@@ -22,5 +22,8 @@
     "apps/*",
     "packages/*",
     "services/*"
-  ]
+  ],
+  "dependencies": {
+    "lucide-react": "^1.7.0"
+  }
 }

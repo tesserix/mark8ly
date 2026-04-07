@@ -3,9 +3,6 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Button,
-  Card,
-  CardContent,
   Input,
   Label,
   Select,
@@ -36,12 +33,13 @@ type SlugStatus =
 /**
  * OnboardingForm — single client component holding the entire wizard.
  *
- * Five fields: email, business name, slug (auto-suggested + live check),
- * country, currency. Timezone auto-detected from browser. One submit
- * sends the magic link email and routes to /onboarding/check-inbox.
+ * The legacy app shipped a 5-step wizard. This is the new compressed
+ * single-page replacement: five fields (email, business name, slug,
+ * country, currency) on one page, then a magic-link verification email.
+ * Visuals use the same warm editorial palette as the marketing surface.
  *
- * Visuals are now driven by @tesserix/web (Input, Select, Button, Card,
- * Label) instead of hand-rolled markup. Behavior is unchanged.
+ * Behavior is unchanged from the previous incarnation; only chrome was
+ * upgraded.
  */
 export function OnboardingForm({ countries, currencies, timezones }: Props) {
   const router = useRouter();
@@ -121,7 +119,6 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     if (slugStatus.state !== "available") return;
 
     startTransition(async () => {
-      // Step 1: client-side GIP signup. Captures uid + refresh_token + id_token.
       let gipUid = "";
       let gipRefreshToken = "";
       try {
@@ -137,7 +134,6 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
         return;
       }
 
-      // Step 2: create session + send magic link via server action.
       const r = await submitOnboarding({
         email: trimmedEmail,
         businessName: businessName.trim(),
@@ -151,7 +147,6 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
         return;
       }
 
-      // Step 3: persist everything for the verify page + redirect to inbox.
       setSubmitted({
         email: trimmedEmail,
         sessionId: r.data.sessionId,
@@ -176,18 +171,32 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     !pending;
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardContent className="p-8">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Get your store live
-        </h1>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-          We&apos;ll email you a verification link to finish setting up.
-        </p>
+    <div className="w-full max-w-lg mx-auto">
+      {/* Trust strip above the card */}
+      <div className="text-center mb-6">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-sage-50 text-sage-700 text-xs font-medium border border-sage-200">
+          <span className="h-1.5 w-1.5 rounded-full bg-sage-500 animate-pulse" />
+          12 months free · No credit card
+        </div>
+      </div>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+      <div className="rounded-2xl border border-warm-200 bg-white shadow-lg overflow-hidden">
+        {/* Card header strip */}
+        <div className="px-8 pt-8 pb-6 border-b border-warm-100 bg-gradient-to-b from-warm-50 to-white">
+          <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
+            Let&apos;s get your store live
+          </h1>
+          <p className="mt-2 text-sm text-foreground-secondary">
+            We&apos;ll email you a verification link to finish setting up.
+            Takes about 30 seconds.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-8 py-8 space-y-5">
           <div className="space-y-1.5">
-            <Label htmlFor="email">Email address</Label>
+            <Label htmlFor="email" className="text-foreground">
+              Email address
+            </Label>
             <Input
               id="email"
               type="email"
@@ -201,7 +210,9 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="businessName">Business name</Label>
+            <Label htmlFor="businessName" className="text-foreground">
+              Business name
+            </Label>
             <Input
               id="businessName"
               type="text"
@@ -213,8 +224,10 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="slug">Store URL</Label>
-            <div className="flex items-stretch rounded-md border border-input overflow-hidden focus-within:ring-2 focus-within:ring-ring">
+            <Label htmlFor="slug" className="text-foreground">
+              Store URL
+            </Label>
+            <div className="flex items-stretch rounded-lg border border-warm-200 overflow-hidden bg-white focus-within:ring-2 focus-within:ring-foreground/15 focus-within:border-foreground/30 transition">
               <input
                 id="slug"
                 type="text"
@@ -225,18 +238,23 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
                 }}
                 placeholder="acme"
                 required
-                className="flex-1 px-3 py-2 bg-transparent text-sm focus:outline-none"
+                className="flex-1 px-3 py-2.5 bg-transparent text-sm focus:outline-none text-foreground"
               />
-              <span className="flex items-center px-3 text-sm text-zinc-500 border-l border-input bg-zinc-50 dark:bg-zinc-900">
+              <span className="flex items-center px-3 text-sm font-medium border-l border-warm-200 bg-warm-50 text-foreground-secondary">
                 .mark8ly.com
               </span>
             </div>
             <SlugStatusLine status={slugStatus} />
+            <p className="text-xs text-foreground-tertiary">
+              You can connect your own domain after launch — it&apos;s free.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="country">Country</Label>
+              <Label htmlFor="country" className="text-foreground">
+                Country
+              </Label>
               <Select value={countryCode} onValueChange={setCountryCode}>
                 <SelectTrigger id="country">
                   <SelectValue placeholder="Select…" />
@@ -252,7 +270,9 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="currency">Currency</Label>
+              <Label htmlFor="currency" className="text-foreground">
+                Currency
+              </Label>
               <Select value={currencyCode} onValueChange={setCurrencyCode}>
                 <SelectTrigger id="currency">
                   <SelectValue placeholder="Select…" />
@@ -269,42 +289,76 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           </div>
 
           {error && (
-            <p className="text-sm text-red-600" role="alert">
-              {error}
-            </p>
+            <div className="p-3 rounded-lg bg-terracotta-50 border border-terracotta-200">
+              <p className="text-sm text-terracotta-700" role="alert">
+                {error}
+              </p>
+            </div>
           )}
 
-          <Button
+          <button
             type="submit"
             disabled={!canSubmit}
-            isLoading={pending}
-            loadingText="Sending verification email…"
-            className="w-full"
-            size="lg"
+            className="group w-full bg-primary text-primary-foreground px-6 py-3.5 rounded-xl text-base font-medium hover:bg-primary-hover hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none inline-flex items-center justify-center gap-2"
           >
-            Get my store ready
-          </Button>
+            {pending ? (
+              "Sending verification email…"
+            ) : (
+              <>
+                Get my store ready
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="transition-transform group-hover:translate-x-0.5"
+                >
+                  <path d="M5 12h14M13 5l7 7-7 7" />
+                </svg>
+              </>
+            )}
+          </button>
+
+          <p className="text-xs text-foreground-tertiary text-center">
+            By creating an account you agree to our{" "}
+            <a href="/terms" className="underline hover:text-foreground">
+              Terms
+            </a>
+            ,{" "}
+            <a href="/privacy" className="underline hover:text-foreground">
+              Privacy Policy
+            </a>
+            , and{" "}
+            <a href="/legal" className="underline hover:text-foreground">
+              Security &amp; Compliance Policy
+            </a>
+            .
+          </p>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
 function SlugStatusLine({ status }: { status: SlugStatus }) {
   if (status.state === "idle") {
     return (
-      <p className="text-xs text-zinc-500">
-        3-63 characters, lowercase letters, numbers, and hyphens
+      <p className="text-xs text-foreground-tertiary">
+        3-63 characters · lowercase letters, numbers, and hyphens
       </p>
     );
   }
   if (status.state === "checking")
-    return <p className="text-xs text-zinc-500">Checking…</p>;
+    return <p className="text-xs text-foreground-tertiary">Checking…</p>;
   if (status.state === "available")
-    return <p className="text-xs text-emerald-600">✓ Available</p>;
+    return <p className="text-xs text-sage-700">✓ Available</p>;
   if (status.state === "taken")
-    return <p className="text-xs text-red-600">Already taken</p>;
-  return <p className="text-xs text-red-600">{status.message}</p>;
+    return <p className="text-xs text-terracotta-700">Already taken</p>;
+  return <p className="text-xs text-terracotta-700">{status.message}</p>;
 }
 
 function slugify(input: string): string {

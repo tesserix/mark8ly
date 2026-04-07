@@ -1,0 +1,17 @@
+Welcome to Mark8ly{{if .OwnerName}}, {{.OwnerName}}{{end}}!
+==========================================
+
+Your store {{.BusinessName}} is ready. Here's what you can do next:
+
+1. Set up your admin
+   Add your products, configure shipping, and connect a payment method.
+   {{.AdminURL}}
+
+2. Visit your storefront
+   See what your customers will see.
+   {{.StorefrontURL}}
+
+---
+Questions? Reply to this email or contact {{.SupportEmail}}
+
+© Mark8ly

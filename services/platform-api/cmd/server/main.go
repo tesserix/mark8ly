@@ -3,15 +3,26 @@
 // It does NOT run migrations. On startup it asserts that the DB is at the
 // expected schema version and refuses to start otherwise. This is the safety
 // net that ensures the API never runs against a wrong schema.
+//
+// Domain wiring lives here. Each domain owns its handler/service/repo trio
+// and registers routes onto the /api/v1 group. The outbox drainer is started
+// last so it can process any events written by handlers.
 package main
 
 import (
 	"context"
 	"os/signal"
 	"syscall"
+	"time"
 
 	platformapi "github.com/mark8ly/platform-api"
+	"github.com/mark8ly/platform-api/internal/authz"
 	"github.com/mark8ly/platform-api/internal/location"
+	"github.com/mark8ly/platform-api/internal/notification"
+	"github.com/mark8ly/platform-api/internal/onboarding"
+	"github.com/mark8ly/platform-api/internal/outbox"
+	"github.com/mark8ly/platform-api/internal/tenant"
+	"github.com/mark8ly/platform-api/internal/verification"
 	"github.com/mark8ly/platform-api/pkg/config"
 	"github.com/mark8ly/platform-api/pkg/db"
 	"github.com/mark8ly/platform-api/pkg/httpserver"
@@ -44,16 +55,101 @@ func main() {
 		panic(err)
 	}
 
-	// Wire up domains. Each domain owns its handler/service/repo trio and
-	// registers its routes onto the /api/v1 group.
+	// ─── Notification sender ────────────────────────────────────────────
+	// In dev with no SendGrid key, log emails to stdout (so devs can grab
+	// the OTP for testing). In prod or with a key set, send for real.
+	var sender notification.Sender
+	if cfg.SendGridAPIKey != "" {
+		sender = notification.NewSendGridSender(cfg.SendGridAPIKey)
+	} else {
+		log.Warn("notification: no SENDGRID_API_KEY set — using LogSender (emails will be printed to stdout)")
+		sender = notification.NewLogSender(log)
+	}
+
+	// ─── OpenFGA client ────────────────────────────────────────────────
+	// FGA_STORE_ID can be set explicitly via env. If not, we discover the
+	// store named "mark8ly-platform" automatically — that's the store
+	// created by infra/dev/seed/fga-init.sh, so a fresh `make dev` self-
+	// bootstraps without anyone hand-managing the store ID.
+	storeID := cfg.FGAStoreID
+	if storeID == "" {
+		discoverCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		discovered, derr := authz.DiscoverStoreID(discoverCtx, cfg.FGAAPIURL, authz.FGAStoreName)
+		cancel()
+		if derr != nil {
+			log.Warn("authz: store discovery failed; FGA outbox events will be marked dead",
+				"err", derr)
+		} else if discovered == "" {
+			log.Warn("authz: no store named " + authz.FGAStoreName + " found; FGA outbox events will be marked dead")
+		} else {
+			storeID = discovered
+			log.Info("authz: discovered openfga store", "store_id", storeID)
+		}
+	}
+
+	var fga authz.Client
+	if storeID != "" {
+		fga, err = authz.New(authz.Config{
+			APIURL:  cfg.FGAAPIURL,
+			StoreID: storeID,
+		})
+		if err != nil {
+			log.Error("authz: openfga client", "err", err)
+			panic(err)
+		}
+	}
+
+	// ─── Domains ───────────────────────────────────────────────────────
 	locationHandler := location.NewHandler(location.NewService(location.NewRepository(conn)))
 
+	tenantRepo := tenant.NewRepository(conn)
+	tenantSvc := tenant.NewService(tenantRepo)
+	tenantHandler := tenant.NewHandler(tenantSvc)
+
+	verifSvc := verification.NewService(
+		verification.NewRepository(conn),
+		verification.Config{
+			Sender:       sender,
+			EmailFrom:    cfg.EmailFrom,
+			SupportEmail: cfg.EmailFrom,
+		},
+	)
+	verifHandler := verification.NewHandler(verifSvc)
+
+	onboardingSvc := onboarding.NewService(onboarding.Config{
+		DB:         conn,
+		Repo:       onboarding.NewRepository(conn),
+		TenantRepo: tenantRepo,
+		Sender:     sender,
+		EmailFrom:  cfg.EmailFrom,
+		AdminURLTemplate:      "https://%s-admin.mark8ly.com",
+		StorefrontURLTemplate: "https://%s.mark8ly.com",
+		SupportEmail:          cfg.EmailFrom,
+	})
+	onboardingHandler := onboarding.NewHandler(onboardingSvc, verifSvc)
+
+	// ─── Outbox drainer ────────────────────────────────────────────────
+	drainer := outbox.NewDrainer(conn, log, outbox.Config{})
+	if fga != nil {
+		drainer.Register(onboarding.FGAOutboxKind, onboarding.NewFGAOutboxHandler(fga))
+	}
+
+	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)
 	v1 := r.Group("/api/v1")
-	locationHandler.Register(v1)
+	internal := r.Group("/internal")
 
+	locationHandler.Register(v1)
+	tenantHandler.Register(v1, internal)
+	verifHandler.Register(v1)
+	onboardingHandler.Register(v1)
+
+	// ─── Lifecycle ─────────────────────────────────────────────────────
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	drainer.Start(ctx)
+	defer drainer.Stop()
 
 	if err := httpserver.Run(ctx, cfg.HTTPPort, r, log); err != nil {
 		log.Error("http server", "err", err)

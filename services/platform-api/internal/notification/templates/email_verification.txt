@@ -1,17 +1,18 @@
 Verify your email
 =================
 
-{{if .BusinessName}}Welcome to Mark8ly, {{.BusinessName}}!
+{{if .BusinessName}}Welcome to mark8ly, {{.BusinessName}}.
 
-{{end}}Click the link below to verify your email address and finish setting
-up your store:
+{{end}}Use the link below to verify your email and finish setting up your
+store:
 
     {{.VerifyURL}}
 
-This link will expire in {{.ExpiresIn}}. If you didn't request this,
-you can safely ignore this email.
+This link expires in {{.ExpiresIn}}. Open it on this device to keep moving.
+
+If you didn't request this, you can safely ignore this email.
 
 ---
 Need help? Contact us at {{.SupportEmail}}
 
-© Mark8ly
+mark8ly

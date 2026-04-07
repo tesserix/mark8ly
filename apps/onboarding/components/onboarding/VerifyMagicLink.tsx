@@ -8,6 +8,28 @@ import { refreshIdToken } from "@/lib/gip/signup";
 import { verifyAndLogin } from "@/app/onboarding/actions";
 
 /**
+ * Returns true once zustand's persist middleware has finished rehydrating
+ * the onboarding store from sessionStorage. The hook exists because the
+ * verify page is the magic-link landing target — when the user clicks
+ * the link from their email it opens a fresh tab with an empty
+ * in-memory store, and the verify effect must NOT bail out before the
+ * hydrated values are available.
+ */
+function useOnboardingStoreHasHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(
+    () => useOnboardingStore.persist.hasHydrated(),
+  );
+  useEffect(() => {
+    const unsub = useOnboardingStore.persist.onFinishHydration(() =>
+      setHydrated(true),
+    );
+    setHydrated(useOnboardingStore.persist.hasHydrated());
+    return unsub;
+  }, []);
+  return hydrated;
+}
+
+/**
  * VerifyMagicLink is the magic link target.
  *
  * On mount it:
@@ -25,6 +47,7 @@ export function VerifyMagicLink() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
 
+  const hasHydrated = useOnboardingStoreHasHydrated();
   const businessName = useOnboardingStore((s) => s.businessName);
   const slug = useOnboardingStore((s) => s.slug);
   const countryCode = useOnboardingStore((s) => s.countryCode);
@@ -38,6 +61,10 @@ export function VerifyMagicLink() {
   const ranRef = useRef(false);
 
   useEffect(() => {
+    // Wait for zustand persist to finish rehydrating sessionStorage. Without
+    // this guard, opening the magic link in a fresh tab races: the effect
+    // fires before the store is populated and bails with "no session."
+    if (!hasHydrated) return;
     // StrictMode double-render guard. We must run exactly once because the
     // token is single-use — running twice would consume it and the second
     // call would fail with "token already consumed."
@@ -90,7 +117,7 @@ export function VerifyMagicLink() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasHydrated]);
 
   if (error) {
     return (

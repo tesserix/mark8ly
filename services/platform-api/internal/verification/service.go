@@ -12,6 +12,14 @@ import (
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
 
+// TokenRecorder captures the plaintext token for an email so e2e test
+// helpers can hand it back without an actual email round-trip. Wired in
+// dev/test environments only — production injection is nil and the calls
+// are no-ops. Implemented by internal/test.TokenRecorder.
+type TokenRecorder interface {
+	Record(email, token string)
+}
+
 // Service is the business logic for the email-magic-link verification flow.
 //
 // Two operations:
@@ -36,11 +44,12 @@ import (
 //   Same approach used by: Stripe webhook secrets, GitHub PATs, AWS API
 //   keys, Slack webhook URLs.
 type Service struct {
-	repo         Repository
-	sender       notification.Sender
-	emailFrom    string
-	supportEmail string
+	repo          Repository
+	sender        notification.Sender
+	emailFrom     string
+	supportEmail  string
 	verifyURLBase string
+	recorder      TokenRecorder // optional; nil in prod
 }
 
 // Config holds Service dependencies.
@@ -52,6 +61,9 @@ type Config struct {
 	// clickable URL in the email body. e.g. "https://onboarding.mark8ly.com"
 	// → magic link becomes "https://onboarding.mark8ly.com/onboarding/verify?token=<tok>".
 	VerifyURLBase string
+	// Recorder is an optional capture sink for the plaintext token, used
+	// by e2e tests to bypass the inbox. nil in prod.
+	Recorder TokenRecorder
 }
 
 // NewService constructs a Service.
@@ -68,6 +80,7 @@ func NewService(repo Repository, cfg Config) *Service {
 		emailFrom:     cfg.EmailFrom,
 		supportEmail:  cfg.SupportEmail,
 		verifyURLBase: cfg.VerifyURLBase,
+		recorder:      cfg.Recorder,
 	}
 }
 
@@ -122,6 +135,9 @@ func (s *Service) SendMagicLink(ctx context.Context, sessionID, email, businessN
 	}
 	if err := s.sender.Send(ctx, msg); err != nil {
 		return apperrors.Wrap(err, 500, "email_send_failed", "failed to send verification email")
+	}
+	if s.recorder != nil {
+		s.recorder.Record(email, token)
 	}
 	return nil
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/onboarding"
 	"github.com/mark8ly/platform-api/internal/outbox"
 	"github.com/mark8ly/platform-api/internal/tenant"
+	testhelper "github.com/mark8ly/platform-api/internal/test"
 	"github.com/mark8ly/platform-api/internal/verification"
 	"github.com/mark8ly/platform-api/pkg/config"
 	"github.com/mark8ly/platform-api/pkg/db"
@@ -106,12 +107,21 @@ func main() {
 	tenantSvc := tenant.NewService(tenantRepo)
 	tenantHandler := tenant.NewHandler(tenantSvc)
 
+	// In dev/test environments, capture plaintext magic-link tokens so the
+	// e2e suite can bypass the inbox. nil in prod — verification.Service
+	// no-ops the recorder call when nil.
+	var tokenRecorder *testhelper.TokenRecorder
+	if cfg.Env != "prod" {
+		tokenRecorder = testhelper.NewTokenRecorder()
+	}
+
 	verifSvc := verification.NewService(
 		verification.NewRepository(conn),
 		verification.Config{
 			Sender:       sender,
 			EmailFrom:    cfg.EmailFrom,
 			SupportEmail: cfg.EmailFrom,
+			Recorder:     tokenRecorder,
 		},
 	)
 	verifHandler := verification.NewHandler(verifSvc)
@@ -143,6 +153,13 @@ func main() {
 	tenantHandler.Register(v1, internal)
 	verifHandler.Register(v1)
 	onboardingHandler.Register(v1)
+
+	// e2e helper routes — only mounted outside production. Gives Playwright
+	// a way to grab the latest magic-link token for an email without
+	// reading the inbox.
+	if tokenRecorder != nil {
+		testhelper.NewHandler(tokenRecorder).Register(v1)
+	}
 
 	// ─── Lifecycle ─────────────────────────────────────────────────────
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

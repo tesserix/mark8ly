@@ -187,7 +187,7 @@ const comparisonData: ComparisonRow[] = [
   { feature: "Native Mobile App", mark8ly: "Included", shopify: "Extra cost", woo: "Not included" },
   { feature: "Multi-tenant", mark8ly: "Built-in", shopify: "Not available", woo: "Plugin required" },
   { feature: "Languages", mark8ly: "27 included", shopify: "Limited", woo: "Plugin required" },
-  { feature: "AI Features", mark8ly: "Built-in", shopify: "Apps required", woo: "Plugins required" },
+  { feature: "Store Tools", mark8ly: "Built-in", shopify: "Apps required", woo: "Plugins required" },
   { feature: "Transaction Fees", mark8ly: "0%", shopify: "0.5-2%", woo: "Varies" },
 ];
 
@@ -273,10 +273,14 @@ export default function PresentationPage() {
     const threshold = 50;
 
     const handleTouchStart = (e: TouchEvent) => {
-      touchStartX = e.changedTouches[0].screenX;
+      const touch = e.changedTouches.item(0);
+      if (!touch) return;
+      touchStartX = touch.screenX;
     };
     const handleTouchEnd = (e: TouchEvent) => {
-      touchEndX = e.changedTouches[0].screenX;
+      const touch = e.changedTouches.item(0);
+      if (!touch) return;
+      touchEndX = touch.screenX;
       const diff = touchStartX - touchEndX;
       if (Math.abs(diff) > threshold) {
         if (diff > 0) nextSlide();
@@ -380,9 +384,12 @@ export default function PresentationPage() {
                     </span>
                   </div>
                   <div className="flex items-center justify-center gap-3 mb-8">
-                    <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center">
-                      <span className="text-white font-bold text-xl">m</span>
-                    </div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/logo.png"
+                      alt="mark8ly logo"
+                      className="h-12 w-auto object-contain"
+                    />
                     <span className="text-xl font-serif font-semibold text-foreground">
                       mark8ly
                     </span>
@@ -523,21 +530,21 @@ export default function PresentationPage() {
                 </div>
               )}
 
-              {/* Slide 4: AI Features */}
+              {/* Slide 4: Store Tools */}
               {currentSlide === 4 && (
                 <div className="text-center">
                   <span className="inline-block px-4 py-1.5 rounded-full bg-warm-100 border border-warm-200 text-foreground-secondary text-xs font-semibold tracking-widest mb-4 sm:mb-6">
-                    AI-POWERED
+                    STORE TOOLS
                   </span>
                   <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif font-medium mb-8 sm:mb-12">
-                    <span className="text-foreground">Intelligence </span>
-                    <span className="text-foreground-secondary">Built In</span>
+                    <span className="text-foreground">Tools That Help You </span>
+                    <span className="text-foreground-secondary">Sell Better</span>
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 items-start">
                     <div className="bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 text-left shadow-card">
                       <div className="mb-3 sm:mb-4">
                         <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
-                          Generate description for:
+                          Product listing preview:
                         </div>
                         <div className="text-base sm:text-lg font-medium text-foreground-secondary">
                           &ldquo;Vintage Leather Messenger Bag&rdquo;
@@ -570,18 +577,18 @@ export default function PresentationPage() {
                       {[
                         {
                           icon: Package,
-                          title: "Auto Product Descriptions",
-                          description: "Generate SEO-optimized descriptions in seconds",
+                          title: "Structured Product Listings",
+                          description: "Keep titles, pricing, variants, and merchandising details organized",
                         },
                         {
                           icon: Languages,
-                          title: "Smart Translations",
-                          description: "Auto-translate content to 27 languages",
+                          title: "Multi-Language Storefronts",
+                          description: "Publish across 27 languages with built-in localization support",
                         },
                         {
                           icon: BarChart3,
-                          title: "Intelligent Search",
-                          description: "Typo-tolerant search with instant results",
+                          title: "Fast Product Discovery",
+                          description: "Help shoppers find products quickly with responsive catalog search",
                         },
                       ].map((feature) => (
                         <div

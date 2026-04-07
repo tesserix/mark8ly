@@ -172,23 +172,27 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
 
   return (
     <div className="w-full max-w-lg mx-auto">
-      {/* Trust strip above the card */}
-      <div className="text-center mb-6">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-sage-50 text-sage-700 text-xs font-medium border border-sage-200">
-          <span className="h-1.5 w-1.5 rounded-full bg-sage-500 animate-pulse" />
-          12 months free · No credit card
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-warm-200 bg-white shadow-lg overflow-hidden">
+      <div className="rounded-[2rem] border border-warm-200/90 bg-white/90 shadow-[0_24px_80px_rgba(43,38,34,0.12)] backdrop-blur-sm overflow-hidden">
         {/* Card header strip */}
-        <div className="px-8 pt-8 pb-6 border-b border-warm-100 bg-gradient-to-b from-warm-50 to-white">
+        <div className="px-8 pt-8 pb-6 border-b border-warm-100 bg-[linear-gradient(180deg,rgba(243,238,230,0.72),rgba(255,255,255,0.98))]">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <span className="text-xs font-medium uppercase tracking-[0.16em] text-foreground-tertiary">
+              Create Your Store
+            </span>
+            <span className="rounded-full bg-warm-100 px-3 py-1 text-xs font-medium text-foreground-secondary">
+              Step 1 of 2
+            </span>
+          </div>
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-sage-200 bg-white/88 px-4 py-1.5 text-xs font-medium text-sage-700 shadow-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-sage-500" aria-hidden />
+            6 months free · No credit card
+          </div>
           <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
             Let&apos;s get your store live
           </h1>
-          <p className="mt-2 text-sm text-foreground-secondary">
+          <p className="mt-2 text-sm leading-6 text-foreground-secondary">
             We&apos;ll email you a verification link to finish setting up.
-            Takes about 30 seconds.
+            You can still refine your branding, domain, and catalog after this.
           </p>
         </div>
 
@@ -205,7 +209,7 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
               placeholder="founder@yourbusiness.com"
               required
               autoComplete="email"
-              autoFocus
+              spellCheck={false}
             />
           </div>
 
@@ -227,7 +231,7 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
             <Label htmlFor="slug" className="text-foreground">
               Store URL
             </Label>
-            <div className="flex items-stretch rounded-lg border border-warm-200 overflow-hidden bg-white focus-within:ring-2 focus-within:ring-foreground/15 focus-within:border-foreground/30 transition">
+            <div className="flex items-stretch rounded-lg border border-warm-200 overflow-hidden bg-white focus-within:ring-2 focus-within:ring-foreground/15 focus-within:border-foreground/30 transition-[border-color,box-shadow]">
               <input
                 id="slug"
                 type="text"
@@ -238,6 +242,8 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
                 }}
                 placeholder="acme"
                 required
+                spellCheck={false}
+                autoComplete="off"
                 className="flex-1 px-3 py-2.5 bg-transparent text-sm focus:outline-none text-foreground"
               />
               <span className="flex items-center px-3 text-sm font-medium border-l border-warm-200 bg-warm-50 text-foreground-secondary">
@@ -246,7 +252,8 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
             </div>
             <SlugStatusLine status={slugStatus} />
             <p className="text-xs text-foreground-tertiary">
-              You can connect your own domain after launch — it&apos;s free.
+              Start with a Mark8ly URL now. You can connect a custom domain
+              after launch.
             </p>
           </div>
 
@@ -290,7 +297,11 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
 
           {error && (
             <div className="p-3 rounded-lg bg-terracotta-50 border border-terracotta-200">
-              <p className="text-sm text-terracotta-700" role="alert">
+              <p
+                className="text-sm text-terracotta-700"
+                role="alert"
+                aria-live="polite"
+              >
                 {error}
               </p>
             </div>
@@ -299,10 +310,16 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           <button
             type="submit"
             disabled={!canSubmit}
-            className="group w-full bg-primary text-primary-foreground px-6 py-3.5 rounded-xl text-base font-medium hover:bg-primary-hover hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none inline-flex items-center justify-center gap-2"
+            className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 text-base font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover hover:shadow-[0_18px_36px_rgba(31,30,28,0.22)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-[0_14px_30px_rgba(31,30,28,0.18)]"
           >
             {pending ? (
-              "Sending verification email…"
+              <>
+                <span
+                  className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white motion-safe:animate-spin"
+                  aria-hidden
+                />
+                <span aria-live="polite">Sending your verification link…</span>
+              </>
             ) : (
               <>
                 Get my store ready
@@ -347,18 +364,34 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
 function SlugStatusLine({ status }: { status: SlugStatus }) {
   if (status.state === "idle") {
     return (
-      <p className="text-xs text-foreground-tertiary">
+      <p className="text-xs text-foreground-tertiary" aria-live="polite">
         3-63 characters · lowercase letters, numbers, and hyphens
       </p>
     );
   }
   if (status.state === "checking")
-    return <p className="text-xs text-foreground-tertiary">Checking…</p>;
+    return (
+      <p className="text-xs text-foreground-tertiary" aria-live="polite">
+        Checking availability…
+      </p>
+    );
   if (status.state === "available")
-    return <p className="text-xs text-sage-700">✓ Available</p>;
+    return (
+      <p className="text-xs text-sage-700" aria-live="polite">
+        ✓ Available
+      </p>
+    );
   if (status.state === "taken")
-    return <p className="text-xs text-terracotta-700">Already taken</p>;
-  return <p className="text-xs text-terracotta-700">{status.message}</p>;
+    return (
+      <p className="text-xs text-terracotta-700" aria-live="polite">
+        Already taken
+      </p>
+    );
+  return (
+    <p className="text-xs text-terracotta-700" aria-live="polite">
+      {status.message}
+    </p>
+  );
 }
 
 function slugify(input: string): string {

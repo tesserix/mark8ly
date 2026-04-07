@@ -41,7 +41,7 @@ export function Footer() {
             links={[
               { href: "/#features", label: "Features" },
               { href: "/#pricing", label: "Pricing" },
-              { href: "/demo", label: "Demo" },
+              { href: "/presentation", label: "Demo" },
               { href: "/integrations", label: "Integrations" },
             ]}
           />

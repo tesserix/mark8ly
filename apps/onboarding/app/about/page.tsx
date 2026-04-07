@@ -13,15 +13,38 @@ export default function AboutPage() {
 
       {/* Hero Section */}
       <section className="pt-32 pb-16 px-6">
-        <div className="max-w-3xl mx-auto text-center">
+        <div className="max-w-5xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-warm-200 bg-white/80 px-4 py-2 text-sm font-medium text-foreground-secondary shadow-sm">
+            <Heart className="w-4 h-4 text-terracotta-600" />
+            Built for small business ambition
+          </div>
           <h1 className="font-serif text-4xl sm:text-5xl font-medium tracking-tight mb-6 text-foreground">
             We believe every small business deserves a beautiful online store
           </h1>
-          <p className="text-xl text-foreground-secondary leading-relaxed">
+          <p className="mx-auto max-w-3xl text-xl text-foreground-secondary leading-relaxed">
             mark8ly makes it simple for creators, makers, and small business
             owners to sell online—without the technical headaches or hidden
             fees.
           </p>
+          <div className="mt-10 grid gap-4 sm:grid-cols-3 text-left">
+            {[
+              ["Made for", "Creators, makers & founders"],
+              ["Promise", "No transaction fees, no needless complexity"],
+              ["Approach", "Editorial design, human support, fast setup"],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-2xl border border-warm-200/90 bg-white/80 p-5 shadow-sm"
+              >
+                <p className="text-xs uppercase tracking-[0.14em] text-foreground-tertiary">
+                  {label}
+                </p>
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -49,7 +72,7 @@ export default function AboutPage() {
       </section>
 
       {/* Mission */}
-      <section className="py-16 px-6 bg-warm-50">
+      <section className="py-16 px-6 bg-warm-50/75">
         <div className="max-w-3xl mx-auto">
           <h2 className="font-serif text-3xl font-medium text-foreground mb-6">
             Our Mission
@@ -70,7 +93,7 @@ export default function AboutPage() {
               {
                 icon: Zap,
                 title: "Fairness over fees",
-                desc: "No transaction fees means you keep what you earn",
+                desc: "No extra platform transaction fees from mark8ly means you keep more of what you earn",
               },
               {
                 icon: Users,
@@ -85,7 +108,7 @@ export default function AboutPage() {
             ].map((item) => (
               <div
                 key={item.title}
-                className="flex gap-4 p-5 bg-white rounded-xl border border-warm-200"
+                className="flex gap-4 rounded-2xl border border-warm-200/90 bg-white/88 p-5 shadow-sm"
               >
                 <div className="w-10 h-10 rounded-lg bg-sage-100 flex items-center justify-center flex-shrink-0">
                   <item.icon className="w-5 h-5 text-sage-600" />
@@ -110,11 +133,11 @@ export default function AboutPage() {
             {[
               {
                 title: "No Transaction Fees",
-                desc: "We don't take a cut of your sales. Ever. The money you earn is yours to keep.",
+                desc: "We don&apos;t add a platform transaction fee on top of your orders. You only pay your payment gateway&apos;s standard processing charges.",
               },
               {
                 title: "Start Free",
-                desc: "Start selling today, completely free. When you're ready, simple flat pricing with no surprises.",
+                desc: "Start selling today, free for 6 months. After that, one flat monthly fee with no confusing plan ladder.",
               },
               {
                 title: "No Developer Needed",
@@ -176,11 +199,11 @@ export default function AboutPage() {
             Ready to Start Selling?
           </h2>
           <p className="text-foreground-secondary mb-8">
-            No credit card required. No transaction fees. No catch.
+            No credit card required. No extra platform transaction fees. No catch.
           </p>
           <Link
             href="/onboarding"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-medium rounded-xl hover:bg-primary-hover transition-colors"
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-4 font-medium text-primary-foreground shadow-[0_14px_28px_rgba(31,30,28,0.18)] transition-[background-color,box-shadow] hover:bg-primary-hover hover:shadow-[0_18px_34px_rgba(31,30,28,0.22)]"
           >
             Launch Your Store Free
             <ArrowRight className="w-5 h-5" />

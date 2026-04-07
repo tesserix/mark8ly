@@ -21,21 +21,44 @@ export default function ContactPage() {
 
       {/* Hero Section */}
       <section className="pt-32 pb-16 px-6">
-        <div className="max-w-3xl mx-auto text-center">
+        <div className="max-w-5xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-sage-200 bg-sage-50/90 px-4 py-2 text-sm font-medium text-sage-700 shadow-sm">
+            <Clock className="w-4 h-4" />
+            24/7 human support
+          </div>
           <h1 className="font-serif text-4xl sm:text-5xl font-medium tracking-tight mb-6 text-foreground">
             We&apos;re Here to Help
           </h1>
-          <p className="text-xl text-foreground-secondary leading-relaxed">
+          <p className="mx-auto max-w-3xl text-xl text-foreground-secondary leading-relaxed">
             Whether you have a question, need support, or just want to say
             hello, we&apos;d love to hear from you.
           </p>
+          <div className="mt-10 grid gap-4 sm:grid-cols-3 text-left">
+            {[
+              ["First reply", "Usually under 2 hours by email"],
+              ["Best for", "Questions, setup help, pricing & partnerships"],
+              ["Style", "No bots, no ticket maze, no dead ends"],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-2xl border border-warm-200/90 bg-white/80 p-5 shadow-sm"
+              >
+                <p className="text-xs uppercase tracking-[0.14em] text-foreground-tertiary">
+                  {label}
+                </p>
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* Support Hours Badge */}
       <section className="pb-12 px-6">
         <div className="max-w-3xl mx-auto">
-          <div className="flex items-center justify-center gap-3 p-4 bg-sage-50 border border-sage-200 rounded-xl">
+          <div className="flex items-center justify-center gap-3 rounded-2xl border border-sage-200 bg-white/88 p-4 shadow-sm">
             <Clock className="w-5 h-5 text-sage-600" />
             <span className="font-medium text-sage-700">24/7 Human Support</span>
             <span className="text-sage-600">
@@ -53,7 +76,7 @@ export default function ContactPage() {
           </h2>
 
           <div className="grid md:grid-cols-2 gap-6">
-            <div className="p-6 bg-white border border-warm-200 rounded-xl">
+            <div className="rounded-2xl border border-warm-200/90 bg-white/88 p-6 shadow-sm">
               <div className="w-12 h-12 rounded-xl bg-warm-100 flex items-center justify-center mb-4">
                 <Mail className="w-6 h-6 text-warm-600" />
               </div>
@@ -74,7 +97,7 @@ export default function ContactPage() {
               </p>
             </div>
 
-            <div className="p-6 bg-white border border-warm-200 rounded-xl">
+            <div className="rounded-2xl border border-warm-200/90 bg-white/88 p-6 shadow-sm">
               <div className="w-12 h-12 rounded-xl bg-warm-100 flex items-center justify-center mb-4">
                 <Send className="w-6 h-6 text-warm-600" />
               </div>
@@ -96,7 +119,7 @@ export default function ContactPage() {
               </p>
             </div>
 
-            <div className="p-6 bg-white border border-warm-200 rounded-xl">
+            <div className="rounded-2xl border border-warm-200/90 bg-white/88 p-6 shadow-sm">
               <div className="w-12 h-12 rounded-xl bg-warm-100 flex items-center justify-center mb-4">
                 <MessageCircle className="w-6 h-6 text-warm-600" />
               </div>
@@ -110,7 +133,7 @@ export default function ContactPage() {
               <p className="text-sm text-sage-600 mt-3">Available 24/7</p>
             </div>
 
-            <div className="p-6 bg-white border border-warm-200 rounded-xl">
+            <div className="rounded-2xl border border-warm-200/90 bg-white/88 p-6 shadow-sm">
               <div className="w-12 h-12 rounded-xl bg-warm-100 flex items-center justify-center mb-4">
                 <HelpCircle className="w-6 h-6 text-warm-600" />
               </div>
@@ -133,7 +156,7 @@ export default function ContactPage() {
       </section>
 
       {/* Social Media & Location */}
-      <section className="py-16 px-6 bg-warm-50">
+      <section className="py-16 px-6 bg-warm-50/75">
         <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-12">
           <div>
             <h2 className="font-serif text-2xl font-medium text-foreground mb-6">
@@ -221,7 +244,7 @@ export default function ContactPage() {
           </p>
           <Link
             href="/onboarding"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-medium rounded-xl hover:bg-primary-hover transition-colors"
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-4 font-medium text-primary-foreground shadow-[0_14px_28px_rgba(31,30,28,0.18)] transition-[background-color,box-shadow] hover:bg-primary-hover hover:shadow-[0_18px_34px_rgba(31,30,28,0.22)]"
           >
             Try mark8ly Free
             <ArrowRight className="w-5 h-5" />

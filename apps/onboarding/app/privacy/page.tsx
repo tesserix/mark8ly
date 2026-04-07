@@ -9,7 +9,10 @@ export default function PrivacyPolicyPage() {
       <Header />
 
       <section className="pt-32 pb-12 px-6">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-4xl mx-auto">
+          <div className="inline-flex items-center gap-2 rounded-full border border-warm-200 bg-white/82 px-4 py-2 text-sm font-medium text-foreground-secondary shadow-sm mb-6">
+            Plain-language policy
+          </div>
           <h1 className="font-serif text-4xl sm:text-5xl font-medium tracking-tight mb-4 text-foreground">
             Privacy Policy
           </h1>
@@ -18,15 +21,16 @@ export default function PrivacyPolicyPage() {
       </section>
 
       <section className="pb-20 px-6">
-        <div className="max-w-3xl mx-auto">
-          <div className="prose prose-lg text-foreground-secondary space-y-8">
-            <div className="p-6 bg-warm-50 rounded-xl border border-warm-200">
-              <p className="text-foreground leading-relaxed m-0">
-                At mark8ly, we believe your data is yours. We only collect what
-                we need to provide you with a great service, and we&apos;re
-                transparent about how we use it.
-              </p>
-            </div>
+        <div className="max-w-4xl mx-auto">
+          <div className="rounded-[2rem] border border-warm-200/90 bg-white/90 p-6 shadow-[0_20px_60px_rgba(43,38,34,0.08)] sm:p-8">
+            <div className="prose prose-lg text-foreground-secondary space-y-8">
+              <div className="p-6 bg-warm-50 rounded-xl border border-warm-200">
+                <p className="text-foreground leading-relaxed m-0">
+                  At mark8ly, we believe your data is yours. We only collect what
+                  we need to provide you with a great service, and we&apos;re
+                  transparent about how we use it.
+                </p>
+              </div>
 
             <section>
               <h2 className="font-serif text-2xl font-medium text-foreground mb-4">1. Who We Are</h2>
@@ -44,7 +48,7 @@ export default function PrivacyPolicyPage() {
               <h2 className="font-serif text-2xl font-medium text-foreground mb-4">2. Information We Collect</h2>
               <h3 className="font-medium text-foreground text-lg mt-6 mb-3">Information You Give Us</h3>
               <ul className="list-disc pl-6 space-y-2">
-                <li><strong>Account Information:</strong> Name, email address, phone number, business name, and password</li>
+                <li><strong>Account Information:</strong> Name, email address, phone number, business name, and login credentials</li>
                 <li><strong>Business Information:</strong> Store name, product details, descriptions, images, and pricing</li>
                 <li><strong>Payment Information:</strong> Billing address and payment method details (we never store full card details)</li>
                 <li><strong>Communications:</strong> Messages you send us through email, chat, or support</li>
@@ -138,6 +142,7 @@ export default function PrivacyPolicyPage() {
                 </p>
               </div>
             </section>
+            </div>
           </div>
         </div>
       </section>

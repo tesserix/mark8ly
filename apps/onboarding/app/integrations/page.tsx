@@ -91,8 +91,8 @@ export default function IntegrationsPage() {
       <Header />
 
       <section className="pt-32 pb-16 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-warm-100 border border-warm-200 text-foreground-secondary text-sm font-medium mb-6">
+        <div className="max-w-5xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-warm-200 bg-white/80 px-4 py-2 text-sm font-medium text-foreground-secondary shadow-sm mb-6">
             <Zap className="w-4 h-4" />
             Built-in, not bolted on
           </div>
@@ -110,18 +110,18 @@ export default function IntegrationsPage() {
 
       <section className="pb-16 px-6">
         <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-3 gap-6">
-            <div className="text-center p-6 rounded-2xl bg-warm-50 border border-warm-200">
+          <div className="grid gap-6 md:grid-cols-3">
+            <div className="rounded-2xl border border-warm-200/90 bg-white/88 p-6 text-center shadow-sm">
               <Clock className="w-8 h-8 text-foreground-secondary mx-auto mb-3" />
               <p className="font-medium text-foreground">5-minute setup</p>
               <p className="text-sm text-foreground-secondary">Not 5 hours</p>
             </div>
-            <div className="text-center p-6 rounded-2xl bg-warm-50 border border-warm-200">
+            <div className="rounded-2xl border border-warm-200/90 bg-white/88 p-6 text-center shadow-sm">
               <Shield className="w-8 h-8 text-foreground-secondary mx-auto mb-3" />
               <p className="font-medium text-foreground">PCI compliant</p>
               <p className="text-sm text-foreground-secondary">Bank-grade security</p>
             </div>
-            <div className="text-center p-6 rounded-2xl bg-warm-50 border border-warm-200">
+            <div className="rounded-2xl border border-warm-200/90 bg-white/88 p-6 text-center shadow-sm">
               <CreditCard className="w-8 h-8 text-foreground-secondary mx-auto mb-3" />
               <p className="font-medium text-foreground">No extra fees</p>
               <p className="text-sm text-foreground-secondary">Just gateway charges</p>
@@ -152,7 +152,7 @@ export default function IntegrationsPage() {
                 {category.items.map((item) => (
                   <div
                     key={item.name}
-                    className="p-6 rounded-2xl bg-card border border-border hover:border-warm-300 transition-colors"
+                    className="rounded-2xl border border-border bg-white/88 p-6 shadow-sm transition-[border-color,box-shadow,transform] hover:border-warm-300 hover:shadow-md"
                   >
                     <h3 className="text-xl font-semibold text-foreground mb-2">
                       {item.name}
@@ -194,7 +194,7 @@ export default function IntegrationsPage() {
             {comingSoonIntegrations.map((item) => (
               <div
                 key={item.name}
-                className="p-6 rounded-2xl bg-warm-50 border border-warm-200 border-dashed"
+                className="rounded-2xl border border-warm-200 border-dashed bg-white/82 p-6 shadow-sm"
               >
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-xl bg-warm-100 flex items-center justify-center flex-shrink-0">
@@ -217,16 +217,16 @@ export default function IntegrationsPage() {
 
       <section className="pb-20 px-6">
         <div className="max-w-4xl mx-auto">
-          <div className="text-center p-10 rounded-3xl bg-card border border-border">
+          <div className="text-center rounded-[2rem] border border-border bg-white/90 p-10 shadow-[0_20px_60px_rgba(43,38,34,0.08)]">
             <h2 className="font-serif text-2xl font-medium text-foreground mb-4">
               Ready to start selling?
             </h2>
             <p className="text-foreground-secondary mb-6">
-              Your first year is free. All integrations included.
+              Your first 6 months are free. All integrations included.
             </p>
             <a
               href="/onboarding"
-              className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-medium text-primary-foreground transition-[background-color,box-shadow] hover:bg-primary-hover hover:shadow-lg"
             >
               Start your store
               <ArrowRight className="w-4 h-4" />

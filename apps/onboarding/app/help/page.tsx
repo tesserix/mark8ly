@@ -70,7 +70,11 @@ export default function HelpCenterPage() {
 
       {/* Hero */}
       <section className="pt-32 pb-12 px-6">
-        <div className="max-w-4xl mx-auto text-center">
+        <div className="max-w-5xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-sage-200 bg-sage-50/90 px-4 py-2 text-sm font-medium text-sage-700 shadow-sm">
+            <MessageCircle className="w-4 h-4" />
+            Real help, fast
+          </div>
           <h1 className="font-serif text-4xl sm:text-5xl font-medium tracking-tight mb-6 text-foreground">
             How can we help?
           </h1>
@@ -83,8 +87,8 @@ export default function HelpCenterPage() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-foreground-tertiary" />
               <input
                 type="text"
-                placeholder="Search for answers..."
-                className="w-full pl-12 pr-4 py-4 rounded-xl border border-border bg-card text-foreground placeholder:text-foreground-tertiary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                placeholder="Search for answers…"
+                className="w-full rounded-2xl border border-border bg-white/90 py-4 pl-12 pr-4 text-foreground shadow-sm placeholder:text-foreground-tertiary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
           </div>
@@ -94,7 +98,7 @@ export default function HelpCenterPage() {
       {/* Getting Started */}
       <section className="pb-16 px-6">
         <div className="max-w-4xl mx-auto">
-          <div className="p-8 rounded-2xl bg-warm-50 border border-warm-200">
+          <div className="rounded-[2rem] border border-warm-200/90 bg-white/88 p-8 shadow-sm">
             <h2 className="font-serif text-xl font-medium text-foreground mb-6">
               Getting started
             </h2>
@@ -126,7 +130,7 @@ export default function HelpCenterPage() {
               <a
                 key={category.title}
                 href="#"
-                className="group p-6 rounded-2xl bg-card border border-border hover:border-warm-300 transition-colors"
+                className="group rounded-2xl border border-border bg-white/88 p-6 shadow-sm transition-[border-color,box-shadow,transform] hover:border-warm-300 hover:shadow-md"
               >
                 <div className="w-12 h-12 rounded-xl bg-warm-100 flex items-center justify-center mb-4">
                   <category.icon className="w-6 h-6 text-foreground-secondary" />
@@ -164,8 +168,8 @@ export default function HelpCenterPage() {
                 key={option.title}
                 className={`p-6 rounded-2xl border text-center ${
                   option.primary
-                    ? "bg-primary/5 border-primary/20"
-                    : "bg-card border-border"
+                  ? "border-primary/20 bg-primary/5 shadow-sm"
+                    : "border-border bg-white/88 shadow-sm"
                 }`}
               >
                 <div
@@ -186,10 +190,10 @@ export default function HelpCenterPage() {
                 <p className="text-xs text-foreground-tertiary mb-4">{option.detail}</p>
                 <button
                   type="button"
-                  className={`inline-flex items-center gap-1 text-sm font-medium ${
+                  className={`inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium ${
                     option.primary
-                      ? "text-primary hover:text-primary-hover"
-                      : "text-foreground-secondary hover:text-foreground"
+                      ? "bg-white text-primary hover:text-primary-hover"
+                      : "bg-warm-50 text-foreground-secondary hover:text-foreground"
                   } transition-colors`}
                 >
                   {option.action}

@@ -43,8 +43,8 @@ export default function BlogPage() {
       <Header />
 
       <section className="pt-32 pb-16 px-6">
-        <div className="max-w-3xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-warm-100 border border-warm-200 text-foreground-secondary text-sm font-medium mb-6">
+        <div className="max-w-5xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-warm-200 bg-white/80 px-4 py-2 text-sm font-medium text-foreground-secondary shadow-sm mb-6">
             <Sparkles className="w-4 h-4" />
             Coming soon
           </div>
@@ -55,6 +55,25 @@ export default function BlogPage() {
             We are working on something. Stories, tips, and lessons from the
             world of small business e-commerce. No fluff, no jargon.
           </p>
+          <div className="mx-auto mt-10 grid max-w-4xl gap-4 sm:grid-cols-3 text-left">
+            {[
+              ["Tone", "Practical, candid, grounded in merchant reality"],
+              ["Cadence", "Only useful updates, never content for content’s sake"],
+              ["Focus", "Growth, operations, customer stories, product craft"],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-2xl border border-warm-200/90 bg-white/80 p-5 shadow-sm"
+              >
+                <p className="text-xs uppercase tracking-[0.14em] text-foreground-tertiary">
+                  {label}
+                </p>
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -67,7 +86,7 @@ export default function BlogPage() {
             {upcomingTopics.map((topic) => (
               <div
                 key={topic.title}
-                className="p-6 rounded-2xl bg-warm-50 border border-warm-200"
+                className="rounded-2xl border border-warm-200/90 bg-white/88 p-6 shadow-sm"
               >
                 <div className="w-10 h-10 rounded-lg bg-warm-100 flex items-center justify-center mb-4">
                   <topic.icon className="w-5 h-5 text-foreground-secondary" />
@@ -82,7 +101,7 @@ export default function BlogPage() {
 
       <section className="pb-20 px-6">
         <div className="max-w-3xl mx-auto">
-          <div className="p-10 rounded-3xl bg-card border border-border text-center">
+          <div className="rounded-[2rem] border border-warm-200/90 bg-white/90 p-10 text-center shadow-[0_20px_60px_rgba(43,38,34,0.08)]">
             <div className="w-16 h-16 rounded-2xl bg-warm-100 flex items-center justify-center mx-auto mb-6">
               <Mail className="w-8 h-8 text-foreground-secondary" />
             </div>
@@ -102,7 +121,7 @@ export default function BlogPage() {
               />
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 font-medium text-primary-foreground transition-[background-color,box-shadow] hover:bg-primary-hover hover:shadow-lg"
               >
                 Notify me
                 <ArrowRight className="w-4 h-4" />
@@ -123,15 +142,15 @@ export default function BlogPage() {
           </h2>
           <div className="flex flex-wrap justify-center gap-4">
             <a
-              href="/help"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-border text-foreground-secondary hover:text-foreground hover:border-warm-300 transition-colors"
+              href="/guides"
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-white/80 px-5 py-2.5 text-foreground-secondary hover:text-foreground hover:border-warm-300 transition-colors"
             >
               <PenLine className="w-4 h-4" />
               Read our guides
             </a>
             <a
               href="/help"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-border text-foreground-secondary hover:text-foreground hover:border-warm-300 transition-colors"
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-white/80 px-5 py-2.5 text-foreground-secondary hover:text-foreground hover:border-warm-300 transition-colors"
             >
               Browse help center
             </a>

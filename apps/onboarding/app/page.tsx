@@ -33,12 +33,12 @@ export default function HomePage() {
       <Header currentPage="home" />
 
       {/* Hero */}
-      <section className="pt-32 pb-20 px-6">
+      <section className="px-6 pb-16 pt-28 sm:pb-18 sm:pt-30">
         <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.1fr_0.9fr] gap-16 items-center">
           <div>
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-sage-50 text-sage-700 text-sm font-medium border border-sage-200 mb-6">
-              <span className="h-2 w-2 rounded-full bg-sage-500 animate-pulse" aria-hidden />
-              12 months free, then one flat price
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-sage-200 bg-sage-50 px-4 py-2 text-sm font-medium text-sage-700 shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-sage-500" aria-hidden />
+              6 months free, then one flat monthly fee
             </div>
             <h1 className="font-serif text-4xl sm:text-5xl md:text-6xl font-medium tracking-tight mb-6 leading-[1.05] text-foreground">
               Your online store,
@@ -54,11 +54,11 @@ export default function HomePage() {
                 href="/onboarding"
                 className="group bg-primary text-primary-foreground px-8 py-4 rounded-xl text-base font-medium hover:bg-primary-hover transition-all hover:shadow-lg hover:-translate-y-0.5 inline-flex items-center gap-2"
               >
-                Start Your Free Year
+                Start Free for 6 Months
                 <ArrowRight />
               </Link>
               <Link
-                href="#features"
+                href="/#features"
                 className="px-6 py-4 rounded-xl text-base font-medium text-foreground-secondary hover:text-foreground hover:bg-warm-50 transition-all border border-warm-200"
               >
                 See how it works
@@ -67,6 +67,22 @@ export default function HomePage() {
             <p className="text-sm text-foreground-tertiary mb-8">
               No credit card required. Cancel anytime.
             </p>
+
+            <div className="mb-8 grid gap-4 sm:grid-cols-3">
+              {heroStats.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-2xl border border-warm-200/90 bg-white/82 px-4 py-4 shadow-sm"
+                >
+                  <p className="text-xs uppercase tracking-[0.14em] text-foreground-tertiary">
+                    {item.label}
+                  </p>
+                  <p className="mt-2 text-base font-medium text-foreground">
+                    {item.value}
+                  </p>
+                </div>
+              ))}
+            </div>
 
             {/* Trust badges */}
             <div className="flex flex-wrap items-center gap-6 text-sm text-foreground-tertiary">
@@ -87,7 +103,7 @@ export default function HomePage() {
       </section>
 
       {/* Features */}
-      <section id="features" className="py-24 px-6 border-t border-warm-200">
+      <section id="features" className="border-t border-warm-200 px-6 py-18 sm:py-20">
         <div className="max-w-6xl mx-auto">
           <div className="max-w-2xl mb-14">
             <h2 className="font-serif text-3xl sm:text-4xl font-medium mb-4 text-foreground">
@@ -96,8 +112,8 @@ export default function HomePage() {
               <span className="text-foreground-secondary">nothing you don&apos;t</span>
             </h2>
             <p className="text-lg text-foreground-secondary">
-              We built the tools that matter and left out the complexity that
-              doesn&apos;t.
+              The essentials for launching, selling, and growing without the
+              usual complexity.
             </p>
           </div>
 
@@ -126,97 +142,142 @@ export default function HomePage() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="py-24 px-6 border-t border-warm-200">
+      <section id="pricing" className="border-t border-warm-200 px-6 py-18 sm:py-20">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="font-serif text-3xl sm:text-4xl font-medium mb-4 text-foreground">
               Simple, honest pricing
             </h2>
             <p className="text-lg text-foreground-secondary">
-              Start free. Stay free for 12 months. Then one flat price.
+              One clear offer: launch free for 6 months, then keep growing on a
+              flat monthly fee with no transaction fees from Mark8ly.
             </p>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 max-w-3xl mx-auto">
-            {pricingPlans.map((plan) => (
-              <div
-                key={plan.name}
-                className={`rounded-2xl border bg-white p-6 sm:p-8 flex flex-col transition-all duration-200 hover:shadow-md ${
-                  plan.featured
-                    ? "border-foreground ring-1 ring-foreground/10 shadow-md"
-                    : "border-warm-200 shadow-sm"
-                }`}
-              >
-                {plan.featured && (
-                  <div className="inline-flex self-start items-center px-3 py-1 rounded-full bg-foreground text-background text-xs font-medium mb-3">
-                    Most popular
-                  </div>
-                )}
-                <h3 className="font-serif text-lg font-medium text-foreground mb-1">
-                  {plan.name}
-                </h3>
-                <p className="text-sm text-foreground-tertiary mb-3">
-                  {plan.tagline}
-                </p>
-                <div className="mb-5">
-                  <div className="flex items-baseline gap-1">
-                    <span
-                      className={`font-serif font-medium text-foreground ${
-                        plan.featured ? "text-3xl" : "text-2xl"
-                      }`}
-                    >
-                      {plan.price}
-                    </span>
-                    {plan.cycle && (
-                      <span className="text-foreground-secondary text-sm">
-                        {plan.cycle}
-                      </span>
-                    )}
-                  </div>
-                  {plan.subtext && (
-                    <p className="text-sm text-foreground-secondary mt-1">
-                      {plan.subtext}
-                    </p>
-                  )}
+          <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr] items-stretch">
+            <div className="rounded-[2rem] border border-foreground/10 bg-white p-6 shadow-[0_20px_60px_rgba(43,38,34,0.08)] sm:p-8">
+              <div className="flex flex-wrap items-center gap-3 mb-6">
+                <div className="inline-flex items-center rounded-full bg-foreground px-3 py-1 text-xs font-medium text-background">
+                  The Offer
                 </div>
-                <ul className="space-y-2.5 mb-6 flex-1">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2.5">
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="text-sage-500 flex-shrink-0 mt-0.5"
-                      >
-                        <path d="M5 13l4 4L19 7" />
-                      </svg>
-                      <span className="text-sm text-foreground-secondary">
-                        {f}
+                <p className="text-sm text-foreground-secondary">
+                  Built for new and growing independent merchants
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {pricingPhases.map((phase) => (
+                  <div
+                    key={phase.name}
+                    className={`rounded-[1.5rem] border p-6 ${
+                      phase.emphasis
+                        ? "border-foreground/10 bg-[linear-gradient(180deg,rgba(31,30,28,0.03),rgba(255,255,255,1))]"
+                        : "border-warm-200 bg-warm-50/55"
+                    }`}
+                  >
+                    <p className="text-xs uppercase tracking-[0.16em] text-foreground-tertiary">
+                      {phase.name}
+                    </p>
+                    <div className="mt-4 flex items-end gap-2">
+                      <span className="font-serif text-4xl font-medium text-foreground">
+                        {phase.price}
                       </span>
-                    </li>
-                  ))}
-                </ul>
+                      {phase.cycle && (
+                        <span className="pb-1 text-sm text-foreground-secondary">
+                          {phase.cycle}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-foreground-secondary">
+                      {phase.description}
+                    </p>
+                    <ul className="mt-5 space-y-2.5">
+                      {phase.features.map((feature) => (
+                        <li key={feature} className="flex items-start gap-2.5">
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="text-sage-500 mt-0.5 flex-shrink-0"
+                          >
+                            <path d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span className="text-sm text-foreground-secondary">
+                            {feature}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 flex flex-col gap-4 rounded-[1.5rem] border border-warm-200 bg-warm-50/75 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    No setup fee. No transaction fee from Mark8ly. No migration later.
+                  </p>
+                  <p className="mt-1 text-sm text-foreground-secondary">
+                    Start once, keep the same store, and move into paid growth
+                    without rebuilding anything.
+                  </p>
+                </div>
                 <Link
                   href="/onboarding"
-                  className="w-full py-3 rounded-lg text-base font-medium transition-all bg-primary text-primary-foreground hover:bg-primary-hover hover:shadow-sm text-center"
+                  className="inline-flex min-w-[168px] items-center justify-center gap-2 self-start rounded-2xl bg-primary px-6 py-3.5 text-base font-medium text-primary-foreground shadow-[0_12px_24px_rgba(31,30,28,0.16)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover hover:shadow-[0_16px_30px_rgba(31,30,28,0.2)] sm:self-center"
                 >
-                  {plan.cta}
+                  <span>Start Free</span>
+                  <ArrowRight />
                 </Link>
               </div>
-            ))}
+            </div>
+
+            <div className="rounded-[2rem] border border-warm-200 bg-[linear-gradient(180deg,rgba(243,238,230,0.88),rgba(255,255,255,0.98))] p-6 shadow-sm sm:p-8">
+              <p className="text-xs uppercase tracking-[0.16em] text-foreground-tertiary">
+                Why this pricing works
+              </p>
+              <h3 className="mt-4 font-serif text-2xl font-medium text-foreground">
+                Enough runway to launch well, without delaying paid validation.
+              </h3>
+              <p className="mt-4 text-sm leading-6 text-foreground-secondary">
+                Six free months gives merchants room to set up properly,
+                collect early orders, and build momentum. After that, one flat
+                fee keeps pricing easy to understand while protecting your
+                margins from extra platform cuts.
+              </p>
+
+              <div className="mt-6 space-y-4">
+                {pricingPrinciples.map((item) => (
+                  <div
+                    key={item.title}
+                    className="rounded-2xl border border-white/70 bg-white/82 p-4"
+                  >
+                    <p className="text-sm font-medium text-foreground">
+                      {item.title}
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-foreground-secondary">
+                      {item.body}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Testimonials */}
-      <section id="testimonial" className="py-24 px-6 border-t border-warm-200">
+      <section id="testimonial" className="border-t border-warm-200 px-6 py-18 sm:py-20">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
+            <p className="mb-3 text-xs uppercase tracking-[0.16em] text-foreground-tertiary">
+              Merchant stories
+            </p>
             <div className="flex items-center justify-center gap-1 mb-4 text-amber-400 text-2xl">
               {[1, 2, 3, 4, 5].map((i) => (
                 <span key={i}>★</span>
@@ -228,19 +289,31 @@ export default function HomePage() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
-            {testimonials.map((t) => (
+            {testimonials.map((t, index) => (
               <div
                 key={t.name}
-                className="p-6 rounded-xl bg-white border border-warm-200 shadow-sm"
+                className={`rounded-[1.75rem] border p-6 shadow-sm ${
+                  index === 1
+                    ? "border-foreground/10 bg-[linear-gradient(180deg,rgba(243,238,230,0.95),rgba(255,255,255,1))] shadow-[0_20px_60px_rgba(43,38,34,0.08)]"
+                    : "border-warm-200 bg-white"
+                }`}
               >
-                <div className="flex gap-1 mb-4 text-amber-400">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <span key={i}>★</span>
-                  ))}
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex gap-1 text-amber-400">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <span key={i}>★</span>
+                    ))}
+                  </div>
+                  <span className="rounded-full bg-warm-100 px-3 py-1 text-xs font-medium text-foreground-secondary">
+                    {t.highlight}
+                  </span>
                 </div>
-                <blockquote className="text-foreground leading-relaxed mb-6">
+                <blockquote className="mb-4 font-serif text-lg leading-7 text-foreground sm:text-xl sm:leading-8">
                   &ldquo;{t.quote}&rdquo;
                 </blockquote>
+                <p className="mb-5 text-sm leading-6 text-foreground-secondary">
+                  {t.context}
+                </p>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-warm-100 flex items-center justify-center text-sm font-medium text-warm-700">
                     {t.initials}
@@ -259,37 +332,50 @@ export default function HomePage() {
       </section>
 
       {/* How It Works */}
-      <section className="py-24 px-6 border-t border-warm-200">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center">
-            <h2 className="font-serif text-3xl sm:text-4xl font-medium mb-6 text-foreground">
+      <section className="border-t border-warm-200 px-6 py-16 sm:py-18">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10">
+            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-foreground-tertiary">
+              How it works
+            </p>
+            <h2 className="font-serif text-3xl sm:text-4xl font-medium mb-4 text-foreground">
               Three steps to your new store
             </h2>
-            <p className="text-lg text-foreground-secondary mb-12">
+            <p className="mx-auto max-w-2xl text-lg text-foreground-secondary">
               Tell us about yourself, add your products, and you&apos;re live.
               That&apos;s really all there is to it.
             </p>
           </div>
 
-          <div className="grid sm:grid-cols-3 gap-6">
+          <div className="grid gap-6 md:grid-cols-3">
             {howItWorks.map((item) => (
               <div
                 key={item.step}
-                className="rounded-xl border border-warm-200 bg-white p-6"
+                className="relative overflow-hidden rounded-[1.75rem] border border-warm-200 bg-white p-6 shadow-sm"
               >
-                <div className="w-9 h-9 rounded-full bg-terracotta-100 text-terracotta-700 flex items-center justify-center text-sm font-medium mb-4">
-                  {item.step}
+                <div
+                  aria-hidden
+                  className="absolute right-0 top-0 h-24 w-24 rounded-full bg-terracotta-100/55 blur-2xl"
+                />
+                <div className="relative">
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-terracotta-100 text-sm font-medium text-terracotta-700">
+                    {item.step}
+                  </div>
+                  <h3 className="mb-2 text-lg font-medium text-foreground">
+                    {item.title}
+                  </h3>
+                  <p className="text-sm leading-6 text-foreground-secondary">
+                    {item.body}
+                  </p>
                 </div>
-                <h3 className="font-medium text-foreground mb-2">{item.title}</h3>
-                <p className="text-foreground-secondary text-sm">{item.body}</p>
               </div>
             ))}
           </div>
 
-          <div className="mt-12 text-center">
+          <div className="mt-8 text-center">
             <Link
               href="/onboarding"
-              className="group bg-primary text-primary-foreground px-8 py-3.5 rounded-lg text-base font-medium hover:bg-primary-hover transition-colors inline-flex items-center gap-2"
+              className="group inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-base font-medium text-primary-foreground transition-[background-color,box-shadow] hover:bg-primary-hover hover:shadow-lg"
             >
               Let&apos;s Get Started
               <ArrowRight />
@@ -299,46 +385,57 @@ export default function HomePage() {
       </section>
 
       {/* FAQ */}
-      <section id="faq" className="py-24 px-6 border-t border-warm-200">
-        <div className="max-w-2xl mx-auto">
+      <section id="faq" className="border-t border-warm-200 px-6 py-18 sm:py-20">
+        <div className="max-w-3xl mx-auto">
           <div className="text-center mb-12">
+            <p className="mb-3 text-xs uppercase tracking-[0.16em] text-foreground-tertiary">
+              Questions answered
+            </p>
             <h2 className="font-serif text-3xl sm:text-4xl font-medium text-foreground">
               Questions you might have
             </h2>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {faqs.map((faq, i) => (
               <div
                 key={faq.question}
-                className="rounded-xl bg-white border border-warm-200 overflow-hidden"
+                className={`overflow-hidden rounded-[1.5rem] border transition-[border-color,box-shadow] ${
+                  openFaq === i
+                    ? "border-foreground/10 bg-white shadow-[0_16px_40px_rgba(43,38,34,0.08)]"
+                    : "border-warm-200 bg-white/92"
+                }`}
               >
                 <button
                   type="button"
                   aria-expanded={openFaq === i}
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className="w-full p-6 text-left flex items-center justify-between hover:bg-warm-50 transition-colors"
+                  className="flex w-full items-center justify-between px-6 py-5 text-left transition-colors hover:bg-warm-50/60"
                 >
-                  <span className="font-medium text-foreground pr-4">{faq.question}</span>
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className={`text-foreground-tertiary transition-transform duration-200 flex-shrink-0 ${openFaq === i ? "rotate-180" : ""}`}
-                  >
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
+                  <span className="pr-4 text-base font-medium text-foreground">
+                    {faq.question}
+                  </span>
+                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-warm-50 text-foreground-tertiary">
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={`transition-transform duration-200 ${openFaq === i ? "rotate-180" : ""}`}
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </span>
                 </button>
                 <div
                   className={`overflow-hidden transition-all duration-200 ${openFaq === i ? "max-h-96" : "max-h-0"}`}
                 >
                   <div className="px-6 pb-6">
-                    <p className="text-foreground-secondary leading-relaxed">
+                    <p className="leading-7 text-foreground-secondary">
                       {faq.answer}
                     </p>
                   </div>
@@ -350,24 +447,49 @@ export default function HomePage() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-24 px-6 border-t border-warm-200">
-        <div className="max-w-2xl mx-auto text-center">
-          <h2 className="font-serif text-3xl sm:text-4xl font-medium mb-6 text-foreground">
-            Ready to open your doors?
-          </h2>
-          <p className="text-xl text-foreground-secondary mb-10">
-            Your store is waiting. Start free today.
-          </p>
-          <Link
-            href="/onboarding"
-            className="group bg-primary text-primary-foreground px-10 py-4 rounded-lg text-lg font-medium hover:bg-primary-hover transition-colors inline-flex items-center gap-3"
-          >
-            Create Your Store — Free
-            <ArrowRight />
-          </Link>
-          <p className="text-sm text-foreground-tertiary mt-4">
-            12 months free, then one flat price. Cancel anytime.
-          </p>
+      <section className="border-t border-warm-200 px-6 py-18 sm:py-20">
+        <div className="max-w-5xl mx-auto">
+          <div className="relative overflow-hidden rounded-[2.25rem] border border-warm-200/90 bg-[linear-gradient(180deg,rgba(243,238,230,0.85),rgba(255,255,255,0.98))] px-8 py-12 text-center shadow-[0_24px_80px_rgba(43,38,34,0.08)] sm:px-12">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -left-10 top-0 h-40 w-40 rounded-full bg-sage-100/70 blur-3xl"
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-10 bottom-0 h-40 w-40 rounded-full bg-terracotta-100/70 blur-3xl"
+            />
+            <div className="relative">
+              <p className="mb-3 text-xs uppercase tracking-[0.16em] text-foreground-tertiary">
+                Ready when you are
+              </p>
+              <h2 className="font-serif text-3xl sm:text-5xl font-medium mb-6 text-foreground">
+                Ready to open your doors?
+              </h2>
+              <p className="mx-auto mb-10 max-w-2xl text-xl leading-8 text-foreground-secondary">
+                Start free for 6 months, keep every order free from extra
+                platform transaction fees, and launch with a storefront that
+                feels polished from day one.
+              </p>
+              <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+                <Link
+                  href="/onboarding"
+                  className="group inline-flex items-center gap-3 rounded-full bg-primary px-10 py-4 text-lg font-medium text-primary-foreground transition-[background-color,box-shadow] hover:bg-primary-hover hover:shadow-[0_18px_36px_rgba(31,30,28,0.2)]"
+                >
+                  Create Your Store
+                  <ArrowRight />
+                </Link>
+                <Link
+                  href="/#pricing"
+                  className="inline-flex items-center gap-2 rounded-full border border-warm-300 bg-white/80 px-6 py-4 text-base font-medium text-foreground-secondary transition-colors hover:border-warm-400 hover:text-foreground"
+                >
+                  Review Pricing
+                </Link>
+              </div>
+              <p className="mt-5 text-sm text-foreground-tertiary">
+                Free for 6 months, then $9.99/month. Cancel anytime.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -403,7 +525,7 @@ function ArrowRight() {
 function DashboardMockup() {
   return (
     <div className="relative" aria-hidden>
-      <div className="rounded-2xl border border-warm-200 bg-white shadow-lg p-5 transform hover:scale-[1.02] transition-transform duration-300">
+      <div className="rounded-[2rem] border border-warm-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(250,247,242,0.95))] p-5 shadow-[0_24px_80px_rgba(43,38,34,0.12)] transform hover:scale-[1.02] transition-transform duration-300">
         {/* Browser bar */}
         <div className="flex items-center gap-2 mb-4 pb-4 border-b border-warm-100">
           <div className="flex gap-1.5">
@@ -411,7 +533,9 @@ function DashboardMockup() {
             <div className="w-3 h-3 rounded-full bg-warm-200" />
             <div className="w-3 h-3 rounded-full bg-warm-200" />
           </div>
-          <div className="flex-1 h-6 bg-warm-50 rounded-md mx-4" />
+          <div className="mx-4 flex h-6 flex-1 items-center rounded-md bg-warm-50 px-3 text-[11px] text-foreground-tertiary">
+            your-store-admin.mark8ly.com
+          </div>
         </div>
 
         {/* Stats */}
@@ -476,10 +600,15 @@ function DashboardMockup() {
 
       {/* Floating rating */}
       <div className="absolute -top-4 -right-4 p-3 rounded-xl bg-white border border-warm-200 shadow-lg">
-        <div className="flex items-center gap-0.5 text-amber-400 text-sm">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <span key={i}>★</span>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5 text-amber-400 text-sm">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <span key={i}>★</span>
+            ))}
+          </div>
+          <span className="rounded-full bg-warm-50 px-2 py-1 text-[11px] font-medium text-foreground-secondary">
+            Best seller
+          </span>
         </div>
         <div className="text-xs text-foreground-tertiary mt-1">4.9 rating</div>
       </div>
@@ -498,7 +627,7 @@ const features: Feature[] = [
     icon: Package,
     title: "Make It Yours",
     description:
-      "Beautiful themes you can customize to match your brand. No design skills needed.",
+      "Customizable themes that match your brand. No design skills needed.",
   },
   {
     icon: CreditCard,
@@ -532,39 +661,57 @@ const trustBadges: TrustBadge[] = [
   { icon: Clock, label: "24/7 Support" },
 ];
 
-const pricingPlans = [
+const heroStats = [
+  { label: "Launch time", value: "Under an hour" },
+  { label: "Platform fee", value: "$0 for 6 months" },
+  { label: "Transaction fee", value: "None from Mark8ly" },
+];
+
+const pricingPhases = [
   {
-    name: "Free Trial",
-    tagline: "Get started risk-free",
+    name: "First 6 Months",
     price: "$0",
-    cycle: "",
-    subtext: "for 12 months",
-    featured: false,
-    cta: "Start Free",
+    cycle: "for 6 months",
+    emphasis: false,
+    description:
+      "Launch your store, learn the platform, and make your first sales before the platform fee starts.",
     features: [
       "Unlimited products",
-      "Mobile-responsive storefront",
-      "Payment processing",
+      "Beautiful mobile-friendly storefront",
+      "Payments, shipping, and checkout included",
       "Order management",
       "24/7 human support",
     ],
   },
   {
-    name: "Professional",
-    tagline: "Everything you need to grow",
-    price: "$4.99",
+    name: "After That",
+    price: "$9.99",
     cycle: "/month",
-    subtext: undefined,
-    featured: true,
-    cta: "Get Started",
+    emphasis: true,
+    description:
+      "One flat monthly fee once the free period ends. No extra platform transaction fees and no awkward plan maze.",
     features: [
-      "Sell as many products as you want",
+      "Keep the same store and data",
       "Use your own domain name",
-      "Looks great on phones",
-      "Accept cards, UPI, and wallets",
-      "Analytics dashboard",
-      "No transaction fees from us",
+      "Analytics and growth tools",
+      "No transaction fee from Mark8ly",
+      "Cancel anytime",
     ],
+  },
+];
+
+const pricingPrinciples = [
+  {
+    title: "Long runway",
+    body: "Six free months is enough time to get live, learn fast, and build early momentum.",
+  },
+  {
+    title: "Fair paid plan",
+    body: "$9.99/month keeps the offer simple, accessible, and easy to understand for independent merchants.",
+  },
+  {
+    title: "No surprises",
+    body: "No setup fee, no confusing tiers, and no platform transaction fee layered on top.",
   },
 ];
 
@@ -572,6 +719,9 @@ const testimonials = [
   {
     quote:
       "I spent months trying to figure out Shopify. With mark8ly, I had my store up in an afternoon. It just... works.",
+    context:
+      "The difference wasn’t just setup speed. It was finally having a storefront that looked considered without hiring anyone to build it.",
+    highlight: "Fast launch",
     name: "Sarah Chen",
     role: "Founder",
     company: "BloomBox",
@@ -580,6 +730,9 @@ const testimonials = [
   {
     quote:
       "The onboarding was so smooth I thought I must be missing something. Nope—it really is that simple. My store was live the same day.",
+    context:
+      "What stood out most was how little friction there was between signing up and actually feeling ready to sell.",
+    highlight: "Smooth onboarding",
     name: "Marcus Rivera",
     role: "Owner",
     company: "Craft & Co",
@@ -588,6 +741,9 @@ const testimonials = [
   {
     quote:
       "Finally, an e-commerce platform that doesn't make me feel stupid. Clean, fast, and the support team actually responds.",
+    context:
+      "It feels designed for real business owners, not for people who want to spend their week learning backend settings.",
+    highlight: "Human support",
     name: "Emily Tran",
     role: "Founder",
     company: "Luna Candles",

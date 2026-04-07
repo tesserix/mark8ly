@@ -16,15 +16,18 @@
                 Verify your email
               </h1>
               <p style="margin:0 0 24px 0;font-size:16px;line-height:1.6;color:#4a4a4a;">
-                {{if .BusinessName}}Welcome to Mark8ly, {{.BusinessName}}! {{end}}Please use the code below to verify your email address.
+                {{if .BusinessName}}Welcome to Mark8ly, {{.BusinessName}}! {{end}}Click the button below to verify your email address and finish setting up your store.
               </p>
-              <div style="background-color:#f8f9fb;border:1px solid #e6e8ee;border-radius:8px;padding:24px;text-align:center;margin:16px 0 24px 0;">
-                <div style="font-family:'SF Mono','Menlo','Consolas',monospace;font-size:36px;font-weight:700;letter-spacing:8px;color:#1a1a1a;">
-                  {{.OTPCode}}
-                </div>
+              <div style="text-align:center;margin:24px 0;">
+                <a href="{{.VerifyURL}}" style="display:inline-block;background-color:#1a1a1a;color:#ffffff;text-decoration:none;font-weight:600;padding:14px 32px;border-radius:8px;font-size:16px;">
+                  Verify email
+                </a>
               </div>
-              <p style="margin:0 0 24px 0;font-size:14px;line-height:1.6;color:#6b7280;">
-                This code will expire in {{.ExpiresIn}}. If you didn't request this, you can safely ignore this email.
+              <p style="margin:24px 0 0 0;font-size:14px;line-height:1.6;color:#6b7280;">
+                This link will expire in {{.ExpiresIn}}. If you didn't request this, you can safely ignore this email.
+              </p>
+              <p style="margin:16px 0 0 0;font-size:12px;line-height:1.6;color:#9ca3af;word-break:break-all;">
+                Or copy this link: <a href="{{.VerifyURL}}" style="color:#5b6cf5;">{{.VerifyURL}}</a>
               </p>
               <hr style="border:none;border-top:1px solid #e6e8ee;margin:32px 0 16px 0;">
               <p style="margin:0;font-size:12px;color:#9ca3af;">

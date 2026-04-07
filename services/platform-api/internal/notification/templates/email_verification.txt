@@ -3,11 +3,12 @@ Verify your email
 
 {{if .BusinessName}}Welcome to Mark8ly, {{.BusinessName}}!
 
-{{end}}Please use the code below to verify your email address:
+{{end}}Click the link below to verify your email address and finish setting
+up your store:
 
-    {{.OTPCode}}
+    {{.VerifyURL}}
 
-This code will expire in {{.ExpiresIn}}. If you didn't request this,
+This link will expire in {{.ExpiresIn}}. If you didn't request this,
 you can safely ignore this email.
 
 ---

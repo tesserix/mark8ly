@@ -33,7 +33,10 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 		o.GET("/sessions/:id", h.getSession)
 		o.PATCH("/sessions/:id/draft", h.saveDraft)
 		o.POST("/sessions/:id/verification/send", h.sendVerification)
-		o.POST("/sessions/:id/verification/verify", h.verifyAndMarkSession)
+		// Magic link verification: no session id in path because the magic
+		// link only carries the token. The handler resolves the session
+		// from the token's session_id.
+		o.POST("/verify-token", h.verifyAndMarkSession)
 		o.POST("/sessions/:id/complete", h.completeSession)
 	}
 }
@@ -89,33 +92,40 @@ func (h *Handler) sendVerification(c *gin.Context) {
 	var req sendVerificationRequest
 	_ = c.ShouldBindJSON(&req) // body is optional
 
-	if err := h.verifSvc.SendCode(c.Request.Context(), sessionID, sess.Email, req.BusinessName); err != nil {
+	if err := h.verifSvc.SendMagicLink(c.Request.Context(), sessionID, sess.Email, req.BusinessName); err != nil {
 		respondError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"sent": true}})
 }
 
-type verifySessionRequest struct {
-	Code string `json:"code" binding:"required"`
+type verifyTokenRequest struct {
+	Token string `json:"token" binding:"required"`
 }
 
+// verifyAndMarkSession consumes a magic link token, marks the session
+// verified, and returns the session ID + email so the caller (a server
+// action in apps/onboarding) can immediately complete onboarding.
 func (h *Handler) verifyAndMarkSession(c *gin.Context) {
-	sessionID := c.Param("id")
-	var req verifySessionRequest
+	var req verifyTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, apperrors.BadRequest("invalid_request", err.Error()))
 		return
 	}
-	if err := h.verifSvc.Verify(c.Request.Context(), sessionID, req.Code); err != nil {
+	res, err := h.verifSvc.VerifyToken(c.Request.Context(), req.Token)
+	if err != nil {
 		respondError(c, err)
 		return
 	}
-	if err := h.svc.MarkVerified(c.Request.Context(), sessionID); err != nil {
+	if err := h.svc.MarkVerified(c.Request.Context(), res.SessionID); err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"verified": true}})
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"verified":   true,
+		"session_id": res.SessionID,
+		"email":      res.Email,
+	}})
 }
 
 func (h *Handler) completeSession(c *gin.Context) {

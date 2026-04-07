@@ -15,18 +15,15 @@ import (
 type Repository interface {
 	// Create inserts a new pending token.
 	Create(ctx context.Context, t *Token) error
-	// LatestForSession returns the most recently created NON-CONSUMED token
-	// for a session. Returns NotFound if there is none.
-	LatestForSession(ctx context.Context, sessionID string) (*Token, error)
-	// IncrementAttempts atomically bumps the attempts counter on a token.
-	IncrementAttempts(ctx context.Context, id string) error
+	// GetByHash looks up a token by its SHA-256 hash. Returns the row even
+	// if consumed/expired so the caller can produce a precise error.
+	GetByHash(ctx context.Context, hash string) (*Token, error)
 	// MarkConsumed atomically sets consumed_at on a token. Returns NotFound
 	// if the row was not in a consumable state.
 	MarkConsumed(ctx context.Context, id string) error
 	// InvalidateForSession sets consumed_at on every outstanding token for
-	// the session. Used before issuing a new one to prevent multiple active
-	// codes per session (auth-bug #5 from Phase B writeup: prevents stale
-	// tokens accumulating).
+	// the session. Used before issuing a new one so only the latest magic
+	// link is valid (e.g. after the user clicks "resend").
 	InvalidateForSession(ctx context.Context, sessionID string) error
 }
 
@@ -46,33 +43,20 @@ func (r *gormRepository) Create(ctx context.Context, t *Token) error {
 	return nil
 }
 
-func (r *gormRepository) LatestForSession(ctx context.Context, sessionID string) (*Token, error) {
+func (r *gormRepository) GetByHash(ctx context.Context, hash string) (*Token, error) {
 	var t Token
-	err := r.db.WithContext(ctx).
-		Where("session_id = ? AND consumed_at IS NULL", sessionID).
-		Order("created_at DESC").
-		First(&t).Error
+	// We look up by code_hash directly. Because the hash is SHA-256 of a
+	// high-entropy random token, equality lookup is safe and fast (and we
+	// have an index from the migration). bcrypt would not work here because
+	// its salt makes equality lookups impossible.
+	err := r.db.WithContext(ctx).Where("code_hash = ?", hash).First(&t).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, apperrors.NotFound("token_not_found", "no active verification token for this session")
+		return nil, apperrors.NotFound("token_not_found", "verification link is invalid or expired")
 	}
 	if err != nil {
-		return nil, fmt.Errorf("verification: latest for session %q: %w", sessionID, err)
+		return nil, fmt.Errorf("verification: get by hash: %w", err)
 	}
 	return &t, nil
-}
-
-func (r *gormRepository) IncrementAttempts(ctx context.Context, id string) error {
-	res := r.db.WithContext(ctx).
-		Model(&Token{}).
-		Where("id = ?", id).
-		UpdateColumn("attempts", gorm.Expr("attempts + 1"))
-	if res.Error != nil {
-		return fmt.Errorf("verification: increment attempts: %w", res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return apperrors.NotFound("token_not_found", "verification token does not exist")
-	}
-	return nil
 }
 
 func (r *gormRepository) MarkConsumed(ctx context.Context, id string) error {

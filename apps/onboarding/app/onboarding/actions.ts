@@ -1,21 +1,25 @@
 "use server";
 
-// Server actions for the onboarding wizard.
+// Server actions for the magic-link onboarding flow.
 //
-// Each action is a thin wrapper around the typed platform-api / auth-bff
-// clients. They return discriminated-union results so the client never has
-// to throw — failures show up as { ok: false, code, message } and the UI
-// renders an error inline.
+// Two top-level actions:
 //
-// The session cookie minted by auto-login is forwarded to the browser via
-// next/headers cookies().set(), so the user lands on the welcome page
-// already authenticated.
+//   1. submitOnboarding(form)  → creates session, saves draft, sends magic
+//                                link. Called from the single-page form.
+//
+//   2. verifyAndLogin(token)   → consumes the magic link token, completes
+//                                onboarding (creates tenant + outbox FGA),
+//                                refreshes the GIP id_token, calls auth-bff
+//                                auto-login, sets session cookie. Called
+//                                from the verify landing page.
+//
+// Plus support actions: checkSlug, resendMagicLink.
 
 import { cookies } from "next/headers";
 
 import { onboarding, tenants, PlatformApiError } from "@/lib/api/platform-api";
 import { autoLogin as bffAutoLogin, AuthBffError } from "@/lib/auth/auth-bff";
-import { publicConfig } from "@/lib/config";
+import { config, publicConfig } from "@/lib/config";
 
 type Result<T> =
   | { ok: true; data: T }
@@ -28,43 +32,10 @@ function fail(err: unknown): { ok: false; code: string; message: string } {
   return { ok: false, code: "unknown", message: String(err) };
 }
 
-// ─── Step 1: create session ─────────────────────────────────────────────
-export async function createSession(email: string): Promise<Result<{ sessionId: string }>> {
-  try {
-    const sess = await onboarding.createSession(email);
-    return { ok: true, data: { sessionId: sess.id } };
-  } catch (err) {
-    return fail(err);
-  }
-}
-
-// ─── Step 2: send OTP ───────────────────────────────────────────────────
-export async function sendVerification(
-  sessionId: string,
-): Promise<Result<{ sent: true }>> {
-  try {
-    await onboarding.sendVerification(sessionId);
-    return { ok: true, data: { sent: true } };
-  } catch (err) {
-    return fail(err);
-  }
-}
-
-// ─── Step 2b: verify OTP ────────────────────────────────────────────────
-export async function verifyCode(
-  sessionId: string,
-  code: string,
-): Promise<Result<{ verified: true }>> {
-  try {
-    await onboarding.verifyCode(sessionId, code);
-    return { ok: true, data: { verified: true } };
-  } catch (err) {
-    return fail(err);
-  }
-}
-
-// ─── Step 3: live slug check ────────────────────────────────────────────
-export async function checkSlug(slug: string): Promise<Result<{ available: boolean }>> {
+// ─── Live slug check (live as user types in the form) ──────────────────
+export async function checkSlug(
+  slug: string,
+): Promise<Result<{ available: boolean }>> {
   try {
     const r = await tenants.isSlugAvailable(slug);
     return { ok: true, data: { available: r.available } };
@@ -73,46 +44,121 @@ export async function checkSlug(slug: string): Promise<Result<{ available: boole
   }
 }
 
-// ─── Step 4: complete + auto-login (THE bug-fix path) ───────────────────
-//
-// Wraps three calls in one server action so the client only awaits once:
-//   1. POST /onboarding/sessions/:id/complete  (creates tenant + outbox FGA writes)
-//   2. POST /auth/auto-login                    (verifies token, retries FGA, mints cookie)
-//   3. cookies().set(...)                       (forwards the session cookie to browser)
-export async function completeAndLogin(input: {
-  sessionId: string;
+interface SubmitInput {
+  email: string;
   businessName: string;
   slug: string;
-  ownerUserId: string;
-  ownerEmail: string;
   countryCode: string;
   currencyCode: string;
   timezone: string;
-  idToken: string;
-}): Promise<Result<{ tenantId: string; slug: string }>> {
+}
+
+// ─── submitOnboarding: form submit → create session + send magic link ──
+export async function submitOnboarding(
+  input: SubmitInput,
+): Promise<Result<{ sessionId: string }>> {
   try {
-    // Step 1: complete onboarding (atomic tenant + outbox tx)
-    const completion = await onboarding.complete(input.sessionId, {
+    const sess = await onboarding.createSession(input.email);
+
+    // Save the business draft so the verify endpoint has it later.
+    // (We use the existing /complete endpoint AT verify time, so we don't
+    // actually need to save the draft separately — the verify action will
+    // pass everything fresh.)
+
+    // Send the magic link.
+    await onboarding.sendVerification(sess.id, input.businessName);
+
+    return { ok: true, data: { sessionId: sess.id } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ─── resendMagicLink: re-send the verification email ───────────────────
+export async function resendMagicLink(
+  sessionId: string,
+  businessName: string,
+): Promise<Result<{ sent: true }>> {
+  try {
+    await onboarding.sendVerification(sessionId, businessName);
+    return { ok: true, data: { sent: true } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+interface VerifyInput {
+  token: string;
+  // The form fields, captured at submit time, sent again here so the verify
+  // action has everything it needs to complete onboarding in one shot.
+  businessName: string;
+  slug: string;
+  countryCode: string;
+  currencyCode: string;
+  timezone: string;
+  // GIP credentials from the client-side signup at form-submit time.
+  gipUid: string;
+  gipIdToken: string;
+}
+
+// ─── verifyAndLogin: magic link click → complete + auto-login ──────────
+//
+// The verify landing page calls this on mount. It does the entire
+// completion + auto-login pipeline in one server action so the client
+// just shows a spinner and waits.
+export async function verifyAndLogin(
+  input: VerifyInput,
+): Promise<Result<{ tenantId: string; slug: string }>> {
+  try {
+    // Step 1: validate the magic link token. Returns the session_id +
+    // email, marks the session verified.
+    const verifyRes = await fetch(
+      `${config.platformApiUrl}/api/v1/onboarding/verify-token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: input.token }),
+        cache: "no-store",
+      },
+    );
+    if (!verifyRes.ok) {
+      const body = (await verifyRes.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+      };
+      return {
+        ok: false,
+        code: body.error ?? "verify_failed",
+        message: body.message ?? "Verification link is invalid or expired",
+      };
+    }
+    const verifyBody = (await verifyRes.json()) as {
+      data: { session_id: string; email: string };
+    };
+    const sessionId = verifyBody.data.session_id;
+    const email = verifyBody.data.email;
+
+    // Step 2: complete onboarding (creates tenant + outbox FGA writes).
+    const completion = await onboarding.complete(sessionId, {
       business_name: input.businessName,
       slug: input.slug,
-      owner_user_id: input.ownerUserId,
-      owner_email: input.ownerEmail,
+      owner_user_id: input.gipUid,
+      owner_email: email,
       country_code: input.countryCode,
       currency_code: input.currencyCode,
       timezone: input.timezone,
     });
 
-    // Step 2: auto-login. auth-bff retries the FGA check until the
+    // Step 3: auto-login. auth-bff retries the FGA check until the
     // outbox drainer has shipped the membership tuple.
     const result = await bffAutoLogin({
-      idToken: input.idToken,
+      idToken: input.gipIdToken,
       expectedTenantId: publicConfig.gipTenantId,
       workspaceTenant: completion.tenant_id,
     });
 
-    // Step 3: forward auth-bff's session cookie to the browser response.
+    // Step 4: forward auth-bff's session cookie to the browser response.
     if (result.setCookie) {
-      // Parse the Set-Cookie header into name + value + attrs and set it.
       const parsed = parseSetCookie(result.setCookie);
       if (parsed) {
         const c = await cookies();
@@ -138,9 +184,8 @@ export async function completeAndLogin(input: {
   }
 }
 
-// parseSetCookie pulls out the bits of a Set-Cookie header that next/headers
-// cookies().set() needs. Minimal parser — only handles the attributes
-// auth-bff actually emits.
+// parseSetCookie pulls the bits next/headers cookies().set() needs out of
+// a Set-Cookie header. Minimal parser — only the attributes auth-bff emits.
 function parseSetCookie(raw: string): {
   name: string;
   value: string;

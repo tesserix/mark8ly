@@ -11,11 +11,11 @@ import (
 //go:embed templates/*.html templates/*.txt
 var templatesFS embed.FS
 
-// EmailVerificationVars are the variables for the OTP verification email.
+// EmailVerificationVars are the variables for the magic-link verification email.
 type EmailVerificationVars struct {
 	BusinessName string // optional — empty for first-touch onboarding
-	OTPCode      string // 6-digit numeric
-	ExpiresIn    string // human-readable, e.g. "10 minutes"
+	VerifyURL    string // clickable magic link, e.g. https://onboarding.mark8ly.com/onboarding/verify?token=...
+	ExpiresIn    string // human-readable, e.g. "24 hours"
 	SupportEmail string
 }
 

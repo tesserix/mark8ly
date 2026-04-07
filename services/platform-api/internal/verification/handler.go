@@ -25,8 +25,8 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) Register(r *gin.RouterGroup) {
 	v := r.Group("/verification")
 	{
-		v.POST("/send", h.sendCode)
-		v.POST("/verify", h.verifyCode)
+		v.POST("/send", h.sendMagicLink)
+		v.POST("/verify", h.verifyToken)
 	}
 }
 
@@ -36,13 +36,13 @@ type sendRequest struct {
 	BusinessName string `json:"business_name"`
 }
 
-func (h *Handler) sendCode(c *gin.Context) {
+func (h *Handler) sendMagicLink(c *gin.Context) {
 	var req sendRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, apperrors.BadRequest("invalid_request", err.Error()))
 		return
 	}
-	if err := h.svc.SendCode(c.Request.Context(), req.SessionID, req.Email, req.BusinessName); err != nil {
+	if err := h.svc.SendMagicLink(c.Request.Context(), req.SessionID, req.Email, req.BusinessName); err != nil {
 		respondError(c, err)
 		return
 	}
@@ -50,21 +50,25 @@ func (h *Handler) sendCode(c *gin.Context) {
 }
 
 type verifyRequest struct {
-	SessionID string `json:"session_id" binding:"required"`
-	Code      string `json:"code" binding:"required"`
+	Token string `json:"token" binding:"required"`
 }
 
-func (h *Handler) verifyCode(c *gin.Context) {
+func (h *Handler) verifyToken(c *gin.Context) {
 	var req verifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, apperrors.BadRequest("invalid_request", err.Error()))
 		return
 	}
-	if err := h.svc.Verify(c.Request.Context(), req.SessionID, req.Code); err != nil {
+	res, err := h.svc.VerifyToken(c.Request.Context(), req.Token)
+	if err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"verified": true}})
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"verified":   true,
+		"session_id": res.SessionID,
+		"email":      res.Email,
+	}})
 }
 
 func respondError(c *gin.Context, err error) {

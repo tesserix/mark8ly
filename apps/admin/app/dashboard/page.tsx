@@ -24,15 +24,15 @@ export default async function DashboardPage() {
     : "Your store is live.";
 
   return (
-    <AdminShell tenantName={tenantName}>
-      <div className="mx-auto max-w-4xl">
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-foreground-tertiary">
+    <AdminShell tenantName={tenantName} userEmail={email}>
+      <div className="mx-auto max-w-5xl">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
           Welcome back{email ? `, ${email}` : ""}
         </p>
         <h1 className="mt-3 font-serif text-4xl font-medium tracking-tight text-foreground">
           {headline}
         </h1>
-        <p className="mt-4 max-w-2xl text-lg leading-7 text-foreground-secondary">
+        <p className="mt-4 max-w-2xl text-lg leading-7 text-muted-foreground">
           Add your first product, customize your storefront, or peek at the
           settings. The rest of the admin is coming — this is the scaffold we
           build everything else on.
@@ -42,15 +42,15 @@ export default async function DashboardPage() {
           {metrics.map((m) => (
             <div
               key={m.label}
-              className="rounded-2xl border border-warm-200/90 bg-white/88 p-5 shadow-sm"
+              className="rounded-2xl border border-border bg-card p-5 shadow-sm"
             >
-              <p className="text-xs uppercase tracking-[0.14em] text-foreground-tertiary">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
                 {m.label}
               </p>
-              <p className="mt-2 font-serif text-2xl font-medium text-foreground">
+              <p className="mt-2 font-serif text-2xl font-medium text-card-foreground">
                 {m.value}
               </p>
-              <p className="mt-1 text-xs text-foreground-tertiary">{m.hint}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{m.hint}</p>
             </div>
           ))}
         </div>

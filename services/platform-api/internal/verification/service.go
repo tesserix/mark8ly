@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"log/slog"
 	"time"
 
 	"github.com/mark8ly/platform-api/internal/notification"
@@ -123,6 +124,17 @@ func (s *Service) SendMagicLink(ctx context.Context, sessionID, email, businessN
 	}
 
 	verifyURL := s.verifyURLBase + "/onboarding/verify?token=" + token
+
+	// Dev-friendly line so `docker logs dev-platform-api-1` surfaces the
+	// clickable link without having to grep through the multi-line body
+	// that LogSender prints. Emitted on every send regardless of which
+	// sender is wired up — SendGrid runs will still get it, which is
+	// what you want when debugging a staging send.
+	slog.Info("verification: magic link issued",
+		slog.String("email", email),
+		slog.String("session_id", sessionID),
+		slog.String("verify_url", verifyURL),
+	)
 
 	msg, err := notification.RenderEmailVerification(email, s.emailFrom, notification.EmailVerificationVars{
 		BusinessName: businessName,

@@ -72,6 +72,15 @@ export const onboarding = {
       body: JSON.stringify({ email }),
     }),
 
+  getSession: (sessionId: string) =>
+    request<OnboardingSession>(`/api/v1/onboarding/sessions/${sessionId}`),
+
+  saveDraft: (sessionId: string, draft: Record<string, unknown>) =>
+    request<{ saved: boolean }>(
+      `/api/v1/onboarding/sessions/${sessionId}/draft`,
+      { method: "PATCH", body: JSON.stringify(draft) },
+    ),
+
   sendVerification: (sessionId: string, businessName?: string) =>
     request<{ sent: boolean }>(
       `/api/v1/onboarding/sessions/${sessionId}/verification/send`,

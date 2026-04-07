@@ -141,6 +141,8 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
         countryCode,
         currencyCode,
         timezone: resolvedTimezone,
+        gipUid,
+        gipRefreshToken,
       });
       if (!r.ok) {
         setError(r.message);

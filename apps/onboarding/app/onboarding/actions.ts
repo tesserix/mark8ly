@@ -19,6 +19,7 @@ import { cookies } from "next/headers";
 
 import { onboarding, tenants, PlatformApiError } from "@/lib/api/platform-api";
 import { autoLogin as bffAutoLogin, AuthBffError } from "@/lib/auth/auth-bff";
+import { refreshIdToken } from "@/lib/gip/signup";
 import { config, publicConfig } from "@/lib/config";
 
 type Result<T> =
@@ -51,6 +52,11 @@ interface SubmitInput {
   countryCode: string;
   currencyCode: string;
   timezone: string;
+  // GIP credentials captured by the client-side signUp at form-submit
+  // time. Persisted to the session draft so the verify page can recover
+  // them server-side without depending on per-tab sessionStorage.
+  gipUid: string;
+  gipRefreshToken: string;
 }
 
 // ─── submitOnboarding: form submit → create session + send magic link ──
@@ -60,12 +66,20 @@ export async function submitOnboarding(
   try {
     const sess = await onboarding.createSession(input.email);
 
-    // Save the business draft so the verify endpoint has it later.
-    // (We use the existing /complete endpoint AT verify time, so we don't
-    // actually need to save the draft separately — the verify action will
-    // pass everything fresh.)
+    // Persist EVERYTHING the verify flow needs into the session draft.
+    // This is the cross-tab/cross-device fix: the magic link can be
+    // clicked in any browser because the verify route fetches the
+    // draft from the server instead of reading sessionStorage.
+    await onboarding.saveDraft(sess.id, {
+      business_name: input.businessName,
+      slug: input.slug,
+      country_code: input.countryCode,
+      currency_code: input.currencyCode,
+      timezone: input.timezone,
+      gip_uid: input.gipUid,
+      gip_refresh_token: input.gipRefreshToken,
+    });
 
-    // Send the magic link.
     await onboarding.sendVerification(sess.id, input.businessName);
 
     return { ok: true, data: { sessionId: sess.id } };
@@ -158,6 +172,115 @@ export async function verifyAndLogin(
     });
 
     // Step 4: forward auth-bff's session cookie to the browser response.
+    if (result.setCookie) {
+      const parsed = parseSetCookie(result.setCookie);
+      if (parsed) {
+        const c = await cookies();
+        c.set({
+          name: parsed.name,
+          value: parsed.value,
+          path: parsed.path ?? "/",
+          domain: parsed.domain,
+          httpOnly: parsed.httpOnly,
+          secure: parsed.secure,
+          sameSite: "lax",
+          maxAge: parsed.maxAge,
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      data: { tenantId: completion.tenant_id, slug: completion.slug },
+    };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ─── verifyAndLoginByToken: cross-tab/cross-device safe verify ─────────
+//
+// The new verify path. Takes ONLY the magic-link token — no client-side
+// state at all. Reads everything (business name, slug, country, currency,
+// GIP credentials) from the onboarding session draft that was persisted
+// at form-submit time. Lets users click the magic link from any browser
+// tab or device because nothing depends on per-tab sessionStorage.
+//
+// Replaces the old `verifyAndLogin` that required the client to ship
+// form fields + GIP credentials back over the wire. Old function is
+// kept temporarily for the existing client component.
+export async function verifyAndLoginByToken(
+  token: string,
+): Promise<Result<{ tenantId: string; slug: string }>> {
+  try {
+    // Step 1: validate the magic link token. Marks the session verified
+    // and returns the session id + email so we can look up the draft.
+    const verifyRes = await fetch(
+      `${config.platformApiUrl}/api/v1/onboarding/verify-token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+        cache: "no-store",
+      },
+    );
+    if (!verifyRes.ok) {
+      const body = (await verifyRes.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+      };
+      return {
+        ok: false,
+        code: body.error ?? "verify_failed",
+        message: body.message ?? "Verification link is invalid or expired",
+      };
+    }
+    const verifyBody = (await verifyRes.json()) as {
+      data: { session_id: string; email: string };
+    };
+    const sessionId = verifyBody.data.session_id;
+    const email = verifyBody.data.email;
+
+    // Step 2: pull the persisted draft from the server. This is what
+    // makes the flow cross-tab safe — none of these values came from
+    // the browser that just clicked the link.
+    const sess = await onboarding.getSession(sessionId);
+    const draft = sess.draft ?? {};
+    const gipUid = draft.gip_uid ?? "";
+    const gipRefreshToken = draft.gip_refresh_token ?? "";
+    if (!gipUid || !gipRefreshToken) {
+      return {
+        ok: false,
+        code: "missing_credentials",
+        message:
+          "We couldn't recover your sign-in credentials. Please start onboarding again.",
+      };
+    }
+
+    // Step 3: refresh the GIP id_token using the persisted refresh
+    // token. Same call the client used to make at verify-time.
+    const fresh = await refreshIdToken(gipRefreshToken);
+
+    // Step 4: complete onboarding (creates tenant + outbox FGA writes).
+    const completion = await onboarding.complete(sessionId, {
+      business_name: draft.business_name ?? "",
+      slug: draft.slug ?? "",
+      owner_user_id: gipUid,
+      owner_email: email,
+      country_code: draft.country_code ?? "",
+      currency_code: draft.currency_code ?? "",
+      timezone: draft.timezone ?? "UTC",
+    });
+
+    // Step 5: auto-login (auth-bff retries the FGA check until the
+    // outbox drainer ships the membership tuple).
+    const result = await bffAutoLogin({
+      idToken: fresh.idToken,
+      expectedTenantId: publicConfig.gipTenantId,
+      workspaceTenant: completion.tenant_id,
+    });
+
+    // Step 6: forward auth-bff's session cookie to the browser response.
     if (result.setCookie) {
       const parsed = parseSetCookie(result.setCookie);
       if (parsed) {

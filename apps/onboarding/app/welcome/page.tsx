@@ -1,10 +1,12 @@
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 
-// Welcome page shown after successful onboarding + auto-login.
-//
-// In production this would redirect to the merchant's admin app at
-// {slug}-admin.mark8ly.com. For Phase F we render a simple confirmation
-// — admin app porting is a future phase.
+// Welcome page shown after successful onboarding + auto-login. The
+// session cookie has already been minted by the time the user lands
+// here, so the "Open admin dashboard" CTA below works immediately —
+// no extra sign-in step.
+
+const ADMIN_URL =
+  process.env.NEXT_PUBLIC_ADMIN_URL ?? "http://localhost:4202/dashboard";
 
 export default function WelcomePage() {
   return (
@@ -25,9 +27,25 @@ export default function WelcomePage() {
             Welcome to Mark8ly
           </h1>
           <p className="mt-4 text-base leading-7 text-foreground-secondary">
-            Your store is live and you&apos;re signed in. The admin dashboard is
-            landing in the next phase, but your storefront foundation is ready.
+            Your store is live and you&apos;re signed in. Head into the admin
+            dashboard to add your first product, customize your storefront,
+            and explore your settings.
           </p>
+          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <a
+              href={ADMIN_URL}
+              className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3 text-sm font-medium text-background shadow-[0_14px_28px_rgba(31,30,28,0.18)] transition-[background-color,box-shadow] hover:bg-foreground/90 hover:shadow-[0_18px_34px_rgba(31,30,28,0.22)]"
+            >
+              Open admin dashboard
+              <span aria-hidden>→</span>
+            </a>
+            <a
+              href="/"
+              className="text-sm font-medium text-foreground-secondary hover:text-foreground"
+            >
+              Back to home
+            </a>
+          </div>
         </div>
       </div>
     </PostSubmitShell>

@@ -41,11 +41,15 @@ test-unit: ## Run unit tests across every Go service and TS workspace
 	@echo "▶ turbo (TS workspaces)"
 	@npx turbo run test
 
-test-int: ## Run integration tests (requires `make dev` running)
+test-int: ## Run integration tests against the running `make dev` stack
 	@echo "▶ platform-api integration"
-	@cd services/platform-api && go test -tags=integration ./...
+	@cd services/platform-api && \
+	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/platform_api?sslmode=disable' \
+	  go test -tags=integration ./...
 	@echo "▶ auth-bff integration"
-	@cd services/auth-bff && go test -tags=integration ./...
+	@cd services/auth-bff && \
+	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/auth_bff?sslmode=disable' \
+	  go test -tags=integration ./...
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

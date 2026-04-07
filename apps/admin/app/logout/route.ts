@@ -1,16 +1,25 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+
+import { revokeSession } from "@/lib/auth/session";
 
 /**
- * Logout — clears the admin session cookie and redirects to the
- * marketing site. Phase I stub: only clears the cookie on this origin.
- * Phase J will also POST to auth-bff `/auth/logout` so the session is
- * invalidated server-side (not just hidden from this browser).
+ * Logout — invalidates the session both server-side (auth-bff) and
+ * client-side (this origin's cookie), then redirects to the marketing
+ * site.
+ *
+ * The server-side call goes first so a logout that succeeds locally
+ * but fails to reach auth-bff never leaves a "valid in auth-bff, gone
+ * from browser" phantom session. `revokeSession` is best-effort — if
+ * auth-bff is unreachable we still clear the browser cookie and the
+ * session will expire naturally on its original TTL.
  */
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "m8_session";
 const MARKETING_URL =
   process.env.NEXT_PUBLIC_MARKETING_URL ?? "http://localhost:4201";
 
-export function GET() {
+export async function GET(req: NextRequest) {
+  await revokeSession(req.headers.get("cookie"));
+
   const response = NextResponse.redirect(MARKETING_URL);
   response.cookies.delete(SESSION_COOKIE_NAME);
   return response;

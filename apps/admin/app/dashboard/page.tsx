@@ -1,27 +1,36 @@
+import { headers } from "next/headers";
+
 import { AdminShell } from "@/components/shell/AdminShell";
+import { fetchTenant } from "@/lib/api/platform-api";
 
 /**
- * Dashboard — the only "real" page in the Phase I slice. It exists to
- * prove the auth gate works end-to-end: anonymous visitors get bounced
- * by middleware, authenticated visitors land here.
+ * Dashboard — reads the resolved session from headers set by
+ * middleware.ts, looks up the tenant row on platform-api, and renders
+ * the merchant-facing home.
  *
- * Phase J will swap the hard-coded tenant name for the resolved tenant
- * from `GET /api/v1/tenants/me`. For now it's a placeholder that
- * proves the chrome renders.
+ * No auth check here — if middleware let the request through, the
+ * session headers are guaranteed to be present. The fetchTenant call
+ * is the only network hop on the render path.
  */
-export default function DashboardPage() {
-  // Phase I: hard-coded. Phase J: resolved from the auth-bff session
-  // cookie via the server action wired into lib/auth/session.ts.
-  const tenantName = "your store";
+export default async function DashboardPage() {
+  const h = await headers();
+  const tenantId = h.get("x-session-tenant-id") ?? "";
+  const email = h.get("x-session-email") ?? "";
+  const tenant = await fetchTenant(tenantId);
+
+  const tenantName = tenant?.name ?? "your store";
+  const headline = tenant
+    ? `${tenant.name} is live.`
+    : "Your store is live.";
 
   return (
     <AdminShell tenantName={tenantName}>
       <div className="mx-auto max-w-4xl">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-foreground-tertiary">
-          Welcome back
+          Welcome back{email ? `, ${email}` : ""}
         </p>
         <h1 className="mt-3 font-serif text-4xl font-medium tracking-tight text-foreground">
-          Your store is live.
+          {headline}
         </h1>
         <p className="mt-4 max-w-2xl text-lg leading-7 text-foreground-secondary">
           Add your first product, customize your storefront, or peek at the

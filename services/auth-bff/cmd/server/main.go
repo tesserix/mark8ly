@@ -102,10 +102,14 @@ func main() {
 	})
 	autologinHandler := autologin.NewHandler(autologinSvc)
 
+	// ─── Session introspection + logout ────────────────────────────────
+	sessionHandler := session.NewHandler(sessions)
+
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)
 	v1 := r.Group("/auth")
 	autologinHandler.Register(v1)
+	sessionHandler.Register(v1)
 
 	if err := httpserver.Run(ctx, cfg.HTTPPort, r, log); err != nil {
 		log.Error("http server", "err", err)

@@ -1,0 +1,50 @@
+{
+  "_comment": "Phase C seed: small representative dataset to prove the seed pipeline. Full dataset (~250 countries, ~3500 states) lands in Phase D.",
+  "countries": [
+    { "code": "US", "name": "United States",      "native_name": "United States",  "calling_code": "+1",   "currency_code": "USD", "flag_emoji": "🇺🇸", "region": "Americas" },
+    { "code": "CA", "name": "Canada",             "native_name": "Canada",         "calling_code": "+1",   "currency_code": "CAD", "flag_emoji": "🇨🇦", "region": "Americas" },
+    { "code": "GB", "name": "United Kingdom",     "native_name": "United Kingdom", "calling_code": "+44",  "currency_code": "GBP", "flag_emoji": "🇬🇧", "region": "Europe" },
+    { "code": "DE", "name": "Germany",            "native_name": "Deutschland",    "calling_code": "+49",  "currency_code": "EUR", "flag_emoji": "🇩🇪", "region": "Europe" },
+    { "code": "FR", "name": "France",             "native_name": "France",         "calling_code": "+33",  "currency_code": "EUR", "flag_emoji": "🇫🇷", "region": "Europe" },
+    { "code": "IN", "name": "India",              "native_name": "भारत",            "calling_code": "+91",  "currency_code": "INR", "flag_emoji": "🇮🇳", "region": "Asia" },
+    { "code": "SG", "name": "Singapore",          "native_name": "Singapore",      "calling_code": "+65",  "currency_code": "SGD", "flag_emoji": "🇸🇬", "region": "Asia" },
+    { "code": "AU", "name": "Australia",          "native_name": "Australia",      "calling_code": "+61",  "currency_code": "AUD", "flag_emoji": "🇦🇺", "region": "Oceania" },
+    { "code": "JP", "name": "Japan",              "native_name": "日本",            "calling_code": "+81",  "currency_code": "JPY", "flag_emoji": "🇯🇵", "region": "Asia" },
+    { "code": "BR", "name": "Brazil",             "native_name": "Brasil",         "calling_code": "+55",  "currency_code": "BRL", "flag_emoji": "🇧🇷", "region": "Americas" }
+  ],
+  "states": [
+    { "id": "US-CA", "country_code": "US", "code": "CA", "name": "California",    "type": "state" },
+    { "id": "US-NY", "country_code": "US", "code": "NY", "name": "New York",      "type": "state" },
+    { "id": "US-TX", "country_code": "US", "code": "TX", "name": "Texas",         "type": "state" },
+    { "id": "CA-ON", "country_code": "CA", "code": "ON", "name": "Ontario",       "type": "province" },
+    { "id": "CA-BC", "country_code": "CA", "code": "BC", "name": "British Columbia", "type": "province" },
+    { "id": "IN-MH", "country_code": "IN", "code": "MH", "name": "Maharashtra",   "type": "state" },
+    { "id": "IN-KA", "country_code": "IN", "code": "KA", "name": "Karnataka",     "type": "state" },
+    { "id": "IN-DL", "country_code": "IN", "code": "DL", "name": "Delhi",         "type": "territory" },
+    { "id": "AU-NSW","country_code": "AU", "code": "NSW","name": "New South Wales","type": "state" }
+  ],
+  "currencies": [
+    { "code": "USD", "name": "US Dollar",        "symbol": "$",  "decimal_places": 2 },
+    { "code": "CAD", "name": "Canadian Dollar",  "symbol": "$",  "decimal_places": 2 },
+    { "code": "GBP", "name": "British Pound",    "symbol": "£",  "decimal_places": 2 },
+    { "code": "EUR", "name": "Euro",             "symbol": "€",  "decimal_places": 2 },
+    { "code": "INR", "name": "Indian Rupee",     "symbol": "₹",  "decimal_places": 2 },
+    { "code": "SGD", "name": "Singapore Dollar", "symbol": "$",  "decimal_places": 2 },
+    { "code": "AUD", "name": "Australian Dollar","symbol": "$",  "decimal_places": 2 },
+    { "code": "JPY", "name": "Japanese Yen",     "symbol": "¥",  "decimal_places": 0 },
+    { "code": "BRL", "name": "Brazilian Real",   "symbol": "R$", "decimal_places": 2 }
+  ],
+  "timezones": [
+    { "id": "America/Los_Angeles", "name": "Pacific Time",     "utc_offset": "-08:00" },
+    { "id": "America/New_York",    "name": "Eastern Time",     "utc_offset": "-05:00" },
+    { "id": "America/Toronto",     "name": "Eastern Time",     "utc_offset": "-05:00" },
+    { "id": "Europe/London",       "name": "Greenwich",        "utc_offset": "+00:00" },
+    { "id": "Europe/Berlin",       "name": "Central European", "utc_offset": "+01:00" },
+    { "id": "Europe/Paris",        "name": "Central European", "utc_offset": "+01:00" },
+    { "id": "Asia/Kolkata",        "name": "India Standard",   "utc_offset": "+05:30" },
+    { "id": "Asia/Singapore",      "name": "Singapore",        "utc_offset": "+08:00" },
+    { "id": "Asia/Tokyo",          "name": "Japan Standard",   "utc_offset": "+09:00" },
+    { "id": "Australia/Sydney",    "name": "Australian East",  "utc_offset": "+10:00" },
+    { "id": "America/Sao_Paulo",   "name": "Brasilia",         "utc_offset": "-03:00" }
+  ]
+}

@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	platformapi "github.com/mark8ly/platform-api"
+	"github.com/mark8ly/platform-api/internal/location"
 	"github.com/mark8ly/platform-api/pkg/config"
 	"github.com/mark8ly/platform-api/pkg/db"
 	"github.com/mark8ly/platform-api/pkg/httpserver"
@@ -36,13 +37,20 @@ func main() {
 		panic(err)
 	}
 
-	// Open DB (still useful even though migrations already verified the schema).
-	if _, err := db.Open(cfg.DatabaseURL); err != nil {
+	// Open DB.
+	conn, err := db.Open(cfg.DatabaseURL)
+	if err != nil {
 		log.Error("db open", "err", err)
 		panic(err)
 	}
 
+	// Wire up domains. Each domain owns its handler/service/repo trio and
+	// registers its routes onto the /api/v1 group.
+	locationHandler := location.NewHandler(location.NewService(location.NewRepository(conn)))
+
 	r := httpserver.New(cfg.Env, log)
+	v1 := r.Group("/api/v1")
+	locationHandler.Register(v1)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

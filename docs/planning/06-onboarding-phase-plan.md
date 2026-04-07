@@ -327,3 +327,97 @@ These are the things most likely to derail the timeline if violated:
 - Migration of real data from the old system
 - Any decision about the admin/storefront restructure (revisited after
   this slice)
+
+## Phases beyond the v0.1 onboarding slice
+
+Phases A–H shipped the kill-list slice. Everything below was added
+after v0.1 was tagged, when the re-evaluation point in the planning doc
+asked "what's next?" and we picked admin as the answer. The ordering
+mirrors the same discipline: smallest-useful-thing first, then
+re-evaluate.
+
+### Phase I — Admin workspace scaffold *(shipped)*
+
+`apps/admin` Next.js workspace at `localhost:4202`. Middleware-based
+session-cookie gate, `AdminShell` chrome with sidebar + topbar, stub
+routes for /products /orders /customers /settings, /login redirect
+target, /logout cookie clear. No real auth yet — just cookie-presence.
+
+### Phase J — Real session validation + cross-app auth handoff *(shipped)*
+
+`auth-bff GET /auth/session` and `POST /auth/logout`. Admin middleware
+calls auth-bff on every request, fail-closed on invalid/tampered/
+unreachable. Resolved session forwarded to pages via request headers
+(`x-session-user-id`, `x-session-email`, `x-session-tenant-id`). Admin
+dashboard reads them and calls `platform-api /internal/tenants/:id`
+to render the real tenant name. Cross-app Playwright e2e — anonymous
+admin visit → bounce → onboarding → magic link → admin dashboard with
+real tenant → logout → bounce again.
+
+### Phase K — Admin chrome port from legacy *(shipped)*
+
+`@tesserix/web` Sidebar primitives. Collapsible nav groups (Analytics,
+Catalog, Orders, Customers, Marketing, Settings, Support) ported from
+`mark8ly_backup/apps/admin/app/(tenant)/layout.tsx` with the same icon
+set. Topbar gets a UserMenu dropdown showing the merchant's email
+with Profile / Settings / Sign out. ComingSoon placeholder restyled
+to use the admin token set (`bg-card`, `border-border`, etc) instead
+of the warm-editorial palette.
+
+### Phase L — Cross-tab/cross-device magic link *(shipped)*
+
+The verify page used to read GIP credentials from per-tab
+sessionStorage, breaking when the user clicked the magic link in a
+different tab/device. Phase L moves the credentials into the
+persisted onboarding session draft (existing JSONB column, no
+migration). New `verifyAndLoginByToken` server action takes ONLY the
+token, fetches the draft from platform-api, refreshes the GIP
+id_token, completes onboarding, mints the cookie, all server-side.
+Welcome page gains an "Open admin dashboard →" CTA. New Playwright
+test opens the magic link in a fresh browser context (no shared
+storage) — proves cross-device works.
+
+### Phase M — Returning-user sign-in *(planned)*
+
+Closes the loop for users who already have a tenant. (1) Add a
+password field to the onboarding form so the merchant has a credential
+on file. (2) Switch the client signUp call from email-only to
+`createUserWithEmailAndPassword`. (3) Replace the marketing /login
+stub with a real form: email + password fields and a "Continue with
+Google" button. (4) Both paths produce a GIP id_token and POST it to
+auth-bff `/auth/auto-login` — same endpoint onboarding uses, zero
+new backend code. (5) Successful sign-in sets the session cookie and
+redirects to admin. New e2e: existing user signs in via password →
+admin dashboard renders. ~3–5 hours, frontend only.
+
+### Phases N+ — TBD
+
+Open at the time of writing. Likely candidates:
+
+- **Tenant settings (general) page** — store name, logo, contact email,
+  currency. Real feature page using endpoints platform-api already
+  has. ~half day. The first Phase that proves we can ship a real
+  admin feature on top of the chrome.
+- **Roles + RBAC** — extend the OpenFGA model with `admin` / `staff` /
+  `viewer` relations, write the `owner` tuple on onboarding completion,
+  add role-aware checks in admin middleware, hide nav items based on
+  role. Discussed in detail when the user asked about role pickup.
+  Probably 1–2 days.
+- **Products service + admin products UI** — first real new backend
+  service. Domain CRUD, image URLs, single stock count. Pairs with
+  the admin products page port. ~3–5 days.
+- **Orders service + dashboard metrics** — read-only orders list, real
+  metric tiles on the dashboard. Pairs with the admin orders page
+  port. ~2–3 days.
+- **Storefront** — separate slice after admin v0.1 → v0.2 lands.
+  Customer-facing site. Bigger than admin because it's its own
+  app + a different audience.
+- **Production deploy** — Terraform / Cloudflare Worker / Cloud SQL /
+  GKE. Probably its own multi-day slice once admin v0.1 is in
+  customers' hands.
+- **Data migration from legacy** — real tenants, real users, real
+  orders. Snapshot strategy + cutover plan.
+
+The guiding principle is unchanged from the original kill-list: pick
+the smallest useful slice, ship it, re-evaluate. Don't bulk-port
+admin pages whose backing services don't exist yet.

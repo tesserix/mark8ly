@@ -1,0 +1,155 @@
+# Local development stack for the onboarding-only first slice.
+#
+# Run with:  make dev
+# Stop with: make dev-down
+# Wipe with: make dev-clean
+#
+# What's running:
+#   - postgres            Multi-DB Postgres (platform_api, auth_bff, openfga)
+#   - openfga             Real OpenFGA backed by Postgres
+#   - openfga-seed        Loads the authorization model on first boot (one-shot)
+#   - platform-api        Go API (with migrate init container)
+#   - auth-bff            Go auth service (with migrate init container)
+#
+# What's NOT running here:
+#   - The onboarding Next.js app — run on host with `cd apps/onboarding && npm run dev`
+#   - Any auth emulator — auth-bff talks to real Google Identity Platform
+#     (project: tesseracthub-480811). Secrets are loaded from GCP Secret
+#     Manager into infra/dev/.env.local by `make dev-secrets`.
+
+services:
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Storage
+  # ──────────────────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+      POSTGRES_MULTIPLE_DATABASES: platform_api,auth_bff,openfga
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Authorization (OpenFGA)
+  # ──────────────────────────────────────────────────────────────────────
+
+  openfga-migrate:
+    image: openfga/openfga:v1.8.4
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://dev:dev@postgres:5432/openfga?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  openfga:
+    image: openfga/openfga:v1.8.4
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://dev:dev@postgres:5432/openfga?sslmode=disable
+      OPENFGA_LOG_FORMAT: text
+      OPENFGA_PLAYGROUND_ENABLED: "true"
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8089:8080"  # http
+      - "8090:8081"  # grpc
+      # playground (3000) intentionally not exposed — conflicts with common dev servers
+    # No healthcheck: openfga image is distroless, has no shell/wget/curl.
+    # The openfga-seed init container does its own wait-for-ready loop.
+
+  openfga-seed:
+    image: alpine:3.20
+    depends_on:
+      openfga:
+        condition: service_started
+    volumes:
+      - ./seed:/seed:ro
+    entrypoint: ["sh", "/seed/fga-init.sh"]
+    restart: "no"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Go services
+  # ──────────────────────────────────────────────────────────────────────
+
+  platform-api-migrate:
+    build:
+      context: ../../services/platform-api
+      target: migrate
+    environment:
+      ENV: dev
+      DATABASE_URL: postgres://dev:dev@postgres:5432/platform_api?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["up"]
+    restart: "no"
+
+  platform-api:
+    build:
+      context: ../../services/platform-api
+      target: server
+    env_file:
+      - .env.local
+    environment:
+      ENV: dev
+      HTTP_PORT: "8086"
+      DATABASE_URL: postgres://dev:dev@postgres:5432/platform_api?sslmode=disable
+      FGA_API_URL: http://openfga:8080
+    depends_on:
+      platform-api-migrate:
+        condition: service_completed_successfully
+      openfga-seed:
+        condition: service_completed_successfully
+    ports:
+      - "8086:8086"
+
+  auth-bff-migrate:
+    build:
+      context: ../../services/auth-bff
+      target: migrate
+    environment:
+      ENV: dev
+      DATABASE_URL: postgres://dev:dev@postgres:5432/auth_bff?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["up"]
+    restart: "no"
+
+  auth-bff:
+    build:
+      context: ../../services/auth-bff
+      target: server
+    env_file:
+      - .env.local
+    environment:
+      ENV: dev
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://dev:dev@postgres:5432/auth_bff?sslmode=disable
+      FGA_API_URL: http://openfga:8080
+      SESSION_COOKIE_DOMAIN: localhost
+    depends_on:
+      auth-bff-migrate:
+        condition: service_completed_successfully
+    # Host port 8087 → container 8080 (8080 is commonly taken on dev machines)
+    ports:
+      - "8087:8080"
+
+volumes:
+  postgres-data:

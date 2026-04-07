@@ -1,0 +1,15 @@
+{
+  "name": "@mark8ly/platform-api",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "go build -o bin/server ./cmd/server && go build -o bin/migrate ./cmd/migrate && go build -o bin/seed ./cmd/seed",
+    "test": "go test ./...",
+    "lint": "go vet ./...",
+    "dev": "go run ./cmd/server",
+    "migrate:up": "go run ./cmd/migrate up",
+    "migrate:down": "go run ./cmd/migrate down 1",
+    "migrate:version": "go run ./cmd/migrate version",
+    "seed": "go run ./cmd/seed"
+  }
+}

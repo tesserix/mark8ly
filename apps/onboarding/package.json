@@ -1,0 +1,29 @@
+{
+  "name": "@mark8ly/onboarding",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 4201",
+    "build": "next build",
+    "start": "next start --port 4201",
+    "lint": "next lint",
+    "check-types": "tsc --noEmit",
+    "test": "echo 'no unit tests yet' && exit 0",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "^16.1.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "*",
+    "@repo/typescript-config": "*",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "^16.1.2",
+    "typescript": "5.9.2"
+  }
+}

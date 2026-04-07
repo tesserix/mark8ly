@@ -18,17 +18,17 @@ interface StubPageProps {
  */
 export function StubPage({ title, description }: StubPageProps) {
   return (
-    <div className="min-h-screen flex flex-col bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
+    <div className="min-h-screen flex flex-col text-foreground">
       <Header />
       <main className="flex-1 flex items-center justify-center px-6 py-24">
-        <div className="max-w-xl text-center">
-          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight mb-4">
+        <div className="max-w-xl rounded-[2rem] border border-warm-200/90 bg-white/90 px-8 py-10 text-center shadow-[0_24px_80px_rgba(43,38,34,0.1)] backdrop-blur-sm">
+          <h1 className="font-serif text-4xl sm:text-5xl font-medium tracking-tight mb-4">
             {title}
           </h1>
-          <p className="text-lg text-zinc-600 dark:text-zinc-400 mb-8">
+          <p className="text-lg text-foreground-secondary mb-8">
             {description}
           </p>
-          <p className="text-sm text-zinc-500 mb-8">Coming soon.</p>
+          <p className="text-sm text-foreground-tertiary mb-8">Coming soon.</p>
           <Button asChild variant="outline">
             <Link href="/">Back to home</Link>
           </Button>

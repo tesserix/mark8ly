@@ -28,7 +28,7 @@ services:
     environment:
       POSTGRES_USER: dev
       POSTGRES_PASSWORD: dev
-      POSTGRES_MULTIPLE_DATABASES: platform_api,auth_bff,openfga
+      POSTGRES_MULTIPLE_DATABASES: platform_api,auth_bff,openfga,marketplace_db
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres-init.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
@@ -169,6 +169,40 @@ services:
     # Host port 8087 → container 8080 (8080 is commonly taken on dev machines)
     ports:
       - "8087:8080"
+
+  marketplace-api-migrate:
+    build:
+      context: ../../services/marketplace-api
+      dockerfile: Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgres://dev:dev@postgres:5432/marketplace_db?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["up"]
+    restart: "no"
+
+  marketplace-api:
+    build:
+      context: ../../services/marketplace-api
+      dockerfile: Dockerfile
+      target: runtime
+    environment:
+      ENV: dev
+      MODE: both
+      HTTP_PORT: "8091"
+      DATABASE_URL: postgres://dev:dev@postgres:5432/marketplace_db?sslmode=disable
+    depends_on:
+      marketplace-api-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8091:8091"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8091/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
 volumes:
   postgres-data:

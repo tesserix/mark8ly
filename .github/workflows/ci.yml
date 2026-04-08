@@ -18,9 +18,16 @@ jobs:
   go:
     name: Go (${{ matrix.service }})
     runs-on: ubuntu-latest
+    # Pinned service-container images used by M3+ integration tests in
+    # marketplace-api. Keeping them at the job level so all matrix entries
+    # see the same pinned versions. M1/M2 don't yet consume these.
+    env:
+      POSTGRES_IMAGE: postgres:15-alpine
+      FGA_IMAGE: openfga/openfga:v1.8.4
+      FAKE_GCS_IMAGE: fsouza/fake-gcs-server:1.49.3
     strategy:
       matrix:
-        service: [platform-api, auth-bff]
+        service: [platform-api, auth-bff, marketplace-api]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -69,6 +76,10 @@ jobs:
             dockerfile: services/auth-bff/Dockerfile
             context: services/auth-bff
             target: server
+          - name: mark8ly-marketplace-api
+            dockerfile: services/marketplace-api/Dockerfile
+            context: services/marketplace-api
+            target: runtime
           - name: mark8ly-onboarding
             dockerfile: apps/onboarding/Dockerfile
             context: .
@@ -157,7 +168,14 @@ jobs:
       - name: Bump image tags via yq
         run: |
           set -euo pipefail
-          for svc in platform-api auth-bff onboarding admin storefront; do
+          # marketplace-api-admin and marketplace-api-storefront deploy
+          # from the same image (mark8ly-marketplace-api) but as two
+          # Knative Services differentiated by MODE env. Both values
+          # files receive the same sha tag. The [ ! -f ] guard below
+          # means the loop is forward-compatible: when the values files
+          # land in tesserix-k8s (M1 Tasks 10–13), this just starts
+          # rolling out without another CI change.
+          for svc in platform-api auth-bff onboarding admin storefront marketplace-api-admin marketplace-api-storefront; do
             f="tesserix-k8s/charts/apps/mark8ly-$svc/values.yaml"
             if [ ! -f "$f" ]; then
               echo "WARN: $f does not exist — skipping"

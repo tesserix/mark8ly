@@ -1,0 +1,1 @@
+-- placeholder: keeps the embed glob migrations/*.sql non-empty until the first real migration is added

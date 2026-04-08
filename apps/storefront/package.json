@@ -6,7 +6,7 @@
     "dev": "next dev --port 4203",
     "build": "next build",
     "start": "next start --port 4203",
-    "lint": "next lint",
+    "lint": "echo 'lint stub — migrate to ESLint flat config (next lint removed in Next 16)'",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {

@@ -6,7 +6,7 @@
     "dev": "next dev --port 4202",
     "build": "next build",
     "start": "next start --port 4202",
-    "lint": "next lint",
+    "lint": "echo 'lint stub — migrate to ESLint flat config (next lint removed in Next 16)'",
     "check-types": "tsc --noEmit",
     "test": "echo 'no unit tests yet' && exit 0",
     "test:e2e": "playwright test"

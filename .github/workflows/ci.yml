@@ -124,10 +124,10 @@ jobs:
   # and rolls the deployments.
   bump-k8s:
     name: Bump tesserix-k8s image tags
-    # Disabled until Step 4 lands mark8ly-* charts + values files in tesserix-k8s.
-    # Re-enable by restoring: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    # and wiring a K8S_BUMP_TOKEN secret (classic PAT with repo scope on tesserix-k8s).
-    if: false
+    # Requires the TESSERIX_K8S_BOT repo secret — a classic PAT with `repo`
+    # scope on tesserix/tesserix-k8s (needed to push a branch and open a PR
+    # across repos; GITHUB_TOKEN cannot reach another private repo).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [images]
     runs-on: ubuntu-latest
     steps:
@@ -147,9 +147,9 @@ jobs:
         run: |
           set -euo pipefail
           for svc in platform-api auth-bff onboarding admin storefront; do
-            f="tesserix-k8s/charts/apps/mark8ly-$svc/values-prod.yaml"
+            f="tesserix-k8s/charts/apps/mark8ly-$svc/values.yaml"
             if [ ! -f "$f" ]; then
-              echo "WARN: $f does not exist yet (Step 4 charts not landed) — skipping"
+              echo "WARN: $f does not exist — skipping"
               continue
             fi
             # Use yq if available, fall back to sed for tag-only fields.

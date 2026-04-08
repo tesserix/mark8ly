@@ -1307,4 +1307,350 @@ Replace the "onboard ~10 products" item with test-countable gates:
 
 ---
 
-*End of revisions. v1 authored 2026-04-09; v1.1 revisions 2026-04-09 (same day, after four-reviewer pass).*
+*End of v1.1 revisions. v1 authored 2026-04-09; v1.1 revisions 2026-04-09 (same day, after four-reviewer pass).*
+
+---
+
+## 14 · Revisions after re-review (v1.1 → v1.2)
+
+After the v1.1 pass, a second round dispatched **five** independent reviewers (spec reviewer, architect, UX specialist, tech lead, and a database architect added this round). All 13 v1 BLOCKING issues verified resolved. The net-new items below are the **correctness and production-readiness fixes** from round two. UX polish items (breakpoints, hit targets, readonly-vs-disabled nuance, expand-all toggle, returnUrl pattern) are tracked separately as an implementation TODO list consumed by `writing-plans`.
+
+**§14 supersedes §§1–13 where they conflict.**
+
+### 14.1 · Watermark bottleneck eliminated (supersedes §13.1.3, §13.3 step 10)
+
+`stores.products_updated_watermark` is **removed** from the `stores` projection. Serializing every mutation through a row lock on a single `stores` row is a pool-starvation hazard on db-f1-micro and a deadlock risk under concurrent writes to the same store.
+
+Replacement: a separate `store_watermarks` table **maintained asynchronously** by the outbox publisher (which now ships as part of slice 1 — see §14.6).
+
+```sql
+CREATE TABLE store_watermarks (
+    store_id             uuid         PRIMARY KEY,
+    products_updated_at  timestamptz  NOT NULL DEFAULT now()
+);
+```
+
+Flow:
+
+1. Product/variant/media/category mutations write an `outbox_events` row in the same tx as the data write (unchanged).
+2. The slice-1 outbox publisher goroutine reads events in batches, and for each batch upserts the watermark via `INSERT ... ON CONFLICT (store_id) DO UPDATE SET products_updated_at = GREATEST(store_watermarks.products_updated_at, EXCLUDED.products_updated_at)`. No lock contention on hot writes; the upsert is per-batch, not per-mutation.
+3. Storefront ETag reads from `store_watermarks.products_updated_at` for the requested store — accepts eventual consistency of up to a few seconds (the interval between publisher ticks). This is well within the `s-maxage=60` cache window; merchants editing a product see the update reflected on the storefront within the cache boundary anyway.
+
+Correctness implication: the storefront cache can briefly serve a stale response for up to ~`publisher_tick_interval + s-maxage` seconds after a mutation. This matches Shopify's publication latency and is an acceptable trade-off to eliminate the hot row.
+
+### 14.2 · Currency change path redefined (supersedes §13.2.4)
+
+The `BEFORE UPDATE` trigger on `product_variants` that reads `stores.currency_code` from the marketplace-api projection is **removed**. It created three problems: (a) read during an update acquires extra lock ordering overhead, (b) it duplicates enforcement logic already owned by the service layer, and (c) the 5-minute projection stale window means the trigger can enforce stale rules.
+
+**Slice 1 decision: store currency changes are forbidden.** The platform-api `stores` table (authoritative source) rejects any `UPDATE` that mutates `currency_code` — a CHECK constraint at the platform-api layer or an explicit service-layer refusal. Merchants who need to change their store's currency must create a new store. This is a real constraint but an honest one: changing a live store's currency is a maintenance operation that touches every historical order, refund, coupon, and inventory ledger, not just the product catalog. Deferring it to a slice-N operation (with a dedicated migration runbook) is the correct call.
+
+Consequence for marketplace-api: `product_variants.currency_code` is set once at variant creation from the value in `stores.currency_code` at that moment, and is effectively immutable. No trigger needed. Any code path attempting to change a variant's currency without also creating a new store is refused by the service layer with `currency_change_forbidden` error. A unit test asserts this.
+
+### 14.3 · Partial unique index migration (supersedes §13.2.1)
+
+The migration text needs to make the replacement explicit. v1.2 migration performs, in this exact order inside the transaction:
+
+```sql
+-- Inside 0001_products_initial.up.sql, AFTER the CREATE TABLE statements
+-- that still declare the plain UNIQUE constraints (for readability of the DDL),
+-- immediately drop them and replace with partial unique indexes:
+
+ALTER TABLE categories       DROP CONSTRAINT categories_slug_per_store_unique;
+ALTER TABLE products         DROP CONSTRAINT products_handle_per_store_unique;
+ALTER TABLE product_variants DROP CONSTRAINT variants_sku_per_store_unique;
+
+CREATE UNIQUE INDEX categories_slug_per_store_live_unique
+    ON categories (store_id, slug) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX products_handle_per_store_live_unique
+    ON products (store_id, handle) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX variants_sku_per_store_live_unique
+    ON product_variants (store_id, sku) WHERE deleted_at IS NULL;
+```
+
+Repository-layer responsibility: catch `pgconn.PgError` with `Code == "23505"` (unique violation) on `INSERT` AND `UPDATE` paths (including any hypothetical "un-delete" that clears `deleted_at`) and return typed `handle_taken` / `sku_taken` / `slug_taken` errors with the conflicting value in `details`. A regression test exercises the un-delete path explicitly: soft-delete a row, insert a new live row with the same key, then attempt to clear `deleted_at` on the soft-deleted row and assert the typed error.
+
+### 14.4 · Composite FK DDL placement (supersedes §13.2.3)
+
+`products_id_store_unique` constraint moves into the original `CREATE TABLE products` DDL (not added via `ALTER TABLE` after the fact). The composite FK on `product_variants` references it directly in the original `CREATE TABLE product_variants` DDL. The migration reads top-to-bottom cleanly for future maintainers.
+
+Down-migration drop order (explicitly enumerated):
+
+```sql
+DROP TABLE outbox_events;
+DROP TABLE idempotency_keys;
+DROP TABLE store_watermarks;
+DROP TABLE variant_stock;
+DROP TABLE product_categories;
+DROP TABLE product_media;
+DROP TABLE variant_option_values;
+DROP TABLE product_variants;      -- must be before products due to composite FK
+DROP TABLE product_option_values;
+DROP TABLE product_options;
+DROP TABLE products;
+DROP TABLE categories;
+DROP TABLE stores;
+DROP FUNCTION IF EXISTS set_updated_at();
+DROP FUNCTION IF EXISTS sync_variant_inventory();   -- see §14.5
+```
+
+`migrate up → down → up` cycle is a test fixture in M2.
+
+### 14.5 · `variant_stock` dual-write eliminated via trigger (supersedes §13.2.6)
+
+Service-layer maintenance of `product_variants.inventory_quantity` from `variant_stock.quantity` is replaced by a trigger, making `variant_stock` the single source of truth:
+
+```sql
+CREATE OR REPLACE FUNCTION sync_variant_inventory() RETURNS trigger AS $$
+BEGIN
+    -- Slice 1: one location per variant, so sum equals the single row's quantity.
+    -- Slice 2 (multi-warehouse): this function becomes a SUM aggregate across
+    -- all locations for the variant, or the denormalized column is dropped
+    -- in favor of a view.
+    UPDATE product_variants
+    SET inventory_quantity = NEW.quantity
+    WHERE id = NEW.variant_id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER variant_stock_sync_insert
+    AFTER INSERT ON variant_stock
+    FOR EACH ROW EXECUTE FUNCTION sync_variant_inventory();
+
+CREATE TRIGGER variant_stock_sync_update
+    AFTER UPDATE OF quantity ON variant_stock
+    FOR EACH ROW EXECUTE FUNCTION sync_variant_inventory();
+```
+
+Consequence: `product_variants.inventory_quantity` is **never written directly** by application code. The quick-update variant PATCH endpoint (`PATCH .../variants/:variantId`) updates `variant_stock.quantity` instead; the trigger takes care of the denormalized column. The service layer is simpler and correctness is enforced at the DB level.
+
+Integration test: update `variant_stock`, read `product_variants`, assert the sum matches. Update `product_variants.inventory_quantity` directly (should not happen in real code, but the test guards future regressions), assert it does NOT affect `variant_stock` — making it clear which is source and which is derived.
+
+### 14.6 · Outbox publisher ships in slice 1 (supersedes §13.2.7)
+
+The publisher is no longer deferred to slice 2. Slice 1 ships a minimal, in-process publisher goroutine in `marketplace-api` with these responsibilities:
+
+1. Poll `outbox_events WHERE published_at IS NULL` every 2 seconds, batch-fetch 100 rows via `SELECT ... FOR UPDATE SKIP LOCKED`
+2. For each event, upsert into `store_watermarks` (§14.1)
+3. Mark events as published (`UPDATE outbox_events SET published_at = now() WHERE id = ANY($1)`)
+4. Pub/Sub delivery is **not** in slice 1 — events are written, consumed for watermark-bumping, and marked published. The shape is cemented; slice 2 replaces the watermark-only consumer with a real Pub/Sub publisher.
+
+**Index shape correction:** the partial index on `outbox_events` now includes `tenant_id` up-front to support multi-tenant per-tenant publishers in slice 2 without a live-data reindex:
+
+```sql
+-- Supersedes the index in §13.2.7:
+CREATE INDEX outbox_unpublished_idx
+    ON outbox_events (tenant_id, created_at)
+    WHERE published_at IS NULL;
+```
+
+The slice-1 single-goroutine publisher scans this index filtered on `WHERE published_at IS NULL`; Postgres uses the index for the ordering and the slice-2 per-tenant publisher uses it for the tenant filter without a `CREATE INDEX CONCURRENTLY` migration under live load.
+
+**Operational guard:** a Cloud Monitoring alert fires if any `outbox_events` row has `published_at IS NULL AND created_at < now() - interval '7 days'`. The alert query is one line and runs against Cloud SQL directly, not through marketplace-api. This addresses the "unbounded growth" risk flagged by tech-lead review.
+
+### 14.7 · `StoreMiddleware` serve-stale-on-error (supersedes §13.1.4)
+
+Revised pseudocode that matches the DoD "platform-api outage does not break stale reads" claim:
+
+```go
+func StoreMiddleware(storeRepo stores.Repository, platformClient platform.Client, flight *singleflight.Group) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        storeID := c.Param("storeId")
+        tenantID := auth.TenantID(c)
+
+        cached, cacheErr := storeRepo.GetByIDForTenant(c, storeID, tenantID)
+        fresh := cacheErr == nil && !stores.IsStale(cached, 5*time.Minute)
+
+        if fresh {
+            c.Set("store", cached)
+            c.Next()
+            return
+        }
+
+        // Stale or missing → coalesce concurrent refreshes for the same key
+        result, err, _ := flight.Do("store:"+storeID, func() (interface{}, error) {
+            return refreshFromPlatform(c, platformClient, storeRepo, storeID, tenantID)
+        })
+
+        switch {
+        case err == nil && result != nil:
+            // Refresh succeeded
+            c.Set("store", result.(*stores.Store))
+            c.Next()
+        case cacheErr == nil && cached != nil && time.Since(cached.SyncedAt) < 24*time.Hour:
+            // Refresh failed but we have a cached row under 24h — serve stale with warning
+            log.Warn(c, "serving stale store projection",
+                "store_id", storeID, "synced_at", cached.SyncedAt, "refresh_err", err)
+            c.Set("store", cached)
+            c.Set("store_stale", true)
+            c.Next()
+        default:
+            // No cache at all, OR cache older than 24h, OR cached row for wrong tenant
+            apperrors.Respond(c, apperrors.NotFound("store"))
+            c.Abort()
+        }
+    }
+}
+```
+
+`singleflight.Group` (`golang.org/x/sync/singleflight`) prevents refresh stampedes — 50 concurrent requests for the same expired store key result in exactly one refresh call to platform-api. The stale-but-cached-within-24h window means a platform-api outage degrades gracefully: admin surfaces keep working with the last-known store metadata, only logging a warning.
+
+DoD clause (§13.10) "platform-api outage does not break stale reads" is now realized by the code.
+
+### 14.8 · Knative two-port / two-engine deployment shape (supersedes §13.1.2, §13.8)
+
+Knative Services expose a single `containerPort` per revision. The two-engine design is implemented as **two Knative Services deployed from the same image**, differing only in env and VirtualService routing:
+
+- `marketplace-api-admin` — env `MODE=admin`, the binary starts only the admin Gin engine on `:8080`, storefront engine is not constructed. VirtualService routes `/api/v1/admin/*` to this service.
+- `marketplace-api-storefront` — env `MODE=storefront`, the binary starts only the storefront Gin engine on `:8080`, admin engine is not constructed. VirtualService routes `/api/v1/storefront/*` to this service.
+
+One image, two Knative Services, deployed together from the same Kustomize overlay. M1 infra work now explicitly delivers both manifests. Scale-to-zero applies independently per service — the admin service doesn't need to stay warm when only storefront traffic flows, and vice versa.
+
+Consequence: the "single binary" claim from §3.1 is technically two processes in prod, but the same Go code path and the same image. Local dev still runs a single process with both engines for convenience (gated by `MODE=both`).
+
+**Rate limiter:** `marketplace-api-admin` pins `autoscaling.knative.dev/maxScale: "1"` in its Knative manifest for slice 1. This is the cheaper fix for T1: admin traffic is low-volume (merchants, not shoppers) and a single replica is sufficient. The in-memory token bucket's per-replica-doubling problem is sidestepped. Storefront (`marketplace-api-storefront`) scales normally since storefront rate limits are per-client-IP and N × limit under scale-out is acceptable (the per-IP bucket is not shared but the IP itself isn't under attack from the replica count).
+
+Slice 2 task: Redis-backed rate limiter, unpin `maxScale`. Tracked explicitly in the DoD.
+
+### 14.9 · Pre-tx GCS HEAD validates size + content-type (supersedes §13.3 step 2)
+
+The pre-tx GCS verification is not just `exists?`. Full check:
+
+```go
+attrs, err := obj.Attrs(ctx)
+if err != nil { return ErrUploadNotFound }
+if attrs.Size > 10*1024*1024 { return ErrPayloadTooLarge }
+if !slices.Contains(allowedImageTypes, attrs.ContentType) { return ErrUnsupportedMediaType }
+```
+
+Closes the gap where a client bypassing the signed URL could upload a larger or wrong-typed file. Defense-in-depth alongside the signed-URL `x-goog-content-length-range` constraint.
+
+### 14.10 · Orphan sweep + bucket lifecycle: asymmetric TTLs (supersedes §13.6.2)
+
+- GCS bucket lifecycle rule: delete unreferenced objects under `tenants/*/products/media/` **older than 48 hours**
+- Nightly sweep job (CronJob): deletes orphans older than **24 hours**
+
+The sweep is the primary GC path; the lifecycle rule is the backstop when the sweep fails. The 24h gap prevents the race where a legitimate slow upload (client computes sha256, uploads, waits 23h, finalizes) gets swept out from under the finalize request. Slow uploads have up to 24h before the sweep touches them, and up to 48h before the lifecycle rule does.
+
+**Sweep job operational requirements** (new):
+
+1. Exit with non-zero status on any error (Cloud Monitoring alerts on non-zero exit)
+2. Emit a Cloud Logging INFO log for each deleted object with `storage_key`, `age_hours`, `bytes_freed`
+3. Always performs `SELECT count(*) FROM product_media WHERE storage_key = $1` before deleting a GCS object — never deletes without a DB join check
+4. Dead-man-switch alert: if no successful run in the last 48 hours, Cloud Monitoring pages the on-call (slice 1: the solo developer's email)
+5. Job also runs `DELETE FROM idempotency_keys WHERE expires_at < now()` as a bonus step — one CronJob, two cleanup duties
+
+### 14.11 · `products.store_id` local FK (supersedes §4 schema)
+
+Now that `stores` is a local projection table in marketplace-api, `products.store_id` gets a real FK:
+
+```sql
+ALTER TABLE products
+    ADD CONSTRAINT products_store_fk
+        FOREIGN KEY (store_id)
+        REFERENCES stores(id)
+        ON DELETE RESTRICT;
+```
+
+Prevents products from referencing a store row that was never synced via `StoreMiddleware`. Combined with the middleware's upsert-before-write guarantee, creates a clean invariant: every product's store exists in the local projection.
+
+Same FK applied to `categories.store_id`, `product_variants.store_id`, and `store_watermarks.store_id`.
+
+### 14.12 · Content-addressed delete semantics (supersedes §13.3 step 8)
+
+Explicit documentation of the in-tenant delete path:
+
+- Deleting a product (soft delete) does **not** delete any GCS objects.
+- Deleting a product hard (slice 1 supports soft only; future feature) removes `product_media` rows via `ON DELETE CASCADE`.
+- The **only** GCS-delete code path is the nightly sweep job (§14.10), which checks `product_media` refcount by `storage_key` before deleting.
+- Cross-tenant deduplication is intentionally absent. Each tenant has its own key namespace (`tenants/<tid>/products/media/<sha256>/...`), so the same bytes uploaded by two tenants live as two GCS objects. This is the correct trade-off — cross-tenant dedup creates data-isolation risks that outweigh the storage savings.
+
+### 14.13 · Error code table additions (supersedes §13.4)
+
+Add to the table in §13.4:
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `payload_too_large` | 413 | JSON body exceeds 256 KB, multipart exceeds 1 MB, or an uploaded object exceeds 10 MiB |
+| `unsupported_media_type` | 415 | Uploaded object has a content-type not in the allowlist |
+| `rate_limited` | 429 | Admin (60/min per user) or storefront (120/min per IP) bucket exhausted; `Retry-After` header set |
+| `currency_change_forbidden` | 409 | Attempted to mutate a store or variant currency — unsupported in slice 1 |
+| `slug_taken` | 409 | `(store_id, slug)` collision on categories; `details.suggested` has an alternative |
+
+All additions have at least one test producing them.
+
+### 14.14 · Bluemonday policy versioning (supersedes §13.6.1)
+
+Policy is pinned to a named constant in `internal/product/sanitizer.go`:
+
+```go
+const SanitizerPolicyVersion = 1
+
+func policyV1() *bluemonday.Policy {
+    p := bluemonday.NewPolicy()
+    // ... exact allowed tags/attrs
+    return p
+}
+
+var Policy = policyV1()
+```
+
+Stored HTML is never re-sanitized on read. If the policy is ever updated (e.g., `policyV2()` to allow a new tag or restrict an existing one), the policy constant bumps AND a migration job re-sanitizes every `products.description` by loading, applying `policyV2()`, and re-writing. The migration is explicitly part of any future PR that changes the policy — not optional.
+
+README documents this as an invariant: "The bluemonday policy is append-only unless the change is accompanied by a re-sanitization migration." Unit test fixtures include a small XSS corpus (OWASP top-10 injection payloads) that the sanitizer must reduce to safe output.
+
+### 14.15 · Structured error logging (§13.6.5 addendum)
+
+Mutation handlers log on exit with the fields enumerated in §13.6.5. On error paths, logs additionally include: `error_code` (typed code from §13.4/§14.13), `error_message` (the `message` field of the error envelope, which is human-readable but PII-free by construction), and a `stack` field containing the wrapped call stack captured via `fmt.Errorf("%w", err)` or `errors.Wrap`. Level is INFO for success, WARN for expected errors (validation failures, 409s), ERROR for unexpected errors (pool exhaustion, platform-api unreachable, DB errors).
+
+### 14.16 · Definition of done — v1.2 amendments (supersedes §13.10 in part)
+
+Add these gates to §13.10:
+
+- [ ] `outbox_events` publisher goroutine shipped; integration test asserts watermark is updated within 5 seconds of a mutation
+- [ ] `store_watermarks` table populated correctly under load (query-count-asserted)
+- [ ] `variant_stock` trigger present and tested: update stock → `product_variants.inventory_quantity` reflects
+- [ ] `StoreMiddleware` serve-stale-on-error verified with a simulated platform-api outage in integration tests (20 stores, 10 requests per store, platform-api returns 503 — assert all requests succeed using cached rows, warning logs emitted)
+- [ ] `marketplace-api-admin` Knative Service has `maxScale: 1` pinned with a comment linking to the slice-2 ticket for Redis rate limiter
+- [ ] `marketplace-api-storefront` Knative Service deployed on the same image with `MODE=storefront` env
+- [ ] GCS orphan sweep job + dead-man-switch Cloud Monitoring alert committed and tested
+- [ ] `idempotency_keys` cleanup runs in the same CronJob and is tested
+- [ ] Bluemonday policy pinned to version constant; XSS corpus test green
+- [ ] Cloud Monitoring alert for `outbox_events` unpublished rows older than 7 days committed
+- [ ] Platform-api `stores.currency_code` change forbidden at the source; regression test asserts
+
+Replace the "smoke test" vibe item in §13.10 with: *"Four Playwright E2E journeys pass in CI"* — the fourth journey covers the simple catalog walkthrough previously described as a smoke test. The manual checkpoint becomes a CI-verifiable gate.
+
+### 14.17 · Items explicitly deferred from v1.2 to implementation-time (tracked for `writing-plans`)
+
+These items are **not** blockers for starting M1. They are polish and clarity refinements that are cheaper to resolve when the code is in front of us than to spec in advance. The implementation plan generated by `writing-plans` consumes this list as milestone TODOs:
+
+- **UX refinements** (M7 scope): Variant matrix "Expand all / Collapse all" toggle; 1024–1279px breakpoint behavior for the left-margin anchor list; handle-suggestion rendered as distinct `Use this handle` button instead of prose `→`; staff read-only uses `readonly` for text/numeric inputs and `disabled` only for toggles/uploads; inline variant removal banner scrolls into view on insertion; two-click discard requires matching `href`; category management `?returnTo=<url>` pattern; bulk copy via POST body instead of query params; variant matrix first-render orientation sentence
+- **Accessibility** (M7c): `aria-live` announcement for unsaved-changes state transitions; explicit acknowledgement in the spec that `beforeunload` is the single permitted browser-native modal exception
+- **Schema DDL comments** (M2): comment on `products_published_requires_active` explaining the audit-timestamp intent; comment on the composite FK explaining the cascade interaction with soft delete
+- **`locale` placeholder column** on the `stores` projection table (M2) — forward-compat for slice-N per-locale full-text search
+- **`copy_source_product_id` rendering** (M7d): "Copied from (deleted product)" fallback when the source no longer exists
+- **`ListAdmin` query-count gate** (M3): verify `≤5` against the actual repository design; raise to `≤7` if warranted, but assert whatever number is chosen
+- **M7c proactive cut trigger** (execution): if M7c runs past day 6, proactively apply cut items 3 (variant-attach popover) and 4 (flat alt-text) without waiting for a slip
+- **CI container startup budget** (M4): measure actual Postgres + FGA + fake-gcs-server cold-start overhead in GitHub Actions; if the 5-minute marketplace-api budget is tight, pre-warm via a dedicated "test-infra-ready" step
+- **p99 latency + baseline load test** (slice 2 explicit commitment): before marketplace-api sees real merchant traffic, a baseline load test runs on a seeded 1000-product tenant catalog with representative read/write mix
+
+### 14.18 · Risk register — v1.2 additions (supersedes §13.13 in part)
+
+Add to §13.13:
+
+| Risk | Mitigation |
+|---|---|
+| `stores` row lock serializing all mutations | §14.1: watermark moved to separate table, updated asynchronously by outbox publisher |
+| Currency drift trigger + stale projection race | §14.2: currency changes forbidden in slice 1 |
+| `variant_stock` / `inventory_quantity` dual-write drift | §14.5: DB trigger makes `variant_stock` single source of truth |
+| Platform-api outage cascades to marketplace-api admin 404s | §14.7: serve-stale-on-error with singleflight, 24h cached-row ceiling |
+| Knative scale-out multiplying in-memory rate limit | §14.8: admin service pins `maxScale: 1`; slice-2 Redis backend tracked as explicit DoD gate |
+| Outbox table unbounded growth | §14.6: publisher ships in slice 1; Cloud Monitoring alert on 7-day unpublished row age |
+| Orphan GCS object / in-flight upload race | §14.10: asymmetric 24h sweep / 48h lifecycle rule |
+| Bluemonday policy drift between editor and storefront | §14.14: pinned policy version + mandatory re-sanitize migration on change |
+
+---
+
+*End of v1.2 revisions. v1.1 → v1.2 incorporates findings from the five-reviewer re-review round (spec reviewer, architect, UX specialist, tech lead, database architect). Items intentionally deferred to implementation time are enumerated in §14.17 for consumption by the `writing-plans` skill.*
+

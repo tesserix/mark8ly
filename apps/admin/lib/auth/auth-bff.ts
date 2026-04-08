@@ -32,6 +32,52 @@ interface AutoLoginResult {
   setCookie: string;
 }
 
+interface SwitchTenantResult {
+  /** Set-Cookie header value from auth-bff. The caller forwards this
+   *  to the browser response. */
+  setCookie: string;
+}
+
+/**
+ * Switches the current session's tenant id. Phase P: called from
+ * the tenant switcher dropdown and from the accept-invite server
+ * action after a successful role grant.
+ *
+ * The caller MUST forward its own session cookies via cookieHeader
+ * so auth-bff can read the existing session and verify membership
+ * against the target tenant.
+ */
+export async function switchTenant(
+  tenantId: string,
+  cookieHeader: string,
+): Promise<SwitchTenantResult> {
+  const res = await fetch(`${base}/auth/switch-tenant`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: cookieHeader,
+    },
+    body: JSON.stringify({ tenant_id: tenantId }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? "auth_bff_error",
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+  const setCookie = res.headers.get("set-cookie") ?? "";
+  return { setCookie };
+}
+
 export async function autoLogin(
   req: AutoLoginRequest,
 ): Promise<AutoLoginResult> {

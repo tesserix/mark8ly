@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mark8ly/platform-api/internal/authz"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
 
@@ -13,13 +14,99 @@ import (
 // Most tenant operations originate from onboarding completion (which uses
 // CreateInTx directly inside its own transaction). The Service exposes
 // reads and validation helpers used by other domains and by handlers.
+//
+// Phase P: fga is optional. When set, the service can answer
+// "which tenants does this user belong to" by combining FGA
+// ListObjects with a repo lookup. When nil (dev without OpenFGA),
+// ListMemberTenants degrades to returning the single owner tenant
+// via GetByOwnerUserID so local iteration still works.
 type Service struct {
 	repo Repository
+	fga  authz.Client
 }
 
-// NewService constructs a Service.
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+// NewService constructs a Service. fga may be nil — see the
+// Service doc comment for the degraded-mode semantics.
+func NewService(repo Repository, fga authz.Client) *Service {
+	return &Service{repo: repo, fga: fga}
+}
+
+// Membership is the admin-facing view of "a tenant I belong to".
+// Returned by ListMemberTenants and serialised directly to JSON.
+// Includes the role so the switcher can badge each tenant with
+// "(owner)" / "(admin)" etc.
+type Membership struct {
+	TenantID string `json:"tenant_id"`
+	Name     string `json:"name"`
+	Slug     string `json:"slug"`
+	Role     string `json:"role"`
+}
+
+// ListMemberTenants returns every tenant the user has a role on,
+// enriched with the tenant's name/slug from Postgres and the role
+// from FGA.
+//
+// Implementation: one FGA ListObjects + one batched SQL lookup + N
+// FGA GetRole calls (one per returned tenant). For the common solo
+// founder case that's 2 FGA calls and 1 SQL query. The per-tenant
+// GetRole calls are acceptable for Phase P (a typical user is in
+// 1–5 tenants); if multi-tenant users become common, add an
+// FGA batched-read or cache the role in the tenant list.
+//
+// If fga is nil, falls back to GetByOwnerUserID so dev without
+// OpenFGA still sees their owner tenant.
+func (s *Service) ListMemberTenants(ctx context.Context, uid string) ([]Membership, error) {
+	uid = strings.TrimSpace(uid)
+	if uid == "" {
+		return nil, apperrors.BadRequest("invalid_uid", "uid is required")
+	}
+
+	if s.fga == nil {
+		t, err := s.repo.GetByOwnerUserID(ctx, uid)
+		if err != nil {
+			if ae, ok := apperrors.As(err); ok && ae.Code == "tenant_not_found" {
+				return []Membership{}, nil
+			}
+			return nil, err
+		}
+		return []Membership{{
+			TenantID: t.ID,
+			Name:     t.Name,
+			Slug:     t.Slug,
+			Role:     string(authz.RoleOwner),
+		}}, nil
+	}
+
+	ids, err := s.fga.ListMemberTenants(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []Membership{}, nil
+	}
+	rows, err := s.repo.ListByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Membership, 0, len(rows))
+	for _, t := range rows {
+		role, err := s.fga.GetRole(ctx, uid, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		if role == "" {
+			// FGA reported membership but role lookup came back
+			// empty — skip rather than surface a broken row.
+			continue
+		}
+		out = append(out, Membership{
+			TenantID: t.ID,
+			Name:     t.Name,
+			Slug:     t.Slug,
+			Role:     string(role),
+		})
+	}
+	return out, nil
 }
 
 // GetByID returns a tenant by UUID.

@@ -680,24 +680,297 @@ Implications for Phase O:
    (product-level). Phase O only touches the platform store;
    marketplace-store roles are a later phase when products ship.
 
-### Phases P+ — TBD
+### Phase P — Multi-tenant membership + invite teammate *(shipped)*
 
-Open. Likely candidates:
+Phase O shipped the role infrastructure but no way for a second
+human to enter the tenant. Phase P closes that loop AND fixes the
+implicit "one tenant per UID" assumption that leaks through the
+whole stack today (auth-bff session, `tenant.GetByOwnerUserID`, the
+sign-in server action, admin middleware).
+
+Phase P does NOT introduce the store abstraction. A tenant is still
+the thing that owns a storefront URL via `tenant.slug`. Multi-store
+is a dedicated later slice (Phase Q) because the migration is big
+and tangling it with invites produces a monster commit.
+
+**P.1 — Multi-tenant plumbing + tenant switcher**
+
+1. **`tenant.ListMemberTenants(uid)`** replaces the implicit "owner
+   lookup gives you the single workspace tenant" path. Implementation:
+   FGA `ListObjects("user:<uid>", "member", "tenant")` → enrich from
+   the `tenants` table with name/slug/role. Returns
+   `[]{tenant_id, name, slug, role}`. `GetByOwnerUserID` stays as a
+   thin wrapper for the sign-up auto-login path (tenant-just-created,
+   uid must own exactly one).
+2. **`GET /api/v1/users/me/tenants`** on platform-api. Public
+   endpoint (called from the admin BFF with the uid from the
+   session cookie). Powers the switcher dropdown.
+3. **`POST /auth/switch-tenant {tenant_id}`** on auth-bff.
+   Verifies the user has an FGA role on the target tenant via
+   `CheckMembership`, mints a new session cookie with
+   `tenant_id=<target>`. Keeps uid and email unchanged.
+4. **`/login` → multi-tenant sign-in**. Phase M's `signIn` server
+   action currently calls `GetByOwnerUserID`. Updated flow: after
+   GIP id_token is minted, call `ListMemberTenants(uid)`.
+   - 0 tenants: "no store found for this account" error (unchanged).
+   - 1 tenant: auto-login against that tenant, land on `/dashboard`
+     (unchanged UX).
+   - 2+ tenants: auto-login against the first tenant, redirect to
+     `/pick-tenant?returnUrl=/dashboard`. Minimal page listing the
+     user's tenants as cards; clicking one calls `/auth/switch-tenant`
+     then redirects.
+5. **Tenant switcher in AdminShell**. New dropdown in the top bar
+   next to the role badge. Shows current tenant name, lists others,
+   clicking calls `/auth/switch-tenant` and reloads. Single-tenant
+   users see a non-interactive label (no dropdown) so the UI stays
+   quiet for the solo-founder default.
+6. **Admin middleware unchanged in shape** — still reads a single
+   `x-session-tenant-id` header — but the tenant id is now whatever
+   the last switch put there. `/settings/general` etc continue to
+   operate on the session's current tenant with no new plumbing.
+
+**P.2 — Invitations**
+
+1. **Migration**: new `invitations` table on platform-api with
+   `id, tenant_id, email, role, token_hash, expires_at, status,
+   invited_by_user_id, created_at, accepted_at`. No new tables
+   for tracking accepted members — that's what FGA is for. The
+   row only tracks pending/expired/revoked state.
+2. **New FGA permission**: `can_invite_members = owner or admin`
+   added to `model.fga` + `fga-init.sh` JSON. Same gate as
+   `can_edit_settings` for Phase P; may tighten in a future slice
+   if owner-only invites become a paid feature.
+3. **`internal/invitation/` domain** on platform-api:
+   - `POST /internal/tenants/:id/invitations` — body
+     `{uid, email, role}`, FGA-Checked for `can_invite_members`.
+     Generates a 32-byte random token, stores sha256 hash, sends a
+     magic-link email via the existing `notification.Sender`.
+     Rejects invites where `email` is already a member of the tenant.
+     Rejects `role=owner` (owner is founder-only, can only transfer
+     via a dedicated flow that doesn't exist yet).
+   - `GET /api/v1/invitations/verify?token=...` — public. Hashes the
+     token, looks up the row, returns `{tenant_name, role, expired,
+     invited_email}` for the accept page to render without auth.
+   - `POST /api/v1/invitations/accept` — public. Body `{token, uid}`.
+     Verifies the GIP token server-side against the invited email
+     (strict email match: GIP `email_verified=true` AND
+     `email == invited_email`), writes `fga.WriteRole(uid, role, tid)`,
+     marks invitation accepted, returns
+     `{tenant_id}` so the admin BFF can auto-switch the session.
+   - `GET /internal/tenants/:id/invitations` — lists pending invites
+     for the team page.
+   - `DELETE /internal/tenants/:id/invitations/:inv_id` — revoke.
+4. **Admin `/settings/team` page**:
+   - Sub-page of Settings (sub-nav item added to AdminShell's
+     navigation array). FGA-gated by `can_view_settings`.
+   - Header "Team"
+   - Hardcoded first row: the tenant owner (from
+     `tenant.owner_email` + role=owner). Members list is scoped
+     to pending invitations for Phase P — a real "all current
+     members" list needs either an OpenFGA `ListUsers` call
+     (supported in 1.x but new) or a parallel Postgres staff
+     table, both deferred.
+   - Table of pending invitations: email, role, invited date,
+     "Revoke" button (only visible to `can_invite_members` roles).
+   - "Invite teammate" button (only visible to
+     `can_invite_members` roles) → modal with email + role
+     dropdown (admin/staff/viewer — owner excluded).
+   - Server actions `inviteTeammate({email, role})` and
+     `revokeInvitation({id})`. Both re-check role server-side.
+5. **Public `/accept-invite?token=...` page** on admin:
+   - New public prefix in admin middleware (alongside `/login`,
+     `/logout`).
+   - Server component fetches invitation via `verify` endpoint,
+     renders "You're invited to join {store_name} as {role}".
+   - Two paths to an authenticated session:
+     - **Continue with Google** via the existing Phase M gsi/client
+       helper. Popup → id_token → submit accept.
+     - **Email + password** form. Split on whether the GIP email
+       already exists:
+       - Already exists (invited user has a Mark8ly account):
+         `signInWithPassword` flow reusing the Phase M helper.
+       - New account: `signUp(email, password)` then accept.
+     The page picks the right sub-flow by calling
+     `accounts:lookup` on Identity Toolkit for the invited email.
+   - Strict email match enforced server-side in `accept` — the GIP
+     token's verified email must equal the invited email or the
+     request is rejected with "this invite was sent to X, please
+     sign in with that account".
+   - On success: accept endpoint returns the tenant_id, the admin
+     `/accept-invite/actions.ts` calls the same `/auth/switch-tenant`
+     path P.1 built, the user lands on `/dashboard` of the new
+     tenant.
+6. **Invitation email template** via `notification.Sender`. Subject:
+   "You've been invited to join {store_name} on Mark8ly". Link:
+   `https://{tenant_slug}-admin.mark8ly.com/accept-invite?token=...`.
+7. **Dev test helper** — extend the existing
+   `test/verification/latest` pattern with a similar
+   `test/invitations/latest?email=...` endpoint so the e2e suite
+   can bypass the inbox. Only mounted when `cfg.Env != "prod"`.
+8. **E2E specs**:
+   - **Invite → accept happy path**: onboard A as owner → navigate
+     to `/settings/team` → open invite modal → fill B's email +
+     role=viewer → submit → fetch token via test helper → open
+     second browser context → `/accept-invite?token=…` → choose
+     password path → sign up → land on /dashboard of A's tenant
+     with role=viewer → navigate to `/settings/general` → assert
+     the Phase O read-only banner is visible.
+   - **Multi-tenant switcher**: onboard A as owner of tenant-A →
+     onboard C as owner of tenant-C with a fresh email → A invites
+     C's email as staff on tenant-A → C accepts → C's session
+     auto-switches to tenant-A → C opens the tenant switcher →
+     switches back to tenant-C → assert /settings/general is
+     editable again (C is still owner of tenant-C).
+   - **Strict email mismatch**: invite B@example.com, B tries to
+     accept with a different Google account → expect an error
+     and no FGA tuple written.
+   - **Revoke**: A invites B, then revokes before B accepts →
+     B's accept attempt fails with "invitation_revoked".
+
+**Out of scope for Phase P** (land in later slices):
+- Member listing beyond pending invites (Phase Q or team-management
+  phase, needs OpenFGA `ListUsers` or a staff table)
+- Promote/demote UI for existing members
+- Remove member / kick out
+- Transfer ownership
+- Audit log of membership changes
+- Store-level invites (Phase R — see below)
+- Paywall on seat count
+
+**Dependencies**: Phase O ships first (done). No migration ordering
+with Phase Q — Phase P adds one table, Phase Q adds another.
+
+### Phase Q — Store model + store switcher (4–5 days)
+
+The biggest schema change since Phase D. Introduces the concept that
+a tenant can run multiple storefronts. Today a tenant IS a store:
+`tenant.slug` is the storefront URL. Phase Q separates them, backfills
+a default store per existing tenant, and introduces a second-level
+switcher in the admin.
+
+Data model:
+
+1. **New `stores` table**:
+   `id, tenant_id (FK), slug, name, currency_code, timezone,
+   country_code, logo_url, status, created_at, updated_at`.
+   Same slug rules as the current tenant slug (3-63 chars,
+   lowercase + hyphens, no edge hyphens). Unique across the whole
+   table — storefront URLs must be globally unique.
+2. **Migration moves columns off tenants**: `slug`, `currency_code`,
+   `timezone`, `country_code` move from `tenants` to `stores`. The
+   migration creates a default store per existing tenant, named
+   "Main Store", copying those fields over, then drops them from
+   `tenants`. Zero-downtime strategy: two-phase migration — Phase
+   Q.1 adds the stores table + default rows + keeps the tenant
+   columns nullable; Phase Q.2 drops the tenant columns after the
+   code migration is verified in prod. For dev, both phases run
+   together.
+3. **`tenants` keeps**: `id`, `name` (company name, e.g.
+   "Acme Retail Holdings"), `owner_user_id`, `owner_email`,
+   `status`, `created_at`, `updated_at`. Becomes thinner and more
+   meaningful — a tenant is the company, not the store.
+4. **Onboarding update**: onboarding creates tenant + one default
+   store in the same transaction. The onboarding form's "business
+   name" maps to `tenant.name` AND `store.name` (same value) and
+   the "slug" field goes to the new store row. UX unchanged.
+5. **Tenant-by-owner sign-in flow** still works because
+   `tenants.owner_user_id` stays put. The first store under a
+   newly created tenant is the user's landing store.
+
+FGA model:
+
+6. **New `store` type** in `model.fga`:
+   ```
+   type store
+     relations
+       define parent: [tenant]
+       define owner:   [user]
+       define manager: [user]
+       define staff:   [user]
+       define viewer:  [user]
+       define tenant_admin: admin from parent
+       define tenant_owner: owner from parent
+       define can_edit_store_settings:
+           owner or manager or tenant_admin or tenant_owner
+       define can_manage_catalog:
+           owner or manager or staff or tenant_admin or tenant_owner
+       define can_view_store:
+           owner or manager or staff or viewer or member from parent
+   ```
+   Tenant-level admins/owners automatically inherit store permissions
+   via `from parent`, so the common case (solo founder) needs zero
+   per-store tuple writes. The migration writes `store:<id> parent
+   tenant:<id>` for every backfilled store.
+
+Admin rewrite:
+
+7. **Session adds `current_store_id`**. auth-bff `switch-tenant`
+   clears it; new `POST /auth/switch-store {store_id}` sets it.
+   Middleware forwards both `x-session-tenant-id` and
+   `x-session-store-id` into the request headers.
+8. **`/settings/general` becomes store-scoped**. Renamed to
+   `/settings/stores/[store_id]/general`. The `[store_id]` defaults
+   to the session's `current_store_id`. Existing URL
+   `/settings/general` redirects to the current store's page.
+9. **`/settings/stores` index page** — lists all stores under the
+   current tenant, with "Add store" CTA for `can_edit_settings`
+   roles. First iteration of "create a second store".
+10. **AdminShell: two-level switcher**. Top bar gets a combined
+    "Tenant › Store" breadcrumb-style control. Clicking tenant
+    opens the tenant dropdown (from Phase P), clicking store
+    opens a store dropdown scoped to the current tenant.
+
+E2E:
+
+11. Onboarded merchant lands on their default store. Create a
+    second store. Switch between them. Edit settings on store 2,
+    switch back to store 1, assert store 1's settings weren't
+    touched.
+
+**Deliberate scope cuts**:
+- No per-store currency/country change UI in Q — it ships in Q with
+  the store settings form, same as Phase N's tenant version, but
+  still read-only (no billing/tax reshuffle on currency change).
+- No store-level invites — that's Phase R.
+- No "clone store" / "duplicate catalog" — out of scope.
+
+### Phase R — Store-level invites (1–2 days)
+
+Extends Phase P's invite infrastructure to accept an optional
+`store_id` and write store-level FGA tuples.
+
+1. **Invitation row** gains `store_id` nullable column. If set, the
+   invite grants a store-level role; if null, it grants a
+   tenant-level role like Phase P.
+2. **Invite modal** on `/settings/team` adds a "scope" toggle:
+   "Tenant-wide" (Phase P behaviour) or "Specific store" (new —
+   shows a store picker).
+3. **Accept endpoint** writes to `fga.WriteRole` with either
+   `tenant:<id>` or `store:<id>` as the object based on the
+   invitation row.
+4. **`/settings/team` grows a "Store-level teammates" section**
+   grouped by store.
+5. E2E: tenant-level admin invites a staff member to store 2 only;
+   staff member accepts; asserts they see store 2 but NOT store 1
+   in their store switcher.
+
+**Dependencies**: Phase Q must land first.
+
+### Phase S+ — Still TBD
+
+Unchanged from before, just pushed back:
 
 - **Products service + admin products UI** — first real new backend
-  service. Domain CRUD, image URLs, single stock count. Pairs with
-  the admin products page port. ~3–5 days.
-- **Orders service + dashboard metrics** — read-only orders list, real
-  metric tiles on the dashboard. Pairs with the admin orders page
-  port. ~2–3 days.
-- **Storefront** — separate slice after admin v0.1 → v0.2 lands.
-  Customer-facing site. Bigger than admin because it's its own
-  app + a different audience.
-- **Production deploy** — Terraform / Cloudflare Worker / Cloud SQL /
-  GKE. Probably its own multi-day slice once admin v0.1 is in
-  customers' hands.
-- **Data migration from legacy** — real tenants, real users, real
-  orders. Snapshot strategy + cutover plan.
+  service. Pairs with products page port. ~3–5 days.
+- **Marketplace / vendors** — when products exist, add a `vendor`
+  type under `store` with the same parent-inheritance pattern.
+  Products belong to vendors, vendors belong to stores, stores
+  belong to tenants. Founder's store is vendor 0 / default.
+- **Orders service + dashboard metrics** — ~2–3 days.
+- **Storefront** — separate slice, customer-facing site.
+- **Production deploy** — Terraform / Cloudflare Worker / Cloud SQL
+  / GKE. Multi-day.
+- **Data migration from legacy** — snapshot + cutover.
 
 The guiding principle is unchanged from the original kill-list: pick
 the smallest useful slice, ship it, re-evaluate. Don't bulk-port

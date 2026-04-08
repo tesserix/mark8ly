@@ -49,6 +49,15 @@ func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 		t.GET("/by-owner", h.getTenantByOwner)
 	}
 
+	// Phase P multi-tenant membership. Lives under /api/v1/users
+	// rather than /tenants because the resource is "tenants this
+	// user belongs to", not "a tenant". The admin BFF calls this
+	// with the uid from the session cookie.
+	u := public.Group("/users")
+	{
+		u.GET("/me/tenants", h.listMyTenants)
+	}
+
 	int := internal.Group("/tenants")
 	{
 		int.GET("/:id", h.getTenant)
@@ -202,6 +211,26 @@ func (h *Handler) getTenantByOwner(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": t})
+}
+
+// listMyTenants serves GET /api/v1/users/me/tenants?uid=...
+//
+// Phase P: returns every tenant the user has any role on. Used by the
+// admin tenant switcher and the multi-tenant sign-in flow. Public
+// route — the admin BFF is the only caller today and forwards the
+// uid from the validated session cookie.
+//
+// Empty uid returns 400. Empty result set returns an empty list, not
+// a 404 — callers differentiate "no such user" from "user with zero
+// tenants" by looking at the `data` array length.
+func (h *Handler) listMyTenants(c *gin.Context) {
+	uid := c.Query("uid")
+	memberships, err := h.svc.ListMemberTenants(c.Request.Context(), uid)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": memberships})
 }
 
 func (h *Handler) getTenant(c *gin.Context) {

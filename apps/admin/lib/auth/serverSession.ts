@@ -2,6 +2,8 @@ import { headers } from "next/headers";
 
 import {
   fetchTenant,
+  listMemberTenants,
+  type Membership,
   type Tenant,
   type TenantRole,
 } from "@/lib/api/platform-api";
@@ -29,6 +31,10 @@ export interface ServerSessionContext {
   tenant: Tenant | null;
   tenantName: string;
   role: TenantRole;
+  // Phase P: every tenant the user belongs to. An empty array or
+  // one-element array means the switcher should stay hidden in the
+  // shell. Fetched on every page render — there's no cache yet.
+  memberships: Membership[];
 }
 
 // Default role when the header is somehow missing (middleware regression,
@@ -50,10 +56,27 @@ export async function getServerSessionContext(): Promise<ServerSessionContext> {
   const email = h.get("x-session-email") ?? "";
   const tenantId = h.get("x-session-tenant-id") ?? "";
   const role = normalizeRole(h.get("x-session-role"));
-  const tenant = await fetchTenant(tenantId);
+
+  // Fetch tenant + memberships in parallel. Memberships power the
+  // top-bar tenant switcher; tenant is the current tenant's row for
+  // the chrome's store label. Both calls tolerate failure — empty
+  // results render a degraded shell rather than crash.
+  const [tenant, memberships] = await Promise.all([
+    fetchTenant(tenantId),
+    userId ? listMemberTenants(userId).catch(() => []) : Promise.resolve([]),
+  ]);
+
   const tenantName = tenant?.name ?? "your store";
 
-  return { userId, email, tenantId, tenant, tenantName, role };
+  return {
+    userId,
+    email,
+    tenantId,
+    tenant,
+    tenantName,
+    role,
+    memberships,
+  };
 }
 
 // ─── Permission helpers ────────────────────────────────────────────
@@ -66,6 +89,13 @@ export async function getServerSessionContext(): Promise<ServerSessionContext> {
 // UX, not security.
 
 export function canEditSettings(role: TenantRole): boolean {
+  return role === "owner" || role === "admin";
+}
+
+// Phase P: mirrors the FGA can_invite_members permission. Same
+// gate as can_edit_settings for now; may tighten to owner-only if
+// a "seat count" paid feature ever lands.
+export function canInviteMembers(role: TenantRole): boolean {
   return role === "owner" || role === "admin";
 }
 

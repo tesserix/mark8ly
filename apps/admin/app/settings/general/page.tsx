@@ -19,11 +19,18 @@ import {
  * picker to be usable with ~400 entries; left out of v1.
  */
 export default async function GeneralSettingsPage() {
-  const { tenantName, email, tenant, role } = await getServerSessionContext();
+  const { tenantName, email, tenant, role, memberships, tenantId } =
+    await getServerSessionContext();
   const editable = canEditSettings(role);
 
   return (
-    <AdminShell tenantName={tenantName} userEmail={email} role={role}>
+    <AdminShell
+      tenantName={tenantName}
+      userEmail={email}
+      role={role}
+      memberships={memberships}
+      currentTenantId={tenantId}
+    >
       <div className="mx-auto w-full max-w-5xl space-y-6">
         <header className="admin-surface rounded-[2rem] px-6 py-7 sm:px-8">
           <p className="admin-eyebrow">Store setup</p>

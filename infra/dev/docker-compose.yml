@@ -123,6 +123,11 @@ services:
       HTTP_PORT: "8086"
       DATABASE_URL: postgres://dev:dev@postgres:5432/platform_api?sslmode=disable
       FGA_API_URL: http://openfga:8080
+      # Phase P: accept-invite links in invitation emails. Host-side
+      # admin dev server — container-internal defaults don't resolve
+      # for the user clicking the link in their mail client.
+      ADMIN_BASE_URL_TEMPLATE: http://localhost:4202
+      STOREFRONT_BASE_URL_TEMPLATE: http://localhost:4203
     depends_on:
       platform-api-migrate:
         condition: service_completed_successfully

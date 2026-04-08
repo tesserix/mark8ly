@@ -103,7 +103,7 @@ func main() {
 	autologinHandler := autologin.NewHandler(autologinSvc)
 
 	// ─── Session introspection + logout ────────────────────────────────
-	sessionHandler := session.NewHandler(sessions)
+	sessionHandler := session.NewHandler(sessions, fgaClient)
 
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)

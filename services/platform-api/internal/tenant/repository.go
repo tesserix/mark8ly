@@ -36,6 +36,12 @@ type Repository interface {
 	// rest. The caller is responsible for whitelisting which columns are
 	// allowed — the repo trusts its input.
 	UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error)
+	// ListByIDs returns tenant rows for each id in the given slice, in
+	// arbitrary order, skipping any id that doesn't resolve. Used by
+	// Phase P multi-tenant membership lookups: FGA returns the ids via
+	// ListObjects, then the tenant handler enriches them with
+	// name/slug/status from Postgres in a single query.
+	ListByIDs(ctx context.Context, ids []string) ([]Tenant, error)
 }
 
 // gormRepository is the GORM-backed implementation.
@@ -94,6 +100,17 @@ func (r *gormRepository) GetByOwnerUserID(ctx context.Context, uid string) (*Ten
 		return nil, fmt.Errorf("tenant: get by owner uid %q: %w", uid, err)
 	}
 	return &t, nil
+}
+
+func (r *gormRepository) ListByIDs(ctx context.Context, ids []string) ([]Tenant, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var rows []Tenant
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("tenant: list by ids: %w", err)
+	}
+	return rows, nil
 }
 
 func (r *gormRepository) UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error) {

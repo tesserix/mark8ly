@@ -44,7 +44,7 @@ test("magic link works in a fresh browser context (cross-device)", async ({
     await currencyTrigger.click();
     await aPage.getByRole("option", { name: /usd/i }).first().click();
   }
-  await aPage.getByRole("button", { name: /get my store ready/i }).click();
+  await aPage.getByRole("button", { name: /send verification link/i }).click();
   await expect(aPage).toHaveURL(/\/onboarding\/check-inbox/, {
     timeout: 10_000,
   });

@@ -22,13 +22,13 @@ test("golden path: landing → form → magic link → welcome", async ({
   // 1. Landing page renders and the primary CTA goes to /onboarding.
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: /your online store/i }),
+    page.getByRole("heading", { name: /a storefront worth opening/i }),
   ).toBeVisible();
 
   // 2. Onboarding form.
   await page.goto("/onboarding");
   await expect(
-    page.getByRole("heading", { name: /get your store live|let.s get your store live/i }),
+    page.getByRole("heading", { name: /two minutes to a storefront/i }),
   ).toBeVisible();
 
   await page.getByLabel(/email address/i).fill(email);
@@ -55,7 +55,7 @@ test("golden path: landing → form → magic link → welcome", async ({
   }
 
   // 3. Submit.
-  await page.getByRole("button", { name: /get my store ready/i }).click();
+  await page.getByRole("button", { name: /send verification link/i }).click();
 
   // 4. Land on the check-inbox screen.
   await expect(page).toHaveURL(/\/onboarding\/check-inbox/, { timeout: 10_000 });

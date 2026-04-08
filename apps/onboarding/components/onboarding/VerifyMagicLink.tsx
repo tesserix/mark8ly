@@ -61,8 +61,14 @@ export function VerifyMagicLink() {
   if (error) {
     return (
       <div className="border-t border-border-subtle pt-10">
-        <p className="eyebrow mb-3">We couldn&rsquo;t verify the link</p>
-        <p className="text-foreground-secondary leading-relaxed" aria-live="polite">
+        <p className="eyebrow mb-3">Something went wrong</p>
+        <h2 className="font-serif text-2xl font-medium text-foreground">
+          We couldn&rsquo;t verify your link
+        </h2>
+        <p
+          className="mt-4 text-foreground-secondary leading-relaxed"
+          aria-live="polite"
+        >
           {error}
         </p>
         <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">

@@ -1,6 +1,10 @@
 import { headers } from "next/headers";
 
-import { fetchTenant, type Tenant } from "@/lib/api/platform-api";
+import {
+  fetchTenant,
+  type Tenant,
+  type TenantRole,
+} from "@/lib/api/platform-api";
 
 /**
  * Helper used by every authenticated server component that needs to
@@ -12,6 +16,11 @@ import { fetchTenant, type Tenant } from "@/lib/api/platform-api";
  * are guaranteed to be present by the time this runs. `fetchTenant`
  * may still return null if platform-api is unreachable — callers
  * should render gracefully in that case rather than crash.
+ *
+ * Phase O: `role` is populated from the `x-session-role` header that
+ * middleware fetched from platform-api. Middleware fails the request
+ * out to /login if the user has no role, so the role field is always
+ * one of the four role strings here — never null.
  */
 export interface ServerSessionContext {
   userId: string;
@@ -19,6 +28,20 @@ export interface ServerSessionContext {
   tenantId: string;
   tenant: Tenant | null;
   tenantName: string;
+  role: TenantRole;
+}
+
+// Default role when the header is somehow missing (middleware regression,
+// direct page hit without going through middleware in tests, etc).
+// Choose the LEAST privileged role so UI accidentally rendered outside
+// the middleware path doesn't silently reveal admin-only actions.
+const DEFAULT_ROLE: TenantRole = "viewer";
+
+function normalizeRole(raw: string | null): TenantRole {
+  if (raw === "owner" || raw === "admin" || raw === "staff" || raw === "viewer") {
+    return raw;
+  }
+  return DEFAULT_ROLE;
 }
 
 export async function getServerSessionContext(): Promise<ServerSessionContext> {
@@ -26,8 +49,31 @@ export async function getServerSessionContext(): Promise<ServerSessionContext> {
   const userId = h.get("x-session-user-id") ?? "";
   const email = h.get("x-session-email") ?? "";
   const tenantId = h.get("x-session-tenant-id") ?? "";
+  const role = normalizeRole(h.get("x-session-role"));
   const tenant = await fetchTenant(tenantId);
   const tenantName = tenant?.name ?? "your store";
 
-  return { userId, email, tenantId, tenant, tenantName };
+  return { userId, email, tenantId, tenant, tenantName, role };
+}
+
+// ─── Permission helpers ────────────────────────────────────────────
+//
+// Single source of truth for client-visible "can this role do X?"
+// checks. These MUST stay in lockstep with the DSL in
+// infra/openfga/model.fga — UI gating is advisory; the backend
+// PATCH /internal/tenants/:id runs the real FGA check. If you find
+// yourself tempted to skip the backend check, don't: nav hiding is
+// UX, not security.
+
+export function canEditSettings(role: TenantRole): boolean {
+  return role === "owner" || role === "admin";
+}
+
+export function canViewSettings(role: TenantRole): boolean {
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "staff" ||
+    role === "viewer"
+  );
 }

@@ -6,7 +6,7 @@ export default function CheckInboxPage() {
     <PostSubmitShell
       eyebrow="Email confirmation"
       title="Your store is one click away."
-      description="We’ve sent the verification link. Keep the flow feeling calm and premium while the customer completes the final step."
+      description="We sent your verification link. Open it on this device and we’ll carry you straight into the last setup step."
     >
       <CheckInbox />
     </PostSubmitShell>

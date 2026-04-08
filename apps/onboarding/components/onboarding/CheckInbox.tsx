@@ -91,6 +91,15 @@ export function CheckInbox() {
             {message}
           </p>
         )}
+
+        <div className="mt-6 grid gap-3 text-sm text-foreground-secondary sm:grid-cols-2">
+          <div className="rounded-2xl border border-warm-200/80 bg-white/70 p-4">
+            Check spam or promotions if the email doesn&apos;t appear right away.
+          </div>
+          <div className="rounded-2xl border border-warm-200/80 bg-white/70 p-4">
+            Use the same browser and device for the smoothest handoff into setup.
+          </div>
+        </div>
       </div>
     </div>
   );

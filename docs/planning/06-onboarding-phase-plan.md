@@ -519,49 +519,121 @@ Deliberate scope cuts from the original spec:
 - **No generic settings layout with a side sub-nav.** Single page
   flat until a second settings page justifies the refactor.
 
-### Phase O — Roles + RBAC (1–2 days)
+### Phase O — Roles + RBAC *(shipped)*
 
-Extends the OpenFGA model so tenants can have more than one human,
+Extended the OpenFGA model so tenants can have more than one human
 and so the admin app can hide/deny things based on role. Unblocks
-any future "invite teammate" flow.
+the future "invite teammate" flow and retrofits a real FGA
+`Check()` onto Phase N's PATCH.
 
-Scope:
+What landed:
 
-1. **OpenFGA model update** — add `admin`, `staff`, `viewer`
-   relations on the `tenant` type alongside existing `owner`.
-   Define permission → relation mappings (e.g. `can_edit_settings`
-   = `owner` or `admin`; `can_view_settings` = any member).
-   Migration script or doc for applying the new model to the
-   platform store.
-2. **Write `owner` tuple on onboarding completion** — currently
-   missing. Hook into `onboarding.Complete()` after the tenant is
-   created to write `user:<uid>` `owner` `tenant:<tid>` into the
-   platform store. Idempotent (safe to re-run).
-3. **Role-aware admin middleware** — extend `apps/admin/middleware.ts`
-   to fetch the caller's role(s) for the workspace tenant via a new
-   lightweight platform-api endpoint
-   `GET /api/v1/tenants/:id/me` that returns
-   `{ role: "owner" | "admin" | "staff" | "viewer" }`. Cache in the
-   session cookie so we don't hit FGA on every nav.
-4. **Server-side permission checks** — tenant PATCH from Phase N
-   now requires `can_edit_settings`. Add an `authz` guard in the
-   handler using go-shared's FGA middleware. Phase N's owner-only
-   implicit check is replaced by a real FGA `Check()`.
-5. **Nav hiding** — admin sidebar reads role from session and
-   hides items the user can't access. Hidden ≠ secure: server still
-   enforces. This is purely UX.
-6. **E2E** — spec that creates a tenant, asserts owner can edit
-   settings; stub a second-user "viewer" case via a test helper
-   that writes a tuple directly (no invite flow yet).
+1. **OpenFGA DSL committed to the repo.** `infra/openfga/model.fga`
+   now has four directly-assignable roles (`owner`, `admin`,
+   `staff`, `viewer`) and three derived permissions:
+   - `member` = `owner ∪ admin ∪ staff ∪ viewer`
+   - `can_view_settings` = same as `member`
+   - `can_edit_settings` = `owner ∪ admin`
+   The `infra/dev/seed/fga-init.sh` hand-encoded JSON was updated
+   to match — the DSL and JSON are now the two-file source of
+   truth. Re-running `docker compose up openfga-seed` writes a new
+   authorization model version; OpenFGA supports model versioning,
+   so existing tuples keep working and new Check/Write calls use
+   the latest version.
+2. **`member` is now derived, not directly-assignable.** The old
+   FGA handler wrote both an `owner` AND a bare `member` tuple on
+   onboarding completion. Under the new model `member` is a union,
+   so writing a bare `member` tuple is invalid. The handler
+   (`services/platform-api/internal/onboarding/fga_handler.go`)
+   now only calls `WriteOwnership` — the derived `member` relation
+   resolves transitively to the owner tuple, so auth-bff's
+   `CheckMembership` retry loop still works without any auth-bff
+   change.
+3. **`authz.Client` expanded.** Added `WriteRole(role)`, generic
+   `Check(relation)`, and `GetRole()` (iterates the four direct
+   role relations in priority order and returns the highest).
+   `WriteMembership` removed — it was only called by the onboarding
+   FGA handler, which no longer needs it. `CheckMembership` is
+   retained as a convenience wrapper over `Check(ctx, uid,
+   "member", tid)` because auth-bff autologin uses the same
+   semantic name. New `FakeClient` in `fake.go` keeps the derivation
+   rules hand-maintained (six unit tests in `fake_test.go` lock
+   down the DSL ↔ fake parity).
+4. **`GET /internal/tenants/:id/me?uid=…`** — new endpoint on the
+   tenant handler. Admin BFF calls this once per authenticated
+   request to discover the caller's role. Returns
+   `{ data: { role: "owner"|"admin"|"staff"|"viewer" } }` or
+   `404 no_role` if the user has no role at all. Degrades to
+   `role=owner` if the fga client is nil (dev without OpenFGA)
+   so local iteration isn't blocked.
+5. **`PATCH /internal/tenants/:id` retrofitted.** The handler now
+   runs `fga.Check(uid, "can_edit_settings", tenantID)` before
+   calling `svc.Update`. The `uid` is passed in the request body
+   (not a header) because Gin/middleware edge cases on internal
+   routes with empty header values were causing silent auth
+   bypasses in early drafts. Returns `403 forbidden` on denied.
+   Same nil-fga dev fallback as `/me`.
+6. **Admin middleware forwards the role.** `apps/admin/middleware.ts`
+   fetches the role from platform-api alongside the auth-bff
+   session validation and forwards it as an `x-session-role`
+   request header. Fails closed — if the user has a valid session
+   but no role (deleted tuple, FGA outage), the request redirects
+   to `/login` rather than rendering an admin page with no
+   authorization context.
+7. **`getServerSessionContext()` surfaces the role**, with
+   `canEditSettings(role)` / `canViewSettings(role)` helpers that
+   mirror the DSL. UI gating ONLY — server action re-checks.
+8. **Settings page + form honour the role.** Non-editors see a
+   read-only amber banner in the header (`Read-only: your role
+   (viewer) can view settings but cannot edit them`), the name
+   input is disabled, and the Save / Reset buttons are removed
+   entirely so no amount of React DevTools fiddling re-enables
+   the submit path. The server action re-runs `canEditSettings`
+   before calling platform-api — fails fast with a clean 403
+   message instead of a network error.
+9. **AdminShell role badge.** Top bar shows a small uppercase
+   pill with the current role (`owner` / `admin` / `staff` /
+   `viewer`). Marked with `data-testid="role-badge"` for the
+   e2e suite. The shell accepts `role` as an optional prop so
+   stub pages that haven't been updated yet still compile.
+10. **E2E coverage.**
+    - Phase N's `settings-general.spec.ts` still green under
+      Phase O wiring: the onboarded owner can edit the name,
+      save, reload, and the PATCH now goes through the FGA
+      Check end-to-end.
+    - New `settings-role-gate.spec.ts`: onboards a merchant,
+      grabs their uid from auth-bff `/auth/session`, writes
+      an atomic `{delete owner, write viewer}` tuple pair
+      against the live OpenFGA store, reloads `/settings/general`
+      and asserts the role badge says "viewer", the read-only
+      banner is visible, the name input is disabled, and the
+      Save / Reset buttons have count 0.
+    - New helper functions: `fetchPlatformStoreId` and
+      `writeFgaTuples` in `apps/admin/tests/e2e/helpers.ts` —
+      the minimum glue needed for future phase tests to seed
+      FGA state without an invite-teammate UI.
+    - Full admin suite: **6/6 passing**.
 
-Out of scope: invite-teammate UI, email invitations, role
-management UI (promoting staff → admin), audit log of role
-changes. Those land with a dedicated "team management" phase
-later.
+Deliberate scope cuts:
 
-Dependencies: Phase N ships first so there is at least one
-protected write path to check the role against. Phase O then
-retrofits real FGA enforcement onto Phase N's endpoint.
+- **No invite-teammate UI.** The DSL supports admin/staff/viewer
+  tuples and the write path (`WriteRole`) is there, but there's
+  no page to invite a second user yet. When that lands it wires
+  into the existing infrastructure with zero schema changes.
+- **Role is not cached in the session cookie.** The plan called
+  this out as a possibility; we chose to re-fetch from
+  platform-api on every request instead. Avoids coupling
+  auth-bff redeploys to model changes. ~10ms added latency per
+  authenticated nav; move to an LRU or cookie cache when it
+  shows up as a real problem.
+- **Nav sub-items are not role-filtered.** All four roles can
+  `can_view_settings`, so hiding the Settings section would be
+  wrong. Future role-gated sub-nav (e.g. Payments for admin only)
+  lands alongside the backing feature phase.
+- **`CheckMembership` retained as a convenience method** — technically
+  `Check(..., "member", ...)` would have been enough, but auth-bff
+  and a bunch of comments use the "membership" name. Less churn
+  to keep the wrapper.
 
 **Legacy reference (`../mark8ly_backup`):** the old stack never
 committed an FGA DSL file — the authorization model lived only

@@ -29,10 +29,10 @@ export function UserMenu({ email }: UserMenuProps) {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-3 rounded-full border border-border bg-background px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:border-border-strong hover:bg-accent hover:text-foreground"
+          className="inline-flex items-center gap-3 rounded-full border border-border/80 bg-white/82 px-2 py-1.5 text-sm text-muted-foreground shadow-[0_12px_26px_rgba(76,52,24,0.08)] transition-[background-color,color,border-color,box-shadow] hover:border-border hover:bg-white hover:text-foreground hover:shadow-[0_14px_30px_rgba(76,52,24,0.1)]"
           aria-label="Account menu"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(34,28,23,0.16)]">
             {initial}
           </span>
           <span className="hidden max-w-[12rem] truncate pr-2 sm:inline">
@@ -40,7 +40,7 @@ export function UserMenu({ email }: UserMenuProps) {
           </span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-56 rounded-2xl border-border/80 bg-[rgba(255,252,248,0.98)] shadow-[0_24px_60px_rgba(76,52,24,0.14)]">
         <DropdownMenuLabel className="truncate">
           {email ?? "Not signed in"}
         </DropdownMenuLabel>

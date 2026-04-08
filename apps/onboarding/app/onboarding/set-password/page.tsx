@@ -9,6 +9,7 @@
 import { redirect } from "next/navigation";
 
 import { onboarding } from "@/lib/api/platform-api";
+import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 import { SetPasswordForm } from "@/components/onboarding/SetPasswordForm";
 
 export const metadata = { title: "Finish setup — Mark8ly" };
@@ -39,12 +40,16 @@ export default async function SetPasswordPage({ searchParams }: PageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-warm-50 via-white to-warm-100 px-4 py-16">
+    <PostSubmitShell
+      eyebrow="Final step"
+      title="Finish creating your account."
+      description="Your email is verified. Add a password or continue with Google so we can open your admin dashboard."
+    >
       <SetPasswordForm
         sessionId={sessionId}
         email={email}
         businessName={businessName}
       />
-    </main>
+    </PostSubmitShell>
   );
 }

@@ -69,12 +69,12 @@ export function PostSubmitShell({
 
               <div className="mt-8 rounded-[1.75rem] border border-warm-200/90 bg-foreground px-6 py-6 text-warm-100 shadow-[0_18px_60px_rgba(31,30,28,0.22)]">
                 <p className="text-xs uppercase tracking-[0.16em] text-warm-400">
-                  Why this matters
+                  What happens next
                 </p>
                 <p className="mt-4 text-sm leading-6 text-warm-100/90">
-                  Premium onboarding keeps momentum all the way through the
-                  confirmation steps. These screens should feel like part of the
-                  same guided experience, not a temporary holding state.
+                  You&apos;re in the final stretch. Follow the next step on this
+                  screen and we&apos;ll carry you into your store setup without
+                  making you restart anything.
                 </p>
               </div>
             </div>

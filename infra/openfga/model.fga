@@ -1,9 +1,38 @@
 model
   schema 1.1
 
+# Phase O — Roles + RBAC.
+#
+# Four directly-assignable roles on a tenant, ordered roughly by
+# authority: owner > admin > staff > viewer. Tuples are written from
+# platform-api:
+#   - owner is written by the onboarding outbox drainer on Complete()
+#   - admin/staff/viewer are reserved for the future invite-teammate
+#     flow. Phase O only ships owner writing end-to-end; the other
+#     three relations exist so Check() calls against derived permissions
+#     work without a second model migration when the invite UI lands.
+#
+# Derived permissions:
+#   - member              — anyone with any role on the tenant. Used by
+#                           auth-bff autologin to gate session minting.
+#   - can_view_settings   — anyone with any role.
+#   - can_edit_settings   — owner or admin. Retrofitted onto Phase N's
+#                           PATCH /internal/tenants/:id.
+#
+# Adding a new permission is purely additive: add a line here, update
+# the seed script JSON, deploy. No handler changes needed unless the
+# handler consumes the new permission directly.
+
 type user
 
 type tenant
   relations
-    define member: [user]
-    define owner: [user]
+    define owner:  [user]
+    define admin:  [user]
+    define staff:  [user]
+    define viewer: [user]
+
+    define member: owner or admin or staff or viewer
+
+    define can_view_settings: owner or admin or staff or viewer
+    define can_edit_settings: owner or admin

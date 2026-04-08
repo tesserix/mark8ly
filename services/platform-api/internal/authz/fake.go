@@ -7,26 +7,28 @@ import (
 
 // FakeClient is an in-memory Client for unit tests.
 //
-// It records every Write call so tests can assert "this user-tenant pair
-// was written" without standing up a real OpenFGA. Returns canned errors
-// from FailNextWrite to simulate transient FGA failures (used by the
-// outbox retry tests).
+// Phase O: records one tuple per role per (user, tenant) pair. The
+// derived `member`, `can_view_settings`, and `can_edit_settings`
+// relations are resolved in Check() by walking the same role map the
+// DSL unions over. This keeps the fake in lockstep with the real
+// OpenFGA model without parsing DSL.
 type FakeClient struct {
-	mu              sync.Mutex
-	memberships     map[string]bool // key = userID + "|" + tenantID
-	ownerships      map[string]bool
-	failNextWrites  int
-	failNextChecks  int
-	writeCallCount  int
-	checkCallCount  int
+	mu sync.Mutex
+	// roles[role][user|tenant] = true
+	roles          map[Role]map[string]bool
+	failNextWrites int
+	failNextChecks int
+	writeCallCount int
+	checkCallCount int
 }
 
 // NewFake constructs an empty FakeClient.
 func NewFake() *FakeClient {
-	return &FakeClient{
-		memberships: make(map[string]bool),
-		ownerships:  make(map[string]bool),
+	roles := make(map[Role]map[string]bool, len(allRoles))
+	for _, r := range allRoles {
+		roles[r] = make(map[string]bool)
 	}
+	return &FakeClient{roles: roles}
 }
 
 // FailNextWrites makes the next n Write{Membership,Ownership} calls return
@@ -58,34 +60,46 @@ func (f *FakeClient) CheckCallCount() int {
 	return f.checkCallCount
 }
 
-// HasMembership returns whether the in-memory store records a membership.
-// Used by tests to assert side effects.
+// HasMembership returns true if the user has any role on the tenant.
+// Kept for the existing onboarding integration test which asserts the
+// owner write produced membership. Under the new DSL, any role tuple
+// implies membership via the derived union.
 func (f *FakeClient) HasMembership(userID, tenantID string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.memberships[userID+"|"+tenantID]
+	return f.hasAnyRoleLocked(userID, tenantID)
 }
 
 // HasOwnership returns whether the in-memory store records ownership.
 func (f *FakeClient) HasOwnership(userID, tenantID string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.ownerships[userID+"|"+tenantID]
+	return f.roles[RoleOwner][userID+"|"+tenantID]
 }
 
-func (f *FakeClient) WriteMembership(ctx context.Context, userID, tenantID string) error {
+// HasRole returns whether a specific role tuple has been written.
+func (f *FakeClient) HasRole(userID string, role Role, tenantID string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.writeCallCount++
-	if f.failNextWrites > 0 {
-		f.failNextWrites--
-		return fakeError("simulated FGA write failure")
+	m, ok := f.roles[role]
+	if !ok {
+		return false
 	}
-	f.memberships[userID+"|"+tenantID] = true
-	return nil
+	return m[userID+"|"+tenantID]
 }
 
 func (f *FakeClient) WriteOwnership(ctx context.Context, userID, tenantID string) error {
+	return f.writeRole(userID, RoleOwner, tenantID)
+}
+
+func (f *FakeClient) WriteRole(ctx context.Context, userID string, role Role, tenantID string) error {
+	if _, ok := rolePriority[role]; !ok {
+		return fakeError("unknown role")
+	}
+	return f.writeRole(userID, role, tenantID)
+}
+
+func (f *FakeClient) writeRole(userID string, role Role, tenantID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.writeCallCount++
@@ -93,11 +107,24 @@ func (f *FakeClient) WriteOwnership(ctx context.Context, userID, tenantID string
 		f.failNextWrites--
 		return fakeError("simulated FGA write failure")
 	}
-	f.ownerships[userID+"|"+tenantID] = true
+	f.roles[role][userID+"|"+tenantID] = true
 	return nil
 }
 
 func (f *FakeClient) CheckMembership(ctx context.Context, userID, tenantID string) (bool, error) {
+	return f.Check(ctx, userID, "member", tenantID)
+}
+
+// Check resolves the same derived-union semantics the DSL defines:
+//
+//   - member / can_view_settings → any role
+//   - can_edit_settings          → owner or admin
+//   - owner / admin / staff / viewer → direct tuple match
+//
+// Keeping the fake's derivation rules hand-maintained is simpler than
+// parsing the DSL, and the test suite in authz_test.go guards the
+// fake and the real client against drift.
+func (f *FakeClient) Check(ctx context.Context, userID, relation, tenantID string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.checkCallCount++
@@ -105,7 +132,44 @@ func (f *FakeClient) CheckMembership(ctx context.Context, userID, tenantID strin
 		f.failNextChecks--
 		return false, fakeError("simulated FGA check failure")
 	}
-	return f.memberships[userID+"|"+tenantID], nil
+	key := userID + "|" + tenantID
+	switch relation {
+	case "member", "can_view_settings":
+		return f.hasAnyRoleLocked(userID, tenantID), nil
+	case "can_edit_settings":
+		return f.roles[RoleOwner][key] || f.roles[RoleAdmin][key], nil
+	case string(RoleOwner), string(RoleAdmin), string(RoleStaff), string(RoleViewer):
+		return f.roles[Role(relation)][key], nil
+	default:
+		return false, nil
+	}
+}
+
+func (f *FakeClient) GetRole(ctx context.Context, userID, tenantID string) (Role, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.checkCallCount++
+	if f.failNextChecks > 0 {
+		f.failNextChecks--
+		return "", fakeError("simulated FGA check failure")
+	}
+	key := userID + "|" + tenantID
+	for _, r := range allRoles {
+		if f.roles[r][key] {
+			return r, nil
+		}
+	}
+	return "", nil
+}
+
+func (f *FakeClient) hasAnyRoleLocked(userID, tenantID string) bool {
+	key := userID + "|" + tenantID
+	for _, r := range allRoles {
+		if f.roles[r][key] {
+			return true
+		}
+	}
+	return false
 }
 
 // fakeError is a sentinel error type for FakeClient failure injection.

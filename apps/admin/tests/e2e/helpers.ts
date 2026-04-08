@@ -1,6 +1,71 @@
 import { expect, type APIRequestContext } from "@playwright/test";
 
 /**
+ * Role tuple helper used by Phase O specs. There is no invite-teammate
+ * UI yet, so specs that need a non-owner role have to reach into the
+ * OpenFGA store directly. Takes the store id from `fetchPlatformStoreId`.
+ *
+ * Writes and deletes are batched so the caller can atomically demote
+ * an owner to a viewer (delete owner + write viewer in one call).
+ */
+export type TenantRole = "owner" | "admin" | "staff" | "viewer";
+
+interface TupleOp {
+  user: string; // e.g. "user:<gip-uid>"
+  relation: TenantRole;
+  object: string; // e.g. "tenant:<uuid>"
+}
+
+export async function fetchPlatformStoreId(
+  request: APIRequestContext,
+): Promise<string> {
+  const res = await request.get(`${OPENFGA_URL}/stores`);
+  if (!res.ok()) throw new Error(`openfga list stores: ${res.status()}`);
+  const body = (await res.json()) as {
+    stores: Array<{ id: string; name: string }>;
+  };
+  const store = body.stores.find((s) => s.name === "mark8ly-platform");
+  if (!store) throw new Error("mark8ly-platform store not found in openfga");
+  return store.id;
+}
+
+export async function writeFgaTuples(
+  request: APIRequestContext,
+  storeId: string,
+  {
+    writes = [],
+    deletes = [],
+  }: { writes?: TupleOp[]; deletes?: TupleOp[] },
+): Promise<void> {
+  const body: Record<string, unknown> = {};
+  if (writes.length > 0) {
+    body.writes = {
+      tuple_keys: writes.map((w) => ({
+        user: w.user,
+        relation: w.relation,
+        object: w.object,
+      })),
+    };
+  }
+  if (deletes.length > 0) {
+    body.deletes = {
+      tuple_keys: deletes.map((d) => ({
+        user: d.user,
+        relation: d.relation,
+        object: d.object,
+      })),
+    };
+  }
+  const res = await request.post(`${OPENFGA_URL}/stores/${storeId}/write`, {
+    data: body,
+  });
+  if (!res.ok()) {
+    const text = await res.text();
+    throw new Error(`openfga write: ${res.status()} ${text}`);
+  }
+}
+
+/**
  * Cross-app helpers for the admin e2e suite.
  *
  * The admin tests reuse the same test-helper endpoint on platform-api
@@ -13,6 +78,10 @@ export const ONBOARDING_URL =
   process.env.ONBOARDING_URL ?? "http://localhost:4201";
 export const ADMIN_URL = process.env.ADMIN_URL ?? "http://localhost:4202";
 export const API_URL = process.env.API_URL ?? "http://localhost:8086";
+// OpenFGA HTTP API. Used by Phase O specs to write role tuples
+// directly — there's no "invite teammate" UI yet, so the tests seed
+// the tuples the UI would create.
+export const OPENFGA_URL = process.env.OPENFGA_URL ?? "http://localhost:8089";
 
 /**
  * Build a unique email + slug + business name per test run so Postgres

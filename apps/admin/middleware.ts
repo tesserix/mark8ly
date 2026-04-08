@@ -24,6 +24,8 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "m8_session";
 const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
+const PLATFORM_API_URL =
+  process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 
 // Routes that should never be gated — login redirect targets, static
 // assets, and anything that must render without a session.
@@ -71,6 +73,35 @@ export async function middleware(req: NextRequest) {
     return redirectToLogin(req);
   }
 
+  // Phase O — fetch the caller's role on the workspace tenant. One
+  // extra round-trip to platform-api per authenticated request. We
+  // don't cache in the cookie (yet) because that would require
+  // auth-bff to embed role in session mint, coupling two services
+  // on the same redeploy. A dedicated edge cache (Redis or even an
+  // in-memory LRU) lands when latency warrants it.
+  let role: "owner" | "admin" | "staff" | "viewer" | null = null;
+  try {
+    const roleRes = await fetch(
+      `${PLATFORM_API_URL}/internal/tenants/${session.tenant_id}/me?uid=${encodeURIComponent(session.user_id)}`,
+      { cache: "no-store" },
+    );
+    if (roleRes.ok) {
+      const body = (await roleRes.json()) as {
+        data: { role: "owner" | "admin" | "staff" | "viewer" };
+      };
+      role = body.data.role;
+    }
+  } catch {
+    // platform-api unreachable — treat like an auth outage below.
+  }
+
+  if (!role) {
+    // The session is valid but the user has no role on the tenant
+    // (deleted tuple, wrong tenant, FGA down). Fail closed — an
+    // admin page without a role is meaningless.
+    return redirectToLogin(req);
+  }
+
   // Forward the resolved session to the server component via request
   // headers. Headers are the cleanest Next.js-native way to pass
   // per-request data from middleware to pages.
@@ -78,6 +109,7 @@ export async function middleware(req: NextRequest) {
   headers.set("x-session-user-id", session.user_id);
   headers.set("x-session-email", session.email);
   headers.set("x-session-tenant-id", session.tenant_id);
+  headers.set("x-session-role", role);
 
   return NextResponse.next({ request: { headers } });
 }

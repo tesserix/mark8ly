@@ -102,21 +102,21 @@ export function SignInForm() {
   const disabled = pending || googlePending;
 
   return (
-    <div className="w-full max-w-md mx-auto">
-      <div className="rounded-[2rem] border border-warm-200/90 bg-white/90 shadow-[0_24px_80px_rgba(43,38,34,0.12)] backdrop-blur-sm overflow-hidden">
-        <div className="px-8 pt-8 pb-6 border-b border-warm-100">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-foreground-tertiary">
-            Mark8ly admin
+    <div className="w-full max-w-md justify-self-end">
+      <div className="admin-surface overflow-hidden rounded-[2rem]">
+        <div className="border-b admin-soft-rule bg-[linear-gradient(180deg,rgba(248,241,230,0.9),rgba(255,252,248,0.72))] px-8 pb-6 pt-8">
+          <p className="admin-eyebrow">
+            mark8ly admin
           </p>
           <h1 className="mt-3 font-serif text-3xl font-medium tracking-tight text-foreground">
             Welcome back
           </h1>
-          <p className="mt-2 text-sm leading-6 text-foreground-secondary">
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Sign in to your store dashboard.
           </p>
         </div>
 
-        <form onSubmit={handlePasswordSubmit} className="px-8 py-8 space-y-5">
+        <form onSubmit={handlePasswordSubmit} className="space-y-5 px-8 py-8">
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-foreground">
               Email address
@@ -150,8 +150,8 @@ export function SignInForm() {
           </div>
 
           {error && (
-            <div className="p-3 rounded-lg bg-terracotta-50 border border-terracotta-200">
-              <p className="text-sm text-terracotta-700" role="alert" aria-live="polite">
+            <div className="rounded-2xl border border-destructive/15 bg-destructive/5 p-3">
+              <p className="text-sm text-destructive" role="alert" aria-live="polite">
                 {error}
               </p>
             </div>
@@ -160,17 +160,17 @@ export function SignInForm() {
           <button
             type="submit"
             disabled={disabled}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 text-base font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 text-base font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition-[transform,box-shadow,opacity] hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? "Signing in…" : "Sign in"}
           </button>
 
           <div className="relative py-1">
             <div className="absolute inset-0 flex items-center" aria-hidden>
-              <div className="w-full border-t border-warm-200" />
+              <div className="w-full border-t admin-soft-rule" />
             </div>
             <div className="relative flex justify-center">
-              <span className="bg-white px-3 text-xs uppercase tracking-wider text-foreground-tertiary">
+              <span className="bg-[rgba(255,253,249,0.96)] px-3 text-xs uppercase tracking-wider text-muted-foreground">
                 or
               </span>
             </div>
@@ -180,13 +180,13 @@ export function SignInForm() {
             type="button"
             onClick={handleGoogle}
             disabled={disabled}
-            className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-warm-200 bg-white px-6 py-3 text-sm font-medium text-foreground transition hover:bg-warm-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-border/90 bg-white/82 px-6 py-3 text-sm font-medium text-foreground transition-[background-color,border-color] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             <GoogleMark />
             {googlePending ? "Opening Google…" : "Continue with Google"}
           </button>
 
-          <p className="text-xs text-foreground-tertiary text-center">
+          <p className="text-center text-xs text-muted-foreground">
             Don&apos;t have a store yet?{" "}
             <a href={MARKETING_URL} className="underline hover:text-foreground">
               Start a new one

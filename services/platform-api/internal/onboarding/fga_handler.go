@@ -9,13 +9,19 @@ import (
 	"github.com/mark8ly/platform-api/internal/outbox"
 )
 
-// NewFGAOutboxHandler returns the outbox handler that ships FGA membership
-// writes to OpenFGA. It writes BOTH the owner and member tuples for the
-// (user, tenant) pair from the payload.
+// NewFGAOutboxHandler returns the outbox handler that ships the
+// owner tuple to OpenFGA on onboarding completion.
 //
-// Returning an error from the handler causes the drainer to retry with
-// exponential backoff. Eventual success is guaranteed as long as OpenFGA
-// is reachable.
+// Phase O: only the owner tuple is written. Under the new DSL
+// (infra/openfga/model.fga), `member` is a derived union over
+// owner/admin/staff/viewer, so writing owner is sufficient to pass
+// auth-bff's CheckMembership during autologin — the old explicit
+// `member` tuple would be rejected by the model now since member
+// is no longer directly-assignable.
+//
+// Returning an error from the handler causes the drainer to retry
+// with exponential backoff. Eventual success is guaranteed as long
+// as OpenFGA is reachable.
 func NewFGAOutboxHandler(fga authz.Client) outbox.Handler {
 	return func(ctx context.Context, payload json.RawMessage) error {
 		var p fgaWritePayload
@@ -27,9 +33,6 @@ func NewFGAOutboxHandler(fga authz.Client) outbox.Handler {
 		}
 		if err := fga.WriteOwnership(ctx, p.UserID, p.TenantID); err != nil {
 			return fmt.Errorf("fga outbox: write ownership: %w", err)
-		}
-		if err := fga.WriteMembership(ctx, p.UserID, p.TenantID); err != nil {
-			return fmt.Errorf("fga outbox: write membership: %w", err)
 		}
 		return nil
 	}

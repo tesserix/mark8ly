@@ -61,7 +61,7 @@ export async function fetchTenant(id: string): Promise<Tenant | null> {
  */
 export async function updateTenant(
   id: string,
-  patch: { name?: string },
+  patch: { name?: string; uid: string },
 ): Promise<Tenant> {
   const res = await fetch(`${PLATFORM_API_URL}/internal/tenants/${id}`, {
     method: "PATCH",
@@ -84,6 +84,46 @@ export async function updateTenant(
   }
   const body = (await res.json()) as TenantResponse;
   return body.data;
+}
+
+/**
+ * Tenant role string. Mirrors authz.Role in services/platform-api —
+ * keep the unions in sync when adding a new role. The empty string
+ * sentinel is only used by `fetchTenantMe`'s null-on-404 fallback
+ * and should never leak into UI-facing code.
+ */
+export type TenantRole = "owner" | "admin" | "staff" | "viewer";
+
+interface TenantMeResponse {
+  data: { role: TenantRole };
+}
+
+/**
+ * Fetches the caller's role on a tenant. Used by admin middleware to
+ * forward the role into every server-rendered page via the
+ * `x-session-role` header.
+ *
+ * Returns null if the caller has no role (platform-api 404) or if
+ * the call fails entirely — the caller (middleware) treats null as
+ * "sign the user out" since admin pages without a role are
+ * meaningless.
+ */
+export async function fetchTenantMe(
+  tenantId: string,
+  uid: string,
+): Promise<TenantRole | null> {
+  if (!tenantId || !uid) return null;
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/tenants/${tenantId}/me?uid=${encodeURIComponent(uid)}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as TenantMeResponse;
+    return body.data.role;
+  } catch {
+    return null;
+  }
 }
 
 export class PlatformApiError extends Error {

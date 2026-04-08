@@ -11,6 +11,8 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 
 import { updateTenant, PlatformApiError } from "@/lib/api/platform-api";
+import { canEditSettings } from "@/lib/auth/serverSession";
+import type { TenantRole } from "@/lib/api/platform-api";
 
 export interface UpdateGeneralSettingsInput {
   name: string;
@@ -25,11 +27,25 @@ export async function updateGeneralSettings(
 ): Promise<UpdateGeneralSettingsResult> {
   const h = await headers();
   const tenantId = h.get("x-session-tenant-id") ?? "";
-  if (!tenantId) {
+  const uid = h.get("x-session-user-id") ?? "";
+  const role = (h.get("x-session-role") ?? "viewer") as TenantRole;
+  if (!tenantId || !uid) {
     return {
       ok: false,
       code: "no_session",
       message: "Your session has expired. Please sign in again.",
+    };
+  }
+
+  // Phase O: client-side gate to fail fast before we touch the
+  // network. The real enforcement is platform-api's FGA Check on
+  // PATCH /internal/tenants/:id; this is just UX so a "staff" user
+  // gets a clean 403 instead of a generic network error.
+  if (!canEditSettings(role)) {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "You do not have permission to edit store settings.",
     };
   }
 
@@ -50,7 +66,7 @@ export async function updateGeneralSettings(
   }
 
   try {
-    await updateTenant(tenantId, { name });
+    await updateTenant(tenantId, { name, uid });
   } catch (err) {
     if (err instanceof PlatformApiError) {
       return { ok: false, code: err.code, message: err.message };

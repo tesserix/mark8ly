@@ -28,8 +28,15 @@ if [ -z "$STORE_ID" ] || [ "$STORE_ID" = "null" ]; then
 fi
 echo "fga-seed: store id = $STORE_ID"
 
-# Convert the .fga DSL to JSON. Phase A keeps it simple by hand-encoding the
-# minimal model directly. (Phase D may swap to `fga model write` from the CLI.)
+# Phase O — Roles + RBAC.
+#
+# This JSON is the hand-encoded form of infra/openfga/model.fga. Keep
+# the two in lockstep. Four directly-assignable roles (owner/admin/
+# staff/viewer); member and can_* are derived unions. The "member"
+# relation being derived rather than directly-assignable means auth-
+# bff's CheckMembership still works (derived relations resolve
+# transitively) while preventing misuse like writing a bare
+# "user:x member tenant:y" tuple that bypasses the role hierarchy.
 MODEL_JSON='{
   "schema_version": "1.1",
   "type_definitions": [
@@ -37,13 +44,45 @@ MODEL_JSON='{
     {
       "type": "tenant",
       "relations": {
-        "member": { "this": {} },
-        "owner": { "this": {} }
+        "owner":  { "this": {} },
+        "admin":  { "this": {} },
+        "staff":  { "this": {} },
+        "viewer": { "this": {} },
+        "member": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner"  } },
+              { "computedUserset": { "relation": "admin"  } },
+              { "computedUserset": { "relation": "staff"  } },
+              { "computedUserset": { "relation": "viewer" } }
+            ]
+          }
+        },
+        "can_view_settings": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner"  } },
+              { "computedUserset": { "relation": "admin"  } },
+              { "computedUserset": { "relation": "staff"  } },
+              { "computedUserset": { "relation": "viewer" } }
+            ]
+          }
+        },
+        "can_edit_settings": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner" } },
+              { "computedUserset": { "relation": "admin" } }
+            ]
+          }
+        }
       },
       "metadata": {
         "relations": {
-          "member": { "directly_related_user_types": [{ "type": "user" }] },
-          "owner":  { "directly_related_user_types": [{ "type": "user" }] }
+          "owner":  { "directly_related_user_types": [{ "type": "user" }] },
+          "admin":  { "directly_related_user_types": [{ "type": "user" }] },
+          "staff":  { "directly_related_user_types": [{ "type": "user" }] },
+          "viewer": { "directly_related_user_types": [{ "type": "user" }] }
         }
       }
     }

@@ -24,9 +24,17 @@ import type { Tenant } from "@/lib/api/platform-api";
 
 interface GeneralSettingsFormProps {
   tenant: Tenant;
+  // Phase O: when false, the editable name input is disabled and the
+  // Save/Reset buttons are hidden. The server action also enforces
+  // this via canEditSettings(role), so a user flipping the prop in
+  // the browser DevTools gets a 403 back instead of a write.
+  editable?: boolean;
 }
 
-export function GeneralSettingsForm({ tenant }: GeneralSettingsFormProps) {
+export function GeneralSettingsForm({
+  tenant,
+  editable = true,
+}: GeneralSettingsFormProps) {
   const router = useRouter();
 
   const [name, setName] = useState(tenant.name);
@@ -57,7 +65,7 @@ export function GeneralSettingsForm({ tenant }: GeneralSettingsFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
+    <form onSubmit={handleSubmit} className="space-y-6">
       <Section title="Store">
         <Field label="Store name" htmlFor="name">
           <Input
@@ -68,7 +76,7 @@ export function GeneralSettingsForm({ tenant }: GeneralSettingsFormProps) {
               setSuccess(false);
             }}
             maxLength={200}
-            disabled={pending}
+            disabled={pending || !editable}
             required
           />
         </Field>
@@ -111,33 +119,35 @@ export function GeneralSettingsForm({ tenant }: GeneralSettingsFormProps) {
       {success && (
         <div
           role="status"
-          className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
+          className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
         >
           Saved.
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-3 border-t border-border pt-6">
-        <button
-          type="button"
-          onClick={() => {
-            setName(tenant.name);
-            setError(null);
-            setSuccess(false);
-          }}
-          disabled={!dirty || pending}
-          className="rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Reset
-        </button>
-        <button
-          type="submit"
-          disabled={!dirty || pending}
-          className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {pending ? "Saving..." : "Save changes"}
-        </button>
-      </div>
+      {editable && (
+        <div className="flex items-center justify-end gap-3 border-t admin-soft-rule pt-6">
+          <button
+            type="button"
+            onClick={() => {
+              setName(tenant.name);
+              setError(null);
+              setSuccess(false);
+            }}
+            disabled={!dirty || pending}
+            className="rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Reset
+          </button>
+          <button
+            type="submit"
+            disabled={!dirty || pending}
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition-[transform,box-shadow,opacity] hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {pending ? "Saving..." : "Save changes"}
+          </button>
+        </div>
+      )}
     </form>
   );
 }
@@ -149,8 +159,8 @@ interface SectionProps {
 
 function Section({ title, children }: SectionProps) {
   return (
-    <section className="space-y-4 rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+    <section className="admin-panel space-y-5 rounded-[1.6rem] p-6">
+      <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {title}
       </h2>
       <div className="space-y-4">{children}</div>

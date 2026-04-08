@@ -105,7 +105,7 @@ func main() {
 
 	tenantRepo := tenant.NewRepository(conn)
 	tenantSvc := tenant.NewService(tenantRepo)
-	tenantHandler := tenant.NewHandler(tenantSvc)
+	tenantHandler := tenant.NewHandler(tenantSvc, fga)
 
 	// In dev/test environments, capture plaintext magic-link tokens so the
 	// e2e suite can bypass the inbox. nil in prod — verification.Service

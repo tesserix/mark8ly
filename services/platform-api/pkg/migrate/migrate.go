@@ -7,12 +7,33 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 )
+
+// migrationsTable is the per-service schema_migrations table name. Both
+// services share a single Postgres database (mark8ly_platform_api), so each
+// must own a distinct migrations table to avoid clobbering the other's
+// version state.
+const migrationsTable = "platform_api_schema_migrations"
+
+// withMigrationsTable appends the x-migrations-table query parameter to a
+// libpq-style URL so the postgres driver writes its bookkeeping to the
+// service-specific table instead of the default `schema_migrations`.
+func withMigrationsTable(dbURL string) (string, error) {
+	u, err := url.Parse(dbURL)
+	if err != nil {
+		return "", fmt.Errorf("migrate: parse db url: %w", err)
+	}
+	q := u.Query()
+	q.Set("x-migrations-table", migrationsTable)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
 
 // Migrator runs migrations from an embedded filesystem against a Postgres URL.
 type Migrator struct {
@@ -34,7 +55,11 @@ func (m *Migrator) instance() (*migrate.Migrate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("migrate: iofs source: %w", err)
 	}
-	mig, err := migrate.NewWithSourceInstance("iofs", src, m.dbURL)
+	dbURL, err := withMigrationsTable(m.dbURL)
+	if err != nil {
+		return nil, err
+	}
+	mig, err := migrate.NewWithSourceInstance("iofs", src, dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("migrate: new instance: %w", err)
 	}

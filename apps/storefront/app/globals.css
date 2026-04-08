@@ -1,12 +1,122 @@
 @import "tailwindcss";
 
+/* Paper · Ink · Moss tokens — the canonical Mark8ly design
+   system. Every storefront inherits these as the default so a
+   brand-new tenant with no theme overrides gets the house look
+   automatically. The merchant's theme (selected in admin) is
+   then layered on top via the `--storefront-*` CSS variables
+   applied to <html> in layout.tsx. */
+@import "@repo/ui/styles/mark8ly-tokens.css";
+
+/* Scan @repo/ui source so any shared component classes survive
+   Tailwind tree-shaking. */
+@source "../../../packages/ui/src";
+
+/* ============================================================
+   Storefront theme variables
+   ------------------------------------------------------------
+   The merchant's selected theme (colors, fonts, radius, etc.)
+   gets injected at runtime in layout.tsx via inline style on
+   <html>. These defaults ensure the storefront still renders
+   correctly if the theme values are missing or fail to load.
+   ============================================================ */
+
 :root {
-  --background: #fffaf3;
-  --foreground: #1f1e1c;
+  --storefront-primary: var(--ink-900);
+  --storefront-accent: var(--moss-700);
+  --storefront-background: var(--paper-200);
+  --storefront-surface: #ffffff;
+  --storefront-text: var(--ink-900);
+  --storefront-heading-font: var(--font-serif);
+  --storefront-body-font: var(--font-sans);
+  --storefront-radius: 1.5rem;
+  --storefront-density-scale: 1;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+/* ============================================================
+   Base layer
+   ============================================================ */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--storefront-background);
+    color: var(--storefront-text);
+    font-family: var(--storefront-body-font);
+    font-size: var(--text-base);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    min-height: 100vh;
+  }
+
+  *:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+    border-radius: var(--radius-sm);
+  }
+
+  ::selection {
+    background: var(--moss-100);
+    color: var(--ink-900);
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--storefront-heading-font);
+    text-wrap: balance;
+    color: var(--storefront-text);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  img, picture, video, svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+
+  input, textarea, select {
+    font: inherit;
+    color: inherit;
+  }
+
+  a, button {
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -15,10 +15,11 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 )
 
-// migrationsTable is the per-service schema_migrations table name. Both
-// services share a single Postgres database (mark8ly_platform_api), so each
-// must own a distinct migrations table to avoid clobbering the other's
-// version state.
+// migrationsTable is the per-service schema_migrations table name.
+// marketplace-api owns the `marketplace_db` database on the shared
+// Cloud SQL instance, and the migrations table below is scoped to this
+// service so platform-api's migration state cannot clobber it (and
+// vice-versa) if the databases are ever consolidated.
 const migrationsTable = "marketplace_db_schema_migrations"
 
 // withMigrationsTable appends the x-migrations-table query parameter to a

@@ -38,6 +38,13 @@ func (s *SendGridSender) Send(ctx context.Context, msg Email) error {
 		return fmt.Errorf("notification: SendGrid API key is not configured")
 	}
 
+	// Disable click + open tracking per-send. Transactional magic-link
+	// emails carry single-use tokens; the SendGrid click tracker issues
+	// a GET to record the click, which consumes the token BEFORE the
+	// user can press the button. Disabling it account-wide is the
+	// canonical fix, but belt-and-suspenders the setting here so a
+	// future sender can't accidentally re-enable it globally.
+	falsePtr := false
 	body := sendgridRequest{
 		Personalizations: []sendgridPersonalization{{
 			To: []sendgridAddress{{Email: msg.To}},
@@ -47,6 +54,18 @@ func (s *SendGridSender) Send(ctx context.Context, msg Email) error {
 		Content: []sendgridContent{
 			{Type: "text/plain", Value: msg.TextBody},
 			{Type: "text/html", Value: msg.HTMLBody},
+		},
+		TrackingSettings: &sendgridTrackingSettings{
+			ClickTracking: &sendgridClickTracking{
+				Enable:     &falsePtr,
+				EnableText: &falsePtr,
+			},
+			OpenTracking: &sendgridOpenTracking{
+				Enable: &falsePtr,
+			},
+			SubscriptionTracking: &sendgridSubscriptionTracking{
+				Enable: &falsePtr,
+			},
 		},
 	}
 	raw, err := json.Marshal(body)
@@ -81,6 +100,26 @@ type sendgridRequest struct {
 	From             sendgridAddress           `json:"from"`
 	Subject          string                    `json:"subject"`
 	Content          []sendgridContent         `json:"content"`
+	TrackingSettings *sendgridTrackingSettings `json:"tracking_settings,omitempty"`
+}
+
+type sendgridTrackingSettings struct {
+	ClickTracking        *sendgridClickTracking        `json:"click_tracking,omitempty"`
+	OpenTracking         *sendgridOpenTracking         `json:"open_tracking,omitempty"`
+	SubscriptionTracking *sendgridSubscriptionTracking `json:"subscription_tracking,omitempty"`
+}
+
+type sendgridClickTracking struct {
+	Enable     *bool `json:"enable,omitempty"`
+	EnableText *bool `json:"enable_text,omitempty"`
+}
+
+type sendgridOpenTracking struct {
+	Enable *bool `json:"enable,omitempty"`
+}
+
+type sendgridSubscriptionTracking struct {
+	Enable *bool `json:"enable,omitempty"`
 }
 
 type sendgridPersonalization struct {

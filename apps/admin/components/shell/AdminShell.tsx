@@ -150,6 +150,7 @@ const navigation: NavSection[] = [
     icon: Settings,
     children: [
       { label: "Store Settings", href: "/settings/general" },
+      { label: "Storefront", href: "/settings/storefront" },
       { label: "Stores", href: "/settings/stores" },
       { label: "Team", href: "/settings/team" },
       { label: "Shipping", href: "/settings" },
@@ -529,6 +530,10 @@ function getPageTitle(pathname: string | null): { eyebrow: string; title: string
 
   if (pathname.startsWith("/settings/general")) {
     return { eyebrow: "Store Setup", title: "General Settings" };
+  }
+
+  if (pathname.startsWith("/settings/storefront")) {
+    return { eyebrow: "Storefront", title: "Theme & Layout" };
   }
 
   if (pathname.startsWith("/settings")) {

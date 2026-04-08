@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"strings"
 
@@ -71,13 +72,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Store, error) {
 	}
 
 	row := &Store{
-		TenantID:     tenantID,
-		Slug:         slug,
-		Name:         name,
-		CountryCode:  in.CountryCode,
-		CurrencyCode: in.CurrencyCode,
-		Timezone:     in.Timezone,
-		Status:       StatusActive,
+		TenantID:        tenantID,
+		Slug:            slug,
+		Name:            name,
+		CountryCode:     in.CountryCode,
+		CurrencyCode:    in.CurrencyCode,
+		Timezone:        in.Timezone,
+		StorefrontTheme: json.RawMessage(`{}`),
+		Status:          StatusActive,
 	}
 	if err := s.repo.Create(ctx, row); err != nil {
 		return nil, err
@@ -144,7 +146,8 @@ func (s *Service) ListByTenant(ctx context.Context, tenantID string) ([]Store, e
 // dedicated slice lands because each has ripple effects (billing /
 // picker UX / tax).
 type UpdateInput struct {
-	Name *string
+	Name            *string
+	StorefrontTheme json.RawMessage
 }
 
 // Update applies an UpdateInput to the store row and returns the
@@ -166,6 +169,12 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*Store
 			return nil, apperrors.BadRequest("invalid_name", "store name must be 200 characters or fewer")
 		}
 		patch["name"] = name
+	}
+	if len(in.StorefrontTheme) > 0 {
+		if !json.Valid(in.StorefrontTheme) {
+			return nil, apperrors.BadRequest("invalid_storefront_theme", "storefront theme must be valid JSON")
+		}
+		patch["storefront_theme"] = in.StorefrontTheme
 	}
 
 	if len(patch) == 0 {

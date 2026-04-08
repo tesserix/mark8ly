@@ -6,6 +6,8 @@
  * Phase S slice.
  */
 
+import type { StorefrontTheme } from "@/lib/storefront-theme";
+
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 
@@ -17,6 +19,7 @@ export interface PublicStore {
   currency_code: string;
   timezone: string;
   logo_url?: string;
+  storefront_theme: StorefrontTheme;
 }
 
 /**

@@ -4,6 +4,8 @@
  * that's just the tenant lookup used by the dashboard.
  */
 
+import type { StorefrontTheme } from "@/lib/storefront-theme";
+
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 
@@ -36,6 +38,7 @@ export interface Store {
   currency_code: string;
   timezone: string;
   logo_url?: string | null;
+  storefront_theme: StorefrontTheme;
   status: string;
   created_at: string;
   updated_at: string;
@@ -154,7 +157,7 @@ export async function createStore(
  */
 export async function updateStore(
   id: string,
-  patch: { name?: string; uid: string },
+  patch: { name?: string; storefront_theme?: StorefrontTheme; uid: string },
 ): Promise<Store> {
   const res = await fetch(`${PLATFORM_API_URL}/internal/stores/${id}`, {
     method: "PATCH",

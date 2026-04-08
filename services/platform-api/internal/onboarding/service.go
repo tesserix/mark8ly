@@ -21,13 +21,13 @@ import (
 // tuple race) and #3 (no retry on FGA failure) from
 // docs/planning/auth-bugs.md. The fix has three parts:
 //
-//   1. The DB transaction creates BOTH the tenant row AND the outbox row
-//      describing the FGA tuple writes. Either both commit or neither does.
-//   2. The outbox drainer (separate goroutine) ships the tuple to OpenFGA
-//      with retries. If FGA is down, the row stays pending and is retried.
-//   3. (Out of this package's scope) auth-bff's auto-login does an FGA
-//      Check with retry-on-not-found, so the user can't reach admin until
-//      the tuple is actually visible.
+//  1. The DB transaction creates BOTH the tenant row AND the outbox row
+//     describing the FGA tuple writes. Either both commit or neither does.
+//  2. The outbox drainer (separate goroutine) ships the tuple to OpenFGA
+//     with retries. If FGA is down, the row stays pending and is retried.
+//  3. (Out of this package's scope) auth-bff's auto-login does an FGA
+//     Check with retry-on-not-found, so the user can't reach admin until
+//     the tuple is actually visible.
 //
 // Together these close the race window from both ends.
 type Service struct {
@@ -126,7 +126,7 @@ type CompleteRequest struct {
 	SessionID    string `json:"session_id"`
 	BusinessName string `json:"business_name"`
 	Slug         string `json:"slug"`
-	OwnerUserID  string `json:"owner_user_id"`  // GIP UID
+	OwnerUserID  string `json:"owner_user_id"` // GIP UID
 	OwnerEmail   string `json:"owner_email"`
 	CountryCode  string `json:"country_code"`
 	CurrencyCode string `json:"currency_code"`
@@ -160,10 +160,10 @@ const FGAOutboxKind = "fga.write_membership"
 //
 // In one DB transaction:
 //
-//	1. Verify the session is in a completable state (verified email)
-//	2. Create the tenant row
-//	3. Mark the session completed and link tenant_id
-//	4. Enqueue an outbox event for the FGA membership write
+//  1. Verify the session is in a completable state (verified email)
+//  2. Create the tenant row
+//  3. Mark the session completed and link tenant_id
+//  4. Enqueue an outbox event for the FGA membership write
 //
 // All four happen-or-nothing. The outbox drainer picks up the event and
 // writes the OpenFGA tuple. If the drainer is delayed or FGA is down,
@@ -204,12 +204,13 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		Status:      tenant.StatusActive,
 	}
 	st := &store.Store{
-		Slug:         req.Slug,
-		Name:         req.BusinessName,
-		CountryCode:  req.CountryCode,
-		CurrencyCode: req.CurrencyCode,
-		Timezone:     req.Timezone,
-		Status:       store.StatusActive,
+		Slug:            req.Slug,
+		Name:            req.BusinessName,
+		CountryCode:     req.CountryCode,
+		CurrencyCode:    req.CurrencyCode,
+		Timezone:        req.Timezone,
+		StorefrontTheme: json.RawMessage(`{}`),
+		Status:          store.StatusActive,
 	}
 
 	// THE BUG-FIX TRANSACTION (Phase D) extended with the Phase Q

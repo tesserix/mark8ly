@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -125,13 +126,14 @@ func (h *Handler) createForTenant(c *gin.Context) {
 // internal fields (tenant_id, logo_url nullability is preserved)
 // and exposes only what a customer-facing page needs.
 type publicStore struct {
-	ID           string `json:"id"`
-	Slug         string `json:"slug"`
-	Name         string `json:"name"`
-	CountryCode  string `json:"country_code"`
-	CurrencyCode string `json:"currency_code"`
-	Timezone     string `json:"timezone"`
-	LogoURL      string `json:"logo_url,omitempty"`
+	ID              string          `json:"id"`
+	Slug            string          `json:"slug"`
+	Name            string          `json:"name"`
+	CountryCode     string          `json:"country_code"`
+	CurrencyCode    string          `json:"currency_code"`
+	Timezone        string          `json:"timezone"`
+	LogoURL         string          `json:"logo_url,omitempty"`
+	StorefrontTheme json.RawMessage `json:"storefront_theme"`
 }
 
 func (h *Handler) getPublicStoreBySlug(c *gin.Context) {
@@ -148,12 +150,13 @@ func (h *Handler) getPublicStoreBySlug(c *gin.Context) {
 		return
 	}
 	out := publicStore{
-		ID:           s.ID,
-		Slug:         s.Slug,
-		Name:         s.Name,
-		CountryCode:  s.CountryCode,
-		CurrencyCode: s.CurrencyCode,
-		Timezone:     s.Timezone,
+		ID:              s.ID,
+		Slug:            s.Slug,
+		Name:            s.Name,
+		CountryCode:     s.CountryCode,
+		CurrencyCode:    s.CurrencyCode,
+		Timezone:        s.Timezone,
+		StorefrontTheme: s.StorefrontTheme,
 	}
 	if s.LogoURL != nil {
 		out.LogoURL = *s.LogoURL
@@ -192,7 +195,8 @@ func (h *Handler) listByTenant(c *gin.Context) {
 }
 
 type updateStoreRequest struct {
-	Name *string `json:"name"`
+	Name            *string         `json:"name"`
+	StorefrontTheme json.RawMessage `json:"storefront_theme"`
 	// UID carries the calling user's GIP uid so we can run the FGA
 	// can_edit_store_settings check. Same pattern the tenant handler
 	// uses since Phase O.
@@ -232,7 +236,10 @@ func (h *Handler) updateStore(c *gin.Context) {
 		}
 	}
 
-	s, err := h.svc.Update(c.Request.Context(), storeID, UpdateInput{Name: req.Name})
+	s, err := h.svc.Update(c.Request.Context(), storeID, UpdateInput{
+		Name:            req.Name,
+		StorefrontTheme: req.StorefrontTheme,
+	})
 	if err != nil {
 		respondError(c, err)
 		return

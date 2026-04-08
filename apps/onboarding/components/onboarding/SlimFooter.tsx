@@ -1,36 +1,32 @@
 import Link from "next/link";
 
+/**
+ * Thin footer used by the onboarding flow and post-submit
+ * pages. Pure type, a single row, hairline top border. No card
+ * chrome, no icons.
+ */
 export function SlimFooter() {
   return (
-    <footer className="border-t border-warm-200/80 bg-background/70 backdrop-blur-sm">
-      <div className="max-w-6xl mx-auto flex flex-col gap-3 px-6 py-4 text-sm text-foreground-secondary sm:flex-row sm:items-center sm:justify-between">
+    <footer className="border-t border-border-subtle bg-background">
+      <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-5 text-sm text-foreground-secondary sm:flex-row sm:items-center sm:justify-between">
         <p>
           Need help?{" "}
           <a
-            href="mailto:support@mark8ly.com"
-            className="font-medium text-foreground hover:text-terracotta-700 transition-colors"
+            href="mailto:hello@mark8ly.com"
+            className="font-medium text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
           >
-            support@mark8ly.com
+            hello@mark8ly.com
           </a>
         </p>
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Link
-            href="/terms"
-            className="hover:text-foreground transition-colors"
-          >
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <Link href="/terms" className="hover:text-foreground">
             Terms
           </Link>
-          <Link
-            href="/privacy"
-            className="hover:text-foreground transition-colors"
-          >
+          <Link href="/privacy" className="hover:text-foreground">
             Privacy
           </Link>
-          <Link
-            href="/legal"
-            className="hover:text-foreground transition-colors"
-          >
+          <Link href="/legal" className="hover:text-foreground">
             Security
           </Link>
         </div>

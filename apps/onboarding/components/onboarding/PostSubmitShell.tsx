@@ -10,6 +10,16 @@ interface PostSubmitShellProps {
   children: ReactNode;
 }
 
+/**
+ * PostSubmitShell — wrapper used by every page after the
+ * onboarding form has been submitted: /onboarding/check-inbox,
+ * /onboarding/set-password, /onboarding/verify, /welcome.
+ *
+ * Layout: slim brand bar → editorial hero (eyebrow + serif
+ * title + lede) → children → slim footer. Single column,
+ * left-aligned, no card chrome, no blur blobs, no fake
+ * decoration.
+ */
 export function PostSubmitShell({
   eyebrow,
   title,
@@ -17,71 +27,53 @@ export function PostSubmitShell({
   children,
 }: PostSubmitShellProps) {
   return (
-    <div className="min-h-screen flex flex-col">
-      <div className="border-b border-warm-200/80 bg-background/85 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      {/* Slim brand bar */}
+      <header className="border-b border-border-subtle">
+        <div className="mx-auto flex h-[64px] max-w-6xl items-center justify-between px-6">
           <Link
             href="/"
-            className="flex items-center hover:opacity-80 transition-opacity"
+            aria-label="mark8ly — home"
+            className="-mx-2 inline-flex items-center px-2 py-2"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/icon-192.png"
-              alt="mark8ly icon"
-              className="h-8 w-auto object-contain"
-            />
-            <span className="text-xl font-serif font-medium tracking-[-0.015em] text-foreground-secondary">
+            <span className="font-serif text-xl font-medium tracking-[-0.025em] text-foreground">
               mark8ly
             </span>
           </Link>
           <Link
             href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-warm-200 bg-white/80 px-4 py-2 text-sm font-medium text-foreground-secondary shadow-sm transition-[background-color,border-color,color,box-shadow] hover:border-warm-300 hover:bg-white hover:text-foreground hover:shadow-md"
+            className="inline-flex h-10 items-center px-3 text-sm text-foreground-secondary hover:text-foreground"
           >
-            <span aria-hidden>←</span>
-            <span>Back Home</span>
+            <span aria-hidden="true" className="mr-2">
+              ←
+            </span>
+            Back to home
           </Link>
         </div>
-      </div>
+      </header>
 
-      <main className="flex-1 px-4 py-10 sm:px-6 sm:py-14">
-        <div className="max-w-6xl mx-auto grid gap-8 lg:grid-cols-[0.85fr_1.15fr] items-center">
-          <section className="relative overflow-hidden rounded-[2rem] border border-warm-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(250,247,242,0.9))] px-7 py-8 shadow-[0_20px_70px_rgba(43,38,34,0.08)] sm:px-10 sm:py-10">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -right-20 top-0 h-56 w-56 rounded-full bg-terracotta-200/40 blur-3xl"
-            />
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -left-16 bottom-0 h-44 w-44 rounded-full bg-sage-200/40 blur-3xl"
-            />
+      <main id="main" className="flex-1">
+        <section className="mx-auto max-w-3xl px-6 pb-16 pt-16 sm:pb-20 sm:pt-24">
+          <p className="eyebrow mb-5">{eyebrow}</p>
+          <h1
+            className="font-serif font-medium text-foreground"
+            style={{
+              fontSize: "var(--text-4xl)",
+              lineHeight: 1.05,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {title}
+          </h1>
+          <p
+            className="mt-6 max-w-xl text-foreground-secondary"
+            style={{ fontSize: "var(--text-lg)", lineHeight: 1.55 }}
+          >
+            {description}
+          </p>
+        </section>
 
-            <div className="relative">
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-foreground-tertiary">
-                {eyebrow}
-              </p>
-              <h1 className="mt-4 font-serif text-4xl font-medium tracking-[-0.03em] text-foreground sm:text-5xl">
-                {title}
-              </h1>
-              <p className="mt-5 max-w-xl text-base leading-7 text-foreground-secondary sm:text-lg">
-                {description}
-              </p>
-
-              <div className="mt-8 rounded-[1.75rem] border border-warm-200/90 bg-foreground px-6 py-6 text-warm-100 shadow-[0_18px_60px_rgba(31,30,28,0.22)]">
-                <p className="text-xs uppercase tracking-[0.16em] text-warm-400">
-                  What happens next
-                </p>
-                <p className="mt-4 text-sm leading-6 text-warm-100/90">
-                  You&apos;re in the final stretch. Follow the next step on this
-                  screen and we&apos;ll carry you into your store setup without
-                  making you restart anything.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section>{children}</section>
-        </div>
+        <section className="mx-auto max-w-3xl px-6 pb-24">{children}</section>
       </main>
 
       <SlimFooter />

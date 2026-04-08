@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@tesserix/web";
 import { Field } from "@repo/ui/field";
+import { StorefrontLayoutPreview } from "@repo/ui/storefront-preview";
 
 import { updateStorefrontTheme } from "@/app/settings/storefront/actions";
 import type { Store } from "@/lib/api/platform-api";
@@ -316,7 +317,11 @@ export function StorefrontThemeForm({
             </p>
           </div>
 
-          <StorefrontPreview theme={theme} name={store.name} slug={store.slug} />
+          <StorefrontLayoutPreview
+            theme={theme}
+            name={store.name}
+            slug={store.slug}
+          />
         </aside>
       </section>
 
@@ -416,105 +421,6 @@ function SelectField({
         </SelectContent>
       </Select>
     </Field>
-  );
-}
-
-function StorefrontPreview({
-  theme,
-  name,
-  slug,
-}: {
-  theme: StorefrontTheme;
-  name: string;
-  slug: string;
-}) {
-  const radius =
-    theme.radius === "sharp"
-      ? "0.375rem"
-      : theme.radius === "rounded"
-        ? "1.25rem"
-        : "0.75rem";
-  const spacing =
-    theme.density === "compact"
-      ? "1rem"
-      : theme.density === "airy"
-        ? "1.6rem"
-        : "1.25rem";
-
-  return (
-    <div
-      className="overflow-hidden border"
-      style={{
-        background: theme.colors.background,
-        color: theme.colors.text,
-        borderColor: `${theme.colors.primary}22`,
-        borderRadius: radius,
-      }}
-    >
-      <div
-        className="border-b px-5 py-4 text-xs font-semibold uppercase tracking-[0.2em]"
-        style={{
-          borderColor: `${theme.colors.primary}22`,
-          color: theme.colors.primary,
-        }}
-      >
-        {slug}.mark8ly.com
-      </div>
-      <div className="space-y-4 px-5 py-5" style={{ gap: spacing }}>
-        <div
-          className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]"
-          style={{
-            background: `${theme.colors.accent}18`,
-            color: theme.colors.accent,
-          }}
-        >
-          {theme.layout.replace(/-/g, " ")}
-        </div>
-        <div className="space-y-3">
-          <h3 className="text-3xl font-medium tracking-tight">{name}</h3>
-          <p className="max-w-sm text-sm leading-6 opacity-75">
-            Your storefront styling will carry this mood across the hero,
-            supporting sections, and launch CTA.
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div
-            className="border px-4 py-4"
-            style={{
-              background: theme.colors.surface,
-              borderColor: `${theme.colors.primary}22`,
-              borderRadius: radius,
-            }}
-          >
-            <div className="text-xs uppercase tracking-[0.18em] opacity-55">
-              Primary action
-            </div>
-            <div
-              className="mt-3 inline-flex rounded-full px-4 py-2 text-sm font-semibold text-white"
-              style={{ background: theme.colors.primary }}
-            >
-              Shop the collection
-            </div>
-          </div>
-          <div
-            className="border px-4 py-4"
-            style={{
-              background: theme.colors.surface,
-              borderColor: `${theme.colors.primary}22`,
-              borderRadius: radius,
-            }}
-          >
-            <div className="text-xs uppercase tracking-[0.18em] opacity-55">
-              Styling notes
-            </div>
-            <p className="mt-3 text-sm opacity-75">
-              {theme.motion} motion, {theme.density} spacing,{" "}
-              {theme.typography.headingFont} headings.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 

@@ -6,10 +6,10 @@ import type { StorefrontTheme } from "@repo/ui/storefront-theme";
 /* ============================================================
    Shared layout primitives
    ------------------------------------------------------------
-   Every storefront layout consumes the same theme tokens and
-   uses the same primitive set. A layout switch + a preset swap
-   should produce a wildly different look without any layout
-   touching brand colors directly.
+   All storefront layouts consume the same theme tokens and
+   the same primitive set. A layout switch + a preset swap should
+   produce a wildly different look without any layout touching
+   brand colors directly.
    ============================================================ */
 
 export interface LayoutProps {
@@ -17,140 +17,192 @@ export interface LayoutProps {
   theme: StorefrontTheme;
 }
 
+/* ------------------------------------------------------------
+   Structural primitives
+   ------------------------------------------------------------ */
+
+/** Reserved-space product slot. Honest placeholder — never fakes
+ *  product photography. The aspect ratio matches what real merchant
+ *  catalog photography will fill. */
+export function ProductSlot({
+  theme,
+  label,
+  ratio = "aspect-[4/5]",
+  size = "md",
+}: {
+  theme: StorefrontTheme;
+  label: string;
+  ratio?: string;
+  size?: "sm" | "md" | "lg";
+}) {
+  const tone = theme.preset === "midnight" ? "light" : "dark";
+  const labelSize =
+    size === "lg" ? "text-sm" : size === "sm" ? "text-[10px]" : "text-xs";
+  return (
+    <figure
+      className={`group relative overflow-hidden ${ratio}`}
+      style={{
+        background: `${theme.colors.primary}08`,
+        border: `1px solid ${theme.colors.primary}18`,
+        borderRadius: "var(--store-radius)",
+      }}
+    >
+      <div
+        className="absolute inset-0 flex items-end p-4"
+        style={{
+          background: `linear-gradient(180deg, ${theme.colors.primary}00 55%, ${theme.colors.primary}12)`,
+        }}
+      />
+      <figcaption
+        className={`absolute left-4 top-4 font-semibold uppercase tracking-[0.18em] ${labelSize}`}
+        style={{
+          color: tone === "light" ? `${theme.colors.text}CC` : `${theme.colors.primary}99`,
+        }}
+      >
+        {label}
+      </figcaption>
+      <div
+        className="absolute bottom-4 left-4 right-4 text-[11px] uppercase tracking-[0.16em]"
+        style={{ color: `${theme.colors.primary}55` }}
+      >
+        Reserved for product photography
+      </div>
+    </figure>
+  );
+}
+
+/** Editorial pull quote. Large serif over paper, moss rule. */
+export function PullQuote({
+  theme,
+  quote,
+  attribution,
+}: {
+  theme: StorefrontTheme;
+  quote: string;
+  attribution?: string;
+}) {
+  return (
+    <blockquote
+      className="border-l-2 pl-6 py-2"
+      style={{ borderColor: theme.colors.accent }}
+    >
+      <p
+        className="text-2xl font-medium leading-[1.3] tracking-tight sm:text-3xl"
+        style={{ ...headingStyle(), color: theme.colors.text }}
+      >
+        &ldquo;{quote}&rdquo;
+      </p>
+      {attribution && (
+        <footer
+          className="mt-3 text-[11px] font-semibold uppercase tracking-[0.2em]"
+          style={{ color: `${theme.colors.primary}99` }}
+        >
+          — {attribution}
+        </footer>
+      )}
+    </blockquote>
+  );
+}
+
+/** Horizontal marquee strip — brand loop, uppercase. Pure CSS. */
+export function Marquee({
+  theme,
+  items,
+}: {
+  theme: StorefrontTheme;
+  items: string[];
+}) {
+  const line = items.join("   ·   ");
+  return (
+    <div
+      className="overflow-hidden border-y py-4"
+      style={{
+        borderColor: `${theme.colors.primary}22`,
+        background: `${theme.colors.surface}88`,
+      }}
+    >
+      <div
+        className="whitespace-nowrap text-xs font-semibold uppercase tracking-[0.28em]"
+        style={{ color: `${theme.colors.primary}CC` }}
+      >
+        {line}   ·   {line}   ·   {line}
+      </div>
+    </div>
+  );
+}
+
+/** Section divider with editorial label. */
+export function SectionLabel({
+  theme,
+  label,
+  title,
+  trailing,
+}: {
+  theme: StorefrontTheme;
+  label: string;
+  title?: string;
+  trailing?: ReactNode;
+}) {
+  return (
+    <div
+      className="flex items-end justify-between gap-4 border-b pb-4"
+      style={{ borderColor: `${theme.colors.primary}22` }}
+    >
+      <div>
+        <p
+          className="text-[11px] font-semibold uppercase tracking-[0.24em]"
+          style={{ color: `${theme.colors.accent}D9` }}
+        >
+          {label}
+        </p>
+        {title && (
+          <h2
+            className="mt-1 text-2xl font-medium tracking-tight sm:text-3xl"
+            style={headingStyle()}
+          >
+            {title}
+          </h2>
+        )}
+      </div>
+      {trailing}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------
+   Typographic primitives
+   ------------------------------------------------------------ */
+
 export function HeroTitle({
   store,
   theme,
   align = "left",
+  size = "lg",
 }: {
   store: PublicStore;
   theme: StorefrontTheme;
   align?: "left" | "center";
+  size?: "md" | "lg" | "xl";
 }) {
+  const sizeClass =
+    size === "xl"
+      ? "text-6xl sm:text-7xl lg:text-[7.5rem]"
+      : size === "md"
+        ? "text-4xl sm:text-5xl"
+        : "text-5xl sm:text-6xl lg:text-7xl";
   return (
     <div className={align === "center" ? "text-center" : ""}>
       <h1
-        className="text-5xl font-medium tracking-tight sm:text-6xl"
+        className={`${sizeClass} font-medium leading-[0.95] tracking-[-0.03em]`}
         style={headingStyle()}
       >
         {store.name}
       </h1>
-      <p className="mt-4 text-base leading-7 opacity-75">
-        Theme preset: {theme.preset.replace("-", " ")} ·{" "}
-        {theme.layout.replace("-", " ")}
-      </p>
     </div>
   );
 }
 
-export function ActionRow({ theme }: { theme: StorefrontTheme }) {
-  return (
-    <div className="flex flex-wrap gap-3">
-      <PrimaryButton theme={theme}>Browse the store</PrimaryButton>
-      <SecondaryButton theme={theme}>See featured collections</SecondaryButton>
-    </div>
-  );
-}
-
-export function CenteredCta({ theme }: { theme: StorefrontTheme }) {
-  return (
-    <div className="flex justify-center">
-      <PrimaryButton theme={theme}>Start browsing</PrimaryButton>
-    </div>
-  );
-}
-
-export function Card({
-  theme,
-  title,
-  body,
-  compact = false,
-  children,
-}: {
-  theme: StorefrontTheme;
-  title: string;
-  body: string;
-  compact?: boolean;
-  children?: ReactNode;
-}) {
-  return (
-    <section
-      className={compact ? "space-y-3 p-5" : "space-y-4 p-6"}
-      style={surfaceStyle(theme)}
-    >
-      <h2 className="text-lg font-semibold" style={headingStyle()}>
-        {title}
-      </h2>
-      <p className="text-sm leading-6 opacity-75">{body}</p>
-      {children}
-    </section>
-  );
-}
-
-export function StoryPanel({
-  theme,
-  eyebrow,
-  title,
-  body,
-  large = false,
-}: {
-  theme: StorefrontTheme;
-  eyebrow: string;
-  title: string;
-  body: string;
-  large?: boolean;
-}) {
-  return (
-    <section
-      className={large ? "space-y-5 p-8" : "space-y-4 p-6"}
-      style={surfaceStyle(theme)}
-    >
-      <p
-        className="text-[11px] font-semibold uppercase tracking-[0.24em]"
-        style={{ color: `${theme.colors.primary}CC` }}
-      >
-        {eyebrow}
-      </p>
-      <h2
-        className={
-          large
-            ? "text-4xl font-medium tracking-tight"
-            : "text-2xl font-medium tracking-tight"
-        }
-        style={headingStyle()}
-      >
-        {title}
-      </h2>
-      <p className="text-sm leading-7 opacity-75">{body}</p>
-    </section>
-  );
-}
-
-export function MiniStat({
-  theme,
-  label,
-  value,
-}: {
-  theme: StorefrontTheme;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div
-      className="rounded-[1rem] border px-4 py-4"
-      style={{
-        background: `${theme.colors.background}99`,
-        borderColor: `${theme.colors.primary}22`,
-      }}
-    >
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-55">
-        {label}
-      </div>
-      <div className="mt-2 text-base font-semibold">{value}</div>
-    </div>
-  );
-}
-
-export function PrimaryButton({
+export function Eyebrow({
   theme,
   children,
 }: {
@@ -158,15 +210,36 @@ export function PrimaryButton({
   children: ReactNode;
 }) {
   return (
+    <p
+      className="text-[11px] font-semibold uppercase tracking-[0.24em]"
+      style={{ color: `${theme.colors.accent}D9` }}
+    >
+      {children}
+    </p>
+  );
+}
+
+/* ------------------------------------------------------------
+   Buttons
+   ------------------------------------------------------------ */
+
+export function PrimaryButton({
+  theme,
+  children,
+  size = "md",
+}: {
+  theme: StorefrontTheme;
+  children: ReactNode;
+  size?: "md" | "lg";
+}) {
+  const h = size === "lg" ? "h-14 px-8 text-base" : "h-12 px-6 text-sm";
+  return (
     <button
       type="button"
-      className="rounded-full px-5 py-3 text-sm font-semibold text-white"
+      className={`inline-flex ${h} items-center justify-center font-semibold uppercase tracking-[0.14em] text-white transition-opacity hover:opacity-90`}
       style={{
         background: theme.colors.primary,
-        boxShadow:
-          theme.motion === "none"
-            ? "none"
-            : `0 18px 32px ${theme.colors.primary}30`,
+        borderRadius: "var(--store-radius)",
       }}
     >
       {children}
@@ -184,11 +257,12 @@ export function SecondaryButton({
   return (
     <button
       type="button"
-      className="rounded-full border px-5 py-3 text-sm font-semibold"
+      className="inline-flex h-12 items-center justify-center border px-6 text-sm font-semibold uppercase tracking-[0.14em] transition-colors"
       style={{
-        borderColor: `${theme.colors.primary}33`,
-        background: `${theme.colors.surface}D9`,
+        borderColor: `${theme.colors.primary}44`,
+        background: "transparent",
         color: theme.colors.text,
+        borderRadius: "var(--store-radius)",
       }}
     >
       {children}
@@ -196,27 +270,30 @@ export function SecondaryButton({
   );
 }
 
-export function PromoButton({ children }: { children: ReactNode }) {
+export function LinkCta({
+  theme,
+  children,
+}: {
+  theme: StorefrontTheme;
+  children: ReactNode;
+}) {
   return (
-    <button
-      type="button"
-      className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-neutral-900"
+    <span
+      className="inline-flex items-center gap-2 border-b pb-1 text-sm font-semibold uppercase tracking-[0.14em]"
+      style={{
+        color: theme.colors.accent,
+        borderColor: theme.colors.accent,
+      }}
     >
       {children}
-    </button>
+      <span aria-hidden="true">→</span>
+    </span>
   );
 }
 
-export function PromoGhostButton({ children }: { children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      className="rounded-full border border-white/35 px-5 py-3 text-sm font-semibold text-white"
-    >
-      {children}
-    </button>
-  );
-}
+/* ------------------------------------------------------------
+   Style helpers
+   ------------------------------------------------------------ */
 
 export function headingStyle(): CSSProperties {
   return { fontFamily: "var(--store-heading-font)" };
@@ -224,12 +301,8 @@ export function headingStyle(): CSSProperties {
 
 export function surfaceStyle(theme: StorefrontTheme): CSSProperties {
   return {
-    background: `${theme.colors.surface}F0`,
+    background: theme.colors.surface,
     border: `1px solid ${theme.colors.primary}22`,
     borderRadius: "var(--store-radius)",
-    boxShadow:
-      theme.motion === "none"
-        ? "none"
-        : `0 18px 40px ${theme.colors.primary}12`,
   };
 }

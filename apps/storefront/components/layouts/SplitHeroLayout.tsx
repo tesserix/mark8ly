@@ -1,33 +1,59 @@
-import { Card, MiniStat, StoryPanel, type LayoutProps } from "./shared";
+import {
+  Eyebrow,
+  HeroTitle,
+  LinkCta,
+  PrimaryButton,
+  ProductSlot,
+  SecondaryButton,
+  type LayoutProps,
+} from "./shared";
 
 /**
- * Split-hero layout — equal weight to message and action.
+ * Split-hero — true 50/50 cinematic hero.
  *
- * Practical two-column structure that gives equal visual weight to
- * the store narrative and a featured action. Stub-quality today;
- * inherits the editorial primitives until merchants demand a
- * dedicated implementation.
+ * Text rail on the left, full-bleed product image placeholder on the
+ * right that runs edge-to-edge. Strong for product-led brands where
+ * the imagery does the narrative lift.
  */
 export function SplitHeroLayout({ store, theme }: LayoutProps) {
   return (
-    <section className="grid gap-6 lg:grid-cols-2 lg:items-stretch">
-      <StoryPanel
-        theme={theme}
-        eyebrow="Store launch"
-        title={store.name}
-        body="A practical split layout that gives equal weight to the store message and launch actions."
-        large
-      />
-      <Card
-        theme={theme}
-        title="Open with confidence"
-        body="Highlight collections, mention delivery expectations, or use this area for a featured launch offer."
+    <article className="space-y-16">
+      <section
+        className="-mx-6 grid min-h-[32rem] gap-0 sm:-mx-8 lg:grid-cols-2"
+        style={{ background: `${theme.colors.surface}66` }}
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <MiniStat theme={theme} label="Visual style" value="Structured" />
-          <MiniStat theme={theme} label="Best for" value="Focused launches" />
+        <div className="flex flex-col justify-center space-y-6 px-6 py-12 sm:px-12 lg:py-20">
+          <Eyebrow theme={theme}>Featured · Launch drop</Eyebrow>
+          <HeroTitle store={store} theme={theme} size="lg" />
+          <p className="max-w-md text-base leading-8 opacity-75">
+            A cinematic opening frame — product on the right, narrative on the
+            left. Equal weight, no competition.
+          </p>
+          <div className="flex flex-wrap items-center gap-4 pt-2">
+            <PrimaryButton theme={theme} size="lg">
+              Shop the drop
+            </PrimaryButton>
+            <SecondaryButton theme={theme}>Lookbook</SecondaryButton>
+          </div>
         </div>
-      </Card>
-    </section>
+        <div className="relative min-h-[24rem]">
+          <ProductSlot
+            theme={theme}
+            label="Featured piece"
+            ratio="aspect-auto h-full"
+            size="lg"
+          />
+        </div>
+      </section>
+
+      <section className="grid gap-6 sm:grid-cols-3">
+        {["Bestseller", "Restocked", "Staff pick"].map((label) => (
+          <div key={label} className="space-y-3">
+            <ProductSlot theme={theme} label={label} ratio="aspect-square" />
+            <LinkCta theme={theme}>Shop now</LinkCta>
+          </div>
+        ))}
+      </section>
+    </article>
   );
 }

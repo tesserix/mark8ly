@@ -24,6 +24,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/notification"
 	"github.com/mark8ly/platform-api/internal/onboarding"
 	"github.com/mark8ly/platform-api/internal/outbox"
+	"github.com/mark8ly/platform-api/internal/store"
 	"github.com/mark8ly/platform-api/internal/tenant"
 	testhelper "github.com/mark8ly/platform-api/internal/test"
 	"github.com/mark8ly/platform-api/internal/verification"
@@ -110,6 +111,11 @@ func main() {
 	tenantSvc := tenant.NewService(tenantRepo, fga)
 	tenantHandler := tenant.NewHandler(tenantSvc, fga)
 
+	// Phase Q — store domain.
+	storeRepo := store.NewRepository(conn)
+	storeSvc := store.NewService(storeRepo)
+	storeHandler := store.NewHandler(storeSvc, fga)
+
 	// In dev/test environments, capture plaintext magic-link tokens so the
 	// e2e suite can bypass the inbox. nil in prod — verification.Service
 	// no-ops the recorder call when nil.
@@ -135,6 +141,7 @@ func main() {
 		DB:                    conn,
 		Repo:                  onboarding.NewRepository(conn),
 		TenantRepo:            tenantRepo,
+		StoreRepo:             storeRepo,
 		Sender:                sender,
 		EmailFrom:             cfg.EmailFrom,
 		AdminURLTemplate:      cfg.AdminBaseURLTemplate,
@@ -160,6 +167,7 @@ func main() {
 	invitationSvc := invitation.NewService(invitation.Config{
 		Repo:       invitation.NewRepository(conn),
 		TenantRepo: tenantRepo,
+		StoreRepo:  storeRepo,
 		FGA:        fga,
 		Sender:     sender,
 		EmailFrom:  cfg.EmailFrom,
@@ -181,6 +189,7 @@ func main() {
 
 	locationHandler.Register(v1)
 	tenantHandler.Register(v1, internal)
+	storeHandler.Register(v1, internal)
 	verifHandler.Register(v1)
 	onboardingHandler.Register(v1)
 	invitationHandler.Register(v1, internal)

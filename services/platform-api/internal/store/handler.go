@@ -1,0 +1,146 @@
+package store
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/mark8ly/platform-api/internal/authz"
+	apperrors "github.com/mark8ly/platform-api/pkg/errors"
+)
+
+// Handler is the HTTP layer for store endpoints.
+//
+// Phase Q: store update is FGA-gated on `can_edit_store_settings`
+// which resolves transitively to tenant-level owners/admins via the
+// `from parent` inheritance in the DSL. The admin BFF forwards the
+// caller's uid in the request body so the handler can run the
+// check without standing up its own auth middleware — same pattern
+// as the tenant handler post-Phase-O.
+type Handler struct {
+	svc *Service
+	fga authz.Client
+}
+
+func NewHandler(svc *Service, fga authz.Client) *Handler {
+	return &Handler{svc: svc, fga: fga}
+}
+
+// Register mounts store routes onto the given gin.RouterGroups.
+//
+// Public routes:
+//
+//	GET /stores/slug-available?slug=...  used by onboarding wizard
+//	                                     and the future add-store UI
+//
+// Internal routes (trusted in-cluster callers, i.e. admin BFF):
+//
+//	GET   /internal/stores/:id                 — fetch a single store
+//	GET   /internal/tenants/:tenant_id/stores  — list a tenant's stores
+//	PATCH /internal/stores/:id                 — edit a store (name)
+func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
+	pub := public.Group("/stores")
+	{
+		pub.GET("/slug-available", h.checkSlugAvailable)
+	}
+
+	int := internal.Group("/stores")
+	{
+		int.GET("/:id", h.getStore)
+		int.PATCH("/:id", h.updateStore)
+	}
+
+	// Listing stores is addressed under the tenant they belong to
+	// so the route lines up with REST nesting expectations.
+	internal.GET("/tenants/:id/stores", h.listByTenant)
+}
+
+func (h *Handler) checkSlugAvailable(c *gin.Context) {
+	slug := c.Query("slug")
+	available, err := h.svc.IsSlugAvailable(c.Request.Context(), slug)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{"slug": slug, "available": available},
+	})
+}
+
+func (h *Handler) getStore(c *gin.Context) {
+	s, err := h.svc.GetByID(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": s})
+}
+
+func (h *Handler) listByTenant(c *gin.Context) {
+	rows, err := h.svc.ListByTenant(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": rows})
+}
+
+type updateStoreRequest struct {
+	Name *string `json:"name"`
+	// UID carries the calling user's GIP uid so we can run the FGA
+	// can_edit_store_settings check. Same pattern the tenant handler
+	// uses since Phase O.
+	UID string `json:"uid"`
+}
+
+func (h *Handler) updateStore(c *gin.Context) {
+	var req updateStoreRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_body",
+			"message": "request body is not valid JSON",
+		})
+		return
+	}
+	storeID := c.Param("id")
+
+	if h.fga != nil {
+		if req.UID == "" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "missing_uid",
+				"message": "authorization requires uid",
+			})
+			return
+		}
+		allowed, err := h.fga.CheckObject(c.Request.Context(), req.UID, "can_edit_store_settings", "store", storeID)
+		if err != nil {
+			respondError(c, apperrors.Internal("authz_check_failed", "authorization check failed"))
+			return
+		}
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "forbidden",
+				"message": "you do not have permission to edit this store's settings",
+			})
+			return
+		}
+	}
+
+	s, err := h.svc.Update(c.Request.Context(), storeID, UpdateInput{Name: req.Name})
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": s})
+}
+
+func respondError(c *gin.Context, err error) {
+	if ae, ok := apperrors.As(err); ok {
+		c.JSON(ae.Status, gin.H{"error": ae.Code, "message": ae.Message})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"error":   "internal_error",
+		"message": "an unexpected error occurred",
+	})
+}

@@ -12,15 +12,13 @@ import (
 
 // fakeRepo is an in-memory Repository for unit tests.
 type fakeRepo struct {
-	mu     sync.Mutex
-	bySlug map[string]*Tenant
-	byID   map[string]*Tenant
+	mu   sync.Mutex
+	byID map[string]*Tenant
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		bySlug: map[string]*Tenant{},
-		byID:   map[string]*Tenant{},
+		byID: map[string]*Tenant{},
 	}
 }
 
@@ -28,9 +26,8 @@ func (f *fakeRepo) seed(t *Tenant) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if t.ID == "" {
-		t.ID = "id-" + t.Slug
+		t.ID = "id-" + t.Name
 	}
-	f.bySlug[t.Slug] = t
 	f.byID[t.ID] = t
 }
 
@@ -40,16 +37,6 @@ func (f *fakeRepo) GetByID(ctx context.Context, id string) (*Tenant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	t, ok := f.byID[id]
-	if !ok {
-		return nil, apperrors.NotFound("tenant_not_found", "no")
-	}
-	return t, nil
-}
-
-func (f *fakeRepo) GetBySlug(ctx context.Context, slug string) (*Tenant, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	t, ok := f.bySlug[slug]
 	if !ok {
 		return nil, apperrors.NotFound("tenant_not_found", "no")
 	}
@@ -92,75 +79,11 @@ func (f *fakeRepo) UpdateEditable(ctx context.Context, id string, patch map[stri
 	return t, nil
 }
 
-func (f *fakeRepo) SlugExists(ctx context.Context, slug string) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	_, ok := f.bySlug[slug]
-	return ok, nil
-}
+// Phase Q: slug-related tests (IsSlugAvailable, SlugExists) moved
+// to the store package along with the slug itself. See
+// internal/store for equivalent coverage.
 
 // ─────────────────────────────────────────────────────────────────────────
-
-func TestService_IsSlugAvailable_ReturnsTrueForUnusedSlug(t *testing.T) {
-	svc := NewService(newFakeRepo(), nil)
-	ok, err := svc.IsSlugAvailable(context.Background(), "acme")
-	if err != nil {
-		t.Fatalf("error = %v", err)
-	}
-	if !ok {
-		t.Error("expected available, got taken")
-	}
-}
-
-func TestService_IsSlugAvailable_ReturnsFalseForTakenSlug(t *testing.T) {
-	repo := newFakeRepo()
-	repo.seed(&Tenant{Slug: "acme"})
-	svc := NewService(repo, nil)
-
-	ok, err := svc.IsSlugAvailable(context.Background(), "acme")
-	if err != nil {
-		t.Fatalf("error = %v", err)
-	}
-	if ok {
-		t.Error("expected taken, got available")
-	}
-}
-
-func TestService_IsSlugAvailable_RejectsMalformedSlugs(t *testing.T) {
-	svc := NewService(newFakeRepo(), nil)
-	cases := []string{
-		"",        // empty
-		"a",       // too short
-		"-leading", // leading hyphen
-		"trailing-", // trailing hyphen
-		"UPPER",   // uppercase
-		"has space",
-		"has.dot",
-	}
-	for _, slug := range cases {
-		t.Run(slug, func(t *testing.T) {
-			_, err := svc.IsSlugAvailable(context.Background(), slug)
-			ae, ok := apperrors.As(err)
-			if !ok || ae.Code != "invalid_slug" {
-				t.Errorf("expected invalid_slug, got %v", err)
-			}
-		})
-	}
-}
-
-func TestService_IsSlugAvailable_TrimsWhitespaceButNotCase(t *testing.T) {
-	svc := NewService(newFakeRepo(), nil)
-
-	// Whitespace IS trimmed.
-	if _, err := svc.IsSlugAvailable(context.Background(), "  acme  "); err != nil {
-		t.Errorf("whitespace should be trimmed, got %v", err)
-	}
-	// Uppercase is NOT silently lowercased — it's rejected so the user
-	// commits to a single canonical casing.
-	if _, err := svc.IsSlugAvailable(context.Background(), "Acme"); err == nil {
-		t.Error("uppercase should be rejected, not normalized")
-	}
-}
 
 func TestService_GetByID_RejectsEmpty(t *testing.T) {
 	svc := NewService(newFakeRepo(), nil)
@@ -191,15 +114,15 @@ func TestService_GetByOwnerUserID_RejectsEmpty(t *testing.T) {
 
 func TestService_GetByOwnerUserID_FindsSeededTenant(t *testing.T) {
 	repo := newFakeRepo()
-	repo.seed(&Tenant{Slug: "acme", OwnerUserID: "uid-42"})
+	repo.seed(&Tenant{ID: "t-acme", Name: "Acme", OwnerUserID: "uid-42"})
 	svc := NewService(repo, nil)
 
 	got, err := svc.GetByOwnerUserID(context.Background(), "uid-42")
 	if err != nil {
 		t.Fatalf("error = %v", err)
 	}
-	if got.Slug != "acme" {
-		t.Errorf("Slug = %q, want acme", got.Slug)
+	if got.ID != "t-acme" {
+		t.Errorf("ID = %q, want t-acme", got.ID)
 	}
 }
 
@@ -207,7 +130,7 @@ func ptr[T any](v T) *T { return &v }
 
 func TestService_Update_RenamesTenant(t *testing.T) {
 	repo := newFakeRepo()
-	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	repo.seed(&Tenant{ID: "t1", Name: "Acme"})
 	svc := NewService(repo, nil)
 
 	got, err := svc.Update(context.Background(), "t1", UpdateInput{Name: ptr("Acme Corp")})
@@ -221,7 +144,7 @@ func TestService_Update_RenamesTenant(t *testing.T) {
 
 func TestService_Update_TrimsName(t *testing.T) {
 	repo := newFakeRepo()
-	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	repo.seed(&Tenant{ID: "t1", Name: "Acme"})
 	svc := NewService(repo, nil)
 
 	got, err := svc.Update(context.Background(), "t1", UpdateInput{Name: ptr("  Trimmed  ")})
@@ -235,7 +158,7 @@ func TestService_Update_TrimsName(t *testing.T) {
 
 func TestService_Update_RejectsEmptyName(t *testing.T) {
 	repo := newFakeRepo()
-	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	repo.seed(&Tenant{ID: "t1", Name: "Acme"})
 	svc := NewService(repo, nil)
 
 	_, err := svc.Update(context.Background(), "t1", UpdateInput{Name: ptr("   ")})
@@ -247,7 +170,7 @@ func TestService_Update_RejectsEmptyName(t *testing.T) {
 
 func TestService_Update_RejectsOversizedName(t *testing.T) {
 	repo := newFakeRepo()
-	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	repo.seed(&Tenant{ID: "t1", Name: "Acme"})
 	svc := NewService(repo, nil)
 
 	long := make([]byte, 201)
@@ -263,7 +186,7 @@ func TestService_Update_RejectsOversizedName(t *testing.T) {
 
 func TestService_Update_RejectsEmptyPatch(t *testing.T) {
 	repo := newFakeRepo()
-	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	repo.seed(&Tenant{ID: "t1", Name: "Acme"})
 	svc := NewService(repo, nil)
 
 	_, err := svc.Update(context.Background(), "t1", UpdateInput{})

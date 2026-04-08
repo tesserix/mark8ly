@@ -10,14 +10,15 @@ import (
 )
 
 // NewFGAOutboxHandler returns the outbox handler that ships the
-// owner tuple to OpenFGA on onboarding completion.
+// onboarding-completion FGA tuples to OpenFGA. Two tuples:
 //
-// Phase O: only the owner tuple is written. Under the new DSL
-// (infra/openfga/model.fga), `member` is a derived union over
-// owner/admin/staff/viewer, so writing owner is sufficient to pass
-// auth-bff's CheckMembership during autologin — the old explicit
-// `member` tuple would be rejected by the model now since member
-// is no longer directly-assignable.
+//  1. user:<uid> owner tenant:<tid>       — Phase D/O
+//  2. tenant:<tid> parent store:<sid>     — Phase Q
+//
+// The parent tuple unlocks the `from parent` inheritance in the
+// store type's DSL: tenant owners/admins automatically get
+// store-level permissions on every store in their tenant, so the
+// common single-founder case needs zero per-store tuples.
 //
 // Returning an error from the handler causes the drainer to retry
 // with exponential backoff. Eventual success is guaranteed as long
@@ -33,6 +34,14 @@ func NewFGAOutboxHandler(fga authz.Client) outbox.Handler {
 		}
 		if err := fga.WriteOwnership(ctx, p.UserID, p.TenantID); err != nil {
 			return fmt.Errorf("fga outbox: write ownership: %w", err)
+		}
+		// StoreID is optional so pre-Phase-Q outbox rows that were
+		// written without one (and any future tuple-write payloads
+		// that don't involve a store) still drain cleanly.
+		if p.StoreID != "" {
+			if err := fga.WriteStoreParent(ctx, p.StoreID, p.TenantID); err != nil {
+				return fmt.Errorf("fga outbox: write store parent: %w", err)
+			}
 		}
 		return nil
 	}

@@ -19,8 +19,15 @@ import {
  * picker to be usable with ~400 entries; left out of v1.
  */
 export default async function GeneralSettingsPage() {
-  const { tenantName, email, tenant, role, memberships, tenantId } =
-    await getServerSessionContext();
+  const {
+    tenantName,
+    email,
+    tenant,
+    role,
+    memberships,
+    tenantId,
+    currentStore,
+  } = await getServerSessionContext();
   const editable = canEditSettings(role);
 
   return (
@@ -49,8 +56,12 @@ export default async function GeneralSettingsPage() {
           )}
         </header>
 
-        {tenant ? (
-          <GeneralSettingsForm tenant={tenant} editable={editable} />
+        {tenant && currentStore ? (
+          <GeneralSettingsForm
+            tenant={tenant}
+            store={currentStore}
+            editable={editable}
+          />
         ) : (
           <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-6 text-sm text-destructive">
             We couldn&apos;t load your store details. Please refresh, or

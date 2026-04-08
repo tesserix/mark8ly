@@ -45,7 +45,9 @@ func NewHandler(svc *Service, fga authz.Client) *Handler {
 func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 	t := public.Group("/tenants")
 	{
-		t.GET("/slug-available", h.checkSlugAvailable)
+		// Phase Q: slug-available moved to the store package
+		// (store.Handler.checkSlugAvailable); a tenant doesn't
+		// own a slug anymore.
 		t.GET("/by-owner", h.getTenantByOwner)
 	}
 
@@ -179,21 +181,6 @@ func (h *Handler) getMe(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"role": string(role)}})
-}
-
-func (h *Handler) checkSlugAvailable(c *gin.Context) {
-	slug := c.Query("slug")
-	available, err := h.svc.IsSlugAvailable(c.Request.Context(), slug)
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"data": gin.H{
-			"slug":      slug,
-			"available": available,
-		},
-	})
 }
 
 // getTenantByOwner serves GET /tenants/by-owner?uid=...

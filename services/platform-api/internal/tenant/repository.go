@@ -12,35 +12,20 @@ import (
 )
 
 // Repository is the data-access interface for tenants.
+//
+// Phase Q: GetBySlug and SlugExists moved to the store package —
+// slug is a store-level identifier now.
 type Repository interface {
-	// CreateInTx inserts a tenant inside an existing transaction.
-	// The caller must commit the tx for the row to persist. Used by
-	// onboarding completion which writes both the tenant and an outbox
-	// row in one tx.
 	CreateInTx(ctx context.Context, tx *gorm.DB, t *Tenant) error
-	// GetByID returns a tenant by its UUID.
 	GetByID(ctx context.Context, id string) (*Tenant, error)
-	// GetBySlug returns a tenant by its public slug.
-	GetBySlug(ctx context.Context, slug string) (*Tenant, error)
-	// SlugExists checks slug uniqueness without loading the row.
-	SlugExists(ctx context.Context, slug string) (bool, error)
-	// GetByOwnerUserID returns the tenant whose owner is the given GIP UID.
-	// Used by returning-user sign-in to map an authenticated GIP identity
-	// back to its Mark8ly tenant before calling auth-bff /auth/auto-login
-	// (which requires workspace_tenant). v1 assumption: a UID owns at most
-	// one tenant.
+	// GetByOwnerUserID returns the tenant whose owner is the given
+	// GIP UID. Used by returning-user sign-in to map an authenticated
+	// GIP identity back to a Mark8ly tenant before calling auth-bff
+	// /auth/auto-login. v1 assumption: a UID owns at most one tenant.
 	GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, error)
-	// UpdateEditable applies a patch to the editable subset of a tenant row
-	// and returns the updated row. Only fields present in the patch map are
-	// written, so callers can PATCH a single field without clobbering the
-	// rest. The caller is responsible for whitelisting which columns are
-	// allowed — the repo trusts its input.
 	UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error)
-	// ListByIDs returns tenant rows for each id in the given slice, in
-	// arbitrary order, skipping any id that doesn't resolve. Used by
-	// Phase P multi-tenant membership lookups: FGA returns the ids via
-	// ListObjects, then the tenant handler enriches them with
-	// name/slug/status from Postgres in a single query.
+	// ListByIDs returns tenant rows for each id in the given slice.
+	// Used by Phase P multi-tenant membership lookups.
 	ListByIDs(ctx context.Context, ids []string) ([]Tenant, error)
 }
 
@@ -56,10 +41,8 @@ func NewRepository(db *gorm.DB) Repository {
 
 func (r *gormRepository) CreateInTx(ctx context.Context, tx *gorm.DB, t *Tenant) error {
 	if err := tx.WithContext(ctx).Create(t).Error; err != nil {
-		// Catch slug-uniqueness violations and translate them into a
-		// caller-friendly conflict error.
 		if isUniqueViolation(err) {
-			return apperrors.Conflict("slug_taken", fmt.Sprintf("slug %q is already taken", t.Slug))
+			return apperrors.Conflict("tenant_conflict", "tenant row violates a unique constraint")
 		}
 		return fmt.Errorf("tenant: create: %w", err)
 	}
@@ -74,18 +57,6 @@ func (r *gormRepository) GetByID(ctx context.Context, id string) (*Tenant, error
 	}
 	if err != nil {
 		return nil, fmt.Errorf("tenant: get by id %q: %w", id, err)
-	}
-	return &t, nil
-}
-
-func (r *gormRepository) GetBySlug(ctx context.Context, slug string) (*Tenant, error) {
-	var t Tenant
-	err := r.db.WithContext(ctx).Where("slug = ?", slug).First(&t).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, apperrors.NotFound("tenant_not_found", fmt.Sprintf("tenant %q does not exist", slug))
-	}
-	if err != nil {
-		return nil, fmt.Errorf("tenant: get by slug %q: %w", slug, err)
 	}
 	return &t, nil
 }

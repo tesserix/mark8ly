@@ -15,7 +15,11 @@ import (
 type FakeClient struct {
 	mu sync.Mutex
 	// roles[role][user|tenant] = true
-	roles          map[Role]map[string]bool
+	roles map[Role]map[string]bool
+	// storeParents[storeID] = tenantID — Phase Q store->tenant parent
+	// tuples tracked separately so the `member from parent` logic in
+	// Check has something to resolve against.
+	storeParents   map[string]string
 	failNextWrites int
 	failNextChecks int
 	writeCallCount int
@@ -28,7 +32,7 @@ func NewFake() *FakeClient {
 	for _, r := range allRoles {
 		roles[r] = make(map[string]bool)
 	}
-	return &FakeClient{roles: roles}
+	return &FakeClient{roles: roles, storeParents: map[string]string{}}
 }
 
 // FailNextWrites makes the next n Write{Membership,Ownership} calls return
@@ -92,6 +96,27 @@ func (f *FakeClient) WriteOwnership(ctx context.Context, userID, tenantID string
 	return f.writeRole(userID, RoleOwner, tenantID)
 }
 
+// WriteStoreParent records a store→tenant parent tuple. Idempotent:
+// writing the same pair twice is a no-op.
+func (f *FakeClient) WriteStoreParent(ctx context.Context, storeID, tenantID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.writeCallCount++
+	if f.failNextWrites > 0 {
+		f.failNextWrites--
+		return fakeError("simulated FGA write failure")
+	}
+	f.storeParents[storeID] = tenantID
+	return nil
+}
+
+// HasStoreParent is a test helper to assert a parent tuple was written.
+func (f *FakeClient) HasStoreParent(storeID, tenantID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.storeParents[storeID] == tenantID
+}
+
 func (f *FakeClient) WriteRole(ctx context.Context, userID string, role Role, tenantID string) error {
 	if _, ok := rolePriority[role]; !ok {
 		return fakeError("unknown role")
@@ -125,6 +150,16 @@ func (f *FakeClient) CheckMembership(ctx context.Context, userID, tenantID strin
 // parsing the DSL, and the test suite in authz_test.go guards the
 // fake and the real client against drift.
 func (f *FakeClient) Check(ctx context.Context, userID, relation, tenantID string) (bool, error) {
+	return f.CheckObject(ctx, userID, relation, "tenant", tenantID)
+}
+
+// CheckObject resolves the Phase O tenant relations AND the Phase Q
+// store relations. Store-type lookups use the storeParents map to
+// walk up to the tenant, mirroring the DSL's `from parent`
+// inheritance rules. No store-direct role tuples exist in Phase Q
+// (stores only inherit); Phase R will teach this method about
+// store-level owner/manager/staff/viewer tuples when it lands.
+func (f *FakeClient) CheckObject(ctx context.Context, userID, relation, objectType, objectID string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.checkCallCount++
@@ -132,17 +167,42 @@ func (f *FakeClient) Check(ctx context.Context, userID, relation, tenantID strin
 		f.failNextChecks--
 		return false, fakeError("simulated FGA check failure")
 	}
+
+	switch objectType {
+	case "tenant":
+		return f.checkTenantRelationLocked(userID, relation, objectID), nil
+	case "store":
+		tenantID, ok := f.storeParents[objectID]
+		if !ok {
+			return false, nil
+		}
+		switch relation {
+		case "can_view_store", "member":
+			return f.hasAnyRoleLocked(userID, tenantID), nil
+		case "can_edit_store_settings":
+			key := userID + "|" + tenantID
+			return f.roles[RoleOwner][key] || f.roles[RoleAdmin][key], nil
+		case "can_manage_catalog":
+			key := userID + "|" + tenantID
+			return f.roles[RoleOwner][key] ||
+				f.roles[RoleAdmin][key] ||
+				f.roles[RoleStaff][key], nil
+		}
+	}
+	return false, nil
+}
+
+func (f *FakeClient) checkTenantRelationLocked(userID, relation, tenantID string) bool {
 	key := userID + "|" + tenantID
 	switch relation {
 	case "member", "can_view_settings":
-		return f.hasAnyRoleLocked(userID, tenantID), nil
-	case "can_edit_settings", "can_invite_members":
-		return f.roles[RoleOwner][key] || f.roles[RoleAdmin][key], nil
+		return f.hasAnyRoleLocked(userID, tenantID)
+	case "can_edit_settings", "can_invite_members", "can_manage_stores":
+		return f.roles[RoleOwner][key] || f.roles[RoleAdmin][key]
 	case string(RoleOwner), string(RoleAdmin), string(RoleStaff), string(RoleViewer):
-		return f.roles[Role(relation)][key], nil
-	default:
-		return false, nil
+		return f.roles[Role(relation)][key]
 	}
+	return false
 }
 
 func (f *FakeClient) GetRole(ctx context.Context, userID, tenantID string) (Role, error) {

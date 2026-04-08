@@ -83,6 +83,14 @@ MODEL_JSON='{
               { "computedUserset": { "relation": "admin" } }
             ]
           }
+        },
+        "can_manage_stores": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner" } },
+              { "computedUserset": { "relation": "admin" } }
+            ]
+          }
         }
       },
       "metadata": {
@@ -91,6 +99,90 @@ MODEL_JSON='{
           "admin":  { "directly_related_user_types": [{ "type": "user" }] },
           "staff":  { "directly_related_user_types": [{ "type": "user" }] },
           "viewer": { "directly_related_user_types": [{ "type": "user" }] }
+        }
+      }
+    },
+    {
+      "type": "store",
+      "relations": {
+        "parent":  { "this": {} },
+        "owner":   { "this": {} },
+        "manager": { "this": {} },
+        "staff":   { "this": {} },
+        "viewer":  { "this": {} },
+        "tenant_admin": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "parent" },
+            "computedUserset": { "relation": "admin" }
+          }
+        },
+        "tenant_owner": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "parent" },
+            "computedUserset": { "relation": "owner" }
+          }
+        },
+        "member": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner" } },
+              { "computedUserset": { "relation": "manager" } },
+              { "computedUserset": { "relation": "staff" } },
+              { "computedUserset": { "relation": "viewer" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "parent" },
+                  "computedUserset": { "relation": "member" }
+                }
+              }
+            ]
+          }
+        },
+        "can_view_store": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner" } },
+              { "computedUserset": { "relation": "manager" } },
+              { "computedUserset": { "relation": "staff" } },
+              { "computedUserset": { "relation": "viewer" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "parent" },
+                  "computedUserset": { "relation": "member" }
+                }
+              }
+            ]
+          }
+        },
+        "can_edit_store_settings": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner" } },
+              { "computedUserset": { "relation": "manager" } },
+              { "computedUserset": { "relation": "tenant_owner" } },
+              { "computedUserset": { "relation": "tenant_admin" } }
+            ]
+          }
+        },
+        "can_manage_catalog": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner" } },
+              { "computedUserset": { "relation": "manager" } },
+              { "computedUserset": { "relation": "staff" } },
+              { "computedUserset": { "relation": "tenant_owner" } },
+              { "computedUserset": { "relation": "tenant_admin" } }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "parent":  { "directly_related_user_types": [{ "type": "tenant" }] },
+          "owner":   { "directly_related_user_types": [{ "type": "user" }] },
+          "manager": { "directly_related_user_types": [{ "type": "user" }] },
+          "staff":   { "directly_related_user_types": [{ "type": "user" }] },
+          "viewer":  { "directly_related_user_types": [{ "type": "user" }] }
         }
       }
     }

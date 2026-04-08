@@ -79,6 +79,14 @@ type Client interface {
 	// the onboarding outbox drainer on tenant creation.
 	WriteOwnership(ctx context.Context, userID, tenantID string) error
 
+	// WriteStoreParent writes store:<id> parent tenant:<id>. Called
+	// by the onboarding outbox drainer on default-store creation
+	// (Phase Q). The parent tuple is what lets FGA's store-type
+	// permissions inherit from tenant-level roles via `from parent`
+	// in the DSL, so tenant owners/admins automatically have access
+	// to every store under their tenant without per-store tuples.
+	WriteStoreParent(ctx context.Context, storeID, tenantID string) error
+
 	// WriteRole writes user:<id> <role> tenant:<id> for one of the
 	// four role constants. Reserved for the future invite-teammate
 	// flow; unused in Phase O but checked in unit tests.
@@ -88,10 +96,14 @@ type Client interface {
 	// `member` relation, used by auth-bff's autologin retry loop.
 	CheckMembership(ctx context.Context, userID, tenantID string) (bool, error)
 
-	// Check is the generic permission check. Relation can be any
-	// relation or permission defined on the tenant type, e.g.
-	// "can_edit_settings".
+	// Check is the generic permission check against a `tenant:<id>`
+	// object. Relation can be any relation or permission defined on
+	// the tenant type.
 	Check(ctx context.Context, userID, relation, tenantID string) (bool, error)
+
+	// CheckObject is Check with an explicit object type. Use for
+	// store-scoped (and future vendor/product-scoped) permissions.
+	CheckObject(ctx context.Context, userID, relation, objectType, objectID string) (bool, error)
 
 	// GetRole returns the highest role the user holds on the tenant,
 	// or the empty string if they have no role at all. "Highest" is
@@ -176,6 +188,28 @@ func (c *fgaClient) WriteOwnership(ctx context.Context, userID, tenantID string)
 	return c.write(ctx, userID, "owner", tenantID)
 }
 
+// WriteStoreParent writes the tuple `tenant:<tid> parent store:<sid>`.
+// Unlike WriteOwnership / WriteRole the "user" field carries a
+// `tenant:` prefix rather than `user:` because the store-type
+// `parent` relation accepts a tenant subject, not a user.
+func (c *fgaClient) WriteStoreParent(ctx context.Context, storeID, tenantID string) error {
+	body := client.ClientWriteRequest{
+		Writes: []client.ClientTupleKey{{
+			User:     "tenant:" + tenantID,
+			Relation: "parent",
+			Object:   "store:" + storeID,
+		}},
+	}
+	_, err := c.api.Write(ctx).Body(body).Execute()
+	if err != nil {
+		if isAlreadyExistsError(err) {
+			return nil
+		}
+		return fmt.Errorf("authz: write store parent: %w", err)
+	}
+	return nil
+}
+
 // WriteRole writes the tuple `user:<id> <role> tenant:<id>` for any of
 // the four role constants. Reserved for the invite-teammate flow; the
 // integration point exists now so Phase O can test it even though the
@@ -194,12 +228,17 @@ func (c *fgaClient) CheckMembership(ctx context.Context, userID, tenantID string
 	return c.Check(ctx, userID, "member", tenantID)
 }
 
-// Check is the generic permission check.
+// Check is the generic permission check against a `tenant:` object.
 func (c *fgaClient) Check(ctx context.Context, userID, relation, tenantID string) (bool, error) {
+	return c.CheckObject(ctx, userID, relation, "tenant", tenantID)
+}
+
+// CheckObject is Check against an explicit object type.
+func (c *fgaClient) CheckObject(ctx context.Context, userID, relation, objectType, objectID string) (bool, error) {
 	body := client.ClientCheckRequest{
 		User:     "user:" + userID,
 		Relation: relation,
-		Object:   "tenant:" + tenantID,
+		Object:   objectType + ":" + objectID,
 	}
 	resp, err := c.api.Check(ctx).Body(body).Execute()
 	if err != nil {

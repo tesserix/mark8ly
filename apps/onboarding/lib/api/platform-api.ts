@@ -115,10 +115,16 @@ export const onboarding = {
 };
 
 // ─── Tenants ────────────────────────────────────────────────────────────
+//
+// Phase Q: slug availability moved to the store package — a slug is
+// a store-level identifier now. The onboarding wizard still calls
+// this during the wizard's draft phase, before the store row
+// actually exists, so "available" means "no other store anywhere
+// has claimed this slug yet".
 export const tenants = {
   isSlugAvailable: (slug: string) =>
     request<{ slug: string; available: boolean }>(
-      `/api/v1/tenants/slug-available?slug=${encodeURIComponent(slug)}`,
+      `/api/v1/stores/slug-available?slug=${encodeURIComponent(slug)}`,
     ),
 };
 

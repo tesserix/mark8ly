@@ -7,15 +7,35 @@
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 
+/**
+ * Tenant = the company that owns one or more stores. Phase Q moved
+ * slug/currency/timezone/country to the Store interface; a tenant
+ * keeps only company-level fields (name, owner, status).
+ */
 export interface Tenant {
   id: string;
-  slug: string;
   name: string;
   owner_user_id: string;
   owner_email: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Store = a single storefront under a tenant. Carries the public
+ * URL identity and locale settings. Phase Q introduces this as a
+ * first-class admin concept; Phase R adds store-level role grants.
+ */
+export interface Store {
+  id: string;
+  tenant_id: string;
+  slug: string;
+  name: string;
   country_code: string;
   currency_code: string;
   timezone: string;
+  logo_url?: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -47,23 +67,54 @@ export async function fetchTenant(id: string): Promise<Tenant | null> {
 }
 
 /**
- * Patches the editable subset of a tenant row. Phase N ships with only
- * `name` editable; additional fields will be added as follow-up slices
- * (timezone picker, currency change with billing warning, etc).
- *
- * Hits the internal route at PATCH /internal/tenants/:id which platform-
- * api exposes for trusted in-cluster callers. The admin server action
- * is the only caller today and has already validated the session's
- * tenant id against the path param before invoking this.
- *
- * Throws PlatformApiError on any non-2xx so callers can map the error
- * code to a user-friendly message inline in the form.
+ * Lists all stores under the given tenant. Used by the admin server
+ * session helper to resolve the current store (default = first).
  */
-export async function updateTenant(
+export async function listStoresByTenant(
+  tenantId: string,
+): Promise<Store[]> {
+  if (!tenantId) return [];
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/tenants/${tenantId}/stores`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data: Store[] };
+    return body.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetches a single store by id. Used by the settings page when the
+ * caller already knows which store is current.
+ */
+export async function fetchStore(id: string): Promise<Store | null> {
+  if (!id) return null;
+  try {
+    const res = await fetch(`${PLATFORM_API_URL}/internal/stores/${id}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data: Store };
+    return body.data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Patches the editable subset of a store row. Phase Q ships with
+ * only `name` editable — currency / timezone / country edits need
+ * their own slice (billing / picker / tax concerns).
+ */
+export async function updateStore(
   id: string,
-  patch: { name?: string; uid: string },
-): Promise<Tenant> {
-  const res = await fetch(`${PLATFORM_API_URL}/internal/tenants/${id}`, {
+  patch: { name?: string },
+): Promise<Store> {
+  const res = await fetch(`${PLATFORM_API_URL}/internal/stores/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -82,7 +133,7 @@ export async function updateTenant(
       body.message ?? `HTTP ${res.status}`,
     );
   }
-  const body = (await res.json()) as TenantResponse;
+  const body = (await res.json()) as { data: Store };
   return body.data;
 }
 

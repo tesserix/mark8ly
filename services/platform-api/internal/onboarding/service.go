@@ -10,6 +10,7 @@ import (
 
 	"github.com/mark8ly/platform-api/internal/notification"
 	"github.com/mark8ly/platform-api/internal/outbox"
+	"github.com/mark8ly/platform-api/internal/store"
 	"github.com/mark8ly/platform-api/internal/tenant"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
@@ -30,12 +31,15 @@ import (
 //
 // Together these close the race window from both ends.
 type Service struct {
-	db          *gorm.DB
-	repo        Repository
-	tenantRepo  tenant.Repository
-	sender      notification.Sender
-	emailFrom   string
-	supportSite string
+	db                    *gorm.DB
+	repo                  Repository
+	tenantRepo            tenant.Repository
+	storeRepo             store.Repository
+	sender                notification.Sender
+	emailFrom             string
+	supportSite           string
+	adminURLTemplate      string
+	storefrontURLTemplate string
 }
 
 // Config holds Service dependencies.
@@ -43,24 +47,30 @@ type Config struct {
 	DB         *gorm.DB
 	Repo       Repository
 	TenantRepo tenant.Repository
+	StoreRepo  store.Repository
 	Sender     notification.Sender
 	EmailFrom  string
 	// AdminURLTemplate is a template like "https://%s-admin.mark8ly.com"
-	// for building the welcome email's admin link.
-	AdminURLTemplate     string
+	// for building the welcome email's admin link. Supports both the
+	// per-slug shape (contains %s) and flat-host shape (no %s → used
+	// as-is, for dev on localhost).
+	AdminURLTemplate      string
 	StorefrontURLTemplate string
-	SupportEmail         string
+	SupportEmail          string
 }
 
 // NewService constructs a Service.
 func NewService(cfg Config) *Service {
 	return &Service{
-		db:          cfg.DB,
-		repo:        cfg.Repo,
-		tenantRepo:  cfg.TenantRepo,
-		sender:      cfg.Sender,
-		emailFrom:   cfg.EmailFrom,
-		supportSite: cfg.SupportEmail,
+		db:                    cfg.DB,
+		repo:                  cfg.Repo,
+		tenantRepo:            cfg.TenantRepo,
+		storeRepo:             cfg.StoreRepo,
+		sender:                cfg.Sender,
+		emailFrom:             cfg.EmailFrom,
+		supportSite:           cfg.SupportEmail,
+		adminURLTemplate:      cfg.AdminURLTemplate,
+		storefrontURLTemplate: cfg.StorefrontURLTemplate,
 	}
 }
 
@@ -132,9 +142,15 @@ type CompleteResult struct {
 // fgaWritePayload is the outbox event payload for an FGA tuple write.
 // Stored in outbox_events.payload as JSONB; consumed by the registered
 // handler in cmd/server.
+//
+// Phase Q added StoreID: the drainer also writes the
+// `store:<id> parent tenant:<id>` tuple so FGA's store-type
+// `from parent` inheritance works for the default store created
+// during onboarding.
 type fgaWritePayload struct {
 	UserID   string `json:"user_id"`
 	TenantID string `json:"tenant_id"`
+	StoreID  string `json:"store_id,omitempty"`
 }
 
 // FGAOutboxKind is the dispatch key for FGA membership writes.
@@ -174,32 +190,49 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		return nil, apperrors.BadRequest("email_not_verified", "email must be verified before completion")
 	}
 
+	// Phase Q: onboarding creates BOTH a tenant (the company) and a
+	// default store (the first storefront) in the same transaction.
+	// The merchant's "business name" becomes both the tenant.name
+	// (company) and the store.name ("Main Store" label is reserved
+	// for backfilled legacy tenants only). The store row carries the
+	// slug + currency + timezone + country — the user-facing
+	// storefront identity.
 	t := &tenant.Tenant{
+		Name:        req.BusinessName,
+		OwnerUserID: req.OwnerUserID,
+		OwnerEmail:  req.OwnerEmail,
+		Status:      tenant.StatusActive,
+	}
+	st := &store.Store{
 		Slug:         req.Slug,
 		Name:         req.BusinessName,
-		OwnerUserID:  req.OwnerUserID,
-		OwnerEmail:   req.OwnerEmail,
 		CountryCode:  req.CountryCode,
 		CurrencyCode: req.CurrencyCode,
 		Timezone:     req.Timezone,
-		Status:       tenant.StatusActive,
+		Status:       store.StatusActive,
 	}
 
-	// THE BUG-FIX TRANSACTION.
+	// THE BUG-FIX TRANSACTION (Phase D) extended with the Phase Q
+	// store creation. Either every row commits together or nothing
+	// does — if the store insert fails on a slug collision, the
+	// tenant row is rolled back along with it.
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Step 1: insert tenant row.
 		if err := s.tenantRepo.CreateInTx(ctx, tx, t); err != nil {
 			return err
 		}
-		// Step 2: link the session to the tenant + mark complete.
+		st.TenantID = t.ID
+		if err := s.storeRepo.CreateInTx(ctx, tx, st); err != nil {
+			return err
+		}
 		if err := s.repo.CompleteInTx(ctx, tx, req.SessionID, t.ID); err != nil {
 			return err
 		}
-		// Step 3: enqueue OpenFGA writes via the outbox. Two tuples:
-		// owner AND member, written by the drainer's registered handler.
+		// Phase D outbox event — owner tuple on the tenant. Store-
+		// level tuples come with Phase R (store-level invites).
 		if err := outbox.Enqueue(tx, FGAOutboxKind, fgaWritePayload{
 			UserID:   req.OwnerUserID,
 			TenantID: t.ID,
+			StoreID:  st.ID,
 		}); err != nil {
 			return err
 		}
@@ -209,27 +242,34 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		return nil, err
 	}
 
-	// After commit: send welcome email best-effort. Failure is logged by
-	// the caller (handler), not propagated — the merchant is already
-	// successfully onboarded at this point.
 	if s.sender != nil {
-		_ = s.sendWelcome(ctx, t, req)
+		_ = s.sendWelcome(ctx, t, st, req)
 	}
 
-	return &CompleteResult{TenantID: t.ID, Slug: t.Slug}, nil
+	return &CompleteResult{TenantID: t.ID, Slug: st.Slug}, nil
 }
 
-func (s *Service) sendWelcome(ctx context.Context, t *tenant.Tenant, req CompleteRequest) error {
+func (s *Service) sendWelcome(ctx context.Context, t *tenant.Tenant, st *store.Store, req CompleteRequest) error {
 	msg, err := notification.RenderWelcome(t.OwnerEmail, s.emailFrom, notification.WelcomeVars{
 		BusinessName:  t.Name,
-		AdminURL:      fmt.Sprintf("https://%s-admin.mark8ly.com", t.Slug),
-		StorefrontURL: fmt.Sprintf("https://%s.mark8ly.com", t.Slug),
+		AdminURL:      formatURLTemplate(s.adminURLTemplate, st.Slug),
+		StorefrontURL: formatURLTemplate(s.storefrontURLTemplate, st.Slug),
 		SupportEmail:  s.supportSite,
 	})
 	if err != nil {
 		return err
 	}
 	return s.sender.Send(ctx, msg)
+}
+
+// formatURLTemplate substitutes %s with slug if present, otherwise
+// returns the template as-is. Lets ops pick flat-host (dev) or
+// per-slug (prod) URL shapes via config without a code change.
+func formatURLTemplate(template, slug string) string {
+	if strings.Contains(template, "%s") {
+		return fmt.Sprintf(template, slug)
+	}
+	return template
 }
 
 // validateCompleteRequest enforces presence + shape of every required field.

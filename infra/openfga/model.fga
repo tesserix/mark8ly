@@ -34,6 +34,39 @@ type tenant
 
     define member: owner or admin or staff or viewer
 
-    define can_view_settings: owner or admin or staff or viewer
-    define can_edit_settings:  owner or admin
-    define can_invite_members: owner or admin
+    define can_view_settings:   owner or admin or staff or viewer
+    define can_edit_settings:   owner or admin
+    define can_invite_members:  owner or admin
+    define can_manage_stores:   owner or admin
+
+# Phase Q — store type.
+#
+# A store lives under a tenant via the `parent` relation. Store-level
+# roles (owner/manager/staff/viewer) are reserved for the future
+# "invite someone to a specific store" flow in Phase R; Phase Q ships
+# them so the model is ready without a second migration.
+#
+# The `from parent` tuple-to-userset lets tenant-level owners and
+# admins automatically inherit store-level permissions without any
+# per-store tuple writes — the common case (solo founder with one
+# store) needs zero store tuples and Just Works.
+type store
+  relations
+    define parent: [tenant]
+
+    define owner:   [user]
+    define manager: [user]
+    define staff:   [user]
+    define viewer:  [user]
+
+    define tenant_admin: admin from parent
+    define tenant_owner: owner from parent
+
+    define member:
+        owner or manager or staff or viewer or member from parent
+    define can_view_store:
+        owner or manager or staff or viewer or member from parent
+    define can_edit_store_settings:
+        owner or manager or tenant_owner or tenant_admin
+    define can_manage_catalog:
+        owner or manager or staff or tenant_owner or tenant_admin

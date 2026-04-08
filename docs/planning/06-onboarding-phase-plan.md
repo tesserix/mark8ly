@@ -840,7 +840,113 @@ and tangling it with invites produces a monster commit.
 **Dependencies**: Phase O ships first (done). No migration ordering
 with Phase Q — Phase P adds one table, Phase Q adds another.
 
-### Phase Q — Store model + store switcher (4–5 days)
+### Phase Q — Store model + store switcher *(shipped — switcher deferred to Q.2)*
+
+**What landed:**
+
+- **Migration 0007 0008** (`create_stores.up.sql`) creates the
+  `stores` table, backfills one "Main Store" per existing tenant
+  copying slug/currency/timezone/country, and drops those columns
+  (plus their FK constraints) from `tenants`. Destructive one-shot
+  for dev; prod would need a two-phase deploy.
+- **`internal/store/`** — new domain package (models, repo,
+  service, handler) mirroring the pre-Phase-Q tenant code for
+  slug lookup, slug-available, list-by-tenant, and editable
+  update. Routes: `GET /api/v1/stores/slug-available`, `GET /internal/stores/:id`, `PATCH /internal/stores/:id`, `GET /internal/tenants/:id/stores`.
+- **`tenant.Tenant`** now carries only `id, name, owner_user_id,
+  owner_email, status, created_at, updated_at`. `GetBySlug`,
+  `SlugExists`, `IsSlugAvailable`, and `validateSlug` moved to
+  the store package along with their unit tests. `Membership`
+  lost its slug field — the Phase P tenant switcher shows tenant
+  name only; URL identity is store-scoped.
+- **Onboarding `Complete()`** now creates tenant + default store
+  in the same transaction. The merchant's "business name" is
+  written into both `tenant.name` (company label) and
+  `store.name` (public-facing, Phase Q ships it editable). The
+  slug, currency, timezone, country all land on the store. The
+  bug-fix transaction (Phase D) still covers everything: tenant
+  row + store row + onboarding session completion + FGA outbox
+  event commit atomically.
+- **FGA store type** added to `model.fga` and the seed JSON.
+  Store has direct relations (`owner/manager/staff/viewer`),
+  inherited relations (`tenant_admin = admin from parent`,
+  `tenant_owner = owner from parent`), and derived permissions
+  (`can_edit_store_settings`, `can_manage_catalog`,
+  `can_view_store`, `member`). Tenant owners/admins
+  automatically get every store-level permission via
+  `from parent` — the common single-founder case needs zero
+  store-level tuples.
+- **`authz.Client.WriteStoreParent`** writes
+  `tenant:<tid> parent store:<sid>` tuples. Called by the
+  onboarding outbox drainer alongside the existing owner tuple
+  write. Idempotent.
+- **`authz.Client.CheckObject`** — new method that takes an
+  explicit object type so callers can check store-scoped
+  permissions without the old `Check`'s hardcoded `tenant:`
+  prefix. `Check` is kept as a convenience wrapper around
+  `CheckObject(…, "tenant", …)`. The `FakeClient` implements
+  store resolution by walking the `storeParents` map to the
+  tenant, mirroring the DSL's `from parent` semantics without
+  parsing the DSL.
+- **`PATCH /internal/stores/:id`** is FGA-gated on
+  `can_edit_store_settings` against the store object. Tenant
+  owners/admins pass automatically via inheritance; staff/viewer
+  don't. Same "uid in body" pattern the tenant handler has used
+  since Phase O.
+- **Invitation service** now looks up the tenant's default store
+  slug (first store by created_at) when building the invitation
+  accept URL and when rendering the `VerifyResult.tenant_slug`
+  field. A tenant with zero stores falls back to an empty slug —
+  shouldn't happen post-Phase-Q.
+- **Config-driven URL templates** wired consistently: onboarding
+  welcome + invitation accept links all use
+  `ADMIN_BASE_URL_TEMPLATE` / `STOREFRONT_BASE_URL_TEMPLATE` from
+  `pkg/config` (either flat hosts for dev or `%s`-templated
+  per-slug hosts for prod).
+- **Admin `/settings/general`** now edits the CURRENT store, not
+  the tenant. `GeneralSettingsForm` takes `store: Store`
+  alongside `tenant: Tenant` and displays store-owned fields
+  (name, slug, country, currency, timezone) + the one tenant-
+  owned field (owner_email). Server action
+  `updateGeneralSettings` resolves the current store via
+  `listStoresByTenant` (first = default) then calls the new
+  `updateStore` client.
+- **`getServerSessionContext`** fetches `stores` + `currentStore`
+  in parallel with tenant and memberships; every shell-using
+  page gets them for free.
+- **Admin `platform-api.ts` client** — new `Store` type,
+  `listStoresByTenant`, `fetchStore`, `updateStore`. Old
+  `updateTenant` removed (no tenant-level edit path anymore).
+- **Onboarding wizard** — slug-availability check re-pointed at
+  `/api/v1/stores/slug-available` (was `/tenants/slug-available`).
+
+**E2E coverage after Phase Q**: full admin suite passes
+(**7/7 green**) against the new data model without changes to
+any existing spec beyond helper touch-ups (invite-teammate
+updates for the radix Select in TeamSettings, nothing Phase Q
+specific).
+
+**Deliberate scope cuts still open:**
+
+- **Store switcher UI is not shipped** (Phase Q.2). Onboarding
+  creates exactly one store per tenant, so there's nothing to
+  switch between yet. The switcher dropdown will slot next to
+  the tenant switcher in AdminShell when an "Add store" flow
+  lands.
+- **`/settings/stores` index + Add store** deferred to Q.2 for
+  the same reason — no value without a second-store creation
+  flow.
+- **`current_store_id` in the session cookie** deferred. Phase Q
+  derives "current store" as the first-created store per request
+  on the server. Moving to a cookie-cached id is a straightforward
+  auth-bff change that can happen when multi-store tenants exist.
+- **Store-level role grants** stay deferred to Phase R —
+  infrastructure is ready (DSL + WriteRole supports `store:`
+  objects), UI is not.
+
+### Phase Q (original plan — superseded above, kept for reference)
+
+(4–5 days)
 
 The biggest schema change since Phase D. Introduces the concept that
 a tenant can run multiple storefronts. Today a tenant IS a store:

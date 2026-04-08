@@ -20,29 +20,31 @@ import { useRouter } from "next/navigation";
 import { Input, Label } from "@tesserix/web";
 
 import { updateGeneralSettings } from "@/app/settings/general/actions";
-import type { Tenant } from "@/lib/api/platform-api";
+import type { Store, Tenant } from "@/lib/api/platform-api";
 
 interface GeneralSettingsFormProps {
   tenant: Tenant;
-  // Phase O: when false, the editable name input is disabled and the
-  // Save/Reset buttons are hidden. The server action also enforces
-  // this via canEditSettings(role), so a user flipping the prop in
-  // the browser DevTools gets a 403 back instead of a write.
+  // Phase Q: the general settings form now edits the CURRENT store,
+  // not the tenant. Tenant is passed through for owner_email (auth-
+  // coupled, lives on tenant) while name/slug/country/currency/
+  // timezone all come from store.
+  store: Store;
   editable?: boolean;
 }
 
 export function GeneralSettingsForm({
   tenant,
+  store,
   editable = true,
 }: GeneralSettingsFormProps) {
   const router = useRouter();
 
-  const [name, setName] = useState(tenant.name);
+  const [name, setName] = useState(store.name);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  const dirty = name.trim() !== tenant.name && name.trim().length > 0;
+  const dirty = name.trim() !== store.name && name.trim().length > 0;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,7 +85,7 @@ export function GeneralSettingsForm({
 
         <ReadOnlyField
           label="Store URL slug"
-          value={`${tenant.slug}.mark8ly.com`}
+          value={`${store.slug}.mark8ly.com`}
           hint="Changing your slug would break existing links. Contact support if you need a new one."
         />
       </Section>
@@ -98,12 +100,12 @@ export function GeneralSettingsForm({
 
       <Section title="Region &amp; currency">
         <div className="grid gap-6 sm:grid-cols-2">
-          <ReadOnlyField label="Country" value={tenant.country_code} />
-          <ReadOnlyField label="Currency" value={tenant.currency_code} />
+          <ReadOnlyField label="Country" value={store.country_code} />
+          <ReadOnlyField label="Currency" value={store.currency_code} />
         </div>
         <ReadOnlyField
           label="Timezone"
-          value={tenant.timezone}
+          value={store.timezone}
           hint="Timezone editing is coming in a follow-up. Contact support if you need it changed now."
         />
       </Section>
@@ -130,7 +132,7 @@ export function GeneralSettingsForm({
           <button
             type="button"
             onClick={() => {
-              setName(tenant.name);
+              setName(store.name);
               setError(null);
               setSuccess(false);
             }}

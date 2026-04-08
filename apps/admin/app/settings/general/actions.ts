@@ -10,7 +10,11 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 
-import { updateTenant, PlatformApiError } from "@/lib/api/platform-api";
+import {
+  listStoresByTenant,
+  updateStore,
+  PlatformApiError,
+} from "@/lib/api/platform-api";
 import { canEditSettings } from "@/lib/auth/serverSession";
 import type { TenantRole } from "@/lib/api/platform-api";
 
@@ -65,8 +69,21 @@ export async function updateGeneralSettings(
     };
   }
 
+  // Phase Q: general settings edit the CURRENT STORE, not the
+  // tenant. The store id comes from the first store under the
+  // session tenant (store switcher lands in Phase Q.2, until then
+  // "default store" === "current store" for everyone).
   try {
-    await updateTenant(tenantId, { name, uid });
+    const stores = await listStoresByTenant(tenantId);
+    const current = stores[0];
+    if (!current) {
+      return {
+        ok: false,
+        code: "no_store",
+        message: "We couldn't find a store for your account.",
+      };
+    }
+    await updateStore(current.id, { name });
   } catch (err) {
     if (err instanceof PlatformApiError) {
       return { ok: false, code: err.code, message: err.message };
@@ -77,6 +94,7 @@ export async function updateGeneralSettings(
       message: "Something went wrong. Please try again.",
     };
   }
+  void uid;
 
   // Server components on /settings/general and anywhere else that
   // renders tenantName (AdminShell top-bar) need to pick up the new

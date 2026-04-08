@@ -10,6 +10,7 @@ import (
 
 	"github.com/mark8ly/platform-api/internal/authz"
 	"github.com/mark8ly/platform-api/internal/notification"
+	"github.com/mark8ly/platform-api/internal/store"
 	"github.com/mark8ly/platform-api/internal/tenant"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
@@ -24,17 +25,13 @@ import (
 type Service struct {
 	repo       Repository
 	tenantRepo tenant.Repository
+	storeRepo  store.Repository
 	fga        authz.Client
 	sender     notification.Sender
 	emailFrom  string
 	acceptURL  func(slug, token string) string
-	// expiry controls how long an invitation token is valid for.
-	// 72 hours matches the legacy backup's `StaffInvitation`
-	// default and is plenty of time for an inbox round-trip.
-	expiry time.Duration
-	// recorder captures plaintext tokens in dev/test so the e2e
-	// suite can bypass the inbox. nil in prod.
-	recorder TokenRecorder
+	expiry     time.Duration
+	recorder   TokenRecorder
 }
 
 // TokenRecorder is the narrow interface the service calls to publish
@@ -49,14 +46,17 @@ type TokenRecorder interface {
 type Config struct {
 	Repo       Repository
 	TenantRepo tenant.Repository
-	FGA        authz.Client
-	Sender     notification.Sender
-	EmailFrom  string
-	// AcceptURL builds the full invitation accept URL from a tenant
-	// slug and plaintext token. In dev this is e.g.
-	//   http://localhost:4202/accept-invite?token=...
-	// In prod it becomes
-	//   https://<slug>-admin.mark8ly.com/accept-invite?token=...
+	// StoreRepo is used to look up the tenant's default store when
+	// building the invitation accept URL — phase Q moved the slug
+	// (which parameterises the admin subdomain) off the tenant and
+	// onto the store. The "default" store is the first one created,
+	// i.e. the store that onboarding set up.
+	StoreRepo store.Repository
+	FGA       authz.Client
+	Sender    notification.Sender
+	EmailFrom string
+	// AcceptURL builds the full invitation accept URL from the
+	// default-store slug and a plaintext token.
 	AcceptURL func(slug, token string) string
 	// Expiry defaults to 72h when zero.
 	Expiry   time.Duration
@@ -71,6 +71,7 @@ func NewService(cfg Config) *Service {
 	return &Service{
 		repo:       cfg.Repo,
 		tenantRepo: cfg.TenantRepo,
+		storeRepo:  cfg.StoreRepo,
 		fga:        cfg.FGA,
 		sender:     cfg.Sender,
 		emailFrom:  cfg.EmailFrom,
@@ -78,6 +79,21 @@ func NewService(cfg Config) *Service {
 		expiry:     cfg.Expiry,
 		recorder:   cfg.Recorder,
 	}
+}
+
+// defaultStoreSlug returns the slug of the tenant's first store, or
+// the empty string if the tenant has no stores (shouldn't happen
+// post-Phase-Q — onboarding creates a default store). Returning the
+// empty string falls back to the flat-host accept URL.
+func (s *Service) defaultStoreSlug(ctx context.Context, tenantID string) string {
+	if s.storeRepo == nil {
+		return ""
+	}
+	stores, err := s.storeRepo.ListByTenant(ctx, tenantID)
+	if err != nil || len(stores) == 0 {
+		return ""
+	}
+	return stores[0].Slug
 }
 
 // CreateInput is the payload for a new invitation.
@@ -155,7 +171,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Invitation, erro
 	// Send the email. Non-fatal: a failed send leaves the row
 	// pending and the user can retry via "resend" (future slice).
 	if s.sender != nil {
-		url := s.acceptURL(t.Slug, token)
+		slug := s.defaultStoreSlug(ctx, t.ID)
+		url := s.acceptURL(slug, token)
 		subject := "You've been invited to join " + t.Name + " on Mark8ly"
 		body := inviteEmailBody(t.Name, role, url)
 		_ = s.sender.Send(ctx, notification.Email{
@@ -209,7 +226,7 @@ func (s *Service) Verify(ctx context.Context, plainToken string) (*VerifyResult,
 		InvitationID: inv.ID,
 		TenantID:     inv.TenantID,
 		TenantName:   t.Name,
-		TenantSlug:   t.Slug,
+		TenantSlug:   s.defaultStoreSlug(ctx, inv.TenantID),
 		Email:        inv.Email,
 		Role:         inv.Role,
 		ExpiresAt:    inv.ExpiresAt,

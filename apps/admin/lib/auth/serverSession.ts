@@ -3,7 +3,9 @@ import { headers } from "next/headers";
 import {
   fetchTenant,
   listMemberTenants,
+  listStoresByTenant,
   type Membership,
+  type Store,
   type Tenant,
   type TenantRole,
 } from "@/lib/api/platform-api";
@@ -35,6 +37,14 @@ export interface ServerSessionContext {
   // one-element array means the switcher should stay hidden in the
   // shell. Fetched on every page render — there's no cache yet.
   memberships: Membership[];
+  // Phase Q: every store under the current tenant, and the currently
+  // active store. Phase Q derives "current store" as the first one
+  // (by created_at) because there's no store switcher cookie yet;
+  // when Phase Q.2 lands the switcher, `currentStore` will come from
+  // the session cookie instead of this default.
+  stores: Store[];
+  currentStore: Store | null;
+  storeName: string;
 }
 
 // Default role when the header is somehow missing (middleware regression,
@@ -57,16 +67,21 @@ export async function getServerSessionContext(): Promise<ServerSessionContext> {
   const tenantId = h.get("x-session-tenant-id") ?? "";
   const role = normalizeRole(h.get("x-session-role"));
 
-  // Fetch tenant + memberships in parallel. Memberships power the
-  // top-bar tenant switcher; tenant is the current tenant's row for
-  // the chrome's store label. Both calls tolerate failure — empty
-  // results render a degraded shell rather than crash.
-  const [tenant, memberships] = await Promise.all([
+  // Fetch tenant + memberships + stores in parallel. Everything
+  // tolerates failure — empty results render a degraded shell
+  // rather than crash.
+  const [tenant, memberships, stores] = await Promise.all([
     fetchTenant(tenantId),
     userId ? listMemberTenants(userId).catch(() => []) : Promise.resolve([]),
+    tenantId ? listStoresByTenant(tenantId) : Promise.resolve<Store[]>([]),
   ]);
 
   const tenantName = tenant?.name ?? "your store";
+  // Phase Q "current store" fallback: first by created_at. When the
+  // store switcher ships, this will look at x-session-store-id from
+  // middleware instead.
+  const currentStore = stores[0] ?? null;
+  const storeName = currentStore?.name ?? tenantName;
 
   return {
     userId,
@@ -76,6 +91,9 @@ export async function getServerSessionContext(): Promise<ServerSessionContext> {
     tenantName,
     role,
     memberships,
+    stores,
+    currentStore,
+    storeName,
   };
 }
 

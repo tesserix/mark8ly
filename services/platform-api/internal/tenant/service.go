@@ -2,7 +2,6 @@ package tenant
 
 import (
 	"context"
-	"regexp"
 	"strings"
 
 	"github.com/mark8ly/platform-api/internal/authz"
@@ -33,12 +32,12 @@ func NewService(repo Repository, fga authz.Client) *Service {
 
 // Membership is the admin-facing view of "a tenant I belong to".
 // Returned by ListMemberTenants and serialised directly to JSON.
-// Includes the role so the switcher can badge each tenant with
-// "(owner)" / "(admin)" etc.
+// Phase Q: slug moved to store-level, so a tenant no longer has a
+// single URL identity — the tenant switcher renders the tenant
+// name, and a separate store switcher handles store selection.
 type Membership struct {
 	TenantID string `json:"tenant_id"`
 	Name     string `json:"name"`
-	Slug     string `json:"slug"`
 	Role     string `json:"role"`
 }
 
@@ -72,7 +71,6 @@ func (s *Service) ListMemberTenants(ctx context.Context, uid string) ([]Membersh
 		return []Membership{{
 			TenantID: t.ID,
 			Name:     t.Name,
-			Slug:     t.Slug,
 			Role:     string(authz.RoleOwner),
 		}}, nil
 	}
@@ -102,7 +100,6 @@ func (s *Service) ListMemberTenants(ctx context.Context, uid string) ([]Membersh
 		out = append(out, Membership{
 			TenantID: t.ID,
 			Name:     t.Name,
-			Slug:     t.Slug,
 			Role:     string(role),
 		})
 	}
@@ -179,49 +176,5 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*Tenan
 	return s.repo.UpdateEditable(ctx, id, patch)
 }
 
-// GetBySlug returns a tenant by its public slug.
-//
-// We TRIM whitespace but do NOT lowercase. The slug is the canonical
-// public identifier and the user must commit to a single casing. Accepting
-// "Acme" silently as "acme" would let two URLs (acme.mark8ly.com and
-// Acme.mark8ly.com) point to the same tenant — confusing for SEO and
-// analytics. Uppercase input is rejected, not normalized.
-func (s *Service) GetBySlug(ctx context.Context, slug string) (*Tenant, error) {
-	slug = strings.TrimSpace(slug)
-	if err := validateSlug(slug); err != nil {
-		return nil, err
-	}
-	return s.repo.GetBySlug(ctx, slug)
-}
-
-// IsSlugAvailable returns true if the slug is well-formed and not yet taken.
-// Used by the onboarding wizard's "check slug" step before final submission.
-func (s *Service) IsSlugAvailable(ctx context.Context, slug string) (bool, error) {
-	slug = strings.TrimSpace(slug)
-	if err := validateSlug(slug); err != nil {
-		return false, err
-	}
-	taken, err := s.repo.SlugExists(ctx, slug)
-	if err != nil {
-		return false, err
-	}
-	return !taken, nil
-}
-
-// validateSlug enforces the public slug rules:
-//   - 3 to 63 characters
-//   - lowercase alphanumeric, hyphens allowed
-//   - cannot start or end with a hyphen
-//
-// Matches the CHECK constraint in migrations/0003_create_tenants.up.sql.
-// Uppercase input is REJECTED, not normalized — see GetBySlug rationale.
-func validateSlug(slug string) error {
-	if !slugPattern.MatchString(slug) {
-		return apperrors.BadRequest("invalid_slug",
-			"slug must be 3-63 lowercase alphanumeric characters and hyphens, not starting or ending with a hyphen")
-	}
-	return nil
-}
-
-// slugPattern: 3 to 63 chars, lowercase alphanumeric + hyphens, no edge hyphens.
-var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
+// Phase Q: GetBySlug, IsSlugAvailable, validateSlug and slugPattern
+// moved to the store package — slug is a store-level identifier now.

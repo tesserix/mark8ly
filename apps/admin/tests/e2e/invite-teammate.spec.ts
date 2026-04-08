@@ -59,9 +59,10 @@ test("owner invites viewer → invitee accepts via password → lands in read-on
   // ── 3. Invite a fresh email as viewer ───────────────────────────
   const invitee = uniqueEmail("invite-viewer");
   await ownerPage.getByLabel("Email").fill(invitee.email);
-  await ownerPage
-    .getByLabel("Role")
-    .selectOption("viewer");
+  // Role picker is a radix Select combobox (not a native <select>);
+  // click the trigger and pick the option from the popup.
+  await ownerPage.getByLabel("Role").click();
+  await ownerPage.getByRole("option", { name: /viewer/i }).click();
   await ownerPage.getByRole("button", { name: /send invite/i }).click();
   await expect(
     ownerPage.getByText(new RegExp(`invitation sent to ${invitee.email}`, "i")),

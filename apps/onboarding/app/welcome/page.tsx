@@ -9,6 +9,12 @@ import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 const ADMIN_URL =
   process.env.NEXT_PUBLIC_ADMIN_URL ?? "http://localhost:4202/dashboard";
 
+// Funnel destination — never index.
+export const metadata = {
+  title: "Welcome",
+  robots: { index: false, follow: false },
+};
+
 export default function WelcomePage() {
   return (
     <PostSubmitShell

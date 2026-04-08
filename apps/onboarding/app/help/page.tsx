@@ -2,6 +2,7 @@ import { MarketingStub } from "@/components/marketing/primitives";
 
 export const metadata = {
   title: "Help",
+  robots: { index: false, follow: true },
 };
 
 export default function HelpPage() {

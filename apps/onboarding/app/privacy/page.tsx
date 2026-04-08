@@ -6,6 +6,9 @@ import {
 
 export const metadata = {
   title: "Privacy",
+  description:
+    "Plain-language privacy policy for Mark8ly. We don&rsquo;t sell your personal information. TLS everywhere, GDPR-aligned handling, and the right to access, correct, delete, and export your data at any time.",
+  alternates: { canonical: "/privacy" },
 };
 
 export default function PrivacyPolicyPage() {

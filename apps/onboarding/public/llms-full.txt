@@ -1,0 +1,160 @@
+# Mark8ly — Full Content Index
+
+This file provides LLM crawlers with the primary content of every indexed marketing page on https://mark8ly.com in plain text, so models can answer questions about the product without needing to execute JavaScript or scrape rendered HTML.
+
+Last generated: April 2026.
+
+---
+
+## Home (https://mark8ly.com/)
+
+A storefront worth opening.
+
+Mark8ly is a quiet, considered commerce platform for people who actually make things. Set up in an afternoon. Keep your margins. Sell on a storefront that doesn't look like everyone else's.
+
+Free for six months. No card required. One flat fee after that.
+
+### What we believe
+
+**Three things we'll never compromise on.**
+
+1. **Quiet by design.** No popups, no abandoned-cart guilt, no aggressive nudges in the admin. Your store should feel like a shop you walk into, not an inbox you can't close.
+
+2. **Yours, fully.** No transaction fees from us. No platform skim. Use your own domain, export your data anytime, leave whenever you want. The store is yours — we just keep it running.
+
+3. **Made well.** Real merchants worked on the design. Real engineers built the infrastructure. The result is a tool that does fewer things, but does them properly.
+
+### What you get
+
+**Less software, more shop.**
+
+- **Storefront:** A theme that feels considered, out of the box. Quiet typography, generous whitespace, real attention to product detail pages.
+- **Checkout:** Payments that work everywhere customers do. Cards, UPI, wallets, and local methods, all behind a single checkout. No upcharges from us. Standard processor fees only.
+- **Admin:** An admin you don't have to learn. Products, orders, customers, inventory — each screen does one thing, clearly. No dashboards full of metrics that don't matter to you.
+
+### Pricing
+
+**One offer. Honestly priced.**
+
+Run free for six months. After that, one flat monthly fee. We never take a cut of your sales — only your processor does, at their standard rate.
+
+**$0 for the first six months.** Then $9.99 per month, flat. Unlimited products. Your own domain. Cancel anytime, take your data with you.
+
+Included:
+- Unlimited products
+- Your own domain
+- Mark8ly takes 0% of sales
+- Real human support
+- Export everything, anytime
+- Cancel in one click
+
+### How it works
+
+**An afternoon, start to finish.**
+
+1. Tell us about your shop. Name, country, what you sell. Two minutes.
+2. Add what you make. Upload products, set prices, organize them however you like.
+3. Open the doors. Share your link. Your storefront is live.
+
+### Questions, answered
+
+**I'm not technical. Can I still use this?**
+Yes — that's the entire point. If you can write an email, you can run a store on Mark8ly. And if you get stuck, real humans answer real messages.
+
+**What happens after the six free months?**
+One flat fee — $9.99 a month — kicks in. No tiers, no surprises, no added transaction fees. You can cancel any time and take your data with you.
+
+**What does Mark8ly take from each sale?**
+Nothing. Your payment processor charges their standard fee (around 2% for UPI, 2–3% for cards). We don't add anything on top of that.
+
+**Is there a limit on products?**
+No. Add as many products, photos, and variants as you want. We're not in the business of nickel-and-diming you.
+
+**Can I leave?**
+Whenever you like. Export your products, customers, and orders in one click and take everything with you. No hard feelings.
+
+---
+
+## About (https://mark8ly.com/about)
+
+**Built for people who make things.**
+
+We're a small team building a commerce platform for independent merchants who want a store that looks considered, costs predictably, and stays out of their way.
+
+### Why we're building this
+
+There are dozens of ways to open an online store. Most of them are designed for merchants with a developer, a design budget, or a long runway. If you don't have any of those, the experience is overwhelming, expensive, and slow.
+
+Mark8ly is the opposite. The storefront looks like something a studio made. The admin only shows what you need. Six months are free. After that the price is one honest number.
+
+We're not trying to be the biggest platform. We're trying to be the one that treats indie merchants like the adults they are.
+
+### What we believe
+
+Three commitments we won't compromise on:
+
+1. **Quiet by design.** No popups, no upsells in the admin, no aggressive growth hacks. The storefront and the tools should feel like furniture, not a casino.
+
+2. **Yours, fully.** No transaction fees from us. Your domain, your data, your customers. Export everything any time. Leave whenever you like — no friction, no hard feelings.
+
+3. **Made well.** Real merchants shaped the design. Real engineers wrote the code. We build fewer things on purpose so each one works properly.
+
+### Where we're based
+
+Mumbai, India. Remote-first, global by default. We build and support Mark8ly from a small distributed team of engineers, designers, and merchants.
+
+---
+
+## Contact (https://mark8ly.com/contact)
+
+**Say hello.**
+
+We're a small team and we actually read what lands in the inbox. No ticket queues, no chatbots, no form maze.
+
+### By email
+
+- **General support:** hello@mark8ly.com — Questions about setup, billing, or anything that isn't working the way you expected. The inbox we check first.
+- **Partnerships:** partners@mark8ly.com — Payment processors, shipping carriers, marketing tools, agencies, or anyone who wants to build with us.
+- **Legal and press:** legal@mark8ly.com — Privacy requests, compliance questions, press enquiries, or anything that needs a considered reply.
+
+### Where we are
+
+Mumbai, India. We work remote-first across a small distributed team, which means there is almost always someone awake when you write to us.
+
+---
+
+## Privacy Policy (https://mark8ly.com/privacy)
+
+**Your data is yours.** We only collect what we need to run the service and we're direct about how we use it.
+
+- We don't sell your personal information.
+- Account info we collect: name, email, phone, business name, login credentials.
+- Business info we collect: store name, product details, descriptions, images, pricing.
+- Payment info: billing address and payment method details. We never store full card numbers.
+- Security: TLS encryption for every connection, PCI-compliant payment routing, GDPR-aligned data handling, regular third-party security reviews.
+- Your rights: access, correction, deletion, portability, withdraw consent. Email privacy@mark8ly.com to exercise them.
+- We respond to data requests within 30 days.
+
+---
+
+## Terms of Service (https://mark8ly.com/terms)
+
+**Plain-language terms.** Welcome to Mark8ly. These terms govern your use of the platform.
+
+- Age requirement: 18+.
+- Free trial: 6 months, no credit card.
+- After the free period: $9.99/month, flat. No extra platform transaction fees from Mark8ly.
+- Refunds: within 14 days, via support@mark8ly.com.
+- Acceptable use: no illegal, counterfeit, or restricted items. No fraud, malware, or interference with other stores.
+- Cancellation: any time, no fees, no penalties. Download your data before cancelling.
+- Limitation of liability: capped at the amount paid in the prior 12 months.
+
+---
+
+## Contact Summary
+
+- **General:** hello@mark8ly.com
+- **Partnerships:** partners@mark8ly.com
+- **Legal/Press:** legal@mark8ly.com
+- **Privacy requests:** privacy@mark8ly.com
+- **Security disclosures:** security@mark8ly.com

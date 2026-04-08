@@ -1,0 +1,39 @@
+# Mark8ly
+
+> Mark8ly is a modern editorial commerce platform for independent merchants. Launch a storefront in an afternoon, keep every sale (no platform transaction fees), and ship a store that looks considered from day one.
+
+Mark8ly is a Tesserix product built for indie merchants and small established brands who want an online store that feels composed — the opposite of templated SaaS builders. Six free months, then one flat monthly fee. No transaction fees, no tier maze, no feature paywalls. You own your data, your customers, your domain, and you can export everything and leave at any time.
+
+The project is pre-launch. The marketing site at https://mark8ly.com is the primary public surface. Admin and storefront surfaces for live merchants are in development.
+
+## Core pages
+
+- [Home](https://mark8ly.com/): The main landing page — product positioning, pricing, how it works, FAQs.
+- [About](https://mark8ly.com/about): Who we are, what we believe, where we're based.
+- [Contact](https://mark8ly.com/contact): Email channels for general support, partnerships, legal, and press.
+- [Privacy](https://mark8ly.com/privacy): Plain-language privacy policy. We don't sell personal information.
+- [Terms](https://mark8ly.com/terms): Terms of service.
+
+## Pricing
+
+Free for the first six months, no credit card required. After that, $9.99 per month, flat. Mark8ly never takes a cut of your sales — only your payment processor charges their standard fees (around 2% for UPI, 2–3% for cards).
+
+## Core beliefs
+
+- **Quiet by design.** No popups, no growth hacks, no aggressive nudges in the admin.
+- **Yours, fully.** No transaction fees from Mark8ly. Your domain, your data, your customers. Export everything, leave any time.
+- **Made well.** Real merchants shaped the design; real engineers wrote the code. We build fewer things on purpose so each one works properly.
+
+## Who it's for
+
+Indie merchants, small batch makers, boutique brands, and established small-to-mid merchants migrating off Shopify, WooCommerce, or Squarespace. India-based, globally available.
+
+## Not indexed
+
+The onboarding funnel (/onboarding/*), the welcome page, and the "coming soon" stubs (blog, help, guides, integrations, legal security page) are intentionally excluded from indexing. They're either funnel destinations or placeholder content.
+
+## Contact
+
+- hello@mark8ly.com — general
+- partners@mark8ly.com — partnerships
+- legal@mark8ly.com — legal, press, compliance

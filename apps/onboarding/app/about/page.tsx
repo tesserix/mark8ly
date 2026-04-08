@@ -4,6 +4,15 @@ import { MarketingPage, PageHero } from "@/components/marketing/primitives";
 
 export const metadata = {
   title: "About",
+  description:
+    "A small team building a commerce platform for independent merchants who want a store that looks considered, costs predictably, and stays out of their way.",
+  alternates: { canonical: "/about" },
+  openGraph: {
+    title: "About · Mark8ly",
+    description:
+      "Built for people who make things. A small team, three commitments, Mumbai.",
+    url: "/about",
+  },
 };
 
 export default function AboutPage() {

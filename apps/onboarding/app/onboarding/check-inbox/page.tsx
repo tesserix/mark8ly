@@ -1,6 +1,12 @@
 import { CheckInbox } from "@/components/onboarding/CheckInbox";
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 
+// Funnel intermediate — never index.
+export const metadata = {
+  title: "Check your inbox",
+  robots: { index: false, follow: false },
+};
+
 export default function CheckInboxPage() {
   return (
     <PostSubmitShell

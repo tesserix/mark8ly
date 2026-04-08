@@ -3,6 +3,12 @@ import { Suspense } from "react";
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 import { VerifyMagicLink } from "@/components/onboarding/VerifyMagicLink";
 
+// Funnel intermediate — never index.
+export const metadata = {
+  title: "Verifying",
+  robots: { index: false, follow: false },
+};
+
 // The verify page is the magic link target. We wrap the client component
 // in Suspense because it reads searchParams via useSearchParams (client-side
 // only) — the wrapper avoids the static prerendering bailout warning.

@@ -4,6 +4,15 @@ import { MarketingPage, PageHero } from "@/components/marketing/primitives";
 
 export const metadata = {
   title: "Contact",
+  description:
+    "Email us directly. We&rsquo;re a small team and we actually read what lands in the inbox. No ticket queues, no chatbots, no form maze.",
+  alternates: { canonical: "/contact" },
+  openGraph: {
+    title: "Contact · Mark8ly",
+    description:
+      "Say hello. hello@mark8ly.com for support, partners@mark8ly.com for partnerships, legal@mark8ly.com for press.",
+    url: "/contact",
+  },
 };
 
 export default function ContactPage() {

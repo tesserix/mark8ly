@@ -4,6 +4,13 @@ import { locations } from "@/lib/api/platform-api";
 import { OnboardingForm } from "@/components/onboarding/OnboardingForm";
 import { SlimFooter } from "@/components/onboarding/SlimFooter";
 
+// Funnel entry point — never index (we want search traffic to
+// land on the marketing home, not mid-funnel).
+export const metadata = {
+  title: "Open your store",
+  robots: { index: false, follow: false },
+};
+
 /**
  * /onboarding — the single-page signup form.
  *

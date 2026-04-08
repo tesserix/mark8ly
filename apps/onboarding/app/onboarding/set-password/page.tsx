@@ -12,7 +12,11 @@ import { onboarding } from "@/lib/api/platform-api";
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 import { SetPasswordForm } from "@/components/onboarding/SetPasswordForm";
 
-export const metadata = { title: "Finish setup — Mark8ly" };
+// Funnel intermediate — never index.
+export const metadata = {
+  title: "Finish setup",
+  robots: { index: false, follow: false },
+};
 
 interface PageProps {
   searchParams: Promise<{ session?: string }>;

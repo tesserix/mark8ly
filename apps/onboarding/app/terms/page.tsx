@@ -6,6 +6,9 @@ import {
 
 export const metadata = {
   title: "Terms",
+  description:
+    "Mark8ly Terms of Service. Six months free, then $9.99 flat per month. No transaction fees from Mark8ly. Cancel any time, export your data, no penalties.",
+  alternates: { canonical: "/terms" },
 };
 
 export default function TermsOfServicePage() {

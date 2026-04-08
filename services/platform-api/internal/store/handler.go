@@ -42,6 +42,11 @@ func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 	pub := public.Group("/stores")
 	{
 		pub.GET("/slug-available", h.checkSlugAvailable)
+		// Phase S — public storefront lookup. The customer-facing
+		// storefront app resolves {slug}.mark8ly.com to a store row
+		// via this endpoint. Returns 404 for unknown or non-active
+		// (suspended/archived) stores.
+		pub.GET("/by-slug/:slug", h.getPublicStoreBySlug)
 	}
 
 	int := internal.Group("/stores")
@@ -114,6 +119,46 @@ func (h *Handler) createForTenant(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"data": row})
+}
+
+// publicStore is the shape returned by the storefront lookup. Strips
+// internal fields (tenant_id, logo_url nullability is preserved)
+// and exposes only what a customer-facing page needs.
+type publicStore struct {
+	ID           string `json:"id"`
+	Slug         string `json:"slug"`
+	Name         string `json:"name"`
+	CountryCode  string `json:"country_code"`
+	CurrencyCode string `json:"currency_code"`
+	Timezone     string `json:"timezone"`
+	LogoURL      string `json:"logo_url,omitempty"`
+}
+
+func (h *Handler) getPublicStoreBySlug(c *gin.Context) {
+	s, err := h.svc.GetBySlug(c.Request.Context(), c.Param("slug"))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	if s.Status != StatusActive {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "store_not_found",
+			"message": "this store is not currently available",
+		})
+		return
+	}
+	out := publicStore{
+		ID:           s.ID,
+		Slug:         s.Slug,
+		Name:         s.Name,
+		CountryCode:  s.CountryCode,
+		CurrencyCode: s.CurrencyCode,
+		Timezone:     s.Timezone,
+	}
+	if s.LogoURL != nil {
+		out.LogoURL = *s.LogoURL
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 func (h *Handler) checkSlugAvailable(c *gin.Context) {

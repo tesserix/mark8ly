@@ -52,7 +52,9 @@ test("settings/general surfaces onboarding data and saves a name edit", async ({
   const nameInput = page.getByLabel("Store name");
   await expect(nameInput).toHaveValue(details.businessName);
 
-  // Slug surfaces as a read-only hostname preview (tenant.slug.mark8ly.com)
+  // Slug surfaces as a read-only hostname preview
+  // ({slug}.mark8ly.com). The storefront lives at the bare
+  // subdomain; admin lives at {slug}-admin.mark8ly.com.
   await expect(page.getByLabel("Store URL slug")).toHaveValue(
     `${details.slug}.mark8ly.com`,
   );

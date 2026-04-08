@@ -159,12 +159,7 @@ export function AdminShell({
   const pathname = usePathname();
   const storeLabel = tenantName ?? "mark8ly";
   const pageTitle = getPageTitle(pathname);
-  const activeSectionKey =
-    navigation.find((section) =>
-      section.href
-        ? isActiveLink(pathname, section.href)
-        : section.children?.some((child) => isActiveLink(pathname, child.href)),
-    )?.key ?? null;
+  const activeSectionKey = getActiveSectionKey(pathname);
   const [openSectionKey, setOpenSectionKey] = useState<string | null>(
     activeSectionKey,
   );
@@ -204,30 +199,17 @@ export function AdminShell({
         </SidebarHeader>
 
         <SidebarContent className="sidebar-scrollbar">
-          <div className="px-4 py-4 group-data-[collapsible=icon]:hidden">
-            <div className="rounded-[1.35rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-text-muted">
-                Workspace
-              </p>
-              <p className="mt-2 text-sm font-medium text-sidebar-foreground">
-                {storeLabel}
-              </p>
-              <p className="mt-1 text-sm leading-6 text-sidebar-text">
-                Products, orders, and settings all plug into this shell as the admin grows.
-              </p>
-            </div>
-          </div>
-
           <SidebarGroup className="px-2">
-            <div className="px-4 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-text-muted group-data-[collapsible=icon]:hidden">
+            <div className="px-4 pb-3 pt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-text-muted group-data-[collapsible=icon]:hidden">
               Navigation
             </div>
             <SidebarGroupContent>
-              <SidebarMenu>
+              <SidebarMenu className="space-y-1.5">
                 {navigation.map((section) => (
                   <NavSectionItem
                     key={section.key}
                     section={section}
+                    activeSectionKey={activeSectionKey}
                     openSectionKey={openSectionKey}
                     onToggleSection={setOpenSectionKey}
                   />
@@ -307,10 +289,12 @@ export function AdminShell({
  */
 function NavSectionItem({
   section,
+  activeSectionKey,
   openSectionKey,
   onToggleSection,
 }: {
   section: NavSection;
+  activeSectionKey: string | null;
   openSectionKey: string | null;
   onToggleSection: (key: string | null) => void;
 }) {
@@ -319,7 +303,7 @@ function NavSectionItem({
 
   // Simple link item.
   if (section.href) {
-    const active = isActiveLink(pathname, section.href);
+    const active = activeSectionKey === section.key;
     return (
       <SidebarMenuItem>
         <SidebarMenuButton asChild isActive={active} tooltip={section.label}>
@@ -333,15 +317,14 @@ function NavSectionItem({
   }
 
   // Collapsible group.
-  const hasActiveChild =
-    section.children?.some((c) => isActiveLink(pathname, c.href)) ?? false;
+  const hasActiveChild = activeSectionKey === section.key;
   const isOpen = openSectionKey === section.key;
 
   return (
     <Collapsible
       open={isOpen}
       onOpenChange={(open) => onToggleSection(open ? section.key : null)}
-      className="group/collapsible"
+      className="group/collapsible space-y-1.5"
     >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
@@ -352,12 +335,12 @@ function NavSectionItem({
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <SidebarMenuSub>
+          <SidebarMenuSub className="ml-5 border-l border-white/10 pl-3">
             {section.children?.map((child) => (
               <SidebarMenuSubItem key={`${section.key}-${child.label}`}>
                 <SidebarMenuSubButton
                   asChild
-                  isActive={isActiveLink(pathname, child.href)}
+                  isActive={isChildActive(pathname, section.key, section.children ?? [], child)}
                 >
                   <Link href={child.href}>{child.label}</Link>
                 </SidebarMenuSubButton>
@@ -375,6 +358,45 @@ function isActiveLink(pathname: string | null, href: string): boolean {
   if (pathname === href) return true;
   return pathname.startsWith(`${href}/`);
 }
+
+function getActiveSectionKey(pathname: string | null): string | null {
+  if (!pathname || pathname === "/dashboard") {
+    return null;
+  }
+
+  return (
+    navigation.find((section) =>
+      section.href
+        ? isActiveLink(pathname, section.href)
+        : section.children?.some((child) => isActiveLink(pathname, child.href)),
+    )?.key ?? null
+  );
+}
+
+function isChildActive(
+  pathname: string | null,
+  sectionKey: string,
+  siblings: NavLeaf[],
+  child: NavLeaf,
+): boolean {
+  if (!pathname) return false;
+
+  const duplicateHrefCount = siblings.filter((item) => item.href === child.href).length;
+  if (duplicateHrefCount > 1) {
+    return canonicalChildLabelBySection[sectionKey] === child.label && pathname === child.href;
+  }
+
+  return isActiveLink(pathname, child.href);
+}
+
+const canonicalChildLabelBySection: Record<string, string> = {
+  analytics: "Overview",
+  catalog: "Products",
+  orders: "All Orders",
+  customers: "All Customers",
+  marketing: "Campaigns",
+  settings: "Store Settings",
+};
 
 function getPageTitle(pathname: string | null): { eyebrow: string; title: string } {
   if (!pathname || pathname === "/" || pathname === "/dashboard") {

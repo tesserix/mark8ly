@@ -41,7 +41,13 @@ import (
 type Session struct {
 	UID       string    `json:"uid"`
 	Email     string    `json:"email"`
-	TenantID  string    `json:"tenant_id"`            // GIP tenant pool
+	TenantID  string    `json:"tenant_id"` // mark8ly workspace tenant
+	// StoreID is the currently active store under TenantID. Phase
+	// Q.2 introduced this alongside `/auth/switch-store` so a
+	// merchant with multiple stores can switch without leaving
+	// admin. Empty on pre-Phase-Q.2 cookies — the admin falls
+	// back to the first store under the current tenant when blank.
+	StoreID   string    `json:"store_id,omitempty"`
 	IssuedAt  time.Time `json:"iat"`
 	ExpiresAt time.Time `json:"exp"`
 }

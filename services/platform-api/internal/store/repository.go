@@ -18,6 +18,10 @@ type Repository interface {
 	// onboarding completion which writes the tenant + default store
 	// in the same transaction as the FGA outbox event.
 	CreateInTx(ctx context.Context, tx *gorm.DB, s *Store) error
+	// Create inserts a standalone store row. Used by the Phase Q.2
+	// "add a second store" flow where there's nothing to coordinate
+	// atomically with the insert.
+	Create(ctx context.Context, s *Store) error
 	// GetByID returns a store by its UUID.
 	GetByID(ctx context.Context, id string) (*Store, error)
 	// GetBySlug returns a store by its globally unique slug.
@@ -44,6 +48,19 @@ func NewRepository(db *gorm.DB) Repository {
 
 func (r *gormRepository) CreateInTx(ctx context.Context, tx *gorm.DB, s *Store) error {
 	if err := tx.WithContext(ctx).Create(s).Error; err != nil {
+		if isUniqueViolation(err) {
+			return apperrors.Conflict(
+				"slug_taken",
+				fmt.Sprintf("slug %q is already taken", s.Slug),
+			)
+		}
+		return fmt.Errorf("store: create: %w", err)
+	}
+	return nil
+}
+
+func (r *gormRepository) Create(ctx context.Context, s *Store) error {
+	if err := r.db.WithContext(ctx).Create(s).Error; err != nil {
 		if isUniqueViolation(err) {
 			return apperrors.Conflict(
 				"slug_taken",

@@ -69,21 +69,28 @@ export async function updateGeneralSettings(
     };
   }
 
-  // Phase Q: general settings edit the CURRENT STORE, not the
-  // tenant. The store id comes from the first store under the
-  // session tenant (store switcher lands in Phase Q.2, until then
-  // "default store" === "current store" for everyone).
+  // Phase Q / Q.2: general settings edit the CURRENT STORE. The
+  // current store id comes from the session cookie
+  // (x-session-store-id header, populated by middleware from
+  // auth-bff after a switch-store call). If the header is blank
+  // we fall back to the first store under the tenant — the
+  // initial post-signin state before any switch.
+  const currentStoreId = h.get("x-session-store-id") ?? "";
   try {
-    const stores = await listStoresByTenant(tenantId);
-    const current = stores[0];
-    if (!current) {
-      return {
-        ok: false,
-        code: "no_store",
-        message: "We couldn't find a store for your account.",
-      };
+    let storeId = currentStoreId;
+    if (!storeId) {
+      const stores = await listStoresByTenant(tenantId);
+      const current = stores[0];
+      if (!current) {
+        return {
+          ok: false,
+          code: "no_store",
+          message: "We couldn't find a store for your account.",
+        };
+      }
+      storeId = current.id;
     }
-    await updateStore(current.id, { name });
+    await updateStore(storeId, { name, uid });
   } catch (err) {
     if (err instanceof PlatformApiError) {
       return { ok: false, code: err.code, message: err.message };

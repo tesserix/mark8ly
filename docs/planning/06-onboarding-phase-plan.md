@@ -926,23 +926,59 @@ any existing spec beyond helper touch-ups (invite-teammate
 updates for the radix Select in TeamSettings, nothing Phase Q
 specific).
 
+**Phase Q.2 — shipped on top of Q.1:**
+
+- **`POST /internal/tenants/:id/stores`** on platform-api. FGA-
+  gated on the tenant's `can_manage_stores` permission
+  (owner/admin). Creates the store row, then best-effort writes
+  the `tenant:<tid> parent store:<sid>` tuple so the new store
+  inherits `from parent` permissions immediately.
+- **`store.Service.Create`** — validates slug + name + country +
+  currency + timezone, calls `Repository.Create` (new method
+  alongside `CreateInTx`), and fires `WriteStoreParent`.
+- **`session.Session.StoreID`** — auth-bff session cookie now
+  carries the active store id. Defaults to empty on first mint
+  (admin falls back to first store); explicitly cleared on
+  `switch-tenant` since store ids are tenant-scoped.
+- **`POST /auth/switch-store`** on auth-bff — re-mints the
+  session cookie with a new store id under the same tenant.
+  No FGA check yet because store access is derived from tenant
+  membership in the current DSL (`member from parent`); Phase R
+  will add a `can_view_store` gate when per-store role grants
+  exist.
+- **Admin middleware** forwards `x-session-store-id` from the
+  auth-bff session response. `getServerSessionContext` prefers
+  that header over the first-by-created-at fallback when it
+  resolves `currentStore`.
+- **Admin `/settings/stores` page** — lists every store under
+  the tenant with a "Switch" button on each non-current row and
+  an inline "Add store" form for owner/admin roles. The form
+  takes slug / name / country / currency / timezone as plain
+  text inputs; proper pickers are deferred to a follow-up.
+- **`createNewStore`** server action creates the store, auto-
+  switches the session to the new store id, and redirects to
+  `/settings/general` so the user can configure the brand-new
+  store inline.
+- **`switchToStore`** server action re-mints the cookie via
+  auth-bff and hands off to a client `window.location.reload()`.
+- **E2E**: new `stores-multi.spec.ts` onboards a merchant, adds
+  a second store, verifies both appear in the list, clicks
+  Switch back to the original, and asserts the "Current" badge
+  moves. Full admin suite: **8/8 passing**.
+
 **Deliberate scope cuts still open:**
 
-- **Store switcher UI is not shipped** (Phase Q.2). Onboarding
-  creates exactly one store per tenant, so there's nothing to
-  switch between yet. The switcher dropdown will slot next to
-  the tenant switcher in AdminShell when an "Add store" flow
-  lands.
-- **`/settings/stores` index + Add store** deferred to Q.2 for
-  the same reason — no value without a second-store creation
-  flow.
-- **`current_store_id` in the session cookie** deferred. Phase Q
-  derives "current store" as the first-created store per request
-  on the server. Moving to a cookie-cached id is a straightforward
-  auth-bff change that can happen when multi-store tenants exist.
+- **Top-bar store switcher dropdown** (analogous to the tenant
+  switcher) — the /settings/stores page is enough for Phase Q.2;
+  a top-bar dropdown can land when a merchant actually runs 3+
+  stores and wants a quick-switch affordance.
+- **Proper country/currency/timezone pickers** in the add-store
+  form. Phase Q.2 uses plain text inputs with US/USD/America
+  defaults. Reuse the onboarding wizard's pickers when they get
+  refactored.
 - **Store-level role grants** stay deferred to Phase R —
   infrastructure is ready (DSL + WriteRole supports `store:`
-  objects), UI is not.
+  objects, switch-store endpoint exists), UI is not.
 
 ### Phase Q (original plan — superseded above, kept for reference)
 

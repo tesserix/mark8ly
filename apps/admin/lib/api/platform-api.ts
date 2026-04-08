@@ -106,13 +106,55 @@ export async function fetchStore(id: string): Promise<Store | null> {
 }
 
 /**
+ * Creates a new store under the given tenant. Phase Q.2 adds this
+ * for the "add a second store" flow. FGA-gated on the tenant's
+ * `can_manage_stores` permission (owner or admin).
+ */
+export async function createStore(
+  tenantId: string,
+  payload: {
+    uid: string;
+    slug: string;
+    name: string;
+    country_code: string;
+    currency_code: string;
+    timezone: string;
+  },
+): Promise<Store> {
+  const res = await fetch(
+    `${PLATFORM_API_URL}/internal/tenants/${tenantId}/stores`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    },
+  );
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new PlatformApiError(
+      res.status,
+      body.error ?? "platform_api_error",
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+  const body = (await res.json()) as { data: Store };
+  return body.data;
+}
+
+/**
  * Patches the editable subset of a store row. Phase Q ships with
  * only `name` editable — currency / timezone / country edits need
  * their own slice (billing / picker / tax concerns).
  */
 export async function updateStore(
   id: string,
-  patch: { name?: string },
+  patch: { name?: string; uid: string },
 ): Promise<Store> {
   const res = await fetch(`${PLATFORM_API_URL}/internal/stores/${id}`, {
     method: "PATCH",

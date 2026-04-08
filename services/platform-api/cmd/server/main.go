@@ -113,7 +113,7 @@ func main() {
 
 	// Phase Q — store domain.
 	storeRepo := store.NewRepository(conn)
-	storeSvc := store.NewService(storeRepo)
+	storeSvc := store.NewService(storeRepo, fga)
 	storeHandler := store.NewHandler(storeSvc, fga)
 
 	// In dev/test environments, capture plaintext magic-link tokens so the

@@ -77,10 +77,15 @@ export async function getServerSessionContext(): Promise<ServerSessionContext> {
   ]);
 
   const tenantName = tenant?.name ?? "your store";
-  // Phase Q "current store" fallback: first by created_at. When the
-  // store switcher ships, this will look at x-session-store-id from
-  // middleware instead.
-  const currentStore = stores[0] ?? null;
+  // Phase Q.2: prefer the session-cookie store id (forwarded by
+  // middleware as x-session-store-id). If the header is blank or
+  // points at a store that no longer belongs to the current tenant
+  // (e.g. after a switch-tenant), fall back to the first store.
+  const sessionStoreId = h.get("x-session-store-id") ?? "";
+  const fromSession = sessionStoreId
+    ? stores.find((s) => s.id === sessionStoreId) ?? null
+    : null;
+  const currentStore = fromSession ?? stores[0] ?? null;
   const storeName = currentStore?.name ?? tenantName;
 
   return {

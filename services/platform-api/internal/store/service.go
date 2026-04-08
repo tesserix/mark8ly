@@ -5,18 +5,92 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mark8ly/platform-api/internal/authz"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
 
 // Service is the business-logic layer for stores. Phase Q port of
 // the tenant service bits that moved to store: slug lookup + slug
 // availability + the editable update subset (name; more to come).
+//
+// Phase Q.2 added Create for the "add a second store" flow. The
+// FGA client is used to write the `tenant:<tid> parent store:<sid>`
+// tuple immediately after insert so the new store inherits all
+// tenant-level permissions via the DSL's `from parent`. The write
+// is best-effort — a failure leaves the store row in place without
+// FGA inheritance, and the merchant can delete and retry.
 type Service struct {
 	repo Repository
+	fga  authz.Client
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, fga authz.Client) *Service {
+	return &Service{repo: repo, fga: fga}
+}
+
+// CreateInput is the payload for creating a new store under an
+// existing tenant. Used by the "Add store" flow in admin. Onboarding
+// uses Repository.CreateInTx directly because it creates the tenant
+// and the default store in the same transaction.
+type CreateInput struct {
+	TenantID     string
+	Slug         string
+	Name         string
+	CountryCode  string
+	CurrencyCode string
+	Timezone     string
+}
+
+// Create validates the input and inserts a new store row. Runs
+// outside a transaction because "add a second store" doesn't have
+// the cross-row atomicity needs that onboarding completion does.
+func (s *Service) Create(ctx context.Context, in CreateInput) (*Store, error) {
+	tenantID := strings.TrimSpace(in.TenantID)
+	slug := strings.TrimSpace(in.Slug)
+	name := strings.TrimSpace(in.Name)
+	if tenantID == "" {
+		return nil, apperrors.BadRequest("invalid_tenant_id", "tenant id is required")
+	}
+	if err := validateSlug(slug); err != nil {
+		return nil, err
+	}
+	if name == "" {
+		return nil, apperrors.BadRequest("invalid_name", "store name is required")
+	}
+	if len(name) > 200 {
+		return nil, apperrors.BadRequest("invalid_name", "store name must be 200 characters or fewer")
+	}
+	if len(in.CountryCode) != 2 {
+		return nil, apperrors.BadRequest("invalid_country_code", "country code must be a 2-letter ISO code")
+	}
+	if len(in.CurrencyCode) != 3 {
+		return nil, apperrors.BadRequest("invalid_currency_code", "currency code must be a 3-letter ISO 4217 code")
+	}
+	if strings.TrimSpace(in.Timezone) == "" {
+		return nil, apperrors.BadRequest("invalid_timezone", "timezone is required")
+	}
+
+	row := &Store{
+		TenantID:     tenantID,
+		Slug:         slug,
+		Name:         name,
+		CountryCode:  in.CountryCode,
+		CurrencyCode: in.CurrencyCode,
+		Timezone:     in.Timezone,
+		Status:       StatusActive,
+	}
+	if err := s.repo.Create(ctx, row); err != nil {
+		return nil, err
+	}
+	// Write the FGA parent tuple so tenant-level owners/admins
+	// automatically inherit store-level permissions on the new
+	// store. Best-effort: a failed write returns the store row
+	// anyway so the admin UI can retry, and the tenant owner can
+	// still access the store via tenant-level routes.
+	if s.fga != nil {
+		_ = s.fga.WriteStoreParent(ctx, row.ID, row.TenantID)
+	}
+	return row, nil
 }
 
 // GetByID returns a store by UUID.

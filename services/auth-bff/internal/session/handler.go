@@ -47,6 +47,7 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	r.GET("/session", h.getSession)
 	r.POST("/logout", h.logout)
 	r.POST("/switch-tenant", h.switchTenant)
+	r.POST("/switch-store", h.switchStore)
 }
 
 // sessionResponse is the JSON shape handed back to authenticated
@@ -56,6 +57,7 @@ type sessionResponse struct {
 	UserID   string `json:"user_id"`
 	Email    string `json:"email"`
 	TenantID string `json:"tenant_id"`
+	StoreID  string `json:"store_id,omitempty"`
 }
 
 // getSession reads the session cookie and returns its payload. The
@@ -93,6 +95,7 @@ func (h *Handler) getSession(c *gin.Context) {
 			UserID:   s.UID,
 			Email:    s.Email,
 			TenantID: s.TenantID,
+			StoreID:  s.StoreID,
 		},
 	})
 }
@@ -166,7 +169,9 @@ func (h *Handler) switchTenant(c *gin.Context) {
 
 	// Mint the new session. Preserve ExpiresAt so a user bouncing
 	// between tenants every minute doesn't get a perpetually
-	// refreshed cookie — sessions should still age out honestly.
+	// refreshed cookie. StoreID is deliberately cleared: store ids
+	// are tenant-scoped, so switching tenants resets "current
+	// store" and the admin resolves a new default on next render.
 	now := time.Now()
 	next := Session{
 		UID:       existing.UID,
@@ -187,6 +192,63 @@ func (h *Handler) switchTenant(c *gin.Context) {
 			UserID:   next.UID,
 			Email:    next.Email,
 			TenantID: next.TenantID,
+		},
+	})
+}
+
+// switchStoreRequest is the body shape for POST /auth/switch-store.
+type switchStoreRequest struct {
+	StoreID string `json:"store_id"`
+}
+
+// switchStore re-mints the session cookie with a different store id
+// under the same tenant. Does not run an FGA check: store access is
+// derived from tenant membership via the Phase Q DSL
+// (`member from parent` on the store type). Any user with a tenant
+// role automatically has access to every store under that tenant.
+// Phase R will add a real Check against `can_view_store` when
+// per-store role grants exist.
+func (h *Handler) switchStore(c *gin.Context) {
+	existing, err := h.mgr.Read(c.Request)
+	if err != nil || existing == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "invalid_session",
+			"message": "no active session",
+		})
+		return
+	}
+
+	var req switchStoreRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.StoreID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_body",
+			"message": "store_id is required",
+		})
+		return
+	}
+
+	now := time.Now()
+	next := Session{
+		UID:       existing.UID,
+		Email:     existing.Email,
+		TenantID:  existing.TenantID,
+		StoreID:   req.StoreID,
+		IssuedAt:  now,
+		ExpiresAt: existing.ExpiresAt,
+	}
+	if err := h.mgr.Mint(c.Writer, next); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "session_mint_failed",
+			"message": "failed to issue new session",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": sessionResponse{
+			UserID:   next.UID,
+			Email:    next.Email,
+			TenantID: next.TenantID,
+			StoreID:  next.StoreID,
 		},
 	})
 }

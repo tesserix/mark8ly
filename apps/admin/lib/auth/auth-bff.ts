@@ -47,6 +47,43 @@ interface SwitchTenantResult {
  * so auth-bff can read the existing session and verify membership
  * against the target tenant.
  */
+/**
+ * Switches the current session's store id under the same tenant.
+ * Phase Q.2 — used by the store switcher and by the "Add store"
+ * flow after creating a new store so the user lands in the newly
+ * created store immediately.
+ */
+export async function switchStore(
+  storeId: string,
+  cookieHeader: string,
+): Promise<SwitchTenantResult> {
+  const res = await fetch(`${base}/auth/switch-store`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: cookieHeader,
+    },
+    body: JSON.stringify({ store_id: storeId }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? "auth_bff_error",
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+  const setCookie = res.headers.get("set-cookie") ?? "";
+  return { setCookie };
+}
+
 export async function switchTenant(
   tenantId: string,
   cookieHeader: string,

@@ -43,6 +43,7 @@ interface SessionResponse {
     user_id: string;
     email: string;
     tenant_id: string;
+    store_id?: string;
   };
 }
 
@@ -116,6 +117,7 @@ export async function middleware(req: NextRequest) {
   headers.set("x-session-user-id", session.user_id);
   headers.set("x-session-email", session.email);
   headers.set("x-session-tenant-id", session.tenant_id);
+  headers.set("x-session-store-id", session.store_id ?? "");
   headers.set("x-session-role", role);
 
   return NextResponse.next({ request: { headers } });

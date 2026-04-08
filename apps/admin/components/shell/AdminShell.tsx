@@ -150,6 +150,7 @@ const navigation: NavSection[] = [
     icon: Settings,
     children: [
       { label: "Store Settings", href: "/settings/general" },
+      { label: "Stores", href: "/settings/stores" },
       { label: "Team", href: "/settings/team" },
       { label: "Shipping", href: "/settings" },
       { label: "Payments", href: "/settings" },

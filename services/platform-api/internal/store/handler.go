@@ -50,9 +50,70 @@ func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 		int.PATCH("/:id", h.updateStore)
 	}
 
-	// Listing stores is addressed under the tenant they belong to
-	// so the route lines up with REST nesting expectations.
+	// Listing + creating stores is addressed under the tenant they
+	// belong to so the route lines up with REST nesting expectations.
 	internal.GET("/tenants/:id/stores", h.listByTenant)
+	internal.POST("/tenants/:id/stores", h.createForTenant)
+}
+
+// createStoreRequest is the body shape for POST /internal/tenants/:id/stores.
+type createStoreRequest struct {
+	Slug         string `json:"slug"`
+	Name         string `json:"name"`
+	CountryCode  string `json:"country_code"`
+	CurrencyCode string `json:"currency_code"`
+	Timezone     string `json:"timezone"`
+	// UID is the calling user's GIP uid. Phase Q.2 gates store
+	// creation on the tenant-level can_manage_stores permission.
+	UID string `json:"uid"`
+}
+
+func (h *Handler) createForTenant(c *gin.Context) {
+	var req createStoreRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_body",
+			"message": "request body is not valid JSON",
+		})
+		return
+	}
+	tenantID := c.Param("id")
+
+	if h.fga != nil {
+		if req.UID == "" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "missing_uid",
+				"message": "authorization requires uid",
+			})
+			return
+		}
+		allowed, err := h.fga.Check(c.Request.Context(), req.UID, "can_manage_stores", tenantID)
+		if err != nil {
+			respondError(c, apperrors.Internal("authz_check_failed", "authorization check failed"))
+			return
+		}
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "forbidden",
+				"message": "you do not have permission to create stores",
+			})
+			return
+		}
+	}
+
+	row, err := h.svc.Create(c.Request.Context(), CreateInput{
+		TenantID:     tenantID,
+		Slug:         req.Slug,
+		Name:         req.Name,
+		CountryCode:  req.CountryCode,
+		CurrencyCode: req.CurrencyCode,
+		Timezone:     req.Timezone,
+	})
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"data": row})
 }
 
 func (h *Handler) checkSlugAvailable(c *gin.Context) {

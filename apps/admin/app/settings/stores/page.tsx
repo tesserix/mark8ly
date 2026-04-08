@@ -6,13 +6,8 @@ import {
 } from "@/lib/auth/serverSession";
 
 /**
- * Admin /settings/stores — Phase Q.2.
- *
- * Lists every store under the current tenant with a "switch to
- * store" button for each, and an "Add store" CTA for owner/admin
- * roles. The current store is badged. Store editing (name,
- * currency, logo) continues to live on /settings/general — this
- * page is purely the multi-store index.
+ * /settings/stores — multi-store index. Lists every store under the
+ * current tenant; owners and admins can add a new one.
  */
 export default async function StoresIndexPage() {
   const {
@@ -34,16 +29,16 @@ export default async function StoresIndexPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto w-full max-w-5xl space-y-6">
-        <header className="admin-surface rounded-[2rem] px-6 py-7 sm:px-8">
-          <p className="admin-eyebrow">Store setup</p>
-          <h1 className="mt-3 font-serif text-4xl font-medium tracking-tight text-foreground">
+      <div className="mx-auto w-full max-w-5xl space-y-12">
+        <header className="space-y-3">
+          <p className="eyebrow">Store setup</p>
+          <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
             Stores
           </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-            Every storefront under {tenantName}. Switch between
-            stores to edit their settings, or add a new one to run a
-            second brand from the same account.
+          <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
+            Every storefront under {tenantName}. Switch between stores to edit
+            their settings, or add a new one to run a second brand from the
+            same account.
           </p>
         </header>
 

@@ -2,13 +2,13 @@
 
 import { useMemo, useState, useTransition } from "react";
 import {
-  Label,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@tesserix/web";
+import { Field } from "@repo/ui/field";
 
 import { updateStorefrontTheme } from "@/app/settings/storefront/actions";
 import type { Store } from "@/lib/api/platform-api";
@@ -32,6 +32,17 @@ interface StorefrontThemeFormProps {
   editable?: boolean;
 }
 
+/**
+ * StorefrontThemeForm — the merchant-facing editor for the storefront
+ * theme system. Layout selection, preset, color overrides, typography,
+ * motion, density, radius. Editorial Paper · Ink · Moss surface — no
+ * glassmorphism, no card chrome around individual controls, hairline
+ * rules between sections.
+ *
+ * State stays simple useState — this is a single-screen editor with no
+ * cross-field validation. The shape is enforced by the typed
+ * StorefrontTheme interface from @repo/ui/storefront-theme.
+ */
 export function StorefrontThemeForm({
   store,
   editable = true,
@@ -73,14 +84,18 @@ export function StorefrontThemeForm({
     });
   }
 
+  const disabled = !editable || pending;
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <section className="admin-panel space-y-6 rounded-[1.8rem] p-6">
+    <form onSubmit={handleSubmit} className="space-y-12">
+      {/* Layout */}
+      <section className="space-y-5 border-t border-border-subtle pt-10">
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Layout presets
+          <p className="eyebrow">Layout</p>
+          <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
+            Choose a structure
           </h2>
-          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+          <p className="max-w-2xl text-sm leading-7 text-foreground-secondary">
             Pick a storefront structure first, then fine-tune the styling.
             Layout changes affect the overall composition customers see when
             they land on your store.
@@ -96,16 +111,18 @@ export function StorefrontThemeForm({
                 type="button"
                 data-testid={`layout-${option.value}`}
                 aria-pressed={active}
-                disabled={!editable || pending}
+                disabled={disabled}
                 onClick={() => updateTheme({ ...theme, layout: option.value })}
-                className={`rounded-[1.35rem] border px-4 py-4 text-left transition-[transform,border-color,box-shadow,background-color] ${
+                className={`min-h-[44px] rounded-md border px-4 py-4 text-left transition-colors ${
                   active
-                    ? "border-[var(--app-orange)] bg-[rgba(230,122,47,0.08)] shadow-[0_14px_34px_rgba(76,52,24,0.08)]"
-                    : "border-border/70 bg-white/72 hover:-translate-y-0.5 hover:border-[rgba(138,100,64,0.35)]"
+                    ? "border-moss-700 bg-moss-50"
+                    : "border-border bg-background-elevated hover:border-border-strong"
                 } disabled:cursor-not-allowed disabled:opacity-60`}
               >
-                <p className="text-sm font-semibold text-foreground">{option.label}</p>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                <p className="text-sm font-semibold text-foreground">
+                  {option.label}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-foreground-secondary">
                   {option.description}
                 </p>
               </button>
@@ -114,33 +131,34 @@ export function StorefrontThemeForm({
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
-        <div className="admin-panel space-y-6 rounded-[1.8rem] p-6">
+      {/* Style + preview */}
+      <section className="grid gap-10 border-t border-border-subtle pt-10 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
+        <div className="space-y-8">
           <div className="space-y-2">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Style controls
+            <p className="eyebrow">Style</p>
+            <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
+              Brand controls
             </h2>
-            <p className="text-sm leading-6 text-muted-foreground">
-              Start from a curated preset, then customize brand colors,
-              typography, motion, and density.
+            <p className="max-w-xl text-sm leading-7 text-foreground-secondary">
+              Start from a curated preset, then customize colors, typography,
+              motion, and density.
             </p>
           </div>
 
-          <div className="space-y-3">
-            <Label>Preset</Label>
-            <div className="flex flex-wrap gap-2">
+          <Field id="preset" label="Preset">
+            <div className="flex flex-wrap gap-2 pt-1">
               {storefrontPresetOptions.map((option) => {
                 const active = theme.preset === option.value;
                 return (
                   <button
                     key={option.value}
                     type="button"
-                    disabled={!editable || pending}
+                    disabled={disabled}
                     onClick={() => applyPreset(option.value)}
-                    className={`rounded-full border px-3 py-2 text-sm transition-colors ${
+                    className={`min-h-[44px] rounded-md border px-4 text-sm transition-colors ${
                       active
-                        ? "border-[var(--app-orange)] bg-[rgba(230,122,47,0.08)] text-[var(--app-orange)]"
-                        : "border-border/70 bg-white/72 text-muted-foreground hover:text-foreground"
+                        ? "border-moss-700 bg-moss-50 text-moss-700"
+                        : "border-border bg-background-elevated text-foreground-secondary hover:text-foreground"
                     } disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     {option.label}
@@ -148,13 +166,13 @@ export function StorefrontThemeForm({
                 );
               })}
             </div>
-          </div>
+          </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-5 sm:grid-cols-2">
             <ColorField
               label="Primary"
               value={theme.colors.primary}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({
                   ...theme,
@@ -165,7 +183,7 @@ export function StorefrontThemeForm({
             <ColorField
               label="Accent"
               value={theme.colors.accent}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({
                   ...theme,
@@ -176,7 +194,7 @@ export function StorefrontThemeForm({
             <ColorField
               label="Background"
               value={theme.colors.background}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({
                   ...theme,
@@ -187,7 +205,7 @@ export function StorefrontThemeForm({
             <ColorField
               label="Surface"
               value={theme.colors.surface}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({
                   ...theme,
@@ -198,7 +216,7 @@ export function StorefrontThemeForm({
             <ColorField
               label="Text"
               value={theme.colors.text}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({
                   ...theme,
@@ -208,12 +226,13 @@ export function StorefrontThemeForm({
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-5 sm:grid-cols-2">
             <SelectField
+              id="heading-font"
               label="Heading font"
               value={theme.typography.headingFont}
               options={storefrontFontOptions}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({
                   ...theme,
@@ -225,10 +244,11 @@ export function StorefrontThemeForm({
               }
             />
             <SelectField
+              id="body-font"
               label="Body font"
               value={theme.typography.bodyFont}
               options={storefrontFontOptions}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({
                   ...theme,
@@ -240,6 +260,7 @@ export function StorefrontThemeForm({
               }
             />
             <SelectField
+              id="motion"
               label="Motion"
               value={theme.motion}
               options={[
@@ -247,12 +268,13 @@ export function StorefrontThemeForm({
                 { value: "subtle", label: "Subtle" },
                 { value: "expressive", label: "Expressive" },
               ]}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({ ...theme, motion: value as StorefrontMotion })
               }
             />
             <SelectField
+              id="density"
               label="Density"
               value={theme.density}
               options={[
@@ -260,12 +282,13 @@ export function StorefrontThemeForm({
                 { value: "balanced", label: "Balanced" },
                 { value: "airy", label: "Airy" },
               ]}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({ ...theme, density: value as StorefrontDensity })
               }
             />
             <SelectField
+              id="radius"
               label="Corner style"
               value={theme.radius}
               options={[
@@ -273,7 +296,7 @@ export function StorefrontThemeForm({
                 { value: "soft", label: "Soft" },
                 { value: "rounded", label: "Rounded" },
               ]}
-              disabled={!editable || pending}
+              disabled={disabled}
               onChange={(value) =>
                 updateTheme({ ...theme, radius: value as StorefrontRadius })
               }
@@ -281,39 +304,34 @@ export function StorefrontThemeForm({
           </div>
         </div>
 
-        <section className="admin-panel space-y-5 rounded-[1.8rem] p-6">
+        <aside className="space-y-4">
           <div className="space-y-2">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Preview
+            <p className="eyebrow">Preview</p>
+            <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
+              How it reads
             </h2>
-            <p className="text-sm leading-6 text-muted-foreground">
-              A compact approximation of how the storefront mood will read to
-              customers.
+            <p className="text-sm leading-7 text-foreground-secondary">
+              A compact approximation of the storefront mood. The live store
+              renders the full layout.
             </p>
           </div>
 
           <StorefrontPreview theme={theme} name={store.name} slug={store.slug} />
-        </section>
+        </aside>
       </section>
 
       {error && (
-        <div
-          role="alert"
-          className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-        >
+        <p role="alert" className="text-sm text-danger">
           {error}
-        </div>
+        </p>
       )}
       {success && (
-        <div
-          role="status"
-          className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
-        >
+        <p role="status" className="text-sm text-moss-700">
           Storefront theme saved.
-        </div>
+        </p>
       )}
 
-      <div className="flex items-center justify-end gap-3 border-t admin-soft-rule pt-6">
+      <div className="flex items-center justify-end gap-3 border-t border-border-subtle pt-6">
         <button
           type="button"
           disabled={!dirty || pending}
@@ -322,7 +340,7 @@ export function StorefrontThemeForm({
             setError(null);
             setSuccess(false);
           }}
-          className="rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-11 items-center px-4 text-sm font-medium text-foreground-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
           Reset
         </button>
@@ -330,9 +348,9 @@ export function StorefrontThemeForm({
           type="submit"
           data-testid="save-storefront-theme"
           disabled={!editable || !dirty || pending}
-          className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition-[transform,box-shadow,opacity] hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-12 items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
         >
-          {pending ? "Saving..." : "Save storefront theme"}
+          {pending ? "Saving…" : "Save storefront theme"}
         </button>
       </div>
     </form>
@@ -350,30 +368,33 @@ function ColorField({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const id = `color-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <div className="flex items-center gap-3 rounded-[1rem] border border-border/70 bg-white/72 px-3 py-2">
+    <Field id={id} label={label}>
+      <div className="flex items-center gap-3 rounded-md border border-border bg-background-elevated px-3 py-2">
         <input
+          id={id}
           type="color"
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className="h-10 w-10 rounded-md border-0 bg-transparent p-0"
+          className="h-10 w-10 rounded-sm border-0 bg-transparent p-0"
         />
-        <span className="text-sm font-medium text-foreground">{value}</span>
+        <span className="font-mono text-sm text-foreground">{value}</span>
       </div>
-    </div>
+    </Field>
   );
 }
 
 function SelectField({
+  id,
   label,
   value,
   options,
   disabled,
   onChange,
 }: {
+  id: string;
   label: string;
   value: string;
   options: Array<{ value: string; label: string }>;
@@ -381,21 +402,20 @@ function SelectField({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
+    <Field id={id} label={label}>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger className="h-10 rounded-xl border-border bg-white/82 text-sm shadow-sm">
+        <SelectTrigger id={id}>
           <SelectValue />
         </SelectTrigger>
-        <SelectContent className="rounded-2xl border-border/80 bg-[rgba(255,252,248,0.98)] shadow-[0_24px_60px_rgba(76,52,24,0.14)]">
+        <SelectContent>
           {options.map((option) => (
-            <SelectItem key={option.value} value={option.value} className="rounded-xl">
+            <SelectItem key={option.value} value={option.value}>
               {option.label}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-    </div>
+    </Field>
   );
 }
 
@@ -409,13 +429,21 @@ function StorefrontPreview({
   slug: string;
 }) {
   const radius =
-    theme.radius === "sharp" ? "1rem" : theme.radius === "rounded" ? "2rem" : "1.4rem";
+    theme.radius === "sharp"
+      ? "0.375rem"
+      : theme.radius === "rounded"
+        ? "1.25rem"
+        : "0.75rem";
   const spacing =
-    theme.density === "compact" ? "1rem" : theme.density === "airy" ? "1.6rem" : "1.25rem";
+    theme.density === "compact"
+      ? "1rem"
+      : theme.density === "airy"
+        ? "1.6rem"
+        : "1.25rem";
 
   return (
     <div
-      className="overflow-hidden border shadow-[0_22px_44px_rgba(76,52,24,0.08)]"
+      className="overflow-hidden border"
       style={{
         background: theme.colors.background,
         color: theme.colors.text,
@@ -451,10 +479,11 @@ function StorefrontPreview({
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div
-            className="rounded-[1.15rem] border px-4 py-4"
+            className="border px-4 py-4"
             style={{
               background: theme.colors.surface,
               borderColor: `${theme.colors.primary}22`,
+              borderRadius: radius,
             }}
           >
             <div className="text-xs uppercase tracking-[0.18em] opacity-55">
@@ -468,10 +497,11 @@ function StorefrontPreview({
             </div>
           </div>
           <div
-            className="rounded-[1.15rem] border px-4 py-4"
+            className="border px-4 py-4"
             style={{
               background: theme.colors.surface,
               borderColor: `${theme.colors.primary}22`,
+              borderRadius: radius,
             }}
           >
             <div className="text-xs uppercase tracking-[0.18em] opacity-55">
@@ -489,5 +519,7 @@ function StorefrontPreview({
 }
 
 export function initialStorefrontTheme(store: Store): StorefrontTheme {
-  return normalizeStorefrontTheme(store.storefront_theme ?? defaultStorefrontTheme);
+  return normalizeStorefrontTheme(
+    store.storefront_theme ?? defaultStorefrontTheme,
+  );
 }

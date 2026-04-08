@@ -15,40 +15,42 @@ interface ComingSoonProps {
 export function ComingSoon({ title, description, eta }: ComingSoonProps) {
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="admin-surface rounded-[2rem] p-6 sm:p-8">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.7fr)]">
-          <div>
-            <p className="admin-eyebrow">Coming Soon</p>
-            <h1 className="mt-3 font-serif text-3xl font-medium tracking-tight text-card-foreground sm:text-4xl">
-              {title}
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
-              {description}
-            </p>
-            {eta && (
-              <p className="mt-5 text-sm text-muted-foreground">
-                Expected:{" "}
-                <span className="font-medium text-card-foreground">{eta}</span>
-              </p>
-            )}
-            <div className="mt-8 flex items-center gap-3">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground shadow-[0_16px_36px_rgba(34,28,23,0.18)] transition-[transform,box-shadow,opacity] hover:-translate-y-0.5 hover:opacity-95"
-              >
-                Back to dashboard
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
+      <div className="space-y-4">
+        <p className="eyebrow">Coming soon</p>
+        <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground sm:text-5xl">
+          {title}
+        </h1>
+        <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
+          {description}
+        </p>
+        {eta && (
+          <p className="text-sm text-foreground-tertiary">
+            Expected:{" "}
+            <span className="font-medium text-foreground">{eta}</span>
+          </p>
+        )}
+      </div>
 
-          <div className="admin-panel rounded-[1.6rem] p-5">
-            <p className="admin-eyebrow">Why This Exists</p>
-            <div className="mt-5 space-y-4 text-sm leading-6 text-muted-foreground">
-              <p>The route is already wired so the information architecture stays stable while features land.</p>
-              <p>That means new slices can plug into a finished shell instead of being redesigned each time.</p>
-            </div>
-          </div>
+      <div className="mt-10 border-t border-border-subtle pt-8">
+        <p className="eyebrow">Why this exists</p>
+        <div className="mt-3 max-w-2xl space-y-3 text-sm leading-7 text-foreground-secondary">
+          <p>
+            The route is already wired so the information architecture stays
+            stable while features land.
+          </p>
+          <p>
+            New slices can plug into a finished shell instead of being
+            redesigned each time.
+          </p>
+        </div>
+        <div className="mt-8">
+          <Link
+            href="/dashboard"
+            className="inline-flex h-12 items-center gap-2 rounded-md bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary-hover"
+          >
+            Back to dashboard
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Link>
         </div>
       </div>
     </div>

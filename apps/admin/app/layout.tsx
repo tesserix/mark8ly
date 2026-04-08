@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { Source_Sans_3, Source_Serif_4 } from "next/font/google";
+import { SkipLink } from "@repo/ui/skip-link";
 
 import "./globals.css";
 
@@ -17,8 +18,22 @@ const sourceSerif = Source_Serif_4({
 });
 
 export const metadata: Metadata = {
-  title: "Mark8ly Admin",
-  description: "Your store, your control.",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_ADMIN_URL ?? "https://admin.mark8ly.com",
+  ),
+  title: {
+    default: "Mark8ly Admin",
+    template: "%s · Mark8ly Admin",
+  },
+  description:
+    "The calm control room for your Mark8ly store — products, orders, customers, and storefront in one place.",
+  // Admin is auth-gated. No SEO surface. No robots, no sitemap, no OG.
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: { index: false, follow: false },
+  },
   icons: {
     icon: "/favicon.ico",
     shortcut: "/favicon.ico",
@@ -31,8 +46,14 @@ interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en" className={`${sourceSans.variable} ${sourceSerif.variable}`}>
-      <body>{children}</body>
+    <html
+      lang="en"
+      className={`${sourceSans.variable} ${sourceSerif.variable}`}
+    >
+      <body>
+        <SkipLink />
+        {children}
+      </body>
     </html>
   );
 }

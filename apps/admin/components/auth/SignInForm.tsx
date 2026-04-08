@@ -1,17 +1,23 @@
 "use client";
 
-// Returning-user sign-in form for the admin app. Two paths:
+// Returning-user sign-in for the admin app. Two paths:
 //
 //   1. Email + password — Identity Toolkit signInWithPassword via the GIP
 //      REST helper, then signIn server action.
 //   2. Continue with Google — gsi/client popup → Google credential →
 //      Identity Toolkit signInWithIdp → same signIn server action.
 //
-// Both paths land at /dashboard on success.
+// Both paths land at /dashboard on success (or /pick-tenant when the user
+// belongs to multiple stores).
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Input, Label } from "@tesserix/web";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Input } from "@tesserix/web";
+import { Field } from "@repo/ui/field";
+import { GoogleMark } from "@repo/ui/google-mark";
 
 import { signInWithPassword, signInWithGoogle, GIPError } from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
@@ -20,42 +26,57 @@ import { signIn } from "@/app/login/actions";
 const MARKETING_URL =
   process.env.NEXT_PUBLIC_MARKETING_URL ?? "http://localhost:4201";
 
+const schema = z.object({
+  email: z
+    .string()
+    .min(1, "Email is required")
+    .email("Enter a valid email address"),
+  password: z.string().min(1, "Please enter your password"),
+});
+
+type FormValues = z.infer<typeof schema>;
+
 export function SignInForm() {
   const router = useRouter();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [googlePending, setGooglePending] = useState(false);
 
-  function handlePasswordSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    mode: "onTouched",
+    reValidateMode: "onChange",
+    defaultValues: { email: "", password: "" },
+  });
 
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail.includes("@")) {
-      setError("Please enter a valid email address");
-      return;
-    }
-    if (password.length < 1) {
-      setError("Please enter your password");
-      return;
-    }
+  const disabled = pending || googlePending;
+
+  function onValid(values: FormValues) {
+    setSubmitError(null);
+    const trimmedEmail = values.email.trim().toLowerCase();
 
     startTransition(async () => {
       let idToken = "";
       let uid = "";
       try {
-        const gip = await signInWithPassword(trimmedEmail, password);
+        const gip = await signInWithPassword(trimmedEmail, values.password);
         idToken = gip.idToken;
         uid = gip.uid;
       } catch (err) {
         if (err instanceof GIPError && err.code === "invalid_credentials") {
-          setError("Email or password is incorrect");
+          setError("password", {
+            type: "server",
+            message: "Email or password is incorrect",
+          });
           return;
         }
-        setError(
+        setSubmitError(
           err instanceof Error ? `Sign-in failed: ${err.message}` : "Sign-in failed",
         );
         return;
@@ -63,11 +84,13 @@ export function SignInForm() {
 
       const r = await signIn({ idToken, uid });
       if (!r.ok) {
-        setError(
-          r.code === "tenant_not_found"
-            ? "We couldn't find a store for this account. Did you finish onboarding?"
-            : r.message,
-        );
+        if (r.code === "tenant_not_found") {
+          setSubmitError(
+            "We couldn't find a store for this account. Did you finish onboarding?",
+          );
+        } else {
+          setSubmitError(r.message);
+        }
         return;
       }
       router.push(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
@@ -75,14 +98,14 @@ export function SignInForm() {
   }
 
   async function handleGoogle() {
-    setError(null);
+    setSubmitError(null);
     setGooglePending(true);
     try {
       const { credential } = await getGoogleCredential();
       const gip = await signInWithGoogle(credential);
       const r = await signIn({ idToken: gip.idToken, uid: gip.uid });
       if (!r.ok) {
-        setError(
+        setSubmitError(
           r.code === "tenant_not_found"
             ? "No store found for this Google account. Start a new store from the home page."
             : r.message,
@@ -91,133 +114,101 @@ export function SignInForm() {
       }
       router.push(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
     } catch (err) {
-      setError(
-        err instanceof Error ? `Google sign-in failed: ${err.message}` : "Google sign-in failed",
+      setSubmitError(
+        err instanceof Error
+          ? `Google sign-in failed: ${err.message}`
+          : "Google sign-in failed",
       );
     } finally {
       setGooglePending(false);
     }
   }
 
-  const disabled = pending || googlePending;
-
   return (
-    <div className="w-full max-w-md justify-self-end">
-      <div className="admin-surface overflow-hidden rounded-[2rem]">
-        <div className="border-b admin-soft-rule bg-[linear-gradient(180deg,rgba(248,241,230,0.9),rgba(255,252,248,0.72))] px-8 pb-6 pt-8">
-          <p className="admin-eyebrow">
-            mark8ly admin
+    <div className="w-full max-w-md">
+      <div className="space-y-2">
+        <p className="eyebrow">mark8ly admin</p>
+        <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground">
+          Welcome back
+        </h1>
+        <p className="text-base leading-7 text-foreground-secondary">
+          Sign in to your store dashboard.
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit(onValid)} noValidate className="mt-8 space-y-5">
+        <Field id="email" label="Email address" error={errors.email?.message}>
+          <Input
+            id="email"
+            type="email"
+            placeholder="founder@yourbusiness.com"
+            autoComplete="email"
+            spellCheck={false}
+            disabled={disabled}
+            aria-invalid={errors.email ? true : undefined}
+            aria-describedby={errors.email ? "email-error" : undefined}
+            {...register("email")}
+          />
+        </Field>
+
+        <Field id="password" label="Password" error={errors.password?.message}>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            disabled={disabled}
+            aria-invalid={errors.password ? true : undefined}
+            aria-describedby={errors.password ? "password-error" : undefined}
+            {...register("password")}
+          />
+        </Field>
+
+        {submitError && (
+          <p role="alert" aria-live="polite" className="text-sm text-danger">
+            {submitError}
           </p>
-          <h1 className="mt-3 font-serif text-3xl font-medium tracking-tight text-foreground">
-            Welcome back
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Sign in to your store dashboard.
-          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={disabled}
+          className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
+        >
+          {pending ? "Signing in…" : "Sign in"}
+        </button>
+
+        <div className="relative py-1">
+          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+            <div className="w-full border-t border-border-subtle" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-background px-3 text-xs uppercase tracking-wider text-foreground-tertiary">
+              or
+            </span>
+          </div>
         </div>
 
-        <form onSubmit={handlePasswordSubmit} className="space-y-5 px-8 py-8">
-          <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-foreground">
-              Email address
-            </Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="founder@yourbusiness.com"
-              required
-              autoComplete="email"
-              spellCheck={false}
-              disabled={disabled}
-            />
-          </div>
+        <button
+          type="button"
+          onClick={handleGoogle}
+          disabled={disabled}
+          className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <GoogleMark />
+          {googlePending ? "Opening Google…" : "Continue with Google"}
+        </button>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-foreground">
-              Password
-            </Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-              disabled={disabled}
-            />
-          </div>
-
-          {error && (
-            <div className="rounded-2xl border border-destructive/15 bg-destructive/5 p-3">
-              <p className="text-sm text-destructive" role="alert" aria-live="polite">
-                {error}
-              </p>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={disabled}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 text-base font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition-[transform,box-shadow,opacity] hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+        <p className="text-center text-xs text-foreground-tertiary">
+          Don&apos;t have a store yet?{" "}
+          <a
+            href={MARKETING_URL}
+            className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
           >
-            {pending ? "Signing in…" : "Sign in"}
-          </button>
-
-          <div className="relative py-1">
-            <div className="absolute inset-0 flex items-center" aria-hidden>
-              <div className="w-full border-t admin-soft-rule" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-[rgba(255,253,249,0.96)] px-3 text-xs uppercase tracking-wider text-muted-foreground">
-                or
-              </span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleGoogle}
-            disabled={disabled}
-            className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-border/90 bg-white/82 px-6 py-3 text-sm font-medium text-foreground transition-[background-color,border-color] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <GoogleMark />
-            {googlePending ? "Opening Google…" : "Continue with Google"}
-          </button>
-
-          <p className="text-center text-xs text-muted-foreground">
-            Don&apos;t have a store yet?{" "}
-            <a href={MARKETING_URL} className="underline hover:text-foreground">
-              Start a new one
-            </a>
-            .
-          </p>
-        </form>
-      </div>
+            Start a new one
+          </a>
+          .
+        </p>
+      </form>
     </div>
-  );
-}
-
-function GoogleMark() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
-      <path
-        fill="#4285F4"
-        d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
-      />
-      <path
-        fill="#34A853"
-        d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.997 8.997 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"
-      />
-      <path
-        fill="#EA4335"
-        d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"
-      />
-    </svg>
   );
 }

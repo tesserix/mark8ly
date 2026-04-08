@@ -6,17 +6,10 @@ import {
 } from "@/lib/auth/serverSession";
 
 /**
- * Admin /settings/general — Phase N.
- *
- * First real admin feature page on top of the chrome. Reads the
- * tenant row populated during onboarding (business name, slug,
- * country, currency, timezone, owner email) and lets the merchant
- * edit the store name. Everything else renders read-only with a
- * "contact support to change" hint — slug breaks URLs, currency
- * affects billing, country affects tax, owner email is auth-coupled.
- *
- * Timezone editing is a sensible follow-up but needs a searchable
- * picker to be usable with ~400 entries; left out of v1.
+ * /settings/general — store identity. Most fields are read-only after
+ * onboarding (slug breaks URLs, currency affects billing, country
+ * affects tax, owner email is auth-coupled). The merchant can edit
+ * the display name; everything else routes to support.
  */
 export default async function GeneralSettingsPage() {
   const {
@@ -38,20 +31,20 @@ export default async function GeneralSettingsPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto w-full max-w-5xl space-y-6">
-        <header className="admin-surface rounded-[2rem] px-6 py-7 sm:px-8">
-          <p className="admin-eyebrow">Store setup</p>
-          <h1 className="mt-3 font-serif text-4xl font-medium tracking-tight text-foreground">
+      <div className="mx-auto w-full max-w-5xl space-y-12">
+        <header className="space-y-3">
+          <p className="eyebrow">Store setup</p>
+          <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
             General settings
           </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
+          <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
             Your store details. Some fields are locked after onboarding —
             contact support to change them.
           </p>
           {!editable && (
-            <p className="mt-4 inline-flex rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs text-amber-900">
-              Read-only: your role ({role}) can view settings but cannot
-              edit them.
+            <p className="text-sm text-warning">
+              Read-only: your role ({role}) can view settings but cannot edit
+              them.
             </p>
           )}
         </header>
@@ -63,10 +56,10 @@ export default async function GeneralSettingsPage() {
             editable={editable}
           />
         ) : (
-          <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-6 text-sm text-destructive">
+          <p className="text-sm text-danger">
             We couldn&apos;t load your store details. Please refresh, or
             contact support if the problem persists.
-          </div>
+          </p>
         )}
       </div>
     </AdminShell>

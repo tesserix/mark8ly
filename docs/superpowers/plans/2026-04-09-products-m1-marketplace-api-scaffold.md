@@ -4,7 +4,7 @@
 
 **Goal:** Land a new `services/marketplace-api/` Go binary that boots, answers `/health` and `/ready`, connects to a dedicated `marketplace_api` Postgres database, supports the `MODE=admin|storefront|both` engine switch from §14.8 of the spec, and is deployed to the dev cluster via ArgoCD — with nothing else in it yet.
 
-**Architecture:** Mirror the `services/platform-api/` structure byte-for-byte for the scaffolding layers (`pkg/config`, `pkg/db`, `pkg/httpserver`, `pkg/logger`, `pkg/migrate`, `pkg/testdb`). New service owns a new Postgres DB `marketplace_api` on the shared instance, with its own `marketplace_api_schema_migrations` tracking table. Two Knative Services deploy from the same image via the `MODE` env var. No business logic, no middleware beyond logging/recovery, no migrations yet beyond the empty `marketplace_api_schema_migrations` table.
+**Architecture:** Mirror the `services/platform-api/` structure byte-for-byte for the scaffolding layers (`pkg/config`, `pkg/db`, `pkg/httpserver`, `pkg/logger`, `pkg/migrate`, `pkg/testdb`). New service owns a new Postgres DB `marketplace_api` on the shared instance, with its own `marketplace_db_schema_migrations` tracking table. Two Knative Services deploy from the same image via the `MODE` env var. No business logic, no middleware beyond logging/recovery, no migrations yet beyond the empty `marketplace_db_schema_migrations` table.
 
 **Tech Stack:** Go 1.26, Gin, GORM, Postgres 15, golang-migrate, envconfig, slog, Alpine 3.19 multi-stage Docker, Knative Serving, Kustomize, ArgoCD, GitHub Actions.
 
@@ -17,12 +17,12 @@
 ## Decisions locked for this milestone
 
 1. **Module path:** `github.com/mark8ly/marketplace-api` — mirrors `github.com/mark8ly/platform-api`.
-2. **Database name:** `marketplace_api` on the same Postgres instance as `platform_api` and `auth_bff`. Added to the `POSTGRES_MULTIPLE_DATABASES` env of the dev Postgres container.
-3. **Per-service migrations tracking table:** `marketplace_api_schema_migrations`. Isolated from platform-api's.
+2. **Database name:** `marketplace_db` — matches spec §13.8 verbatim. Added to the `POSTGRES_MULTIPLE_DATABASES` env of the dev Postgres container alongside `platform_api`, `auth_bff`, `openfga`. Local dev user is `dev` (docker-compose convention); the production user `marketplace_user` is created by infra tooling outside this plan.
+3. **Per-service migrations tracking table:** `marketplace_db_schema_migrations`. Isolated from platform-api's.
 4. **Local dev port:** `:8087` (platform-api is `:8086`, auth-bff is `:8088`). In `MODE=both` both Gin engines share this single port; in cluster deployments each Knative Service runs in a single mode on its own port.
-5. **Scaffolding duplication:** `pkg/config`, `pkg/db`, `pkg/logger`, `pkg/httpserver`, `pkg/migrate`, `pkg/testdb` are **copied from platform-api** into marketplace-api, not imported. Inter-service compile-time coupling is explicitly forbidden by the architecture decision. A future `pkg/go-shared` extraction is tracked as a slice-2+ refactor when a third service emerges.
+5. **Scaffolding duplication:** `pkg/config`, `pkg/db`, `pkg/logger`, `pkg/migrate`, `pkg/testdb` are **copied from platform-api** verbatim (with the module path adjusted). `pkg/httpserver` is **adapted**, not copied, because marketplace-api's two-engine (`Engines`) design diverges from platform-api's single-engine `New` signature — see Task 3 for the new code and the instruction to **not** copy platform-api's `server_test.go`. Inter-service compile-time coupling is explicitly forbidden by the architecture decision. A future `pkg/go-shared` extraction is tracked as a slice-2+ refactor when a third service emerges.
 6. **MODE env:** `admin`, `storefront`, or `both`. Default `both` for local dev; Knative manifests in the infra repo set `admin` and `storefront` explicitly per service.
-7. **No migrations in M1.** `migrations/` directory is empty; `migrate up` creates only `marketplace_api_schema_migrations`. The first real migration (`0001_products_initial`) lands in M2.
+7. **No migrations in M1.** `migrations/` directory is empty; `migrate up` creates only `marketplace_db_schema_migrations`. The first real migration (`0001_products_initial`) lands in M2.
 8. **Authentication middleware is not wired in M1.** `/health` and `/ready` are unauthenticated. The GIP middleware factory is imported but only used when real admin routes land in M5.
 
 ---
@@ -117,7 +117,10 @@ Each task is one logical commit.
 ```bash
 cd services/marketplace-api
 go mod init github.com/mark8ly/marketplace-api
+go mod edit -go=1.26
 ```
+
+The `go mod edit -go=1.26` step pins the module to Go 1.26 regardless of the toolchain version the engineer has installed locally. Without this, `go mod init` writes whatever version the host toolchain defaults to, and CI (which builds with 1.26) will diverge from local.
 
 Then pin dependencies to match `services/platform-api/go.mod` exactly. Copy the relevant `require` lines from `platform-api/go.mod` for these packages (versions must match; the easiest way is to open `services/platform-api/go.mod` and copy the lines verbatim):
 
@@ -376,7 +379,7 @@ const migrationsTable = "platform_api_schema_migrations"
 to:
 
 ```go
-const migrationsTable = "marketplace_api_schema_migrations"
+const migrationsTable = "marketplace_db_schema_migrations"
 ```
 
 Leave everything else identical.
@@ -398,7 +401,7 @@ var MigrationsFS embed.FS
 // ExpectedSchemaVersion is the migration version the current code was
 // written against. cmd/marketplace-api refuses to start if the database's
 // migration state doesn't match. M1 runs against version 0 (empty schema,
-// only the marketplace_api_schema_migrations table exists). Bump this with
+// only the marketplace_db_schema_migrations table exists). Bump this with
 // every migration.
 const ExpectedSchemaVersion uint = 0
 ```
@@ -440,7 +443,9 @@ git commit -m "feat(marketplace-api): embed migrations + DB + migrate wrappers"
 
 - [ ] **Step 3.1: Write `pkg/httpserver/server.go`**
 
-Start from `services/platform-api/pkg/httpserver/server.go` and adapt. Unlike platform-api, marketplace-api constructs engines per `Mode`, so `New` takes a `mode.Mode` and returns a map of label → engine so the caller can listen on the appropriate port(s) and assemble route groups cleanly.
+⚠ **Do not copy `services/platform-api/pkg/httpserver/server_test.go`.** Platform-api's test calls `httpserver.New("test", log)` (two arguments), which is incompatible with marketplace-api's three-argument `New(env, m, log)`. Use it only as a reference for how to test a Gin engine factory; write a new test in Step 3.3b below.
+
+Start from `services/platform-api/pkg/httpserver/server.go` and adapt. Unlike platform-api, marketplace-api constructs engines per `Mode`, so `New` takes a `mode.Mode` and returns an `Engines` struct with per-mode fields so the caller can listen on the appropriate port(s) and assemble route groups cleanly.
 
 ```go
 // Package httpserver provides Gin setup with the conventions used across
@@ -631,7 +636,50 @@ func TestReadyEndpoint_WithNilDB_Returns503(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3.4: Run health tests**
+- [ ] **Step 3.3b: Write a minimal `pkg/httpserver/server_test.go` smoke test**
+
+```go
+package httpserver
+
+import (
+	"io"
+	"log/slog"
+	"testing"
+
+	"github.com/mark8ly/marketplace-api/internal/mode"
+)
+
+func TestNew_Admin_PopulatesOnlyAdminEngine(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	e := New("test", mode.Admin, log)
+	if e.Admin == nil {
+		t.Error("Admin engine should be non-nil for mode.Admin")
+	}
+	if e.Storefront != nil {
+		t.Error("Storefront engine should be nil for mode.Admin")
+	}
+}
+
+func TestNew_Storefront_PopulatesOnlyStorefrontEngine(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	e := New("test", mode.Storefront, log)
+	if e.Admin != nil {
+		t.Error("Admin engine should be nil for mode.Storefront")
+	}
+	if e.Storefront == nil {
+		t.Error("Storefront engine should be non-nil for mode.Storefront")
+	}
+}
+
+func TestMergedForBoth_ReturnsNonNil(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if MergedForBoth("test", log) == nil {
+		t.Error("MergedForBoth should return a non-nil engine")
+	}
+}
+```
+
+- [ ] **Step 3.4: Run health + httpserver tests**
 
 ```bash
 cd services/marketplace-api
@@ -882,7 +930,7 @@ POSTGRES_MULTIPLE_DATABASES: platform_api,auth_bff,openfga
 to:
 
 ```yaml
-POSTGRES_MULTIPLE_DATABASES: platform_api,auth_bff,openfga,marketplace_api
+POSTGRES_MULTIPLE_DATABASES: platform_api,auth_bff,openfga,marketplace_db
 ```
 
 - [ ] **Step 7.2: Verify `postgres-init.sh` creates the DB correctly**
@@ -900,7 +948,7 @@ Below the existing `platform-api` service block in `infra/dev/docker-compose.yml
       dockerfile: Dockerfile
       target: migrate
     environment:
-      DATABASE_URL: postgres://dev:dev@postgres:5432/marketplace_api?sslmode=disable
+      DATABASE_URL: postgres://dev:dev@postgres:5432/marketplace_db?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -916,7 +964,7 @@ Below the existing `platform-api` service block in `infra/dev/docker-compose.yml
       ENV: dev
       MODE: both
       HTTP_PORT: 8087
-      DATABASE_URL: postgres://dev:dev@postgres:5432/marketplace_api?sslmode=disable
+      DATABASE_URL: postgres://dev:dev@postgres:5432/marketplace_db?sslmode=disable
     depends_on:
       marketplace-api-migrate:
         condition: service_completed_successfully
@@ -939,7 +987,7 @@ Append:
 
 ```bash
 # marketplace-api
-MARKETPLACE_API_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_api?sslmode=disable
+MARKETPLACE_API_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable
 MARKETPLACE_API_PORT=8087
 ```
 
@@ -1018,8 +1066,8 @@ docker compose -f infra/dev/docker-compose.yml up -d postgres marketplace-api-mi
 
 Expected:
 - `postgres` becomes healthy
-- `marketplace-api-migrate` runs, reports "no change" (no migrations exist yet but the tracking table is created), and exits with status 0
-- `marketplace-api` starts, logs `listening addr=:8087`
+- `marketplace-api-migrate` runs, logs `no change` on stdout (no `.sql` files exist yet — `go:embed migrations/*.sql` is a legal zero-match glob, `migrate up` creates only the `marketplace_db_schema_migrations` tracking table, reports `no change`, and exits `0`)
+- `marketplace-api` starts, logs `listening addr=:8087` and `mode=both`
 
 - [ ] **Step 8.5: Curl the health endpoint**
 
@@ -1042,7 +1090,7 @@ docker compose -f infra/dev/docker-compose.yml exec postgres \
     psql -U dev -d marketplace_api -c "\dt"
 ```
 
-Expected output includes `marketplace_api_schema_migrations` with zero rows.
+Expected output includes `marketplace_db_schema_migrations` with zero rows.
 
 - [ ] **Step 8.7: Tear down**
 
@@ -1134,7 +1182,7 @@ platform-api or marketplace-api needs a scaffolding change.
 
 ```bash
 go test ./...                                    # unit tests only
-TEST_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_api?sslmode=disable \
+TEST_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable \
   go test -tags=integration ./...                # integration tests (when they exist)
 ```
 
@@ -1142,7 +1190,7 @@ TEST_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_api?sslmode=disa
 
 - DB name: `marketplace_api` (on the shared dev Postgres)
 - User: `dev` (dev only) / `marketplace_user` (prod)
-- Migrations tracking table: `marketplace_api_schema_migrations`
+- Migrations tracking table: `marketplace_db_schema_migrations`
 - Slice 1 schema: see M2 plan (not yet landed as of M1 completion)
 ```
 
@@ -1164,6 +1212,19 @@ git commit -m "docs(marketplace-api): README with local dev + MODE + scaffolding
 - Create: `k8s/apps/marketplace/marketplace-api-admin/knative-service.yaml`
 - Create: `k8s/apps/marketplace/marketplace-api-admin/service-account.yaml`
 - Create: `k8s/apps/marketplace/marketplace-api-admin/external-secret.yaml`
+
+- [ ] **Step 10.0: Verify infra repo layout before starting**
+
+Paths in Tasks 10–12 were written based on documented conventions — confirm them on the actual `tesserix-infra` checkout before executing:
+
+```bash
+cd tesserix-infra
+ls k8s/apps/platform/                 # expect: a platform-api/ directory
+ls k8s/apps/                          # confirm the marketplace/ namespace dir exists or create it
+ls k8s/argocd/appsets/                # expect: services.yaml (the ApplicationSet registration target)
+```
+
+If any path differs (for example the platform-api overlay lives under a different grouping), update every subsequent path in Tasks 10–12 accordingly before executing the tasks. Do not guess — read the actual files and match what's there.
 
 - [ ] **Step 10.1: Locate the closest existing reference**
 
@@ -1196,12 +1257,16 @@ env:
         key: url
 ```
 
-And the annotation:
+And the annotation (per spec §14.16 DoD — must reference a slice-2 ticket for the Redis rate limiter upgrade):
 
 ```yaml
 annotations:
-  autoscaling.knative.dev/maxScale: "1"  # slice 1: in-memory rate limiter — see spec §14.8
+  # slice 1: in-memory rate limiter — per spec §14.8 + §14.16.
+  # TODO(slice-2): unpin once Redis-backed rate limiter ships. Tracking: <SLICE2_TICKET_TBD>
+  autoscaling.knative.dev/maxScale: "1"
 ```
+
+Replace `<SLICE2_TICKET_TBD>` with the actual slice-2 ticket ID when that ticket exists. Until then the placeholder is acceptable — the important thing is the inline reference so a future reviewer can trace the constraint back to its rationale.
 
 - [ ] **Step 10.3: Write `service-account.yaml`**
 
@@ -1209,7 +1274,61 @@ Copy platform-api's `service-account.yaml`, change the name to `marketplace-api-
 
 - [ ] **Step 10.4: Write `external-secret.yaml`**
 
-Mirror platform-api's ExternalSecret, pointing at `marketplace-api-db-password` as the GCP Secret Manager secret. The database URL should be constructed at-deploy-time by the ExternalSecret's template block; platform-api's ExternalSecret already does this — copy the template structure exactly.
+Spec §13.8 item 4 requires the ExternalSecret to reference **two** secrets from GCP Secret Manager: the DB password AND the `X-Storefront-Key` shared secret used for storefront trust-boundary enforcement (spec §13.1.2). The `X-Storefront-Key` is provisioned in slice 1 even though it's only read by the storefront engine starting in M6 — creating the K8s secret up front is cheap and avoids a second infra PR later.
+
+Naming layers to keep straight:
+
+| Layer | Name |
+|---|---|
+| GCP Secret Manager secret (DB password) | `marketplace-api-db-password` |
+| GCP Secret Manager secret (storefront shared key) | `marketplace-api-storefront-key` |
+| K8s Secret produced by the ExternalSecret | `marketplace-api-db` |
+| K8s Secret data keys | `url`, `storefront_key` |
+
+Explicit YAML (adapt names/refreshInterval/secretStoreRef to match what platform-api uses in your actual tesserix-infra checkout):
+
+```yaml
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: marketplace-api-db
+  namespace: marketplace
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-manager       # match platform-api's ClusterSecretStore name
+    kind: ClusterSecretStore
+  target:
+    name: marketplace-api-db       # K8s Secret produced at the cluster
+    template:
+      engineVersion: v2
+      data:
+        url: "postgres://marketplace_user:{{ .dbPassword }}@127.0.0.1:5432/marketplace_db?sslmode=disable"
+        storefront_key: "{{ .storefrontKey }}"
+  data:
+    - secretKey: dbPassword
+      remoteRef:
+        key: marketplace-api-db-password
+    - secretKey: storefrontKey
+      remoteRef:
+        key: marketplace-api-storefront-key
+```
+
+The database URL template points at `127.0.0.1:5432` because the Cloud SQL Auth Proxy runs as a sidecar on the same pod. If platform-api uses a different address shape (for example, a Unix socket path), match that instead.
+
+The knative-service.yaml env block from Step 10.2 must additionally read the `storefront_key` from this secret, even though only `marketplace-api-storefront` consumes it at runtime. Adding a `STOREFRONT_KEY` env var on the admin service is harmless (the admin engine doesn't read it) and keeps both services consuming a single shared Secret:
+
+```yaml
+env:
+  # ... DATABASE_URL as before
+  - name: STOREFRONT_KEY
+    valueFrom:
+      secretKeyRef:
+        name: marketplace-api-db
+        key: storefront_key
+```
+
+**GCP prerequisite (Task 10.0 companion):** an infra admin must create the two GCP Secret Manager secrets (`marketplace-api-db-password`, `marketplace-api-storefront-key`) before the ExternalSecret can sync. Generate the storefront key with `openssl rand -base64 48`. Log the creation in the PR description so it's auditable.
 
 - [ ] **Step 10.5: Write `kustomization.yaml`**
 
@@ -1409,16 +1528,25 @@ The rest of the `go` job body should already generalize over `matrix.service` �
 
 - [ ] **Step 14.2: Pin the FGA + Postgres + fake-gcs-server versions in the job env**
 
-Marketplace-api tests will eventually spin up real Postgres + FGA + fake-gcs-server containers (M3+). Pin them now so slice 1 never drifts:
+Marketplace-api tests will eventually spin up real Postgres + FGA + fake-gcs-server containers (M3+). Pin them now so slice 1 never drifts. These env vars go at the **job level** (under `jobs.go:`, as a sibling of `runs-on:` and `strategy:`) so every matrix entry sees the same pinned versions. They do **not** go at the workflow top level (which would leak into unrelated jobs) and they do **not** go inside `strategy.matrix` (which is for dimension values, not env).
+
+Diff-style example (the engineer applies this to wherever `jobs.go:` is declared in `ci.yml`):
 
 ```yaml
-env:
-  POSTGRES_IMAGE: postgres:15-alpine
-  FGA_IMAGE: openfga/openfga:v1.8.4
-  FAKE_GCS_IMAGE: fsouza/fake-gcs-server:1.49.3
+jobs:
+  go:
+    name: Go (${{ matrix.service }})
+    runs-on: ubuntu-latest
++   env:
++     POSTGRES_IMAGE: postgres:15-alpine
++     FGA_IMAGE: openfga/openfga:v1.8.4
++     FAKE_GCS_IMAGE: fsouza/fake-gcs-server:1.49.3
+    strategy:
+      matrix:
+        service: [platform-api, auth-bff, marketplace-api]
 ```
 
-The pinned versions match the existing dev compose for Postgres and FGA. `fake-gcs-server` is pinned to a known-good recent version; adjust to the current latest stable when running this task.
+The pinned versions match the existing dev compose (`infra/dev/docker-compose.yml`) for Postgres and FGA. `fake-gcs-server` is pinned to a known-good recent version; adjust to the current latest stable when running this task if a newer patch release exists. Steps that spin up those containers (added in M3+ milestones, not this one) will reference the env vars by name.
 
 - [ ] **Step 14.3: Validate the workflow locally**
 
@@ -1481,7 +1609,7 @@ Check each against the implementation:
 
 - [ ] `services/marketplace-api/` service binary and Dockerfile (Task 1–4, 8)
 - [ ] `marketplace_api` database provisioned in dev Postgres (Task 7)
-- [ ] `marketplace_api_schema_migrations` tracking table exists (Task 8 Step 6)
+- [ ] `marketplace_db_schema_migrations` tracking table exists (Task 8 Step 6)
 - [ ] Kustomize overlays for admin + storefront (Tasks 10–11)
 - [ ] ExternalSecret referencing `marketplace-api-db-password` (Task 10.4)
 - [ ] ArgoCD Application registration (Task 12)
@@ -1492,7 +1620,7 @@ Check each against the implementation:
 - [ ] MODE switch tested in three configurations (Task 1.5 + Task 13.5)
 - [ ] README documents local dev + MODE + scaffolding-duplication decision (Task 9)
 - [ ] Graceful shutdown implemented (Task 4)
-- [ ] Per-service migrations table `marketplace_api_schema_migrations` (Task 2.2)
+- [ ] Per-service migrations table `marketplace_db_schema_migrations` (Task 2.2)
 - [ ] Module path `github.com/mark8ly/marketplace-api` (Task 1.1)
 - [ ] `go test ./...` passes on the whole module (Task 14 CI verification)
 

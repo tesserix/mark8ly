@@ -101,7 +101,7 @@ export default function GuidesPage() {
                   </span>
                 </div>
                 <a
-                  href="#"
+                  href="/onboarding"
                   className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 font-medium text-primary-foreground transition-[background-color,box-shadow] hover:bg-primary-hover hover:shadow-lg"
                 >
                   Start reading
@@ -143,7 +143,7 @@ export default function GuidesPage() {
             {remainingGuides.map((guide) => (
               <a
                 key={guide.title}
-                href="#"
+                href="/onboarding"
                 className="group flex flex-col gap-6 rounded-2xl border border-border bg-white/88 p-6 shadow-sm transition-[border-color,box-shadow,transform] hover:border-warm-300 hover:shadow-md sm:flex-row"
               >
                 <div className="w-14 h-14 rounded-xl bg-warm-100 flex items-center justify-center flex-shrink-0">

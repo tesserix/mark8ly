@@ -20,11 +20,11 @@ import { Header } from "@/components/marketing/Header";
 import { Footer } from "@/components/marketing/Footer";
 
 const gettingStartedArticles = [
-  { title: "Create your store in 10 minutes", href: "#" },
-  { title: "Add your first product", href: "#" },
-  { title: "Set up payments with Razorpay", href: "#" },
-  { title: "Configure shipping rates", href: "#" },
-  { title: "Customize your storefront", href: "#" },
+  { title: "Create your store in 10 minutes", href: "/onboarding" },
+  { title: "Add your first product", href: "/onboarding" },
+  { title: "Set up payments with Razorpay", href: "/onboarding" },
+  { title: "Configure shipping rates", href: "/onboarding" },
+  { title: "Customize your storefront", href: "/onboarding" },
 ];
 
 const helpCategories = [
@@ -129,7 +129,7 @@ export default function HelpCenterPage() {
             {helpCategories.map((category) => (
               <a
                 key={category.title}
-                href="#"
+                href="/onboarding"
                 className="group rounded-2xl border border-border bg-white/88 p-6 shadow-sm transition-[border-color,box-shadow,transform] hover:border-warm-300 hover:shadow-md"
               >
                 <div className="w-12 h-12 rounded-xl bg-warm-100 flex items-center justify-center mb-4">

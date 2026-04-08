@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { Source_Sans_3, Source_Serif_4 } from "next/font/google";
+import { SkipLink } from "@repo/ui/skip-link";
 
 import "./globals.css";
 
@@ -17,8 +18,12 @@ const sourceSerif = Source_Serif_4({
 });
 
 export const metadata: Metadata = {
-  title: "mark8ly",
-  description: "Get your store live on mark8ly.",
+  title: {
+    default: "mark8ly — quiet commerce for people who make things",
+    template: "%s · mark8ly",
+  },
+  description:
+    "A modern editorial commerce platform for indie merchants and considered brands. Launch your store in an afternoon.",
   icons: {
     icon: "/favicon.ico",
     shortcut: "/favicon.ico",
@@ -32,8 +37,14 @@ interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en" className={`${sourceSans.variable} ${sourceSerif.variable}`}>
-      <body>{children}</body>
+    <html
+      lang="en"
+      className={`${sourceSans.variable} ${sourceSerif.variable}`}
+    >
+      <body>
+        <SkipLink />
+        {children}
+      </body>
     </html>
   );
 }

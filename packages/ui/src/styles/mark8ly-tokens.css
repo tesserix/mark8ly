@@ -1,0 +1,311 @@
+/* ============================================================
+   Mark8ly Design Tokens — Paper · Ink · Moss
+   ------------------------------------------------------------
+   Single source of truth for the Mark8ly visual system.
+   Consumed by every app in apps/* via:
+
+       @import "@repo/ui/styles/mark8ly-tokens.css";
+
+   Direction: modern editorial luxury. Warm-neutral paper,
+   sharp near-black ink, one decisive moss-green accent.
+   Light mode only — by design.
+
+   Token layers:
+     1. Primitive scales        (--paper-*, --ink-*, --moss-*)
+     2. Semantic aliases        (--background, --foreground, --primary…)
+     3. Tailwind v4 @theme      (exposes both as utilities)
+     4. Legacy aliases          (--warm-*, --terracotta-*, --sage-*)
+        kept so untouched pages keep rendering during the
+        migration. Remove once all surfaces are on the new
+        semantic tokens.
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  /* ---------- 1. Primitive scales ---------- */
+
+  /* Paper — warm-neutral surfaces. Less yellow than bone, more
+     body than pure white. Each step is perceptually uniform. */
+  --paper-50:  #FDFCF8;
+  --paper-100: #FAF8F2;
+  --paper-200: #F7F6F2; /* canonical page background */
+  --paper-300: #ECEAE3;
+  --paper-400: #DDDACE;
+  --paper-500: #C5C0B2;
+  --paper-600: #A19C8E;
+
+  /* Ink — near-black with almost no warmth. The contrast
+     against paper is what makes the system feel expensive. */
+  --ink-900: #0E0E0C; /* canonical foreground / primary CTA */
+  --ink-800: #1C1B19;
+  --ink-700: #2B2A27;
+  --ink-600: #45433E;
+  --ink-500: #5C5953;
+  --ink-400: #7A766E;
+  --ink-300: #A09C92;
+  --ink-200: #C7C3B8;
+  --ink-100: #E2DFD6;
+
+  /* Moss — single editorial accent. Bottega/Phoebe Philo
+     deep green. Used for links, focus, key CTA hover, and
+     functional success. Never decorative. */
+  --moss-900: #0F1A0D;
+  --moss-800: #1C2F1A;
+  --moss-700: #2D4A2B; /* canonical accent */
+  --moss-600: #3D5F38;
+  --moss-500: #527149;
+  --moss-400: #7B9272;
+  --moss-300: #A8BAA0;
+  --moss-200: #CFDAC8;
+  --moss-100: #E8EEE2;
+  --moss-50:  #F3F6EF;
+
+  /* Functional only — never decorative.
+     Signal: vermillion for genuine urgency (live now, expiring offer)
+     Danger: oxblood for errors and destructive
+     Warning: amber-bronze for warnings */
+  --signal:    #D94B1A;
+  --danger:    #8B2E20;
+  --warning:   #B5751F;
+
+  /* ---------- 2. Semantic aliases ---------- */
+
+  --background:           var(--paper-200);
+  --background-elevated:  #FFFFFF;
+  --background-sink:      var(--paper-300);
+
+  --foreground:           var(--ink-900);
+  --foreground-secondary: var(--ink-600);
+  --foreground-tertiary:  var(--ink-400);
+
+  --primary:              var(--ink-900);
+  --primary-foreground:   var(--paper-50);
+  --primary-hover:        var(--ink-800);
+
+  --accent:               var(--moss-700);
+  --accent-foreground:    var(--paper-50);
+  --accent-hover:         var(--moss-800);
+  --accent-tint:          var(--moss-100);
+
+  --muted:                var(--paper-300);
+  --muted-foreground:     var(--ink-500);
+
+  --card:                 var(--background-elevated);
+  --card-foreground:      var(--foreground);
+
+  --popover:              #FFFFFF;
+  --popover-foreground:   var(--foreground);
+
+  --destructive:          var(--danger);
+  --destructive-foreground: var(--paper-50);
+  --success:              var(--moss-700);
+  --success-foreground:   var(--paper-50);
+
+  --border:               var(--ink-100);
+  --border-strong:        var(--ink-200);
+  --border-subtle:        var(--paper-300);
+
+  --input:                var(--ink-100);
+  --ring:                 var(--moss-700);
+
+  /* Radius — 8px base, used sparingly. Editorial layouts
+     prefer crisp edges over heavy rounding. */
+  --radius-sm:  4px;
+  --radius:     6px;
+  --radius-md:  8px;
+  --radius-lg:  12px;
+  --radius-xl:  16px;
+  --radius-2xl: 24px;
+  --radius-pill: 9999px;
+
+  /* Shadow — quiet, single-elevation. The contrast between
+     paper and elevated white IS the elevation cue. */
+  --shadow-1: 0 1px 2px rgba(14, 14, 12, 0.04),
+              0 1px 1px rgba(14, 14, 12, 0.03);
+  --shadow-2: 0 4px 12px rgba(14, 14, 12, 0.06),
+              0 1px 2px rgba(14, 14, 12, 0.04);
+  --shadow-3: 0 12px 32px rgba(14, 14, 12, 0.08),
+              0 2px 6px rgba(14, 14, 12, 0.04);
+  --shadow-focus: 0 0 0 2px var(--background),
+                  0 0 0 4px var(--ring);
+
+  /* Motion — single curve, three durations. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);    /* ease-out-expo */
+  --duration-fast: 150ms;
+  --duration:      220ms;
+  --duration-slow: 420ms;
+
+  /* Typography — fluid scale, clamp() based. */
+  --font-serif: var(--font-editorial-serif),
+                "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --font-sans:  var(--font-editorial-sans),
+                "Source Sans 3", -apple-system, BlinkMacSystemFont,
+                "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  --text-xs:   clamp(0.75rem,  0.72rem + 0.15vw, 0.8125rem);
+  --text-sm:   clamp(0.875rem, 0.84rem + 0.18vw, 0.9375rem);
+  --text-base: clamp(1rem,     0.96rem + 0.20vw, 1.0625rem);
+  --text-lg:   clamp(1.125rem, 1.05rem + 0.35vw, 1.25rem);
+  --text-xl:   clamp(1.25rem,  1.10rem + 0.70vw, 1.5rem);
+  --text-2xl:  clamp(1.5rem,   1.25rem + 1.20vw, 2rem);
+  --text-3xl:  clamp(1.875rem, 1.45rem + 2.00vw, 2.75rem);
+  --text-4xl:  clamp(2.25rem,  1.65rem + 2.80vw, 3.5rem);
+  --text-5xl:  clamp(2.75rem,  1.80rem + 4.20vw, 4.75rem);
+
+  /* ---------- 4. Legacy aliases ----------
+     These map the old warm/terracotta/sage Tailwind utilities
+     to the new system so existing markup keeps rendering.
+     Remove these blocks once every page has been migrated to
+     the semantic tokens above. */
+
+  --warm-50:  var(--paper-50);
+  --warm-100: var(--paper-100);
+  --warm-200: var(--paper-300);
+  --warm-300: var(--paper-400);
+  --warm-400: var(--paper-500);
+  --warm-500: var(--paper-600);
+  --warm-600: var(--ink-500);
+  --warm-700: var(--ink-700);
+  --warm-800: var(--ink-800);
+  --warm-900: var(--ink-900);
+  --warm-950: var(--ink-900);
+
+  /* Terracotta is dead. All terracotta utilities now point at
+     moss so any leftover usage gets the new accent for free. */
+  --terracotta-50:  var(--moss-50);
+  --terracotta-100: var(--moss-100);
+  --terracotta-200: var(--moss-200);
+  --terracotta-300: var(--moss-300);
+  --terracotta-400: var(--moss-400);
+  --terracotta-500: var(--moss-700);
+  --terracotta-600: var(--moss-700);
+  --terracotta-700: var(--moss-800);
+  --terracotta-800: var(--moss-800);
+  --terracotta-900: var(--moss-900);
+
+  /* Sage was previously success — moss is now success too. */
+  --sage-50:  var(--moss-50);
+  --sage-100: var(--moss-100);
+  --sage-200: var(--moss-200);
+  --sage-300: var(--moss-300);
+  --sage-400: var(--moss-400);
+  --sage-500: var(--moss-700);
+  --sage-600: var(--moss-700);
+  --sage-700: var(--moss-800);
+  --sage-800: var(--moss-800);
+  --sage-900: var(--moss-900);
+}
+
+/* ============================================================
+   Tailwind v4 — expose tokens as utilities
+   ============================================================ */
+
+@theme inline {
+  /* Paper / Ink / Moss — the new system */
+  --color-paper-50:  var(--paper-50);
+  --color-paper-100: var(--paper-100);
+  --color-paper-200: var(--paper-200);
+  --color-paper-300: var(--paper-300);
+  --color-paper-400: var(--paper-400);
+  --color-paper-500: var(--paper-500);
+  --color-paper-600: var(--paper-600);
+
+  --color-ink-100: var(--ink-100);
+  --color-ink-200: var(--ink-200);
+  --color-ink-300: var(--ink-300);
+  --color-ink-400: var(--ink-400);
+  --color-ink-500: var(--ink-500);
+  --color-ink-600: var(--ink-600);
+  --color-ink-700: var(--ink-700);
+  --color-ink-800: var(--ink-800);
+  --color-ink-900: var(--ink-900);
+
+  --color-moss-50:  var(--moss-50);
+  --color-moss-100: var(--moss-100);
+  --color-moss-200: var(--moss-200);
+  --color-moss-300: var(--moss-300);
+  --color-moss-400: var(--moss-400);
+  --color-moss-500: var(--moss-500);
+  --color-moss-600: var(--moss-600);
+  --color-moss-700: var(--moss-700);
+  --color-moss-800: var(--moss-800);
+  --color-moss-900: var(--moss-900);
+
+  --color-signal:  var(--signal);
+  --color-danger:  var(--danger);
+  --color-warning: var(--warning);
+
+  /* Semantic aliases */
+  --color-background:           var(--background);
+  --color-background-elevated:  var(--background-elevated);
+  --color-background-sink:      var(--background-sink);
+
+  --color-foreground:           var(--foreground);
+  --color-foreground-secondary: var(--foreground-secondary);
+  --color-foreground-tertiary:  var(--foreground-tertiary);
+
+  --color-primary:              var(--primary);
+  --color-primary-foreground:   var(--primary-foreground);
+  --color-primary-hover:        var(--primary-hover);
+
+  --color-accent:               var(--accent);
+  --color-accent-foreground:    var(--accent-foreground);
+  --color-accent-hover:         var(--accent-hover);
+  --color-accent-tint:          var(--accent-tint);
+
+  --color-muted:                var(--muted);
+  --color-muted-foreground:     var(--muted-foreground);
+
+  --color-card:                 var(--card);
+  --color-card-foreground:      var(--card-foreground);
+
+  --color-popover:              var(--popover);
+  --color-popover-foreground:   var(--popover-foreground);
+
+  --color-border:               var(--border);
+  --color-border-strong:        var(--border-strong);
+  --color-border-subtle:        var(--border-subtle);
+  --color-input:                var(--input);
+  --color-ring:                 var(--ring);
+
+  /* Legacy color utilities — kept so existing className strings
+     (bg-warm-100, text-terracotta-700, etc.) keep rendering. */
+  --color-warm-50:  var(--warm-50);
+  --color-warm-100: var(--warm-100);
+  --color-warm-200: var(--warm-200);
+  --color-warm-300: var(--warm-300);
+  --color-warm-400: var(--warm-400);
+  --color-warm-500: var(--warm-500);
+  --color-warm-600: var(--warm-600);
+  --color-warm-700: var(--warm-700);
+  --color-warm-800: var(--warm-800);
+  --color-warm-900: var(--warm-900);
+  --color-warm-950: var(--warm-950);
+
+  --color-terracotta-50:  var(--terracotta-50);
+  --color-terracotta-100: var(--terracotta-100);
+  --color-terracotta-200: var(--terracotta-200);
+  --color-terracotta-300: var(--terracotta-300);
+  --color-terracotta-400: var(--terracotta-400);
+  --color-terracotta-500: var(--terracotta-500);
+  --color-terracotta-600: var(--terracotta-600);
+  --color-terracotta-700: var(--terracotta-700);
+  --color-terracotta-800: var(--terracotta-800);
+  --color-terracotta-900: var(--terracotta-900);
+
+  --color-sage-50:  var(--sage-50);
+  --color-sage-100: var(--sage-100);
+  --color-sage-200: var(--sage-200);
+  --color-sage-300: var(--sage-300);
+  --color-sage-400: var(--sage-400);
+  --color-sage-500: var(--sage-500);
+  --color-sage-600: var(--sage-600);
+  --color-sage-700: var(--sage-700);
+  --color-sage-800: var(--sage-800);
+  --color-sage-900: var(--sage-900);
+
+  /* Type */
+  --font-sans:  var(--font-sans);
+  --font-serif: var(--font-serif);
+}

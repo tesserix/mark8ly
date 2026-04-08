@@ -1,199 +1,23 @@
 @import "tailwindcss";
 
-/* Tailwind v4 needs to scan the @tesserix/web compiled JS so class names
-   used inside DS components survive tree-shaking. */
+/* Mark8ly design tokens — single source of truth lives in the
+   shared workspace package. Editing colors? Edit there. */
+@import "@repo/ui/styles/mark8ly-tokens.css";
+
+/* Tailwind v4 needs to scan everything that emits class names so
+   tree-shaking doesn't drop utilities used by our shared
+   packages or the Tesserix design system. */
 @source "../../../node_modules/@tesserix/web/dist";
+@source "../../../packages/ui/src";
 
-/* ============================================
-   WARM EDITORIAL DESIGN SYSTEM
-   Light mode only - human-crafted aesthetic
-   Ported verbatim from mark8ly_backup so the marketing surface looks
-   identical to the legacy app.
-   ============================================ */
-
-:root {
-  color-scheme: light;
-
-  /* Warm Neutrals - Cream/Tan scale */
-  --warm-50: #FAF7F2;
-  --warm-100: #F3EEE6;
-  --warm-200: #E7DED1;
-  --warm-300: #D6C8B6;
-  --warm-400: #BFAF97;
-  --warm-500: #A28F76;
-  --warm-600: #85705A;
-  --warm-700: #655241;
-  --warm-800: #463A31;
-  --warm-900: #2B2622;
-  --warm-950: #1A1816;
-
-  /* Terracotta - Primary accent */
-  --terracotta-50: #FEF5F2;
-  --terracotta-100: #FCE8E2;
-  --terracotta-200: #F9CFC2;
-  --terracotta-300: #E8B09D;
-  --terracotta-400: #D78F79;
-  --terracotta-500: #C5745C;
-  --terracotta-600: #A95B46;
-  --terracotta-700: #8A4837;
-  --terracotta-800: #7D3022;
-  --terracotta-900: #5A241A;
-
-  /* Sage - Success/Secondary */
-  --sage-50: #F2F7F0;
-  --sage-100: #E1ECDB;
-  --sage-200: #C5D9BA;
-  --sage-300: #9FC08D;
-  --sage-400: #7AA866;
-  --sage-500: #5D8F4A;
-  --sage-600: #48733A;
-  --sage-700: #3A5C2F;
-  --sage-800: #2E4A26;
-  --sage-900: #23381D;
-
-  /* Semantic Colors */
-  --background: #F8F6F2;
-  --background-elevated: #FFFFFF;
-  --background-subtle: var(--warm-100);
-  --foreground: #1F1E1C;
-  --foreground-secondary: #3B3630;
-  --foreground-tertiary: #6C5F52;
-
-  /* Primary - Charcoal */
-  --primary: #1F1E1C;
-  --primary-foreground: #FFFFFF;
-  --primary-hover: #2A2622;
-
-  /* Secondary */
-  --secondary: var(--warm-100);
-  --secondary-foreground: var(--warm-900);
-
-  /* Muted */
-  --muted: var(--warm-100);
-  --muted-foreground: var(--warm-500);
-
-  /* Status Colors */
-  --destructive: #C4685A;
-  --destructive-foreground: #FFFFFF;
-  --success: var(--sage-500);
-  --success-foreground: #FFFFFF;
-  --warning: #D4A574;
-  --warning-foreground: #FFFFFF;
-
-  /* Card */
-  --card: var(--background-elevated);
-  --card-foreground: var(--foreground);
-
-  /* Input */
-  --input: var(--warm-200);
-  --ring: #2A2622;
-
-  /* Radius */
-  --radius: 8px;
-  --radius-sm: 4px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
-
-  /* Typography */
-  --font-serif: var(--font-editorial-serif), "Source Serif 4", "Iowan Old Style", Georgia, serif;
-  --font-sans: var(--font-editorial-sans), "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, Helvetica, Arial, sans-serif;
-
-  /* Borders */
-  --border: var(--warm-200);
-  --border-strong: var(--warm-300);
-  --border-subtle: var(--warm-100);
-
-  /* Popover / dropdown surface — opaque white so Radix Select content
-     doesn't bleed through to the form behind it. */
-  --popover: #FFFFFF;
-  --popover-foreground: var(--foreground);
-  --accent: var(--warm-100);
-  --accent-foreground: var(--foreground);
-}
-
-/* ============================================
-   TAILWIND v4 THEME TOKENS — exposed as utilities
-   ============================================ */
-
-@theme inline {
-  --color-warm-50: var(--warm-50);
-  --color-warm-100: var(--warm-100);
-  --color-warm-200: var(--warm-200);
-  --color-warm-300: var(--warm-300);
-  --color-warm-400: var(--warm-400);
-  --color-warm-500: var(--warm-500);
-  --color-warm-600: var(--warm-600);
-  --color-warm-700: var(--warm-700);
-  --color-warm-800: var(--warm-800);
-  --color-warm-900: var(--warm-900);
-  --color-warm-950: var(--warm-950);
-
-  --color-terracotta-50: var(--terracotta-50);
-  --color-terracotta-100: var(--terracotta-100);
-  --color-terracotta-200: var(--terracotta-200);
-  --color-terracotta-300: var(--terracotta-300);
-  --color-terracotta-400: var(--terracotta-400);
-  --color-terracotta-500: var(--terracotta-500);
-  --color-terracotta-600: var(--terracotta-600);
-  --color-terracotta-700: var(--terracotta-700);
-  --color-terracotta-800: var(--terracotta-800);
-  --color-terracotta-900: var(--terracotta-900);
-
-  --color-sage-50: var(--sage-50);
-  --color-sage-100: var(--sage-100);
-  --color-sage-200: var(--sage-200);
-  --color-sage-300: var(--sage-300);
-  --color-sage-400: var(--sage-400);
-  --color-sage-500: var(--sage-500);
-  --color-sage-600: var(--sage-600);
-  --color-sage-700: var(--sage-700);
-  --color-sage-800: var(--sage-800);
-  --color-sage-900: var(--sage-900);
-
-  --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
-  --color-border-subtle: var(--border-subtle);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-
-  --color-background: var(--background);
-  --color-background-elevated: var(--background-elevated);
-  --color-background-subtle: var(--background-subtle);
-
-  --color-foreground: var(--foreground);
-  --color-foreground-secondary: var(--foreground-secondary);
-  --color-foreground-tertiary: var(--foreground-tertiary);
-
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary-hover: var(--primary-hover);
-
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-
-  --font-sans: var(--font-sans);
-  --font-serif: var(--font-serif);
-}
-
-/* ============================================
-   BASE
-   ============================================ */
+/* ============================================================
+   Base layer — global resets, body, focus ring, motion
+   ============================================================ */
 
 @layer base {
-  * {
+  *,
+  *::before,
+  *::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
@@ -201,32 +25,44 @@
 
   html {
     scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
-    background:
-      radial-gradient(circle at top, rgba(197, 116, 92, 0.14), transparent 32rem),
-      linear-gradient(180deg, #fcfaf7 0%, var(--background) 26%, #f3eee6 100%);
+    background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
-    font-size: 16px;
-    line-height: 1.6;
+    font-size: var(--text-base);
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
     min-height: 100vh;
   }
 
+  /* Focus ring — moss accent against paper, single style for
+     every interactive surface. */
   *:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
+    box-shadow: var(--shadow-focus);
     border-radius: var(--radius-sm);
   }
 
-  button, a, input, textarea, select {
-    transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+  /* Selection — moss tint, never browser blue. */
+  ::selection {
+    background: var(--moss-100);
+    color: var(--ink-900);
   }
 
   h1, h2, h3, h4 {
     text-wrap: balance;
+    color: var(--foreground);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 
   img, picture, video, svg {
@@ -234,18 +70,25 @@
     max-width: 100%;
   }
 
-  input, button, textarea, select {
-    font: inherit;
-  }
-
   button {
     background: none;
     border: none;
     cursor: pointer;
+    font: inherit;
+    color: inherit;
   }
 
-  ::selection {
-    background: rgba(196, 120, 90, 0.2);
+  input, textarea, select {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Subtle, scoped transitions — never `transition: all`. */
+  a, button {
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
   }
 }
 
@@ -254,15 +97,55 @@
     scroll-behavior: auto;
   }
 
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
 
+/* ============================================================
+   Component-layer helpers
+   ============================================================ */
+
 @layer components {
   .font-serif {
     font-family: var(--font-serif);
+    font-feature-settings: "ss01", "ss02";
+  }
+
+  /* Editorial eyebrow label used to introduce sections. */
+  .eyebrow {
+    display: inline-block;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--foreground-tertiary);
+  }
+
+  /* Hairline rule used between editorial sections instead of
+     bordered cards. */
+  .rule {
+    height: 1px;
+    width: 100%;
+    background: var(--border);
+  }
+
+  /* Quiet ghost button — used for secondary CTAs so they never
+     compete with the primary ink CTA. */
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--foreground);
+    font-weight: 500;
+    border-bottom: 1px solid currentColor;
+    padding-bottom: 2px;
+  }
+  .btn-ghost:hover {
+    color: var(--accent);
   }
 }

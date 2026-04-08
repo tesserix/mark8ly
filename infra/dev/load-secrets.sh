@@ -67,6 +67,11 @@ GIP_INTERNAL_TENANT_ID=$GIP_INTERNAL_TENANT_ID
 GIP_CUSTOMER_TENANT_ID=$GIP_CUSTOMER_TENANT_ID
 GIP_PLATFORM_TENANT_ID=$GIP_PLATFORM_TENANT_ID
 
+# Phase M aliases — platform-api's onboarding/google_verify.go reads these
+# under shorter names so the package isn't tied to the multi-pool naming.
+GIP_API_KEY=$GIP_WEB_API_KEY
+GIP_TENANT_ID=$GIP_INTERNAL_TENANT_ID
+
 OAUTH_CLIENT_ID=$OAUTH_CLIENT_ID
 OAUTH_CLIENT_SECRET=$OAUTH_CLIENT_SECRET
 
@@ -92,6 +97,11 @@ AUTH_BFF_URL=http://localhost:8087
 NEXT_PUBLIC_GIP_PROJECT_ID=$PROJECT_ID
 NEXT_PUBLIC_GIP_TENANT_ID=$GIP_INTERNAL_TENANT_ID
 NEXT_PUBLIC_GIP_API_KEY=$GIP_WEB_API_KEY
+
+# Phase M — Google Identity Services popup on /login + onboarding
+# "Continue with Google". Same OAuth client used by auth-bff.
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=$OAUTH_CLIENT_ID
+
 NEXT_PUBLIC_SITE_URL=http://localhost:4201
 EOF
 

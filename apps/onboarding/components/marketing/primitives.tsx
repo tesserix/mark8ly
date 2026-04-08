@@ -43,21 +43,11 @@ export function PageHero({ eyebrow, title, lede }: PageHeroProps) {
       <div className="mx-auto max-w-6xl px-6">
         <div className="max-w-3xl">
           {eyebrow ? <p className="eyebrow mb-5">{eyebrow}</p> : null}
-          <h1
-            className="font-serif font-medium text-foreground"
-            style={{
-              fontSize: "var(--text-5xl)",
-              lineHeight: 1.02,
-              letterSpacing: "-0.025em",
-            }}
-          >
+          <h1 className="font-serif text-5xl font-medium leading-[1.02] tracking-[-0.025em] text-foreground">
             {title}
           </h1>
           {lede ? (
-            <p
-              className="mt-6 max-w-xl text-foreground-secondary"
-              style={{ fontSize: "var(--text-lg)", lineHeight: 1.55 }}
-            >
+            <p className="mt-6 max-w-xl text-lg leading-[1.55] text-foreground-secondary">
               {lede}
             </p>
           ) : null}
@@ -135,20 +125,10 @@ export function MarketingStub({
       <section className="pb-32 pt-20 sm:pb-40 sm:pt-28">
         <div className="mx-auto max-w-3xl px-6">
           <p className="eyebrow mb-6">{eyebrow}</p>
-          <h1
-            className="font-serif font-medium text-foreground"
-            style={{
-              fontSize: "var(--text-4xl)",
-              lineHeight: 1.05,
-              letterSpacing: "-0.02em",
-            }}
-          >
+          <h1 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
             {title}
           </h1>
-          <p
-            className="mt-6 max-w-xl text-foreground-secondary"
-            style={{ fontSize: "var(--text-lg)", lineHeight: 1.55 }}
-          >
+          <p className="mt-6 max-w-xl text-lg leading-[1.55] text-foreground-secondary">
             {body}
           </p>
 

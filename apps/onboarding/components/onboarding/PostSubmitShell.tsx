@@ -46,20 +46,10 @@ export function PostSubmitShell({
       <main id="main" className="flex-1">
         <section className="mx-auto max-w-3xl px-6 pb-16 pt-16 sm:pb-20 sm:pt-24">
           <p className="eyebrow mb-5">{eyebrow}</p>
-          <h1
-            className="font-serif font-medium text-foreground"
-            style={{
-              fontSize: "var(--text-4xl)",
-              lineHeight: 1.05,
-              letterSpacing: "-0.02em",
-            }}
-          >
+          <h1 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
             {title}
           </h1>
-          <p
-            className="mt-6 max-w-xl text-foreground-secondary"
-            style={{ fontSize: "var(--text-lg)", lineHeight: 1.55 }}
-          >
+          <p className="mt-6 max-w-xl text-lg leading-[1.55] text-foreground-secondary">
             {description}
           </p>
         </section>

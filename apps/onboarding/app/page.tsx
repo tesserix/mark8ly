@@ -50,22 +50,12 @@ function Hero() {
     <section className="relative overflow-hidden">
       <div className="mx-auto max-w-6xl px-6 pb-16 pt-16 lg:pb-24 lg:pt-20">
         <div className="max-w-3xl">
-          <h1
-            className="font-serif font-medium text-foreground"
-            style={{
-              fontSize: "var(--text-5xl)",
-              lineHeight: 1.02,
-              letterSpacing: "-0.025em",
-            }}
-          >
+          <h1 className="font-serif text-5xl font-medium leading-[1.02] tracking-[-0.025em] text-foreground">
             A storefront
             <br />
             worth opening.
           </h1>
-          <p
-            className="mt-8 max-w-xl text-foreground-secondary"
-            style={{ fontSize: "var(--text-lg)", lineHeight: 1.55 }}
-          >
+          <p className="mt-8 max-w-xl text-lg leading-[1.55] text-foreground-secondary">
             Mark8ly is a quiet, considered commerce platform for people who
             actually make things. Set up in an afternoon. Keep your margins.
             Sell on a storefront that doesn&rsquo;t look like everyone
@@ -129,8 +119,7 @@ function Manifesto() {
         <div className="grid gap-12 lg:grid-cols-[1fr_2fr] lg:gap-16">
           <div className="lg:sticky lg:top-32 lg:self-start">
             <p className="eyebrow mb-5">What we believe</p>
-            <h2 className="font-serif font-medium text-foreground"
-                style={{ fontSize: "var(--text-4xl)", lineHeight: 1.05, letterSpacing: "-0.02em" }}>
+            <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
               Three things we&rsquo;ll never compromise on.
             </h2>
           </div>
@@ -145,8 +134,7 @@ function Manifesto() {
                   <h3 className="font-serif text-2xl text-foreground">
                     {beat.title}
                   </h3>
-                  <p className="mt-3 max-w-xl text-foreground-secondary leading-relaxed"
-                     style={{ fontSize: "var(--text-base)" }}>
+                  <p className="mt-3 max-w-xl text-base leading-relaxed text-foreground-secondary">
                     {beat.body}
                   </p>
                 </div>
@@ -191,8 +179,7 @@ function Features() {
       <div className="mx-auto max-w-6xl px-6">
         <div className="mb-12 max-w-2xl">
           <p className="eyebrow mb-5">What you get</p>
-          <h2 className="font-serif font-medium text-foreground"
-              style={{ fontSize: "var(--text-4xl)", lineHeight: 1.05, letterSpacing: "-0.02em" }}>
+          <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
             Less software,
             <br />
             more shop.
@@ -284,15 +271,13 @@ function Pricing() {
         <div className="mb-10 grid gap-8 lg:grid-cols-[1fr_2fr] lg:gap-12">
           <div>
             <p className="eyebrow mb-5">Pricing</p>
-            <h2 className="font-serif font-medium text-foreground"
-                style={{ fontSize: "var(--text-4xl)", lineHeight: 1.05, letterSpacing: "-0.02em" }}>
+            <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
               One offer.
               <br />
               Honestly priced.
             </h2>
           </div>
-          <p className="max-w-xl text-foreground-secondary leading-relaxed self-end"
-             style={{ fontSize: "var(--text-lg)" }}>
+          <p className="max-w-xl self-end text-lg leading-relaxed text-foreground-secondary">
             Run free for six months. After that, one flat monthly fee. We
             never take a cut of your sales — only your processor does, at
             their standard rate.
@@ -311,10 +296,7 @@ function Pricing() {
             >
               $0
             </p>
-            <p
-              className="mt-3 font-sans text-foreground-tertiary"
-              style={{ fontSize: "var(--text-xl)" }}
-            >
+            <p className="mt-3 font-sans text-xl text-foreground-tertiary">
               for the first six months.
             </p>
             <p className="mt-6 max-w-md text-foreground-secondary">
@@ -381,8 +363,7 @@ function HowItWorks() {
       <div className="mx-auto max-w-6xl px-6">
         <div className="max-w-2xl">
           <p className="eyebrow mb-5">From signup to live</p>
-          <h2 className="font-serif font-medium text-foreground"
-              style={{ fontSize: "var(--text-4xl)", lineHeight: 1.05, letterSpacing: "-0.02em" }}>
+          <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
             An afternoon, start to finish.
           </h2>
         </div>
@@ -390,11 +371,10 @@ function HowItWorks() {
         <ol className="mt-12 grid gap-10 sm:grid-cols-3 sm:gap-8">
           {steps.map((step) => (
             <li key={step.number}>
-              <p className="font-serif text-moss-700" style={{ fontSize: "var(--text-3xl)" }}>
+              <p className="font-serif text-3xl text-moss-700">
                 {step.number}
               </p>
-              <h3 className="mt-4 font-serif text-foreground"
-                  style={{ fontSize: "var(--text-xl)", lineHeight: 1.2 }}>
+              <h3 className="mt-4 font-serif text-xl leading-[1.2] text-foreground">
                 {step.title}
               </h3>
               <p className="mt-3 text-foreground-secondary leading-relaxed">
@@ -448,8 +428,7 @@ function Faq() {
         <div className="grid gap-12 lg:grid-cols-[1fr_2fr] lg:gap-16">
           <div className="lg:sticky lg:top-32 lg:self-start">
             <p className="eyebrow mb-5">Anticipated</p>
-            <h2 className="font-serif font-medium text-foreground"
-                style={{ fontSize: "var(--text-4xl)", lineHeight: 1.05, letterSpacing: "-0.02em" }}>
+            <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
               Questions, answered.
             </h2>
           </div>
@@ -470,8 +449,7 @@ function FinalCta() {
     <section className="border-t border-border-subtle bg-ink-900 py-20 text-paper-50 sm:py-28">
       <div className="mx-auto max-w-5xl px-6 text-left">
         <p className="eyebrow text-paper-400">Ready when you are</p>
-        <h2 className="mt-6 font-serif font-medium"
-            style={{ fontSize: "var(--text-5xl)", lineHeight: 1.02, letterSpacing: "-0.025em" }}>
+        <h2 className="mt-6 font-serif text-5xl font-medium leading-[1.02] tracking-[-0.025em]">
           Open your shop
           <br />
           this afternoon.

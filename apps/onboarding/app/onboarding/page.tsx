@@ -40,20 +40,10 @@ export default async function OnboardingPage() {
         <div className="mx-auto grid max-w-6xl gap-12 px-6 pb-20 pt-16 sm:pt-20 lg:grid-cols-[1fr_1.2fr] lg:gap-16">
           <section>
             <p className="eyebrow mb-5">Open your store</p>
-            <h1
-              className="font-serif font-medium text-foreground"
-              style={{
-                fontSize: "var(--text-4xl)",
-                lineHeight: 1.05,
-                letterSpacing: "-0.02em",
-              }}
-            >
+            <h1 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
               Two minutes to a storefront.
             </h1>
-            <p
-              className="mt-6 max-w-md text-foreground-secondary"
-              style={{ fontSize: "var(--text-lg)", lineHeight: 1.55 }}
-            >
+            <p className="mt-6 max-w-md text-lg leading-[1.55] text-foreground-secondary">
               Name, region, URL. We send a verification link to confirm your
               email, then open your admin.
             </p>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You've been invited</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F7F6F2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Source Sans 3',Helvetica,Arial,sans-serif;color:#0E0E0C;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    {{.Inviter}} invited you to join {{.TenantName}} on Mark8ly as a {{.Role}}.
+  </div>
+  <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#F7F6F2;padding:48px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#FFFFFF;border:1px solid #ECEAE3;">
+          <tr>
+            <td style="padding:36px 40px 20px 40px;border-bottom:1px solid #ECEAE3;">
+              <span style="font-family:Georgia,'Source Serif 4','Times New Roman',serif;font-size:22px;font-weight:500;letter-spacing:-0.025em;color:#0E0E0C;">mark8ly</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:40px 40px 24px 40px;">
+              <p style="margin:0 0 14px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">
+                Team invite
+              </p>
+              <h1 style="margin:0 0 20px 0;font-family:Georgia,'Source Serif 4','Times New Roman',serif;font-size:36px;font-weight:500;letter-spacing:-0.025em;line-height:1.05;color:#0E0E0C;">
+                Join {{.TenantName}}
+              </h1>
+              <p style="margin:0 0 24px 0;font-size:16px;line-height:1.7;color:#45433E;">
+                You&rsquo;ve been invited to join <strong style="font-weight:600;color:#0E0E0C;">{{.TenantName}}</strong> on Mark8ly as a <strong style="font-weight:600;color:#0E0E0C;">{{.Role}}</strong>. Accept the invite to open the admin and start collaborating.
+              </p>
+              <table cellspacing="0" cellpadding="0" border="0" style="margin:0 0 28px 0;">
+                <tr>
+                  <td>
+                    <a href="{{.AcceptURL}}" style="display:inline-block;background-color:#0E0E0C;color:#FDFCF8;text-decoration:none;font-weight:600;padding:14px 28px;font-size:15px;letter-spacing:0.04em;border-radius:6px;">
+                      Accept invitation
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 28px 0;font-size:14px;line-height:1.7;color:#5C5953;border-left:2px solid #2D4A2B;padding-left:16px;">
+                This link expires in {{.ExpiresIn}}.
+              </p>
+              <p style="margin:0 0 18px 0;font-size:13px;line-height:1.7;color:#7A766E;">
+                If the button doesn&rsquo;t work, copy and paste this link into your browser:
+              </p>
+              <p style="margin:0 0 28px 0;font-size:13px;line-height:1.7;color:#0E0E0C;word-break:break-all;">
+                <a href="{{.AcceptURL}}" style="color:#2D4A2B;text-decoration:underline;text-decoration-color:#2D4A2B;text-underline-offset:3px;">{{.AcceptURL}}</a>
+              </p>
+              <p style="margin:0;font-size:13px;line-height:1.7;color:#7A766E;">
+                If you weren&rsquo;t expecting this, you can safely ignore this email — the invite will expire on its own.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 40px 36px 40px;border-top:1px solid #ECEAE3;">
+              <p style="margin:0;font-size:12px;line-height:1.7;color:#7A766E;">
+                Questions? Contact us at
+                <a href="mailto:{{.SupportEmail}}" style="color:#2D4A2B;text-decoration:underline;text-decoration-color:#2D4A2B;text-underline-offset:3px;">{{.SupportEmail}}</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:20px 0 0 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#A09C92;">
+          Paper · Ink · Moss
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

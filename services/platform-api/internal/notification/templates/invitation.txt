@@ -1,0 +1,18 @@
+Join {{.TenantName}} on Mark8ly
+===============================
+
+You've been invited to join {{.TenantName}} on Mark8ly as a {{.Role}}.
+
+Accept the invitation:
+
+    {{.AcceptURL}}
+
+This link expires in {{.ExpiresIn}}.
+
+If you weren't expecting this, you can safely ignore this email — the
+invite will expire on its own.
+
+---
+Questions? Contact us at {{.SupportEmail}}
+
+mark8ly

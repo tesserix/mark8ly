@@ -28,6 +28,16 @@ type WelcomeVars struct {
 	SupportEmail string
 }
 
+// InvitationVars are the variables for the teammate invitation email.
+type InvitationVars struct {
+	TenantName   string
+	Role         string
+	Inviter      string
+	AcceptURL    string
+	ExpiresIn    string
+	SupportEmail string
+}
+
 // RenderEmailVerification renders the verification OTP email and returns
 // a fully populated Email ready to hand to a Sender.
 func RenderEmailVerification(to, from string, vars EmailVerificationVars) (Email, error) {
@@ -43,6 +53,26 @@ func RenderEmailVerification(to, from string, vars EmailVerificationVars) (Email
 		To:       to,
 		From:     from,
 		Subject:  "Verify your email — Mark8ly",
+		HTMLBody: html,
+		TextBody: text,
+	}, nil
+}
+
+// RenderInvitation renders the "you've been invited" email sent to
+// teammates who get added to a tenant.
+func RenderInvitation(to, from string, vars InvitationVars) (Email, error) {
+	html, err := renderHTML("templates/invitation.html", vars)
+	if err != nil {
+		return Email{}, err
+	}
+	text, err := renderText("templates/invitation.txt", vars)
+	if err != nil {
+		return Email{}, err
+	}
+	return Email{
+		To:       to,
+		From:     from,
+		Subject:  fmt.Sprintf("You've been invited to join %s on Mark8ly", vars.TenantName),
 		HTMLBody: html,
 		TextBody: text,
 	}, nil

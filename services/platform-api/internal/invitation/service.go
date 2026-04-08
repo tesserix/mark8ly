@@ -213,15 +213,16 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Invitation, erro
 	if s.sender != nil {
 		slug := s.defaultStoreSlug(ctx, t.ID)
 		url := s.acceptURL(slug, token)
-		subject := "You've been invited to join " + t.Name + " on Mark8ly"
-		body := inviteEmailBody(t.Name, role, url)
-		_ = s.sender.Send(ctx, notification.Email{
-			From:     s.emailFrom,
-			To:       email,
-			Subject:  subject,
-			HTMLBody: body,
-			TextBody: inviteEmailText(t.Name, role, url),
+		msg, err := notification.RenderInvitation(email, s.emailFrom, notification.InvitationVars{
+			TenantName:   t.Name,
+			Role:         role,
+			AcceptURL:    url,
+			ExpiresIn:    "72 hours",
+			SupportEmail: s.emailFrom,
 		})
+		if err == nil {
+			_ = s.sender.Send(ctx, msg)
+		}
 	}
 
 	return inv, nil
@@ -421,16 +422,6 @@ func hashToken(plain string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func inviteEmailBody(tenantName, role, url string) string {
-	return `<p>You've been invited to join <strong>` + tenantName +
-		`</strong> on Mark8ly as a <strong>` + role + `</strong>.</p>` +
-		`<p><a href="` + url + `">Accept the invitation</a></p>` +
-		`<p>This link expires in 72 hours.</p>`
-}
-
-func inviteEmailText(tenantName, role, url string) string {
-	return "You've been invited to join " + tenantName +
-		" on Mark8ly as a " + role + ".\n\n" +
-		"Accept the invitation: " + url + "\n\n" +
-		"This link expires in 72 hours."
-}
+// inviteEmailBody / inviteEmailText have been superseded by
+// notification.RenderInvitation, which renders the Paper · Ink · Moss
+// invitation HTML + text templates from embedded files.

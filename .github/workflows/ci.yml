@@ -118,6 +118,7 @@ jobs:
             NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
             NEXT_PUBLIC_MARKETING_URL=${{ secrets.NEXT_PUBLIC_MARKETING_URL }}
             NEXT_PUBLIC_ADMIN_URL_TEMPLATE=${{ secrets.NEXT_PUBLIC_ADMIN_URL_TEMPLATE }}
+            NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=${{ secrets.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN }}
 
       - name: Trivy scan (fail on CRITICAL)
         uses: aquasecurity/trivy-action@master

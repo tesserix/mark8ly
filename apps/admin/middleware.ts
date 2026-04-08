@@ -26,6 +26,13 @@ const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "m8_session";
 const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
+// Canonical sign-in host. This is the single host we register with
+// Google OAuth as an "Authorized JavaScript origin" — every per-tenant
+// subdomain ({slug}-admin.mark8ly.com) bounces here for unauthenticated
+// traffic, and the session cookie (scoped to .mark8ly.com) carries
+// back across the bounce automatically. Dev falls back to same-origin.
+const CANONICAL_LOGIN_ORIGIN =
+  process.env.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN ?? "";
 
 // Routes that should never be gated — login redirect targets, static
 // assets, and anything that must render without a session.
@@ -124,7 +131,18 @@ export async function middleware(req: NextRequest) {
 }
 
 function redirectToLogin(req: NextRequest): NextResponse {
-  const loginUrl = new URL("/login", req.nextUrl.origin);
+  // If CANONICAL_LOGIN_ORIGIN is configured AND the current request is
+  // NOT already on that host, bounce the user to the canonical host
+  // for sign-in. The session cookie is scoped to .mark8ly.com so once
+  // auth-bff mints it at admin.mark8ly.com, every {slug}-admin.mark8ly.com
+  // subdomain picks it up without extra plumbing.
+  const currentOrigin = req.nextUrl.origin;
+  const useCanonical =
+    CANONICAL_LOGIN_ORIGIN && currentOrigin !== CANONICAL_LOGIN_ORIGIN;
+  const loginUrl = new URL(
+    "/login",
+    useCanonical ? CANONICAL_LOGIN_ORIGIN : currentOrigin,
+  );
   loginUrl.searchParams.set("returnUrl", req.nextUrl.toString());
   return NextResponse.redirect(loginUrl);
 }

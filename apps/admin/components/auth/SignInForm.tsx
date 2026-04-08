@@ -36,8 +36,33 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export function SignInForm() {
+interface SignInFormProps {
+  /**
+   * Where to redirect after a successful sign-in. Set by middleware on
+   * per-tenant subdomains that bounce users here for authentication.
+   * Must be pre-sanitized by the server (the /login page) — SignInForm
+   * trusts this value and does a full-page navigation to it.
+   */
+  returnUrl?: string;
+}
+
+export function SignInForm({ returnUrl }: SignInFormProps = {}) {
   const router = useRouter();
+
+  // Full-page navigation when returnUrl crosses origins (the common
+  // case: signing in at admin.mark8ly.com → bouncing to
+  // demo-store-admin.mark8ly.com). router.push only handles same-origin
+  // client-side navigation, so we use window.location.assign for the
+  // cross-subdomain case.
+  function goToDestination(defaultPath: string) {
+    if (returnUrl) {
+      if (typeof window !== "undefined") {
+        window.location.assign(returnUrl);
+      }
+      return;
+    }
+    router.push(defaultPath);
+  }
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -93,7 +118,7 @@ export function SignInForm() {
         }
         return;
       }
-      router.push(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
+      goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
     });
   }
 
@@ -112,7 +137,7 @@ export function SignInForm() {
         );
         return;
       }
-      router.push(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
+      goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
     } catch (err) {
       setSubmitError(
         err instanceof Error

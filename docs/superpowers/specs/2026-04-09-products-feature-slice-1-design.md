@@ -33,7 +33,7 @@ First production feature on top of the rewritten Mark8ly foundation. Introduces 
 - Public storefront read endpoints (products list/detail, categories) with a strictly separate DTO family
 - Full test suite: unit, repository-integration, service-integration (real Postgres + FGA + GCS emulator), API-integration, three Playwright E2E journeys
 
-**Deferred (slice 2+):** product import/export, bulk duplicate within store, inventory history, multi-warehouse stock, collections, gift cards, subscriptions, bundles, digital products, reviews, Q&A, variant drag-reorder in admin, crop-on-upload, automatic currency conversion in copy-to-store, full-text search tuning beyond GIN baseline, `permissions-matrix` admin UI, Istio peer auth wiring for the trusted `X-Store-ID` header.
+**Deferred (slice 2+):** product import/export, bulk duplicate within store, inventory history, multi-warehouse stock, collections, gift cards, subscriptions, bundles, digital products, reviews, Q&A, variant drag-reorder in admin, crop-on-upload, automatic currency conversion in copy-to-store, full-text search tuning beyond GIN baseline, `permissions-matrix` admin UI, per-object OpenFGA ACLs (e.g. "this admin can only edit these N products").
 
 ---
 
@@ -46,7 +46,7 @@ First production feature on top of the rewritten Mark8ly foundation. Introduces 
 5. **Money as `NUMERIC(12,2)`.** Readable in SQL, supports any currency Mark8ly will plausibly handle, clean Go round-trip via `decimal.Decimal`. No cents-as-bigint, no strings.
 6. **Separate DTO families for admin and storefront.** `AdminProductResponse` and `StorefrontProductResponse` are distinct Go structs. The type system prevents `cost_price` / `inventory_quantity` from ever leaking to a public route. Storefront exposes only `in_stock: bool` and optionally `low_stock: bool`, never raw quantity.
 7. **Fresh service, not a port.** `services/marketplace-api/` is new code following the `platform-api` structural pattern (per-domain folders with handler/service/repository/models). The legacy `services/products/` code is reference material only.
-8. **OpenFGA from day one.** Authorization model committed to source, tuples written inside the same transaction as data, middleware wired on every admin route. Storefront reads bypass FGA (public) and rely on repository-level `status=active AND published_at<=now()` filtering as the safety boundary.
+8. **OpenFGA from day one, tenant-scoped only.** Authorization model committed to source; middleware wired on every admin route. **No per-product or per-category tuples are written.** Every relation in the model resolves `from tenant`, so authorization reduces to "is this user a staff/admin/owner of this tenant?" — which is already represented by the platform's existing `tenant:<id>#member/admin/owner@user:<uid>` tuples. Writing a `product:<id>#tenant@tenant:<tid>` tuple at create time would carry no information beyond `products.tenant_id` itself, while introducing a dual-write drift risk between Postgres and the OpenFGA store (two different services, two different databases, no 2PC). Dropping per-object tuples eliminates that invariant we couldn't actually guarantee. Per-object ACLs are a future extension if and when real "this admin can only edit these N products" requirements surface. Storefront reads bypass FGA (public) and rely on repository-level `status=active AND published_at<=now()` filtering plus the distinct storefront DTO family as the safety boundary.
 9. **Flat sidebar.** `Products` appears directly in the admin sidebar, not nested under a `Catalog` group. A single-item group would be editorial overhead for a hypothetical future second child.
 
 ---
@@ -806,3 +806,505 @@ Tenant has EUR and USD stores. Copy "Porcelain bowl" from EUR to USD. Verify: ti
 - [ ] 80%+ coverage on business logic
 - [ ] A merchant can onboard ~10 products (simple + variant + photos + categories) end-to-end with no workarounds
 - [ ] Documentation in `services/marketplace-api/README.md` covers: local dev setup, test strategy, module boundaries
+
+---
+
+## 13 · Revisions after review (v1 → v1.1)
+
+The sections below supersede the corresponding content earlier in this document where they conflict. They consolidate feedback from four independent reviews (spec reviewer, architect, UX specialist, tech lead) plus the user directive **"avoid dialogs and modals unless for delete"**.
+
+When a section here contradicts §§1–12, §13 wins.
+
+### 13.1 · Architecture corrections
+
+#### 13.1.1 · OpenFGA: per-object tuples dropped (supersedes §5.2, §5.3, §6.4 step 9)
+
+Per-object tuples (`product:<id>#tenant@tenant:<tid>`, and the equivalent for categories) are **not written**. Every relation in the model resolves `from tenant`, so the tuple carries no information beyond `products.tenant_id` / `categories.tenant_id`. Writing it creates a dual-write drift risk between Postgres and the OpenFGA store (two services, two databases, no 2PC) without adding any security.
+
+**Consequences:**
+
+- The `category` and `product` FGA types are removed from `model.fga`. The model contains only `user` and `tenant` with `member`/`owner`/`admin`/`staff` relations. Tenant membership tuples are already written by `platform-api` during onboarding/invitation — `marketplace-api` is a pure reader of them.
+- All admin route permission checks reduce to tenant-level membership checks: `fgaMw.RequireTenantRelation(tenantRole)` where `tenantRole` is one of `staff`, `admin`, `owner`.
+- `service.Create` / `service.Update` / `service.Delete` no longer write or delete FGA tuples. Transactions become DB-only.
+- The permission map in §5.3 is replaced by:
+
+| Route | Required tenant role |
+|---|---|
+| `GET /admin/.../products[/:id]` | `staff` |
+| `POST /admin/.../products` | `admin` |
+| `PATCH /admin/.../products/:id` | `admin` |
+| `PATCH /admin/.../products/:id` with `status: active` | `admin` |
+| `DELETE /admin/.../products/:id` (hard delete) | `owner` |
+| `POST /admin/.../products/:id/copy` | `admin` (enforced on both source and target store — both stores must belong to the same tenant where the caller is admin) |
+| `POST /admin/.../products/:id/media*` | `admin` |
+| `GET /admin/.../categories` | `staff` |
+| `POST /admin/.../categories` | `admin` |
+| `PATCH /admin/.../categories/:id` | `admin` |
+| `DELETE /admin/.../categories/:id` | `admin` |
+
+- "Archive" is a status update and uses the `admin` role like any other PATCH. Only hard `DELETE` requires `owner`.
+- All admin routes return `404 not_found` (not `403 forbidden`) when the caller's tenant doesn't own the target store — no existence leaks across tenants.
+
+#### 13.1.2 · Storefront trust boundary (supersedes §3.2, §6.2)
+
+No trusted `X-Store-ID` header. The storefront boundary uses three layers of defense:
+
+1. **Separate Gin engine on port 8081** — the marketplace-api binary starts two engines: admin on `:8080` (main port, exposed to admin VirtualService only) and storefront on `:8081` (exposed to storefront VirtualService only). Routes registered on one engine are unreachable from the other. Cheap belt-and-braces isolation, reversible, requires no Istio work.
+2. **Path-based store resolution** — storefront routes take the store slug in the URL: `GET /api/v1/storefront/stores/:storeSlug/products`. The handler calls `stores.GetBySlug(slug)` against marketplace-api's own local `stores` projection table (see §13.1.3). No header trust.
+3. **Shared-secret header** `X-Storefront-Key` — env-configured, rotatable, rejected if missing. Stops accidental direct access from outside the storefront Next.js server even if the two ports are ever exposed. Removed once Istio peer auth lands (tracked as a follow-up ops task, but the slice 1 code ships without relying on it).
+
+Storefront routes after revision:
+
+```
+GET /api/v1/storefront/stores/:storeSlug/products
+GET /api/v1/storefront/stores/:storeSlug/products/:handle
+GET /api/v1/storefront/stores/:storeSlug/categories
+GET /api/v1/storefront/stores/:storeSlug/categories/:slug/products
+```
+
+#### 13.1.3 · `stores` projection table in marketplace-api (new; §4 addendum)
+
+`marketplace-api` needs its own read-only copy of store metadata so `StoreMiddleware` does not call `platform-api` on every admin request (pool killer on db-f1-micro with 5 connections per service).
+
+New table in migration `0001`:
+
+```sql
+CREATE TABLE stores (
+    id                         uuid         PRIMARY KEY,
+    tenant_id                  uuid         NOT NULL,
+    slug                       varchar(63)  NOT NULL,
+    name                       varchar(200) NOT NULL,
+    country_code               char(2)      NOT NULL,
+    currency_code              char(3)      NOT NULL,
+    timezone                   varchar(64)  NOT NULL,
+    status                     varchar(20)  NOT NULL,
+    products_updated_watermark timestamptz  NOT NULL DEFAULT now(),
+    synced_at                  timestamptz  NOT NULL DEFAULT now(),
+    CONSTRAINT stores_slug_unique UNIQUE (slug)
+);
+CREATE INDEX stores_tenant_idx ON stores (tenant_id);
+```
+
+**Sync strategy for slice 1:** lazy pull-through. On any admin request that names a `:storeId`, `StoreMiddleware` reads the local `stores` row; if missing or `synced_at` is older than 5 minutes, it fetches `/internal/tenants/:tid/stores/:sid` from `platform-api` once, upserts the row, and serves the request. All subsequent requests for the same store inside 5 minutes are local-only. A slice 2 task replaces pull-through with an outbox-driven event when platform-api gains its outbox.
+
+`products_updated_watermark` is bumped on every product/variant/media/category mutation in the same transaction as the mutation itself (one extra `UPDATE stores SET products_updated_watermark = now() WHERE id = $1` inside the tx). The storefront ETag uses this watermark.
+
+#### 13.1.4 · `StoreMiddleware` specification (supersedes §3.2 open question)
+
+```go
+func StoreMiddleware(storeRepo stores.Repository, platformClient platform.Client) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        storeID := c.Param("storeId")
+        tenantID := auth.TenantID(c)  // set by TenantMiddleware upstream
+
+        store, err := storeRepo.GetByIDForTenant(c, storeID, tenantID)
+        if errors.Is(err, stores.ErrNotFound) || stores.IsStale(store, 5*time.Minute) {
+            store, err = refreshFromPlatform(c, platformClient, storeRepo, storeID, tenantID)
+        }
+        if err != nil || store == nil {
+            // Not found, wrong tenant, or sync failure — 404, no leak
+            apperrors.Respond(c, apperrors.NotFound("store"))
+            c.Abort()
+            return
+        }
+        c.Set("store", store)
+        c.Next()
+    }
+}
+```
+
+Store ownership is verified at every hop: the local lookup is keyed by `(store_id, tenant_id)`, so a caller's tenant can only ever see their own stores. Cross-tenant `:storeId` values produce 404 with no existence leak.
+
+### 13.2 · Schema corrections (supersedes §4)
+
+The tables from §4 are kept with the following modifications. The final table count is **twelve** (not seven): `categories`, `products`, `product_options`, `product_option_values`, `product_variants`, `variant_option_values`, `product_media`, `product_categories`, `stores` (projection), `variant_stock` (new), `outbox_events` (new), `idempotency_keys` (new).
+
+#### 13.2.1 · Unique constraints → partial unique indexes (blocking fix)
+
+Soft-delete + plain `UNIQUE` means a deleted row blocks reuse of its handle/slug/sku forever. All three uniqueness constraints on soft-deletable tables become partial unique indexes:
+
+```sql
+-- Replace these three constraints from §4:
+-- CONSTRAINT categories_slug_per_store_unique UNIQUE (store_id, slug)
+-- CONSTRAINT products_handle_per_store_unique UNIQUE (store_id, handle)
+-- CONSTRAINT variants_sku_per_store_unique    UNIQUE (store_id, sku)
+-- With:
+CREATE UNIQUE INDEX categories_slug_per_store_live_unique
+    ON categories (store_id, slug) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX products_handle_per_store_live_unique
+    ON products (store_id, handle) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX variants_sku_per_store_live_unique
+    ON product_variants (store_id, sku) WHERE deleted_at IS NULL;
+```
+
+#### 13.2.2 · `variants_inventory_non_negative` CHECK removed (blocking fix)
+
+The CHECK conflicts with `inventory_policy = 'continue'` (oversell allowed). Negative inventory is a legitimate state when a merchant opts into backorder selling. Drop the constraint; enforce non-negative-when-policy-is-deny at the service layer instead, where the policy is known.
+
+#### 13.2.3 · `store_id` consistency FK on variants (blocking fix)
+
+Denormalization without integrity → drift risk. Add a composite unique constraint on `products` and make `product_variants` reference it:
+
+```sql
+ALTER TABLE products ADD CONSTRAINT products_id_store_unique UNIQUE (id, store_id);
+-- Drop the plain product_id FK on product_variants and replace with composite:
+ALTER TABLE product_variants
+    DROP CONSTRAINT product_variants_product_id_fkey,
+    ADD CONSTRAINT product_variants_product_store_fk
+        FOREIGN KEY (product_id, store_id)
+        REFERENCES products(id, store_id)
+        ON DELETE CASCADE;
+```
+
+Now `product_variants.store_id` can never drift from `products.store_id` — the database enforces it.
+
+#### 13.2.4 · `currency_code` drift trigger (important fix)
+
+Store-level currency change (rare, usually a migration) must cascade to all variants or fail loudly. A `BEFORE UPDATE` trigger on `product_variants` rejects any attempt to set a currency_code that doesn't match the current `stores.currency_code`. Store currency changes themselves go through a maintenance path documented in `services/marketplace-api/README.md` (bulk update inside a single tx, locks `product_variants` briefly).
+
+#### 13.2.5 · `products_published_requires_active` logic kept, auto-set documented
+
+The CHECK is correct; the PATCH trap is resolved at the service layer: any `PATCH` that transitions status to `active` sets `published_at = now()` automatically in the same update statement. Transition to `draft` or `archived` does **not** clear `published_at` — leaving it captures "most recent publish time" for audit and future analytics. Documented in the service method; unit-tested.
+
+#### 13.2.6 · `variant_stock` table (new, slice-2 forward-compat)
+
+Multi-warehouse is explicitly deferred, but the schema cements a structure today so slice 2 is additive:
+
+```sql
+CREATE TABLE variant_stock (
+    variant_id         uuid        NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+    location_id        uuid        NOT NULL,                      -- single "default" location in slice 1
+    quantity           integer     NOT NULL DEFAULT 0,
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (variant_id, location_id)
+);
+CREATE INDEX variant_stock_location_idx ON variant_stock (location_id);
+```
+
+Slice 1 writes exactly one row per variant at the `DEFAULT_LOCATION_ID` (an env var, initially the same UUID for every tenant). `product_variants.inventory_quantity` stays as a denormalised sum maintained in the service layer via `variant_stock` writes (a sum is trivial with one row). Slice 2 adds more locations; reads of `inventory_quantity` keep working; UI gradually migrates to the per-location view.
+
+#### 13.2.7 · `outbox_events` + `idempotency_keys` tables (new)
+
+Cemented write-path infrastructure so slice 2 orders/webhooks are additive:
+
+```sql
+CREATE TABLE outbox_events (
+    id            uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     uuid         NOT NULL,
+    aggregate     varchar(64)  NOT NULL,    -- 'product', 'category', etc.
+    aggregate_id  uuid         NOT NULL,
+    event_type    varchar(64)  NOT NULL,    -- 'product.created', ...
+    payload       jsonb        NOT NULL,
+    created_at    timestamptz  NOT NULL DEFAULT now(),
+    published_at  timestamptz,
+    error         text
+);
+CREATE INDEX outbox_unpublished_idx ON outbox_events (created_at) WHERE published_at IS NULL;
+
+CREATE TABLE idempotency_keys (
+    key          varchar(255) PRIMARY KEY,
+    tenant_id    uuid         NOT NULL,
+    response     jsonb,
+    created_at   timestamptz  NOT NULL DEFAULT now(),
+    expires_at   timestamptz  NOT NULL
+);
+CREATE INDEX idempotency_expires_idx ON idempotency_keys (expires_at);
+```
+
+Products module writes `product.created`/`updated`/`deleted` events to `outbox_events` in the same tx as the mutation from day one. The publisher (a background goroutine with a Pub/Sub adapter) is slice 2. `idempotency_keys` is wired into `POST` handlers that accept an `Idempotency-Key` header — slice 1 use is optional but the infrastructure is live.
+
+#### 13.2.8 · `copy_source_product_id` audit column (new)
+
+`products` gets a nullable `copy_source_product_id uuid` column (no FK — the source may be soft-deleted or across stores). Populated during `service.Copy`. Enables future master-catalog backfill and gives merchants a visible "Copied from …" affordance. Not a gate on any behavior in slice 1.
+
+### 13.3 · Create-product transaction flow correction (supersedes §6.4)
+
+GCS operations happen **before** `BEGIN`, not inside the transaction. No network I/O inside an open Postgres connection. Revised flow:
+
+1. **Pre-tx validation** (unchanged): option/variant integrity, category ownership, currency enforcement, variant count cap (≤100 per product — new hard limit), ≤3 options.
+2. **Pre-tx GCS phase:** for each media item, verify the object exists at the submitted `storage_key`. Storage keys are **content-addressed** (`tenants/<tid>/products/media/<sha256>/<filename>`), computed by the frontend before upload. No tmp→permanent move; the object is uploaded to its permanent path directly. If any object is missing, return `upload_not_found` before touching the DB.
+3. **Begin tx**
+4. Insert `products` row
+5. Insert `product_options`, `product_option_values`, `product_variants`, `variant_option_values`
+6. For each variant, insert one `variant_stock` row at `DEFAULT_LOCATION_ID`
+7. Insert `product_categories`
+8. Insert `product_media` (refcount is a `count(*)` on `storage_key`; multiple rows sharing a key is expected)
+9. Insert `outbox_events` row: `product.created`
+10. `UPDATE stores SET products_updated_watermark = now() WHERE id = $storeId`
+11. Commit
+
+No FGA tuple write (see §13.1.1). No GCS move step. No mid-flight GCS cleanup path because there is nothing to undo.
+
+**Orphan sweep:** a named slice-1 deliverable. A nightly job (initially a single Go program invoked via CronJob or Cloud Scheduler) lists objects under `tenants/*/products/media/*` older than 24 hours and deletes any with no matching `product_media.storage_key` row. This is the only garbage-collection path; simple, observable, cheap.
+
+### 13.4 · Error codes (supersedes §6.5)
+
+Full enumerated list:
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `validation_failed` | 400 | Request shape/content invalid; `details` names the field |
+| `variant_matrix_mismatch` | 400 | Variant count doesn't equal Π(option_value_counts); `details` has `expected`/`got` |
+| `too_many_options` | 400 | >3 option axes |
+| `too_many_variants` | 400 | >100 variants per product |
+| `currency_mismatch` | 400 | Variant currency differs from store currency (also silently corrected — this code is only returned when correction is not possible, e.g., copy-to-store target validation) |
+| `handle_taken` | 409 | `(store_id, handle)` collision; `details.suggested` has an available alternative |
+| `sku_taken` | 409 | `(store_id, sku)` collision; `details.sku` identifies the conflicting value |
+| `category_not_empty` | 409 | Delete refused; `details.product_count` |
+| `category_has_children` | 409 | Delete refused; `details.child_count` |
+| `target_store_invalid` | 400 | Copy-to-store target is missing, same as source, or owned by a different tenant |
+| `upload_not_found` | 400 | A submitted `storage_key` doesn't exist in GCS |
+| `forbidden` | 403 | Authenticated but lacks the required tenant role |
+| `not_found` | 404 | Resource doesn't exist OR belongs to another tenant (no existence leak) |
+
+All tests in §9 that reference "every typed error code from §6.5" use this enumeration.
+
+### 13.5 · UX corrections (supersedes parts of §7)
+
+**No dialogs or modals except for hard delete.** `confirm-dialog` is permitted only for `DELETE` actions (product delete, category delete with cascade). Everything else resolves inline via banners, sticky bars, or dedicated page routes.
+
+#### 13.5.1 · Copy-to-store becomes a dedicated page (supersedes §7.7)
+
+Route: `/products/:id/copy`. Triggered from the product detail overflow menu or the list bulk action. Full editorial single-column page, back button returns to source product. Structure:
+
+```
+  ← Back to Linen shirt
+
+  Copy "Linen shirt"
+  to another store
+  ─────────────────────────────
+  Target store
+  [ Mark8ly EU ▾ ]
+
+  ⟡  The target store sells in USD.
+     Prices on this product are in EUR and will NOT be converted.
+     Review every price after copying.
+
+  What carries over
+  • Title, description, handle, tags, SEO
+  • Options (Size, Color) and every variant
+  • Media
+  • Categories (created in the target store if missing)
+
+  What does not
+  • Inventory — starts at zero in the target store
+  • Published status — lands as Draft so you can review
+                                       ─────────────────
+                               [ Cancel ]   [ Copy ]
+```
+
+The currency-mismatch callout (the `⟡` block) is rendered **only when** `source.currency_code != target.currency_code`. It's not a warning box — a single moss `⟡` glyph, a hairline moss left-border, editorial prose, inline with the page. Visually distinct, but restrained. Same-currency copies don't render the callout at all.
+
+On success: navigate directly to the new draft in the target store (store switcher in the page header pre-selected). A brief inline success banner appears at the top of the new product's form for ~4s, with an `Undo` moss text link that soft-deletes the copy.
+
+Bulk copy from the list page uses the same route with query params: `/products/copy?ids=1,2,3` — the page renders the same form keyed to N products instead of 1. No bulk-copy dialog.
+
+#### 13.5.2 · Category management becomes a dedicated page (supersedes §7.5)
+
+Route: `/products/categories/manage`. Linked from the inline picker footer (`Manage all categories →`). Full-page tree editor with drag-reparent, inline rename, delete (delete is the one place `confirm-dialog` shows up per the no-modal rule). Uses `@tesserix/web` `tree` + `input` + editorial layout. Not a drawer, not a sheet. Back button returns to wherever the merchant came from.
+
+#### 13.5.3 · Inline category picker: "Create under [highlighted]" fork (§7.4 addendum)
+
+When a merchant types a new category name and an existing category row is currently highlighted in the combobox, the "+ Create" footer expands to two options side by side:
+
+```
+  + Create "linen classics" at root
+  + Create "linen classics" under Shirts
+```
+
+Only when both options are meaningful (a category is highlighted AND the typed text has no exact match). Prevents the root-category graveyard without adding a modal.
+
+#### 13.5.4 · Variant removal is an inline banner (supersedes the variant confirmation modal assumption in §7.3)
+
+When the merchant removes an option value that has existing variants, an inline banner slides down above the variant matrix:
+
+```
+  ⟡  Removing "Large" will remove 2 variants (LIN-L-SAND, LIN-L-INK).
+     [ Undo ]   [ Remove variants ]
+```
+
+Hairline moss left-border. Inline Undo restores the option value. `Remove variants` soft-deletes them on next Save. No modal. If the merchant discards instead of saving, the soft-delete never happens.
+
+#### 13.5.5 · Unsaved-changes navigation guard (supersedes the `confirm-dialog` unsaved guard in §7.3)
+
+No modal on navigation. Mechanism:
+
+1. The sticky action bar's state changes to an **unsaved-changes prompt**: left-aligned muted text "Unsaved changes", right-aligned `[Discard] [Save]`. Hairline-highlighted top border becomes 2px moss.
+2. Navigation attempts (sidebar click, browser back) are intercepted by the Next.js router. Instead of a modal, the action bar subtly pulses (2-step moss-to-default fade, honors `prefers-reduced-motion`) and the page does **not** navigate. A second click within 3s forces navigation and discards changes (power-user shortcut).
+3. Tab-close / browser-close fires `beforeunload`, which is the single browser-native prompt users cannot avoid — this is the only "modal-like" exception, and it's the browser's, not ours.
+
+#### 13.5.6 · Handle conflict on already-published product (new, supersedes §7.3 addendum)
+
+On `PATCH` returning `handle_taken`, the handle field renders an inline error beneath it:
+
+```
+  Handle
+  [ linen-shirt                                     ]
+  ⟡  Taken in this store. Try linen-shirt-2 →
+```
+
+The `→` is a one-click moss text link that fills the field with the suggested value. No modal. Save button stays enabled so the merchant can retype manually instead.
+
+#### 13.5.7 · Staff read-only mode is explicit (supersedes §7.8)
+
+For staff viewers:
+
+- All form inputs render with `disabled` or `readonly` HTML attributes — not hidden, not ghost-styled. The merchant can see the data structure; they can't type into it.
+- The sticky action bar is **not rendered at all** (not hidden with CSS — genuinely absent from the DOM).
+- The page header shows a small `staff · read-only` muted label next to the title, linked via `aria-describedby` to a tooltip: *"You can view products but not edit them. Ask your store admin for edit access."*
+- Row-level actions in the list page's overflow menu are absent. The row is still clickable (drills into the read-only detail page).
+
+#### 13.5.8 · Variant matrix row grouping + fill-down (supersedes §7.3 — variant editor)
+
+For products with >2 options, or >12 variants, the matrix gets:
+
+1. **Row grouping by the first option axis.** Variants are rendered as collapsible groups keyed to (e.g.) Size. Each group has a compact header showing the axis value + a group-level bulk-edit affordance: `Size: Medium (6 variants) [ Bulk edit → ]`. Collapsed groups show only a single summary row per group. Expanded groups show all child variants.
+2. **Column fill-down keyboard shortcut.** Selecting a cell in the price, stock, or SKU column and pressing `⌘D` (or `Ctrl+D`) fills the value down to all visible rows below it in the same group. Announced via `aria-live` on activation.
+3. **Column freeze.** The leftmost column (the option-values label) stays pinned when horizontally scrolling; the header row stays pinned when vertically scrolling within the matrix section.
+4. **Hard cap: 100 variants.** Products with more than 100 variants are refused by the API (`too_many_variants`); the form surfaces this before save as a live counter.
+
+#### 13.5.9 · Single-column layout: left-margin anchor list for variant-heavy products (supersedes §7.3)
+
+For variant-heavy products (more than 2 options or more than 12 variants), the detail page renders an editorial left-margin **section anchor list** — not a sidebar, not tabs, not a sticky toolbar. A small vertically-centered list of section names (Title · Media · Categories · Variants · SEO), each a moss text link, rendered in the whitespace to the left of the main column at desktop widths ≥1280px. Matches magazine "chapter marks" convention. At narrower widths, the list is absent.
+
+#### 13.5.10 · Progressive disclosure for first-time merchants (new, §7.3 addendum)
+
+1. `Search engine` (SEO) section is **collapsed by default** on new products. Expands on click. Saved products remember the expansion state per session.
+2. The `has variants` radio has a one-line descriptor beneath it in muted text: *"Use this if you sell the same product in different sizes, colors, or materials."*
+3. On the very first variant matrix render in a browser session (tracked via `localStorage`), a small dismiss-once callout appears above the matrix: *"Edit any cell inline. Use `⌘D` to fill a value down. Removing a value removes its variants."* Dismissible with a single close action; never shown again on that machine.
+
+#### 13.5.11 · Zero-products empty state copy (new, §7.2 addendum)
+
+Draft copy committed to the spec so M7a doesn't block on brand writing:
+
+- **Headline** (Source Serif 4): *"Your catalog starts here."*
+- **Body** (Source Sans 3 muted): *"Add your first product — photos, variants, stock, and pricing all in one place. You can keep things simple or add every detail. Nothing goes live until you're ready."*
+- **CTA** (moss primary): *"Add your first product"*
+
+#### 13.5.12 · Color tokens and type scale (§7 addendum)
+
+- Low-stock indicator in the list uses **`--signal`** (the editorial vermillion token), never a raw hex. Bound in `StatusDot`'s `tone="signal"` variant.
+- Summary line (`42 products · 3 drafts · 2 archived`) renders in **Source Sans 3** at body size with `--ink-500` muted. Not serif. Never mistaken for the eyebrow treatment.
+- Numerals in the variant matrix and price columns use Source Serif 4 tabular figures if the loaded weight supports them; otherwise Source Sans 3 tabular. M7a verifies.
+
+### 13.6 · Security corrections (§ addendum; severity BLOCKING)
+
+#### 13.6.1 · Rich-text sanitization
+
+`products.description` stores TipTap output as sanitized HTML. Sanitization happens **on write** in the `product.Service.Create` / `Update` methods using `github.com/microcosm-cc/bluemonday` with a policy allowing only the editorial tags used by the admin editor (h1–h4, p, strong, em, ul, ol, li, blockquote, a with rel=nofollow, img — img is already a product media and is stripped from descriptions; only text-level tags allowed). The bluemonday policy is a committed artifact (`internal/product/sanitizer.go`), unit-tested, versioned.
+
+The storefront reads and renders the already-sanitized field via `dangerouslySetInnerHTML` with confidence because every byte went through bluemonday before persistence. Storefront-side DOMPurify is a second layer (defense in depth) but not the authoritative boundary.
+
+#### 13.6.2 · Upload size limits
+
+Signed URLs include `x-goog-content-length-range: 0,10485760` (10 MiB max per object). Content type is constrained via `content-type` match. Only `image/jpeg`, `image/png`, `image/webp`, `image/avif` permitted. Videos explicitly refused in slice 1 even though `product_media.media_type` supports them.
+
+GCS bucket has a lifecycle rule that auto-deletes any object under `tenants/*/products/media/` older than 24 hours with no matching DB row (see orphan sweep in §13.3).
+
+#### 13.6.3 · Request body caps
+
+Gin router sets `MaxMultipartMemory = 1MB` and `BodyLimit = 256KB` globally (products POST/PATCH is JSON, never multipart). Middleware rejects oversized bodies with a clean `413 payload_too_large` error envelope before any handler code runs.
+
+#### 13.6.4 · Rate limiting
+
+Admin routes: 60 requests/minute per `(tenant_id, user_id)`, burst 10. Storefront routes: 120 requests/minute per client IP, burst 30. Implemented via `go-shared/middleware/ratelimit` with an in-memory token bucket (single-replica for slice 1; a Redis backend is a slice-2 upgrade when the service goes multi-replica). Rate-limit responses carry `Retry-After`.
+
+#### 13.6.5 · Structured mutation logging (observability floor)
+
+Every admin mutation handler logs on entry and exit at INFO with: `request_id`, `user_id`, `tenant_id`, `store_id`, `operation` (`product.create` / `product.update` / etc.), `product_id`, `duration_ms`, `status`. This is the minimum observability floor for shipping to prod before metrics/tracing land. No PII in logs; titles and descriptions are hashed if included at all.
+
+### 13.7 · Testing corrections (§9 addendum)
+
+- **Pure validators** in §9.1 unit tests take primitive inputs only (no DB-backed dependencies). Anything that needs a store-currency lookup or a category ownership check runs at the service-integration layer in §9.3. The "no mocks" rule is preserved by drawing the boundary at the function signature: pure functions get unit tests; functions that read state get integration tests.
+- **Concurrent-create test** (§9.4) is explicitly: 10 goroutines POST the same handle to the same store simultaneously; assert exactly one returns 201 and the other nine return `handle_taken`.
+- **FGA test container version is pinned** (`openfga/openfga:v1.5.4` or the exact version `platform-api` currently uses; M4 reads `platform-api`'s CI config and matches).
+- **Postgres test DB setup reuses `platform-api`'s `pkg/testdb`** (confirmed to exist at `services/platform-api/pkg/testdb/testdb.go`). Marketplace-api imports it via a small `internal/test/db.go` wrapper. The `//go:build integration` tag from `platform-api` is reused. This resolves §11.1.
+- **Coverage gate**: 80% aggregate across `internal/product/`, `internal/category/`, `internal/media/`, `internal/stores/`; 90% target on pure-logic files (`sanitizer.go`, matrix helpers, validators). Gate configured via `-coverpkg=./internal/product/...,./internal/category/...,./internal/media/...,./internal/stores/...` — `cmd/` entrypoints are explicitly excluded.
+- **Query-count assertion** on `ListAdmin`: the repository must load an N-product list in a bounded number of SQL queries (≤5 total regardless of N). An integration test uses `pgx` query logging or a `gorm` plugin to count actual queries and fail the test on N+1.
+
+### 13.8 · M1 infra prerequisites (supersedes §8 M1 exit criteria)
+
+M1 now explicitly delivers:
+
+1. `services/marketplace-api/` service binary and Dockerfile (as before)
+2. `marketplace_db` + `marketplace_user` provisioned in dev Cloud SQL
+3. **`tesserix-infra/k8s/apps/marketplace/marketplace-api/` Kustomize overlay** (new — Knative Service + ServiceAccount + Cloud SQL Auth Proxy sidecar, mirroring an existing `go-service` base from `tesserix-infra`)
+4. **`ExternalSecret` manifest** referencing GCP Secret Manager secrets for `marketplace_db` password and `X-Storefront-Key`
+5. **ArgoCD Application registration** so the service deploys via `argocd` like the rest of the fleet
+6. Dev-cluster deployment running and returning 200 from `/health` at the allocated URL
+7. `.github/workflows/ci.yml` in the new service repo (or path in monorepo) with pinned Postgres 15, FGA, `fake-gcs-server` versions
+
+The rationale is in the tech-lead review: M5–M7 depend on a deployed environment; hitting infra for the first time at M5 is how projects slip. Better to pay M1's ~1 day of infra work up front.
+
+### 13.9 · Milestone 7 breakdown risk (§8 M7c addendum)
+
+M7c is the single riskiest milestone in the plan. Its scope:
+
+- `MoneyInput` promotion
+- `MediaGrid` with GCS signed-URL upload flow + progress + reorder + alt text + variant-attach
+- `OptionsEditor` (up to 3 axes, max-enforcement, inline validation)
+- `VariantMatrixEditor` with generation, preservation-by-option-value-id, inline edit, bulk edit, row grouping, fill-down, column freeze, 100-variant cap, dismiss-once callout
+
+Realistic estimate for a single developer: **5–8 working days**. If M7c runs long, the cut list (in order of preference to cut):
+
+1. **Cut** row grouping + column freeze (slice 2 polish; ship with flat matrix first)
+2. **Cut** fill-down keyboard shortcut (slice 2 polish)
+3. **Cut** variant-attach popover on media (media stays product-level for slice 1; variant-level images move to slice 2)
+4. **Cut** alt-text popover UX (alt text becomes a second row of fields visible all the time; less polished but functional)
+
+Everything before "Cut" is load-bearing for M7d and must stay.
+
+### 13.10 · Definition of done — revised (supersedes §12)
+
+Replace the "onboard ~10 products" item with test-countable gates:
+
+- [ ] Three Playwright E2E journeys from §9.5 pass in CI
+- [ ] Unit + repository + service + API integration tests green; coverage gate met
+- [ ] `marketplace-api` deployed to dev via ArgoCD
+- [ ] `/health`, `/ready` reachable on both admin (`:8080`) and storefront (`:8081`) ports
+- [ ] Bluemonday sanitizer unit tests cover XSS corpus (OWASP 10 top payloads)
+- [ ] Orphan GCS sweep job committed and runs in dev
+- [ ] Rate-limit middleware wired, 429 responses verified
+- [ ] Structured mutation logs visible in GCP Cloud Logging for all admin routes
+- [ ] Tenant-hard-delete placeholder: one-line strategy documented in README (`async cleanup via slice-N event; products remain until then`)
+- [ ] `stores` projection: pull-through refresh works; `platform-api` outage does not break stale reads
+- [ ] Single-developer smoke test: create 3 simple products, 1 variant product (2×3 matrix), 1 copy-to-store, all end-to-end with no workarounds — documented as a manual checkpoint in the PR description
+
+### 13.11 · Open questions closed
+
+- **§11.1 — test helper reuse:** resolved. Use `platform-api/pkg/testdb` via a thin `internal/test/db.go` wrapper.
+- **§11.2 — StoreMiddleware shape:** resolved in §13.1.4.
+- **§11.3 — `X-Store-ID` trust boundary:** resolved in §13.1.2 (separate port + path-based slug + shared secret).
+- **§11.4 — FGA model version migration:** moot after §13.1.1 (no marketplace-specific FGA types to version).
+- **§11.5 — Source Serif 4 tabular figures:** open; verified in M7a. Fallback is Source Sans 3 tabular.
+
+### 13.12 · Component reuse map adjustments (§7.10 addendum)
+
+- **`StoreSwitcher`** is a new admin-only composition (not promoted). Composes `@tesserix/web` `select` with the editorial override, reads stores from the new local projection via `GET /api/v1/admin/stores`. Lives in `apps/admin/components/shell/StoreSwitcher.tsx`.
+- **`StatusDot`, `PriceDisplay`, `MoneyInput`** — pre-promoted to `@repo/ui` in a dedicated commit **before M7a starts**, not mid-milestone. This avoids context-switching cost during the UI crunch.
+- **`dialog` / `confirm-dialog`** — used only for hard-delete confirmations (product delete, category delete with cascade). Removed from copy-to-store, variant removal, unsaved-changes guard, category management.
+- **`sheet` / `drawer`** — not used anywhere in slice 1. Category management is a page route.
+
+### 13.13 · Risk register (supersedes §10)
+
+| Risk | Mitigation |
+|---|---|
+| FGA + DB drift | Eliminated by §13.1.1 (no per-object tuples). |
+| Storefront leaks draft products | Repository-level `ListPublished` + distinct DTO types + separate Gin engine + shared-secret header + leak tests at repo and API layer. |
+| Cross-tenant storefront read via forged `X-Store-ID` | §13.1.2 — no trusted header; slug + local lookup. |
+| Variant matrix regeneration loses data | Matrix diff by `option_value_id` tuple; 15+ unit tests; inline removal banner with Undo. |
+| GCS orphan objects | Content-addressed keys + nightly sweep job + 24h lifecycle rule. |
+| Connection pool starvation on db-f1-micro | `SetMaxOpenConns(4)`; no GCS calls inside tx; `stores` projection removes platform-api calls from hot path; query-count test on `ListAdmin`; bulk import restricted to serialized per-tenant path with advisory lock. |
+| XSS via rich-text description | Bluemonday sanitize on write; committed policy; XSS corpus in tests. |
+| Oversized uploads | `x-goog-content-length-range`; bucket lifecycle; per-route body caps. |
+| Currency drift on stores.currency_code change | BEFORE UPDATE trigger on variants; maintenance path documented. |
+| Tenant hard delete orphans data | Placeholder: async cleanup job deferred to slice N; explicitly documented, not silently ignored. |
+| M7c schedule overrun | Explicit cut list in §13.9. |
+| Multi-warehouse slice 2 requires variant schema rewrite | Eliminated — `variant_stock` table exists from day one with a single default-location row. |
+| Orders/webhooks slice 2 require outbox rewrite | Eliminated — `outbox_events` and `idempotency_keys` exist from day one. |
+| Copy-to-store currency confusion | Dedicated page with distinct currency-mismatch callout when source ≠ target; draft status gates publish. |
+| Autosave-free explicit-save data loss | `beforeunload` browser guard; unsaved state visible in sticky bar; failed-save retry inline. |
+
+---
+
+*End of revisions. v1 authored 2026-04-09; v1.1 revisions 2026-04-09 (same day, after four-reviewer pass).*

@@ -28,26 +28,17 @@ export function PostSubmitShell({
 }: PostSubmitShellProps) {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
-      {/* Slim brand bar */}
+      {/* Slim brand bar — wordmark is the home link */}
       <header className="border-b border-border-subtle">
-        <div className="mx-auto flex h-[64px] max-w-6xl items-center justify-between px-6">
+        <div className="mx-auto flex h-[64px] max-w-6xl items-center px-6">
           <Link
             href="/"
             aria-label="mark8ly — home"
             className="-mx-2 inline-flex items-center px-2 py-2"
           >
-            <span className="font-serif text-xl font-medium tracking-[-0.025em] text-foreground">
+            <span className="font-serif text-[1.5rem] font-medium tracking-[-0.025em] text-foreground">
               mark8ly
             </span>
-          </Link>
-          <Link
-            href="/"
-            className="inline-flex h-10 items-center px-3 text-sm text-foreground-secondary hover:text-foreground"
-          >
-            <span aria-hidden="true" className="mr-2">
-              ←
-            </span>
-            Back to home
           </Link>
         </div>
       </header>

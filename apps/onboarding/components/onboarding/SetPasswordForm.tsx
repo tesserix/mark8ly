@@ -123,27 +123,8 @@ export function SetPasswordForm({ sessionId, email, businessName }: Props) {
   const disabled = pending || googlePending;
 
   return (
-    <div className="w-full max-w-md mx-auto">
-      <div className="rounded-[2rem] border border-warm-200/90 bg-white/90 shadow-[0_24px_80px_rgba(43,38,34,0.12)] backdrop-blur-sm overflow-hidden">
-        <div className="px-8 pt-8 pb-6 border-b border-warm-100 bg-[linear-gradient(180deg,rgba(243,238,230,0.72),rgba(255,255,255,0.98))]">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <span className="text-xs font-medium uppercase tracking-[0.16em] text-foreground-tertiary">
-              Almost there
-            </span>
-            <span className="rounded-full bg-warm-100 px-3 py-1 text-xs font-medium text-foreground-secondary">
-              Step 2 of 2
-            </span>
-          </div>
-          <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
-            Set a password{businessName ? ` for ${businessName}` : ""}
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-foreground-secondary">
-            Pick a password you&apos;ll remember, or sign in with Google to skip
-            it. We&apos;ll use this whenever you come back to your store.
-          </p>
-        </div>
-
-        <form onSubmit={handlePasswordSubmit} className="px-8 py-8 space-y-5">
+    <div className="w-full max-w-md border-t border-border-subtle pt-10">
+      <form onSubmit={handlePasswordSubmit} className="space-y-6">
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-foreground">
               Email address
@@ -186,17 +167,17 @@ export function SetPasswordForm({ sessionId, email, businessName }: Props) {
           <button
             type="submit"
             disabled={disabled || password.length < 8}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 text-base font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
           >
             {pending ? "Finishing up…" : "Create account"}
           </button>
 
-          <div className="relative py-1">
-            <div className="absolute inset-0 flex items-center" aria-hidden>
-              <div className="w-full border-t border-warm-200" />
+          <div className="relative py-2">
+            <div className="absolute inset-0 flex items-center" aria-hidden="true">
+              <div className="w-full border-t border-border-subtle" />
             </div>
             <div className="relative flex justify-center">
-              <span className="bg-white px-3 text-xs uppercase tracking-wider text-foreground-tertiary">
+              <span className="bg-background px-3 text-xs uppercase tracking-[0.16em] text-foreground-tertiary">
                 or
               </span>
             </div>
@@ -206,13 +187,12 @@ export function SetPasswordForm({ sessionId, email, businessName }: Props) {
             type="button"
             onClick={handleGoogle}
             disabled={disabled}
-            className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-warm-200 bg-white px-6 py-3 text-sm font-medium text-foreground transition hover:bg-warm-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:bg-paper-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <GoogleMark />
             {googlePending ? "Opening Google…" : "Continue with Google"}
           </button>
-        </form>
-      </div>
+      </form>
     </div>
   );
 }

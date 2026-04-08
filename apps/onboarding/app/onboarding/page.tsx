@@ -21,33 +21,24 @@ export default async function OnboardingPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
-      {/* Slim brand bar */}
+      {/* Slim brand bar — wordmark is the home link */}
       <header className="border-b border-border-subtle">
-        <div className="mx-auto flex h-[64px] max-w-6xl items-center justify-between px-6">
+        <div className="mx-auto flex h-[64px] max-w-6xl items-center px-6">
           <Link
             href="/"
             aria-label="mark8ly — home"
             className="-mx-2 inline-flex items-center px-2 py-2"
           >
-            <span className="font-serif text-xl font-medium tracking-[-0.025em] text-foreground">
+            <span className="font-serif text-[1.5rem] font-medium tracking-[-0.025em] text-foreground">
               mark8ly
             </span>
-          </Link>
-          <Link
-            href="/"
-            className="inline-flex h-10 items-center px-3 text-sm text-foreground-secondary hover:text-foreground"
-          >
-            <span aria-hidden="true" className="mr-2">
-              ←
-            </span>
-            Back to home
           </Link>
         </div>
       </header>
 
       <main id="main" className="flex-1">
         <div className="mx-auto grid max-w-6xl gap-12 px-6 pb-20 pt-16 sm:pt-20 lg:grid-cols-[1fr_1.2fr] lg:gap-16">
-          <section className="lg:sticky lg:top-20 lg:self-start">
+          <section>
             <p className="eyebrow mb-5">Open your store</p>
             <h1
               className="font-serif font-medium text-foreground"
@@ -77,18 +68,15 @@ export default async function OnboardingPage() {
                 {
                   n: "ii.",
                   t: "Verify your email.",
-                  d: "We&rsquo;ll send a link so you don&rsquo;t need a password yet.",
+                  d: "We\u2019ll send a link so you don\u2019t need a password yet.",
                 },
                 {
                   n: "iii.",
                   t: "Open the doors.",
-                  d: "You&rsquo;ll land in your admin, ready to go.",
+                  d: "You\u2019ll land in your admin, ready to go.",
                 },
               ].map((step) => (
-                <li
-                  key={step.n}
-                  className="grid grid-cols-[auto_1fr] gap-6"
-                >
+                <li key={step.n} className="grid grid-cols-[auto_1fr] gap-6">
                   <span className="font-serif text-xl text-moss-700">
                     {step.n}
                   </span>
@@ -96,10 +84,9 @@ export default async function OnboardingPage() {
                     <p className="font-serif text-lg text-foreground">
                       {step.t}
                     </p>
-                    <p
-                      className="mt-1 text-sm text-foreground-secondary"
-                      dangerouslySetInnerHTML={{ __html: step.d }}
-                    />
+                    <p className="mt-1 text-sm text-foreground-secondary">
+                      {step.d}
+                    </p>
                   </div>
                 </li>
               ))}

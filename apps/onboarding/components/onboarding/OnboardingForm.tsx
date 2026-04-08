@@ -153,32 +153,8 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     !pending;
 
   return (
-    <div className="w-full max-w-lg mx-auto">
-      <div className="rounded-[2rem] border border-warm-200/90 bg-white/90 shadow-[0_24px_80px_rgba(43,38,34,0.12)] backdrop-blur-sm overflow-hidden">
-        {/* Card header strip */}
-        <div className="px-8 pt-8 pb-6 border-b border-warm-100 bg-[linear-gradient(180deg,rgba(243,238,230,0.72),rgba(255,255,255,0.98))]">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <span className="text-xs font-medium uppercase tracking-[0.16em] text-foreground-tertiary">
-              Create Your Store
-            </span>
-            <span className="rounded-full bg-warm-100 px-3 py-1 text-xs font-medium text-foreground-secondary">
-              Step 1 of 2
-            </span>
-          </div>
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-sage-200 bg-white/88 px-4 py-1.5 text-xs font-medium text-sage-700 shadow-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-sage-500" aria-hidden />
-            6 months free · No credit card
-          </div>
-          <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
-            Let&apos;s get your store live
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-foreground-secondary">
-            We&apos;ll email you a verification link to finish setting up.
-            You can pick a password or sign in with Google after that.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="px-8 py-8 space-y-5">
+    <div className="w-full max-w-lg mx-auto lg:mx-0">
+      <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-foreground">
               Email address
@@ -292,53 +268,40 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           <button
             type="submit"
             disabled={!canSubmit}
-            className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 text-base font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover hover:shadow-[0_18px_36px_rgba(31,30,28,0.22)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-[0_14px_30px_rgba(31,30,28,0.18)]"
+            className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
           >
             {pending ? (
-              <>
-                <span
-                  className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white motion-safe:animate-spin"
-                  aria-hidden
-                />
-                <span aria-live="polite">Sending your verification link…</span>
-              </>
+              <span aria-live="polite">Sending verification link…</span>
             ) : (
-              <>
-                Get my store ready
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="transition-transform group-hover:translate-x-0.5"
-                >
-                  <path d="M5 12h14M13 5l7 7-7 7" />
-                </svg>
-              </>
+              "Send verification link"
             )}
           </button>
 
-          <p className="text-xs text-foreground-tertiary text-center">
+          <p className="text-xs text-foreground-tertiary">
             By creating an account you agree to our{" "}
-            <a href="/terms" className="underline hover:text-foreground">
+            <a
+              href="/terms"
+              className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
+            >
               Terms
             </a>
             ,{" "}
-            <a href="/privacy" className="underline hover:text-foreground">
+            <a
+              href="/privacy"
+              className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
+            >
               Privacy Policy
             </a>
             , and{" "}
-            <a href="/legal" className="underline hover:text-foreground">
-              Security &amp; Compliance Policy
+            <a
+              href="/legal"
+              className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
+            >
+              Security Policy
             </a>
             .
           </p>
-        </form>
-      </div>
+      </form>
     </div>
   );
 }

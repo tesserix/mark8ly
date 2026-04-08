@@ -1,13 +1,12 @@
-import Link from "next/link";
-
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
+import { WelcomeCta } from "@/components/onboarding/WelcomeCta";
 
 // Welcome page shown after successful onboarding + auto-login.
 // The session cookie has already been minted by the time the
 // user lands here, so the primary CTA into admin works immediately.
-
-const ADMIN_URL =
-  process.env.NEXT_PUBLIC_ADMIN_URL ?? "http://localhost:4202/dashboard";
+// The CTA itself is a client component so it can read the freshly
+// onboarded tenant slug from the zustand store and build a per-tenant
+// admin URL — see components/onboarding/WelcomeCta.tsx.
 
 // Funnel destination — never index.
 export const metadata = {
@@ -23,17 +22,7 @@ export default function WelcomePage() {
       description="You&rsquo;re signed in. Step into the admin dashboard to add your first product, shape your storefront, and confirm your settings."
     >
       <div className="border-t border-border-subtle pt-10">
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
-          <a
-            href={ADMIN_URL}
-            className="inline-flex h-12 items-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
-          >
-            Open admin dashboard
-          </a>
-          <Link href="/" className="btn-ghost">
-            Back to home
-          </Link>
-        </div>
+        <WelcomeCta />
 
         <dl className="mt-16 grid gap-10 border-t border-border-subtle pt-10 sm:grid-cols-2">
           <div>

@@ -1,0 +1,45 @@
+# Root .dockerignore — applies to every `docker build` from this repo.
+#
+# The build context for every image is the monorepo root, so excluding
+# things here keeps build context small and avoids invalidating layer
+# caches when irrelevant files change.
+
+# Build outputs
+**/.next
+**/.turbo
+**/dist
+**/bin
+**/node_modules
+**/coverage
+
+# Test artifacts
+**/test-results
+**/playwright-report
+**/playwright/.cache
+
+# Local env / secrets — never bake into images
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Editor / OS junk
+.DS_Store
+.idea
+.vscode
+*.swp
+
+# Git history (we use COMMIT_SHA via build arg, not git log)
+.git
+.gitignore
+.gitattributes
+
+# Docs that don't affect runtime
+docs
+*.md
+!README.md
+
+# CI artifacts
+.github
+
+# Dev-only infra
+infra/dev

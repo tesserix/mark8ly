@@ -9,6 +9,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
 jobs:
   go:
     name: Go (${{ matrix.service }})
@@ -43,3 +48,127 @@ jobs:
           cache: "npm"
       - run: npm install
       - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff'
+
+  # ─── Image build + push ────────────────────────────────────────────
+  # Builds 5 immutable images tagged sha-<12-char-commit> and pushes
+  # them to GHCR. Skipped on PRs (only main pushes ship images).
+  images:
+    name: Build & push (${{ matrix.image.name }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [go, node]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: mark8ly-platform-api
+            dockerfile: services/platform-api/Dockerfile
+            context: services/platform-api
+            target: server
+          - name: mark8ly-auth-bff
+            dockerfile: services/auth-bff/Dockerfile
+            context: services/auth-bff
+            target: server
+          - name: mark8ly-onboarding
+            dockerfile: apps/onboarding/Dockerfile
+            context: .
+            target: runtime
+          - name: mark8ly-admin
+            dockerfile: apps/admin/Dockerfile
+            context: .
+            target: runtime
+          - name: mark8ly-storefront
+            dockerfile: apps/storefront/Dockerfile
+            context: .
+            target: runtime
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (immutable sha tag only)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          target: ${{ matrix.image.target }}
+          push: true
+          tags: ghcr.io/tesserix/${{ matrix.image.name }}:sha-${{ steps.sha.outputs.short }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,scope=${{ matrix.image.name }},mode=max
+          provenance: false
+
+      - name: Trivy scan (fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/tesserix/${{ matrix.image.name }}:sha-${{ steps.sha.outputs.short }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+
+  # ─── Bump tesserix-k8s values ──────────────────────────────────────
+  # After all images push successfully, open a PR on tesserix-k8s
+  # bumping the mark8ly-* image tags. ArgoCD picks up the merged PR
+  # and rolls the deployments.
+  bump-k8s:
+    name: Bump tesserix-k8s image tags
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [images]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=$(echo ${{ github.sha }} | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tesserix-k8s
+        uses: actions/checkout@v4
+        with:
+          repository: tesserix/tesserix-k8s
+          token: ${{ secrets.TESSERIX_K8S_BOT }}
+          path: tesserix-k8s
+          ref: main
+
+      - name: Bump image tags via yq
+        run: |
+          set -euo pipefail
+          for svc in platform-api auth-bff onboarding admin storefront; do
+            f="tesserix-k8s/charts/apps/mark8ly-$svc/values-prod.yaml"
+            if [ ! -f "$f" ]; then
+              echo "WARN: $f does not exist yet (Step 4 charts not landed) — skipping"
+              continue
+            fi
+            # Use yq if available, fall back to sed for tag-only fields.
+            if command -v yq >/dev/null; then
+              yq -i ".image.tag = \"sha-${{ steps.sha.outputs.short }}\"" "$f"
+            else
+              sed -i "s|^\(\s*tag:\s*\).*|\1\"sha-${{ steps.sha.outputs.short }}\"|" "$f"
+            fi
+          done
+
+      - name: Open PR on tesserix-k8s
+        uses: peter-evans/create-pull-request@v6
+        with:
+          path: tesserix-k8s
+          token: ${{ secrets.TESSERIX_K8S_BOT }}
+          commit-message: "chore(mark8ly): bump images to sha-${{ steps.sha.outputs.short }}"
+          title: "chore(mark8ly): bump images to sha-${{ steps.sha.outputs.short }}"
+          body: |
+            Auto-generated from `tesserix/mark8ly@${{ github.sha }}`.
+
+            Bumps `mark8ly-*` image tags to `sha-${{ steps.sha.outputs.short }}`.
+
+            Merge to roll out via ArgoCD.
+          branch: bump-mark8ly-${{ steps.sha.outputs.short }}
+          delete-branch: true

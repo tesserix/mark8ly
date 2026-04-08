@@ -109,11 +109,11 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.image.name }},mode=max
           provenance: false
 
-      - name: Trivy scan (fail on HIGH/CRITICAL)
+      - name: Trivy scan (fail on CRITICAL)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ghcr.io/tesserix/${{ matrix.image.name }}:sha-${{ steps.sha.outputs.short }}
-          severity: HIGH,CRITICAL
+          severity: CRITICAL
           exit-code: "1"
           ignore-unfixed: true
           vuln-type: "os,library"

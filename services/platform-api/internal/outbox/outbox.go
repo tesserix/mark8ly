@@ -36,7 +36,15 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// inFlightVisibility is the per-row visibility timeout for in_flight events.
+// A drainer that crashes mid-dispatch will leave its rows stuck in_flight;
+// after this window any drainer can re-claim them. Sized comfortably above
+// the longest expected handler runtime so healthy drainers never race their
+// own rows.
+const inFlightVisibility = 5 * time.Minute
 
 // Event is one outbox row. Use Enqueue (not Create) to insert from app code
 // so payload encoding stays consistent.
@@ -198,18 +206,54 @@ func (d *Drainer) loop(ctx context.Context) {
 	}
 }
 
-// Tick processes one batch of pending events. Exposed publicly so tests
-// can drive the drainer deterministically without sleeping.
+// Tick claims and processes one batch of pending events.
+//
+// The claim is done in a single transaction using SELECT … FOR UPDATE SKIP
+// LOCKED so multiple drainer replicas never fetch the same row. Claimed rows
+// are immediately flipped to in_flight status with a fresh updated_at, and
+// any in_flight rows older than inFlightVisibility are reclaimable (covers
+// crash-mid-dispatch). Dispatch happens after the claim transaction commits
+// so handler latency does not hold a row lock.
+//
+// Exposed publicly so tests can drive the drainer deterministically without
+// sleeping.
 func (d *Drainer) Tick(ctx context.Context) error {
 	var batch []Event
 	now := time.Now()
+	visibilityCutoff := now.Add(-inFlightVisibility)
 
-	if err := d.db.WithContext(ctx).
-		Where("status = ? AND next_attempt_at <= ?", StatusPending, now).
-		Order("id ASC").
-		Limit(d.batchSize).
-		Find(&batch).Error; err != nil {
-		return fmt.Errorf("outbox: fetch batch: %w", err)
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where(
+				"(status = ? AND next_attempt_at <= ?) OR (status = ? AND updated_at <= ?)",
+				StatusPending, now,
+				StatusInFlight, visibilityCutoff,
+			).
+			Order("id ASC").
+			Limit(d.batchSize).
+			Find(&batch).Error; err != nil {
+			return fmt.Errorf("outbox: fetch batch: %w", err)
+		}
+		if len(batch) == 0 {
+			return nil
+		}
+		ids := make([]int64, len(batch))
+		for i := range batch {
+			ids[i] = batch[i].ID
+		}
+		if err := tx.Model(&Event{}).
+			Where("id IN ?", ids).
+			Updates(map[string]any{
+				"status":     StatusInFlight,
+				"updated_at": now,
+			}).Error; err != nil {
+			return fmt.Errorf("outbox: claim batch: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	for _, evt := range batch {

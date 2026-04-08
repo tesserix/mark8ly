@@ -87,58 +87,158 @@ Tasks are strictly serial except where noted. Each task ends with a commit. No t
 
 ### Task 0: Verify Products slice 1 prerequisites
 
-**Files:** none (verification only)
+**Files:** none (verification only — no writes, no commits)
 
-- [ ] **Step 1: Verify marketplace-api service exists**
+This task is **read-only**. It proves the products slice 1 scaffold + migration baseline is in the working tree, the dependencies the plan imports are in `go.mod`, the module path the plan uses matches reality, the helper function signatures the plan calls match what products ships, and the live `marketplace_db` is at the expected state. Every step must pass before Task 1. **If any step fails, STOP** and escalate — do not try to patch around a missing prereq.
 
-Run:
+A passing Task 0 means: "every assumption baked into Tasks 1–13 has been verified against the current tree, not against the spec."
+
+- [ ] **Step 1: Verify the service tree exists (products M1 scaffold)**
+
 ```bash
-ls services/marketplace-api/cmd/marketplace-api/main.go \
-   services/marketplace-api/cmd/migrate/main.go \
-   services/marketplace-api/pkg/db \
-   services/marketplace-api/pkg/migrate \
-   services/marketplace-api/pkg/testdb \
-   services/marketplace-api/migrations.go
+for p in \
+  services/marketplace-api/cmd/marketplace-api/main.go \
+  services/marketplace-api/cmd/migrate/main.go \
+  services/marketplace-api/pkg/db/db.go \
+  services/marketplace-api/pkg/migrate/migrate.go \
+  services/marketplace-api/pkg/testdb/testdb.go \
+  services/marketplace-api/migrations.go \
+  services/marketplace-api/go.mod; do
+  test -f "$p" || { echo "MISSING: $p"; exit 1; }
+done
+echo "scaffold OK"
 ```
-Expected: all paths print without error. If any `ls: No such file`, **STOP**. Products slice 1 M1 has not landed. Ask the human to merge it.
+Expected: `scaffold OK`. If `MISSING: ...` — **STOP**. Products M1 has not landed on the base of this branch.
 
-- [ ] **Step 2: Verify `0000_extensions` migration shipped with pg_trgm**
+- [ ] **Step 2: Verify the Go module path matches what the plan imports**
 
-Run:
 ```bash
-grep -l "pg_trgm" services/marketplace-api/migrations/0000_extensions.up.sql
+grep '^module ' services/marketplace-api/go.mod
 ```
-Expected: prints the file path. If empty, **STOP** — the extension prereq is missing.
+Expected: `module github.com/mark8ly/marketplace-api`. Tasks 5, 6, 7, 8, 9, 11, 12 all import `github.com/mark8ly/marketplace-api/internal/order` and `.../pkg/testdb`. If the module path differs (e.g. products picked a different owner), **STOP** and update every import in this plan before proceeding — the test files as written will not compile.
 
-- [ ] **Step 3: Verify `0001_products_initial` shipped with the shared trigger function**
+- [ ] **Step 3: Verify go.work includes the service**
 
-Run:
 ```bash
-grep -n "CREATE OR REPLACE FUNCTION set_updated_at" services/marketplace-api/migrations/0001_products_initial.up.sql
+grep -F 'services/marketplace-api' go.work
 ```
-Expected: one match. If zero, **STOP** — this plan cannot reuse the trigger function that doesn't exist.
+Expected: one match. If empty, the service is not in the workspace and `go test ./...` from the repo root will skip it silently. **STOP** and add it to `go.work` via products slice 1 — do not add it from this plan.
 
-- [ ] **Step 4: Verify migrate up → down → up cycles cleanly against local Postgres**
+- [ ] **Step 4: Verify the specific Go dependencies the plan imports are in go.mod**
 
-Run (from repo root, with `docker-compose up -d postgres` already running):
 ```bash
 cd services/marketplace-api && \
-  go run ./cmd/migrate -direction up && \
-  go run ./cmd/migrate -direction down && \
-  go run ./cmd/migrate -direction up
+  for dep in \
+    github.com/google/uuid \
+    github.com/shopspring/decimal \
+    github.com/stretchr/testify \
+    gorm.io/gorm \
+    gorm.io/datatypes; do
+    grep -q "$dep" go.mod || { echo "MISSING DEP: $dep"; exit 1; }
+  done && echo "deps OK"
 ```
-Expected: each command prints "migration complete" (or equivalent from the existing tool) and exits 0. If any fails, the products migration base is broken — **STOP** and report.
+Expected: `deps OK`. If any dep is missing, **STOP**. The plan does not add dependencies — products slice 1 is expected to have them. If `shopspring/decimal` or `gorm.io/datatypes` are missing specifically, products has a gap and must add them before orders M1 starts.
 
-- [ ] **Step 5: Verify `marketplace_db` is at the expected Products slice 1 schema version**
+- [ ] **Step 5: Verify `testdb.New` signature matches what the plan calls**
 
-Run:
+Tasks 8, 9, 11, 12 call `testdb.New(t)` and assume it returns `*gorm.DB`. Verify:
 ```bash
-psql -h localhost -U dev -d marketplace_db -c \
+cd services/marketplace-api && go doc ./pkg/testdb .New
+```
+Expected output contains `func New(t *testing.T) *gorm.DB` (or `*testing.T` with equivalent `testing.TB` generalization). If the signature is different — e.g. `func New(t *testing.T) (*gorm.DB, func())` with a cleanup closure — **STOP** and update every test file in this plan to match before writing Task 1. This is the single most likely source of post-Task-0 churn; spend the minute here.
+
+- [ ] **Step 6: Verify the migrate CLI flag name**
+
+The plan calls `go run ./cmd/migrate -direction up`. Verify the flag is actually `-direction`:
+```bash
+cd services/marketplace-api && go run ./cmd/migrate -h 2>&1 | grep -- '-direction'
+```
+Expected: a `-direction` flag line (or equivalent `--direction`). If products named the flag differently (e.g. `-dir`, `up`/`down` as positional args), **STOP** and globally update every `go run ./cmd/migrate` line in this plan (Tasks 1, 2, 3, 13) before proceeding.
+
+- [ ] **Step 7: Verify Postgres is reachable and `marketplace_db` exists**
+
+Before touching migrations, confirm the DB is up:
+```bash
+pg_isready -h localhost -p 5432 -U dev -d marketplace_db
+```
+Expected: `localhost:5432 - accepting connections`. If not, run `docker-compose up -d postgres` from the repo root and retry. If `pg_isready` is not installed, fall back to:
+```bash
+psql -h localhost -U dev -d marketplace_db -c 'SELECT 1;'
+```
+Expected: prints `1`. If psql errors with "database does not exist", products M1 did not create `marketplace_db` — **STOP**.
+
+- [ ] **Step 8: Verify `pg_trgm` extension is installed in the live DB (not just in a migration file)**
+
+```bash
+psql -h localhost -U dev -d marketplace_db -tAc \
+  "SELECT extname FROM pg_extension WHERE extname = 'pg_trgm';"
+```
+Expected: prints `pg_trgm`. If empty, the `0000_extensions` migration either hasn't run or doesn't include it. **STOP** — orders M1's schema cannot be trusted to function until this is present.
+
+- [ ] **Step 9: Verify `gen_random_uuid()` is callable in the live DB**
+
+The orders migration uses `DEFAULT gen_random_uuid()` on every primary key. On Postgres 13+ this is built-in; on older instances it requires `pgcrypto`. Verify:
+```bash
+psql -h localhost -U dev -d marketplace_db -tAc "SELECT gen_random_uuid();"
+```
+Expected: prints a UUID. If `function gen_random_uuid() does not exist`, **STOP** — products slice 1 must enable `pgcrypto` before orders M1 can run.
+
+- [ ] **Step 10: Verify the shared `set_updated_at()` trigger function exists in the live DB and is callable**
+
+```bash
+psql -h localhost -U dev -d marketplace_db -tAc \
+  "SELECT proname, pronargs FROM pg_proc WHERE proname = 'set_updated_at';"
+```
+Expected: one row, `set_updated_at|0`. If zero rows, products M2 has not landed in the DB — **STOP**. If `pronargs` is not `0`, a different function with the same name exists — **STOP** and investigate before the migration at Task 1 tries to register triggers against it.
+
+- [ ] **Step 11: Verify `marketplace_db_schema_migrations` is at the expected baseline**
+
+```bash
+psql -h localhost -U dev -d marketplace_db -tAc \
   "SELECT version FROM marketplace_db_schema_migrations ORDER BY version DESC LIMIT 1;"
 ```
-Expected: prints `1` (the products migration). If 0 or missing, migrations did not run. If > 1, something else is ahead of us — **STOP** and investigate.
+Expected: a version that reflects the latest products migration on the stack base. As of this plan's writing, that is `1` (if stacked on products M1+M2 with `0000_extensions` + `0001_products_initial`). Allowable variants: any version ≥ 1 that corresponds to a products migration and does NOT already contain an `orders` table. If the version is 0, migrations have not run — **STOP** and run `go run ./cmd/migrate -direction up` from the products branch first. If the version is greater than the latest products migration, something else has already shipped — **STOP** and investigate (orders might already be partially applied from a failed prior run).
 
-No commit — Task 0 is verification only.
+- [ ] **Step 12: Verify products tables exist and orders tables do NOT**
+
+```bash
+psql -h localhost -U dev -d marketplace_db -tAc "\dt" | awk '{print $2}' | sort > /tmp/m1_tables.txt
+echo "---- products tables (should be present) ----"
+grep -E '^(products|categories|variants|product_options)?$' /tmp/m1_tables.txt || true
+echo "---- orders tables (must be absent) ----"
+if grep -qE '^(orders|order_items|returns|abandoned_carts|pending_events|document_number_seq)$' /tmp/m1_tables.txt; then
+  echo "ORDERS TABLES ALREADY EXIST — aborting"
+  exit 1
+fi
+echo "db state OK"
+```
+Expected: `db state OK`. If `ORDERS TABLES ALREADY EXIST`, a previous orders M1 run was partially applied and left the DB dirty — **STOP**, roll back via `go run ./cmd/migrate -direction down` (if the migration file exists on this branch) or manually drop the tables, and start this plan from Task 1.
+
+- [ ] **Step 13: Verify `go test ./...` for the service passes on the current (pre-orders) tree**
+
+```bash
+cd services/marketplace-api && go test ./...
+```
+Expected: all tests PASS. This is the baseline. If any test fails before orders M1 touches anything, **STOP** — the base is broken and orders M1 would merge on top of a broken baseline.
+
+- [ ] **Step 14: Record the baseline in a scratch note**
+
+Create `.orders-m1-baseline.txt` in the repo root (gitignored or deleted at end of plan):
+```bash
+cat > .orders-m1-baseline.txt <<'EOF'
+Orders M1 baseline verified at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Branch: $(git branch --show-current)
+Base commit: $(git rev-parse HEAD)
+Module path: $(grep '^module ' services/marketplace-api/go.mod)
+Schema version: $(psql -h localhost -U dev -d marketplace_db -tAc "SELECT version FROM marketplace_db_schema_migrations ORDER BY version DESC LIMIT 1;")
+Test status: PASS
+EOF
+```
+No commit. This file is a debugging crumb — if Task 12's benchmark fails mysteriously a day later, you check this file to see the exact state the plan was executed against.
+
+---
+
+**Task 0 is read-only and writes no files (except the scratch note). No commit. If all 14 steps pass, proceed to Task 1. If any step fails, STOP and escalate — the plan explicitly forbids patching around a failed prerequisite.**
 
 ---
 

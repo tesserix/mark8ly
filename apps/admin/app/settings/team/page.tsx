@@ -4,19 +4,23 @@ import {
   canInviteMembers,
   getServerSessionContext,
 } from "@/lib/auth/serverSession";
-import { listPendingInvitations } from "@/lib/api/platform-api";
+import {
+  listPendingInvitations,
+  listTeamMembers,
+} from "@/lib/api/platform-api";
 
 /**
- * /settings/team — owner row plus pending invitations. Owners and
- * admins see an "Invite teammate" CTA; staff/viewer see a read-only
- * list. There is no "current members" list yet — that's a separate
- * slice that needs FGA ListUsers or a parallel staff table.
+ * /settings/team — current members, pending invitations, and the
+ * invite form. Owners and admins see the invite CTA; staff/viewer see
+ * a read-only view. The "current members" list is the tenant owner
+ * plus every accepted invitation — sourced from platform-api's
+ * `/internal/tenants/{id}/members` endpoint which joins the tenants
+ * row with accepted invitations rows.
  */
 export default async function TeamSettingsPage() {
   const {
     tenantName,
     email,
-    tenant,
     role,
     memberships,
     tenantId,
@@ -24,7 +28,13 @@ export default async function TeamSettingsPage() {
   } = await getServerSessionContext();
   const canInvite = canInviteMembers(role);
 
-  const invitations = await listPendingInvitations(tenantId).catch(() => []);
+  // Fetch members + pending invitations in parallel. Both endpoints
+  // fail-soft to an empty array so a transient platform-api hiccup
+  // degrades the page instead of 500-ing it.
+  const [members, invitations] = await Promise.all([
+    listTeamMembers(tenantId).catch(() => []),
+    listPendingInvitations(tenantId).catch(() => []),
+  ]);
 
   return (
     <AdminShell
@@ -53,7 +63,7 @@ export default async function TeamSettingsPage() {
         </header>
 
         <TeamSettings
-          ownerEmail={tenant?.owner_email ?? ""}
+          members={members}
           invitations={invitations}
           canInvite={canInvite}
           stores={stores}

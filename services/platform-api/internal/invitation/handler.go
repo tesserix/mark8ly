@@ -28,6 +28,7 @@ func NewHandler(svc *Service) *Handler {
 //   - POST   /internal/tenants/:id/invitations
 //   - GET    /internal/tenants/:id/invitations
 //   - DELETE /internal/tenants/:id/invitations/:inv_id
+//   - GET    /internal/tenants/:id/members
 func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 	pub := public.Group("/invitations")
 	{
@@ -41,6 +42,16 @@ func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 		inv.GET("", h.listPending)
 		inv.DELETE("/:inv_id", h.revoke)
 	}
+	internal.GET("/tenants/:id/members", h.listMembers)
+}
+
+func (h *Handler) listMembers(c *gin.Context) {
+	rows, err := h.svc.ListMembers(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": rows})
 }
 
 type createRequest struct {

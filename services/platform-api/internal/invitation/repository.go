@@ -17,6 +17,7 @@ type Repository interface {
 	GetByTokenHash(ctx context.Context, hash string) (*Invitation, error)
 	GetByID(ctx context.Context, id string) (*Invitation, error)
 	ListPendingByTenant(ctx context.Context, tenantID string) ([]Invitation, error)
+	ListAcceptedByTenant(ctx context.Context, tenantID string) ([]Invitation, error)
 	MarkAccepted(ctx context.Context, id string) error
 	MarkRevoked(ctx context.Context, id string) error
 }
@@ -75,6 +76,18 @@ func (r *gormRepository) ListPendingByTenant(ctx context.Context, tenantID strin
 		Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("invitation: list pending: %w", err)
+	}
+	return rows, nil
+}
+
+func (r *gormRepository) ListAcceptedByTenant(ctx context.Context, tenantID string) ([]Invitation, error) {
+	var rows []Invitation
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND status = ?", tenantID, StatusAccepted).
+		Order("accepted_at DESC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("invitation: list accepted: %w", err)
 	}
 	return rows, nil
 }

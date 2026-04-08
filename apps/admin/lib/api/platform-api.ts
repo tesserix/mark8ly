@@ -344,6 +344,37 @@ export async function listPendingInvitations(
 }
 
 /**
+ * A member on the team listing: the tenant owner plus any teammate
+ * who has already accepted their invite. Source of truth is the
+ * platform-api /internal/tenants/{id}/members endpoint, which joins
+ * the tenants row (owner) with accepted invitations rows.
+ */
+export interface TeamMember {
+  email: string;
+  role: string;
+  kind: "owner" | "invited";
+  accepted_at?: string;
+}
+
+/**
+ * Lists the current team for the tenant — owner row first, then
+ * every accepted invitation. Used by /settings/team.
+ */
+export async function listTeamMembers(
+  tenantId: string,
+): Promise<TeamMember[]> {
+  const res = await fetch(
+    `${PLATFORM_API_URL}/internal/tenants/${tenantId}/members`,
+    { cache: "no-store" },
+  );
+  if (!res.ok) {
+    throw await platformError(res);
+  }
+  const body = (await res.json()) as { data: TeamMember[] };
+  return body.data ?? [];
+}
+
+/**
  * Revokes a pending invitation. Requires the inviting user's uid
  * for the FGA re-check on the server side.
  */

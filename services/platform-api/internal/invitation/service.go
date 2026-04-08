@@ -366,6 +366,53 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 	}, nil
 }
 
+// ListMembers returns the current team for a tenant: the owner
+// (from tenants.owner_email) plus every accepted invitation. Used by
+// the admin Settings → Team page to render the "who's on the team"
+// list. Intentionally uses the invitations table as source of truth
+// rather than enumerating FGA tuples — every membership in the
+// current product flow goes through an invitation, and the email
+// address lives on the invitation row so we don't need an auth-bff
+// round-trip to resolve UIDs.
+type Member struct {
+	Email      string     `json:"email"`
+	Role       string     `json:"role"`
+	Kind       string     `json:"kind"` // "owner" | "invited"
+	AcceptedAt *time.Time `json:"accepted_at,omitempty"`
+}
+
+func (s *Service) ListMembers(ctx context.Context, tenantID string) ([]Member, error) {
+	t, err := s.tenantRepo.GetByID(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := s.repo.ListAcceptedByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Member, 0, 1+len(accepted))
+	out = append(out, Member{
+		Email: t.OwnerEmail,
+		Role:  "owner",
+		Kind:  "owner",
+	})
+	for _, inv := range accepted {
+		// Owner shouldn't normally accept an invitation to their own
+		// tenant, but if an edge-case produced one we de-dupe by
+		// email so we don't list them twice.
+		if strings.EqualFold(inv.Email, t.OwnerEmail) {
+			continue
+		}
+		out = append(out, Member{
+			Email:      inv.Email,
+			Role:       inv.Role,
+			Kind:       "invited",
+			AcceptedAt: inv.AcceptedAt,
+		})
+	}
+	return out, nil
+}
+
 // ListPending returns the tenant's pending invitations for the
 // /settings/team table. Gated on can_view_settings by the handler.
 func (s *Service) ListPending(ctx context.Context, tenantID string) ([]Invitation, error) {

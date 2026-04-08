@@ -2,20 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Input,
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@tesserix/web";
+import { Input } from "@tesserix/web";
+import { Field } from "@repo/ui/field";
 
 import type {
   Invitation,
   InviteRole,
   Store,
+  TeamMember,
 } from "@/lib/api/platform-api";
 import {
   inviteTeammate,
@@ -23,28 +17,30 @@ import {
 } from "@/app/settings/team/actions";
 
 interface TeamSettingsProps {
-  ownerEmail: string;
+  members: TeamMember[];
   invitations: Invitation[];
   canInvite: boolean;
-  // Phase R: every store under the current tenant. Powers the
-  // "Tenant-wide" vs "Specific store" scope picker on the invite
-  // form. When the tenant has a single store the store picker is
-  // hidden — nothing meaningful to choose.
   stores: Store[];
 }
 
 type Scope = "tenant" | "store";
 
 /**
- * Phase P — /settings/team client component.
+ * /settings/team client component — Paper · Ink · Moss.
  *
- * Renders the owner row + pending invitations table. Owners/admins
- * see an invite form inline; other roles see a read-only view.
- * No modal yet — the inline form is small enough that the extra
- * portal complexity isn't worth it for v1.
+ * Three editorial sections separated by hairline rules:
+ *   1. Team (owner + accepted invitations)
+ *   2. Invite form (owner/admin only)
+ *   3. Pending invitations
+ *
+ * The members list fetches from platform-api's
+ * /internal/tenants/{id}/members which joins the tenants row (owner)
+ * with accepted invitations rows. Source of truth for "who is on
+ * this team right now" is the invitation record — every membership
+ * in the current product flow goes through an invitation.
  */
 export function TeamSettings({
-  ownerEmail,
+  members,
   invitations,
   canInvite,
   stores,
@@ -58,10 +54,9 @@ export function TeamSettings({
   const [success, setSuccess] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  // Role options depend on scope. Tenant-wide: admin/staff/viewer
-  // (matches the tenant DSL). Store-scoped: manager/staff/viewer
-  // (matches the store DSL). When the scope flips we reset the
-  // role to the safe "staff" default so we never ship a combo
+  // Role options depend on scope. Tenant-wide: admin/staff/viewer.
+  // Store-scoped: manager/staff/viewer. When the scope flips we reset
+  // the role to the safe "staff" default so we never ship a combo
   // that would fail the backend allowlist.
   const roleOptions: InviteRole[] =
     scope === "tenant"
@@ -116,122 +111,142 @@ export function TeamSettings({
   }
 
   return (
-    <div className="space-y-6">
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(18rem,0.95fr)]">
-        <div className="admin-panel space-y-4 rounded-[1.6rem] p-6">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Owner
-          </h2>
-          <div className="rounded-[1.25rem] border border-border/60 bg-white/60 px-4 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">
-                  {ownerEmail || "Unknown owner"}
-                </p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Founder account. Contact support if ownership needs to move to
-                  a different person.
-                </p>
-              </div>
-              <span className="rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                owner
-              </span>
-            </div>
+    <div className="space-y-16">
+      {/* Members list */}
+      <section>
+        <div className="flex items-baseline justify-between border-b border-border-subtle pb-4">
+          <div>
+            <p className="eyebrow">Team</p>
+            <h2 className="mt-1 font-serif text-2xl font-medium tracking-tight text-foreground">
+              Who&rsquo;s on the team
+            </h2>
           </div>
+          <p className="text-xs text-foreground-tertiary">
+            {members.length} {members.length === 1 ? "person" : "people"}
+          </p>
         </div>
 
-        <div className="admin-panel space-y-4 rounded-[1.6rem] p-6">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Roles
-          </h2>
-          <div className="space-y-3">
-            {roleNotes.map((item) => (
-              <div
-                key={item.role}
-                className="rounded-[1.15rem] border border-border/60 bg-white/56 px-4 py-3"
+        {members.length === 0 ? (
+          <p className="mt-6 text-sm text-foreground-tertiary">
+            Just you so far. Invite a teammate below to start collaborating.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border-subtle">
+            {members.map((m) => (
+              <li
+                key={`${m.kind}-${m.email}`}
+                className="flex items-center justify-between gap-4 py-5"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-foreground">{item.role}</p>
-                  <span className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                    {item.scope}
-                  </span>
+                <div className="min-w-0">
+                  <p className="truncate text-base font-medium text-foreground">
+                    {m.email}
+                  </p>
+                  <p className="mt-1 text-xs text-foreground-tertiary">
+                    {m.kind === "owner"
+                      ? "Founder account — contact support to move ownership"
+                      : m.accepted_at
+                        ? `Joined ${new Date(m.accepted_at).toLocaleDateString()}`
+                        : "Joined via invitation"}
+                  </p>
                 </div>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {item.body}
-                </p>
-              </div>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
+                  {m.role}
+                </span>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        )}
       </section>
 
+      {/* Invite form */}
       {canInvite && (
-        <section className="admin-panel space-y-4 rounded-[1.6rem] p-6">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Invite teammate
-          </h2>
-          <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            Send an invitation by email and choose how much access the teammate
-            should have once they join the store.
-          </p>
+        <section className="border-t border-border-subtle pt-10">
+          <div className="pb-6">
+            <p className="eyebrow">Invite</p>
+            <h2 className="mt-1 font-serif text-2xl font-medium tracking-tight text-foreground">
+              Add a teammate
+            </h2>
+            <p className="mt-2 max-w-xl text-sm leading-7 text-foreground-secondary">
+              Send an invitation by email and choose how much access the
+              teammate should have once they join.
+            </p>
+          </div>
+
           {stores.length > 1 && (
             <div
               data-testid="invite-scope"
-              className="flex w-fit items-center gap-2 rounded-xl border border-border/70 bg-white/60 p-1"
+              role="tablist"
+              aria-label="Invite scope"
+              className="mb-6 grid w-fit grid-cols-2 border border-border"
             >
-              <button
-                type="button"
-                onClick={() => handleScopeChange("tenant")}
-                disabled={pending}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                  scope === "tenant"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Tenant-wide
-              </button>
-              <button
-                type="button"
-                onClick={() => handleScopeChange("store")}
-                disabled={pending}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                  scope === "store"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Specific store
-              </button>
+              {([
+                { value: "tenant", label: "Tenant-wide" },
+                { value: "store", label: "Specific store" },
+              ] as const).map((opt) => {
+                const selected = scope === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => handleScopeChange(opt.value)}
+                    disabled={pending}
+                    className={`h-11 px-5 text-sm font-medium transition-colors ${
+                      selected
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background-elevated text-foreground-secondary hover:text-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
             </div>
           )}
-          <form
-            onSubmit={handleInvite}
-            className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-end"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="invite-email">Email</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="teammate@example.com"
-                disabled={pending}
-                required
-                className="bg-white/82"
-              />
+
+          <form onSubmit={handleInvite} className="space-y-5" noValidate>
+            <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_12rem]">
+              <Field id="invite-email" label="Email">
+                <Input
+                  id="invite-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="teammate@example.com"
+                  disabled={pending}
+                  required
+                  autoComplete="email"
+                  spellCheck={false}
+                />
+              </Field>
+
+              <Field id="invite-role" label="Role">
+                <select
+                  id="invite-role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as InviteRole)}
+                  disabled={pending}
+                  className="h-11 w-full rounded-md border border-border bg-background-elevated px-3 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
+                >
+                  {roleOptions.map((r) => (
+                    <option key={r} value={r}>
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
             </div>
+
             {scope === "store" && (
-              <div className="space-y-2 sm:col-span-3">
-                <Label htmlFor="invite-store">Store</Label>
+              <Field id="invite-store" label="Store">
                 <select
                   id="invite-store"
                   value={storeId}
                   onChange={(e) => setStoreId(e.target.value)}
                   disabled={pending}
                   data-testid="invite-store-select"
-                  className="h-10 w-full rounded-xl border border-border bg-white/82 px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="h-11 w-full rounded-md border border-border bg-background-elevated px-3 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                 >
                   {stores.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -239,93 +254,76 @@ export function TeamSettings({
                     </option>
                   ))}
                 </select>
-              </div>
+              </Field>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="invite-role">Role</Label>
-              <Select
-                value={role}
-                onValueChange={(value) => setRole(value as InviteRole)}
+
+            {error && (
+              <p role="alert" className="text-sm text-danger">
+                {error}
+              </p>
+            )}
+            {success && (
+              <p role="status" className="text-sm text-moss-700">
+                {success}
+              </p>
+            )}
+
+            <div>
+              <button
+                type="submit"
                 disabled={pending}
+                className="inline-flex h-12 items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
               >
-                <SelectTrigger
-                  id="invite-role"
-                  className="h-10 rounded-xl border-border bg-white/82 text-sm shadow-sm"
-                >
-                  <SelectValue placeholder="Choose a role" />
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl border-border/80 bg-[rgba(255,252,248,0.98)] shadow-[0_24px_60px_rgba(76,52,24,0.14)]">
-                  {roleOptions.map((r) => (
-                    <SelectItem
-                      key={r}
-                      value={r}
-                      className="rounded-xl focus:bg-primary focus:text-primary-foreground"
-                    >
-                      {r.charAt(0).toUpperCase() + r.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {pending ? "Sending…" : "Send invitation"}
+              </button>
             </div>
-            <button
-              type="submit"
-              disabled={pending}
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-primary px-5 text-sm font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition-[transform,box-shadow,opacity] hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {pending ? "Sending..." : "Send invite"}
-            </button>
           </form>
-          {error && (
-            <div
-              role="alert"
-              className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-            >
-              {error}
-            </div>
-          )}
-          {success && (
-            <div
-              role="status"
-              className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
-            >
-              {success}
-            </div>
-          )}
         </section>
       )}
 
-      <section className="admin-panel space-y-4 rounded-[1.6rem] p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Pending invitations
-        </h2>
-        {invitations.length === 0 ? (
-          <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/45 px-4 py-5 text-sm text-muted-foreground">
-            No pending invitations right now.
+      {/* Pending invitations */}
+      <section className="border-t border-border-subtle pt-10">
+        <div className="flex items-baseline justify-between border-b border-border-subtle pb-4">
+          <div>
+            <p className="eyebrow">Pending</p>
+            <h2 className="mt-1 font-serif text-2xl font-medium tracking-tight text-foreground">
+              Awaiting acceptance
+            </h2>
           </div>
+          <p className="text-xs text-foreground-tertiary">
+            {invitations.length}{" "}
+            {invitations.length === 1 ? "invitation" : "invitations"}
+          </p>
+        </div>
+
+        {invitations.length === 0 ? (
+          <p className="mt-6 text-sm text-foreground-tertiary">
+            No pending invitations right now.
+          </p>
         ) : (
-          <ul className="divide-y divide-border/60">
+          <ul className="divide-y divide-border-subtle">
             {invitations.map((inv) => (
               <li
                 key={inv.id}
-                className="flex items-center justify-between gap-4 py-4"
+                className="flex items-center justify-between gap-4 py-5"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">
+                  <p className="truncate text-base font-medium text-foreground">
                     {inv.email}
                   </p>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span className="rounded-full border border-border/70 bg-white/72 px-2 py-0.5 uppercase tracking-[0.14em]">
+                  <p className="mt-1 text-xs text-foreground-tertiary">
+                    Invited {new Date(inv.created_at).toLocaleDateString()} ·{" "}
+                    <span className="uppercase tracking-[0.14em]">
                       {inv.role}
                     </span>
-                    <span>Invited {new Date(inv.created_at).toLocaleDateString()}</span>
-                  </div>
+                  </p>
                 </div>
                 {canInvite && (
                   <button
                     type="button"
                     onClick={() => handleRevoke(inv.id)}
                     disabled={pending}
-                    className="rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-[border-color,color,background-color] hover:border-destructive hover:bg-destructive/5 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-10 items-center rounded-md border border-border px-4 text-sm font-medium text-foreground-secondary hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Revoke
                   </button>
@@ -338,21 +336,3 @@ export function TeamSettings({
     </div>
   );
 }
-
-const roleNotes = [
-  {
-    role: "Admin",
-    scope: "Broad access",
-    body: "Can manage settings, invite teammates, and help run the store alongside the owner.",
-  },
-  {
-    role: "Staff",
-    scope: "Operational",
-    body: "Best for day-to-day catalog and order work without giving full control over the workspace.",
-  },
-  {
-    role: "Viewer",
-    scope: "Read only",
-    body: "Can look around the store workspace without making changes.",
-  },
-];

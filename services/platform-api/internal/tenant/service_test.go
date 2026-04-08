@@ -56,6 +56,17 @@ func (f *fakeRepo) GetBySlug(ctx context.Context, slug string) (*Tenant, error) 
 	return t, nil
 }
 
+func (f *fakeRepo) GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, t := range f.byID {
+		if t.OwnerUserID == uid {
+			return t, nil
+		}
+	}
+	return nil, apperrors.NotFound("tenant_not_found", "no")
+}
+
 func (f *fakeRepo) SlugExists(ctx context.Context, slug string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -138,6 +149,38 @@ func TestService_GetByID_RejectsEmpty(t *testing.T) {
 func TestService_GetByID_PropagatesNotFound(t *testing.T) {
 	svc := NewService(newFakeRepo())
 	_, err := svc.GetByID(context.Background(), "nonexistent")
+	ae, ok := apperrors.As(err)
+	if !ok || ae.Code != "tenant_not_found" {
+		t.Errorf("expected tenant_not_found, got %v", err)
+	}
+}
+
+func TestService_GetByOwnerUserID_RejectsEmpty(t *testing.T) {
+	svc := NewService(newFakeRepo())
+	_, err := svc.GetByOwnerUserID(context.Background(), "  ")
+	ae, ok := apperrors.As(err)
+	if !ok || ae.Code != "invalid_uid" {
+		t.Errorf("expected invalid_uid, got %v", err)
+	}
+}
+
+func TestService_GetByOwnerUserID_FindsSeededTenant(t *testing.T) {
+	repo := newFakeRepo()
+	repo.seed(&Tenant{Slug: "acme", OwnerUserID: "uid-42"})
+	svc := NewService(repo)
+
+	got, err := svc.GetByOwnerUserID(context.Background(), "uid-42")
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if got.Slug != "acme" {
+		t.Errorf("Slug = %q, want acme", got.Slug)
+	}
+}
+
+func TestService_GetByOwnerUserID_NotFound(t *testing.T) {
+	svc := NewService(newFakeRepo())
+	_, err := svc.GetByOwnerUserID(context.Background(), "nobody")
 	ae, ok := apperrors.As(err)
 	if !ok || ae.Code != "tenant_not_found" {
 		t.Errorf("expected tenant_not_found, got %v", err)

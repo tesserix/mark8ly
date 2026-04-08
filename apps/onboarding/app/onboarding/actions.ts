@@ -307,6 +307,165 @@ export async function verifyAndLoginByToken(
   }
 }
 
+// ─── signIn: returning-user sign-in ────────────────────────────────────
+//
+// The /login page collects email + password (or runs the Google popup)
+// client-side, exchanges credentials with GIP, and hands the resulting
+// id_token + uid to this action. We then:
+//
+//   1. Look up the user's workspace_tenant via platform-api
+//      `/tenants/by-owner?uid=...` (added in Phase M).
+//   2. Call auth-bff /auth/auto-login with that workspace_tenant. This
+//      reuses the exact same retry-on-FGA-miss path onboarding uses.
+//   3. Forward the session cookie back to the browser response.
+//
+// Returns the tenant slug so the caller can redirect into the right
+// admin URL.
+interface SignInInput {
+  idToken: string;
+  uid: string;
+}
+
+export async function signIn(
+  input: SignInInput,
+): Promise<Result<{ tenantId: string; slug: string }>> {
+  try {
+    const t = await tenants.getByOwner(input.uid);
+
+    const result = await bffAutoLogin({
+      idToken: input.idToken,
+      expectedTenantId: publicConfig.gipTenantId,
+      workspaceTenant: t.id,
+    });
+
+    if (result.setCookie) {
+      const parsed = parseSetCookie(result.setCookie);
+      if (parsed) {
+        const c = await cookies();
+        c.set({
+          name: parsed.name,
+          value: parsed.value,
+          path: parsed.path ?? "/",
+          domain: parsed.domain,
+          httpOnly: parsed.httpOnly,
+          secure: parsed.secure,
+          sameSite: "lax",
+          maxAge: parsed.maxAge,
+        });
+      }
+    }
+
+    return { ok: true, data: { tenantId: t.id, slug: t.slug } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ─── submitOnboardingWithGoogle: Google signup → no magic link ─────────
+//
+// "Continue with Google" path. The client has already exchanged a Google
+// credential for a fresh GIP id_token via signInWithGoogle (which round-
+// trips through Identity Toolkit's signInWithIdp). We:
+//
+//   1. Create the onboarding session for the verified email.
+//   2. Save the draft so it survives any retries.
+//   3. Call /sessions/:id/verify-google with the id_token. platform-api
+//      validates the token via Identity Toolkit accounts:lookup and marks
+//      the session verified — bypassing the magic-link round-trip.
+//   4. Complete the session (creates tenant + outbox FGA writes).
+//   5. auto-login → forward cookie. Same as the magic-link path from here.
+interface GoogleSubmitInput {
+  email: string;
+  businessName: string;
+  slug: string;
+  countryCode: string;
+  currencyCode: string;
+  timezone: string;
+  gipUid: string;
+  gipIdToken: string;
+  gipRefreshToken: string;
+}
+
+export async function submitOnboardingWithGoogle(
+  input: GoogleSubmitInput,
+): Promise<Result<{ tenantId: string; slug: string }>> {
+  try {
+    const sess = await onboarding.createSession(input.email);
+
+    await onboarding.saveDraft(sess.id, {
+      business_name: input.businessName,
+      slug: input.slug,
+      country_code: input.countryCode,
+      currency_code: input.currencyCode,
+      timezone: input.timezone,
+      gip_uid: input.gipUid,
+      gip_refresh_token: input.gipRefreshToken,
+    });
+
+    // Bypass the magic link by validating the id_token server-side.
+    const verifyRes = await fetch(
+      `${config.platformApiUrl}/api/v1/onboarding/sessions/${sess.id}/verify-google`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_token: input.gipIdToken }),
+        cache: "no-store",
+      },
+    );
+    if (!verifyRes.ok) {
+      const body = (await verifyRes.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+      };
+      return {
+        ok: false,
+        code: body.error ?? "verify_google_failed",
+        message: body.message ?? "Could not verify Google sign-in",
+      };
+    }
+
+    const completion = await onboarding.complete(sess.id, {
+      business_name: input.businessName,
+      slug: input.slug,
+      owner_user_id: input.gipUid,
+      owner_email: input.email,
+      country_code: input.countryCode,
+      currency_code: input.currencyCode,
+      timezone: input.timezone,
+    });
+
+    const result = await bffAutoLogin({
+      idToken: input.gipIdToken,
+      expectedTenantId: publicConfig.gipTenantId,
+      workspaceTenant: completion.tenant_id,
+    });
+
+    if (result.setCookie) {
+      const parsed = parseSetCookie(result.setCookie);
+      if (parsed) {
+        const c = await cookies();
+        c.set({
+          name: parsed.name,
+          value: parsed.value,
+          path: parsed.path ?? "/",
+          domain: parsed.domain,
+          httpOnly: parsed.httpOnly,
+          secure: parsed.secure,
+          sameSite: "lax",
+          maxAge: parsed.maxAge,
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      data: { tenantId: completion.tenant_id, slug: completion.slug },
+    };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 // parseSetCookie pulls the bits next/headers cookies().set() needs out of
 // a Set-Cookie header. Minimal parser — only the attributes auth-bff emits.
 function parseSetCookie(raw: string): {

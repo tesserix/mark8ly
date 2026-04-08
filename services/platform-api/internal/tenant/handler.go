@@ -26,6 +26,9 @@ func NewHandler(svc *Service) *Handler {
 //
 // Public routes:
 //   - GET /slug-available?slug=...  used by onboarding wizard
+//   - GET /tenants/by-owner?uid=... used by the returning-user sign-in
+//                                   server action to map a GIP UID to its
+//                                   workspace_tenant before calling auth-bff
 //
 // Internal routes (callable by other services / auth-bff):
 //   - GET /internal/tenants/:id     used by auth-bff to look up a tenant
@@ -34,6 +37,7 @@ func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 	t := public.Group("/tenants")
 	{
 		t.GET("/slug-available", h.checkSlugAvailable)
+		t.GET("/by-owner", h.getTenantByOwner)
 	}
 
 	int := internal.Group("/tenants")
@@ -55,6 +59,23 @@ func (h *Handler) checkSlugAvailable(c *gin.Context) {
 			"available": available,
 		},
 	})
+}
+
+// getTenantByOwner serves GET /tenants/by-owner?uid=...
+//
+// Looks up the workspace tenant owned by the given GIP UID. Used by the
+// onboarding app's sign-in server action to bridge a freshly minted GIP
+// id_token to a concrete workspace_tenant before calling auth-bff
+// /auth/auto-login. Returns 404 if the UID doesn't own a tenant — the
+// caller surfaces this as "no store found for this account".
+func (h *Handler) getTenantByOwner(c *gin.Context) {
+	uid := c.Query("uid")
+	t, err := h.svc.GetByOwnerUserID(c.Request.Context(), uid)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": t})
 }
 
 func (h *Handler) getTenant(c *gin.Context) {

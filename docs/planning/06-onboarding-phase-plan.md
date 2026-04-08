@@ -377,18 +377,65 @@ Welcome page gains an "Open admin dashboard →" CTA. New Playwright
 test opens the magic link in a fresh browser context (no shared
 storage) — proves cross-device works.
 
-### Phase M — Returning-user sign-in *(planned)*
+### Phase M — Returning-user sign-in + Google sign-up *(shipped)*
 
-Closes the loop for users who already have a tenant. (1) Add a
-password field to the onboarding form so the merchant has a credential
-on file. (2) Switch the client signUp call from email-only to
-`createUserWithEmailAndPassword`. (3) Replace the marketing /login
-stub with a real form: email + password fields and a "Continue with
-Google" button. (4) Both paths produce a GIP id_token and POST it to
-auth-bff `/auth/auto-login` — same endpoint onboarding uses, zero
-new backend code. (5) Successful sign-in sets the session cookie and
-redirects to admin. New e2e: existing user signs in via password →
-admin dashboard renders. ~3–5 hours, frontend only.
+Closes the loop for users who already have a tenant AND adds a
+password-free signup path via Google.
+
+What landed:
+
+1. **Password on signup.** OnboardingForm now has a real password
+   field (min 8 chars) wired through `signUp(email, password)` so the
+   merchant has a credential on file for next time. The throwaway
+   randomPassword path is gone.
+2. **Login page.** `/login` is now a real client form: email +
+   password + a "Continue with Google" button. The page replaces the
+   Phase J stub.
+3. **`signIn` server action.** Takes `{idToken, uid}` from the client,
+   looks up the workspace tenant by GIP UID via the new platform-api
+   endpoint `GET /api/v1/tenants/by-owner?uid=...`, then calls
+   auth-bff `/auth/auto-login` (reusing its retry-on-FGA-miss). The
+   plan called for "zero new backend code" but that's not actually
+   possible — `/auth/auto-login` requires `workspace_tenant`, and a
+   returning user doesn't know it. The lookup endpoint is a ~30-line
+   addition on top of the existing `tenants.owner_user_id` index.
+4. **Continue with Google on `/login`.** Uses Google Identity Services
+   (gsi/client) for the popup → Google credential is exchanged via
+   Identity Toolkit `accounts:signInWithIdp` for a GIP id_token in our
+   tenant pool → same `signIn` server action takes it from there. No
+   firebase JS SDK dependency added.
+5. **Continue with Google on signup.** Same gsi/client popup, but this
+   path needed real backend work because the existing `Complete()`
+   path hard-fails when `email_verified_at` is null on the session,
+   and a Google user shouldn't have to wait on a magic link. New
+   server-side endpoint `POST /api/v1/onboarding/sessions/:id/verify-google`
+   takes a GIP id_token, validates it via Identity Toolkit
+   `accounts:lookup`, and marks the session verified iff the email
+   matches and `email_verified=true`. Defense-in-depth tenant check on
+   top in case the API key is shared across tenant pools. New server
+   action `submitOnboardingWithGoogle` runs the createSession →
+   saveDraft → verify-google → complete → autoLogin pipeline in one
+   shot, no inbox round-trip.
+
+New backend surface:
+
+- `tenant.GetByOwnerUserID` repo + service + handler + tests
+- `onboarding.GoogleVerifier` (Identity Toolkit `accounts:lookup`
+  client)
+- `onboarding.VerifyGoogleAndMark` service method + handler
+
+New env vars:
+
+- platform-api: `GIP_API_KEY`, `GIP_TENANT_ID` (optional — if unset,
+  the verify-google path returns `google_verify_disabled` and the
+  Google-on-signup button surfaces an error; password signup still
+  works)
+- onboarding app: `NEXT_PUBLIC_GOOGLE_CLIENT_ID` for the GSI client
+
+Original budget was "3–5 hours frontend only". Real cost was closer
+to a full day because the Google-on-signup ask added ~80 lines of Go
+plus a new server action. Worth it: the merchant can now sign up in
+one click without ever seeing a magic-link email.
 
 ### Phases N+ — TBD
 

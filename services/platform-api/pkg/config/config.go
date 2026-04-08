@@ -22,6 +22,12 @@ type Config struct {
 
 	// Storage (inlined GCS for now)
 	GCSBucket string `envconfig:"GCS_BUCKET"`
+
+	// GIP — used by the onboarding "verify-google" path to validate a
+	// Google-issued GIP id_token via Identity Toolkit accounts:lookup
+	// before bypassing the magic-link verification step.
+	GIPAPIKey   string `envconfig:"GIP_API_KEY"`
+	GIPTenantID string `envconfig:"GIP_TENANT_ID"`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

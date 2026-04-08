@@ -24,6 +24,12 @@ type Repository interface {
 	GetBySlug(ctx context.Context, slug string) (*Tenant, error)
 	// SlugExists checks slug uniqueness without loading the row.
 	SlugExists(ctx context.Context, slug string) (bool, error)
+	// GetByOwnerUserID returns the tenant whose owner is the given GIP UID.
+	// Used by returning-user sign-in to map an authenticated GIP identity
+	// back to its Mark8ly tenant before calling auth-bff /auth/auto-login
+	// (which requires workspace_tenant). v1 assumption: a UID owns at most
+	// one tenant.
+	GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, error)
 }
 
 // gormRepository is the GORM-backed implementation.
@@ -68,6 +74,18 @@ func (r *gormRepository) GetBySlug(ctx context.Context, slug string) (*Tenant, e
 	}
 	if err != nil {
 		return nil, fmt.Errorf("tenant: get by slug %q: %w", slug, err)
+	}
+	return &t, nil
+}
+
+func (r *gormRepository) GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, error) {
+	var t Tenant
+	err := r.db.WithContext(ctx).Where("owner_user_id = ?", uid).First(&t).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, apperrors.NotFound("tenant_not_found", fmt.Sprintf("no tenant owned by uid %q", uid))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("tenant: get by owner uid %q: %w", uid, err)
 	}
 	return &t, nil
 }

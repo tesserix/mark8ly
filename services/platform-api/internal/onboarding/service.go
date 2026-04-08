@@ -36,6 +36,7 @@ type Service struct {
 	sender      notification.Sender
 	emailFrom   string
 	supportSite string
+	googleVerif *GoogleVerifier
 }
 
 // Config holds Service dependencies.
@@ -50,6 +51,9 @@ type Config struct {
 	AdminURLTemplate     string
 	StorefrontURLTemplate string
 	SupportEmail         string
+	// GoogleVerifier optionally enables the "verify-google" path that
+	// bypasses the magic-link step for Google sign-up. nil = feature off.
+	GoogleVerifier *GoogleVerifier
 }
 
 // NewService constructs a Service.
@@ -61,7 +65,43 @@ func NewService(cfg Config) *Service {
 		sender:      cfg.Sender,
 		emailFrom:   cfg.EmailFrom,
 		supportSite: cfg.SupportEmail,
+		googleVerif: cfg.GoogleVerifier,
 	}
+}
+
+// VerifyGoogleAndMark validates a GIP id_token via Identity Toolkit and,
+// if it resolves to the same email as the session and `email_verified=true`,
+// marks the session verified. This is the magic-link bypass for the
+// "Continue with Google" sign-up path.
+//
+// Returns 503 if Identity Toolkit is unreachable, 401 if the token is bad,
+// 400 if the email doesn't match the session's email, 404 if the session
+// doesn't exist.
+func (s *Service) VerifyGoogleAndMark(ctx context.Context, sessionID, idToken string) (*Session, error) {
+	if s.googleVerif == nil {
+		return nil, apperrors.BadRequest("google_verify_disabled", "google sign-up is not enabled on this server")
+	}
+	sess, err := s.repo.GetByID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := s.googleVerif.Verify(ctx, idToken)
+	if err != nil {
+		return nil, err
+	}
+	if !user.EmailVerified {
+		return nil, apperrors.BadRequest("email_not_verified", "google account email is not verified")
+	}
+	if !strings.EqualFold(user.Email, sess.Email) {
+		return nil, apperrors.BadRequest("email_mismatch", "id_token email does not match session email")
+	}
+
+	if err := s.repo.MarkEmailVerified(ctx, sessionID); err != nil {
+		return nil, err
+	}
+	// Re-read so the response reflects the new verified_at timestamp.
+	return s.repo.GetByID(ctx, sessionID)
 }
 
 // CreateRequest is the input to Create.

@@ -24,4 +24,7 @@ export const publicConfig = {
   gipTenantId: process.env.NEXT_PUBLIC_GIP_TENANT_ID ?? "",
   /** GIP Web API key. Public by design. */
   gipApiKey: process.env.NEXT_PUBLIC_GIP_API_KEY ?? "",
+  /** Google OAuth client ID, used by the GSI library on the /login page
+   *  to drive the "Continue with Google" button. Public by design. */
+  googleClientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
 } as const;

@@ -1,22 +1,22 @@
-import { StubPage } from "@/components/marketing/StubPage";
+import { SignInForm } from "@/components/auth/SignInForm";
 
 export const metadata = { title: "Sign in — Mark8ly" };
 
 /**
- * Marketing /login — landing page the admin middleware bounces to
- * when the session cookie is missing or invalid. Phase J stub: tells
- * the visitor how to get back in (start a new store, or wait for the
- * passwordless sign-in flow we haven't built yet).
+ * /login — returning-user sign-in. Two paths to a session:
  *
- * A real "enter your email, we'll send a magic link" sign-in form
- * lands in a later slice. For now this page's job is just to exist
- * so admin redirects land somewhere real instead of 404-ing.
+ *   1. Email + password — uses Identity Toolkit signInWithPassword and the
+ *      `signIn` server action which looks up the workspace tenant by GIP
+ *      UID and calls auth-bff /auth/auto-login.
+ *   2. Continue with Google — Google Identity Services popup, exchanged
+ *      via Identity Toolkit signInWithIdp, then the same server action.
+ *
+ * Phase M.
  */
 export default function LoginPage() {
   return (
-    <StubPage
-      title="Sign in"
-      description="Passwordless sign-in for existing stores is on the way. In the meantime, start a new store from the home page and we'll email you a link."
-    />
+    <main className="min-h-screen bg-gradient-to-br from-warm-50 via-white to-warm-100 px-4 py-16">
+      <SignInForm />
+    </main>
   );
 }

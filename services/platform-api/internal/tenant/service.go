@@ -31,6 +31,20 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Tenant, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
+// GetByOwnerUserID returns the tenant owned by the given GIP UID.
+//
+// Used by the returning-user sign-in flow: after Identity Toolkit hands
+// us a fresh id_token, the server action looks up which Mark8ly tenant
+// the UID owns so it can call auth-bff /auth/auto-login with a concrete
+// workspace_tenant.
+func (s *Service) GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, error) {
+	uid = strings.TrimSpace(uid)
+	if uid == "" {
+		return nil, apperrors.BadRequest("invalid_uid", "uid is required")
+	}
+	return s.repo.GetByOwnerUserID(ctx, uid)
+}
+
 // GetBySlug returns a tenant by its public slug.
 //
 // We TRIM whitespace but do NOT lowercase. The slug is the canonical

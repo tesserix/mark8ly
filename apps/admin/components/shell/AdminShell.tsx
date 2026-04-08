@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Bell,
+  ChevronLeft,
   ChevronRight,
   Package,
   ShoppingCart,
@@ -35,6 +36,13 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  useSidebar,
 } from "@tesserix/web";
 
 import { UserMenu } from "./UserMenu";
@@ -43,9 +51,9 @@ import { UserMenu } from "./UserMenu";
  * AdminShell wraps every authenticated admin page with the sidebar +
  * topbar chrome. The structure is ported from
  * mark8ly_backup/apps/admin/app/(tenant)/layout.tsx — same section
- * groupings, same icons, same collapsible sub-nav. Role filtering and
- * the tenant switcher are out of scope for Phase K and will land
- * alongside the real RBAC work.
+ * groupings and same icons, with the multi-store switcher promoted
+ * into the shell so changing tenants feels like a core workspace
+ * action instead of a detour.
  *
  * Navigation items whose destinations don't exist yet (catalog,
  * orders, customers, marketing children) render as collapsed groups
@@ -53,7 +61,8 @@ import { UserMenu } from "./UserMenu";
  * /settings stub routes. Everything under the shell is an
  * authenticated route; middleware has already gated the request.
  */
-import type { TenantRole } from "@/lib/api/platform-api";
+import type { Membership, TenantRole } from "@/lib/api/platform-api";
+import { TenantSwitcher } from "./TenantSwitcher";
 
 interface AdminShellProps {
   children: ReactNode;
@@ -61,9 +70,13 @@ interface AdminShellProps {
   userEmail?: string;
   // Phase O: forwarded so the shell can surface a role badge in the
   // top bar and (in the future) filter sub-nav items by permission.
-  // Phase O ships with all four roles able to see all nav items;
-  // role-gated sub-nav lands with invite-teammate.
   role?: TenantRole;
+  // Phase P: every tenant the signed-in user belongs to. When the
+  // list has more than one entry the sidebar renders a switcher so
+  // users can move between stores without leaving admin. Pre-fetched
+  // via getServerSessionContext() on every page that uses the shell.
+  memberships?: Membership[];
+  currentTenantId?: string;
 }
 
 interface NavLeaf {
@@ -136,7 +149,8 @@ const navigation: NavSection[] = [
     label: "Settings",
     icon: Settings,
     children: [
-      { label: "Store Settings", href: "/settings" },
+      { label: "Store Settings", href: "/settings/general" },
+      { label: "Team", href: "/settings/team" },
       { label: "Shipping", href: "/settings" },
       { label: "Payments", href: "/settings" },
       { label: "Legal", href: "/settings" },
@@ -155,14 +169,40 @@ export function AdminShell({
   tenantName,
   userEmail,
   role,
+  memberships,
+  currentTenantId,
+}: AdminShellProps) {
+  return (
+    <SidebarProvider>
+      <AdminShellFrame
+        children={children}
+        tenantName={tenantName}
+        userEmail={userEmail}
+        role={role}
+        memberships={memberships}
+        currentTenantId={currentTenantId}
+      />
+    </SidebarProvider>
+  );
+}
+
+function AdminShellFrame({
+  children,
+  tenantName,
+  userEmail,
+  role,
+  memberships,
+  currentTenantId,
 }: AdminShellProps) {
   const pathname = usePathname();
+  const { state, toggleSidebar } = useSidebar();
   const storeLabel = tenantName ?? "mark8ly";
   const pageTitle = getPageTitle(pathname);
   const activeSectionKey = getActiveSectionKey(pathname);
   const [openSectionKey, setOpenSectionKey] = useState<string | null>(
     activeSectionKey,
   );
+  const isCollapsed = state === "collapsed";
 
   useEffect(() => {
     if (activeSectionKey) {
@@ -171,21 +211,21 @@ export function AdminShell({
   }, [activeSectionKey]);
 
   return (
-    <SidebarProvider>
+    <>
       <Sidebar
         collapsible="icon"
         className="border-r border-sidebar-border/70 bg-[linear-gradient(180deg,rgba(34,28,23,0.985),rgba(27,22,19,0.97))] text-sidebar-foreground"
       >
-        <SidebarHeader className="border-b border-sidebar-border/70 px-4 py-4">
+        <SidebarHeader className="border-b border-sidebar-border/70 px-4 py-4 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-3">
           <Link
             href="/dashboard"
-            className="flex items-center gap-3 rounded-[1.35rem] px-2 py-2 transition-opacity hover:opacity-90"
+            className="flex items-center gap-3 rounded-[1.35rem] px-2 py-2 transition-opacity hover:opacity-90 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/icon-192.png"
               alt="mark8ly"
-              className="h-10 w-10 shrink-0 rounded-[1.15rem] border border-white/10 shadow-[0_14px_34px_rgba(0,0,0,0.28)]"
+              className="h-10 w-10 shrink-0 rounded-[1.15rem] border border-white/10 shadow-[0_14px_34px_rgba(0,0,0,0.28)] group-data-[collapsible=icon]:h-9 group-data-[collapsible=icon]:w-9"
             />
             <div className="min-w-0 group-data-[collapsible=icon]:hidden">
               <p className="truncate font-serif text-xl font-medium tracking-tight text-sidebar-foreground">
@@ -196,10 +236,19 @@ export function AdminShell({
               </p>
             </div>
           </Link>
+          {memberships && memberships.length > 1 && currentTenantId && (
+            <div className="mt-4 px-2 group-data-[collapsible=icon]:hidden">
+              <TenantSwitcher
+                memberships={memberships}
+                currentTenantId={currentTenantId}
+                label="Switch store"
+              />
+            </div>
+          )}
         </SidebarHeader>
 
         <SidebarContent className="sidebar-scrollbar">
-          <SidebarGroup className="px-2">
+          <SidebarGroup className="px-2 group-data-[collapsible=icon]:px-1.5">
             <div className="px-4 pb-3 pt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-text-muted group-data-[collapsible=icon]:hidden">
               Navigation
             </div>
@@ -219,7 +268,7 @@ export function AdminShell({
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="border-t border-sidebar-border/70 p-3">
+        <SidebarFooter className="border-t border-sidebar-border/70 p-3 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-3">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton asChild tooltip="Sign out">
@@ -236,11 +285,23 @@ export function AdminShell({
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset>
+      <SidebarInset className="relative">
         <header className="sticky top-0 z-30 border-b admin-soft-rule bg-[rgba(248,243,236,0.72)] backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="absolute left-0 top-1/2 z-40 hidden h-12 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[rgba(221,206,188,0.95)] bg-[rgba(251,246,238,0.98)] text-[var(--app-brown)] shadow-[0_10px_24px_rgba(76,52,24,0.12)] transition-[transform,box-shadow,background-color,color] hover:-translate-x-[52%] hover:-translate-y-1/2 hover:bg-[rgba(255,250,244,1)] hover:shadow-[0_14px_30px_rgba(76,52,24,0.16)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(138,100,64,0.18)] md:inline-flex"
+          >
+            {isCollapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </button>
           <div className="flex h-[4.5rem] items-center justify-between px-5 py-4 sm:px-7">
             <div className="flex items-center gap-3">
-              <SidebarTrigger className="-ml-1" />
+              <SidebarTrigger className="-ml-1 md:hidden" />
               <div className="hidden sm:block">
                 <p className="admin-eyebrow">{pageTitle.eyebrow}</p>
                 <div className="mt-1 flex items-center gap-2">
@@ -277,7 +338,7 @@ export function AdminShell({
 
         <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">{children}</main>
       </SidebarInset>
-    </SidebarProvider>
+    </>
   );
 }
 
@@ -299,7 +360,9 @@ function NavSectionItem({
   onToggleSection: (key: string | null) => void;
 }) {
   const pathname = usePathname();
+  const { state } = useSidebar();
   const Icon = section.icon;
+  const isCollapsed = state === "collapsed";
 
   // Simple link item.
   if (section.href) {
@@ -319,6 +382,54 @@ function NavSectionItem({
   // Collapsible group.
   const hasActiveChild = activeSectionKey === section.key;
   const isOpen = openSectionKey === section.key;
+
+  if (isCollapsed) {
+    return (
+      <DropdownMenu modal={false}>
+        <SidebarMenuItem>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuButton tooltip={section.label} isActive={hasActiveChild}>
+              <Icon className="h-4 w-4" />
+              <span>{section.label}</span>
+            </SidebarMenuButton>
+          </DropdownMenuTrigger>
+        </SidebarMenuItem>
+        <DropdownMenuContent
+          side="right"
+          align="start"
+          sideOffset={12}
+          className="min-w-[15rem] rounded-[1.25rem] border-border/80 bg-[rgba(255,252,248,0.98)] p-1.5 shadow-[0_24px_60px_rgba(76,52,24,0.14)]"
+        >
+          <DropdownMenuLabel className="px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-[var(--app-brown)]">
+            {section.label}
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator className="mx-1 mb-1 bg-border/70" />
+          {section.children?.map((child) => {
+            const active = isChildActive(
+              pathname,
+              section.key,
+              section.children ?? [],
+              child,
+            );
+
+            return (
+              <DropdownMenuItem
+                key={`${section.key}-${child.label}`}
+                asChild
+                className={
+                  active
+                    ? "rounded-xl bg-primary text-primary-foreground focus:bg-primary focus:text-primary-foreground"
+                    : "rounded-xl text-foreground focus:bg-[rgba(138,100,64,0.12)] focus:text-foreground"
+                }
+              >
+                <Link href={child.href}>{child.label}</Link>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
 
   return (
     <Collapsible

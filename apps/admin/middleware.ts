@@ -29,7 +29,14 @@ const PLATFORM_API_URL =
 
 // Routes that should never be gated — login redirect targets, static
 // assets, and anything that must render without a session.
-const PUBLIC_PREFIXES = ["/login", "/logout", "/_next", "/favicon", "/icon-"];
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/logout",
+  "/accept-invite", // Phase P: invitees must land here without a session
+  "/_next",
+  "/favicon",
+  "/icon-",
+];
 
 interface SessionResponse {
   data: {

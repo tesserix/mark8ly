@@ -35,4 +35,5 @@ type tenant
     define member: owner or admin or staff or viewer
 
     define can_view_settings: owner or admin or staff or viewer
-    define can_edit_settings: owner or admin
+    define can_edit_settings:  owner or admin
+    define can_invite_members: owner or admin

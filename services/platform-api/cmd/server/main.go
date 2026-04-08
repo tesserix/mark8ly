@@ -11,12 +11,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	platformapi "github.com/mark8ly/platform-api"
 	"github.com/mark8ly/platform-api/internal/authz"
+	"github.com/mark8ly/platform-api/internal/invitation"
 	"github.com/mark8ly/platform-api/internal/location"
 	"github.com/mark8ly/platform-api/internal/notification"
 	"github.com/mark8ly/platform-api/internal/onboarding"
@@ -104,15 +107,17 @@ func main() {
 	locationHandler := location.NewHandler(location.NewService(location.NewRepository(conn)))
 
 	tenantRepo := tenant.NewRepository(conn)
-	tenantSvc := tenant.NewService(tenantRepo)
+	tenantSvc := tenant.NewService(tenantRepo, fga)
 	tenantHandler := tenant.NewHandler(tenantSvc, fga)
 
 	// In dev/test environments, capture plaintext magic-link tokens so the
 	// e2e suite can bypass the inbox. nil in prod — verification.Service
 	// no-ops the recorder call when nil.
 	var tokenRecorder *testhelper.TokenRecorder
+	var invitationRec *testhelper.InvitationTokenRecorder
 	if cfg.Env != "prod" {
 		tokenRecorder = testhelper.NewTokenRecorder()
+		invitationRec = testhelper.NewInvitationTokenRecorder()
 	}
 
 	verifSvc := verification.NewService(
@@ -127,16 +132,41 @@ func main() {
 	verifHandler := verification.NewHandler(verifSvc)
 
 	onboardingSvc := onboarding.NewService(onboarding.Config{
-		DB:         conn,
-		Repo:       onboarding.NewRepository(conn),
-		TenantRepo: tenantRepo,
-		Sender:     sender,
-		EmailFrom:  cfg.EmailFrom,
-		AdminURLTemplate:      "https://%s-admin.mark8ly.com",
-		StorefrontURLTemplate: "https://%s.mark8ly.com",
+		DB:                    conn,
+		Repo:                  onboarding.NewRepository(conn),
+		TenantRepo:            tenantRepo,
+		Sender:                sender,
+		EmailFrom:             cfg.EmailFrom,
+		AdminURLTemplate:      cfg.AdminBaseURLTemplate,
+		StorefrontURLTemplate: cfg.StorefrontBaseURLTemplate,
 		SupportEmail:          cfg.EmailFrom,
 	})
 	onboardingHandler := onboarding.NewHandler(onboardingSvc, verifSvc)
+
+	// ─── Invitations (Phase P) ─────────────────────────────────────────
+	// The accept URL is built from cfg.AdminBaseURLTemplate. In dev
+	// the template is a flat host (http://localhost:4202); in prod it
+	// becomes a per-slug template (https://%s-admin.mark8ly.com). We
+	// detect which shape we've been given by checking for the %s
+	// verb so ops can pick either model without a code change.
+	adminBase := cfg.AdminBaseURLTemplate
+	acceptURL := func(slug, token string) string {
+		base := adminBase
+		if strings.Contains(adminBase, "%s") {
+			base = fmt.Sprintf(adminBase, slug)
+		}
+		return base + "/accept-invite?token=" + token
+	}
+	invitationSvc := invitation.NewService(invitation.Config{
+		Repo:       invitation.NewRepository(conn),
+		TenantRepo: tenantRepo,
+		FGA:        fga,
+		Sender:     sender,
+		EmailFrom:  cfg.EmailFrom,
+		AcceptURL:  acceptURL,
+		Recorder:   invitationRec,
+	})
+	invitationHandler := invitation.NewHandler(invitationSvc)
 
 	// ─── Outbox drainer ────────────────────────────────────────────────
 	drainer := outbox.NewDrainer(conn, log, outbox.Config{})
@@ -153,12 +183,13 @@ func main() {
 	tenantHandler.Register(v1, internal)
 	verifHandler.Register(v1)
 	onboardingHandler.Register(v1)
+	invitationHandler.Register(v1, internal)
 
 	// e2e helper routes — only mounted outside production. Gives Playwright
 	// a way to grab the latest magic-link token for an email without
 	// reading the inbox.
 	if tokenRecorder != nil {
-		testhelper.NewHandler(tokenRecorder).Register(v1)
+		testhelper.NewHandler(tokenRecorder, invitationRec).Register(v1)
 	}
 
 	// ─── Lifecycle ─────────────────────────────────────────────────────

@@ -136,7 +136,7 @@ func (f *FakeClient) Check(ctx context.Context, userID, relation, tenantID strin
 	switch relation {
 	case "member", "can_view_settings":
 		return f.hasAnyRoleLocked(userID, tenantID), nil
-	case "can_edit_settings":
+	case "can_edit_settings", "can_invite_members":
 		return f.roles[RoleOwner][key] || f.roles[RoleAdmin][key], nil
 	case string(RoleOwner), string(RoleAdmin), string(RoleStaff), string(RoleViewer):
 		return f.roles[Role(relation)][key], nil
@@ -160,6 +160,34 @@ func (f *FakeClient) GetRole(ctx context.Context, userID, tenantID string) (Role
 		}
 	}
 	return "", nil
+}
+
+func (f *FakeClient) ListMemberTenants(ctx context.Context, userID string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.checkCallCount++
+	if f.failNextChecks > 0 {
+		f.failNextChecks--
+		return nil, fakeError("simulated FGA check failure")
+	}
+	// Collect the distinct tenant ids across all roles for this user.
+	seen := map[string]struct{}{}
+	out := []string{}
+	prefix := userID + "|"
+	for _, r := range allRoles {
+		for key := range f.roles[r] {
+			if len(key) <= len(prefix) || key[:len(prefix)] != prefix {
+				continue
+			}
+			tid := key[len(prefix):]
+			if _, ok := seen[tid]; ok {
+				continue
+			}
+			seen[tid] = struct{}{}
+			out = append(out, tid)
+		}
+	}
+	return out, nil
 }
 
 func (f *FakeClient) hasAnyRoleLocked(userID, tenantID string) bool {

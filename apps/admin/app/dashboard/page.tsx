@@ -1,7 +1,11 @@
 import { headers } from "next/headers";
 
 import { AdminShell } from "@/components/shell/AdminShell";
-import { fetchTenant, type TenantRole } from "@/lib/api/platform-api";
+import {
+  fetchTenant,
+  listMemberTenants,
+  type TenantRole,
+} from "@/lib/api/platform-api";
 
 /**
  * Dashboard — reads the resolved session from headers set by
@@ -15,9 +19,13 @@ import { fetchTenant, type TenantRole } from "@/lib/api/platform-api";
 export default async function DashboardPage() {
   const h = await headers();
   const tenantId = h.get("x-session-tenant-id") ?? "";
+  const userId = h.get("x-session-user-id") ?? "";
   const email = h.get("x-session-email") ?? "";
   const role = (h.get("x-session-role") ?? "viewer") as TenantRole;
-  const tenant = await fetchTenant(tenantId);
+  const [tenant, memberships] = await Promise.all([
+    fetchTenant(tenantId),
+    userId ? listMemberTenants(userId).catch(() => []) : Promise.resolve([]),
+  ]);
 
   const tenantName = tenant?.name ?? "your store";
   const headline = tenant
@@ -25,7 +33,13 @@ export default async function DashboardPage() {
     : "Your store is live.";
 
   return (
-    <AdminShell tenantName={tenantName} userEmail={email} role={role}>
+    <AdminShell
+      tenantName={tenantName}
+      userEmail={email}
+      role={role}
+      memberships={memberships}
+      currentTenantId={tenantId}
+    >
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="admin-surface overflow-hidden rounded-[2rem]">
           <div className="grid gap-8 px-6 py-7 sm:px-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.9fr)] lg:px-10 lg:py-9">

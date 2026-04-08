@@ -97,6 +97,13 @@ type Client interface {
 	// or the empty string if they have no role at all. "Highest" is
 	// defined by rolePriority.
 	GetRole(ctx context.Context, userID, tenantID string) (Role, error)
+
+	// ListMemberTenants returns every tenant id the user has any
+	// role on. Phase P: used by `GET /api/v1/users/me/tenants` to
+	// power the admin tenant switcher and the multi-tenant sign-in
+	// flow. The returned ids are unenriched — the caller joins
+	// against the tenants table via tenant.ListByIDs.
+	ListMemberTenants(ctx context.Context, userID string) ([]string, error)
 }
 
 // fgaClient is the OpenFGA-backed implementation of Client.
@@ -202,6 +209,36 @@ func (c *fgaClient) Check(ctx context.Context, userID, relation, tenantID string
 		return false, nil
 	}
 	return *resp.Allowed, nil
+}
+
+// ListMemberTenants returns every tenant id where the user has any
+// role. Delegates to OpenFGA's ListObjects against the derived
+// `member` relation, which resolves transitively via the DSL union.
+// Returns ids without the "tenant:" prefix so callers can pass them
+// straight into tenant.ListByIDs.
+func (c *fgaClient) ListMemberTenants(ctx context.Context, userID string) ([]string, error) {
+	body := client.ClientListObjectsRequest{
+		User:     "user:" + userID,
+		Relation: "member",
+		Type:     "tenant",
+	}
+	resp, err := c.api.ListObjects(ctx).Body(body).Execute()
+	if err != nil {
+		return nil, fmt.Errorf("authz: list member tenants: %w", err)
+	}
+	if resp == nil {
+		return nil, nil
+	}
+	objects := resp.GetObjects()
+	out := make([]string, 0, len(objects))
+	for _, o := range objects {
+		// ListObjects returns fully-qualified object refs like
+		// "tenant:<uuid>" — strip the prefix.
+		if len(o) > len("tenant:") && o[:len("tenant:")] == "tenant:" {
+			out = append(out, o[len("tenant:"):])
+		}
+	}
+	return out, nil
 }
 
 // GetRole iterates the direct role relations in priority order and

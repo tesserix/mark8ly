@@ -75,6 +75,14 @@ MODEL_JSON='{
               { "computedUserset": { "relation": "admin" } }
             ]
           }
+        },
+        "can_invite_members": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner" } },
+              { "computedUserset": { "relation": "admin" } }
+            ]
+          }
         }
       },
       "metadata": {

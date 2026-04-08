@@ -1,14 +1,18 @@
 // Browser-side GIP sign-in helpers for the admin app.
 //
-// Sign-up lives in the onboarding app — admin only signs returning users
-// in. Two paths to a fresh GIP id_token:
+// Paths to a fresh GIP id_token:
 //
 //   1. signInWithPassword — Identity Toolkit accounts:signInWithPassword
 //   2. signInWithGoogle   — Identity Toolkit accounts:signInWithIdp,
 //      called with the Google credential from getGoogleCredential().
+//   3. signUp             — Identity Toolkit accounts:signUp. Phase P
+//      added this for the /accept-invite new-account path; the main
+//      sign-up funnel still lives in the onboarding app. Admin's copy
+//      only runs when a brand-new user clicks an invite link without
+//      a Mark8ly account.
 //
-// Both return the same shape so the caller can hand off to the signIn
-// server action without branching.
+// All three return the same shape so the caller can hand off to a
+// server action without branching on auth method.
 
 import { publicConfig } from "@/lib/config";
 
@@ -136,5 +140,73 @@ export async function signInWithGoogle(
     idToken: body.idToken,
     refreshToken: body.refreshToken,
     expiresIn: parseInt(body.expiresIn, 10),
+  };
+}
+
+/**
+ * Sign up a new GIP user in the configured tenant pool.
+ *
+ * Used by the Phase P accept-invite flow when the invitee doesn't
+ * yet have a Mark8ly account. Enforces a minimum 8-char password
+ * client-side — platform-api re-validates nothing about passwords,
+ * GIP owns the full password policy.
+ */
+export async function signUp(
+  email: string,
+  password: string,
+): Promise<GipResult> {
+  if (!publicConfig.gipApiKey) {
+    throw new GIPError("config_missing", "GIP Web API key is not configured");
+  }
+  if (!publicConfig.gipTenantId) {
+    throw new GIPError("config_missing", "GIP tenant id is not configured");
+  }
+  if (!password || password.length < 8) {
+    throw new GIPError(
+      "weak_password",
+      "Password must be at least 8 characters",
+    );
+  }
+
+  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${publicConfig.gipApiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email,
+      password,
+      tenantId: publicConfig.gipTenantId,
+      returnSecureToken: true,
+    }),
+  });
+
+  if (!res.ok) {
+    let body: { error?: { message?: string } } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    const code = body.error?.message ?? `HTTP ${res.status}`;
+    let friendly = "signup_failed";
+    if (code.startsWith("EMAIL_EXISTS")) {
+      friendly = "email_exists";
+    } else if (code.startsWith("WEAK_PASSWORD")) {
+      friendly = "weak_password";
+    }
+    throw new GIPError(friendly, code);
+  }
+
+  const signupBody = (await res.json()) as {
+    localId: string;
+    idToken: string;
+    refreshToken: string;
+    expiresIn: string;
+  };
+  return {
+    uid: signupBody.localId,
+    idToken: signupBody.idToken,
+    refreshToken: signupBody.refreshToken,
+    expiresIn: parseInt(signupBody.expiresIn, 10),
   };
 }

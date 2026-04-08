@@ -70,7 +70,7 @@ export function SignInForm() {
         );
         return;
       }
-      router.push("/dashboard");
+      router.push(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
     });
   }
 
@@ -89,7 +89,7 @@ export function SignInForm() {
         );
         return;
       }
-      router.push("/dashboard");
+      router.push(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
     } catch (err) {
       setError(
         err instanceof Error ? `Google sign-in failed: ${err.message}` : "Google sign-in failed",

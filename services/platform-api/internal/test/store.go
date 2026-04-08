@@ -46,3 +46,43 @@ func (r *TokenRecorder) Latest(email string) (string, bool) {
 	tok, ok := r.tokens[email]
 	return tok, ok
 }
+
+// InvitationTokenRecorder captures plaintext invitation tokens for the
+// e2e test helper. Keyed on tenant+email so the same email can have
+// pending invitations on multiple tenants without collision — the
+// Phase P test scenarios rely on this for the multi-tenant story.
+type InvitationTokenRecorder struct {
+	mu     sync.RWMutex
+	tokens map[string]string // tenantID|email → latest plaintext token
+}
+
+// NewInvitationTokenRecorder constructs an empty recorder.
+func NewInvitationTokenRecorder() *InvitationTokenRecorder {
+	return &InvitationTokenRecorder{tokens: make(map[string]string)}
+}
+
+// Record stores the latest invitation token for the given tenant+email.
+// Safe for concurrent use. Called by invitation.Service in dev/test.
+func (r *InvitationTokenRecorder) Record(tenantID, email, token string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tokens[tenantID+"|"+email] = token
+}
+
+// LatestByEmail returns the most recent token for an email across
+// any tenant. Used by the e2e helper endpoint which doesn't know
+// the tenant id of a freshly-invited user.
+func (r *InvitationTokenRecorder) LatestByEmail(email string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	suffix := "|" + email
+	for key, tok := range r.tokens {
+		if len(key) > len(suffix) && key[len(key)-len(suffix):] == suffix {
+			return tok, true
+		}
+	}
+	return "", false
+}

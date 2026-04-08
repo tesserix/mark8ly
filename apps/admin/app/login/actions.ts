@@ -11,7 +11,7 @@ import { cookies } from "next/headers";
 
 import { autoLogin, AuthBffError } from "@/lib/auth/auth-bff";
 import {
-  getTenantByOwner,
+  listMemberTenants,
   PlatformApiError,
 } from "@/lib/api/platform-api";
 import { publicConfig } from "@/lib/config";
@@ -32,16 +32,39 @@ interface SignInInput {
   uid: string;
 }
 
+interface SignInSuccess {
+  tenantId: string;
+  slug: string;
+  // true when the user has more than one tenant and the UI should
+  // redirect them to /pick-tenant after the initial dashboard land.
+  // The initial tenant is the first one returned by platform-api's
+  // /users/me/tenants (priority: owner first, then by created_at).
+  multipleTenants: boolean;
+}
+
 export async function signIn(
   input: SignInInput,
-): Promise<Result<{ tenantId: string; slug: string }>> {
+): Promise<Result<SignInSuccess>> {
   try {
-    const t = await getTenantByOwner(input.uid);
+    // Phase P: multi-tenant membership. A user can own one tenant and
+    // be staff on another, so "find my workspace tenant" is no longer
+    // a single-row lookup. We list every tenant the uid has any role
+    // on, pick the first, and flag the caller if there's more than
+    // one so the UI can offer a picker.
+    const tenants = await listMemberTenants(input.uid);
+    const primary = tenants[0];
+    if (!primary) {
+      return {
+        ok: false,
+        code: "tenant_not_found",
+        message: "no store found for this account",
+      };
+    }
 
     const result = await autoLogin({
       idToken: input.idToken,
       expectedTenantId: publicConfig.gipTenantId,
-      workspaceTenant: t.id,
+      workspaceTenant: primary.tenant_id,
     });
 
     if (result.setCookie) {
@@ -61,7 +84,14 @@ export async function signIn(
       }
     }
 
-    return { ok: true, data: { tenantId: t.id, slug: t.slug } };
+    return {
+      ok: true,
+      data: {
+        tenantId: primary.tenant_id,
+        slug: primary.slug,
+        multipleTenants: tenants.length > 1,
+      },
+    };
   } catch (err) {
     return fail(err);
   }

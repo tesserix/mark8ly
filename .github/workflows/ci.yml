@@ -124,7 +124,10 @@ jobs:
   # and rolls the deployments.
   bump-k8s:
     name: Bump tesserix-k8s image tags
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Disabled until Step 4 lands mark8ly-* charts + values files in tesserix-k8s.
+    # Re-enable by restoring: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # and wiring a K8S_BUMP_TOKEN secret (classic PAT with repo scope on tesserix-k8s).
+    if: false
     needs: [images]
     runs-on: ubuntu-latest
     steps:

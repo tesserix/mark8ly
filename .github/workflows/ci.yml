@@ -110,7 +110,7 @@ jobs:
           provenance: false
 
       - name: Trivy scan (fail on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ghcr.io/tesserix/${{ matrix.image.name }}:sha-${{ steps.sha.outputs.short }}
           severity: HIGH,CRITICAL

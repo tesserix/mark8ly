@@ -466,6 +466,22 @@ function HeroHeadline({
   );
 }
 
+function MarqueeBar({ theme }: { theme: StorefrontTheme }) {
+  return (
+    <div
+      className="overflow-hidden border-y py-1.5 text-[8px] font-semibold uppercase tracking-[0.28em]"
+      style={{
+        borderColor: `${theme.colors.primary}22`,
+        background: `${theme.colors.surface}88`,
+        color: `${theme.colors.primary}99`,
+      }}
+    >
+      hand picked · small batch · ships worldwide · est. 2026 · hand picked ·
+      small batch
+    </div>
+  );
+}
+
 function Bar({
   theme,
   width,

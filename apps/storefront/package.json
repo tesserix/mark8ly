@@ -10,6 +10,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@repo/ui": "*",
     "@tailwindcss/postcss": "^4.2.2",
     "next": "^16.1.1",
     "postcss": "^8.5.8",

@@ -8,7 +8,7 @@ import {
   themeRadius,
   themeSpacing,
   type StorefrontTheme,
-} from "@/lib/storefront-theme";
+} from "@repo/ui/storefront-theme";
 import { slugFromHost } from "@/lib/slug";
 
 export const dynamic = "force-dynamic";

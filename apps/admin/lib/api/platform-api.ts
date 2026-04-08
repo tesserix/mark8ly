@@ -4,7 +4,7 @@
  * that's just the tenant lookup used by the dashboard.
  */
 
-import type { StorefrontTheme } from "@/lib/storefront-theme";
+import type { StorefrontTheme } from "@repo/ui/storefront-theme";
 
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";

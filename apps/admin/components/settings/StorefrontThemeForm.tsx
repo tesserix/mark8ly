@@ -25,7 +25,7 @@ import {
   type StorefrontPreset,
   type StorefrontRadius,
   type StorefrontTheme,
-} from "@/lib/storefront-theme";
+} from "@repo/ui/storefront-theme";
 
 interface StorefrontThemeFormProps {
   store: Store;

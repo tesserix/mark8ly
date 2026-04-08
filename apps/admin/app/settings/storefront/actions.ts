@@ -12,7 +12,7 @@ import {
 import {
   canEditSettings,
 } from "@/lib/auth/serverSession";
-import type { StorefrontTheme } from "@/lib/storefront-theme";
+import type { StorefrontTheme } from "@repo/ui/storefront-theme";
 
 export type UpdateStorefrontThemeResult =
   | { ok: true }

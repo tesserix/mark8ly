@@ -3,23 +3,25 @@
 // SetPasswordForm — Phase M.
 //
 // Shown after the merchant clicks the magic link and the session has
-// been marked email-verified. Two paths to a credential, both produce a
-// fresh GIP id_token + uid that we hand to `completeOnboarding`:
+// been marked email-verified. Two paths to a credential:
 //
 //   1. Pick a password — client-side signUp(email, password) hits
 //      Identity Toolkit accounts:signUp.
 //   2. Continue with Google — gsi/client popup → signInWithGoogle hits
-//      accounts:signInWithIdp. The user's email is whatever Google
-//      asserted, NOT what they entered on /onboarding. We require the
-//      two to match so a Google user can't claim someone else's session.
+//      accounts:signInWithIdp. The user's email must match the session's.
 //
-// On success, the server action completeOnboarding creates the tenant
-// (the session is already verified, so the platform-api guard passes),
-// calls auth-bff /auth/auto-login, and forwards the cookie. We then
-// redirect to /welcome.
+// On success, completeOnboarding creates the tenant, mints the session
+// cookie, and we redirect to /welcome.
+//
+// Validation layer: react-hook-form + zod for the password field with
+// inline errors. Server errors are routed to the password field when
+// recognisable and fall back to a top-level alert otherwise.
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Input, Label } from "@tesserix/web";
 
 import { signUp, signInWithGoogle, GIPSignupError } from "@/lib/gip/signup";
@@ -32,52 +34,75 @@ interface Props {
   businessName: string;
 }
 
-export function SetPasswordForm({ sessionId, email, businessName }: Props) {
+const schema = z.object({
+  password: z
+    .string()
+    .min(1, "Password is required")
+    .min(8, "Password must be at least 8 characters"),
+});
+
+type FormValues = z.infer<typeof schema>;
+
+export function SetPasswordForm({ sessionId, email }: Props) {
   const router = useRouter();
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [googlePending, setGooglePending] = useState(false);
 
-  function handlePasswordSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    mode: "onTouched",
+    reValidateMode: "onChange",
+    defaultValues: { password: "" },
+  });
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
-      return;
-    }
+  function onValid(values: FormValues) {
+    setSubmitError(null);
 
     startTransition(async () => {
       let uid = "";
       let idToken = "";
       try {
-        const gip = await signUp(email, password);
+        const gip = await signUp(email, values.password);
         uid = gip.uid;
         idToken = gip.idToken;
       } catch (err) {
         if (err instanceof GIPSignupError && err.code === "weak_password") {
-          setError("Password is too weak. Pick something stronger.");
+          setError("password", {
+            type: "server",
+            message: "Password is too weak. Pick something stronger.",
+          });
           return;
         }
-        // EMAIL_EXISTS means an account with this email already exists in
-        // GIP — either the user clicked the magic link twice and signed
-        // up on a previous attempt, or they should be on /login instead.
-        if (err instanceof GIPSignupError && /EMAIL_EXISTS/.test(err.message)) {
-          setError(
+        if (
+          err instanceof GIPSignupError &&
+          /EMAIL_EXISTS/.test(err.message)
+        ) {
+          setSubmitError(
             "An account already exists for this email. Try signing in instead.",
           );
           return;
         }
-        setError(
-          err instanceof Error ? `Account creation failed: ${err.message}` : "Account creation failed",
+        setSubmitError(
+          err instanceof Error
+            ? `Account creation failed: ${err.message}`
+            : "Account creation failed.",
         );
         return;
       }
 
-      const r = await completeOnboarding({ sessionId, gipUid: uid, gipIdToken: idToken });
+      const r = await completeOnboarding({
+        sessionId,
+        gipUid: uid,
+        gipIdToken: idToken,
+      });
       if (!r.ok) {
-        setError(r.message);
+        setSubmitError(r.message);
         return;
       }
       router.push("/welcome");
@@ -85,18 +110,17 @@ export function SetPasswordForm({ sessionId, email, businessName }: Props) {
   }
 
   async function handleGoogle() {
-    setError(null);
+    setSubmitError(null);
     setGooglePending(true);
     try {
       const { credential } = await getGoogleCredential();
       const gip = await signInWithGoogle(credential);
 
-      // Defense-in-depth: confirm Google's verified email matches the
-      // session's email so a stray Google account can't hijack a session.
+      // Defense in depth: Google's verified email must match the session.
       const googleEmail = decodeJwtEmail(gip.idToken);
       if (googleEmail && googleEmail.toLowerCase() !== email.toLowerCase()) {
-        setError(
-          `This Google account (${googleEmail}) doesn't match the email you signed up with (${email}).`,
+        setSubmitError(
+          `This Google account (${googleEmail}) doesn${"\u2019"}t match the email you signed up with (${email}).`,
         );
         return;
       }
@@ -107,13 +131,15 @@ export function SetPasswordForm({ sessionId, email, businessName }: Props) {
         gipIdToken: gip.idToken,
       });
       if (!r.ok) {
-        setError(r.message);
+        setSubmitError(r.message);
         return;
       }
       router.push("/welcome");
     } catch (err) {
-      setError(
-        err instanceof Error ? `Google sign-in failed: ${err.message}` : "Google sign-in failed",
+      setSubmitError(
+        err instanceof Error
+          ? `Google sign-in failed: ${err.message}`
+          : "Google sign-in failed.",
       );
     } finally {
       setGooglePending(false);
@@ -124,88 +150,102 @@ export function SetPasswordForm({ sessionId, email, businessName }: Props) {
 
   return (
     <div className="w-full max-w-md border-t border-border-subtle pt-10">
-      <form onSubmit={handlePasswordSubmit} className="space-y-6">
-          <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-foreground">
-              Email address
-            </Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              readOnly
-              disabled
-            />
-            <p className="text-xs text-sage-700">✓ Verified</p>
+      <form
+        onSubmit={handleSubmit(onValid)}
+        noValidate
+        className="space-y-5"
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-foreground">
+            Email address
+          </Label>
+          <Input id="email" type="email" value={email} readOnly disabled />
+          <div className="min-h-[1.125rem]">
+            <p className="text-xs text-moss-700">Verified</p>
           </div>
+        </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-foreground">
-              Password
-            </Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              disabled={disabled}
-            />
-          </div>
-
-          {error && (
-            <div className="p-3 rounded-lg bg-terracotta-50 border border-terracotta-200">
-              <p className="text-sm text-terracotta-700" role="alert" aria-live="polite">
-                {error}
-              </p>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={disabled || password.length < 8}
-            className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
-          >
-            {pending ? "Finishing up…" : "Create account"}
-          </button>
-
-          <div className="relative py-2">
-            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-              <div className="w-full border-t border-border-subtle" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-background px-3 text-xs uppercase tracking-[0.16em] text-foreground-tertiary">
-                or
-              </span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleGoogle}
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className="text-foreground">
+            Password
+          </Label>
+          <Input
+            id="password"
+            type="password"
+            placeholder="At least 8 characters"
+            autoComplete="new-password"
             disabled={disabled}
-            className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:bg-paper-100 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-invalid={errors.password ? true : undefined}
+            aria-describedby={errors.password ? "password-error" : undefined}
+            {...register("password")}
+          />
+          <div className="min-h-[1.125rem]">
+            {errors.password ? (
+              <p
+                id="password-error"
+                role="alert"
+                aria-live="polite"
+                className="text-xs text-danger"
+              >
+                {errors.password.message}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        {submitError && (
+          <p
+            role="alert"
+            aria-live="polite"
+            className="text-sm text-danger"
           >
-            <GoogleMark />
-            {googlePending ? "Opening Google…" : "Continue with Google"}
-          </button>
+            {submitError}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={disabled}
+          className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
+        >
+          {pending ? "Finishing up…" : "Create account"}
+        </button>
+
+        <div className="relative py-2">
+          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+            <div className="w-full border-t border-border-subtle" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-background px-3 text-xs uppercase tracking-[0.16em] text-foreground-tertiary">
+              or
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogle}
+          disabled={disabled}
+          className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:bg-paper-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <GoogleMark />
+          {googlePending ? "Opening Google…" : "Continue with Google"}
+        </button>
       </form>
     </div>
   );
 }
 
-// decodeJwtEmail pulls the email claim out of a JWT without verifying
-// the signature. Used as a defense-in-depth check that the Google account
-// matches the session's email — the server is the source of truth for
-// what tenant gets created.
+// decodeJwtEmail pulls the email claim out of a JWT without verifying the
+// signature. Defense-in-depth only — the server is the source of truth.
 function decodeJwtEmail(token: string): string | null {
   try {
     const [, payload] = token.split(".");
     if (!payload) return null;
-    const padded = payload.padEnd(payload.length + ((4 - (payload.length % 4)) % 4), "=");
+    const padded = payload.padEnd(
+      payload.length + ((4 - (payload.length % 4)) % 4),
+      "=",
+    );
     const json = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
     const claims = JSON.parse(json) as { email?: string };
     return claims.email ?? null;
@@ -216,7 +256,7 @@ function decodeJwtEmail(token: string): string | null {
 
 function GoogleMark() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
       <path
         fill="#4285F4"
         d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"

@@ -5,75 +5,84 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Welcome to Mark8ly</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f6f1ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#241f1a;">
+<body style="margin:0;padding:0;background-color:#F7F6F2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Source Sans 3',Helvetica,Arial,sans-serif;color:#0E0E0C;">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
-    Your mark8ly store is ready. Open your admin and start adding products.
+    Your Mark8ly store is ready. Open your admin and start adding products.
   </div>
-  <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background:linear-gradient(180deg,#f8f3ec 0%,#f3ece2 100%);padding:32px 16px;">
+  <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#F7F6F2;padding:48px 16px;">
     <tr>
       <td align="center">
-        <table width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background-color:#fffdf9;border:1px solid #e6d8c6;border-radius:28px;box-shadow:0 20px 50px rgba(79,52,24,0.08);overflow:hidden;">
+        <table width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#FFFFFF;border:1px solid #ECEAE3;">
           <tr>
-            <td style="padding:24px 32px 12px 32px;background:linear-gradient(180deg,#f7efe5 0%,#fffaf4 100%);">
-              <table width="100%" cellspacing="0" cellpadding="0" border="0">
+            <td style="padding:36px 40px 20px 40px;border-bottom:1px solid #ECEAE3;">
+              <span style="font-family:Georgia,'Source Serif 4','Times New Roman',serif;font-size:22px;font-weight:500;letter-spacing:-0.025em;color:#0E0E0C;">mark8ly</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:40px 40px 24px 40px;">
+              <p style="margin:0 0 14px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">
+                Store ready
+              </p>
+              <h1 style="margin:0 0 20px 0;font-family:Georgia,'Source Serif 4','Times New Roman',serif;font-size:36px;font-weight:500;letter-spacing:-0.025em;line-height:1.05;color:#0E0E0C;">
+                Welcome to Mark8ly{{if .OwnerName}}, {{.OwnerName}}{{end}}
+              </h1>
+              <p style="margin:0 0 32px 0;font-size:16px;line-height:1.7;color:#45433E;">
+                Your store <strong style="font-weight:600;color:#0E0E0C;">{{.BusinessName}}</strong> is live. Open the admin to add products, then preview the storefront your customers will see.
+              </p>
+
+              <table cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 28px 0;border-top:1px solid #ECEAE3;">
                 <tr>
-                  <td align="left">
-                    <span style="display:inline-block;padding:10px 14px;border-radius:999px;background-color:#2b241f;color:#fffaf4;font-size:14px;font-weight:700;letter-spacing:0.08em;text-transform:lowercase;">mark8ly</span>
+                  <td style="padding:22px 0 22px 0;border-bottom:1px solid #ECEAE3;">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">
+                      Step 01
+                    </p>
+                    <p style="margin:0 0 6px 0;font-size:18px;font-weight:500;color:#0E0E0C;font-family:Georgia,'Source Serif 4','Times New Roman',serif;letter-spacing:-0.01em;">
+                      Open your admin
+                    </p>
+                    <p style="margin:0 0 10px 0;font-size:14px;line-height:1.7;color:#5C5953;">
+                      Add products, configure shipping, connect a payment method.
+                    </p>
+                    <a href="{{.AdminURL}}" style="color:#2D4A2B;text-decoration:underline;text-decoration-color:#2D4A2B;text-underline-offset:3px;font-size:13px;font-weight:600;letter-spacing:0.02em;">Open admin →</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:22px 0 22px 0;border-bottom:1px solid #ECEAE3;">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">
+                      Step 02
+                    </p>
+                    <p style="margin:0 0 6px 0;font-size:18px;font-weight:500;color:#0E0E0C;font-family:Georgia,'Source Serif 4','Times New Roman',serif;letter-spacing:-0.01em;">
+                      View your storefront
+                    </p>
+                    <p style="margin:0 0 10px 0;font-size:14px;line-height:1.7;color:#5C5953;">
+                      See what customers will see on day one.
+                    </p>
+                    <a href="{{.StorefrontURL}}" style="color:#2D4A2B;text-decoration:underline;text-decoration-color:#2D4A2B;text-underline-offset:3px;font-size:13px;font-weight:600;letter-spacing:0.02em;">View storefront →</a>
+                  </td>
+                </tr>
+              </table>
+
+              <table cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;">
+                <tr>
+                  <td>
+                    <a href="{{.AdminURL}}" style="display:inline-block;background-color:#0E0E0C;color:#FDFCF8;text-decoration:none;font-weight:600;padding:14px 28px;font-size:15px;letter-spacing:0.04em;border-radius:6px;">
+                      Go to admin
+                    </a>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
           <tr>
-            <td style="padding:32px 32px 18px 32px;">
-              <p style="margin:0 0 12px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#9a7a59;font-weight:700;">
-                Store Ready
-              </p>
-              <h1 style="margin:0 0 16px 0;font-size:30px;font-weight:700;color:#241f1a;line-height:1.2;">
-                Welcome to mark8ly{{if .OwnerName}}, {{.OwnerName}}{{end}}
-              </h1>
-              <p style="margin:0 0 22px 0;font-size:16px;line-height:1.7;color:#5f5348;">
-                Your store <strong>{{.BusinessName}}</strong> is live and ready for the next step. Start in your admin, then preview the storefront your customers will see.
-              </p>
-              <table cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px 0;">
-                <tr>
-                  <td style="padding:20px 22px;background-color:#fcf6ee;border:1px solid #eadcc9;border-radius:20px;">
-                    <p style="margin:0 0 8px 0;font-size:15px;font-weight:700;color:#241f1a;">
-                      1. Open your admin
-                    </p>
-                    <p style="margin:0;font-size:14px;line-height:1.7;color:#6a5c50;">
-                      Add your products, configure shipping, and connect a payment method.
-                      <br><br><a href="{{.AdminURL}}" style="color:#8d5f34;text-decoration:none;font-weight:700;">Open admin →</a>
-                    </p>
-                  </td>
-                </tr>
-                <tr><td style="height:14px;"></td></tr>
-                <tr>
-                  <td style="padding:20px 22px;background-color:#fffaf4;border:1px solid #eadcc9;border-radius:20px;">
-                    <p style="margin:0 0 8px 0;font-size:15px;font-weight:700;color:#241f1a;">
-                      2. View your storefront
-                    </p>
-                    <p style="margin:0;font-size:14px;line-height:1.7;color:#6a5c50;">
-                      See what your customers will see.
-                      <br><br><a href="{{.StorefrontURL}}" style="color:#8d5f34;text-decoration:none;font-weight:700;">View storefront →</a>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-              <div style="text-align:center;margin:0 0 26px 0;">
-                <a href="{{.AdminURL}}" style="display:inline-block;background-color:#2b241f;color:#fffaf4;text-decoration:none;font-weight:700;padding:15px 34px;border-radius:999px;font-size:16px;box-shadow:0 10px 24px rgba(43,36,31,0.18);">
-                  Go to Admin
-                </a>
-              </div>
-              <hr style="border:none;border-top:1px solid #eadcc9;margin:0 0 16px 0;">
-              <p style="margin:0;font-size:12px;line-height:1.7;color:#8c7a69;">
-                Questions? Reply to this email or contact <a href="mailto:{{.SupportEmail}}" style="color:#8d5f34;text-decoration:none;">{{.SupportEmail}}</a>
+            <td style="padding:24px 40px 36px 40px;border-top:1px solid #ECEAE3;">
+              <p style="margin:0;font-size:12px;line-height:1.7;color:#7A766E;">
+                Questions? Reply to this email or reach
+                <a href="mailto:{{.SupportEmail}}" style="color:#2D4A2B;text-decoration:underline;text-decoration-color:#2D4A2B;text-underline-offset:3px;">{{.SupportEmail}}</a>
               </p>
             </td>
           </tr>
         </table>
-        <p style="margin:18px 0 0 0;font-size:12px;color:#9a8a79;">
-          mark8ly
+        <p style="margin:20px 0 0 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#A09C92;">
+          Paper · Ink · Moss
         </p>
       </td>
     </tr>

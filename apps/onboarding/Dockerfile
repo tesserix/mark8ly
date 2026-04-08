@@ -34,6 +34,22 @@ RUN apk add --no-cache libc6-compat
 COPY --from=deps /src/node_modules ./node_modules
 COPY . .
 
+# Public Next.js env vars — these are INLINED into the client bundle
+# at build time. Setting them as runtime env vars in Kubernetes is a
+# no-op for NEXT_PUBLIC_* — the bundle is already frozen. CI passes
+# these via `docker buildx build --build-arg NEXT_PUBLIC_*=...` from
+# GH Actions secrets so the baked bundle has the real values.
+ARG NEXT_PUBLIC_GIP_PROJECT_ID=""
+ARG NEXT_PUBLIC_GIP_TENANT_ID=""
+ARG NEXT_PUBLIC_GIP_API_KEY=""
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=""
+ARG NEXT_PUBLIC_MARKETING_URL=""
+ENV NEXT_PUBLIC_GIP_PROJECT_ID=$NEXT_PUBLIC_GIP_PROJECT_ID
+ENV NEXT_PUBLIC_GIP_TENANT_ID=$NEXT_PUBLIC_GIP_TENANT_ID
+ENV NEXT_PUBLIC_GIP_API_KEY=$NEXT_PUBLIC_GIP_API_KEY
+ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
+ENV NEXT_PUBLIC_MARKETING_URL=$NEXT_PUBLIC_MARKETING_URL
+
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build --workspace=@mark8ly/onboarding
 

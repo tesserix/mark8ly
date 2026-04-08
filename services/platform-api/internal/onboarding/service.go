@@ -263,10 +263,14 @@ func (s *Service) sendWelcome(ctx context.Context, t *tenant.Tenant, st *store.S
 	return s.sender.Send(ctx, msg)
 }
 
-// formatURLTemplate substitutes %s with slug if present, otherwise
-// returns the template as-is. Lets ops pick flat-host (dev) or
-// per-slug (prod) URL shapes via config without a code change.
+// formatURLTemplate substitutes the tenant slug into a URL template.
+// Supports both Go's printf "%s" verb and the {slug} placeholder used
+// by the Helm charts. Falls back to the template as-is when neither
+// is present (flat-host shape for dev on localhost).
 func formatURLTemplate(template, slug string) string {
+	if strings.Contains(template, "{slug}") {
+		return strings.ReplaceAll(template, "{slug}", slug)
+	}
 	if strings.Contains(template, "%s") {
 		return fmt.Sprintf(template, slug)
 	}

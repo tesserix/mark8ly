@@ -129,10 +129,11 @@ func main() {
 	verifSvc := verification.NewService(
 		verification.NewRepository(conn),
 		verification.Config{
-			Sender:       sender,
-			EmailFrom:    cfg.EmailFrom,
-			SupportEmail: cfg.EmailFrom,
-			Recorder:     tokenRecorder,
+			Sender:        sender,
+			EmailFrom:     cfg.EmailFrom,
+			SupportEmail:  cfg.EmailFrom,
+			VerifyURLBase: cfg.OnboardingBaseURL,
+			Recorder:      tokenRecorder,
 		},
 	)
 	verifHandler := verification.NewHandler(verifSvc)
@@ -153,13 +154,17 @@ func main() {
 	// ─── Invitations (Phase P) ─────────────────────────────────────────
 	// The accept URL is built from cfg.AdminBaseURLTemplate. In dev
 	// the template is a flat host (http://localhost:4202); in prod it
-	// becomes a per-slug template (https://%s-admin.mark8ly.com). We
-	// detect which shape we've been given by checking for the %s
-	// verb so ops can pick either model without a code change.
+	// becomes a per-slug template (https://{slug}-admin.mark8ly.com).
+	// Supports both the {slug} placeholder (Helm chart convention) and
+	// the %s printf verb (legacy), so ops can pick either without a
+	// code change.
 	adminBase := cfg.AdminBaseURLTemplate
 	acceptURL := func(slug, token string) string {
 		base := adminBase
-		if strings.Contains(adminBase, "%s") {
+		switch {
+		case strings.Contains(adminBase, "{slug}"):
+			base = strings.ReplaceAll(adminBase, "{slug}", slug)
+		case strings.Contains(adminBase, "%s"):
 			base = fmt.Sprintf(adminBase, slug)
 		}
 		return base + "/accept-invite?token=" + token

@@ -33,8 +33,13 @@ type Config struct {
 	AdminBaseURLTemplate string `envconfig:"ADMIN_BASE_URL_TEMPLATE" default:"http://localhost:4202"`
 	// Storefront base URL template. Customer-facing store URL
 	// surfaced to the merchant on the onboarding welcome page.
-	// Same %s → slug substitution pattern as AdminBaseURLTemplate.
+	// Same {slug} → tenant-slug substitution pattern as AdminBaseURLTemplate.
 	StorefrontBaseURLTemplate string `envconfig:"STOREFRONT_BASE_URL_TEMPLATE" default:"http://localhost:4203"`
+	// Onboarding base URL. Used to build the magic-link verification
+	// URL in the email_verification email. Flat host — no per-slug
+	// substitution, since the onboarding funnel is not tenant-scoped.
+	// Dev: http://localhost:4201; prod: https://mark8ly.com.
+	OnboardingBaseURL string `envconfig:"ONBOARDING_BASE_URL" default:"http://localhost:4201"`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

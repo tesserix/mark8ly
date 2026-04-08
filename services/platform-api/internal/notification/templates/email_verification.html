@@ -5,69 +5,64 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Verify your email</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f6f1ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#241f1a;">
+<body style="margin:0;padding:0;background-color:#F7F6F2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Source Sans 3',Helvetica,Arial,sans-serif;color:#0E0E0C;">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
-    Verify your email to finish setting up your mark8ly store.
+    Verify your email to finish setting up your Mark8ly store.
   </div>
-  <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background:linear-gradient(180deg,#f8f3ec 0%,#f3ece2 100%);padding:32px 16px;">
+  <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#F7F6F2;padding:48px 16px;">
     <tr>
       <td align="center">
-        <table width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background-color:#fffdf9;border:1px solid #e6d8c6;border-radius:28px;box-shadow:0 20px 50px rgba(79,52,24,0.08);overflow:hidden;">
+        <table width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#FFFFFF;border:1px solid #ECEAE3;">
           <tr>
-            <td style="padding:24px 32px 12px 32px;background:linear-gradient(180deg,#f7efe5 0%,#fffaf4 100%);">
-              <table width="100%" cellspacing="0" cellpadding="0" border="0">
-                <tr>
-                  <td align="left">
-                    <span style="display:inline-block;padding:10px 14px;border-radius:999px;background-color:#2b241f;color:#fffaf4;font-size:14px;font-weight:700;letter-spacing:0.08em;text-transform:lowercase;">mark8ly</span>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding:36px 40px 20px 40px;border-bottom:1px solid #ECEAE3;">
+              <span style="font-family:Georgia,'Source Serif 4','Times New Roman',serif;font-size:22px;font-weight:500;letter-spacing:-0.025em;color:#0E0E0C;">mark8ly</span>
             </td>
           </tr>
           <tr>
-            <td style="padding:32px 32px 18px 32px;">
-              <p style="margin:0 0 12px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#9a7a59;font-weight:700;">
-                Email Verification
+            <td style="padding:40px 40px 24px 40px;">
+              <p style="margin:0 0 14px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">
+                Email verification
               </p>
-              <h1 style="margin:0 0 16px 0;font-size:30px;font-weight:700;color:#241f1a;line-height:1.2;">
+              <h1 style="margin:0 0 20px 0;font-family:Georgia,'Source Serif 4','Times New Roman',serif;font-size:36px;font-weight:500;letter-spacing:-0.025em;line-height:1.05;color:#0E0E0C;">
                 Verify your email
               </h1>
-              <p style="margin:0 0 22px 0;font-size:16px;line-height:1.7;color:#5f5348;">
-                {{if .BusinessName}}Welcome to mark8ly, {{.BusinessName}}. {{end}}Use the button below to verify your email and keep moving toward launch.
+              <p style="margin:0 0 28px 0;font-size:16px;line-height:1.7;color:#45433E;">
+                {{if .BusinessName}}Welcome to Mark8ly, {{.BusinessName}}. {{end}}Use the button below to confirm your email and keep moving toward launch.
               </p>
-              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px 0;">
+              <table cellspacing="0" cellpadding="0" border="0" style="margin:0 0 28px 0;">
                 <tr>
-                  <td style="padding:20px 22px;background-color:#fcf6ee;border:1px solid #eadcc9;border-radius:20px;">
-                    <p style="margin:0 0 8px 0;font-size:14px;font-weight:700;color:#241f1a;">
-                      One quick step left
-                    </p>
-                    <p style="margin:0;font-size:14px;line-height:1.7;color:#6a5c50;">
-                      The link expires in {{.ExpiresIn}}. Open it on this device to finish setting up your store.
-                    </p>
+                  <td>
+                    <a href="{{.VerifyURL}}" style="display:inline-block;background-color:#0E0E0C;color:#FDFCF8;text-decoration:none;font-weight:600;padding:14px 28px;font-size:15px;letter-spacing:0.04em;border-radius:6px;">
+                      Verify email
+                    </a>
                   </td>
                 </tr>
               </table>
-              <div style="text-align:center;margin:0 0 24px 0;">
-                <a href="{{.VerifyURL}}" style="display:inline-block;background-color:#2b241f;color:#fffaf4;text-decoration:none;font-weight:700;padding:15px 34px;border-radius:999px;font-size:16px;box-shadow:0 10px 24px rgba(43,36,31,0.18);">
-                  Verify Email
-                </a>
-              </div>
-              <p style="margin:0 0 14px 0;font-size:14px;line-height:1.7;color:#6a5c50;">
-                If you didn&apos;t request this, you can safely ignore this email.
+              <p style="margin:0 0 28px 0;font-size:14px;line-height:1.7;color:#5C5953;border-left:2px solid #2D4A2B;padding-left:16px;">
+                This link expires in {{.ExpiresIn}}. Open it on this device to finish setting up your store.
               </p>
-              <p style="margin:0;font-size:12px;line-height:1.7;color:#8c7a69;word-break:break-all;">
-                Or copy this link:
-                <a href="{{.VerifyURL}}" style="color:#8d5f34;text-decoration:none;">{{.VerifyURL}}</a>
+              <p style="margin:0 0 18px 0;font-size:13px;line-height:1.7;color:#7A766E;">
+                If the button doesn&rsquo;t work, copy and paste this link into your browser:
               </p>
-              <hr style="border:none;border-top:1px solid #eadcc9;margin:30px 0 16px 0;">
-              <p style="margin:0;font-size:12px;line-height:1.7;color:#8c7a69;">
-                Need help? Contact us at <a href="mailto:{{.SupportEmail}}" style="color:#8d5f34;text-decoration:none;">{{.SupportEmail}}</a>
+              <p style="margin:0 0 28px 0;font-size:13px;line-height:1.7;color:#0E0E0C;word-break:break-all;">
+                <a href="{{.VerifyURL}}" style="color:#2D4A2B;text-decoration:underline;text-decoration-color:#2D4A2B;text-underline-offset:3px;">{{.VerifyURL}}</a>
+              </p>
+              <p style="margin:0;font-size:13px;line-height:1.7;color:#7A766E;">
+                If you didn&rsquo;t request this, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 40px 36px 40px;border-top:1px solid #ECEAE3;">
+              <p style="margin:0;font-size:12px;line-height:1.7;color:#7A766E;">
+                Questions? Contact us at
+                <a href="mailto:{{.SupportEmail}}" style="color:#2D4A2B;text-decoration:underline;text-decoration-color:#2D4A2B;text-underline-offset:3px;">{{.SupportEmail}}</a>
               </p>
             </td>
           </tr>
         </table>
-        <p style="margin:18px 0 0 0;font-size:12px;color:#9a8a79;">
-          mark8ly
+        <p style="margin:20px 0 0 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#A09C92;">
+          Paper · Ink · Moss
         </p>
       </td>
     </tr>

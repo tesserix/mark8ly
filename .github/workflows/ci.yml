@@ -108,6 +108,15 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image.name }}
           cache-to: type=gha,scope=${{ matrix.image.name }},mode=max
           provenance: false
+          # Public Next.js config baked into the client bundle at build
+          # time. Go service Dockerfiles ignore unknown ARGs, so it's safe
+          # to pass these for every image in the matrix.
+          build-args: |
+            NEXT_PUBLIC_GIP_PROJECT_ID=${{ secrets.NEXT_PUBLIC_GIP_PROJECT_ID }}
+            NEXT_PUBLIC_GIP_TENANT_ID=${{ secrets.NEXT_PUBLIC_GIP_TENANT_ID }}
+            NEXT_PUBLIC_GIP_API_KEY=${{ secrets.NEXT_PUBLIC_GIP_API_KEY }}
+            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+            NEXT_PUBLIC_MARKETING_URL=${{ secrets.NEXT_PUBLIC_MARKETING_URL }}
 
       - name: Trivy scan (fail on CRITICAL)
         uses: aquasecurity/trivy-action@master

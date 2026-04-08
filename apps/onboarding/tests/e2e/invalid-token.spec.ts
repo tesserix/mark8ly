@@ -16,10 +16,11 @@ import { uniqueEmail } from "./helpers";
 test("invalid magic link token surfaces an error and never navigates to welcome", async ({
   page,
 }) => {
-  const { email, slug, businessName } = uniqueEmail("invalid");
+  const { email, slug, businessName, password } = uniqueEmail("invalid");
 
   await page.goto("/onboarding");
   await page.getByLabel(/email address/i).fill(email);
+  await page.locator("#password").fill(password);
   await page.getByLabel(/business name/i).fill(businessName);
   await page.locator("#slug").fill(slug);
   await expect(page.getByText(/✓ available/i)).toBeVisible({ timeout: 5000 });

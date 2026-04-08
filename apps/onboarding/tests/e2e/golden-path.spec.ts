@@ -17,7 +17,7 @@ test("golden path: landing → form → magic link → welcome", async ({
   page,
   request,
 }) => {
-  const { email, slug, businessName } = uniqueEmail();
+  const { email, slug, businessName, password } = uniqueEmail();
 
   // 1. Landing page renders and the primary CTA goes to /onboarding.
   await page.goto("/");
@@ -32,6 +32,7 @@ test("golden path: landing → form → magic link → welcome", async ({
   ).toBeVisible();
 
   await page.getByLabel(/email address/i).fill(email);
+  await page.locator("#password").fill(password);
   await page.getByLabel(/business name/i).fill(businessName);
 
   // The slug field auto-suggests from the business name; overwrite to

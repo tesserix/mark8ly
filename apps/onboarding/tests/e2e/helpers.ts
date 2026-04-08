@@ -14,11 +14,15 @@ export const API_URL =
 
 /** A unique email per test run so Postgres state from a previous run
  * doesn't collide with the new one. The slug is derived from the local
- * part so it stays under 63 chars and matches the slug regex. */
+ * part so it stays under 63 chars and matches the slug regex.
+ *
+ * Phase M added a required password field on the signup form, so each
+ * generated identity also carries a default e2e password. */
 export function uniqueEmail(label = "e2e"): {
   email: string;
   slug: string;
   businessName: string;
+  password: string;
 } {
   const stamp = `${Date.now().toString(36)}${Math.floor(
     Math.random() * 1e4,
@@ -28,6 +32,7 @@ export function uniqueEmail(label = "e2e"): {
     email: `${local}@example.com`,
     slug: local.replace(/[^a-z0-9-]/g, "").slice(0, 60),
     businessName: `${label} ${stamp}`,
+    password: "e2e-test-password-123",
   };
 }
 

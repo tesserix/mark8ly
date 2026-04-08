@@ -27,7 +27,7 @@ test("survives full browser close between submit and verify", async ({
   browser,
   request,
 }) => {
-  const { email, slug, businessName } = uniqueEmail("resume");
+  const { email, slug, businessName, password } = uniqueEmail("resume");
 
   // ── 1. First context: complete the form ───────────────────────────────
   const first = await browser.newContext();
@@ -35,6 +35,7 @@ test("survives full browser close between submit and verify", async ({
 
   await firstPage.goto("http://localhost:4201/onboarding");
   await firstPage.getByLabel(/email address/i).fill(email);
+  await firstPage.locator("#password").fill(password);
   await firstPage.getByLabel(/business name/i).fill(businessName);
   await firstPage.locator("#slug").fill(slug);
   await expect(firstPage.getByText(/✓ available/i)).toBeVisible({

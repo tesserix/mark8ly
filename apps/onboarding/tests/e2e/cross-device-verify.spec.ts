@@ -33,6 +33,7 @@ test("magic link works in a fresh browser context (cross-device)", async ({
 
   await aPage.goto("http://localhost:4201/onboarding");
   await aPage.getByLabel(/email address/i).fill(details.email);
+  await aPage.locator("#password").fill(details.password);
   await aPage.getByLabel(/business name/i).fill(details.businessName);
   await aPage.locator("#slug").fill(details.slug);
   await expect(aPage.getByText(/✓ available/i)).toBeVisible({ timeout: 5000 });

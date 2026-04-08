@@ -27,6 +27,7 @@ test("rejects a slug that another tenant has already claimed", async ({
   // ── 1. Claim the slug end-to-end ──────────────────────────────────────
   await page.goto("/onboarding");
   await page.getByLabel(/email address/i).fill(claim.email);
+  await page.locator("#password").fill(claim.password);
   await page.getByLabel(/business name/i).fill(claim.businessName);
   await page.locator("#slug").fill(claim.slug);
   await expect(page.getByText(/✓ available/i)).toBeVisible({ timeout: 5000 });

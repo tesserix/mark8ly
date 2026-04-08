@@ -67,6 +67,19 @@ func (f *fakeRepo) GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, e
 	return nil, apperrors.NotFound("tenant_not_found", "no")
 }
 
+func (f *fakeRepo) UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.byID[id]
+	if !ok {
+		return nil, apperrors.NotFound("tenant_not_found", "no")
+	}
+	if v, ok := patch["name"].(string); ok {
+		t.Name = v
+	}
+	return t, nil
+}
+
 func (f *fakeRepo) SlugExists(ctx context.Context, slug string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -175,6 +188,85 @@ func TestService_GetByOwnerUserID_FindsSeededTenant(t *testing.T) {
 	}
 	if got.Slug != "acme" {
 		t.Errorf("Slug = %q, want acme", got.Slug)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func TestService_Update_RenamesTenant(t *testing.T) {
+	repo := newFakeRepo()
+	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	svc := NewService(repo)
+
+	got, err := svc.Update(context.Background(), "t1", UpdateInput{Name: ptr("Acme Corp")})
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if got.Name != "Acme Corp" {
+		t.Errorf("Name = %q, want %q", got.Name, "Acme Corp")
+	}
+}
+
+func TestService_Update_TrimsName(t *testing.T) {
+	repo := newFakeRepo()
+	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	svc := NewService(repo)
+
+	got, err := svc.Update(context.Background(), "t1", UpdateInput{Name: ptr("  Trimmed  ")})
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if got.Name != "Trimmed" {
+		t.Errorf("Name = %q, want %q", got.Name, "Trimmed")
+	}
+}
+
+func TestService_Update_RejectsEmptyName(t *testing.T) {
+	repo := newFakeRepo()
+	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	svc := NewService(repo)
+
+	_, err := svc.Update(context.Background(), "t1", UpdateInput{Name: ptr("   ")})
+	ae, ok := apperrors.As(err)
+	if !ok || ae.Code != "invalid_name" {
+		t.Errorf("expected invalid_name, got %v", err)
+	}
+}
+
+func TestService_Update_RejectsOversizedName(t *testing.T) {
+	repo := newFakeRepo()
+	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	svc := NewService(repo)
+
+	long := make([]byte, 201)
+	for i := range long {
+		long[i] = 'a'
+	}
+	_, err := svc.Update(context.Background(), "t1", UpdateInput{Name: ptr(string(long))})
+	ae, ok := apperrors.As(err)
+	if !ok || ae.Code != "invalid_name" {
+		t.Errorf("expected invalid_name, got %v", err)
+	}
+}
+
+func TestService_Update_RejectsEmptyPatch(t *testing.T) {
+	repo := newFakeRepo()
+	repo.seed(&Tenant{ID: "t1", Slug: "acme", Name: "Acme"})
+	svc := NewService(repo)
+
+	_, err := svc.Update(context.Background(), "t1", UpdateInput{})
+	ae, ok := apperrors.As(err)
+	if !ok || ae.Code != "empty_update" {
+		t.Errorf("expected empty_update, got %v", err)
+	}
+}
+
+func TestService_Update_RejectsEmptyID(t *testing.T) {
+	svc := NewService(newFakeRepo())
+	_, err := svc.Update(context.Background(), "  ", UpdateInput{Name: ptr("Acme")})
+	ae, ok := apperrors.As(err)
+	if !ok || ae.Code != "invalid_tenant_id" {
+		t.Errorf("expected invalid_tenant_id, got %v", err)
 	}
 }
 

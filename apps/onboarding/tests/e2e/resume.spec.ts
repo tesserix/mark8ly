@@ -35,7 +35,6 @@ test("survives full browser close between submit and verify", async ({
 
   await firstPage.goto("http://localhost:4201/onboarding");
   await firstPage.getByLabel(/email address/i).fill(email);
-  await firstPage.locator("#password").fill(password);
   await firstPage.getByLabel(/business name/i).fill(businessName);
   await firstPage.locator("#slug").fill(slug);
   await expect(firstPage.getByText(/✓ available/i)).toBeVisible({
@@ -95,7 +94,12 @@ test("survives full browser close between submit and verify", async ({
     `http://localhost:4201/onboarding/verify?token=${encodeURIComponent(token)}`,
   );
 
-  // ── 5. Welcome page renders even after the cold-open ─────────────────
+  // ── 5. Set-password step (Phase M) → welcome page renders cold ───────
+  await expect(secondPage).toHaveURL(/\/onboarding\/set-password/, {
+    timeout: 15_000,
+  });
+  await secondPage.locator("#password").fill(password);
+  await secondPage.getByRole("button", { name: /create account/i }).click();
   await expect(secondPage).toHaveURL(/\/welcome/, { timeout: 15_000 });
 
   await second.close();

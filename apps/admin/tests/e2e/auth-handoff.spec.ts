@@ -9,7 +9,7 @@ import { ADMIN_URL, ONBOARDING_URL, completeOnboarding } from "./helpers";
  * marketing site and the admin app:
  *
  *   1. Fresh context. Visit admin with no cookie → middleware bounces
- *      us to the marketing login URL.
+ *      us to admin's own /login (Phase M restructure).
  *   2. Walk the onboarding golden path on :4201 — this mints a real
  *      session cookie via auth-bff.
  *   3. Navigate to the admin dashboard on :4202 in the SAME context.
@@ -32,10 +32,10 @@ test("onboarding → admin → dashboard with real tenant → logout", async ({
   page,
   request,
 }) => {
-  // 1. Anonymous admin visit → bounce to marketing login.
+  // 1. Anonymous admin visit → bounce to admin's own /login (Phase M).
   const anon = await page.goto(`${ADMIN_URL}/dashboard`);
   expect(anon?.status()).toBe(200);
-  await expect(page).toHaveURL(/localhost:4201\/login/);
+  await expect(page).toHaveURL(/localhost:4202\/login/);
 
   // 2. Walk onboarding to welcome — this mints the session cookie.
   const details = await completeOnboarding(page, request, "handoff");
@@ -54,5 +54,5 @@ test("onboarding → admin → dashboard with real tenant → logout", async ({
   await expect(page).toHaveURL(new RegExp(ONBOARDING_URL.replace(/\//g, "\\/")));
 
   await page.goto(`${ADMIN_URL}/dashboard`);
-  await expect(page).toHaveURL(/localhost:4201\/login/);
+  await expect(page).toHaveURL(/localhost:4202\/login/);
 });

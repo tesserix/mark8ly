@@ -30,6 +30,12 @@ type Repository interface {
 	// (which requires workspace_tenant). v1 assumption: a UID owns at most
 	// one tenant.
 	GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, error)
+	// UpdateEditable applies a patch to the editable subset of a tenant row
+	// and returns the updated row. Only fields present in the patch map are
+	// written, so callers can PATCH a single field without clobbering the
+	// rest. The caller is responsible for whitelisting which columns are
+	// allowed — the repo trusts its input.
+	UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error)
 }
 
 // gormRepository is the GORM-backed implementation.
@@ -88,6 +94,28 @@ func (r *gormRepository) GetByOwnerUserID(ctx context.Context, uid string) (*Ten
 		return nil, fmt.Errorf("tenant: get by owner uid %q: %w", uid, err)
 	}
 	return &t, nil
+}
+
+func (r *gormRepository) UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error) {
+	if len(patch) == 0 {
+		// Nothing to write; fetch and return current state so callers get
+		// a no-op semantics instead of an empty SQL UPDATE.
+		return r.GetByID(ctx, id)
+	}
+	// Always bump updated_at so callers see a fresh timestamp.
+	patch["updated_at"] = gorm.Expr("NOW()")
+
+	res := r.db.WithContext(ctx).Model(&Tenant{}).Where("id = ?", id).Updates(patch)
+	if err := res.Error; err != nil {
+		if isUniqueViolation(err) {
+			return nil, apperrors.Conflict("tenant_update_conflict", "tenant update violates a unique constraint")
+		}
+		return nil, fmt.Errorf("tenant: update %q: %w", id, err)
+	}
+	if res.RowsAffected == 0 {
+		return nil, apperrors.NotFound("tenant_not_found", fmt.Sprintf("tenant %q does not exist", id))
+	}
+	return r.GetByID(ctx, id)
 }
 
 func (r *gormRepository) SlugExists(ctx context.Context, slug string) (bool, error) {

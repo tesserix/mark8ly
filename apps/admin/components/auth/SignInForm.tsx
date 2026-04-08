@@ -1,25 +1,24 @@
 "use client";
 
-// Phase M sign-in form. Two paths to a session:
+// Returning-user sign-in form for the admin app. Two paths:
 //
-//   1. Email + password — submit hits Identity Toolkit signInWithPassword
-//      via the GIP REST helper, then hands off to the signIn server action
-//      which looks up the workspace_tenant by uid and calls auth-bff
-//      /auth/auto-login.
+//   1. Email + password — Identity Toolkit signInWithPassword via the GIP
+//      REST helper, then signIn server action.
+//   2. Continue with Google — gsi/client popup → Google credential →
+//      Identity Toolkit signInWithIdp → same signIn server action.
 //
-//   2. Continue with Google — Google Identity Services popup → Google
-//      credential → signInWithGoogle (Identity Toolkit signInWithIdp) →
-//      same signIn server action.
-//
-// Both paths land at the same admin redirect on success.
+// Both paths land at /dashboard on success.
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Input, Label } from "@tesserix/web";
 
-import { signInWithPassword, signInWithGoogle, GIPSignupError } from "@/lib/gip/signup";
+import { signInWithPassword, signInWithGoogle, GIPError } from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
-import { signIn } from "@/app/onboarding/actions";
+import { signIn } from "@/app/login/actions";
+
+const MARKETING_URL =
+  process.env.NEXT_PUBLIC_MARKETING_URL ?? "http://localhost:4201";
 
 export function SignInForm() {
   const router = useRouter();
@@ -52,7 +51,7 @@ export function SignInForm() {
         idToken = gip.idToken;
         uid = gip.uid;
       } catch (err) {
-        if (err instanceof GIPSignupError && err.code === "invalid_credentials") {
+        if (err instanceof GIPError && err.code === "invalid_credentials") {
           setError("Email or password is incorrect");
           return;
         }
@@ -71,7 +70,7 @@ export function SignInForm() {
         );
         return;
       }
-      router.push("/welcome");
+      router.push("/dashboard");
     });
   }
 
@@ -90,7 +89,7 @@ export function SignInForm() {
         );
         return;
       }
-      router.push("/welcome");
+      router.push("/dashboard");
     } catch (err) {
       setError(
         err instanceof Error ? `Google sign-in failed: ${err.message}` : "Google sign-in failed",
@@ -106,11 +105,14 @@ export function SignInForm() {
     <div className="w-full max-w-md mx-auto">
       <div className="rounded-[2rem] border border-warm-200/90 bg-white/90 shadow-[0_24px_80px_rgba(43,38,34,0.12)] backdrop-blur-sm overflow-hidden">
         <div className="px-8 pt-8 pb-6 border-b border-warm-100">
-          <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-foreground-tertiary">
+            Mark8ly admin
+          </p>
+          <h1 className="mt-3 font-serif text-3xl font-medium tracking-tight text-foreground">
             Welcome back
           </h1>
           <p className="mt-2 text-sm leading-6 text-foreground-secondary">
-            Sign in to your Mark8ly admin dashboard.
+            Sign in to your store dashboard.
           </p>
         </div>
 
@@ -186,7 +188,7 @@ export function SignInForm() {
 
           <p className="text-xs text-foreground-tertiary text-center">
             Don&apos;t have a store yet?{" "}
-            <a href="/" className="underline hover:text-foreground">
+            <a href={MARKETING_URL} className="underline hover:text-foreground">
               Start a new one
             </a>
             .

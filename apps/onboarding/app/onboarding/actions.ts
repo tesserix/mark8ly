@@ -2,24 +2,30 @@
 
 // Server actions for the magic-link onboarding flow.
 //
-// Two top-level actions:
+// Phase M restructure: the form no longer collects a password or GIP
+// credentials. The flow is now:
 //
-//   1. submitOnboarding(form)  → creates session, saves draft, sends magic
-//                                link. Called from the single-page form.
+//   1. submitOnboarding(form)   → creates session + saves business draft +
+//                                 sends magic link. Pure form data.
 //
-//   2. verifyAndLogin(token)   → consumes the magic link token, completes
-//                                onboarding (creates tenant + outbox FGA),
-//                                refreshes the GIP id_token, calls auth-bff
-//                                auto-login, sets session cookie. Called
-//                                from the verify landing page.
+//   2. (user clicks magic link)
 //
-// Plus support actions: checkSlug, resendMagicLink.
+//   3. verifyToken(token)       → marks the session verified server-side
+//                                 and returns its id. The verify page
+//                                 then redirects to /onboarding/set-password.
+//
+//   4. completeOnboarding(...)  → called from the set-password page after
+//                                 the user picks a password OR completes
+//                                 the Google popup. Reads the draft,
+//                                 calls platform-api complete (creates
+//                                 tenant + outbox FGA writes), calls
+//                                 auth-bff /auth/auto-login, forwards
+//                                 the session cookie to the browser.
 
 import { cookies } from "next/headers";
 
 import { onboarding, tenants, PlatformApiError } from "@/lib/api/platform-api";
 import { autoLogin as bffAutoLogin, AuthBffError } from "@/lib/auth/auth-bff";
-import { refreshIdToken } from "@/lib/gip/signup";
 import { config, publicConfig } from "@/lib/config";
 
 type Result<T> =
@@ -45,6 +51,7 @@ export async function checkSlug(
   }
 }
 
+// ─── submitOnboarding: form submit → create session + send magic link ──
 interface SubmitInput {
   email: string;
   businessName: string;
@@ -52,32 +59,23 @@ interface SubmitInput {
   countryCode: string;
   currencyCode: string;
   timezone: string;
-  // GIP credentials captured by the client-side signUp at form-submit
-  // time. Persisted to the session draft so the verify page can recover
-  // them server-side without depending on per-tab sessionStorage.
-  gipUid: string;
-  gipRefreshToken: string;
 }
 
-// ─── submitOnboarding: form submit → create session + send magic link ──
 export async function submitOnboarding(
   input: SubmitInput,
 ): Promise<Result<{ sessionId: string }>> {
   try {
     const sess = await onboarding.createSession(input.email);
 
-    // Persist EVERYTHING the verify flow needs into the session draft.
-    // This is the cross-tab/cross-device fix: the magic link can be
-    // clicked in any browser because the verify route fetches the
-    // draft from the server instead of reading sessionStorage.
+    // Persist the business fields into the session draft so the
+    // /onboarding/set-password page (reached after the magic link click)
+    // can read them server-side without depending on per-tab state.
     await onboarding.saveDraft(sess.id, {
       business_name: input.businessName,
       slug: input.slug,
       country_code: input.countryCode,
       currency_code: input.currencyCode,
       timezone: input.timezone,
-      gip_uid: input.gipUid,
-      gip_refresh_token: input.gipRefreshToken,
     });
 
     await onboarding.sendVerification(sess.id, input.businessName);
@@ -101,120 +99,16 @@ export async function resendMagicLink(
   }
 }
 
-interface VerifyInput {
-  token: string;
-  // The form fields, captured at submit time, sent again here so the verify
-  // action has everything it needs to complete onboarding in one shot.
-  businessName: string;
-  slug: string;
-  countryCode: string;
-  currencyCode: string;
-  timezone: string;
-  // GIP credentials from the client-side signup at form-submit time.
-  gipUid: string;
-  gipIdToken: string;
-}
-
-// ─── verifyAndLogin: magic link click → complete + auto-login ──────────
+// ─── verifyToken: magic link click → mark verified, return session id ──
 //
-// The verify landing page calls this on mount. It does the entire
-// completion + auto-login pipeline in one server action so the client
-// just shows a spinner and waits.
-export async function verifyAndLogin(
-  input: VerifyInput,
-): Promise<Result<{ tenantId: string; slug: string }>> {
-  try {
-    // Step 1: validate the magic link token. Returns the session_id +
-    // email, marks the session verified.
-    const verifyRes = await fetch(
-      `${config.platformApiUrl}/api/v1/onboarding/verify-token`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: input.token }),
-        cache: "no-store",
-      },
-    );
-    if (!verifyRes.ok) {
-      const body = (await verifyRes.json().catch(() => ({}))) as {
-        error?: string;
-        message?: string;
-      };
-      return {
-        ok: false,
-        code: body.error ?? "verify_failed",
-        message: body.message ?? "Verification link is invalid or expired",
-      };
-    }
-    const verifyBody = (await verifyRes.json()) as {
-      data: { session_id: string; email: string };
-    };
-    const sessionId = verifyBody.data.session_id;
-    const email = verifyBody.data.email;
-
-    // Step 2: complete onboarding (creates tenant + outbox FGA writes).
-    const completion = await onboarding.complete(sessionId, {
-      business_name: input.businessName,
-      slug: input.slug,
-      owner_user_id: input.gipUid,
-      owner_email: email,
-      country_code: input.countryCode,
-      currency_code: input.currencyCode,
-      timezone: input.timezone,
-    });
-
-    // Step 3: auto-login. auth-bff retries the FGA check until the
-    // outbox drainer has shipped the membership tuple.
-    const result = await bffAutoLogin({
-      idToken: input.gipIdToken,
-      expectedTenantId: publicConfig.gipTenantId,
-      workspaceTenant: completion.tenant_id,
-    });
-
-    // Step 4: forward auth-bff's session cookie to the browser response.
-    if (result.setCookie) {
-      const parsed = parseSetCookie(result.setCookie);
-      if (parsed) {
-        const c = await cookies();
-        c.set({
-          name: parsed.name,
-          value: parsed.value,
-          path: parsed.path ?? "/",
-          domain: parsed.domain,
-          httpOnly: parsed.httpOnly,
-          secure: parsed.secure,
-          sameSite: "lax",
-          maxAge: parsed.maxAge,
-        });
-      }
-    }
-
-    return {
-      ok: true,
-      data: { tenantId: completion.tenant_id, slug: completion.slug },
-    };
-  } catch (err) {
-    return fail(err);
-  }
-}
-
-// ─── verifyAndLoginByToken: cross-tab/cross-device safe verify ─────────
-//
-// The new verify path. Takes ONLY the magic-link token — no client-side
-// state at all. Reads everything (business name, slug, country, currency,
-// GIP credentials) from the onboarding session draft that was persisted
-// at form-submit time. Lets users click the magic link from any browser
-// tab or device because nothing depends on per-tab sessionStorage.
-//
-// Replaces the old `verifyAndLogin` that required the client to ship
-// form fields + GIP credentials back over the wire. Old function is
-// kept temporarily for the existing client component.
-export async function verifyAndLoginByToken(
+// The verify landing page calls this on mount. It only marks the session
+// verified and returns the session id + email so the page can redirect
+// to /onboarding/set-password. Tenant creation + auto-login happen later
+// in completeOnboarding, after the user has picked a credential.
+export async function verifyToken(
   token: string,
-): Promise<Result<{ tenantId: string; slug: string }>> {
+): Promise<Result<{ sessionId: string; email: string }>> {
   try {
-    // Step 1: validate the magic link token. Marks the session verified
-    // and returns the session id + email so we can look up the draft.
     const verifyRes = await fetch(
       `${config.platformApiUrl}/api/v1/onboarding/verify-token`,
       {
@@ -238,200 +132,67 @@ export async function verifyAndLoginByToken(
     const verifyBody = (await verifyRes.json()) as {
       data: { session_id: string; email: string };
     };
-    const sessionId = verifyBody.data.session_id;
-    const email = verifyBody.data.email;
-
-    // Step 2: pull the persisted draft from the server. This is what
-    // makes the flow cross-tab safe — none of these values came from
-    // the browser that just clicked the link.
-    const sess = await onboarding.getSession(sessionId);
-    const draft = sess.draft ?? {};
-    const gipUid = draft.gip_uid ?? "";
-    const gipRefreshToken = draft.gip_refresh_token ?? "";
-    if (!gipUid || !gipRefreshToken) {
-      return {
-        ok: false,
-        code: "missing_credentials",
-        message:
-          "We couldn't recover your sign-in credentials. Please start onboarding again.",
-      };
-    }
-
-    // Step 3: refresh the GIP id_token using the persisted refresh
-    // token. Same call the client used to make at verify-time.
-    const fresh = await refreshIdToken(gipRefreshToken);
-
-    // Step 4: complete onboarding (creates tenant + outbox FGA writes).
-    const completion = await onboarding.complete(sessionId, {
-      business_name: draft.business_name ?? "",
-      slug: draft.slug ?? "",
-      owner_user_id: gipUid,
-      owner_email: email,
-      country_code: draft.country_code ?? "",
-      currency_code: draft.currency_code ?? "",
-      timezone: draft.timezone ?? "UTC",
-    });
-
-    // Step 5: auto-login (auth-bff retries the FGA check until the
-    // outbox drainer ships the membership tuple).
-    const result = await bffAutoLogin({
-      idToken: fresh.idToken,
-      expectedTenantId: publicConfig.gipTenantId,
-      workspaceTenant: completion.tenant_id,
-    });
-
-    // Step 6: forward auth-bff's session cookie to the browser response.
-    if (result.setCookie) {
-      const parsed = parseSetCookie(result.setCookie);
-      if (parsed) {
-        const c = await cookies();
-        c.set({
-          name: parsed.name,
-          value: parsed.value,
-          path: parsed.path ?? "/",
-          domain: parsed.domain,
-          httpOnly: parsed.httpOnly,
-          secure: parsed.secure,
-          sameSite: "lax",
-          maxAge: parsed.maxAge,
-        });
-      }
-    }
-
     return {
       ok: true,
-      data: { tenantId: completion.tenant_id, slug: completion.slug },
+      data: {
+        sessionId: verifyBody.data.session_id,
+        email: verifyBody.data.email,
+      },
     };
   } catch (err) {
     return fail(err);
   }
 }
 
-// ─── signIn: returning-user sign-in ────────────────────────────────────
+// ─── completeOnboarding: set-password submit → tenant + auto-login ─────
 //
-// The /login page collects email + password (or runs the Google popup)
-// client-side, exchanges credentials with GIP, and hands the resulting
-// id_token + uid to this action. We then:
+// Called from the /onboarding/set-password page once the user has either
+// (a) signed up with email + password via the GIP REST helper, or
+// (b) completed the "Continue with Google" popup via signInWithGoogle.
+// Both paths produce a fresh GIP id_token + uid + refreshToken; this
+// action takes those plus the session id and finishes the pipeline:
 //
-//   1. Look up the user's workspace_tenant via platform-api
-//      `/tenants/by-owner?uid=...` (added in Phase M).
-//   2. Call auth-bff /auth/auto-login with that workspace_tenant. This
-//      reuses the exact same retry-on-FGA-miss path onboarding uses.
-//   3. Forward the session cookie back to the browser response.
-//
-// Returns the tenant slug so the caller can redirect into the right
-// admin URL.
-interface SignInInput {
-  idToken: string;
-  uid: string;
-}
-
-export async function signIn(
-  input: SignInInput,
-): Promise<Result<{ tenantId: string; slug: string }>> {
-  try {
-    const t = await tenants.getByOwner(input.uid);
-
-    const result = await bffAutoLogin({
-      idToken: input.idToken,
-      expectedTenantId: publicConfig.gipTenantId,
-      workspaceTenant: t.id,
-    });
-
-    if (result.setCookie) {
-      const parsed = parseSetCookie(result.setCookie);
-      if (parsed) {
-        const c = await cookies();
-        c.set({
-          name: parsed.name,
-          value: parsed.value,
-          path: parsed.path ?? "/",
-          domain: parsed.domain,
-          httpOnly: parsed.httpOnly,
-          secure: parsed.secure,
-          sameSite: "lax",
-          maxAge: parsed.maxAge,
-        });
-      }
-    }
-
-    return { ok: true, data: { tenantId: t.id, slug: t.slug } };
-  } catch (err) {
-    return fail(err);
-  }
-}
-
-// ─── submitOnboardingWithGoogle: Google signup → no magic link ─────────
-//
-// "Continue with Google" path. The client has already exchanged a Google
-// credential for a fresh GIP id_token via signInWithGoogle (which round-
-// trips through Identity Toolkit's signInWithIdp). We:
-//
-//   1. Create the onboarding session for the verified email.
-//   2. Save the draft so it survives any retries.
-//   3. Call /sessions/:id/verify-google with the id_token. platform-api
-//      validates the token via Identity Toolkit accounts:lookup and marks
-//      the session verified — bypassing the magic-link round-trip.
-//   4. Complete the session (creates tenant + outbox FGA writes).
-//   5. auto-login → forward cookie. Same as the magic-link path from here.
-interface GoogleSubmitInput {
-  email: string;
-  businessName: string;
-  slug: string;
-  countryCode: string;
-  currencyCode: string;
-  timezone: string;
+//   1. Read the persisted business draft + email from the session.
+//   2. Call platform-api complete — creates the tenant row + outbox FGA
+//      writes in one transaction.
+//   3. Call auth-bff /auth/auto-login (which retries the FGA check until
+//      the outbox drainer ships the membership tuple).
+//   4. Forward the resulting Set-Cookie to the browser response.
+interface CompleteInput {
+  sessionId: string;
   gipUid: string;
   gipIdToken: string;
-  gipRefreshToken: string;
 }
 
-export async function submitOnboardingWithGoogle(
-  input: GoogleSubmitInput,
+export async function completeOnboarding(
+  input: CompleteInput,
 ): Promise<Result<{ tenantId: string; slug: string }>> {
   try {
-    const sess = await onboarding.createSession(input.email);
+    const sess = await onboarding.getSession(input.sessionId);
+    const draft = sess.draft ?? {};
+    const businessName = draft.business_name ?? "";
+    const slug = draft.slug ?? "";
+    const countryCode = draft.country_code ?? "";
+    const currencyCode = draft.currency_code ?? "";
+    const timezone = draft.timezone ?? "UTC";
 
-    await onboarding.saveDraft(sess.id, {
-      business_name: input.businessName,
-      slug: input.slug,
-      country_code: input.countryCode,
-      currency_code: input.currencyCode,
-      timezone: input.timezone,
-      gip_uid: input.gipUid,
-      gip_refresh_token: input.gipRefreshToken,
-    });
-
-    // Bypass the magic link by validating the id_token server-side.
-    const verifyRes = await fetch(
-      `${config.platformApiUrl}/api/v1/onboarding/sessions/${sess.id}/verify-google`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_token: input.gipIdToken }),
-        cache: "no-store",
-      },
-    );
-    if (!verifyRes.ok) {
-      const body = (await verifyRes.json().catch(() => ({}))) as {
-        error?: string;
-        message?: string;
-      };
+    if (!businessName || !slug || !countryCode || !currencyCode) {
       return {
         ok: false,
-        code: body.error ?? "verify_google_failed",
-        message: body.message ?? "Could not verify Google sign-in",
+        code: "draft_incomplete",
+        message:
+          "We couldn't recover your store details. Please start onboarding again.",
       };
     }
 
-    const completion = await onboarding.complete(sess.id, {
-      business_name: input.businessName,
-      slug: input.slug,
+    const completion = await onboarding.complete(input.sessionId, {
+      business_name: businessName,
+      slug,
       owner_user_id: input.gipUid,
-      owner_email: input.email,
-      country_code: input.countryCode,
-      currency_code: input.currencyCode,
-      timezone: input.timezone,
+      owner_email: sess.email,
+      country_code: countryCode,
+      currency_code: currencyCode,
+      timezone,
     });
 
     const result = await bffAutoLogin({
@@ -484,19 +245,27 @@ function parseSetCookie(raw: string): {
   const name = first.slice(0, eq);
   const value = first.slice(eq + 1);
 
-  const out: ReturnType<typeof parseSetCookie> = {
+  const out = {
     name,
     value,
     httpOnly: false,
     secure: false,
+  } as {
+    name: string;
+    value: string;
+    path?: string;
+    domain?: string;
+    httpOnly: boolean;
+    secure: boolean;
+    maxAge?: number;
   };
   for (const attr of attrs) {
     const lower = attr.toLowerCase();
-    if (lower === "httponly") out!.httpOnly = true;
-    else if (lower === "secure") out!.secure = true;
-    else if (lower.startsWith("path=")) out!.path = attr.slice(5);
-    else if (lower.startsWith("domain=")) out!.domain = attr.slice(7);
-    else if (lower.startsWith("max-age=")) out!.maxAge = parseInt(attr.slice(8), 10);
+    if (lower === "httponly") out.httpOnly = true;
+    else if (lower === "secure") out.secure = true;
+    else if (lower.startsWith("path=")) out.path = attr.slice(5);
+    else if (lower.startsWith("domain=")) out.domain = attr.slice(7);
+    else if (lower.startsWith("max-age=")) out.maxAge = parseInt(attr.slice(8), 10);
   }
   return out;
 }

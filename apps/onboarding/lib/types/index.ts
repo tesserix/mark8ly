@@ -42,10 +42,6 @@ export interface OnboardingDraft {
   country_code?: string;
   currency_code?: string;
   timezone?: string;
-  // GIP credentials persisted at form-submit time so the verify page can
-  // recover them server-side without depending on per-tab sessionStorage.
-  gip_uid?: string;
-  gip_refresh_token?: string;
 }
 
 export interface OnboardingSession {

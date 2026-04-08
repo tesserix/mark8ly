@@ -1,16 +1,8 @@
-import { AdminShell } from "@/components/shell/AdminShell";
-import { ComingSoon } from "@/components/shell/ComingSoon";
-import { getServerSessionContext } from "@/lib/auth/serverSession";
+import { redirect } from "next/navigation";
 
-export default async function SettingsPage() {
-  const { tenantName, email } = await getServerSessionContext();
-  return (
-    <AdminShell tenantName={tenantName} userEmail={email}>
-      <ComingSoon
-        title="Settings"
-        description="Store details, payments, shipping, tax, domains, and roles. This is where you fine-tune everything."
-        eta="Next slice"
-      />
-    </AdminShell>
-  );
+// /settings is an index route — redirect to the only real settings
+// page we've shipped so far. When a second settings section lands
+// this becomes a layout with a sidebar of sub-pages.
+export default function SettingsPage() {
+  redirect("/settings/general");
 }

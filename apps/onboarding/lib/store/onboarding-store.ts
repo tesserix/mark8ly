@@ -12,10 +12,6 @@ import { persist, createJSONStorage } from "zustand/middleware";
 export interface OnboardingFields {
   email: string;
   sessionId: string;
-  // GIP credentials captured at form-submit time so the verify page can
-  // refresh the id_token at click time without re-running signup.
-  gipUid: string;
-  gipRefreshToken: string;
   businessName: string;
   slug: string;
   countryCode: string;
@@ -31,8 +27,6 @@ interface OnboardingState extends OnboardingFields {
 const initial: OnboardingFields = {
   email: "",
   sessionId: "",
-  gipUid: "",
-  gipRefreshToken: "",
   businessName: "",
   slug: "",
   countryCode: "",

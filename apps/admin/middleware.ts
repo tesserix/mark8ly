@@ -11,18 +11,19 @@ import { NextResponse, type NextRequest } from "next/server";
  * re-hitting auth-bff.
  *
  * Failure modes:
- *   - no cookie on request       → redirect to marketing login
- *   - cookie present but invalid → redirect to marketing login
- *   - auth-bff unreachable       → redirect to marketing login (fail closed)
+ *   - no cookie on request       → redirect to /login (admin's own form)
+ *   - cookie present but invalid → redirect to /login
+ *   - auth-bff unreachable       → redirect to /login (fail closed)
  *
  * The "fail closed" branch is deliberate: an unreachable auth-bff is a
  * real outage, not a gray zone. Rendering an admin page with no
  * session would leak tenant-scoped data to anonymous visitors.
+ *
+ * Phase M: /login is now hosted on the admin app itself (not the
+ * marketing site) so returning users don't bounce across origins.
  */
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "m8_session";
 const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
-const MARKETING_URL =
-  process.env.NEXT_PUBLIC_MARKETING_URL ?? "http://localhost:4201";
 
 // Routes that should never be gated — login redirect targets, static
 // assets, and anything that must render without a session.
@@ -82,7 +83,7 @@ export async function middleware(req: NextRequest) {
 }
 
 function redirectToLogin(req: NextRequest): NextResponse {
-  const loginUrl = new URL(`${MARKETING_URL}/login`);
+  const loginUrl = new URL("/login", req.nextUrl.origin);
   loginUrl.searchParams.set("returnUrl", req.nextUrl.toString());
   return NextResponse.redirect(loginUrl);
 }

@@ -377,79 +377,241 @@ Welcome page gains an "Open admin dashboard →" CTA. New Playwright
 test opens the magic link in a fresh browser context (no shared
 storage) — proves cross-device works.
 
-### Phase M — Returning-user sign-in + Google sign-up *(shipped)*
+### Phase M — Returning-user sign-in + post-verify credential picker *(shipped)*
 
-Closes the loop for users who already have a tenant AND adds a
-password-free signup path via Google.
+Closes the loop for users who already have a tenant AND restructures
+the signup flow so the credential (password OR Google) is collected
+AFTER the email is verified, not before.
 
-What landed:
+The shipped UX is:
 
-1. **Password on signup.** OnboardingForm now has a real password
-   field (min 8 chars) wired through `signUp(email, password)` so the
-   merchant has a credential on file for next time. The throwaway
-   randomPassword path is gone.
-2. **Login page.** `/login` is now a real client form: email +
-   password + a "Continue with Google" button. The page replaces the
-   Phase J stub.
-3. **`signIn` server action.** Takes `{idToken, uid}` from the client,
-   looks up the workspace tenant by GIP UID via the new platform-api
-   endpoint `GET /api/v1/tenants/by-owner?uid=...`, then calls
-   auth-bff `/auth/auto-login` (reusing its retry-on-FGA-miss). The
-   plan called for "zero new backend code" but that's not actually
-   possible — `/auth/auto-login` requires `workspace_tenant`, and a
-   returning user doesn't know it. The lookup endpoint is a ~30-line
-   addition on top of the existing `tenants.owner_user_id` index.
-4. **Continue with Google on `/login`.** Uses Google Identity Services
-   (gsi/client) for the popup → Google credential is exchanged via
-   Identity Toolkit `accounts:signInWithIdp` for a GIP id_token in our
-   tenant pool → same `signIn` server action takes it from there. No
-   firebase JS SDK dependency added.
-5. **Continue with Google on signup.** Same gsi/client popup, but this
-   path needed real backend work because the existing `Complete()`
-   path hard-fails when `email_verified_at` is null on the session,
-   and a Google user shouldn't have to wait on a magic link. New
-   server-side endpoint `POST /api/v1/onboarding/sessions/:id/verify-google`
-   takes a GIP id_token, validates it via Identity Toolkit
-   `accounts:lookup`, and marks the session verified iff the email
-   matches and `email_verified=true`. Defense-in-depth tenant check on
-   top in case the API key is shared across tenant pools. New server
-   action `submitOnboardingWithGoogle` runs the createSession →
-   saveDraft → verify-google → complete → autoLogin pipeline in one
-   shot, no inbox round-trip.
+1. **Onboarding form** at `/onboarding` collects email + business
+   name + slug + country + currency. No password, no Google button.
+   Submit creates the session, persists the business draft, sends a
+   magic link.
+2. **Magic link click** lands on `/onboarding/verify?token=…`. The
+   `verifyToken` server action marks the session verified server-side
+   and the page redirects to `/onboarding/set-password?session=…`.
+3. **Set-password page** is a server-component shell that fetches
+   the session from platform-api, asserts it's verified, and renders
+   the `SetPasswordForm` with the verified email + business name.
+   The form offers two paths to a credential:
+   - Email + password (min 8 chars) → `signUp(email, password)` via
+     Identity Toolkit `accounts:signUp`.
+   - **Continue with Google** via `getGoogleCredential` (gsi/client
+     popup) → `signInWithGoogle` (Identity Toolkit
+     `accounts:signInWithIdp`). Defense-in-depth check: the Google
+     credential's email must match the session's verified email, so
+     a stray Google account can't hijack a session.
+   Both paths produce a fresh GIP id_token + uid + refreshToken and
+   call the `completeOnboarding` server action, which reads the
+   draft, calls platform-api `complete()` (the session is already
+   verified, no bypass needed), calls auth-bff `/auth/auto-login`,
+   and forwards the session cookie. Lands on `/welcome`.
+4. **Returning users** get their own `/login` page on the **admin app**
+   (port 4202). It hosts a real client form: email + password + a
+   "Continue with Google" button. Both paths produce a GIP id_token,
+   handed to admin's `signIn` server action which looks up the
+   workspace tenant by GIP UID via platform-api
+   `GET /api/v1/tenants/by-owner?uid=…`, then calls
+   `/auth/auto-login`. Lands on `/dashboard`.
+5. **Admin middleware** redirects unauth users to admin's own `/login`
+   instead of bouncing across origins to the marketing site.
 
-New backend surface:
+New backend surface (kept):
 
 - `tenant.GetByOwnerUserID` repo + service + handler + tests
-- `onboarding.GoogleVerifier` (Identity Toolkit `accounts:lookup`
-  client)
-- `onboarding.VerifyGoogleAndMark` service method + handler
+- `GET /api/v1/tenants/by-owner?uid=…`
+
+Removed (dead code from the earlier iteration that did
+verify-google-on-signup before this restructure):
+
+- `onboarding.GoogleVerifier` Identity Toolkit `accounts:lookup` client
+- `onboarding.VerifyGoogleAndMark` service method + `verify-google`
+  handler/route
+- `GIP_API_KEY` / `GIP_TENANT_ID` config on platform-api
+- `submitOnboardingWithGoogle` server action and the onboarding
+  `signInWithPassword` / `refreshIdToken` GIP REST helpers
+- The onboarding `/login` stub (returning users go to the admin
+  origin's `/login` directly)
 
 New env vars:
 
-- platform-api: `GIP_API_KEY`, `GIP_TENANT_ID` (optional — if unset,
-  the verify-google path returns `google_verify_disabled` and the
-  Google-on-signup button surfaces an error; password signup still
-  works)
-- onboarding app: `NEXT_PUBLIC_GOOGLE_CLIENT_ID` for the GSI client
+- onboarding app: `NEXT_PUBLIC_GOOGLE_CLIENT_ID` for the set-password
+  page's GSI button.
+- admin app: same `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. The `lib/gip` and
+  `lib/auth/auth-bff` helpers are duplicated in both apps for now —
+  small enough that a shared package isn't worth the build-graph cost.
 
-Original budget was "3–5 hours frontend only". Real cost was closer
-to a full day because the Google-on-signup ask added ~80 lines of Go
-plus a new server action. Worth it: the merchant can now sign up in
-one click without ever seeing a magic-link email.
+Why the post-verify credential picker matters: a Google user never
+sees the magic-link email but the email is still verified before the
+tenant is created (via the magic-link round-trip). One funnel, two
+credential paths, no special-case backend.
 
-### Phases N+ — TBD
+### Phase N — Tenant settings (general) page *(shipped)*
 
-Open at the time of writing. Likely candidates:
+First real admin feature on top of the chrome. Proves the
+auth/session/tenant-context plumbing holds when a page actually reads
+and writes tenant data, and surfaces every onboarding-form field
+back to the merchant so "what I typed when I signed up" is visible
+and (where safe) editable.
 
-- **Tenant settings (general) page** — store name, logo, contact email,
-  currency. Real feature page using endpoints platform-api already
-  has. ~half day. The first Phase that proves we can ship a real
-  admin feature on top of the chrome.
-- **Roles + RBAC** — extend the OpenFGA model with `admin` / `staff` /
-  `viewer` relations, write the `owner` tuple on onboarding completion,
-  add role-aware checks in admin middleware, hide nav items based on
-  role. Discussed in detail when the user asked about role pickup.
-  Probably 1–2 days.
+What landed:
+
+1. **Admin page** `apps/admin/app/settings/general/page.tsx` — server
+   component pulling the tenant row from `getServerSessionContext()`
+   (which already hits platform-api `GET /internal/tenants/:id`).
+   Graceful fallback if the fetch fails. `/settings` redirects here.
+2. **Update endpoint** on platform-api —
+   `PATCH /internal/tenants/:id` (mounted under `/internal`, not
+   `/api/v1`, matching the existing tenant-read pattern: trusted
+   in-cluster callers only). Accepts a partial JSON body; Phase N
+   ships with only `name` editable. Pointer fields in `UpdateInput`
+   keep "unset" vs "empty" distinguishable, so adding more fields
+   later is additive.
+3. **Repository `UpdateEditable`** — `map[string]any` patch against
+   GORM `Updates()`, auto-bumps `updated_at`, translates unique
+   violations to `tenant_update_conflict`, returns `tenant_not_found`
+   on zero rows affected.
+4. **Service `Update`** — trims whitespace, rejects empty names,
+   caps at 200 chars (matches the DB `VARCHAR(200)`), rejects
+   empty patches with `empty_update`. 6 new service tests cover the
+   happy path and every rejection branch.
+5. **Server action** `updateGeneralSettings` in
+   `apps/admin/app/settings/general/actions.ts` — reads tenant id
+   from middleware-forwarded session headers (never the browser),
+   re-validates server-side, calls `updateTenant` on the platform-api
+   client, then `revalidatePath("/", "layout")` so the AdminShell
+   top-bar tenant name refreshes everywhere on next nav.
+6. **Form** `apps/admin/components/settings/GeneralSettingsForm.tsx`
+   — client component. Surfaces **all** onboarding fields:
+   - **Editable**: store name.
+   - **Read-only**: slug (as a `{slug}.mark8ly.com` URL preview),
+     owner email, country code, currency code, timezone. Each gets
+     a "contact support to change" hint explaining why it's locked.
+   Simple `useState` + `useTransition` + `router.refresh()` — no
+   RHF/Zod yet because there is only one editable field; we upgrade
+   when the second lands. Error and success banners wired to the
+   server action's discriminated-union return type.
+7. **E2E** `apps/admin/tests/e2e/settings-general.spec.ts` — two
+   specs. Happy path: onboard a merchant, sign in, navigate to
+   `/settings/general`, assert every onboarding field is visible
+   with the value the merchant typed, edit the name, save, reload,
+   assert the new name comes back from the DB. Negative path:
+   assert whitespace-only name is rejected.
+
+Deliberate scope cuts from the original spec:
+
+- **No `logo_url` or `contact_email` fields.** The original plan
+  listed them but the `tenants` schema has neither column. Adding
+  two columns (plus a GCS upload flow for the logo) would have
+  quadrupled the slice. Reuse the fields that already exist, ship,
+  re-evaluate.
+- **No currency / timezone / country editing.** Currency change has
+  billing implications, country affects tax, timezone editing
+  needs a searchable picker for ~400 entries to be usable. All
+  three surface read-only with a support hint; each is a sensible
+  follow-up slice.
+- **No RBAC guard on the PATCH yet.** Phase N enforces "one owner
+  per tenant" implicitly (a UID owns at most one tenant, and the
+  server action uses the session tenant id unconditionally). Real
+  FGA `Check()` lands in Phase O and retrofits onto this endpoint.
+- **No generic settings layout with a side sub-nav.** Single page
+  flat until a second settings page justifies the refactor.
+
+### Phase O — Roles + RBAC (1–2 days)
+
+Extends the OpenFGA model so tenants can have more than one human,
+and so the admin app can hide/deny things based on role. Unblocks
+any future "invite teammate" flow.
+
+Scope:
+
+1. **OpenFGA model update** — add `admin`, `staff`, `viewer`
+   relations on the `tenant` type alongside existing `owner`.
+   Define permission → relation mappings (e.g. `can_edit_settings`
+   = `owner` or `admin`; `can_view_settings` = any member).
+   Migration script or doc for applying the new model to the
+   platform store.
+2. **Write `owner` tuple on onboarding completion** — currently
+   missing. Hook into `onboarding.Complete()` after the tenant is
+   created to write `user:<uid>` `owner` `tenant:<tid>` into the
+   platform store. Idempotent (safe to re-run).
+3. **Role-aware admin middleware** — extend `apps/admin/middleware.ts`
+   to fetch the caller's role(s) for the workspace tenant via a new
+   lightweight platform-api endpoint
+   `GET /api/v1/tenants/:id/me` that returns
+   `{ role: "owner" | "admin" | "staff" | "viewer" }`. Cache in the
+   session cookie so we don't hit FGA on every nav.
+4. **Server-side permission checks** — tenant PATCH from Phase N
+   now requires `can_edit_settings`. Add an `authz` guard in the
+   handler using go-shared's FGA middleware. Phase N's owner-only
+   implicit check is replaced by a real FGA `Check()`.
+5. **Nav hiding** — admin sidebar reads role from session and
+   hides items the user can't access. Hidden ≠ secure: server still
+   enforces. This is purely UX.
+6. **E2E** — spec that creates a tenant, asserts owner can edit
+   settings; stub a second-user "viewer" case via a test helper
+   that writes a tuple directly (no invite flow yet).
+
+Out of scope: invite-teammate UI, email invitations, role
+management UI (promoting staff → admin), audit log of role
+changes. Those land with a dedicated "team management" phase
+later.
+
+Dependencies: Phase N ships first so there is at least one
+protected write path to check the role against. Phase O then
+retrofits real FGA enforcement onto Phase N's endpoint.
+
+**Legacy reference (`../mark8ly_backup`):** the old stack never
+committed an FGA DSL file — the authorization model lived only
+in the running OpenFGA store. What the code tells us:
+
+- DB-level membership roles existed as string constants in
+  `services/tenant-service/internal/models/models.go:538-544`:
+  `owner`, `admin`, `manager`, `member`, `viewer`. These drove a
+  `tenant_memberships` table, not FGA.
+- FGA was only used for **one** platform-level tuple:
+  `user:<idpUserID>` `owner` `tenant:<tenantID>`, written from
+  `services/tenant-service/internal/services/onboarding_completion.go:505`
+  via `platformFGA.Grant(...)` with a 3-attempt retry. No other
+  roles (admin/manager/member/viewer) were ever written to the
+  platform store.
+- Separate store-level and vendor-level roles lived in the
+  `staff` service (`services/staff/internal/services/fga_tuple_writer.go`)
+  via `GrantStoreRole` / `GrantVendorRole`. Out of scope for Phase O
+  — those belong to a future staff/marketplace slice.
+- The go-shared authz client already exposes everything we need:
+  `Can`, `Grant`, `Revoke`, `ListObjects`, `GrantRelation`,
+  `WriteModel` (`packages/go-shared/authz/client.go:147-246`).
+  Port or depend on this verbatim rather than reinventing.
+
+Implications for Phase O:
+
+1. **Drop `manager` and `member` from the initial model.** The old
+   stack defined them but never wrote tuples for them. Start with
+   `owner` / `admin` / `staff` / `viewer` and add more only when a
+   real feature needs them.
+2. **Commit the FGA DSL to the repo this time.** Put the model at
+   `services/platform-api/internal/authz/model.fga` (or
+   `infra/openfga/platform-model.fga`) with a tiny apply script
+   that calls `WriteAuthorizationModel`. The legacy drift between
+   "what the code writes" and "what the store accepts" came from
+   having no checked-in source of truth.
+3. **Reuse the legacy write path pattern.** The onboarding-complete
+   tuple write in Phase O item 2 should copy the retry-with-backoff
+   shape from `onboarding_completion.go:499-516`: 3 attempts,
+   500ms → 5s, and on final failure mark the tenant `failed` and
+   abort onboarding. Do not silently swallow.
+4. **One store, not per-product.** The legacy code distinguished
+   "platform store" (tenant membership) from a marketplace store
+   (product-level). Phase O only touches the platform store;
+   marketplace-store roles are a later phase when products ship.
+
+### Phases P+ — TBD
+
+Open. Likely candidates:
+
 - **Products service + admin products UI** — first real new backend
   service. Domain CRUD, image URLs, single stock count. Pairs with
   the admin products page port. ~3–5 days.

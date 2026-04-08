@@ -33,7 +33,6 @@ test("magic link works in a fresh browser context (cross-device)", async ({
 
   await aPage.goto("http://localhost:4201/onboarding");
   await aPage.getByLabel(/email address/i).fill(details.email);
-  await aPage.locator("#password").fill(details.password);
   await aPage.getByLabel(/business name/i).fill(details.businessName);
   await aPage.locator("#slug").fill(details.slug);
   await expect(aPage.getByText(/✓ available/i)).toBeVisible({ timeout: 5000 });
@@ -65,8 +64,15 @@ test("magic link works in a fresh browser context (cross-device)", async ({
     `http://localhost:4201/onboarding/verify?token=${encodeURIComponent(token)}`,
   );
 
-  // Cross-device-safe verify reads the draft from the server and lands
-  // on /welcome without ever touching sessionStorage.
+  // Phase M: cross-device verify lands on /onboarding/set-password in
+  // the second context, since the credential collection now happens
+  // post-verify. The set-password page server-fetches the session draft
+  // — that's the cross-device safety guarantee we're proving here.
+  await expect(bPage).toHaveURL(/\/onboarding\/set-password/, {
+    timeout: 15_000,
+  });
+  await bPage.locator("#password").fill(details.password);
+  await bPage.getByRole("button", { name: /create account/i }).click();
   await expect(bPage).toHaveURL(/\/welcome/, { timeout: 15_000 });
   await expect(
     bPage.getByRole("link", { name: /open admin dashboard/i }),

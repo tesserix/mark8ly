@@ -45,6 +45,53 @@ func (s *Service) GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, er
 	return s.repo.GetByOwnerUserID(ctx, uid)
 }
 
+// UpdateInput is the editable subset of a Tenant row.
+//
+// Phase N ships with only Name editable. Additional fields (currency,
+// timezone) are deliberately omitted: currency change has invoicing
+// implications and timezone affects daily rollups — both are admin-
+// op requests, not self-service toggles. Slug and country_code are
+// permanently immutable.
+//
+// Pointer fields allow the caller to distinguish "unset" (leave as-is)
+// from "set to empty string" (validated and rejected).
+type UpdateInput struct {
+	Name *string
+}
+
+// Update applies an UpdateInput to the tenant row and returns the
+// updated tenant. Validates each provided field; fields omitted from
+// the input are left untouched.
+//
+// Authorization is the caller's responsibility. In Phase N the admin
+// BFF enforces that the session tenant matches the path param before
+// calling this method. Phase O will retrofit an OpenFGA Check() onto
+// the handler directly.
+func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*Tenant, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, apperrors.BadRequest("invalid_tenant_id", "tenant id is required")
+	}
+
+	patch := map[string]any{}
+	if in.Name != nil {
+		name := strings.TrimSpace(*in.Name)
+		if name == "" {
+			return nil, apperrors.BadRequest("invalid_name", "store name cannot be empty")
+		}
+		if len(name) > 200 {
+			return nil, apperrors.BadRequest("invalid_name", "store name must be 200 characters or fewer")
+		}
+		patch["name"] = name
+	}
+
+	if len(patch) == 0 {
+		return nil, apperrors.BadRequest("empty_update", "no editable fields provided")
+	}
+
+	return s.repo.UpdateEditable(ctx, id, patch)
+}
+
 // GetBySlug returns a tenant by its public slug.
 //
 // We TRIM whitespace but do NOT lowercase. The slug is the canonical

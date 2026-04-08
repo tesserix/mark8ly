@@ -37,34 +37,8 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 		// link only carries the token. The handler resolves the session
 		// from the token's session_id.
 		o.POST("/verify-token", h.verifyAndMarkSession)
-		// Magic-link bypass for "Continue with Google" sign-up. Caller
-		// presents a fresh GIP id_token; we validate it via Identity
-		// Toolkit and mark the session verified if email matches.
-		o.POST("/sessions/:id/verify-google", h.verifyGoogle)
 		o.POST("/sessions/:id/complete", h.completeSession)
 	}
-}
-
-type verifyGoogleRequest struct {
-	IDToken string `json:"id_token" binding:"required"`
-}
-
-func (h *Handler) verifyGoogle(c *gin.Context) {
-	var req verifyGoogleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, apperrors.BadRequest("invalid_request", err.Error()))
-		return
-	}
-	sess, err := h.svc.VerifyGoogleAndMark(c.Request.Context(), c.Param("id"), req.IDToken)
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"verified":   true,
-		"session_id": sess.ID,
-		"email":      sess.Email,
-	}})
 }
 
 func (h *Handler) createSession(c *gin.Context) {

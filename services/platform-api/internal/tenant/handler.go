@@ -43,7 +43,38 @@ func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 	int := internal.Group("/tenants")
 	{
 		int.GET("/:id", h.getTenant)
+		int.PATCH("/:id", h.updateTenant)
 	}
+}
+
+// updateTenantRequest is the body shape for PATCH /internal/tenants/:id.
+//
+// All fields are optional pointers so callers can PATCH a single field
+// without needing to resend the full tenant row. Matches tenant.UpdateInput.
+type updateTenantRequest struct {
+	Name *string `json:"name"`
+}
+
+// updateTenant handles PATCH /internal/tenants/:id.
+//
+// Callable only from trusted in-cluster services (admin BFF forwards the
+// authenticated session's tenant id from the cookie). Authorization is
+// assumed — see service.Update doc comment for the Phase N/O split.
+func (h *Handler) updateTenant(c *gin.Context) {
+	var req updateTenantRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_body",
+			"message": "request body is not valid JSON",
+		})
+		return
+	}
+	t, err := h.svc.Update(c.Request.Context(), c.Param("id"), UpdateInput{Name: req.Name})
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": t})
 }
 
 func (h *Handler) checkSlugAvailable(c *gin.Context) {

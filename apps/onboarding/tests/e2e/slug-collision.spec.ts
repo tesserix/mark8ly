@@ -27,7 +27,6 @@ test("rejects a slug that another tenant has already claimed", async ({
   // ── 1. Claim the slug end-to-end ──────────────────────────────────────
   await page.goto("/onboarding");
   await page.getByLabel(/email address/i).fill(claim.email);
-  await page.locator("#password").fill(claim.password);
   await page.getByLabel(/business name/i).fill(claim.businessName);
   await page.locator("#slug").fill(claim.slug);
   await expect(page.getByText(/✓ available/i)).toBeVisible({ timeout: 5000 });
@@ -44,6 +43,12 @@ test("rejects a slug that another tenant has already claimed", async ({
 
   const token = await fetchMagicLinkToken(request, claim.email);
   await page.goto(`/onboarding/verify?token=${encodeURIComponent(token)}`);
+  // Phase M: set-password step before /welcome.
+  await expect(page).toHaveURL(/\/onboarding\/set-password/, {
+    timeout: 15_000,
+  });
+  await page.locator("#password").fill(claim.password);
+  await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });
 
   // ── 2. Fresh tab, same slug, expect "Already taken" ───────────────────

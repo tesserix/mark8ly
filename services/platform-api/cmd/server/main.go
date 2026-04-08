@@ -135,7 +135,6 @@ func main() {
 		AdminURLTemplate:      "https://%s-admin.mark8ly.com",
 		StorefrontURLTemplate: "https://%s.mark8ly.com",
 		SupportEmail:          cfg.EmailFrom,
-		GoogleVerifier:        onboarding.NewGoogleVerifier(cfg.GIPAPIKey, cfg.GIPTenantID),
 	})
 	onboardingHandler := onboarding.NewHandler(onboardingSvc, verifSvc)
 

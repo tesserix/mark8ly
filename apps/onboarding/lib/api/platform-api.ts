@@ -115,26 +115,10 @@ export const onboarding = {
 };
 
 // ─── Tenants ────────────────────────────────────────────────────────────
-interface TenantSummary {
-  id: string;
-  slug: string;
-  name: string;
-  owner_user_id: string;
-  owner_email: string;
-}
-
 export const tenants = {
   isSlugAvailable: (slug: string) =>
     request<{ slug: string; available: boolean }>(
       `/api/v1/tenants/slug-available?slug=${encodeURIComponent(slug)}`,
-    ),
-
-  /** Look up the workspace tenant owned by the given GIP UID. Used by
-   *  the returning-user sign-in path so the server action can fill the
-   *  workspace_tenant field in the auth-bff /auth/auto-login call. */
-  getByOwner: (uid: string) =>
-    request<TenantSummary>(
-      `/api/v1/tenants/by-owner?uid=${encodeURIComponent(uid)}`,
     ),
 };
 

@@ -22,6 +22,7 @@ export function uniqueEmail(label = "admin-e2e"): {
   email: string;
   slug: string;
   businessName: string;
+  password: string;
 } {
   const stamp = `${Date.now().toString(36)}${Math.floor(
     Math.random() * 1e4,
@@ -31,6 +32,9 @@ export function uniqueEmail(label = "admin-e2e"): {
     email: `${local}@example.com`,
     slug: local.replace(/[^a-z0-9-]/g, "").slice(0, 60),
     businessName: `${label} ${stamp}`,
+    // Phase M: the set-password page collects this after the magic link
+    // is consumed. Stable per call so the admin sign-in spec can reuse it.
+    password: "e2e-test-password-123",
   };
 }
 
@@ -80,7 +84,12 @@ export async function completeOnboarding(
   page: import("@playwright/test").Page,
   request: APIRequestContext,
   label = "admin-e2e",
-): Promise<{ email: string; slug: string; businessName: string }> {
+): Promise<{
+  email: string;
+  slug: string;
+  businessName: string;
+  password: string;
+}> {
   const details = uniqueEmail(label);
 
   await page.goto(`${ONBOARDING_URL}/onboarding`);
@@ -105,6 +114,14 @@ export async function completeOnboarding(
   await page.goto(
     `${ONBOARDING_URL}/onboarding/verify?token=${encodeURIComponent(token)}`,
   );
+
+  // Phase M: verify lands on /onboarding/set-password (not /welcome).
+  // Pick the email+password path, submit, then end up on /welcome.
+  await expect(page).toHaveURL(/\/onboarding\/set-password/, {
+    timeout: 15_000,
+  });
+  await page.locator("#password").fill(details.password);
+  await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });
 
   return details;

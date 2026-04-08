@@ -32,7 +32,6 @@ test("golden path: landing → form → magic link → welcome", async ({
   ).toBeVisible();
 
   await page.getByLabel(/email address/i).fill(email);
-  await page.locator("#password").fill(password);
   await page.getByLabel(/business name/i).fill(businessName);
 
   // The slug field auto-suggests from the business name; overwrite to
@@ -66,6 +65,12 @@ test("golden path: landing → form → magic link → welcome", async ({
   const token = await fetchMagicLinkToken(request, email);
   await page.goto(`/onboarding/verify?token=${encodeURIComponent(token)}`);
 
-  // 6. Welcome page.
-  await expect(page).toHaveURL(/\/welcome/, { timeout: 10_000 });
+  // 6. Phase M: lands on /onboarding/set-password. Pick a password and
+  //    click Create account → /welcome.
+  await expect(page).toHaveURL(/\/onboarding\/set-password/, {
+    timeout: 15_000,
+  });
+  await page.locator("#password").fill(password);
+  await page.getByRole("button", { name: /create account/i }).click();
+  await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });
 });

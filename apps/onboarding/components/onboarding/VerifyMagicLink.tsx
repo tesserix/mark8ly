@@ -4,18 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useOnboardingStore } from "@/lib/store/onboarding-store";
-import { verifyAndLoginByToken } from "@/app/onboarding/actions";
+import { verifyToken } from "@/app/onboarding/actions";
 
 /**
  * VerifyMagicLink is the magic link target.
  *
- * Phase L: cross-tab/cross-device safe. Reads ONLY the token from the
- * URL and hands it to the `verifyAndLoginByToken` server action. The
- * server fetches the persisted onboarding session draft (with the GIP
- * credentials we saved at form-submit time), refreshes the id_token,
- * completes the tenant, and mints the session cookie — all without
- * requiring any client-side state. The user can click the link from
- * any tab, browser, or device.
+ * Phase M: this page now ONLY validates the magic-link token and marks
+ * the session verified server-side. On success it redirects to
+ * /onboarding/set-password where the merchant picks a credential
+ * (password or Google) — that page completes the tenant + mints the
+ * session cookie.
+ *
+ * The split exists so the credential-picker UX can run AFTER email
+ * verification, which means a Google-signup user never has to read
+ * the magic-link email.
  *
  * The onboarding store still gets reset on success because we want
  * the same browser to forget the in-progress fields if it does happen
@@ -47,13 +49,15 @@ export function VerifyMagicLink() {
 
     (async () => {
       try {
-        const r = await verifyAndLoginByToken(token);
+        const r = await verifyToken(token);
         if (!r.ok) {
           setError(`${r.code}: ${r.message}`);
           return;
         }
         reset();
-        router.push("/welcome");
+        router.push(
+          `/onboarding/set-password?session=${encodeURIComponent(r.data.sessionId)}`,
+        );
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Something went wrong",

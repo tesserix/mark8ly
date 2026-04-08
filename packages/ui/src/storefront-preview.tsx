@@ -522,7 +522,6 @@ function ButtonBlock({
 function Tile({
   theme,
   ratio,
-  small = false,
   fill = false,
 }: {
   theme: StorefrontTheme;

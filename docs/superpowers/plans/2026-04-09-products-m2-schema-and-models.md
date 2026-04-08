@@ -695,10 +695,13 @@ Include `go.mod` and `go.sum` in the commit if `datatypes` was a new dependency.
 
 - [ ] **Step 4.4: Commit**
 
+`gorm.io/datatypes` is a brand-new direct dependency (it is NOT a transitive of anything M1 landed). `go.mod` and `go.sum` MUST be in the commit — do not make them optional. Verify with `git status` before committing: both files should appear as modified.
+
 ```bash
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly
 git add services/marketplace-api/internal/outbox services/marketplace-api/internal/idempotency
-git add services/marketplace-api/go.mod services/marketplace-api/go.sum 2>/dev/null || true
+git add services/marketplace-api/go.mod services/marketplace-api/go.sum
+git status --short  # Expect: M internal/outbox/..., M internal/idempotency/..., M go.mod, M go.sum
 git commit -m "feat(marketplace-api): outbox + idempotency key models"
 ```
 
@@ -923,6 +926,24 @@ type ProductCategory struct {
 }
 
 func (ProductCategory) TableName() string { return "product_categories" }
+
+// VariantStock is the per-location stock row. Writing to this table
+// triggers sync_variant_inventory() which updates the denormalised
+// Variant.InventoryQuantity column. Slice 1 uses exactly one row per
+// variant at DEFAULT_LOCATION_ID; slice 2+ extends to multi-warehouse.
+//
+// The composite primary key (variant_id, location_id) is declared
+// explicitly so GORM does NOT try to add a RETURNING id clause on
+// INSERT. Without the primaryKey tags on both fields, GORM would look
+// for a single-column PK and fail.
+type VariantStock struct {
+	VariantID  string    `gorm:"primaryKey;column:variant_id;type:uuid"     json:"variant_id"`
+	LocationID string    `gorm:"primaryKey;column:location_id;type:uuid"    json:"location_id"`
+	Quantity   int       `gorm:"column:quantity;not null;default:0"          json:"quantity"`
+	UpdatedAt  time.Time `gorm:"column:updated_at;not null;default:now()"    json:"updated_at"`
+}
+
+func (VariantStock) TableName() string { return "variant_stock" }
 ```
 
 - [ ] **Step 6.2: Verify build**
@@ -1114,15 +1135,12 @@ func TestIntegration_FullProductGraph_RoundTrip(t *testing.T) {
 	// 7. Insert variant_stock rows → trigger should sync inventory_quantity
 	defaultLocation := "00000000-0000-0000-0000-000000000001"
 	for i, v := range variants {
-		initialQty := 10 + i // 10, 11, 12, 13, 14, 15
-		type stockRow struct {
-			VariantID  string    `gorm:"column:variant_id"`
-			LocationID string    `gorm:"column:location_id"`
-			Quantity   int       `gorm:"column:quantity"`
-			UpdatedAt  time.Time `gorm:"column:updated_at"`
+		stock := &product.VariantStock{
+			VariantID:  v.ID,
+			LocationID: defaultLocation,
+			Quantity:   10 + i, // 10, 11, 12, 13, 14, 15
 		}
-		row := stockRow{VariantID: v.ID, LocationID: defaultLocation, Quantity: initialQty}
-		if err := tx.Table("variant_stock").Create(&row).Error; err != nil {
+		if err := tx.Create(stock).Error; err != nil {
 			t.Fatalf("insert variant_stock for %s: %v", v.SKU, err)
 		}
 	}
@@ -1207,6 +1225,11 @@ func TestIntegration_FullProductGraph_RoundTrip(t *testing.T) {
 // TestIntegration_PartialUnique_SoftDelete verifies that the partial
 // unique index on (store_id, handle) WHERE deleted_at IS NULL lets a
 // new live row reuse a handle after the previous row is soft-deleted.
+//
+// Postgres aborts an entire transaction on any SQL error, so every
+// expected-failure statement (the duplicate insert, the un-delete)
+// MUST run inside its own SAVEPOINT. Rolling back the savepoint after
+// the expected error leaves the outer tx healthy for the next step.
 func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 	tx := testdb.NewTx(t)
 
@@ -1226,7 +1249,7 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 		t.Fatalf("insert store: %v", err)
 	}
 
-	// Insert first product
+	// Insert first product (real statement; stays committed inside the outer tx)
 	p1 := &product.Product{
 		TenantID: tenantID,
 		StoreID:  storeID,
@@ -1238,7 +1261,11 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 		t.Fatalf("insert first product: %v", err)
 	}
 
-	// Insert a second product with the same handle → should fail
+	// Expected-failure #1: duplicate live handle → must fail with unique
+	// violation. Wrap in a savepoint so the outer tx survives the error.
+	if err := tx.SavePoint("before_dup_insert").Error; err != nil {
+		t.Fatalf("savepoint before_dup_insert: %v", err)
+	}
 	p2 := &product.Product{
 		TenantID: tenantID,
 		StoreID:  storeID,
@@ -1246,11 +1273,15 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 		Title:    "Silk Scarf (v2)",
 		Status:   product.StatusDraft,
 	}
-	if err := tx.Create(p2).Error; err == nil {
+	dupErr := tx.Create(p2).Error
+	if dupErr == nil {
 		t.Fatal("expected unique violation on duplicate live handle, got nil")
 	}
+	if err := tx.RollbackTo("before_dup_insert").Error; err != nil {
+		t.Fatalf("rollback to before_dup_insert: %v", err)
+	}
 
-	// Soft-delete the first product
+	// Soft-delete the first product (real statement)
 	now := time.Now()
 	if err := tx.Model(&product.Product{}).Where("id = ?", p1.ID).Update("deleted_at", now).Error; err != nil {
 		t.Fatalf("soft-delete first product: %v", err)
@@ -1268,11 +1299,19 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 		t.Fatalf("insert after soft-delete: %v", err)
 	}
 
-	// Attempting to un-delete the first product should now fail (two live
-	// rows with the same handle would violate the partial unique index).
-	if err := tx.Model(&product.Product{}).Where("id = ?", p1.ID).
-		Update("deleted_at", gorm.Expr("NULL")).Error; err == nil {
+	// Expected-failure #2: un-deleting p1 while p3 is live must fail
+	// (two live rows with the same handle would violate the partial
+	// unique index). Savepoint again.
+	if err := tx.SavePoint("before_undelete").Error; err != nil {
+		t.Fatalf("savepoint before_undelete: %v", err)
+	}
+	undeleteErr := tx.Model(&product.Product{}).Where("id = ?", p1.ID).
+		Update("deleted_at", gorm.Expr("NULL")).Error
+	if undeleteErr == nil {
 		t.Fatal("expected unique violation on un-delete with conflicting live row, got nil")
+	}
+	if err := tx.RollbackTo("before_undelete").Error; err != nil {
+		t.Fatalf("rollback to before_undelete: %v", err)
 	}
 }
 ```
@@ -1304,10 +1343,18 @@ Expected: both `TestIntegration_FullProductGraph_RoundTrip` and `TestIntegration
 
 - [ ] **Step 7.4: Commit**
 
+The test imports `github.com/google/uuid`. It is likely already a transitive dependency (GORM, golang-migrate, and other libs commonly pull it), but verify with `git status` before committing. If `go.mod` / `go.sum` show as modified, include them in the commit explicitly; if not, omit them.
+
 ```bash
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly
 git add services/marketplace-api/internal/product/models_integration_test.go
-git add services/marketplace-api/go.mod services/marketplace-api/go.sum 2>/dev/null || true
+
+# Check whether google/uuid pulled a go.mod change
+if ! git diff --quiet services/marketplace-api/go.mod services/marketplace-api/go.sum; then
+    git add services/marketplace-api/go.mod services/marketplace-api/go.sum
+fi
+
+git status --short
 git commit -m "test(marketplace-api): round-trip integration test for product graph + triggers"
 ```
 

@@ -16,10 +16,12 @@ type FakeClient struct {
 	mu sync.Mutex
 	// roles[role][user|tenant] = true
 	roles map[Role]map[string]bool
-	// storeParents[storeID] = tenantID — Phase Q store->tenant parent
-	// tuples tracked separately so the `member from parent` logic in
-	// Check has something to resolve against.
-	storeParents   map[string]string
+	// storeParents[storeID] = tenantID — Phase Q store->tenant
+	// parent tuples.
+	storeParents map[string]string
+	// storeRoles[relation][user|storeID] = true — Phase R direct
+	// store-level role grants (manager/staff/viewer on a store).
+	storeRoles     map[string]map[string]bool
 	failNextWrites int
 	failNextChecks int
 	writeCallCount int
@@ -32,7 +34,47 @@ func NewFake() *FakeClient {
 	for _, r := range allRoles {
 		roles[r] = make(map[string]bool)
 	}
-	return &FakeClient{roles: roles, storeParents: map[string]string{}}
+	return &FakeClient{
+		roles:        roles,
+		storeParents: map[string]string{},
+		storeRoles:   map[string]map[string]bool{},
+	}
+}
+
+// WriteRoleObject records a direct role tuple on an arbitrary
+// object type. Phase R uses this for store-level grants —
+// e.g. WriteRoleObject(ctx, uid, "manager", "store", sid).
+func (f *FakeClient) WriteRoleObject(ctx context.Context, userID, relation, objectType, objectID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.writeCallCount++
+	if f.failNextWrites > 0 {
+		f.failNextWrites--
+		return fakeError("simulated FGA write failure")
+	}
+	if objectType != "store" {
+		// Only store-level grants are modelled today; tenant-level
+		// grants go through WriteRole. Silently accept other types
+		// so future call sites don't explode.
+		return nil
+	}
+	if _, ok := f.storeRoles[relation]; !ok {
+		f.storeRoles[relation] = map[string]bool{}
+	}
+	f.storeRoles[relation][userID+"|"+objectID] = true
+	return nil
+}
+
+// HasStoreRole is a test helper to assert a store-level role grant
+// was written.
+func (f *FakeClient) HasStoreRole(userID, relation, storeID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m, ok := f.storeRoles[relation]
+	if !ok {
+		return false
+	}
+	return m[userID+"|"+storeID]
 }
 
 // FailNextWrites makes the next n Write{Membership,Ownership} calls return
@@ -172,21 +214,36 @@ func (f *FakeClient) CheckObject(ctx context.Context, userID, relation, objectTy
 	case "tenant":
 		return f.checkTenantRelationLocked(userID, relation, objectID), nil
 	case "store":
-		tenantID, ok := f.storeParents[objectID]
-		if !ok {
-			return false, nil
+		// Direct store-level role grant (Phase R). Check first
+		// before walking up to the parent tenant so a store-only
+		// invitee short-circuits without needing tenant access.
+		storeKey := userID + "|" + objectID
+		direct := func(rel string) bool {
+			m, ok := f.storeRoles[rel]
+			return ok && m[storeKey]
 		}
+		// Relation-keyed lookups for direct role strings first.
+		if m, ok := f.storeRoles[relation]; ok && m[storeKey] {
+			return true, nil
+		}
+
+		tenantID, hasParent := f.storeParents[objectID]
+		tenantKey := userID + "|" + tenantID
+		tenantHasRole := func(r Role) bool {
+			return hasParent && f.roles[r][tenantKey]
+		}
+
 		switch relation {
 		case "can_view_store", "member":
-			return f.hasAnyRoleLocked(userID, tenantID), nil
+			return direct("owner") || direct("manager") ||
+				direct("staff") || direct("viewer") ||
+				(hasParent && f.hasAnyRoleLocked(userID, tenantID)), nil
 		case "can_edit_store_settings":
-			key := userID + "|" + tenantID
-			return f.roles[RoleOwner][key] || f.roles[RoleAdmin][key], nil
+			return direct("owner") || direct("manager") ||
+				tenantHasRole(RoleOwner) || tenantHasRole(RoleAdmin), nil
 		case "can_manage_catalog":
-			key := userID + "|" + tenantID
-			return f.roles[RoleOwner][key] ||
-				f.roles[RoleAdmin][key] ||
-				f.roles[RoleStaff][key], nil
+			return direct("owner") || direct("manager") || direct("staff") ||
+				tenantHasRole(RoleOwner) || tenantHasRole(RoleAdmin), nil
 		}
 	}
 	return false, nil

@@ -15,6 +15,7 @@ import {
   createInvitation,
   revokeInvitation,
   PlatformApiError,
+  type InviteRole,
   type TenantRole,
 } from "@/lib/api/platform-api";
 import { canInviteMembers } from "@/lib/auth/serverSession";
@@ -49,7 +50,10 @@ async function readAuth(): Promise<{
 
 export async function inviteTeammate(input: {
   email: string;
-  role: TenantRole;
+  role: InviteRole;
+  // Phase R: optional — when set, the invite grants a store-level
+  // role on that specific store instead of a tenant-wide one.
+  storeId?: string;
 }): Promise<Result> {
   const { tenantId, uid, role } = await readAuth();
   if (!tenantId || !uid) {
@@ -74,7 +78,9 @@ export async function inviteTeammate(input: {
       message: "A valid email address is required.",
     };
   }
-  if (input.role === "owner") {
+  // Defensive: block owner role client-side too. Backend also
+  // rejects via isAllowedTenantRole / isAllowedStoreRole.
+  if ((input.role as string) === "owner") {
     return {
       ok: false,
       code: "invalid_role",
@@ -82,7 +88,12 @@ export async function inviteTeammate(input: {
     };
   }
   try {
-    await createInvitation(tenantId, { uid, email, role: input.role });
+    await createInvitation(tenantId, {
+      uid,
+      email,
+      role: input.role,
+      store_id: input.storeId,
+    });
     revalidatePath("/settings/team");
     return { ok: true };
   } catch (err) {

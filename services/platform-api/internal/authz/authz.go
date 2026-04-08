@@ -88,9 +88,16 @@ type Client interface {
 	WriteStoreParent(ctx context.Context, storeID, tenantID string) error
 
 	// WriteRole writes user:<id> <role> tenant:<id> for one of the
-	// four role constants. Reserved for the future invite-teammate
-	// flow; unused in Phase O but checked in unit tests.
+	// four tenant role constants. Used by the Phase P tenant-level
+	// invitation accept path.
 	WriteRole(ctx context.Context, userID string, role Role, tenantID string) error
+
+	// WriteRoleObject writes user:<id> <relation> <type>:<id>.
+	// Used by Phase R store-level invitations to grant manager /
+	// staff / viewer on a specific store object. The `relation`
+	// string is free-form so the caller can pick any relation
+	// defined in the DSL for the target type.
+	WriteRoleObject(ctx context.Context, userID, relation, objectType, objectID string) error
 
 	// CheckMembership is a convenience wrapper around the derived
 	// `member` relation, used by auth-bff's autologin retry loop.
@@ -210,15 +217,33 @@ func (c *fgaClient) WriteStoreParent(ctx context.Context, storeID, tenantID stri
 	return nil
 }
 
-// WriteRole writes the tuple `user:<id> <role> tenant:<id>` for any of
-// the four role constants. Reserved for the invite-teammate flow; the
-// integration point exists now so Phase O can test it even though the
-// UI lands later.
+// WriteRole writes the tuple `user:<id> <role> tenant:<id>` for any
+// of the four tenant role constants.
 func (c *fgaClient) WriteRole(ctx context.Context, userID string, role Role, tenantID string) error {
 	if _, ok := rolePriority[role]; !ok {
 		return fmt.Errorf("authz: unknown role %q", role)
 	}
 	return c.write(ctx, userID, string(role), tenantID)
+}
+
+// WriteRoleObject writes user:<id> <relation> <type>:<id>. Used by
+// Phase R store-level invitations.
+func (c *fgaClient) WriteRoleObject(ctx context.Context, userID, relation, objectType, objectID string) error {
+	body := client.ClientWriteRequest{
+		Writes: []client.ClientTupleKey{{
+			User:     "user:" + userID,
+			Relation: relation,
+			Object:   objectType + ":" + objectID,
+		}},
+	}
+	_, err := c.api.Write(ctx).Body(body).Execute()
+	if err != nil {
+		if isAlreadyExistsError(err) {
+			return nil
+		}
+		return fmt.Errorf("authz: write role object %s:%s %s: %w", objectType, objectID, relation, err)
+	}
+	return nil
 }
 
 // CheckMembership returns true if the user is a member of the tenant.

@@ -97,8 +97,14 @@ func (s *Service) defaultStoreSlug(ctx context.Context, tenantID string) string 
 }
 
 // CreateInput is the payload for a new invitation.
+//
+// Phase R: StoreID is optional. When set, the invitation grants a
+// store-level role (manager/staff/viewer) scoped to that specific
+// store; when nil, it grants a tenant-level role (admin/staff/viewer)
+// over the whole tenant (Phase P behaviour).
 type CreateInput struct {
 	TenantID        string
+	StoreID         string
 	Email           string
 	Role            string
 	InvitedByUserID string
@@ -109,6 +115,7 @@ type CreateInput struct {
 // the inviting user.
 func (s *Service) Create(ctx context.Context, in CreateInput) (*Invitation, error) {
 	tenantID := strings.TrimSpace(in.TenantID)
+	storeID := strings.TrimSpace(in.StoreID)
 	email := strings.ToLower(strings.TrimSpace(in.Email))
 	role := strings.TrimSpace(in.Role)
 	uid := strings.TrimSpace(in.InvitedByUserID)
@@ -119,14 +126,30 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Invitation, erro
 	if email == "" || !strings.Contains(email, "@") {
 		return nil, apperrors.BadRequest("invalid_email", "a valid email is required")
 	}
-	if !isAllowedRole(role) {
-		return nil, apperrors.BadRequest("invalid_role", "role must be admin, staff, or viewer")
-	}
 	if uid == "" {
 		return nil, apperrors.BadRequest("invalid_inviter", "invited_by_user_id is required")
 	}
+	// Phase R: role allowlist depends on scope. Tenant-wide
+	// invitations accept admin/staff/viewer; store-scoped ones
+	// accept manager/staff/viewer (matching the store type's
+	// DSL relations).
+	if storeID == "" {
+		if !isAllowedTenantRole(role) {
+			return nil, apperrors.BadRequest("invalid_role", "role must be admin, staff, or viewer")
+		}
+	} else {
+		if !isAllowedStoreRole(role) {
+			return nil, apperrors.BadRequest("invalid_role", "store role must be manager, staff, or viewer")
+		}
+	}
 
-	// Authorize the invite.
+	// Authorize the invite. Both tenant-wide and store-scoped
+	// invitations are currently gated on the tenant-level
+	// can_invite_members permission — a store-scoped invite still
+	// requires the inviter to be a tenant owner/admin. Phase R+
+	// could introduce a per-store can_invite_store_members if we
+	// ever want a store manager to self-service invite their own
+	// staff without bothering the tenant owner.
 	if s.fga != nil {
 		allowed, err := s.fga.Check(ctx, uid, "can_invite_members", tenantID)
 		if err != nil {
@@ -143,6 +166,19 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Invitation, erro
 		return nil, err
 	}
 
+	// If a store is specified, sanity-check it belongs to the
+	// target tenant. Stops a malicious admin BFF from minting
+	// cross-tenant invitations.
+	if storeID != "" && s.storeRepo != nil {
+		target, err := s.storeRepo.GetByID(ctx, storeID)
+		if err != nil {
+			return nil, err
+		}
+		if target.TenantID != tenantID {
+			return nil, apperrors.New(403, "store_tenant_mismatch", "store does not belong to this tenant")
+		}
+	}
+
 	token, hash, err := newToken()
 	if err != nil {
 		return nil, apperrors.Wrap(err, 500, "token_generation_failed", "failed to generate invitation token")
@@ -156,6 +192,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Invitation, erro
 		ExpiresAt:       time.Now().Add(s.expiry),
 		Status:          StatusPending,
 		InvitedByUserID: uid,
+	}
+	if storeID != "" {
+		sid := storeID
+		inv.StoreID = &sid
 	}
 	if err := s.repo.Create(ctx, inv); err != nil {
 		return nil, err
@@ -284,12 +324,35 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 		)
 	}
 
-	// Write the FGA role tuple. Degraded mode (fga nil) skips
-	// the write — dev-only, never prod.
+	// Write the FGA role tuple. Phase R branches on scope:
+	// store-scoped invitations write to the store object; tenant-
+	// scoped invitations keep the Phase P tenant-level WriteRole.
+	//
+	// A store-scoped invite ALSO writes a minimal tenant-level
+	// `viewer` tuple so auth-bff's autologin (which checks
+	// tenant.member) can mint the session cookie. Without this
+	// the store-scoped user would be stuck at /login because they
+	// have store membership but no tenant membership, and the
+	// session-mint path only checks the tenant. The net effect
+	// is that a store-scoped invitee can see tenant-level read-
+	// only views in addition to their store-level grant — a
+	// documented tradeoff for Phase R's minimal footprint.
+	//
+	// Degraded mode (fga nil) skips — dev-only, never prod.
 	if s.fga != nil {
-		role := authz.Role(inv.Role)
-		if err := s.fga.WriteRole(ctx, uid, role, inv.TenantID); err != nil {
-			return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant role")
+		if inv.StoreID != nil && *inv.StoreID != "" {
+			if err := s.fga.WriteRoleObject(ctx, uid, inv.Role, "store", *inv.StoreID); err != nil {
+				return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant store role")
+			}
+			// Back-fill a tenant viewer so session mint works.
+			if err := s.fga.WriteRole(ctx, uid, authz.RoleViewer, inv.TenantID); err != nil {
+				return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant tenant viewer")
+			}
+		} else {
+			role := authz.Role(inv.Role)
+			if err := s.fga.WriteRole(ctx, uid, role, inv.TenantID); err != nil {
+				return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant role")
+			}
 		}
 	}
 

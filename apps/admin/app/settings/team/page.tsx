@@ -16,8 +16,15 @@ import { listPendingInvitations } from "@/lib/api/platform-api";
  * staff table is a separate slice.
  */
 export default async function TeamSettingsPage() {
-  const { tenantName, email, tenant, role, memberships, tenantId } =
-    await getServerSessionContext();
+  const {
+    tenantName,
+    email,
+    tenant,
+    role,
+    memberships,
+    tenantId,
+    stores,
+  } = await getServerSessionContext();
   const canInvite = canInviteMembers(role);
 
   const invitations = await listPendingInvitations(tenantId).catch(() => []);
@@ -53,6 +60,7 @@ export default async function TeamSettingsPage() {
           ownerEmail={tenant?.owner_email ?? ""}
           invitations={invitations}
           canInvite={canInvite}
+          stores={stores}
         />
       </div>
     </AdminShell>

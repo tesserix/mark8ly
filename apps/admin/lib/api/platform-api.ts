@@ -264,8 +264,9 @@ export async function fetchTenantMe(
 export interface Invitation {
   id: string;
   tenant_id: string;
+  store_id?: string | null;
   email: string;
-  role: TenantRole;
+  role: InviteRole;
   status: "pending" | "accepted" | "expired" | "revoked";
   expires_at: string;
   invited_by_user_id: string;
@@ -289,9 +290,21 @@ export interface InvitationVerifyResult {
  * from the validated session cookie. platform-api enforces the
  * `can_invite_members` FGA check on top.
  */
+/**
+ * Phase R: roles accepted by invitation. Tenant-wide invites use
+ * admin/staff/viewer (mirrors Phase P). Store-scoped invites use
+ * manager/staff/viewer (mirrors the store DSL relations).
+ */
+export type InviteRole = "admin" | "manager" | "staff" | "viewer";
+
 export async function createInvitation(
   tenantId: string,
-  payload: { uid: string; email: string; role: TenantRole },
+  payload: {
+    uid: string;
+    email: string;
+    role: InviteRole;
+    store_id?: string;
+  },
 ): Promise<Invitation> {
   const res = await fetch(
     `${PLATFORM_API_URL}/internal/tenants/${tenantId}/invitations`,

@@ -44,9 +44,10 @@ func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 }
 
 type createRequest struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
-	UID   string `json:"uid"`
+	Email   string `json:"email"`
+	Role    string `json:"role"`
+	UID     string `json:"uid"`
+	StoreID string `json:"store_id,omitempty"`
 }
 
 func (h *Handler) create(c *gin.Context) {
@@ -60,6 +61,7 @@ func (h *Handler) create(c *gin.Context) {
 	}
 	inv, err := h.svc.Create(c.Request.Context(), CreateInput{
 		TenantID:        c.Param("id"),
+		StoreID:         req.StoreID,
 		Email:           req.Email,
 		Role:            req.Role,
 		InvitedByUserID: req.UID,

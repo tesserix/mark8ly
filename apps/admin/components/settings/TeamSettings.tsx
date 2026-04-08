@@ -12,7 +12,11 @@ import {
   SelectValue,
 } from "@tesserix/web";
 
-import type { Invitation, TenantRole } from "@/lib/api/platform-api";
+import type {
+  Invitation,
+  InviteRole,
+  Store,
+} from "@/lib/api/platform-api";
 import {
   inviteTeammate,
   revokeInvite,
@@ -22,7 +26,14 @@ interface TeamSettingsProps {
   ownerEmail: string;
   invitations: Invitation[];
   canInvite: boolean;
+  // Phase R: every store under the current tenant. Powers the
+  // "Tenant-wide" vs "Specific store" scope picker on the invite
+  // form. When the tenant has a single store the store picker is
+  // hidden — nothing meaningful to choose.
+  stores: Store[];
 }
+
+type Scope = "tenant" | "store";
 
 /**
  * Phase P — /settings/team client component.
@@ -36,13 +47,31 @@ export function TeamSettings({
   ownerEmail,
   invitations,
   canInvite,
+  stores,
 }: TeamSettingsProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<TenantRole>("staff");
+  const [scope, setScope] = useState<Scope>("tenant");
+  const [storeId, setStoreId] = useState<string>(stores[0]?.id ?? "");
+  const [role, setRole] = useState<InviteRole>("staff");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  // Role options depend on scope. Tenant-wide: admin/staff/viewer
+  // (matches the tenant DSL). Store-scoped: manager/staff/viewer
+  // (matches the store DSL). When the scope flips we reset the
+  // role to the safe "staff" default so we never ship a combo
+  // that would fail the backend allowlist.
+  const roleOptions: InviteRole[] =
+    scope === "tenant"
+      ? ["admin", "staff", "viewer"]
+      : ["manager", "staff", "viewer"];
+
+  function handleScopeChange(next: Scope) {
+    setScope(next);
+    setRole("staff");
+  }
 
   function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -53,8 +82,16 @@ export function TeamSettings({
       setError("Please enter a valid email address.");
       return;
     }
+    if (scope === "store" && !storeId) {
+      setError("Please pick a store for the invite.");
+      return;
+    }
     startTransition(async () => {
-      const result = await inviteTeammate({ email: trimmed, role });
+      const result = await inviteTeammate({
+        email: trimmed,
+        role,
+        storeId: scope === "store" ? storeId : undefined,
+      });
       if (!result.ok) {
         setError(result.message);
         return;
@@ -137,6 +174,37 @@ export function TeamSettings({
             Send an invitation by email and choose how much access the teammate
             should have once they join the store.
           </p>
+          {stores.length > 1 && (
+            <div
+              data-testid="invite-scope"
+              className="flex w-fit items-center gap-2 rounded-xl border border-border/70 bg-white/60 p-1"
+            >
+              <button
+                type="button"
+                onClick={() => handleScopeChange("tenant")}
+                disabled={pending}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  scope === "tenant"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Tenant-wide
+              </button>
+              <button
+                type="button"
+                onClick={() => handleScopeChange("store")}
+                disabled={pending}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  scope === "store"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Specific store
+              </button>
+            </div>
+          )}
           <form
             onSubmit={handleInvite}
             className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-end"
@@ -154,11 +222,30 @@ export function TeamSettings({
                 className="bg-white/82"
               />
             </div>
+            {scope === "store" && (
+              <div className="space-y-2 sm:col-span-3">
+                <Label htmlFor="invite-store">Store</Label>
+                <select
+                  id="invite-store"
+                  value={storeId}
+                  onChange={(e) => setStoreId(e.target.value)}
+                  disabled={pending}
+                  data-testid="invite-store-select"
+                  className="h-10 w-full rounded-xl border border-border bg-white/82 px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.slug}.mark8ly.com)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="invite-role">Role</Label>
               <Select
                 value={role}
-                onValueChange={(value) => setRole(value as TenantRole)}
+                onValueChange={(value) => setRole(value as InviteRole)}
                 disabled={pending}
               >
                 <SelectTrigger
@@ -168,24 +255,15 @@ export function TeamSettings({
                   <SelectValue placeholder="Choose a role" />
                 </SelectTrigger>
                 <SelectContent className="rounded-2xl border-border/80 bg-[rgba(255,252,248,0.98)] shadow-[0_24px_60px_rgba(76,52,24,0.14)]">
-                  <SelectItem
-                    value="admin"
-                    className="rounded-xl focus:bg-primary focus:text-primary-foreground"
-                  >
-                    Admin
-                  </SelectItem>
-                  <SelectItem
-                    value="staff"
-                    className="rounded-xl focus:bg-primary focus:text-primary-foreground"
-                  >
-                    Staff
-                  </SelectItem>
-                  <SelectItem
-                    value="viewer"
-                    className="rounded-xl focus:bg-primary focus:text-primary-foreground"
-                  >
-                    Viewer
-                  </SelectItem>
+                  {roleOptions.map((r) => (
+                    <SelectItem
+                      key={r}
+                      value={r}
+                      className="rounded-xl focus:bg-primary focus:text-primary-foreground"
+                    >
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

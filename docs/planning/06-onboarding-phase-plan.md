@@ -1076,7 +1076,83 @@ E2E:
 - No store-level invites — that's Phase R.
 - No "clone store" / "duplicate catalog" — out of scope.
 
-### Phase R — Store-level invites (1–2 days)
+### Phase R — Store-level invites *(shipped)*
+
+**What landed:**
+
+- **Migration 0009** adds a nullable `store_id` column on
+  `invitations` with a partial index where `store_id IS NOT NULL`.
+  Nothing in the row shape constrains "scoped-to-tenant vs
+  scoped-to-store" other than whether this column is set.
+- **Migration 0010** widens the role CHECK constraint to include
+  `manager` alongside `admin/staff/viewer`. Tenant-wide invites
+  still use admin/staff/viewer (Phase P); store-scoped invites
+  use manager/staff/viewer (matching the store DSL relations).
+- **`invitation.CreateInput.StoreID`** — service layer takes an
+  optional store id. When set:
+  - `isAllowedStoreRole` is used instead of `isAllowedTenantRole`
+    (so you can't sneak an `admin` role into a store-scoped invite
+    or a `manager` into a tenant-wide invite).
+  - The service sanity-checks the store belongs to the target
+    tenant via `storeRepo.GetByID` before writing the row — stops
+    a malicious or buggy admin BFF from minting cross-tenant
+    invitations.
+- **`invitation.Service.Accept`** — branches on `StoreID`.
+  Store-scoped: calls `fga.WriteRoleObject(uid, role, "store", storeID)`
+  AND writes a minimal tenant-level `viewer` tuple so auth-bff's
+  autologin (which checks tenant.member) can mint the session
+  cookie for a pure store-scoped invitee. Tenant-scoped: unchanged
+  from Phase P. Documented tradeoff: a store-scoped invitee gets
+  read-only tenant visibility so the session mint path works. A
+  future slice could teach autologin to check store.member as a
+  fallback and drop the viewer backfill.
+- **`authz.Client.WriteRoleObject`** — new interface method that
+  writes `user:<uid> <relation> <type>:<id>` tuples to any object
+  type (vs `WriteRole` which is tenant-only). The `FakeClient`
+  tracks store roles in a `storeRoles` map, and `CheckObject`
+  resolves store-type relations with direct store grants first
+  then walks to the parent tenant for inheritance.
+- **Admin `createInvitation` client** — accepts optional
+  `store_id`. New `InviteRole` type is the union
+  `admin | manager | staff | viewer`.
+- **Admin `inviteTeammate` server action** — passes the store id
+  through to the create call.
+- **`TeamSettings` client component**:
+  - New scope toggle (`Tenant-wide` / `Specific store`) — only
+    rendered when the tenant has more than one store, because a
+    solo-founder with a single store has nothing meaningful to
+    pick. Tagged `data-testid="invite-scope"` for the e2e spec.
+  - Store picker (native `<select>`, tagged
+    `data-testid="invite-store-select"`) appears when scope is
+    "Specific store".
+  - Role dropdown rebuilds dynamically: `[admin, staff, viewer]`
+    for tenant-wide, `[manager, staff, viewer]` for store-scoped.
+    Scope flip resets the role to the safe `staff` default.
+- **E2E** — new `invite-store-scope.spec.ts`: onboards a merchant,
+  creates a second store, flips the invite scope toggle, picks
+  the outlet + role=manager, sends the invite, fetches the token
+  via the dev helper, accepts as a fresh user via password, and
+  asserts the invitee lands on /dashboard. Full admin suite:
+  **9/9 passing**.
+
+**Still deferred (not Phase R territory):**
+
+- A per-store invite initiation gate (`can_invite_store_members`)
+  that would let a store manager self-service invite their own
+  staff without bothering the tenant owner/admin. Phase R keeps
+  the Phase P `can_invite_members` tenant-level gate for both
+  scopes.
+- Teaching autologin to check store.member, which would let us
+  drop the "tenant viewer backfill" workaround. Probably a
+  Phase S/T cleanup slice once we have enough pure store-scoped
+  users to justify the complexity.
+- A "Store-level teammates" section on /settings/team grouped by
+  store. The pending-invites table shows the raw role column for
+  now; polishing this is UI-only and deferred.
+
+### Phase R — Store-level invites (original spec — superseded above)
+
+(1–2 days)
 
 Extends Phase P's invite infrastructure to accept an optional
 `store_id` and write store-level FGA tuples.

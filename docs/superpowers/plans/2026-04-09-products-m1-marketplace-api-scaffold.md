@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Land a new `services/marketplace-api/` Go binary that boots, answers `/health` and `/ready`, connects to a dedicated `marketplace_api` Postgres database, supports the `MODE=admin|storefront|both` engine switch from §14.8 of the spec, and is deployed to the dev cluster via ArgoCD — with nothing else in it yet.
+**Goal:** Land a new `services/marketplace-api/` Go binary that boots, answers `/health` and `/ready`, connects to a dedicated `marketplace_db` Postgres database, supports the `MODE=admin|storefront|both` engine switch from §14.8 of the spec, and is deployed to the dev cluster via ArgoCD — with nothing else in it yet.
 
-**Architecture:** Mirror the `services/platform-api/` structure byte-for-byte for the scaffolding layers (`pkg/config`, `pkg/db`, `pkg/httpserver`, `pkg/logger`, `pkg/migrate`, `pkg/testdb`). New service owns a new Postgres DB `marketplace_api` on the shared instance, with its own `marketplace_db_schema_migrations` tracking table. Two Knative Services deploy from the same image via the `MODE` env var. No business logic, no middleware beyond logging/recovery, no migrations yet beyond the empty `marketplace_db_schema_migrations` table.
+**Architecture:** Mirror the `services/platform-api/` structure byte-for-byte for the scaffolding layers (`pkg/config`, `pkg/db`, `pkg/httpserver`, `pkg/logger`, `pkg/migrate`, `pkg/testdb`). New service owns a new Postgres DB `marketplace_db` on the shared instance, with its own `marketplace_db_schema_migrations` tracking table. Two Knative Services deploy from the same image via the `MODE` env var. No business logic, no middleware beyond logging/recovery, no migrations yet beyond the empty `marketplace_db_schema_migrations` table.
 
 **Tech Stack:** Go 1.26, Gin, GORM, Postgres 15, golang-migrate, envconfig, slog, Alpine 3.19 multi-stage Docker, Knative Serving, Kustomize, ArgoCD, GitHub Actions.
 
@@ -87,7 +87,7 @@ tesserix-infra/k8s/argocd/appsets/services.yaml
 Monorepo-level:
 
 ```
-infra/dev/docker-compose.yml         # Add marketplace_api to POSTGRES_MULTIPLE_DATABASES + new service block
+infra/dev/docker-compose.yml         # Add marketplace_db to POSTGRES_MULTIPLE_DATABASES + new service block
 infra/dev/.env.local.example         # Add marketplace-api env vars
 .github/workflows/ci.yml             # Add marketplace-api to the Go matrix + its own job
 ```
@@ -912,14 +912,14 @@ git commit -m "feat(marketplace-api): testdb helper for per-test transaction rol
 
 ---
 
-### Task 7: Wire marketplace_api DB into dev Postgres + migrate up smoke test
+### Task 7: Wire marketplace_db into dev Postgres + migrate up smoke test
 
 **Files:**
 - Modify: `infra/dev/docker-compose.yml`
 - Modify: `infra/dev/postgres-init.sh` (if it exists, to add the new user grant)
 - Create/modify: `infra/dev/.env.local.example`
 
-- [ ] **Step 7.1: Add `marketplace_api` to the dev Postgres multi-DB env**
+- [ ] **Step 7.1: Add `marketplace_db` to the dev Postgres multi-DB env**
 
 Open `infra/dev/docker-compose.yml`. Find the `postgres` service block and update:
 
@@ -935,7 +935,7 @@ POSTGRES_MULTIPLE_DATABASES: platform_api,auth_bff,openfga,marketplace_db
 
 - [ ] **Step 7.2: Verify `postgres-init.sh` creates the DB correctly**
 
-Open `infra/dev/postgres-init.sh`. If it iterates over the comma-separated list and runs `CREATE DATABASE`, no change is needed. If it hardcodes database names, add `marketplace_api` explicitly. (Likely it iterates — the existing one supports platform_api, auth_bff, openfga through the same mechanism.)
+Open `infra/dev/postgres-init.sh`. If it iterates over the comma-separated list and runs `CREATE DATABASE`, no change is needed. If it hardcodes database names, add `marketplace_db` explicitly. (Likely it iterates — the existing one supports platform_api, auth_bff, openfga through the same mechanism.)
 
 - [ ] **Step 7.3: Add a marketplace-api compose service block**
 
@@ -1087,7 +1087,7 @@ Expected: `{"status":"ok"}`
 
 ```bash
 docker compose -f infra/dev/docker-compose.yml exec postgres \
-    psql -U dev -d marketplace_api -c "\dt"
+    psql -U dev -d marketplace_db -c "\dt"
 ```
 
 Expected output includes `marketplace_db_schema_migrations` with zero rows.
@@ -1188,7 +1188,7 @@ TEST_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disab
 
 ## Database
 
-- DB name: `marketplace_api` (on the shared dev Postgres)
+- DB name: `marketplace_db` (on the shared dev Postgres)
 - User: `dev` (dev only) / `marketplace_user` (prod)
 - Migrations tracking table: `marketplace_db_schema_migrations`
 - Slice 1 schema: see M2 plan (not yet landed as of M1 completion)
@@ -1608,7 +1608,7 @@ Expected:
 Check each against the implementation:
 
 - [ ] `services/marketplace-api/` service binary and Dockerfile (Task 1–4, 8)
-- [ ] `marketplace_api` database provisioned in dev Postgres (Task 7)
+- [ ] `marketplace_db` database provisioned in dev Postgres (Task 7)
 - [ ] `marketplace_db_schema_migrations` tracking table exists (Task 8 Step 6)
 - [ ] Kustomize overlays for admin + storefront (Tasks 10–11)
 - [ ] ExternalSecret referencing `marketplace-api-db-password` (Task 10.4)

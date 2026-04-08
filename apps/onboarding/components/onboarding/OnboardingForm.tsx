@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
   Input,
   Label,
@@ -22,7 +25,43 @@ interface Props {
   timezones: Timezone[];
 }
 
-type SlugStatus =
+/* ============================================================
+   Validation schema
+   ------------------------------------------------------------
+   Single source of truth for client-side validation. Runs on
+   blur the first time a field is touched, then on every change
+   until the field is valid (mode: "onTouched" + reValidateMode).
+   ============================================================ */
+
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
+
+const schema = z.object({
+  email: z
+    .string()
+    .min(1, "Email is required")
+    .email("Enter a valid email address"),
+  businessName: z
+    .string()
+    .min(1, "Business name is required")
+    .min(2, "Business name is too short")
+    .max(80, "Business name is too long"),
+  slug: z
+    .string()
+    .min(3, "3-63 characters, lowercase letters, numbers, and hyphens")
+    .max(63, "Must be 63 characters or fewer")
+    .regex(SLUG_PATTERN, "Lowercase letters, numbers, and hyphens only"),
+  countryCode: z.string().min(1, "Please select a country"),
+  currencyCode: z.string().min(1, "Please select a currency"),
+});
+
+type FormValues = z.infer<typeof schema>;
+
+/* ============================================================
+   Async slug availability — runs alongside RHF validation.
+   The schema enforces format; this hook enforces uniqueness.
+   ============================================================ */
+
+type SlugAvailability =
   | { state: "idle" }
   | { state: "checking" }
   | { state: "available" }
@@ -30,29 +69,48 @@ type SlugStatus =
   | { state: "invalid"; message: string };
 
 /**
- * OnboardingForm — single client component holding the entire signup
- * wizard.
+ * OnboardingForm — single-page signup using react-hook-form + zod
+ * for client validation, with inline field-level errors.
  *
- * Phase M restructure: this form no longer collects a credential. The
- * merchant enters business details + email here, gets a magic link, and
- * the credential (password OR Google) is collected on the
- * /onboarding/set-password page that runs after the link is clicked.
- *
- * Visuals use the same warm editorial palette as the marketing surface.
+ * Phase M: collects business details + email, sends a magic link,
+ * and hands off to /onboarding/check-inbox. The credential step
+ * runs on /onboarding/set-password after the link is clicked.
  */
 export function OnboardingForm({ countries, currencies, timezones }: Props) {
   const router = useRouter();
   const setSubmitted = useOnboardingStore((s) => s.setSubmitted);
 
-  const [email, setEmail] = useState("");
-  const [businessName, setBusinessName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [countryCode, setCountryCode] = useState("");
-  const [currencyCode, setCurrencyCode] = useState("");
-  const [slugStatus, setSlugStatus] = useState<SlugStatus>({ state: "idle" });
-  const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [slugAvailability, setSlugAvailability] = useState<SlugAvailability>({
+    state: "idle",
+  });
+  const [slugTouched, setSlugTouched] = useState(false);
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    watch,
+    setValue,
+    setError: setFieldError,
+    formState: { errors, touchedFields },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    mode: "onTouched", // validate on blur first
+    reValidateMode: "onChange", // then on every change until valid
+    defaultValues: {
+      email: "",
+      businessName: "",
+      slug: "",
+      countryCode: "",
+      currencyCode: "",
+    },
+  });
+
+  const watchedBusinessName = watch("businessName");
+  const watchedSlug = watch("slug");
+  const watchedCountry = watch("countryCode");
 
   // Browser timezone, auto-detected once on mount.
   const browserTimezone = useMemo(() => {
@@ -67,314 +125,412 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     return exact?.id ?? timezones[0]?.id ?? "UTC";
   }, [browserTimezone, timezones]);
 
-  // Slug auto-suggestion from business name.
+  // Auto-suggest slug from business name until the user touches the slug field.
   useEffect(() => {
     if (slugTouched) return;
-    setSlug(slugify(businessName));
-  }, [businessName, slugTouched]);
+    setValue("slug", slugify(watchedBusinessName), {
+      shouldValidate: touchedFields.slug === true,
+    });
+  }, [watchedBusinessName, slugTouched, setValue, touchedFields.slug]);
 
-  // Currency auto-derivation from country.
+  // Auto-derive currency from selected country.
   useEffect(() => {
-    if (!countryCode) return;
-    const country = countries.find((c) => c.code === countryCode);
-    if (country?.currency_code) setCurrencyCode(country.currency_code);
-  }, [countryCode, countries]);
+    if (!watchedCountry) return;
+    const country = countries.find((c) => c.code === watchedCountry);
+    if (country?.currency_code) {
+      setValue("currencyCode", country.currency_code, { shouldValidate: true });
+    }
+  }, [watchedCountry, countries, setValue]);
 
-  // Live slug availability check (debounced).
+  // Debounced slug availability check — only runs for well-formed slugs.
   useEffect(() => {
-    if (!slug || slug.length < 3) {
-      setSlugStatus({ state: "idle" });
+    if (!watchedSlug || watchedSlug.length < 3) {
+      setSlugAvailability({ state: "idle" });
       return;
     }
-    if (!isValidSlug(slug)) {
-      setSlugStatus({
-        state: "invalid",
-        message: "lowercase letters, numbers, and hyphens only",
-      });
+    if (!SLUG_PATTERN.test(watchedSlug)) {
+      setSlugAvailability({ state: "idle" });
       return;
     }
-    setSlugStatus({ state: "checking" });
+    setSlugAvailability({ state: "checking" });
     const handle = setTimeout(async () => {
-      const r = await checkSlug(slug);
+      const r = await checkSlug(watchedSlug);
       if (!r.ok) {
-        setSlugStatus({ state: "invalid", message: r.message });
+        setSlugAvailability({ state: "invalid", message: r.message });
         return;
       }
-      setSlugStatus({ state: r.data.available ? "available" : "taken" });
+      setSlugAvailability({
+        state: r.data.available ? "available" : "taken",
+      });
     }, 300);
     return () => clearTimeout(handle);
-  }, [slug]);
+  }, [watchedSlug]);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
+  const canSubmit = slugAvailability.state === "available" && !pending;
 
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail.includes("@")) {
-      setError("Please enter a valid email address");
+  function onValid(values: FormValues) {
+    setSubmitError(null);
+
+    // Final guard: schema passed but slug isn't marked available yet.
+    if (slugAvailability.state !== "available") {
+      setSubmitError("Please pick an available store URL.");
       return;
     }
-    if (!businessName.trim() || !slug || !countryCode || !currencyCode) return;
-    if (slugStatus.state !== "available") return;
+
+    const payload = {
+      email: values.email.trim().toLowerCase(),
+      businessName: values.businessName.trim(),
+      slug: values.slug,
+      countryCode: values.countryCode,
+      currencyCode: values.currencyCode,
+      timezone: resolvedTimezone,
+    };
 
     startTransition(async () => {
-      const r = await submitOnboarding({
-        email: trimmedEmail,
-        businessName: businessName.trim(),
-        slug,
-        countryCode,
-        currencyCode,
-        timezone: resolvedTimezone,
-      });
+      const r = await submitOnboarding(payload);
       if (!r.ok) {
-        setError(r.message);
+        // Route field-specific server errors to the matching field
+        // so they render inline beside the input that caused them.
+        // Fall back to a top-level banner for everything else.
+        const routed = routeServerError(r.message);
+        if (routed) {
+          setFieldError(routed.field, {
+            type: "server",
+            message: routed.message,
+          });
+        } else {
+          setSubmitError(r.message);
+        }
         return;
       }
-
       setSubmitted({
-        email: trimmedEmail,
+        email: payload.email,
         sessionId: r.data.sessionId,
-        businessName: businessName.trim(),
-        slug,
-        countryCode,
-        currencyCode,
+        businessName: payload.businessName,
+        slug: payload.slug,
+        countryCode: payload.countryCode,
+        currencyCode: payload.currencyCode,
         timezone: resolvedTimezone,
       });
       router.push("/onboarding/check-inbox");
     });
   }
 
-  const canSubmit =
-    email.trim() &&
-    businessName.trim() &&
-    slugStatus.state === "available" &&
-    countryCode &&
-    currencyCode &&
-    !pending;
-
   return (
-    <div className="w-full max-w-lg mx-auto">
-      <div className="rounded-[2rem] border border-warm-200/90 bg-white/90 shadow-[0_24px_80px_rgba(43,38,34,0.12)] backdrop-blur-sm overflow-hidden">
-        {/* Card header strip */}
-        <div className="px-8 pt-8 pb-6 border-b border-warm-100 bg-[linear-gradient(180deg,rgba(243,238,230,0.72),rgba(255,255,255,0.98))]">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <span className="text-xs font-medium uppercase tracking-[0.16em] text-foreground-tertiary">
-              Create Your Store
-            </span>
-            <span className="rounded-full bg-warm-100 px-3 py-1 text-xs font-medium text-foreground-secondary">
-              Step 1 of 2
+    <div className="w-full max-w-lg mx-auto lg:mx-0">
+      <form
+        onSubmit={handleSubmit(onValid)}
+        noValidate
+        className="space-y-5"
+      >
+        {/* Email */}
+        <Field
+          id="email"
+          label="Email address"
+          error={errors.email?.message}
+        >
+          <Input
+            id="email"
+            type="email"
+            placeholder="founder@yourbusiness.com"
+            autoComplete="email"
+            spellCheck={false}
+            aria-invalid={errors.email ? true : undefined}
+            aria-describedby={errors.email ? "email-error" : undefined}
+            {...register("email")}
+          />
+        </Field>
+
+        {/* Business name */}
+        <Field
+          id="businessName"
+          label="Business name"
+          error={errors.businessName?.message}
+        >
+          <Input
+            id="businessName"
+            type="text"
+            placeholder="Acme Co"
+            autoComplete="organization"
+            aria-invalid={errors.businessName ? true : undefined}
+            aria-describedby={
+              errors.businessName ? "businessName-error" : undefined
+            }
+            {...register("businessName")}
+          />
+        </Field>
+
+        {/* Slug — format via zod, availability via async check */}
+        <Field
+          id="slug"
+          label="Store URL"
+          error={
+            errors.slug?.message ?? slugError(slugAvailability) ?? undefined
+          }
+          hint={slugHint(slugAvailability, errors.slug?.message)}
+          hintState={slugHintState(slugAvailability)}
+        >
+          <div className="flex items-stretch overflow-hidden rounded-md border border-border bg-background-elevated focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+            <input
+              id="slug"
+              type="text"
+              placeholder="acme"
+              spellCheck={false}
+              autoComplete="off"
+              aria-invalid={
+                errors.slug || slugAvailability.state === "taken"
+                  ? true
+                  : undefined
+              }
+              aria-describedby="slug-error slug-hint"
+              {...register("slug", {
+                onChange: (e) => {
+                  setSlugTouched(true);
+                  e.target.value = e.target.value.toLowerCase();
+                },
+              })}
+              className="flex-1 bg-transparent px-3 py-2.5 text-sm text-foreground focus:outline-none"
+            />
+            <span className="flex items-center border-l border-border bg-paper-100 px-3 text-sm font-medium text-foreground-secondary">
+              .mark8ly.com
             </span>
           </div>
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-sage-200 bg-white/88 px-4 py-1.5 text-xs font-medium text-sage-700 shadow-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-sage-500" aria-hidden />
-            6 months free · No credit card
-          </div>
-          <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
-            Let&apos;s get your store live
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-foreground-secondary">
-            We&apos;ll email you a verification link to finish setting up.
-            You can pick a password or sign in with Google after that.
-          </p>
+        </Field>
+
+        {/* Country + Currency */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            id="country"
+            label="Country"
+            error={errors.countryCode?.message}
+          >
+            <Controller
+              control={control}
+              name="countryCode"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger
+                    id="country"
+                    aria-invalid={errors.countryCode ? true : undefined}
+                  >
+                    <SelectValue placeholder="Select…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {countries.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        {c.flag_emoji} {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </Field>
+
+          <Field
+            id="currency"
+            label="Currency"
+            error={errors.currencyCode?.message}
+          >
+            <Controller
+              control={control}
+              name="currencyCode"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger
+                    id="currency"
+                    aria-invalid={errors.currencyCode ? true : undefined}
+                  >
+                    <SelectValue placeholder="Select…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencies.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        {c.code} — {c.symbol}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </Field>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-8 py-8 space-y-5">
-          <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-foreground">
-              Email address
-            </Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="founder@yourbusiness.com"
-              required
-              autoComplete="email"
-              spellCheck={false}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="businessName" className="text-foreground">
-              Business name
-            </Label>
-            <Input
-              id="businessName"
-              type="text"
-              value={businessName}
-              onChange={(e) => setBusinessName(e.target.value)}
-              placeholder="Acme Co"
-              required
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="slug" className="text-foreground">
-              Store URL
-            </Label>
-            <div className="flex items-stretch rounded-lg border border-warm-200 overflow-hidden bg-white focus-within:ring-2 focus-within:ring-foreground/15 focus-within:border-foreground/30 transition-[border-color,box-shadow]">
-              <input
-                id="slug"
-                type="text"
-                value={slug}
-                onChange={(e) => {
-                  setSlugTouched(true);
-                  setSlug(e.target.value.toLowerCase());
-                }}
-                placeholder="acme"
-                required
-                spellCheck={false}
-                autoComplete="off"
-                className="flex-1 px-3 py-2.5 bg-transparent text-sm focus:outline-none text-foreground"
-              />
-              <span className="flex items-center px-3 text-sm font-medium border-l border-warm-200 bg-warm-50 text-foreground-secondary">
-                .mark8ly.com
-              </span>
-            </div>
-            <SlugStatusLine status={slugStatus} />
-            <p className="text-xs text-foreground-tertiary">
-              Start with a Mark8ly URL now. You can connect a custom domain
-              after launch.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="country" className="text-foreground">
-                Country
-              </Label>
-              <Select value={countryCode} onValueChange={setCountryCode}>
-                <SelectTrigger id="country">
-                  <SelectValue placeholder="Select…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {countries.map((c) => (
-                    <SelectItem key={c.code} value={c.code}>
-                      {c.flag_emoji} {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="currency" className="text-foreground">
-                Currency
-              </Label>
-              <Select value={currencyCode} onValueChange={setCurrencyCode}>
-                <SelectTrigger id="currency">
-                  <SelectValue placeholder="Select…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {currencies.map((c) => (
-                    <SelectItem key={c.code} value={c.code}>
-                      {c.code} — {c.symbol}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {error && (
-            <div className="p-3 rounded-lg bg-terracotta-50 border border-terracotta-200">
-              <p
-                className="text-sm text-terracotta-700"
-                role="alert"
-                aria-live="polite"
-              >
-                {error}
-              </p>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 text-base font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover hover:shadow-[0_18px_36px_rgba(31,30,28,0.22)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-[0_14px_30px_rgba(31,30,28,0.18)]"
+        {/* Server-level submit error (network, slug collision race, etc.) */}
+        {submitError && (
+          <p
+            role="alert"
+            aria-live="polite"
+            className="text-sm text-danger"
           >
-            {pending ? (
-              <>
-                <span
-                  className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white motion-safe:animate-spin"
-                  aria-hidden
-                />
-                <span aria-live="polite">Sending your verification link…</span>
-              </>
-            ) : (
-              <>
-                Get my store ready
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="transition-transform group-hover:translate-x-0.5"
-                >
-                  <path d="M5 12h14M13 5l7 7-7 7" />
-                </svg>
-              </>
-            )}
-          </button>
-
-          <p className="text-xs text-foreground-tertiary text-center">
-            By creating an account you agree to our{" "}
-            <a href="/terms" className="underline hover:text-foreground">
-              Terms
-            </a>
-            ,{" "}
-            <a href="/privacy" className="underline hover:text-foreground">
-              Privacy Policy
-            </a>
-            , and{" "}
-            <a href="/legal" className="underline hover:text-foreground">
-              Security &amp; Compliance Policy
-            </a>
-            .
+            {submitError}
           </p>
-        </form>
+        )}
+
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
+        >
+          {pending ? (
+            <span aria-live="polite">Sending verification link…</span>
+          ) : (
+            "Send verification link"
+          )}
+        </button>
+
+        <p className="text-xs text-foreground-tertiary">
+          By creating an account you agree to our{" "}
+          <a
+            href="/terms"
+            className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
+          >
+            Terms
+          </a>
+          ,{" "}
+          <a
+            href="/privacy"
+            className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
+          >
+            Privacy Policy
+          </a>
+          , and{" "}
+          <a
+            href="/legal"
+            className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
+          >
+            Security Policy
+          </a>
+          .
+        </p>
+      </form>
+    </div>
+  );
+}
+
+/* ============================================================
+   Field — label + control + reserved-space error row
+   ------------------------------------------------------------
+   The error <p> always renders (with empty content when there
+   is no error) so the form never jitters when an error appears
+   or disappears. `hint` is an optional helper line used only
+   by the slug field for the live "available/checking" status.
+   ============================================================ */
+
+interface FieldProps {
+  id: string;
+  label: string;
+  error?: string;
+  hint?: string;
+  hintState?: "default" | "muted" | "success" | "error";
+  children: React.ReactNode;
+}
+
+function Field({ id, label, error, hint, hintState, children }: FieldProps) {
+  const hintColor =
+    hintState === "success"
+      ? "text-moss-700"
+      : hintState === "error"
+        ? "text-danger"
+        : "text-foreground-tertiary";
+
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-foreground">
+        {label}
+      </Label>
+      {children}
+      <div className="min-h-[1.125rem]">
+        {error ? (
+          <p
+            id={`${id}-error`}
+            role="alert"
+            aria-live="polite"
+            className="text-xs text-danger"
+          >
+            {error}
+          </p>
+        ) : hint ? (
+          <p
+            id={`${id}-hint`}
+            aria-live="polite"
+            className={`text-xs ${hintColor}`}
+          >
+            {hint}
+          </p>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function SlugStatusLine({ status }: { status: SlugStatus }) {
-  if (status.state === "idle") {
-    return (
-      <p className="text-xs text-foreground-tertiary" aria-live="polite">
-        3-63 characters · lowercase letters, numbers, and hyphens
-      </p>
-    );
-  }
-  if (status.state === "checking")
-    return (
-      <p className="text-xs text-foreground-tertiary" aria-live="polite">
-        Checking availability…
-      </p>
-    );
-  if (status.state === "available")
-    return (
-      <p className="text-xs text-sage-700" aria-live="polite">
-        ✓ Available
-      </p>
-    );
-  if (status.state === "taken")
-    return (
-      <p className="text-xs text-terracotta-700" aria-live="polite">
-        Already taken
-      </p>
-    );
-  return (
-    <p className="text-xs text-terracotta-700" aria-live="polite">
-      {status.message}
-    </p>
-  );
+/* ============================================================
+   Slug helpers — translate SlugAvailability into the bits
+   needed by the Field component.
+   ============================================================ */
+
+function slugError(status: SlugAvailability): string | null {
+  if (status.state === "taken") return "That URL is already taken";
+  if (status.state === "invalid") return status.message;
+  return null;
 }
+
+function slugHint(
+  status: SlugAvailability,
+  schemaError: string | undefined,
+): string | undefined {
+  // When the schema has a format error, don't compete with it.
+  if (schemaError) return undefined;
+  if (status.state === "idle") {
+    return "3-63 characters · lowercase letters, numbers, and hyphens";
+  }
+  if (status.state === "checking") return "Checking availability…";
+  if (status.state === "available") return "✓ Available";
+  return undefined;
+}
+
+function slugHintState(
+  status: SlugAvailability,
+): "default" | "muted" | "success" | "error" {
+  if (status.state === "available") return "success";
+  if (status.state === "taken" || status.state === "invalid") return "error";
+  return "default";
+}
+
+/* ============================================================
+   routeServerError — translate a server-side error message into
+   a field-level error when we can recognise it, or return null
+   to fall back to the top-level banner. Heuristic-only; safe to
+   extend as the platform-api error codes stabilise.
+   ============================================================ */
+
+function routeServerError(
+  message: string,
+): { field: keyof FormValues; message: string } | null {
+  const m = message.toLowerCase();
+
+  if (/slug|store url|already taken|unavailable/.test(m)) {
+    return { field: "slug", message };
+  }
+  if (/email|already exists|already in use/.test(m)) {
+    return { field: "email", message };
+  }
+  if (/business name/.test(m)) {
+    return { field: "businessName", message };
+  }
+  if (/country/.test(m)) {
+    return { field: "countryCode", message };
+  }
+  if (/currency/.test(m)) {
+    return { field: "currencyCode", message };
+  }
+
+  return null;
+}
+
+/* ============================================================
+   slugify — mirrors the legacy auto-suggest behavior.
+   ============================================================ */
 
 function slugify(input: string): string {
   return input
@@ -385,8 +541,4 @@ function slugify(input: string): string {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 63);
-}
-
-function isValidSlug(slug: string): boolean {
-  return /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(slug);
 }

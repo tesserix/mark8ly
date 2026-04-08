@@ -49,7 +49,7 @@ test("survives full browser close between submit and verify", async ({
     await firstPage.getByRole("option", { name: /usd/i }).first().click();
   }
 
-  await firstPage.getByRole("button", { name: /get my store ready/i }).click();
+  await firstPage.getByRole("button", { name: /send verification link/i }).click();
   await expect(firstPage).toHaveURL(/\/onboarding\/check-inbox/, {
     timeout: 10_000,
   });

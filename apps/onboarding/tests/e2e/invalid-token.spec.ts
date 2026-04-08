@@ -31,7 +31,7 @@ test("invalid magic link token surfaces an error and never navigates to welcome"
     await currencyTrigger.click();
     await page.getByRole("option", { name: /usd/i }).first().click();
   }
-  await page.getByRole("button", { name: /get my store ready/i }).click();
+  await page.getByRole("button", { name: /send verification link/i }).click();
   await expect(page).toHaveURL(/\/onboarding\/check-inbox/, { timeout: 10_000 });
 
   // Visit verify with a syntactically valid but unknown token.

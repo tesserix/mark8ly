@@ -30,7 +30,7 @@ test.describe("onboarding form validation", () => {
     // The auto-suggester turns "Ab" into "ab" — under 3 chars → idle.
     // Submit must remain disabled regardless of other fields.
     const submit = page.getByRole("button", {
-      name: /get my store ready/i,
+      name: /send verification link/i,
     });
     await expect(submit).toBeDisabled();
   });

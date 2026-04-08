@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@repo/ui": "*",
     "@tailwindcss/postcss": "^4.2.2",
     "@tesserix/web": "^1.7.1",
     "class-variance-authority": "^0.7.1",

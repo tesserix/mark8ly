@@ -30,6 +30,12 @@ type Invitation struct {
 	InvitedByUserID string     `gorm:"column:invited_by_user_id;type:varchar(128);not null"     json:"invited_by_user_id"`
 	CreatedAt       time.Time  `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
 	AcceptedAt      *time.Time `gorm:"column:accepted_at"                                       json:"accepted_at,omitempty"`
+	// AcceptedByUserID is the GIP UID of the user that accepted the
+	// invitation. Populated at accept time so admin Settings → Team
+	// can change the teammate's role later without a roundtrip to
+	// auth-bff to resolve email → UID. Nullable for invitations that
+	// were accepted before migration 0012 landed.
+	AcceptedByUserID *string `gorm:"column:accepted_by_user_id;type:varchar(128)"             json:"accepted_by_user_id,omitempty"`
 }
 
 // TableName overrides GORM's default pluralization.

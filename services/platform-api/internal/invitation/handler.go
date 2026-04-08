@@ -43,6 +43,7 @@ func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 		inv.DELETE("/:inv_id", h.revoke)
 	}
 	internal.GET("/tenants/:id/members", h.listMembers)
+	internal.PATCH("/tenants/:id/members/role", h.updateMemberRole)
 }
 
 func (h *Handler) listMembers(c *gin.Context) {
@@ -52,6 +53,34 @@ func (h *Handler) listMembers(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": rows})
+}
+
+type updateMemberRoleRequest struct {
+	Email   string `json:"email"`
+	NewRole string `json:"new_role"`
+	UID     string `json:"uid"`
+}
+
+func (h *Handler) updateMemberRole(c *gin.Context) {
+	var req updateMemberRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_body",
+			"message": "request body is not valid JSON",
+		})
+		return
+	}
+	result, err := h.svc.UpdateMemberRole(c.Request.Context(), UpdateMemberRoleInput{
+		TenantID:    c.Param("id"),
+		TargetEmail: req.Email,
+		NewRole:     req.NewRole,
+		ActorUID:    req.UID,
+	})
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
 type createRequest struct {

@@ -14,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import {
   createInvitation,
   revokeInvitation,
+  updateMemberRole,
   PlatformApiError,
   type InviteRole,
   type TenantRole,
@@ -93,6 +94,56 @@ export async function inviteTeammate(input: {
       email,
       role: input.role,
       store_id: input.storeId,
+    });
+    revalidatePath("/settings/team");
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function changeMemberRole(input: {
+  email: string;
+  newRole: InviteRole;
+}): Promise<Result> {
+  const { tenantId, uid, role } = await readAuth();
+  if (!tenantId || !uid) {
+    return {
+      ok: false,
+      code: "no_session",
+      message: "Your session has expired. Please sign in again.",
+    };
+  }
+  // Client-side gate — backend re-checks via FGA GetRole. We allow
+  // owner and admin through; the backend enforces the admin-cannot-
+  // change-admin/owner sub-rules.
+  if (role !== "owner" && role !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "You do not have permission to change team roles.",
+    };
+  }
+  const email = input.email.trim().toLowerCase();
+  if (!email || !email.includes("@")) {
+    return {
+      ok: false,
+      code: "invalid_email",
+      message: "A valid email address is required.",
+    };
+  }
+  if ((input.newRole as string) === "owner") {
+    return {
+      ok: false,
+      code: "invalid_role",
+      message: "Owner is reserved for the store founder.",
+    };
+  }
+  try {
+    await updateMemberRole(tenantId, {
+      email,
+      new_role: input.newRole,
+      uid,
     });
     revalidatePath("/settings/team");
     return { ok: true };

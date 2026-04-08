@@ -18,7 +18,9 @@ type Repository interface {
 	GetByID(ctx context.Context, id string) (*Invitation, error)
 	ListPendingByTenant(ctx context.Context, tenantID string) ([]Invitation, error)
 	ListAcceptedByTenant(ctx context.Context, tenantID string) ([]Invitation, error)
-	MarkAccepted(ctx context.Context, id string) error
+	FindAcceptedByEmail(ctx context.Context, tenantID, email string) (*Invitation, error)
+	MarkAccepted(ctx context.Context, id, acceptedByUserID string) error
+	UpdateRoleByEmail(ctx context.Context, tenantID, email, newRole string) error
 	MarkRevoked(ctx context.Context, id string) error
 }
 
@@ -92,13 +94,14 @@ func (r *gormRepository) ListAcceptedByTenant(ctx context.Context, tenantID stri
 	return rows, nil
 }
 
-func (r *gormRepository) MarkAccepted(ctx context.Context, id string) error {
+func (r *gormRepository) MarkAccepted(ctx context.Context, id, acceptedByUserID string) error {
 	res := r.db.WithContext(ctx).
 		Model(&Invitation{}).
 		Where("id = ? AND status = ?", id, StatusPending).
 		Updates(map[string]any{
-			"status":      StatusAccepted,
-			"accepted_at": gorm.Expr("NOW()"),
+			"status":              StatusAccepted,
+			"accepted_at":         gorm.Expr("NOW()"),
+			"accepted_by_user_id": acceptedByUserID,
 		})
 	if err := res.Error; err != nil {
 		return fmt.Errorf("invitation: mark accepted: %w", err)
@@ -108,6 +111,41 @@ func (r *gormRepository) MarkAccepted(ctx context.Context, id string) error {
 			"invitation_not_pending",
 			"invitation is no longer pending",
 		)
+	}
+	return nil
+}
+
+// FindAcceptedByEmail finds the most recent accepted invitation for
+// the given email on the tenant. Used by the role-change path to
+// resolve the target user's UID.
+func (r *gormRepository) FindAcceptedByEmail(ctx context.Context, tenantID, email string) (*Invitation, error) {
+	var inv Invitation
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND LOWER(email) = LOWER(?) AND status = ?", tenantID, email, StatusAccepted).
+		Order("accepted_at DESC").
+		First(&inv).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, apperrors.NotFound("member_not_found", "no accepted invitation matches this email")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("invitation: find accepted by email: %w", err)
+	}
+	return &inv, nil
+}
+
+// UpdateRoleByEmail changes the role on the most recent accepted
+// invitation for the given email on the tenant. Used by the role-
+// change path so the team list + audit trail reflect the new role.
+func (r *gormRepository) UpdateRoleByEmail(ctx context.Context, tenantID, email, newRole string) error {
+	res := r.db.WithContext(ctx).
+		Model(&Invitation{}).
+		Where("tenant_id = ? AND LOWER(email) = LOWER(?) AND status = ?", tenantID, email, StatusAccepted).
+		Update("role", newRole)
+	if err := res.Error; err != nil {
+		return fmt.Errorf("invitation: update role by email: %w", err)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("member_not_found", "no accepted invitation matches this email")
 	}
 	return nil
 }

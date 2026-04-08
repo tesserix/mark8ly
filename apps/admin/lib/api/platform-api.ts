@@ -375,6 +375,40 @@ export async function listTeamMembers(
 }
 
 /**
+ * Changes an already-accepted teammate's tenant-level role. The
+ * target is identified by email so the admin UI doesn't need to know
+ * GIP UIDs; the platform-api resolves email → UID via the accepted
+ * invitation row. Actor's UID is required for the server-side authz
+ * guard (owner/admin only, cannot demote self, admin cannot touch
+ * other admins or the owner).
+ */
+export async function updateMemberRole(
+  tenantId: string,
+  payload: {
+    email: string;
+    new_role: string;
+    uid: string;
+  },
+): Promise<{ email: string; role: string }> {
+  const res = await fetch(
+    `${PLATFORM_API_URL}/internal/tenants/${tenantId}/members/role`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    },
+  );
+  if (!res.ok) {
+    throw await platformError(res);
+  }
+  const body = (await res.json()) as {
+    data: { email: string; role: string };
+  };
+  return body.data;
+}
+
+/**
  * Revokes a pending invitation. Requires the inviting user's uid
  * for the FGA re-check on the server side.
  */

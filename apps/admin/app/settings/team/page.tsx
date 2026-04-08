@@ -35,6 +35,10 @@ export default async function TeamSettingsPage() {
     listTeamMembers(tenantId).catch(() => []),
     listPendingInvitations(tenantId).catch(() => []),
   ]);
+  // Current user email is passed so the members list can hide the
+  // role-change dropdown on the row belonging to the signed-in user
+  // (no self-demotion). Role is already in-scope.
+  const currentUserEmail = email;
 
   return (
     <AdminShell
@@ -66,6 +70,8 @@ export default async function TeamSettingsPage() {
           members={members}
           invitations={invitations}
           canInvite={canInvite}
+          currentRole={role}
+          currentUserEmail={currentUserEmail}
           stores={stores}
         />
       </div>

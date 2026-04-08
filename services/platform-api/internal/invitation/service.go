@@ -357,13 +357,143 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 		}
 	}
 
-	if err := s.repo.MarkAccepted(ctx, inv.ID); err != nil {
+	if err := s.repo.MarkAccepted(ctx, inv.ID, uid); err != nil {
 		return nil, err
 	}
 	return &AcceptResult{
 		TenantID: inv.TenantID,
 		Role:     inv.Role,
 	}, nil
+}
+
+// UpdateMemberRoleInput is the request for the role-change endpoint.
+type UpdateMemberRoleInput struct {
+	TenantID   string
+	TargetEmail string
+	NewRole    string
+	ActorUID   string
+}
+
+// UpdateMemberRoleResult is what the handler returns to the caller.
+type UpdateMemberRoleResult struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+// UpdateMemberRole changes a teammate's tenant-level role. Guarded
+// by the actor's own role:
+//
+//   - Owner: can change any non-self, non-owner member.
+//   - Admin: can change only staff/viewer members (cannot touch
+//     other admins or the owner).
+//   - Anyone else: denied.
+//
+// The target is identified by email so the admin UI doesn't need to
+// know the GIP UID. We look up the target's UID from the invitations
+// table (populated at accept time as of migration 0012). Invitations
+// accepted before that migration have no UID and therefore cannot be
+// role-changed via this endpoint — they have to be revoked and
+// re-invited. The service returns a clear error in that case so the
+// UI can surface actionable guidance.
+func (s *Service) UpdateMemberRole(ctx context.Context, in UpdateMemberRoleInput) (*UpdateMemberRoleResult, error) {
+	tenantID := strings.TrimSpace(in.TenantID)
+	targetEmail := strings.ToLower(strings.TrimSpace(in.TargetEmail))
+	newRole := strings.ToLower(strings.TrimSpace(in.NewRole))
+	actorUID := strings.TrimSpace(in.ActorUID)
+
+	if tenantID == "" || targetEmail == "" || newRole == "" || actorUID == "" {
+		return nil, apperrors.BadRequest("invalid_input", "tenant_id, email, new_role, and uid are required")
+	}
+	if !isAllowedTenantRole(newRole) {
+		return nil, apperrors.BadRequest("invalid_role", "role must be admin, staff, or viewer")
+	}
+
+	// Actor authz: must be owner or admin on this tenant.
+	actorRole, err := s.actorRole(ctx, actorUID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if actorRole != authz.RoleOwner && actorRole != authz.RoleAdmin {
+		return nil, apperrors.New(403, "forbidden", "you do not have permission to change team roles")
+	}
+
+	// Resolve the target tenant + owner email so we can guard against
+	// the "change the owner" footgun without trusting client input.
+	t, err := s.tenantRepo.GetByID(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(targetEmail, t.OwnerEmail) {
+		return nil, apperrors.New(403, "forbidden", "ownership can't be changed here — contact support")
+	}
+
+	// Look up the target's UID via their most recent accepted invite.
+	inv, err := s.repo.FindAcceptedByEmail(ctx, tenantID, targetEmail)
+	if err != nil {
+		return nil, err
+	}
+	if inv.AcceptedByUserID == nil || *inv.AcceptedByUserID == "" {
+		return nil, apperrors.New(
+			409,
+			"uid_not_recorded",
+			"this teammate was invited before role editing was supported — please revoke and re-invite them",
+		)
+	}
+	targetUID := *inv.AcceptedByUserID
+
+	// Self-change guard: actors can never change their own role. Keeps
+	// the "admin accidentally demotes themselves to viewer" scenario
+	// out of the ops inbox.
+	if targetUID == actorUID {
+		return nil, apperrors.New(403, "forbidden", "you can't change your own role")
+	}
+
+	// Admin→admin/owner guard: admins can only touch staff/viewer
+	// rows. Owners have free reign over non-owner rows.
+	if actorRole == authz.RoleAdmin {
+		currentRole := strings.ToLower(inv.Role)
+		if currentRole == "admin" || currentRole == "owner" {
+			return nil, apperrors.New(403, "forbidden", "admins can only change staff and viewer roles")
+		}
+		if newRole == "admin" {
+			return nil, apperrors.New(403, "forbidden", "only owners can promote members to admin")
+		}
+	}
+
+	// Write the new FGA tuple. WriteRole is idempotent — if the user
+	// already holds the target role this is a no-op. The OLD tuple is
+	// left in place for the audit trail; GetRole returns the highest-
+	// priority relation so the runtime behaviour reflects the new
+	// role immediately.
+	if s.fga != nil {
+		if err := s.fga.WriteRole(ctx, targetUID, authz.Role(newRole), tenantID); err != nil {
+			return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to write new role")
+		}
+	}
+
+	// Update the display label on the invitation row so ListMembers
+	// reflects the new role without another FGA roundtrip.
+	if err := s.repo.UpdateRoleByEmail(ctx, tenantID, targetEmail, newRole); err != nil {
+		return nil, err
+	}
+
+	return &UpdateMemberRoleResult{Email: targetEmail, Role: newRole}, nil
+}
+
+// actorRole is a small helper that resolves the caller's effective
+// tenant role via FGA GetRole. Returns ("", error) on failure.
+func (s *Service) actorRole(ctx context.Context, uid, tenantID string) (authz.Role, error) {
+	if s.fga == nil {
+		return "", apperrors.New(503, "authz_unavailable", "authorization service is not available")
+	}
+	role, err := s.fga.GetRole(ctx, uid, tenantID)
+	if err != nil {
+		return "", apperrors.Wrap(err, 500, "authz_check_failed", "failed to read caller role")
+	}
+	if role == "" {
+		return "", apperrors.New(403, "forbidden", "you do not have a role on this tenant")
+	}
+	return role, nil
 }
 
 // ListMembers returns the current team for a tenant: the owner

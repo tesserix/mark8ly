@@ -20,6 +20,7 @@ import type {
   TeamMember,
 } from "@/lib/api/platform-api";
 import {
+  changeMemberRole,
   inviteTeammate,
   revokeInvite,
 } from "@/app/settings/team/actions";
@@ -28,6 +29,16 @@ interface TeamSettingsProps {
   members: TeamMember[];
   invitations: Invitation[];
   canInvite: boolean;
+  /**
+   * The current user's role. Used to gate the inline role-change
+   * dropdown on each member row — only owner/admin see it, and
+   * admins can only change staff/viewer rows (backend enforces
+   * the same rule, this is just UX).
+   */
+  currentRole?: string;
+  /** The current user's email. Used to hide the role picker on
+   *  their own row so they can't demote themselves by accident. */
+  currentUserEmail?: string;
   stores: Store[];
 }
 
@@ -51,10 +62,15 @@ export function TeamSettings({
   members,
   invitations,
   canInvite,
+  currentRole,
+  currentUserEmail,
   stores,
 }: TeamSettingsProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [roleChangePending, setRoleChangePending] = useState<string | null>(
+    null,
+  );
   const [scope, setScope] = useState<Scope>("tenant");
   const [storeId, setStoreId] = useState<string>(stores[0]?.id ?? "");
   const [role, setRole] = useState<InviteRole>("staff");
@@ -118,6 +134,48 @@ export function TeamSettings({
     });
   }
 
+  function handleRoleChange(targetEmail: string, newRole: InviteRole) {
+    setError(null);
+    setSuccess(null);
+    setRoleChangePending(targetEmail);
+    startTransition(async () => {
+      const result = await changeMemberRole({
+        email: targetEmail,
+        newRole,
+      });
+      setRoleChangePending(null);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      setSuccess(`Updated ${targetEmail} to ${newRole}.`);
+      router.refresh();
+    });
+  }
+
+  /**
+   * canEditMemberRole — per-row gate. Backend re-checks the same
+   * rules; this is pure UX to keep the dropdown from rendering on
+   * rows the user can't touch.
+   *
+   * Rules:
+   *   - Owner row: never editable here (support-only)
+   *   - Your own row: never editable (no self-demotion)
+   *   - Owner (viewer): can edit everything else
+   *   - Admin (viewer): can edit staff/viewer only, not other admins
+   */
+  function canEditMemberRole(m: TeamMember): boolean {
+    if (m.kind === "owner") return false;
+    if (currentUserEmail && m.email.toLowerCase() === currentUserEmail.toLowerCase()) {
+      return false;
+    }
+    if (currentRole === "owner") return true;
+    if (currentRole === "admin") {
+      return m.role === "staff" || m.role === "viewer";
+    }
+    return false;
+  }
+
   return (
     <div className="space-y-16">
       {/* Members list */}
@@ -140,26 +198,64 @@ export function TeamSettings({
           </p>
         ) : (
           <ul className="divide-y divide-border-subtle">
-            {members.map((m) => (
-              <li
-                key={`${m.kind}-${m.email}`}
-                className="flex items-center justify-between gap-4 py-5"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-base font-medium text-foreground">
-                    {m.email}
-                  </p>
-                  <p className="mt-1 text-xs text-foreground-tertiary">
-                    {m.kind === "owner"
-                      ? "Founder account — contact support to move ownership"
-                      : m.accepted_at
-                        ? `Joined ${new Date(m.accepted_at).toLocaleDateString()}`
-                        : "Joined via invitation"}
-                  </p>
-                </div>
-                <RoleBadge role={m.role} />
-              </li>
-            ))}
+            {members.map((m) => {
+              const editable = canEditMemberRole(m);
+              const isPending = roleChangePending === m.email;
+              const adminEditOptions: InviteRole[] =
+                currentRole === "owner"
+                  ? ["admin", "staff", "viewer"]
+                  : ["staff", "viewer"];
+              return (
+                <li
+                  key={`${m.kind}-${m.email}`}
+                  className="flex items-center justify-between gap-4 py-5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-medium text-foreground">
+                      {m.email}
+                    </p>
+                    <p className="mt-1 text-xs text-foreground-tertiary">
+                      {m.kind === "owner"
+                        ? "Founder account — contact support to move ownership"
+                        : m.accepted_at
+                          ? `Joined ${new Date(m.accepted_at).toLocaleDateString()}`
+                          : "Joined via invitation"}
+                    </p>
+                  </div>
+                  {editable ? (
+                    <div className="flex items-center gap-3">
+                      {isPending && (
+                        <span className="text-xs text-moss-700">Saving…</span>
+                      )}
+                      <div className="w-[9rem]">
+                        <Select
+                          value={m.role}
+                          onValueChange={(value) =>
+                            handleRoleChange(m.email, value as InviteRole)
+                          }
+                          disabled={pending}
+                        >
+                          <SelectTrigger
+                            aria-label={`Change role for ${m.email}`}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {adminEditOptions.map((r) => (
+                              <SelectItem key={r} value={r}>
+                                {r.charAt(0).toUpperCase() + r.slice(1)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ) : (
+                    <RoleBadge role={m.role} />
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

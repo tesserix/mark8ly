@@ -11,7 +11,7 @@ var MigrationsFS embed.FS
 
 // ExpectedSchemaVersion is the migration version the current code was
 // written against. cmd/marketplace-api refuses to start if the database's
-// migration state doesn't match. M1 runs against version 0 (empty schema,
-// only the marketplace_db_schema_migrations table exists). Bump this with
-// every migration.
-const ExpectedSchemaVersion uint = 0
+// migration state doesn't match. M1 scaffold: version 1 is the no-op init
+// migration that seeds the migrations tracking table. Bump this with every
+// real migration added.
+const ExpectedSchemaVersion uint = 1

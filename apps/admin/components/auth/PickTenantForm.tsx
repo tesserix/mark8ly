@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { RoleBadge } from "@repo/ui/role-badge";
 
 import type { Membership } from "@/lib/api/platform-api";
 import { switchToTenant } from "@/app/pick-tenant/actions";
@@ -61,10 +62,8 @@ export function PickTenantForm({ tenants }: PickTenantFormProps) {
                     {tenant.slug}.mark8ly.com
                   </p>
                 </div>
-                <div className="flex flex-col items-end gap-1 text-right">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
-                    {tenant.role}
-                  </span>
+                <div className="flex flex-col items-end gap-2 text-right">
+                  <RoleBadge role={tenant.role} />
                   {busy && (
                     <span className="text-xs text-moss-700">Switching…</span>
                   )}

@@ -45,6 +45,8 @@ import {
   useSidebar,
 } from "@tesserix/web";
 
+import { RoleBadge } from "@repo/ui/role-badge";
+
 import type { Membership, TenantRole } from "@/lib/api/platform-api";
 import { UserMenu } from "./UserMenu";
 import { TenantSwitcher } from "./TenantSwitcher";
@@ -284,12 +286,12 @@ function AdminShellFrame({
 
             <div className="flex items-center gap-2 sm:gap-3">
               {role && (
-                <span
+                <div
                   data-testid="role-badge"
-                  className="hidden text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary sm:inline-flex"
+                  className="hidden sm:inline-flex"
                 >
-                  {role}
-                </span>
+                  <RoleBadge role={role} size="md" />
+                </div>
               )}
               <button
                 type="button"

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { Input } from "@tesserix/web";
 import { Field } from "@repo/ui/field";
 import { GoogleMark } from "@repo/ui/google-mark";
+import { RoleBadge } from "@repo/ui/role-badge";
 
 import type { InvitationVerifyResult } from "@/lib/api/platform-api";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
@@ -143,10 +144,11 @@ export function AcceptInviteForm({
   return (
     <div className="w-full max-w-md space-y-8">
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
-          <span>{invitation.role}</span>
-          <span aria-hidden="true">·</span>
-          <span>{invitation.tenant_slug}.mark8ly.com</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <RoleBadge role={invitation.role} />
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
+            {invitation.tenant_slug}.mark8ly.com
+          </span>
         </div>
         <p className="text-sm leading-7 text-foreground-secondary">
           Use{" "}

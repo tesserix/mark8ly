@@ -2,8 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Input } from "@tesserix/web";
+import {
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 import { Field } from "@repo/ui/field";
+import { RoleBadge } from "@repo/ui/role-badge";
 
 import type {
   Invitation,
@@ -149,9 +157,7 @@ export function TeamSettings({
                         : "Joined via invitation"}
                   </p>
                 </div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
-                  {m.role}
-                </span>
+                <RoleBadge role={m.role} />
               </li>
             ))}
           </ul>
@@ -222,38 +228,46 @@ export function TeamSettings({
               </Field>
 
               <Field id="invite-role" label="Role">
-                <select
-                  id="invite-role"
+                <Select
                   value={role}
-                  onChange={(e) => setRole(e.target.value as InviteRole)}
+                  onValueChange={(value) => setRole(value as InviteRole)}
                   disabled={pending}
-                  className="h-11 w-full rounded-md border border-border bg-background-elevated px-3 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                 >
-                  {roleOptions.map((r) => (
-                    <option key={r} value={r}>
-                      {r.charAt(0).toUpperCase() + r.slice(1)}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="invite-role">
+                    <SelectValue placeholder="Choose a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roleOptions.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r.charAt(0).toUpperCase() + r.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
             </div>
 
             {scope === "store" && (
               <Field id="invite-store" label="Store">
-                <select
-                  id="invite-store"
+                <Select
                   value={storeId}
-                  onChange={(e) => setStoreId(e.target.value)}
+                  onValueChange={setStoreId}
                   disabled={pending}
-                  data-testid="invite-store-select"
-                  className="h-11 w-full rounded-md border border-border bg-background-elevated px-3 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                 >
-                  {stores.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.slug}.mark8ly.com)
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    id="invite-store"
+                    data-testid="invite-store-select"
+                  >
+                    <SelectValue placeholder="Pick a store" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {stores.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name} ({s.slug}.mark8ly.com)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
             )}
 
@@ -307,16 +321,16 @@ export function TeamSettings({
                 key={inv.id}
                 className="flex items-center justify-between gap-4 py-5"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-base font-medium text-foreground">
-                    {inv.email}
-                  </p>
-                  <p className="mt-1 text-xs text-foreground-tertiary">
-                    Invited {new Date(inv.created_at).toLocaleDateString()} ·{" "}
-                    <span className="uppercase tracking-[0.14em]">
-                      {inv.role}
-                    </span>
-                  </p>
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-medium text-foreground">
+                      {inv.email}
+                    </p>
+                    <p className="mt-1 text-xs text-foreground-tertiary">
+                      Invited {new Date(inv.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <RoleBadge role={inv.role} />
                 </div>
                 {canInvite && (
                   <button

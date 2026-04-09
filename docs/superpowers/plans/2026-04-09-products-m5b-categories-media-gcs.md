@@ -12,7 +12,7 @@
 
 ## Status
 
-> **Pending.** All tasks open.
+**Status: ✅ COMPLETE** — all tasks merged to main.
 
 ---
 
@@ -378,12 +378,12 @@ func (u *GCSUploader) SignedUploadURL(ctx context.Context, key, contentType stri
 
 **Steps:**
 
-- [ ] **Step 1: Add dep** `cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go get cloud.google.com/go/storage && go mod tidy`. Expect new direct require line for `cloud.google.com/go/storage` and new transitive deps. **Any downgrade of existing direct deps → stop.**
-- [ ] **Step 2: Write failing tests**
-- [ ] **Step 3: Implement `gcs.go`**
-- [ ] **Step 4: Run tests** `go build ./... && go vet ./internal/media/... && go test ./internal/media/... -race -v`. All 6 unit tests pass (+ optional 7th skips).
-- [ ] **Step 5: Verify `git diff go.work` empty**
-- [ ] **Step 6: Commit** `feat(marketplace-api): add GCS uploader with signed URL support (M5b)`
+- [x] **Step 1: Add dep** `cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go get cloud.google.com/go/storage && go mod tidy`. Expect new direct require line for `cloud.google.com/go/storage` and new transitive deps. **Any downgrade of existing direct deps → stop.**
+- [x] **Step 2: Write failing tests**
+- [x] **Step 3: Implement `gcs.go`**
+- [x] **Step 4: Run tests** `go build ./... && go vet ./internal/media/... && go test ./internal/media/... -race -v`. All 6 unit tests pass (+ optional 7th skips).
+- [x] **Step 5: Verify `git diff go.work` empty**
+- [x] **Step 6: Commit** `feat(marketplace-api): add GCS uploader with signed URL support (M5b)`
 
 ---
 
@@ -861,23 +861,23 @@ Read `internal/category/service.go` for the exact `category.Config` field names 
 
 ### Task 9: M5b verification + PR
 
-- [ ] **Step 1: Full check**
+- [x] **Step 1: Full check**
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go vet ./... && go vet -tags=integration ./... && go build ./... && go test ./... -race && go test -tags integration ./... -race
 ```
 
-- [ ] **Step 2: Branch scope check**
+- [x] **Step 2: Branch scope check**
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly && git diff --stat main..feat/products-m5b-categories-media-gcs
 ```
 Only files under `services/marketplace-api/{internal/{auth,media,stores,product,handlers/admin},cmd/marketplace-api,pkg/config,go.mod,go.sum}` plus the M5b plan doc. No migrations, no Helm chart, no docs outside `docs/superpowers/plans/`.
 
-- [ ] **Step 3: Push**
+- [x] **Step 3: Push**
 ```
 git push -u origin feat/products-m5b-categories-media-gcs
 ```
 
-- [ ] **Step 4: Open PR** with a body that documents the new env vars for the ops team:
+- [x] **Step 4: Open PR** with a body that documents the new env vars for the ops team:
 
 ```
 gh pr create --base main --head feat/products-m5b-categories-media-gcs --title "feat(marketplace-api): products M5b — categories, media, variant PATCH, real GCS, real platform client" --body "$(cat <<'EOF'
@@ -925,22 +925,22 @@ EOF
 )"
 ```
 
-- [ ] **Step 5: Wait for CI, merge.**
+- [x] **Step 5: Wait for CI, merge.**
 
 ---
 
 ## Exit criteria
 
-- [ ] Every route in spec §6.1 is live: 6 product + 4 category + 1 variant + 4 media = 15 admin routes (M5a's 6 + M5b's 9)
-- [ ] FakeUploader → real GCS switch is config-gated and defaults to fake
-- [ ] stubPlatformClient → real HTTP client switch is config-gated and defaults to stub
-- [ ] New service methods (`AddMedia`, `UpdateMedia`, `DeleteMedia`, `UpdateVariantBasics`) enqueue outbox events and are covered by integration tests
-- [ ] Signed upload URL endpoint returns 501 with the fake and 200 with the real GCS uploader
-- [ ] Variant PATCH's inventory path writes to `variant_stock` (trigger test)
-- [ ] Variant PATCH rejects currency changes with `currency_change_forbidden`
-- [ ] Platform HTTP client enforces tenant scoping at the client boundary (no leak)
-- [ ] `go.mod` diff touches only `cloud.google.com/go/storage` and its transitives (no cascade to gin/gorm/etc)
-- [ ] PR is open, CI is green, Helm chart follow-up is flagged in the PR description
+- [x] Every route in spec §6.1 is live: 6 product + 4 category + 1 variant + 4 media = 15 admin routes (M5a's 6 + M5b's 9)
+- [x] FakeUploader → real GCS switch is config-gated and defaults to fake
+- [x] stubPlatformClient → real HTTP client switch is config-gated and defaults to stub
+- [x] New service methods (`AddMedia`, `UpdateMedia`, `DeleteMedia`, `UpdateVariantBasics`) enqueue outbox events and are covered by integration tests
+- [x] Signed upload URL endpoint returns 501 with the fake and 200 with the real GCS uploader
+- [x] Variant PATCH's inventory path writes to `variant_stock` (trigger test)
+- [x] Variant PATCH rejects currency changes with `currency_change_forbidden`
+- [x] Platform HTTP client enforces tenant scoping at the client boundary (no leak)
+- [x] `go.mod` diff touches only `cloud.google.com/go/storage` and its transitives (no cascade to gin/gorm/etc)
+- [x] PR is open, CI is green, Helm chart follow-up is flagged in the PR description
 
 ---
 

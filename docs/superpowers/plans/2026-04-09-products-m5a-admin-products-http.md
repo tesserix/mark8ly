@@ -12,7 +12,7 @@
 
 ## Status
 
-> **Pending.** All tasks open.
+**Status: ✅ COMPLETE** — all tasks merged to main.
 
 ---
 
@@ -195,11 +195,11 @@ Tests use `gin.New() + httptest.NewRequest + httptest.NewRecorder + router.Serve
 
 **Steps:**
 
-- [ ] **Step 1:** Write all 6 failing tests
-- [ ] **Step 2:** `cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go test ./internal/auth/...` — confirm compile failure
-- [ ] **Step 3:** Implement `middleware.go` verbatim
-- [ ] **Step 4:** Run tests `go test ./internal/auth/... -race -v` — 6 PASS
-- [ ] **Step 5:** `git add services/marketplace-api/internal/auth && git commit -m "feat(marketplace-api): add header-trust auth middleware (M5a)"`
+- [x] **Step 1:** Write all 6 failing tests
+- [x] **Step 2:** `cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go test ./internal/auth/...` — confirm compile failure
+- [x] **Step 3:** Implement `middleware.go` verbatim
+- [x] **Step 4:** Run tests `go test ./internal/auth/... -race -v` — 6 PASS
+- [x] **Step 5:** `git add services/marketplace-api/internal/auth && git commit -m "feat(marketplace-api): add header-trust auth middleware (M5a)"`
 
 ---
 
@@ -866,10 +866,10 @@ Document in service.go why these wrappers exist (handler-facing convenience).
 
 **Steps:**
 
-- [ ] **Step 1:** Add `Service.List` + `Service.Get` to `internal/product/service.go`
-- [ ] **Step 2:** Implement `products.go`
-- [ ] **Step 3:** `cd .../services/marketplace-api && go build ./... && go vet ./internal/handlers/admin/...`
-- [ ] **Step 4:** Commit: `feat(marketplace-api): add admin product handler with 6 routes (M5a)`
+- [x] **Step 1:** Add `Service.List` + `Service.Get` to `internal/product/service.go`
+- [x] **Step 2:** Implement `products.go`
+- [x] **Step 3:** `cd .../services/marketplace-api && go build ./... && go vet ./internal/handlers/admin/...`
+- [x] **Step 4:** Commit: `feat(marketplace-api): add admin product handler with 6 routes (M5a)`
 
 ---
 
@@ -1066,7 +1066,7 @@ Each test follows the seed → request → assert pattern. Use `httptest.NewReco
 
 ### Task 9: M5a verification + PR
 
-- [ ] **Step 1:** Full test run
+- [x] **Step 1:** Full test run
 
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go vet ./... && go vet -tags=integration ./... && go build ./... && go test ./... -race && go test -tags integration ./... -race
@@ -1074,13 +1074,13 @@ cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api
 
 All clean. API tests skip cleanly without `TEST_DATABASE_URL`.
 
-- [ ] **Step 2:** Push the branch
+- [x] **Step 2:** Push the branch
 
 ```
 git push -u origin feat/products-m5a-admin-products-http
 ```
 
-- [ ] **Step 3:** Open PR
+- [x] **Step 3:** Open PR
 
 ```
 gh pr create --base main --head feat/products-m5a-admin-products-http --title "feat(marketplace-api): products M5a — admin HTTP surface (products lifecycle)" --body "$(cat <<'EOF'
@@ -1114,21 +1114,21 @@ EOF
 )"
 ```
 
-- [ ] **Step 4:** Wait for CI, merge.
+- [x] **Step 4:** Wait for CI, merge.
 
 ---
 
 ## Exit criteria
 
-- [ ] Every product lifecycle endpoint (List, Get, Create, Patch, Delete, Copy) responds correctly to a `curl` from the test harness
-- [ ] Header-trust auth blocks requests with missing claim headers (401)
-- [ ] FGA middleware blocks requests with insufficient role (404, no leak)
-- [ ] StoreMiddleware blocks cross-tenant store access (404, no leak)
-- [ ] Error envelope matches §13.4/§14.13 for every typed error code reachable through the HTTP layer
-- [ ] DTO mapper does not leak any forbidden fields (compile-time guarantee + unit test on field names)
-- [ ] All 18+ API integration tests green against real Postgres
-- [ ] No changes to migrations, Helm chart, CI workflows, or `go.work`
-- [ ] PR is open and CI is green
+- [x] Every product lifecycle endpoint (List, Get, Create, Patch, Delete, Copy) responds correctly to a `curl` from the test harness
+- [x] Header-trust auth blocks requests with missing claim headers (401)
+- [x] FGA middleware blocks requests with insufficient role (404, no leak)
+- [x] StoreMiddleware blocks cross-tenant store access (404, no leak)
+- [x] Error envelope matches §13.4/§14.13 for every typed error code reachable through the HTTP layer
+- [x] DTO mapper does not leak any forbidden fields (compile-time guarantee + unit test on field names)
+- [x] All 18+ API integration tests green against real Postgres
+- [x] No changes to migrations, Helm chart, CI workflows, or `go.work`
+- [x] PR is open and CI is green
 
 ---
 

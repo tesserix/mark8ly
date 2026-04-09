@@ -12,7 +12,7 @@
 
 ## Status
 
-> **Pending.** All tasks open.
+**Status: ✅ COMPLETE** — all tasks merged to main.
 
 ---
 
@@ -958,7 +958,7 @@ This task could be merged into Task 1's commit (where the interface method is ad
 
 ### Task 10: Verification + PR
 
-- [ ] **Step 1: Full run**
+- [x] **Step 1: Full run**
 
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go vet ./... && go vet -tags=integration ./... && go build ./... && go test ./... -race && go test -tags integration ./... -race
@@ -966,7 +966,7 @@ cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api
 
 All clean. Integration tests skip cleanly without TEST_DATABASE_URL.
 
-- [ ] **Step 2: Verify branch scope**
+- [x] **Step 2: Verify branch scope**
 
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly && git diff --stat main..feat/products-m6-storefront-routes
@@ -974,13 +974,13 @@ cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly && git diff --stat main.
 
 Only files under `services/marketplace-api/{internal/{stores,category,product,handlers/storefront,handlers/admin},cmd/marketplace-api,pkg/config}`, `services/marketplace-api/go.mod` (untouched — no new deps), and the M6 plan doc.
 
-- [ ] **Step 3: Push**
+- [x] **Step 3: Push**
 
 ```
 git push -u origin feat/products-m6-storefront-routes
 ```
 
-- [ ] **Step 4: Open PR**
+- [x] **Step 4: Open PR**
 
 Title: `feat(marketplace-api): products M6 — storefront read routes with leak regression`
 
@@ -990,27 +990,27 @@ Body covers:
 - What's NOT in this PR: admin routes (already shipped in M5), signed ETag variants, CDN purging hooks.
 - Test plan: leak assertions list (cost_price, inventory_quantity, tenant_id, deleted_at absent); cache header assertions; 304 flow verified.
 
-- [ ] **Step 5: Merge.**
+- [x] **Step 5: Merge.**
 
 ---
 
 ## Exit criteria
 
-- [ ] 4 storefront routes live under `/api/v1/storefront/stores/:storeSlug/...`
-- [ ] Separate Gin engine mounts them (storefront mode); admin mode NEVER mounts them
-- [ ] `Cache-Control: public, s-maxage=60, stale-while-revalidate=300` on every 200
-- [ ] Weak ETag derived from `store_watermarks.products_updated_at` + store id
-- [ ] `If-None-Match` matching current ETag returns 304
-- [ ] Storefront DTO family contains zero leak fields (reflect-based regression test)
-- [ ] Draft / archived / soft-deleted / unpublished products NEVER appear in any storefront response
-- [ ] Handle lookup (`GetPublishedByHandle`) cannot return a non-published product
-- [ ] Category lookup returns only `is_active=true AND deleted_at IS NULL`
-- [ ] Unknown store slug → 404 (no existence leak)
-- [ ] Suspended store → 404
-- [ ] `X-Storefront-Key` check blocks wrong/missing keys with 404 (not 401 — no leak)
-- [ ] `go.mod` untouched
-- [ ] `go.work` untouched
-- [ ] PR is open and CI is green
+- [x] 4 storefront routes live under `/api/v1/storefront/stores/:storeSlug/...`
+- [x] Separate Gin engine mounts them (storefront mode); admin mode NEVER mounts them
+- [x] `Cache-Control: public, s-maxage=60, stale-while-revalidate=300` on every 200
+- [x] Weak ETag derived from `store_watermarks.products_updated_at` + store id
+- [x] `If-None-Match` matching current ETag returns 304
+- [x] Storefront DTO family contains zero leak fields (reflect-based regression test)
+- [x] Draft / archived / soft-deleted / unpublished products NEVER appear in any storefront response
+- [x] Handle lookup (`GetPublishedByHandle`) cannot return a non-published product
+- [x] Category lookup returns only `is_active=true AND deleted_at IS NULL`
+- [x] Unknown store slug → 404 (no existence leak)
+- [x] Suspended store → 404
+- [x] `X-Storefront-Key` check blocks wrong/missing keys with 404 (not 401 — no leak)
+- [x] `go.mod` untouched
+- [x] `go.work` untouched
+- [x] PR is open and CI is green
 
 ---
 

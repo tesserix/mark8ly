@@ -12,7 +12,7 @@
 
 ## Status
 
-> **Pending.** All tasks open.
+**Status: ✅ COMPLETE** — all tasks merged to main.
 
 ---
 
@@ -122,7 +122,7 @@ The integration test against real FGA introduces a new opt-in env var, NOT a new
 
 **Scope:** Read-only Client interface (`Check`, `CheckMembership`, `GetRole`), real impl backed by `github.com/openfga/go-sdk`, `Config`, `New(cfg)`, `DiscoverStoreID(ctx, apiURL, name)`. Mirror platform-api's shape but trim out every Write* method.
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go get github.com/openfga/go-sdk && go mod tidy
@@ -134,7 +134,7 @@ grep "openfga/go-sdk" services/platform-api/go.mod
 ```
 If platform-api pins a version, use the same: `go get github.com/openfga/go-sdk@<version>`.
 
-- [ ] **Step 2: Write the failing unit test**
+- [x] **Step 2: Write the failing unit test**
 
 `services/marketplace-api/internal/authz/client_test.go`:
 
@@ -169,13 +169,13 @@ func TestRole_Priority(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run test, expect compile failure**
+- [x] **Step 3: Run test, expect compile failure**
 
 ```
 go test ./internal/authz/... -v
 ```
 
-- [ ] **Step 4: Implement `client.go`**
+- [x] **Step 4: Implement `client.go`**
 
 ```go
 // Package authz is marketplace-api's read-only OpenFGA client for tenant-
@@ -341,20 +341,20 @@ func (c *fgaClient) GetRole(ctx context.Context, userID, tenantID string) (Role,
 }
 ```
 
-- [ ] **Step 5: Run tests and confirm pass**
+- [x] **Step 5: Run tests and confirm pass**
 
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go build ./... && go vet ./internal/authz/... && go test ./internal/authz/... -v
 ```
 
-- [ ] **Step 6: Confirm `go.work` untouched**
+- [x] **Step 6: Confirm `go.work` untouched**
 
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly && git diff go.work
 ```
 Empty.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git add services/marketplace-api/internal/authz services/marketplace-api/go.mod services/marketplace-api/go.sum
@@ -373,7 +373,7 @@ git commit -m "feat(marketplace-api): add read-only authz Client interface + rea
 
 Key semantic: `CheckMembership` (i.e. `Check(..., "member", ...)`) must return true if the user has ANY role on the tenant — mirroring the FGA model's derived `member` relation. `Check("admin", ...)` must return true for users granted `owner` (since `admin` is `[user] or owner` in the model). The fake implements these implications explicitly.
 
-- [ ] **Step 1: Write the failing tests** (`fake_test.go`):
+- [x] **Step 1: Write the failing tests** (`fake_test.go`):
 
 Cases:
 1. Grant owner → Check(owner) true, Check(admin) true (implied), Check(staff) true (implied), CheckMembership true.
@@ -384,7 +384,7 @@ Cases:
 6. GetRole returns the highest granted role (grant staff + admin → returns admin).
 7. Revoke removes the grant and subsequent Check returns false.
 
-- [ ] **Step 2: Implement `fake.go`**
+- [x] **Step 2: Implement `fake.go`**
 
 ```go
 package authz
@@ -471,13 +471,13 @@ func (f *FakeClient) GetRole(_ context.Context, userID, tenantID string) (Role, 
 }
 ```
 
-- [ ] **Step 3: Run tests, confirm pass**
+- [x] **Step 3: Run tests, confirm pass**
 
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go test ./internal/authz/... -race -v
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```
 git add services/marketplace-api/internal/authz/fake.go services/marketplace-api/internal/authz/fake_test.go
@@ -502,7 +502,7 @@ Behavior:
 5. On `false` → respond 404 (no existence leak).
 6. On `true` → `c.Next()`.
 
-- [ ] **Step 1: Write the failing test** (`middleware_test.go`):
+- [x] **Step 1: Write the failing test** (`middleware_test.go`):
 
 Cases (all using FakeClient + httptest):
 
@@ -514,7 +514,7 @@ Cases (all using FakeClient + httptest):
 6. `TestMiddleware_RequireRoleAdmin_GrantedStaff_Returns404` — fake grants staff, middleware requires admin → 404.
 7. `TestMiddleware_RequireRoleStaff_GrantedAdmin_Allowed` — fake grants admin, middleware requires staff → allowed (because admin implies staff via the fake's role-implication semantics).
 
-- [ ] **Step 2: Implement `middleware.go`**
+- [x] **Step 2: Implement `middleware.go`**
 
 ```go
 package authz
@@ -594,13 +594,13 @@ func respondInternal(c *gin.Context) {
 var _ = context.Background
 ```
 
-- [ ] **Step 3: Run tests, confirm all 7 cases pass**
+- [x] **Step 3: Run tests, confirm all 7 cases pass**
 
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go test ./internal/authz/... -race -v
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```
 git add services/marketplace-api/internal/authz/middleware.go services/marketplace-api/internal/authz/middleware_test.go
@@ -628,9 +628,9 @@ The test does:
 
 Document the test's preconditions in a comment at the top of the file: "This test requires a running OpenFGA at TEST_FGA_API_URL with a store named mark8ly-platform whose authorization model includes the marketplace-api role definitions. Local devs without that infra get a clean skip."
 
-- [ ] **Step 1: Implement** (single file, ~150 lines)
-- [ ] **Step 2: Run** `cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go test -tags integration ./internal/authz/... -v` — expect skip.
-- [ ] **Step 3: Commit**
+- [x] **Step 1: Implement** (single file, ~150 lines)
+- [x] **Step 2: Run** `cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go test -tags integration ./internal/authz/... -v` — expect skip.
+- [x] **Step 3: Commit**
 
 ```
 git add services/marketplace-api/internal/authz/client_integration_test.go
@@ -647,11 +647,11 @@ git commit -m "test(marketplace-api): real-FGA integration test gated by TEST_FG
 
 **Scope:** Add a single string field to the existing `Config` struct loaded by envconfig.
 
-- [ ] **Step 1: Read the existing config.go** to see the field naming convention (envconfig uses tags like `envconfig:"MARKETPLACE_HTTP_PORT"` or similar — match the existing prefix).
-- [ ] **Step 2: Add the field** `FGAAPIURL string `envconfig:"MARKETPLACE_FGA_API_URL" required:"true"``. Make it required so misconfiguration fails fast at startup.
-- [ ] **Step 3: Update config_test.go** — set the env var in the existing test setup so the existing tests still pass.
-- [ ] **Step 4: Verify** `go test ./pkg/config/... -v`.
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Read the existing config.go** to see the field naming convention (envconfig uses tags like `envconfig:"MARKETPLACE_HTTP_PORT"` or similar — match the existing prefix).
+- [x] **Step 2: Add the field** `FGAAPIURL string `envconfig:"MARKETPLACE_FGA_API_URL" required:"true"``. Make it required so misconfiguration fails fast at startup.
+- [x] **Step 3: Update config_test.go** — set the env var in the existing test setup so the existing tests still pass.
+- [x] **Step 4: Verify** `go test ./pkg/config/... -v`.
+- [x] **Step 5: Commit**
 
 ```
 git add services/marketplace-api/pkg/config
@@ -669,9 +669,9 @@ git commit -m "feat(marketplace-api): add MARKETPLACE_FGA_API_URL config var (M4
 
 For M4 there are no routes to attach the middleware to. Just construct and log. Add a comment: `// M5 will pass authzMW to the admin route registrar`.
 
-- [ ] **Step 1: Read main.go** (already familiar from M3 Task 13).
-- [ ] **Step 2: Add imports**: `"github.com/mark8ly/marketplace-api/internal/authz"`.
-- [ ] **Step 3: After `conn, err := db.Open(...)`** insert:
+- [x] **Step 1: Read main.go** (already familiar from M3 Task 13).
+- [x] **Step 2: Add imports**: `"github.com/mark8ly/marketplace-api/internal/authz"`.
+- [x] **Step 3: After `conn, err := db.Open(...)`** insert:
 
 ```go
 // OpenFGA client — read-only per spec §13.1.1.
@@ -697,8 +697,8 @@ authzMW := authz.NewMiddleware(fgaClient, log)
 _ = authzMW // M5 will pass this to the admin route registrar
 ```
 
-- [ ] **Step 4: Build + vet** `cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go build ./... && go vet ./...`.
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Build + vet** `cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go build ./... && go vet ./...`.
+- [x] **Step 5: Commit**
 
 ```
 git add services/marketplace-api/cmd/marketplace-api/main.go
@@ -709,7 +709,7 @@ git commit -m "feat(marketplace-api): bootstrap FGA client + middleware in main 
 
 ### Task 7: M4 verification + PR
 
-- [ ] **Step 1: Full test run**
+- [x] **Step 1: Full test run**
 
 ```
 cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api && go vet ./... && go vet -tags=integration ./... && go build ./... && go test ./... -race && go test -tags integration ./... -race
@@ -717,13 +717,13 @@ cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/services/marketplace-api
 
 All clean. Integration tests skip without `TEST_FGA_API_URL`.
 
-- [ ] **Step 2: Push the branch**
+- [x] **Step 2: Push the branch**
 
 ```
 git push -u origin feat/products-m4-openfga-authz
 ```
 
-- [ ] **Step 3: Open PR**
+- [x] **Step 3: Open PR**
 
 ```
 gh pr create --base main --head feat/products-m4-openfga-authz --title "feat(marketplace-api): products M4 — OpenFGA tenant-relation authz middleware" --body "$(cat <<'EOF'
@@ -755,22 +755,22 @@ EOF
 )"
 ```
 
-- [ ] **Step 4: Wait for CI, merge.**
+- [x] **Step 4: Wait for CI, merge.**
 
 ---
 
 ## Exit criteria
 
-- [ ] `go test ./internal/authz/... -race` green
-- [ ] `go vet -tags=integration ./internal/authz/...` clean
-- [ ] FakeClient implies derived roles correctly (owner→admin→staff→member)
-- [ ] Middleware returns 404 (not 403) on every deny path
-- [ ] Middleware logs at ERROR level on FGA outage and returns 500
-- [ ] `cmd/marketplace-api/main.go` discovers the store at startup and exits 1 on failure
-- [ ] `MARKETPLACE_FGA_API_URL` is a required config var (start fails without it)
-- [ ] `Client` interface exposes NO Write methods (compile-time guarantee against tuple writes from marketplace-api)
-- [ ] No changes to migrations, Helm chart, CI workflows, or `go.work`
-- [ ] PR is open and CI is green
+- [x] `go test ./internal/authz/... -race` green
+- [x] `go vet -tags=integration ./internal/authz/...` clean
+- [x] FakeClient implies derived roles correctly (owner→admin→staff→member)
+- [x] Middleware returns 404 (not 403) on every deny path
+- [x] Middleware logs at ERROR level on FGA outage and returns 500
+- [x] `cmd/marketplace-api/main.go` discovers the store at startup and exits 1 on failure
+- [x] `MARKETPLACE_FGA_API_URL` is a required config var (start fails without it)
+- [x] `Client` interface exposes NO Write methods (compile-time guarantee against tuple writes from marketplace-api)
+- [x] No changes to migrations, Helm chart, CI workflows, or `go.work`
+- [x] PR is open and CI is green
 
 ---
 

@@ -16,6 +16,7 @@ type Config struct {
 	Mode        string `envconfig:"MODE" default:"both"`
 	HTTPPort    int    `envconfig:"HTTP_PORT" default:"8087"`
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
+	FGAAPIURL   string `envconfig:"MARKETPLACE_FGA_API_URL" required:"true"`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
+	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/health"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
@@ -63,6 +64,28 @@ func main() {
 		log.Error("db open", "err", err)
 		os.Exit(1)
 	}
+
+	// OpenFGA client — read-only per spec §13.1.1.
+	discoverCtx, discoverCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	storeID, err := authz.DiscoverStoreID(discoverCtx, cfg.FGAAPIURL, authz.FGAStoreName)
+	discoverCancel()
+	if err != nil {
+		log.Error("authz: discover store", "err", err, "api_url", cfg.FGAAPIURL)
+		os.Exit(1)
+	}
+	if storeID == "" {
+		log.Error("authz: store not found — bring up openfga-seed first",
+			"store_name", authz.FGAStoreName, "api_url", cfg.FGAAPIURL)
+		os.Exit(1)
+	}
+	log.Info("authz: discovered openfga store", "store_id", storeID)
+	fgaClient, err := authz.New(authz.Config{APIURL: cfg.FGAAPIURL, StoreID: storeID})
+	if err != nil {
+		log.Error("authz: new client", "err", err)
+		os.Exit(1)
+	}
+	authzMW := authz.NewMiddleware(fgaClient, log)
+	_ = authzMW // M5 will pass this to the admin route registrar
 
 	// Outbox publisher — runs in admin and both modes; the storefront
 	// process does not produce events, so running it there would just poll

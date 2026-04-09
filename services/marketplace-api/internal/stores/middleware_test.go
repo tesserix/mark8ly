@@ -95,7 +95,7 @@ func (c *fakeClient) GetStore(_ context.Context, tenantID, storeID string) (*sto
 
 // --- helpers ---
 
-func newStore(syncedAt time.Time) *stores.Store {
+func newFixtureStore(syncedAt time.Time) *stores.Store {
 	return &stores.Store{
 		ID:           testStoreID,
 		TenantID:     testTenantID,
@@ -152,7 +152,7 @@ func baseCfg(repo stores.Repository, client stores.Client) stores.MiddlewareConf
 
 func TestMiddleware_FreshCacheHit(t *testing.T) {
 	repo := newFakeRepo()
-	repo.preload(newStore(time.Now()))
+	repo.preload(newFixtureStore(time.Now()))
 	client := &fakeClient{}
 	p := &probe{}
 	r := buildRouter(baseCfg(repo, client), p)
@@ -174,7 +174,7 @@ func TestMiddleware_FreshCacheHit(t *testing.T) {
 
 func TestMiddleware_MissingCache_SuccessfulRefresh(t *testing.T) {
 	repo := newFakeRepo()
-	client := &fakeClient{result: newStore(time.Time{})}
+	client := &fakeClient{result: newFixtureStore(time.Time{})}
 	p := &probe{}
 	r := buildRouter(baseCfg(repo, client), p)
 
@@ -195,8 +195,8 @@ func TestMiddleware_MissingCache_SuccessfulRefresh(t *testing.T) {
 
 func TestMiddleware_StaleCache_SuccessfulRefresh(t *testing.T) {
 	repo := newFakeRepo()
-	repo.preload(newStore(time.Now().Add(-6 * time.Minute)))
-	client := &fakeClient{result: newStore(time.Time{})}
+	repo.preload(newFixtureStore(time.Now().Add(-6 * time.Minute)))
+	client := &fakeClient{result: newFixtureStore(time.Time{})}
 	p := &probe{}
 	r := buildRouter(baseCfg(repo, client), p)
 
@@ -220,7 +220,7 @@ func TestMiddleware_StaleCache_SuccessfulRefresh(t *testing.T) {
 
 func TestMiddleware_StaleCache_PlatformOutage_ServesStale(t *testing.T) {
 	repo := newFakeRepo()
-	repo.preload(newStore(time.Now().Add(-6 * time.Minute)))
+	repo.preload(newFixtureStore(time.Now().Add(-6 * time.Minute)))
 	client := &fakeClient{err: stores.ErrPlatformUnavailable}
 	p := &probe{}
 	r := buildRouter(baseCfg(repo, client), p)
@@ -257,7 +257,7 @@ func TestMiddleware_MissingCache_PlatformOutage_404(t *testing.T) {
 
 func TestMiddleware_StaleCache_BeyondCeiling_404(t *testing.T) {
 	repo := newFakeRepo()
-	repo.preload(newStore(time.Now().Add(-25 * time.Hour)))
+	repo.preload(newFixtureStore(time.Now().Add(-25 * time.Hour)))
 	client := &fakeClient{err: stores.ErrPlatformUnavailable}
 	p := &probe{}
 	r := buildRouter(baseCfg(repo, client), p)
@@ -274,7 +274,7 @@ func TestMiddleware_StaleCache_BeyondCeiling_404(t *testing.T) {
 func TestMiddleware_SingleflightCoalescing(t *testing.T) {
 	repo := newFakeRepo()
 	client := &fakeClient{
-		result: newStore(time.Time{}),
+		result: newFixtureStore(time.Time{}),
 		delay:  50 * time.Millisecond,
 	}
 	r := gin.New()

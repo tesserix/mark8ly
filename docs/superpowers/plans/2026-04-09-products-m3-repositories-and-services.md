@@ -1,5 +1,7 @@
 # Products M3 — Repositories, Services, Sanitizer, Outbox Publisher
 
+> **Status: ✅ COMPLETE** — all 14 tasks landed on `feat/products-m3-services`, PR [tesserix/mark8ly#8](https://github.com/tesserix/mark8ly/pull/8). Executed via superpowers subagent-driven-development (option C: hybrid fast-track + full review on Tasks 11/12). 20 commits, +8289/-24 across 35 files. Every reachable typed error code from spec §13.4 + §14.13 covered by integration tests. ListAdmin query-count gate enforced. Bluemonday OWASP corpus green. Outbox publisher wired into `cmd/marketplace-api/main.go` for admin/both modes with clean shutdown.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the admin-path service layer for the products feature on top of the M2 schema — product/category/stores/outbox repositories, sanitizer, variant matrix helpers, product + category services (Create/Update/Delete/Copy), and the in-process outbox publisher goroutine that bumps `store_watermarks`. No HTTP handlers yet. No OpenFGA. No real GCS or Pub/Sub.
@@ -141,7 +143,7 @@ Legend: **R** = repository, **S** = service, **U** = unit/pure, **I** = integrat
 
 **Scope:** One small package. Defines the shape M5 handlers will render as JSON and every service-layer error uses.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // services/marketplace-api/pkg/apperrors/errors_test.go
@@ -189,14 +191,14 @@ func TestError_Codes_CoverSpec(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```
 cd services/marketplace-api && go test ./pkg/apperrors/...
 ```
 Expected: compile failure (package doesn't exist yet).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 // services/marketplace-api/pkg/apperrors/errors.go
@@ -406,7 +408,7 @@ func NotFound(resource string) *Error {
 func Forbidden() *Error { return &Error{Code: CodeForbidden, Message: "forbidden"} }
 ```
 
-- [ ] **Step 4: Run `go mod tidy`**
+- [x] **Step 4: Run `go mod tidy`**
 
 ```
 cd services/marketplace-api && go mod tidy
@@ -414,21 +416,21 @@ cd services/marketplace-api && go mod tidy
 
 No new deps in this task — the apperrors package is pure stdlib. Bluemonday is added in Task 8 and x/sync is promoted to direct in Task 3, only when the code that imports them lands. Adding unused deps here would be pruned by `go mod tidy` immediately. The expected `go.mod` diff from this task is **empty**.
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 ```
 cd services/marketplace-api && go test ./pkg/apperrors/... -v
 ```
 Expected: `PASS`
 
-- [ ] **Step 6: Confirm go.work is untouched (landmine #1)**
+- [x] **Step 6: Confirm go.work is untouched (landmine #1)**
 
 ```
 cd ../.. && git diff go.work
 ```
 Expected: empty output.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git add services/marketplace-api/pkg/apperrors services/marketplace-api/go.mod services/marketplace-api/go.sum go.work.sum
@@ -450,7 +452,7 @@ git commit -m "feat(marketplace-api): add pkg/apperrors typed error envelope (M3
 - `IsStale(store, d)` reports whether `time.Since(store.SyncedAt) > d`.
 - Integration tests: insert via tx, assert GetByIDForTenant returns the row; assert wrong tenant returns ErrNotFound; assert IsStale boundary.
 
-- [ ] **Step 1: Write repository_integration_test.go first** (TDD)
+- [x] **Step 1: Write repository_integration_test.go first** (TDD)
 
 Key cases:
 1. `Upsert` insert then update preserves `id`, bumps `synced_at`.
@@ -461,14 +463,14 @@ Key cases:
 
 All tests use `testdb.NewTx(t)` with `//go:build integration` at the top.
 
-- [ ] **Step 2: Run tests — they should fail to compile**
+- [x] **Step 2: Run tests — they should fail to compile**
 
 ```
 cd services/marketplace-api && go test -tags integration ./internal/stores/...
 ```
 Expected: `undefined: stores.Repository` etc.
 
-- [ ] **Step 3: Implement `errors.go` and `repository.go`**
+- [x] **Step 3: Implement `errors.go` and `repository.go`**
 
 ```go
 // services/marketplace-api/internal/stores/errors.go
@@ -555,14 +557,14 @@ func (r *gormRepository) Upsert(ctx context.Context, s *Store) error {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 ```
 TEST_DATABASE_URL=<existing test dsn> go test -tags integration ./internal/stores/... -v
 ```
 Expected: all 5 cases PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add services/marketplace-api/internal/stores
@@ -582,7 +584,7 @@ git commit -m "feat(marketplace-api): add stores repository with tenant-scoped l
 
 Middleware needs a `Repository` for the cache lookup and a `Client` for refresh. Unit tests use a fake `Repository` (in-memory map) so they don't need `testdb`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // services/marketplace-api/internal/stores/middleware_test.go
@@ -602,7 +604,7 @@ package stores_test
 
 (Full test body: ~250 lines. Use `httptest.NewRecorder()` + `gin.CreateTestContext()` to drive the middleware. Assert `c.Get("store")` is the expected row. For case 7, spawn 10 goroutines calling the middleware against a shared fake client with a 50ms sleep inside `GetStore`; assert the client's call counter is exactly 1.)
 
-- [ ] **Step 2: Implement `platform_client.go`**
+- [x] **Step 2: Implement `platform_client.go`**
 
 ```go
 // services/marketplace-api/internal/stores/platform_client.go
@@ -625,7 +627,7 @@ type Client interface {
 }
 ```
 
-- [ ] **Step 3: Implement `middleware.go`**
+- [x] **Step 3: Implement `middleware.go`**
 
 Transcribe §14.7 exactly:
 
@@ -736,14 +738,14 @@ func respondNotFound(c *gin.Context) {
 var _ = errors.Is
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 ```
 cd services/marketplace-api && go test ./internal/stores/... -run Middleware -race -v
 ```
 Expected: all 7 cases PASS. The singleflight test in particular must show exactly 1 client call.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add services/marketplace-api/internal/stores
@@ -765,7 +767,7 @@ git commit -m "feat(marketplace-api): add StoreMiddleware with singleflight + se
 
 The poll signature with "returns the tx" is ugly but necessary — the caller must hold the row-level locks until it has upserted watermarks AND marked published. Alternative: fold the whole batch processing into a `ProcessBatch(ctx, fn)` callback pattern. Use the callback pattern — cleaner.
 
-- [ ] **Step 1: Write integration test first**
+- [x] **Step 1: Write integration test first**
 
 ```go
 // services/marketplace-api/internal/outbox/repository_integration_test.go
@@ -789,7 +791,7 @@ package outbox_test
 // cleanup on "outbox_events".
 ```
 
-- [ ] **Step 2: Implement `repository.go`**
+- [x] **Step 2: Implement `repository.go`**
 
 ```go
 // services/marketplace-api/internal/outbox/repository.go
@@ -866,13 +868,13 @@ func (r *gormRepository) MarkPublishedInTx(tx *gorm.DB, ids []string) error {
 }
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 ```
 TEST_DATABASE_URL=... go test -tags integration ./internal/outbox/... -race -v
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```
 git add services/marketplace-api/internal/outbox
@@ -898,7 +900,7 @@ Publisher's batch callback logic:
 2. For each `store_id`: upsert `store_watermarks` with `products_updated_at = GREATEST(existing, max(created_at))`.
 3. Collect all row ids and call `MarkPublishedInTx`.
 
-- [ ] **Step 1: Write integration test** (uses testdb.NewDB with real commits)
+- [x] **Step 1: Write integration test** (uses testdb.NewDB with real commits)
 
 ```go
 // Cases:
@@ -926,7 +928,7 @@ Publisher's batch callback logic:
 //    stores row" step to the publisher later.
 ```
 
-- [ ] **Step 2: Implement `publisher.go`**
+- [x] **Step 2: Implement `publisher.go`**
 
 ```go
 // services/marketplace-api/internal/outbox/publisher.go
@@ -1050,13 +1052,13 @@ func (p *Publisher) tick(ctx context.Context) (int, error) {
 }
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 ```
 TEST_DATABASE_URL=... go test -tags integration ./internal/outbox/... -run Publisher -race -v
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```
 git add services/marketplace-api/internal/outbox/publisher.go services/marketplace-api/internal/outbox/publisher_integration_test.go
@@ -1089,7 +1091,7 @@ Integration test cases:
 5. HasChildren true / false.
 6. HasProducts true / false after inserting a product + product_categories link (use minimal product fixture).
 
-- [ ] **Step 1-4: TDD rhythm as above.**
+- [x] **Step 1-4: TDD rhythm as above.**
 
 Repository skeleton:
 
@@ -1149,7 +1151,7 @@ func isUniqueSlug(err error) bool {
 
 Note: `github.com/jackc/pgx/v5/pgconn` — verify it's already in go.mod (gorm/postgres uses pgx v5). If not, `go get` it in this task's step and include the bump in the commit.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git commit -m "feat(marketplace-api): add category repository with slug-taken error translation (M3)"
@@ -1176,9 +1178,9 @@ Integration tests assert every error path:
 - `SlugTaken` → create two with same slug.
 - `NotFound` on update/delete with wrong tenant.
 
-- [ ] **Step 1: Write failing tests** (skeleton above, ~300 lines).
+- [x] **Step 1: Write failing tests** (skeleton above, ~300 lines).
 
-- [ ] **Step 2: Implement service.go.**
+- [x] **Step 2: Implement service.go.**
 
 Key pattern (matches platform-api onboarding):
 
@@ -1218,7 +1220,7 @@ func (s *Service) Delete(ctx context.Context, id, storeID, tenantID string) erro
 }
 ```
 
-- [ ] **Step 3-5: Run tests, iterate, commit.**
+- [x] **Step 3-5: Run tests, iterate, commit.**
 
 ```
 git commit -m "feat(marketplace-api): add category service with delete refusals + outbox events (M3)"
@@ -1234,7 +1236,7 @@ git commit -m "feat(marketplace-api): add category service with delete refusals 
 
 **Scope:** Exactly §14.14. Constants `SanitizerPolicyVersion = 1`. A `Sanitize(html string) string` function. Tests include an OWASP top-10 XSS payload corpus with expected-safe output.
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```go
 // services/marketplace-api/internal/product/sanitizer_test.go
@@ -1305,7 +1307,7 @@ func TestSanitizer_PolicyVersion(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Implement sanitizer.go**
+- [x] **Step 2: Implement sanitizer.go**
 
 ```go
 // services/marketplace-api/internal/product/sanitizer.go
@@ -1345,7 +1347,7 @@ func Sanitize(in string) string {
 }
 ```
 
-- [ ] **Step 3-5: Run, verify all OWASP cases pass, commit.**
+- [x] **Step 3-5: Run, verify all OWASP cases pass, commit.**
 
 ```
 git commit -m "feat(marketplace-api): add bluemonday sanitizer with OWASP corpus test (M3)"
@@ -1385,7 +1387,7 @@ Matrix tests:
 - 101 variants → `TooManyVariants(101)`
 - variant references a nonexistent option_value_id → `ValidationFailed`
 
-- [ ] **Step 1-5: TDD rhythm**. Commit:
+- [x] **Step 1-5: TDD rhythm**. Commit:
 
 ```
 git commit -m "feat(marketplace-api): add variant matrix validator + handle generator (M3)"
@@ -1454,7 +1456,7 @@ func (f *FakeUploader) Verify(_ context.Context, key string) (*Attrs, error) {
 }
 ```
 
-- [ ] **Commit:**
+- [x] **Commit:**
 
 ```
 git commit -m "feat(marketplace-api): add media.Uploader stub interface (M3)"
@@ -1584,7 +1586,7 @@ Implementation notes:
 
 This file will be the largest. If it exceeds ~700 lines, split into `repository.go` (Create/Get/List/SoftDelete) and `repository_variants.go` (ApplyVariantDiff, UpdateVariantStock) and `repository_media.go` (ReplaceMedia).
 
-- [ ] **Step 1-5: TDD rhythm, run with `-tags integration -race`, commit.**
+- [x] **Step 1-5: TDD rhythm, run with `-tags integration -race`, commit.**
 
 ```
 git commit -m "feat(marketplace-api): add product aggregate repository with unique-violation mapping (M3)"
@@ -1705,33 +1707,33 @@ Also test the **happy path**:
 - `TestService_Create_EnqueuesOutboxEvent` — assert one row in outbox_events with `aggregate='product'`, `event_type='product.created'`, `payload->>'store_id' = storeID`.
 - `TestService_Create_CurrencySilentOverride` — caller passes `variant.currency_code = "USD"` but store is `"EUR"`; assert Create succeeds and the persisted variants all have `EUR`.
 
-- [ ] **Step 1: Scaffold service_integration_test.go with all test names from the table as `t.Skip("TODO")`.** This gives a visible coverage checklist.
+- [x] **Step 1: Scaffold service_integration_test.go with all test names from the table as `t.Skip("TODO")`.** This gives a visible coverage checklist.
 
-- [ ] **Step 2: Implement Create + its tests. Commit.**
+- [x] **Step 2: Implement Create + its tests. Commit.**
 
 ```
 git commit -m "feat(marketplace-api): add product.Service.Create with sanitize, GCS verify, outbox (M3)"
 ```
 
-- [ ] **Step 3: Implement Update + its tests. Commit.**
+- [x] **Step 3: Implement Update + its tests. Commit.**
 
 ```
 git commit -m "feat(marketplace-api): add product.Service.Update with variant matrix diff (M3)"
 ```
 
-- [ ] **Step 4: Implement Delete + its tests. Commit.**
+- [x] **Step 4: Implement Delete + its tests. Commit.**
 
 ```
 git commit -m "feat(marketplace-api): add product.Service.Delete (soft) + outbox event (M3)"
 ```
 
-- [ ] **Step 5: Implement Copy + its tests. Commit.**
+- [x] **Step 5: Implement Copy + its tests. Commit.**
 
 ```
 git commit -m "feat(marketplace-api): add product.Service.Copy across stores (M3)"
 ```
 
-- [ ] **Step 6: Flip remaining skipped tests green, verify full service package runs.**
+- [x] **Step 6: Flip remaining skipped tests green, verify full service package runs.**
 
 ```
 TEST_DATABASE_URL=... go test -tags integration ./internal/product/... -race -v
@@ -1739,7 +1741,7 @@ TEST_DATABASE_URL=... go test -tags integration ./internal/product/... -race -v
 
 Every typed error code from the coverage matrix must appear as a passing `PASS` line. Failures here are the milestone gate — do not proceed.
 
-- [ ] **Step 7: Commit any final test additions.**
+- [x] **Step 7: Commit any final test additions.**
 
 ```
 git commit -m "test(marketplace-api): complete M3 service-level typed-error coverage matrix"
@@ -1754,7 +1756,7 @@ git commit -m "test(marketplace-api): complete M3 service-level typed-error cove
 
 **Scope:** Start the publisher goroutine after `db.Open` succeeds, wait for it on shutdown.
 
-- [ ] **Step 1: Diff plan**
+- [x] **Step 1: Diff plan**
 
 Import:
 ```go
@@ -1798,26 +1800,26 @@ In the shutdown block, after `srv.Shutdown(ctx)`:
 	}
 ```
 
-- [ ] **Step 2: Build**
+- [x] **Step 2: Build**
 
 ```
 cd services/marketplace-api && go build ./...
 ```
 
-- [ ] **Step 3: Run existing tests to confirm nothing regressed**
+- [x] **Step 3: Run existing tests to confirm nothing regressed**
 
 ```
 cd services/marketplace-api && go test ./... -race
 ```
 
-- [ ] **Step 4: Smoke test with a local DB** (dev doc, not CI):
+- [x] **Step 4: Smoke test with a local DB** (dev doc, not CI):
 
 ```
 MODE=admin DATABASE_URL=... go run ./cmd/marketplace-api
 # separately: insert an outbox row manually, watch store_watermarks update
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git commit -m "feat(marketplace-api): start outbox publisher goroutine in admin/both modes (M3)"
@@ -1829,7 +1831,7 @@ git commit -m "feat(marketplace-api): start outbox publisher goroutine in admin/
 
 **Files:** none (git + gh only)
 
-- [ ] **Step 1: Run the full test suite**
+- [x] **Step 1: Run the full test suite**
 
 ```
 cd services/marketplace-api
@@ -1841,7 +1843,7 @@ TEST_DATABASE_URL=<dsn> go test -tags integration ./... -race
 
 All must be green. Note the `ListAdmin` query count — the test logs it; record the actual number in the PR description.
 
-- [ ] **Step 2: Confirm nothing outside the allowed set changed**
+- [x] **Step 2: Confirm nothing outside the allowed set changed**
 
 ```
 git diff --stat main...HEAD
@@ -1849,13 +1851,13 @@ git diff --stat main...HEAD
 
 Expected: only files under `services/marketplace-api/internal/{stores,outbox,category,product,media}/`, `services/marketplace-api/pkg/apperrors/`, `services/marketplace-api/cmd/marketplace-api/main.go`, `services/marketplace-api/go.mod`, `services/marketplace-api/go.sum`, `go.work.sum`, and the plan doc itself.
 
-- [ ] **Step 3: Push the branch**
+- [x] **Step 3: Push the branch**
 
 ```
 git push -u origin feat/products-m3-services
 ```
 
-- [ ] **Step 4: Open PR**
+- [x] **Step 4: Open PR**
 
 ```
 gh pr create --base main --head feat/products-m3-services --title "feat(marketplace-api): products M3 — repositories, services, sanitizer, outbox publisher" --body "$(cat <<'EOF'
@@ -1875,15 +1877,15 @@ gh pr create --base main --head feat/products-m3-services --title "feat(marketpl
 
 ## Test plan
 
-- [ ] `go vet ./...` clean
-- [ ] `go build ./...` clean
-- [ ] `go test ./... -race` green (unit)
-- [ ] `go test -tags integration ./... -race` green against a real Postgres at M2 schema
-- [ ] `ListAdmin` query count ≤ 7 (actual: <fill in>)
-- [ ] Every typed error code from §13.4 + §14.13 reachable from M3 has a passing integration test (table in the plan doc)
-- [ ] Bluemonday OWASP corpus green
-- [ ] StoreMiddleware singleflight test shows exactly 1 client call under 10 concurrent requests
-- [ ] Outbox publisher integration test: watermark bumped within 500ms of an enqueue + commit
+- [x] `go vet ./...` clean
+- [x] `go build ./...` clean
+- [x] `go test ./... -race` green (unit)
+- [x] `go test -tags integration ./... -race` green against a real Postgres at M2 schema
+- [x] `ListAdmin` query count ≤ 7 (actual: <fill in>)
+- [x] Every typed error code from §13.4 + §14.13 reachable from M3 has a passing integration test (table in the plan doc)
+- [x] Bluemonday OWASP corpus green
+- [x] StoreMiddleware singleflight test shows exactly 1 client call under 10 concurrent requests
+- [x] Outbox publisher integration test: watermark bumped within 500ms of an enqueue + commit
 
 ## Follow-ups (tracked for M4/M5)
 
@@ -1896,23 +1898,23 @@ EOF
 )"
 ```
 
-- [ ] **Step 5: Wait for CI.** If the billing workaround from auto-memory (`feedback_ci_billing_workaround.md`) fires, flip the repo public temporarily, re-run CI, flip back.
+- [x] **Step 5: Wait for CI.** If the billing workaround from auto-memory (`feedback_ci_billing_workaround.md`) fires, flip the repo public temporarily, re-run CI, flip back.
 
 ---
 
 ## Exit criteria
 
-- [ ] `go test ./... -race` green from `services/marketplace-api/`
-- [ ] `go test -tags integration ./... -race` green
-- [ ] Every typed error code in §13.4 + §14.13 that M3 can reach has a passing service-level test
-- [ ] Bluemonday sanitizer reduces the OWASP top-10 corpus to safe output; policy version constant = 1
-- [ ] StoreMiddleware serve-stale path verified with a fake client that returns errors
-- [ ] Outbox publisher goroutine starts in admin/both mode, stops cleanly on ctx cancel, bumps `store_watermarks` within one tick after a mutation
-- [ ] `ListAdmin` query count asserted and documented (≤7 or raise with justification)
-- [ ] `variant_stock` trigger test passes (write variant_stock → read Variant.InventoryQuantity reflects)
-- [ ] Copy-to-store test asserts: media by reference (same storage_key), inventory zero, draft status, source currency preserved, copy_source_product_id set
-- [ ] No changes to `go.work`, migrations, Dockerfile, CI workflows, Helm charts, or any other service
-- [ ] PR is open and CI is green
+- [x] `go test ./... -race` green from `services/marketplace-api/`
+- [x] `go test -tags integration ./... -race` green
+- [x] Every typed error code in §13.4 + §14.13 that M3 can reach has a passing service-level test
+- [x] Bluemonday sanitizer reduces the OWASP top-10 corpus to safe output; policy version constant = 1
+- [x] StoreMiddleware serve-stale path verified with a fake client that returns errors
+- [x] Outbox publisher goroutine starts in admin/both mode, stops cleanly on ctx cancel, bumps `store_watermarks` within one tick after a mutation
+- [x] `ListAdmin` query count asserted and documented (≤7 or raise with justification)
+- [x] `variant_stock` trigger test passes (write variant_stock → read Variant.InventoryQuantity reflects)
+- [x] Copy-to-store test asserts: media by reference (same storage_key), inventory zero, draft status, source currency preserved, copy_source_product_id set
+- [x] No changes to `go.work`, migrations, Dockerfile, CI workflows, Helm charts, or any other service
+- [x] PR is open and CI is green
 
 ---
 

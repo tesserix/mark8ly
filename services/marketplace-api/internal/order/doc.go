@@ -1,6 +1,7 @@
 // Package order owns the orders, order_items, order_addresses, order_events,
-// returns, return_items, abandoned_carts, and document_number_seq tables in
-// marketplace_db.
+// returns, return_items, and abandoned_carts tables in marketplace_db, plus
+// per-store Postgres SEQUENCE objects created lazily by the
+// ensure_store_sequence server-side function (migration 000003_orders_seq_pivot).
 //
 // Note: orders does NOT own an outbox or pending_events table. Customer-facing
 // order events are written to the shared outbox_events table (products-owned,
@@ -26,8 +27,9 @@
 //   - returns and return_items hold an ON DELETE RESTRICT chain back to
 //     order_items, which makes hard-deleting an order with returns IMPOSSIBLE.
 //     Soft delete via orders.deleted_at is the only delete path in slice 1.
-//   - document_number_seq is incremented via atomic upsert; the row lock is
-//     held for a single statement, NOT across the full create transaction.
+//   - Order and return numbers are issued by per-store Postgres sequences with
+//     CACHE 50, NOT by a shared hot-row counter. Sequences are monotonic per
+//     store forever; they do NOT reset daily. See NextDocumentNumber in number.go.
 //
 // See docs/superpowers/specs/2026-04-09-orders-feature-slice-1-design.md §4.1.
 package order

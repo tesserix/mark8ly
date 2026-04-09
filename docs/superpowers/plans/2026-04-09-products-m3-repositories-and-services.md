@@ -98,14 +98,14 @@ services/marketplace-api/
 
 ## New Go module dependencies
 
-Added in Task 1 commit:
+Added **where they are first imported** (not in Task 1 — `go mod tidy` prunes unused deps, so pre-adding them would be undone):
 
 ```
-github.com/microcosm-cc/bluemonday v1.0.26
-golang.org/x/sync                  v0.8.0   // already indirect; promote to direct
+github.com/microcosm-cc/bluemonday v1.0.26   // added in Task 8 (sanitizer.go)
+golang.org/x/sync                  (latest)  // promoted to direct in Task 3 (middleware.go imports singleflight)
 ```
 
-Run `go mod tidy` from `services/marketplace-api/` and commit the resulting `go.mod` + `go.sum` diff in Task 1. `go.work.sum` may also update — stage it.
+In each of those tasks, run `go get <package>` (no version pin — let Go pick the latest compatible release; the repo already has x/sync as indirect at a newer version than v0.8.x, so a version pin would silently downgrade the whole dep tree). Then `go mod tidy` and commit `go.mod` + `go.sum` as part of that task's commit. Always run Go commands from `services/marketplace-api/` (not from a shell whose CWD has drifted elsewhere — CWD drift caused a Task 1 recovery incident).
 
 ---
 
@@ -406,14 +406,13 @@ func NotFound(resource string) *Error {
 func Forbidden() *Error { return &Error{Code: CodeForbidden, Message: "forbidden"} }
 ```
 
-- [ ] **Step 4: Add new module deps**
+- [ ] **Step 4: Run `go mod tidy`**
 
-From `services/marketplace-api/`:
 ```
-go get github.com/microcosm-cc/bluemonday@v1.0.26
-go get golang.org/x/sync@v0.8.0
-go mod tidy
+cd services/marketplace-api && go mod tidy
 ```
+
+No new deps in this task — the apperrors package is pure stdlib. Bluemonday is added in Task 8 and x/sync is promoted to direct in Task 3, only when the code that imports them lands. Adding unused deps here would be pruned by `go mod tidy` immediately. The expected `go.mod` diff from this task is **empty**.
 
 - [ ] **Step 5: Run test to verify it passes**
 

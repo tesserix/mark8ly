@@ -28,6 +28,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
+	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
 	"github.com/mark8ly/marketplace-api/internal/health"
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/mode"
@@ -183,6 +184,30 @@ func main() {
 		}
 	}
 
+	// Storefront wiring — constructed for storefront and both modes. The
+	// admin process never mounts the storefront group so these
+	// dependencies would go unused there.
+	var storefrontDeps storefront.Deps
+	if m == mode.Storefront || m == mode.Both {
+		productRepoSF := product.NewRepository(conn)
+		categoryRepoSF := category.NewRepository(conn)
+		storesRepoSF := stores.NewRepository(conn)
+		var storefrontPlatformClient stores.Client
+		if cfg.PlatformAPIURL != "" {
+			storefrontPlatformClient = stores.NewHTTPClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+		} else {
+			storefrontPlatformClient = stubPlatformClient{}
+		}
+		slugFlight := &singleflight.Group{}
+		slugCache := stores.NewSlugCache(storesRepoSF, storefrontPlatformClient, slugFlight, 5*time.Minute)
+		storefrontHandler := storefront.NewStorefrontHandler(productRepoSF, categoryRepoSF, storesRepoSF, log)
+		storefrontDeps = storefront.Deps{
+			Handler:       storefrontHandler,
+			SlugCache:     slugCache,
+			StorefrontKey: cfg.StorefrontKey,
+		}
+	}
+
 	// Outbox publisher — runs in admin and both modes; the storefront
 	// process does not produce events, so running it there would just poll
 	// an always-empty table and waste a connection.
@@ -213,7 +238,7 @@ func main() {
 		r := httpserver.MergedForBoth(cfg.Env, log)
 		healthHandler.Register(r)
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
-		// Future: storefront route group mounts here in M6.
+		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
 			Handler: r,
@@ -227,6 +252,9 @@ func main() {
 		healthHandler.Register(engine)
 		if m == mode.Admin {
 			admin.RegisterAdmin(engine.Group("/api/v1"), adminDeps)
+		}
+		if m == mode.Storefront {
+			storefront.RegisterStorefront(engine.Group("/api/v1"), storefrontDeps)
 		}
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),

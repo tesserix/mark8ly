@@ -33,6 +33,11 @@ type Config struct {
 	// platform-api. Empty disables the header (fine when Istio network
 	// policy is the only gate).
 	PlatformAPISecret string `envconfig:"MARKETPLACE_PLATFORM_API_SECRET" default:""`
+	// StorefrontKey, when non-empty, gates the storefront route group with
+	// a shared-secret X-Storefront-Key header. Empty disables the check —
+	// fine for local dev and tests; production wiring sets this via
+	// ExternalSecret.
+	StorefrontKey string `envconfig:"MARKETPLACE_STOREFRONT_KEY" default:""`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

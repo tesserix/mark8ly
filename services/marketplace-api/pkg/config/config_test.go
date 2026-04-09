@@ -7,15 +7,29 @@ import (
 
 func TestLoad_RequiresDatabaseURL(t *testing.T) {
 	os.Unsetenv("DATABASE_URL")
+	os.Setenv("MARKETPLACE_FGA_API_URL", "http://openfga:8080")
+	defer os.Unsetenv("MARKETPLACE_FGA_API_URL")
 	_, err := Load()
 	if err == nil {
 		t.Fatal("Load() with no DATABASE_URL = nil, want error")
 	}
 }
 
+func TestLoad_RequiresFGAAPIURL(t *testing.T) {
+	os.Setenv("DATABASE_URL", "postgres://x/y")
+	defer os.Unsetenv("DATABASE_URL")
+	os.Unsetenv("MARKETPLACE_FGA_API_URL")
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() with no MARKETPLACE_FGA_API_URL = nil, want error")
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	os.Setenv("DATABASE_URL", "postgres://x/y")
 	defer os.Unsetenv("DATABASE_URL")
+	os.Setenv("MARKETPLACE_FGA_API_URL", "http://openfga:8080")
+	defer os.Unsetenv("MARKETPLACE_FGA_API_URL")
 	os.Unsetenv("ENV")
 	os.Unsetenv("MODE")
 	os.Unsetenv("HTTP_PORT")

@@ -26,6 +26,7 @@ func TestNextDocumentNumber_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	db := testdb.NewDB(t)
 	storeID := uuid.New()
+	seedStore(t, db, storeID)
 
 	var prev int64
 	for i := 0; i < 5; i++ {
@@ -41,16 +42,13 @@ func TestNextDocumentNumber_HappyPath(t *testing.T) {
 		require.Greater(t, got, prev, "sequence must be monotonic")
 		prev = got
 	}
-
-	// Cleanup the sequence we just created so repeated test runs don't
-	// pile up orphan sequences.
-	cleanupStoreSequences(t, db, storeID)
 }
 
 func TestNextDocumentNumber_KindIsolated(t *testing.T) {
 	ctx := context.Background()
 	db := testdb.NewDB(t)
 	storeID := uuid.New()
+	seedStore(t, db, storeID)
 
 	var orderSeq, returnSeq int64
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
@@ -83,8 +81,6 @@ func TestNextDocumentNumber_KindIsolated(t *testing.T) {
 	require.Greater(t, orderSeq2, orderSeq, "order sequence advances independently of return")
 	require.NotZero(t, orderSeq)
 	require.NotZero(t, returnSeq)
-
-	cleanupStoreSequences(t, db, storeID)
 }
 
 func TestNextDocumentNumber_StoreIsolated(t *testing.T) {
@@ -92,6 +88,8 @@ func TestNextDocumentNumber_StoreIsolated(t *testing.T) {
 	db := testdb.NewDB(t)
 	store1 := uuid.New()
 	store2 := uuid.New()
+	seedStore(t, db, store1)
+	seedStore(t, db, store2)
 
 	var s1a, s2a, s1b int64
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
@@ -106,9 +104,6 @@ func TestNextDocumentNumber_StoreIsolated(t *testing.T) {
 
 	require.Greater(t, s1b, s1a, "store1 advances independently")
 	require.NotZero(t, s2a, "store2 has its own sequence")
-
-	cleanupStoreSequences(t, db, store1)
-	cleanupStoreSequences(t, db, store2)
 }
 
 func TestNextDocumentNumber_InvalidKindRejected(t *testing.T) {
@@ -138,25 +133,4 @@ func TestFormatOrderNumber(t *testing.T) {
 func TestFormatReturnNumber(t *testing.T) {
 	day := time.Date(2026, 4, 9, 10, 0, 0, 0, time.UTC)
 	require.Equal(t, "R-TST-260409-00007", order.FormatReturnNumber("tst", day, 7))
-}
-
-// cleanupStoreSequences drops any mk_seq_* sequences for the given store id.
-// Called at the end of each test to keep the shared DB tidy.
-func cleanupStoreSequences(t *testing.T, db *gorm.DB, storeID uuid.UUID) {
-	t.Helper()
-	// The ensure_store_sequence helper names sequences mk_seq_<kind>_<uuid-underscored>.
-	// We don't know without a lookup which kinds exist for this store, so just
-	// try both.
-	underscored := ""
-	for _, c := range storeID.String() {
-		if c == '-' {
-			underscored += "_"
-		} else {
-			underscored += string(c)
-		}
-	}
-	for _, kind := range []string{"order", "return"} {
-		name := "mk_seq_" + kind + "_" + underscored
-		_ = db.Exec("DROP SEQUENCE IF EXISTS " + name).Error
-	}
 }

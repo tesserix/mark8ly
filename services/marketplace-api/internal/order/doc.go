@@ -1,7 +1,10 @@
 // Package order owns the orders, order_items, order_addresses, order_events,
 // returns, return_items, and abandoned_carts tables in marketplace_db, plus
-// per-store Postgres SEQUENCE objects created lazily by the
-// ensure_store_sequence server-side function (migration 000003_orders_seq_pivot).
+// per-store Postgres SEQUENCE objects created eagerly by the
+// stores_after_insert_create_sequences trigger (migration 000004_orders_seq_eager).
+// Every stores row insert fires mk_create_store_sequences() which creates both
+// mk_seq_order_<id> and mk_seq_return_<id> in the same transaction, so the
+// sequences are guaranteed to exist before any order write can reach the store.
 //
 // Note: orders does NOT own an outbox or pending_events table. Customer-facing
 // order events are written to the shared outbox_events table (products-owned,

@@ -4,28 +4,20 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-// sequenceNameCache remembers the Postgres sequence name for each
-// (store_id, kind) pair we have issued numbers for. Population is lazy on
-// first use and survives for the lifetime of the process.
-//
-// Key format: "<store-uuid>|<kind>". Value: the sequence name returned by
-// ensure_store_sequence (e.g. "mk_seq_order_11111111_1111_...").
-var sequenceNameCache sync.Map
-
 // NextDocumentNumber issues the next sequence number for a (store, kind) pair.
 //
-// Uses a per-store Postgres SEQUENCE created on demand by the
-// ensure_store_sequence function (see migration 000003_orders_seq_pivot).
-// Sequences use Postgres' native lightweight allocation mechanism — NOT row
-// locks — and are configured with CACHE 50 so each backend connection
-// reserves 50 values at a time, eliminating contention under burst.
+// Uses a per-store Postgres SEQUENCE that is created eagerly by the
+// stores_after_insert_create_sequences trigger at store-insert time (see
+// migration 000004_orders_seq_eager). Because the sequence is guaranteed to
+// exist before any order can reference the store, this function needs no
+// on-demand creation, no process-level name cache, and no roundtrip to a
+// PL/pgSQL helper — it calls nextval directly.
 //
 // Sequence numbers are monotonic per store FOREVER and do NOT reset daily.
 // Human-readable date information lives in the order number format string
@@ -45,18 +37,14 @@ func NextDocumentNumber(ctx context.Context, tx *gorm.DB, storeID uuid.UUID, kin
 		return 0, fmt.Errorf("order: NextDocumentNumber requires a transaction handle")
 	}
 
-	seqName, err := resolveSequenceName(ctx, tx, storeID, kind)
-	if err != nil {
-		return 0, err
-	}
+	seqName := buildSequenceName(storeID, kind)
 
 	// nextval() is not parameterizable (it takes a regclass, not a text
 	// bind variable), so we format the name into the SQL. The name is
-	// constructed by the ensure_store_sequence server-side function from a
-	// uuid and a validated kind — the character set is [a-z0-9_] only, so
-	// SQL injection is not possible here.
+	// derived from a uuid and a validated kind — the character set is
+	// [a-z0-9_] only, so SQL injection is not possible here.
 	var next int64
-	err = tx.WithContext(ctx).
+	err := tx.WithContext(ctx).
 		Raw(fmt.Sprintf("SELECT nextval('%s')", seqName)).
 		Scan(&next).Error
 	if err != nil {
@@ -65,49 +53,15 @@ func NextDocumentNumber(ctx context.Context, tx *gorm.DB, storeID uuid.UUID, kin
 	return next, nil
 }
 
-// resolveSequenceName returns the Postgres sequence name for a given
-// (store_id, kind) pair, creating the sequence if this is the first call
-// for that pair in the current process.
+// buildSequenceName returns the Postgres sequence name for a given
+// (store_id, kind) pair. MUST stay in lockstep with the SQL trigger
+// function mk_create_store_sequences() in migration 000004 — both sides
+// produce the same name from the same inputs.
 //
-// The result is cached in a process-wide sync.Map so subsequent calls skip
-// the roundtrip to ensure_store_sequence. Cache is never evicted; on pod
-// restart the first call for each (store, kind) pays the ~200µs function
-// call cost once, then all subsequent calls go straight to nextval.
-//
-// CRITICAL: ensure_store_sequence runs via the underlying *sql.DB pool, NOT
-// the caller's transaction. Creating a Postgres SEQUENCE is transactional —
-// if we called CREATE SEQUENCE inside a tx that hasn't committed yet, other
-// parallel transactions would fail with "relation does not exist" when they
-// try to call nextval on the cached name. Issuing the ensure call on the
-// pool means it auto-commits before we return, so the sequence is visible
-// to all subsequent callers including the tx that triggered the create.
-func resolveSequenceName(ctx context.Context, tx *gorm.DB, storeID uuid.UUID, kind string) (string, error) {
-	cacheKey := storeID.String() + "|" + kind
-	if cached, ok := sequenceNameCache.Load(cacheKey); ok {
-		return cached.(string), nil
-	}
-
-	sqlDB, err := tx.DB()
-	if err != nil {
-		return "", fmt.Errorf("order: get sql.DB for sequence ensure: %w", err)
-	}
-
-	var seqName string
-	err = sqlDB.QueryRowContext(ctx,
-		"SELECT ensure_store_sequence($1, $2)", storeID, kind,
-	).Scan(&seqName)
-	if err != nil {
-		return "", fmt.Errorf("order: ensure_store_sequence: %w", err)
-	}
-	if seqName == "" {
-		return "", fmt.Errorf("order: ensure_store_sequence returned empty name for store=%s kind=%s", storeID, kind)
-	}
-
-	// LoadOrStore so concurrent first-callers for the same pair don't
-	// overwrite each other's entry. The server-side function is idempotent
-	// so repeated calls all return the same name anyway.
-	actual, _ := sequenceNameCache.LoadOrStore(cacheKey, seqName)
-	return actual.(string), nil
+// Format: mk_seq_<kind>_<uuid with dashes replaced by underscores>
+// Example: mk_seq_order_11111111_1111_1111_1111_111111111111
+func buildSequenceName(storeID uuid.UUID, kind string) string {
+	return "mk_seq_" + kind + "_" + strings.ReplaceAll(storeID.String(), "-", "_")
 }
 
 // FormatOrderNumber builds the human-readable order number string from a

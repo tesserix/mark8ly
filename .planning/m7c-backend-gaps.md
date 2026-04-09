@@ -3,18 +3,20 @@
 Generated: 2026-04-10 (Task 1 Step 1)
 Scope: services/marketplace-api aggregate PATCH readiness for M7c variants + rich media admin UI
 
+> **All 7 gaps closed. Backend ready for M7c frontend work.**
+
 ## Summary
 
 | # | Verification item | Status | Blocking |
 |---|---|---|---|
 | 1 | Aggregate PATCH round-trip | DONE | yes |
 | 2 | Removed variants handling | DONE | yes |
-| 3 | Dedicated media endpoints (create/delete/recrop) | PARTIAL | yes |
+| 3 | Dedicated media endpoints (create/delete/recrop) | DONE | yes |
 | 4 | Signed URL endpoint | PARTIAL | no |
 | 5 | `variant_id` on `product_media` | DONE (27b9e9d) | yes |
 | 6 | `gcs_path_original` column | DONE (6afa464, 8cc3f3f) | yes |
 | 7 | Backend 500-variant cap | DONE (2f26f7e) | yes |
-| 8 | Recrop support | MISSING | yes |
+| 8 | Recrop support | DONE | yes |
 
 ## Detail
 
@@ -153,8 +155,8 @@ Ordered by dependency so the frontend can unblock as early as possible.
 |---|---|---|---|---|
 | 1 | PATCH aggregate round-trip | TestIntegration_ProductService_UpdateAggregate_FullRoundTrip | ✅ | (pending) |
 | 2 | Removed variants handling | TestIntegration_ProductService_UpdateAggregate_RemovedVariantIDsSoftDelete | ✅ | (pending) |
-| 3 | Media endpoints lifecycle | TestMediaEndpoints_Lifecycle | ⬜ | _________ |
+| 3 | Media endpoints lifecycle (incl. recrop route) | TestAPI_AdminMedia_Recrop_ReturnsSignedUrlsPreservingOriginal | ✅ | (this commit) |
 | 4 | variant_id on product_media | TestAPI_AdminMedia_Create_WithVariantID_Persists / TestAPI_AdminMedia_Patch_UpdatesVariantID | ✅ | 27b9e9d |
 | 5 | gcs_path_original column + backfill | TestIntegration_Service_AddMedia_HappyPath | ✅ | 6afa464, 8cc3f3f |
 | 6 | 500-variant backend cap | TestValidateMatrix_501Variants_Rejected / TestValidateMatrix_500Variants_Accepted | ✅ | 2f26f7e |
-| 7 | Recrop round-trip | TestMedia_RecropRoundTrip | ⬜ | _________ |
+| 7 | Recrop round-trip | TestAPI_AdminMedia_Recrop_AfterCommit_KeepsOriginalPinned | ✅ | (this commit) |

@@ -430,6 +430,23 @@ func (s *Service) Delete(ctx context.Context, id, storeID, tenantID string) erro
 	})
 }
 
+// ---------- handler-facing convenience wrappers ----------
+//
+// List and Get are thin pass-throughs to the repository. They exist so
+// HTTP handlers depend only on *Service and don't need to import or hold
+// a repo reference for the read paths. Mutations already go through the
+// service, so exposing reads here keeps the handler surface uniform.
+
+// List wraps repo.ListAdmin.
+func (s *Service) List(ctx context.Context, q ListAdminQuery) ([]Aggregate, int64, error) {
+	return s.repo.ListAdmin(ctx, q)
+}
+
+// Get wraps repo.GetByIDForStore.
+func (s *Service) Get(ctx context.Context, id, storeID, tenantID string) (*Aggregate, error) {
+	return s.repo.GetByIDForStore(ctx, id, storeID, tenantID)
+}
+
 // ---------- helpers ----------
 
 func (s *Service) enqueue(ctx context.Context, tx *gorm.DB, tenantID, storeID, productID, eventType string) error {

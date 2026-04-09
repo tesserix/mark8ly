@@ -21,17 +21,34 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/category"
+	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/health"
+	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
+	"github.com/mark8ly/marketplace-api/internal/product"
+	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
 	"github.com/mark8ly/marketplace-api/pkg/httpserver"
 	"github.com/mark8ly/marketplace-api/pkg/logger"
 	"github.com/mark8ly/marketplace-api/pkg/migrate"
 )
+
+// stubPlatformClient is a placeholder stores.Client that always returns
+// ErrPlatformUnavailable. M5a tests pre-seed the stores projection via
+// raw SQL so the middleware never invokes the client. M5b replaces this
+// with a real HTTP client to platform-api.
+type stubPlatformClient struct{}
+
+func (stubPlatformClient) GetStore(ctx context.Context, tenantID, storeID string) (*stores.Store, error) {
+	return nil, stores.ErrPlatformUnavailable
+}
 
 func main() {
 	cfg, err := config.Load()
@@ -85,7 +102,40 @@ func main() {
 		os.Exit(1)
 	}
 	authzMW := authz.NewMiddleware(fgaClient, log)
-	_ = authzMW // M5 will pass this to the admin route registrar
+
+	// Admin wiring — constructed for admin and both modes. The storefront
+	// process never mounts the admin group so these dependencies would go
+	// unused there.
+	var adminDeps admin.Deps
+	if m == mode.Admin || m == mode.Both {
+		productRepo := product.NewRepository(conn)
+		categoryRepo := category.NewRepository(conn)
+		outboxRepo := outbox.NewRepository(conn)
+		storesRepo := stores.NewRepository(conn)
+		fakeUploader := media.NewFakeUploader() // M5b replaces with real GCS
+		productSvc := product.NewService(product.Config{
+			DB:         conn,
+			Repo:       productRepo,
+			StoresRepo: storesRepo,
+			OutboxRepo: outboxRepo,
+			Uploader:   fakeUploader,
+			Logger:     log,
+		})
+		storeFlight := &singleflight.Group{}
+		storeMW := stores.StoreMiddleware(stores.MiddlewareConfig{
+			Repo:   storesRepo,
+			Client: stubPlatformClient{},
+			Logger: log,
+			Flight: storeFlight,
+		})
+		productHandler := admin.NewProductHandler(productSvc, categoryRepo, log)
+		adminDeps = admin.Deps{
+			ProductHandler:   productHandler,
+			StoresMiddleware: storeMW,
+			AuthzMiddleware:  authzMW,
+			InternalSecret:   cfg.InternalAuthSecret,
+		}
+	}
 
 	// Outbox publisher — runs in admin and both modes; the storefront
 	// process does not produce events, so running it there would just poll
@@ -116,7 +166,8 @@ func main() {
 		// running two processes.
 		r := httpserver.MergedForBoth(cfg.Env, log)
 		healthHandler.Register(r)
-		// Future: admin/storefront route groups mount here in M5/M6.
+		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
+		// Future: storefront route group mounts here in M6.
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
 			Handler: r,
@@ -128,6 +179,9 @@ func main() {
 			engine = e.Storefront
 		}
 		healthHandler.Register(engine)
+		if m == mode.Admin {
+			admin.RegisterAdmin(engine.Group("/api/v1"), adminDeps)
+		}
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
 			Handler: engine,

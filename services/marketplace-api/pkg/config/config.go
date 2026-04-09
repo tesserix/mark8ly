@@ -17,6 +17,10 @@ type Config struct {
 	HTTPPort    int    `envconfig:"HTTP_PORT" default:"8087"`
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
 	FGAAPIURL   string `envconfig:"MARKETPLACE_FGA_API_URL" required:"true"`
+	// InternalAuthSecret guards the internal-trust header auth used by the
+	// admin route group. Empty disables the shared-secret check — fine for
+	// local dev and test; production wiring sets this via ExternalSecret.
+	InternalAuthSecret string `envconfig:"MARKETPLACE_INTERNAL_AUTH_SECRET" default:""`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

@@ -32,6 +32,7 @@ const (
 	CodeUnsupportedMediaType    Code = "unsupported_media_type"
 	CodeRateLimited             Code = "rate_limited"
 	CodeCurrencyChangeForbidden Code = "currency_change_forbidden"
+	CodeOptionValueInUse        Code = "option_value_in_use"
 )
 
 // Error is the marketplace-api envelope. Satisfies the error interface.
@@ -72,6 +73,7 @@ var (
 	ErrUnsupportedMediaType    = &Error{Code: CodeUnsupportedMediaType}
 	ErrRateLimited             = &Error{Code: CodeRateLimited}
 	ErrCurrencyChangeForbidden = &Error{Code: CodeCurrencyChangeForbidden}
+	ErrOptionValueInUse        = &Error{Code: CodeOptionValueInUse}
 )
 
 // Is makes errors.Is(err, sentinel) match when the codes are equal,
@@ -94,7 +96,7 @@ func IsKnownCode(s string) bool {
 		CodeSlugTaken, CodeCategoryNotEmpty, CodeCategoryHasChildren,
 		CodeTargetStoreInvalid, CodeUploadNotFound, CodeForbidden, CodeNotFound,
 		CodePayloadTooLarge, CodeUnsupportedMediaType, CodeRateLimited,
-		CodeCurrencyChangeForbidden:
+		CodeCurrencyChangeForbidden, CodeOptionValueInUse:
 		return true
 	}
 	return false
@@ -202,3 +204,13 @@ func NotFound(resource string) *Error {
 }
 
 func Forbidden() *Error { return &Error{Code: CodeForbidden, Message: "forbidden"} }
+
+// OptionValueInUse is returned when an aggregate PATCH removes an
+// option value that is still referenced by a surviving variant. The
+// client is expected to drop orphaned variants in generateVariants()
+// before sending the PATCH; hitting this error is a contract bug.
+func OptionValueInUse(option, value string) *Error {
+	return &Error{Code: CodeOptionValueInUse,
+		Message: fmt.Sprintf("option value %q on %q is still referenced by a surviving variant", value, option),
+		Details: map[string]any{"option": option, "value": value}}
+}

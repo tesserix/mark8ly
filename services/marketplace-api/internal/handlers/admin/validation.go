@@ -1,10 +1,173 @@
 package admin
 
 import (
+	"time"
+
 	"github.com/shopspring/decimal"
 
+	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/product"
 )
+
+// CreateCategoryRequest is the wire body for POST admin create category.
+type CreateCategoryRequest struct {
+	ParentID    *string `json:"parent_id,omitempty" binding:"omitempty,uuid"`
+	Name        string  `json:"name" binding:"required,max=200"`
+	Slug        string  `json:"slug" binding:"omitempty,max=200"`
+	Description *string `json:"description,omitempty"`
+	ImageURL    *string `json:"image_url,omitempty"`
+	Position    int     `json:"position"`
+	IsActive    *bool   `json:"is_active,omitempty"`
+}
+
+// UpdateCategoryRequest is the wire body for PATCH admin update category.
+type UpdateCategoryRequest struct {
+	ParentID    *string `json:"parent_id,omitempty"`
+	Name        *string `json:"name,omitempty"`
+	Slug        *string `json:"slug,omitempty"`
+	Description *string `json:"description,omitempty"`
+	ImageURL    *string `json:"image_url,omitempty"`
+	Position    *int    `json:"position,omitempty"`
+	IsActive    *bool   `json:"is_active,omitempty"`
+}
+
+// UpdateVariantRequest is the wire body for the variant quick-PATCH.
+type UpdateVariantRequest struct {
+	SKU               *string          `json:"sku,omitempty" binding:"omitempty,max=100"`
+	Barcode           *string          `json:"barcode,omitempty"`
+	Price             *decimal.Decimal `json:"price,omitempty"`
+	CompareAtPrice    *decimal.Decimal `json:"compare_at_price,omitempty"`
+	CostPrice         *decimal.Decimal `json:"cost_price,omitempty"`
+	CurrencyCode      *string          `json:"currency_code,omitempty"`
+	WeightGrams       *int             `json:"weight_grams,omitempty"`
+	InventoryQuantity *int             `json:"inventory_quantity,omitempty"`
+	InventoryPolicy   *string          `json:"inventory_policy,omitempty" binding:"omitempty,oneof=deny continue"`
+	LowStockThreshold *int             `json:"low_stock_threshold,omitempty"`
+	Position          *int             `json:"position,omitempty"`
+}
+
+// UploadURLRequest is the wire body for POST /media/upload-url.
+type UploadURLRequest struct {
+	ContentHash string `json:"content_hash" binding:"required,min=16,max=128"`
+	Filename    string `json:"filename" binding:"required,max=200"`
+	ContentType string `json:"content_type" binding:"required,oneof=image/png image/jpeg image/webp"`
+}
+
+// UploadURLResponse is the wire response for POST /media/upload-url.
+type UploadURLResponse struct {
+	URL        string    `json:"url"`
+	StorageKey string    `json:"storage_key"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// CreateMediaRequest is the wire body for POST /products/:id/media.
+type CreateMediaRequest struct {
+	StorageKey string  `json:"storage_key" binding:"required"`
+	URL        string  `json:"url" binding:"required"`
+	Alt        *string `json:"alt,omitempty"`
+	Position   int     `json:"position"`
+	MediaType  string  `json:"media_type" binding:"omitempty,oneof=image video"`
+}
+
+// UpdateMediaWireRequest is the wire body for PATCH /products/:id/media/:mediaId.
+type UpdateMediaWireRequest struct {
+	Alt      *string `json:"alt,omitempty"`
+	Position *int    `json:"position,omitempty"`
+	URL      *string `json:"url,omitempty"`
+}
+
+// toServiceCreateCategory maps the wire create body to the category
+// service CreateRequest. IsActive defaults to true when not supplied.
+func toServiceCreateCategory(req CreateCategoryRequest, tenantID, storeID string) category.CreateRequest {
+	active := true
+	if req.IsActive != nil {
+		active = *req.IsActive
+	}
+	return category.CreateRequest{
+		StoreID:     storeID,
+		TenantID:    tenantID,
+		ParentID:    req.ParentID,
+		Name:        req.Name,
+		Slug:        req.Slug,
+		Description: req.Description,
+		ImageURL:    req.ImageURL,
+		Position:    req.Position,
+		IsActive:    active,
+	}
+}
+
+// toServiceUpdateCategory maps the wire patch body to the category
+// service UpdateRequest.
+func toServiceUpdateCategory(req UpdateCategoryRequest, id, tenantID, storeID string) category.UpdateRequest {
+	return category.UpdateRequest{
+		ID:          id,
+		StoreID:     storeID,
+		TenantID:    tenantID,
+		ParentID:    req.ParentID,
+		Name:        req.Name,
+		Slug:        req.Slug,
+		Description: req.Description,
+		ImageURL:    req.ImageURL,
+		Position:    req.Position,
+		IsActive:    req.IsActive,
+	}
+}
+
+// toServiceUpdateVariantBasics maps the wire variant patch body to the
+// product service request type. The CurrencyCode field is carried
+// through so the service can reject cross-currency mutations.
+func toServiceUpdateVariantBasics(req UpdateVariantRequest, productID, variantID, storeID, tenantID string) product.UpdateVariantBasicsRequest {
+	return product.UpdateVariantBasicsRequest{
+		ProductID:         productID,
+		VariantID:         variantID,
+		StoreID:           storeID,
+		TenantID:          tenantID,
+		SKU:               req.SKU,
+		Barcode:           req.Barcode,
+		Price:             req.Price,
+		CompareAtPrice:    req.CompareAtPrice,
+		CostPrice:         req.CostPrice,
+		WeightGrams:       req.WeightGrams,
+		InventoryQuantity: req.InventoryQuantity,
+		InventoryPolicy:   req.InventoryPolicy,
+		LowStockThreshold: req.LowStockThreshold,
+		Position:          req.Position,
+		CurrencyCode:      req.CurrencyCode,
+	}
+}
+
+// toServiceAddMedia maps the wire create body to the product service
+// AddMediaRequest. MediaType defaults to "image" when not supplied.
+func toServiceAddMedia(req CreateMediaRequest, productID, storeID, tenantID string) product.AddMediaRequest {
+	mt := req.MediaType
+	if mt == "" {
+		mt = "image"
+	}
+	return product.AddMediaRequest{
+		ProductID:  productID,
+		StoreID:    storeID,
+		TenantID:   tenantID,
+		StorageKey: req.StorageKey,
+		URL:        req.URL,
+		Alt:        req.Alt,
+		Position:   req.Position,
+		MediaType:  mt,
+	}
+}
+
+// toServiceUpdateMedia maps the wire patch body to the product service
+// UpdateMediaRequest.
+func toServiceUpdateMedia(req UpdateMediaWireRequest, productID, mediaID, storeID, tenantID string) product.UpdateMediaRequest {
+	return product.UpdateMediaRequest{
+		ProductID: productID,
+		MediaID:   mediaID,
+		StoreID:   storeID,
+		TenantID:  tenantID,
+		Alt:       req.Alt,
+		Position:  req.Position,
+		URL:       req.URL,
+	}
+}
 
 // CreateProductRequest is the wire body for POST admin create.
 type CreateProductRequest struct {

@@ -118,6 +118,88 @@ func TestToServiceCreateRequest_DefaultsMediaType(t *testing.T) {
 	}
 }
 
+func TestToServiceCreateCategory_DefaultsIsActiveTrue(t *testing.T) {
+	req := CreateCategoryRequest{Name: "Shoes", Position: 3}
+	out := toServiceCreateCategory(req, "t1", "s1")
+	if out.TenantID != "t1" || out.StoreID != "s1" || out.Name != "Shoes" || out.Position != 3 {
+		t.Fatalf("fields wrong: %+v", out)
+	}
+	if !out.IsActive {
+		t.Fatalf("IsActive should default to true when unset")
+	}
+}
+
+func TestToServiceCreateCategory_RespectsExplicitIsActive(t *testing.T) {
+	f := false
+	req := CreateCategoryRequest{Name: "X", IsActive: &f}
+	out := toServiceCreateCategory(req, "t", "s")
+	if out.IsActive {
+		t.Fatalf("IsActive should be false")
+	}
+}
+
+func TestToServiceUpdateCategory_NilFieldsStayNil(t *testing.T) {
+	name := "New"
+	req := UpdateCategoryRequest{Name: &name}
+	out := toServiceUpdateCategory(req, "cid", "t", "s")
+	if out.ID != "cid" || out.Name == nil || *out.Name != "New" {
+		t.Fatalf("bad: %+v", out)
+	}
+	if out.Slug != nil || out.Description != nil || out.Position != nil || out.IsActive != nil {
+		t.Fatalf("nil fields should remain nil: %+v", out)
+	}
+}
+
+func TestToServiceUpdateVariantBasics_CarriesFields(t *testing.T) {
+	price := decimal.NewFromFloat(12.34)
+	sku := "NEW"
+	inv := 42
+	cc := "USD"
+	req := UpdateVariantRequest{SKU: &sku, Price: &price, InventoryQuantity: &inv, CurrencyCode: &cc}
+	out := toServiceUpdateVariantBasics(req, "pid", "vid", "sid", "tid")
+	if out.ProductID != "pid" || out.VariantID != "vid" || out.StoreID != "sid" || out.TenantID != "tid" {
+		t.Fatalf("ids wrong: %+v", out)
+	}
+	if out.SKU == nil || *out.SKU != "NEW" || out.Price == nil || !out.Price.Equal(price) {
+		t.Fatalf("scalars wrong: %+v", out)
+	}
+	if out.InventoryQuantity == nil || *out.InventoryQuantity != 42 {
+		t.Fatalf("inv wrong")
+	}
+	if out.CurrencyCode == nil || *out.CurrencyCode != "USD" {
+		t.Fatalf("currency wrong")
+	}
+	if out.Barcode != nil || out.WeightGrams != nil {
+		t.Fatalf("nil fields should stay nil: %+v", out)
+	}
+}
+
+func TestToServiceAddMedia_DefaultsMediaTypeToImage(t *testing.T) {
+	req := CreateMediaRequest{StorageKey: "k", URL: "u"}
+	out := toServiceAddMedia(req, "pid", "sid", "tid")
+	if out.MediaType != "image" {
+		t.Fatalf("media_type default = %q", out.MediaType)
+	}
+	if out.StorageKey != "k" || out.URL != "u" || out.ProductID != "pid" {
+		t.Fatalf("fields wrong: %+v", out)
+	}
+}
+
+func TestToServiceUpdateMedia_CarriesOnlySetFields(t *testing.T) {
+	alt := "new alt"
+	req := UpdateMediaWireRequest{Alt: &alt}
+	out := toServiceUpdateMedia(req, "pid", "mid", "sid", "tid")
+	if out.ProductID != "pid" || out.MediaID != "mid" {
+		t.Fatalf("ids wrong: %+v", out)
+	}
+	if out.Alt == nil || *out.Alt != "new alt" {
+		t.Fatalf("alt wrong")
+	}
+	if out.Position != nil || out.URL != nil {
+		t.Fatalf("nil fields should stay nil: %+v", out)
+	}
+}
+
 func TestListProductsQuery_Defaults(t *testing.T) {
 	q := ListProductsQuery{}
 	q.Defaults()

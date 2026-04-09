@@ -74,6 +74,31 @@ If `go-shared/messaging.Publisher` is not present or has a different signature, 
 
 ---
 
+## Post-Task-0 adjustments (inherited from M1 + M1 sequence pivot)
+
+The task code blocks below were authored before Orders M1 executed against the real scaffold and before the per-store sequence pivot landed. Apply these substitutions inline as you read:
+
+| In task code blocks (as written) | Substitute with |
+|---|---|
+| `testdb.New(t)` | `testdb.NewTx(t)` for tx-rollback tests, OR `testdb.NewDB(t, "table1", "table2", ...)` for tests that need real commits across connections (the outbox drainer tests in Tasks 16/17 specifically require `NewDB` because the drainer reads via a separate connection) |
+| `order.PendingEvent{}` Go struct | `outbox.OutboxEvent{}` from `github.com/mark8ly/marketplace-api/internal/outbox` |
+| `pending_events` table references | `outbox_events` table (products-owned, see internal/outbox) |
+| `s.enqueueOutbox(tx, tenantID, storeID, topic, payload)` helper signature | `s.enqueueOutbox(tx, tenantID, aggregate, aggregateID, eventType, payload)` — the shared `outbox_events` schema has no `store_id` column; correlate via `tenant_id` + `aggregate_id` |
+| `attempts`, `next_attempt_at`, `dead_lettered_at` columns | **do not exist** — drainer sets `error` on failure, leaves `published_at` NULL, and re-picks on every tick |
+| Exponential backoff / dead-letter logic | Removed. Failing rows retry every 2s indefinitely; ops alerts on the `outbox_errored_rows` Prometheus gauge (defined in M5) |
+| `order.NextDocumentNumber(ctx, tx, storeID, kind, day)` | `order.NextDocumentNumber(ctx, tx, storeID, kind)` — M1 sequence pivot dropped the `day` parameter; sequences are monotonic per store forever, the date lives in `FormatOrderNumber(prefix, day, seq)` only |
+| Order number format helpers | Use `order.FormatOrderNumber(prefix, day, seq)` and `order.FormatReturnNumber(prefix, day, seq)` from M1 — do not hand-format in service code |
+| `DocumentNumberSeq` GORM model | Does not exist. The shared row table was dropped by migration `000003_orders_seq_pivot`; the per-store sequences are managed via `ensure_store_sequence(uuid, text)` server-side function and there is no Go model for them |
+| Migration filename `0002_orders_initial.{up,down}.sql` | `000002_orders_initial.{up,down}.sql` (six-digit prefix matches products convention) |
+| `go run ./cmd/migrate -direction up` / `-direction down` | `DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable go run ./cmd/migrate up` / `migrate down 1` (positional args, env var required) |
+| `psql -h localhost -U dev -d marketplace_db ...` | `docker exec dev-postgres-1 psql -U dev -d marketplace_db ...` (no host psql client) |
+| `//go:build testing` build tag (drainer tests) | `//go:build integration` (matches products convention) |
+| `go test -tags=testing ./...` | `TEST_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable go test -tags=integration ./...` (env var required; tests skip silently otherwise) |
+
+If a task block contains a reference that can't be cleanly translated, prefer the canonical shapes in **Tasks 16/17 (drainer scaffold + tests)** which were rewritten in the post-products-M2 revision pass — those are the source of truth for the outbox drainer's actual signature.
+
+---
+
 ## File structure produced by M2
 
 ```

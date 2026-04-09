@@ -4,7 +4,7 @@
 // title, description, categories, media, and variants lands in M7b.
 
 import { AdminShell } from "@/components/shell/AdminShell";
-import { ComingSoon } from "@/components/shell/ComingSoon";
+import { ComingSoon } from "@repo/ui/coming-soon";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 
 export default async function NewProductPage() {

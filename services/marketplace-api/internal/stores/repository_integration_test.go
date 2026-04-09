@@ -119,6 +119,77 @@ func TestIntegration_Repository_GetByIDForTenant_MissingID(t *testing.T) {
 	}
 }
 
+func TestIntegration_Stores_GetBySlug_HappyPath(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := stores.NewRepository(tx)
+	ctx := context.Background()
+
+	s := newStore(uuid.NewString())
+	if err := repo.Upsert(ctx, s); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	got, err := repo.GetBySlug(ctx, s.Slug)
+	if err != nil {
+		t.Fatalf("get by slug: %v", err)
+	}
+	if got.ID != s.ID || got.Slug != s.Slug {
+		t.Fatalf("unexpected: %+v", got)
+	}
+}
+
+func TestIntegration_Stores_GetBySlug_NotFound(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := stores.NewRepository(tx)
+	ctx := context.Background()
+
+	_, err := repo.GetBySlug(ctx, "nope-"+uuid.NewString()[:8])
+	if !errors.Is(err, stores.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestIntegration_Stores_GetProductsWatermark_NoRow_ReturnsEpoch(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := stores.NewRepository(tx)
+	ctx := context.Background()
+
+	storeID := uuid.NewString()
+	got, err := repo.GetProductsWatermark(ctx, storeID)
+	if err != nil {
+		t.Fatalf("watermark: %v", err)
+	}
+	if !got.Equal(time.Unix(0, 0)) {
+		t.Fatalf("expected epoch, got %v", got)
+	}
+}
+
+func TestIntegration_Stores_GetProductsWatermark_ExistingRow_ReturnsStoredTimestamp(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := stores.NewRepository(tx)
+	ctx := context.Background()
+
+	s := newStore(uuid.NewString())
+	if err := repo.Upsert(ctx, s); err != nil {
+		t.Fatalf("upsert store: %v", err)
+	}
+	ts := time.Now().UTC().Truncate(time.Microsecond).Add(-2 * time.Hour)
+	if err := tx.Exec(
+		"INSERT INTO store_watermarks (store_id, products_updated_at) VALUES (?, ?)",
+		s.ID, ts,
+	).Error; err != nil {
+		t.Fatalf("insert watermark: %v", err)
+	}
+
+	got, err := repo.GetProductsWatermark(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("watermark: %v", err)
+	}
+	if !got.Equal(ts) {
+		t.Fatalf("watermark = %v, want %v", got, ts)
+	}
+}
+
 func TestIntegration_Repository_IsStale_Boundary(t *testing.T) {
 	tx := testdb.NewTx(t)
 	repo := stores.NewRepository(tx)

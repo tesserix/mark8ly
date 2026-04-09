@@ -51,6 +51,10 @@ func (stubPlatformClient) GetStore(ctx context.Context, tenantID, storeID string
 	return nil, stores.ErrPlatformUnavailable
 }
 
+func (stubPlatformClient) GetStoreBySlug(ctx context.Context, slug string) (*stores.Store, error) {
+	return nil, stores.ErrPlatformUnavailable
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {

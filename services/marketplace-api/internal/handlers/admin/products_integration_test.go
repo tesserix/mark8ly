@@ -41,6 +41,10 @@ func (stubClient) GetStore(_ context.Context, _, _ string) (*stores.Store, error
 	return nil, stores.ErrPlatformUnavailable
 }
 
+func (stubClient) GetStoreBySlug(_ context.Context, _ string) (*stores.Store, error) {
+	return nil, stores.ErrPlatformUnavailable
+}
+
 // productsTables is the dependency-ordered truncate list for tests that
 // run through the admin products surface.
 var productsTables = []string{

@@ -88,6 +88,7 @@ type UpdateMediaRequest struct {
 	Alt       *string
 	Position  *int
 	URL       *string
+	VariantID *string
 }
 
 // UpdateMedia applies non-nil fields to the given media row. Tenant/
@@ -102,6 +103,9 @@ func (s *Service) UpdateMedia(ctx context.Context, req UpdateMediaRequest) error
 	}
 	if req.URL != nil {
 		fields["url"] = *req.URL
+	}
+	if req.VariantID != nil {
+		fields["variant_id"] = *req.VariantID
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

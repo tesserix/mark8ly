@@ -72,6 +72,7 @@ func ToAdminMediaResponse(m *product.Media) AdminMediaResponse {
 		Alt:        m.Alt,
 		Position:   m.Position,
 		MediaType:  m.MediaType,
+		VariantID:  m.VariantID,
 		Width:      m.Width,
 		Height:     m.Height,
 		Bytes:      m.Bytes,
@@ -143,6 +144,7 @@ type AdminMediaResponse struct {
 	Alt        *string `json:"alt,omitempty"`
 	Position   int     `json:"position"`
 	MediaType  string  `json:"media_type"`
+	VariantID  *string `json:"variant_id,omitempty"`
 	Width      *int    `json:"width,omitempty"`
 	Height     *int    `json:"height,omitempty"`
 	Bytes      *int64  `json:"bytes,omitempty"`
@@ -202,7 +204,8 @@ func ToAdminProductResponse(a *product.Aggregate, categories []AdminCategoryRef)
 		media = append(media, AdminMediaResponse{
 			ID: m.ID, URL: m.URL, StorageKey: m.StorageKey,
 			Alt: m.Alt, Position: m.Position, MediaType: m.MediaType,
-			Width: m.Width, Height: m.Height, Bytes: m.Bytes,
+			VariantID: m.VariantID,
+			Width:     m.Width, Height: m.Height, Bytes: m.Bytes,
 		})
 	}
 

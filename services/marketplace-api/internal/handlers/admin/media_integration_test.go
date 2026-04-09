@@ -180,6 +180,62 @@ func TestAPI_AdminMedia_Delete_Succeeds_204(t *testing.T) {
 	}
 }
 
+func TestAPI_AdminMedia_Create_WithVariantID_Persists(t *testing.T) {
+	env := setupTestRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+
+	pid, v1, _ := seedProductViaService(t, env, storeID, tenantID)
+	env.uploader.Register(media.Attrs{StorageKey: "k-variant-1", Size: 10, ContentType: "image/jpeg"})
+
+	body := map[string]any{
+		"storage_key": "k-variant-1",
+		"url":         "https://cdn/v.jpg",
+		"variant_id":  v1,
+	}
+	w := request(t, env.router, http.MethodPost, mediaURL(storeID, pid), body, authHeaders(userID, tenantID))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["variant_id"] != v1 {
+		t.Fatalf("variant_id = %v, want %s", resp["variant_id"], v1)
+	}
+}
+
+func TestAPI_AdminMedia_Patch_UpdatesVariantID(t *testing.T) {
+	env := setupTestRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+
+	pid, v1, _ := seedProductViaService(t, env, storeID, tenantID)
+	mid := createMediaHTTP(t, env, storeID, tenantID, userID, pid, "k-vpatch")
+
+	w := request(t, env.router, http.MethodPatch, mediaURL(storeID, pid)+"/"+mid,
+		map[string]any{"variant_id": v1}, authHeaders(userID, tenantID))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, %s", w.Code, w.Body.String())
+	}
+
+	w2 := request(t, env.router, http.MethodGet, productsURL(storeID)+"/"+pid, nil, authHeaders(userID, tenantID))
+	var resp map[string]any
+	_ = json.Unmarshal(w2.Body.Bytes(), &resp)
+	mediaRows, _ := resp["media"].([]any)
+	found := false
+	for _, m := range mediaRows {
+		row := m.(map[string]any)
+		if row["id"] == mid && row["variant_id"] == v1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("variant_id update not visible: %s", w2.Body.String())
+	}
+}
+
 func TestAPI_AdminMedia_StaffDenied_404(t *testing.T) {
 	env := setupTestRouter(t)
 	storeID, tenantID := seedStoreRow(t, env.db, "")

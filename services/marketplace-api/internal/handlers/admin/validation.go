@@ -67,13 +67,15 @@ type CreateMediaRequest struct {
 	Alt        *string `json:"alt,omitempty"`
 	Position   int     `json:"position"`
 	MediaType  string  `json:"media_type" binding:"omitempty,oneof=image video"`
+	VariantID  *string `json:"variant_id,omitempty" binding:"omitempty,uuid"`
 }
 
 // UpdateMediaWireRequest is the wire body for PATCH /products/:id/media/:mediaId.
 type UpdateMediaWireRequest struct {
-	Alt      *string `json:"alt,omitempty"`
-	Position *int    `json:"position,omitempty"`
-	URL      *string `json:"url,omitempty"`
+	Alt       *string `json:"alt,omitempty"`
+	Position  *int    `json:"position,omitempty"`
+	URL       *string `json:"url,omitempty"`
+	VariantID *string `json:"variant_id,omitempty" binding:"omitempty,uuid"`
 }
 
 // toServiceCreateCategory maps the wire create body to the category
@@ -152,6 +154,7 @@ func toServiceAddMedia(req CreateMediaRequest, productID, storeID, tenantID stri
 		Alt:        req.Alt,
 		Position:   req.Position,
 		MediaType:  mt,
+		VariantID:  req.VariantID,
 	}
 }
 
@@ -166,6 +169,7 @@ func toServiceUpdateMedia(req UpdateMediaWireRequest, productID, mediaID, storeI
 		Alt:       req.Alt,
 		Position:  req.Position,
 		URL:       req.URL,
+		VariantID: req.VariantID,
 	}
 }
 

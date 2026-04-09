@@ -43,6 +43,7 @@ type Repository interface {
 	GetByIDForStore(ctx context.Context, id, storeID, tenantID string) (*Aggregate, error)
 	ListAdmin(ctx context.Context, q ListAdminQuery) ([]Aggregate, int64, error)
 	ListPublished(ctx context.Context, q ListPublishedQuery) ([]Aggregate, error)
+	GetPublishedByHandle(ctx context.Context, storeID, handle string) (*Aggregate, error)
 	UpdateBasicsInTx(ctx context.Context, tx *gorm.DB, id, storeID, tenantID string, fields map[string]any) error
 	ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, productID, storeID string, diff VariantDiff) error
 	ReplaceCategoryLinksInTx(ctx context.Context, tx *gorm.DB, productID string, categoryIDs []string) error
@@ -316,9 +317,11 @@ func (r *gormRepository) ListPublished(ctx context.Context, q ListPublishedQuery
 		q.Page = 1
 	}
 
+	// SECURITY: hard-coded storefront visibility filter. No caller can
+	// bypass any of these predicates — status, published_at, deleted_at.
 	base := r.db.WithContext(ctx).
 		Model(&Product{}).
-		Where("store_id = ? AND deleted_at IS NULL AND status = ? AND published_at IS NOT NULL",
+		Where("store_id = ? AND deleted_at IS NULL AND status = ? AND published_at IS NOT NULL AND published_at <= now()",
 			q.StoreID, StatusActive)
 
 	if q.CategorySlug != "" {
@@ -327,7 +330,7 @@ func (r *gormRepository) ListPublished(ctx context.Context, q ListPublishedQuery
 				SELECT pc.product_id
 				FROM product_categories pc
 				JOIN categories c ON c.id = pc.category_id
-				WHERE c.slug = ? AND c.store_id = ? AND c.deleted_at IS NULL
+				WHERE c.slug = ? AND c.store_id = ? AND c.deleted_at IS NULL AND c.is_active = true
 			)`, q.CategorySlug, q.StoreID)
 	}
 
@@ -355,6 +358,47 @@ func (r *gormRepository) ListPublished(ctx context.Context, q ListPublishedQuery
 		})
 	}
 	return out, nil
+}
+
+// ---------- GetPublishedByHandle ----------
+
+// GetPublishedByHandle is the storefront product-detail lookup. It
+// applies the same hard-coded visibility filter as ListPublished —
+// status='active', published_at IS NOT NULL AND <= now(),
+// deleted_at IS NULL — and returns apperrors.NotFound("product") on
+// any miss (existence leaks are explicitly forbidden by spec §13.1.4).
+func (r *gormRepository) GetPublishedByHandle(ctx context.Context, storeID, handle string) (*Aggregate, error) {
+	var p Product
+	err := r.db.WithContext(ctx).
+		Preload("Options").
+		Preload("Options.Values").
+		Preload("Variants").
+		Preload("Variants.OptionValueLinks").
+		Preload("Media").
+		Where("store_id = ? AND handle = ? AND status = ? AND deleted_at IS NULL AND published_at IS NOT NULL AND published_at <= now()",
+			storeID, handle, StatusActive).
+		First(&p).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, apperrors.NotFound("product")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("product: get published by handle: %w", err)
+	}
+
+	var links []ProductCategory
+	if err := r.db.WithContext(ctx).
+		Where("product_id = ?", p.ID).
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("product: get published by handle category links: %w", err)
+	}
+
+	return &Aggregate{
+		Product:       p,
+		Options:       p.Options,
+		Variants:      p.Variants,
+		Media:         p.Media,
+		CategoryLinks: links,
+	}, nil
 }
 
 // ---------- UpdateBasics ----------

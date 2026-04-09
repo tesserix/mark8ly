@@ -745,3 +745,226 @@ func TestIntegration_ProductRepo_ConcurrentCreate_SameHandle_OneWinsOneFails(t *
 		t.Fatalf("successes=%d handleTakens=%d", successes, handleTakens)
 	}
 }
+
+// --------------- M6 storefront visibility / leak regressions ---------------
+
+func TestIntegration_ProductRepo_ListPublished_LeakRegression(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := product.NewRepository(tx)
+	ctx := context.Background()
+
+	storeID, tenantID := seedStore(t, tx)
+
+	past := time.Now().Add(-1 * time.Hour)
+	future := time.Now().Add(24 * time.Hour)
+
+	// 1. active + published in the past → INCLUDED
+	good := minimalAggregate(storeID, tenantID, "visible", "VIS-1")
+	good.Product.Status = product.StatusActive
+	good.Product.PublishedAt = &past
+	if err := repo.CreateAggregateInTx(ctx, tx, good); err != nil {
+		t.Fatalf("good: %v", err)
+	}
+
+	// 2. draft → EXCLUDED
+	draft := minimalAggregate(storeID, tenantID, "draft-p", "DR-1")
+	if err := repo.CreateAggregateInTx(ctx, tx, draft); err != nil {
+		t.Fatalf("draft: %v", err)
+	}
+
+	// 3. archived → EXCLUDED
+	arch := minimalAggregate(storeID, tenantID, "arch-p", "AR-1")
+	arch.Product.Status = product.StatusArchived
+	if err := repo.CreateAggregateInTx(ctx, tx, arch); err != nil {
+		t.Fatalf("archived: %v", err)
+	}
+
+	// 4. active + published_at in the future → EXCLUDED
+	sched := minimalAggregate(storeID, tenantID, "sched-p", "SC-1")
+	sched.Product.Status = product.StatusActive
+	sched.Product.PublishedAt = &future
+	if err := repo.CreateAggregateInTx(ctx, tx, sched); err != nil {
+		t.Fatalf("scheduled: %v", err)
+	}
+
+	// 5. active + published + soft-deleted → EXCLUDED
+	del := minimalAggregate(storeID, tenantID, "del-p", "DL-1")
+	del.Product.Status = product.StatusActive
+	del.Product.PublishedAt = &past
+	if err := repo.CreateAggregateInTx(ctx, tx, del); err != nil {
+		t.Fatalf("del: %v", err)
+	}
+	if err := repo.SoftDeleteInTx(ctx, tx, del.Product.ID, storeID, tenantID); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	rows, err := repo.ListPublished(ctx, product.ListPublishedQuery{
+		StoreID:  storeID,
+		Page:     1,
+		PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected exactly 1, got %d: %+v", len(rows), rows)
+	}
+	if rows[0].Product.Handle != "visible" {
+		t.Fatalf("unexpected row: %s", rows[0].Product.Handle)
+	}
+}
+
+func TestIntegration_ProductRepo_ListPublished_WithCategorySlug_Filters(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := product.NewRepository(tx)
+	ctx := context.Background()
+
+	storeID, tenantID := seedStore(t, tx)
+	past := time.Now().Add(-1 * time.Hour)
+
+	apparelID := seedCategory(t, tx, storeID, tenantID, "apparel")
+	shoesID := seedCategory(t, tx, storeID, tenantID, "shoes")
+	bagsID := seedCategory(t, tx, storeID, tenantID, "bags")
+
+	mk := func(handle, sku, catID string) *product.Aggregate {
+		a := minimalAggregate(storeID, tenantID, handle, sku)
+		a.Product.Status = product.StatusActive
+		a.Product.PublishedAt = &past
+		a.CategoryLinks = []product.ProductCategory{{CategoryID: catID}}
+		return a
+	}
+
+	for _, a := range []*product.Aggregate{
+		mk("shirt", "SH-1", apparelID),
+		mk("sneaker", "SN-1", shoesID),
+		mk("tote", "TO-1", bagsID),
+	} {
+		if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
+			t.Fatalf("create %s: %v", a.Product.Handle, err)
+		}
+	}
+
+	rows, err := repo.ListPublished(ctx, product.ListPublishedQuery{
+		StoreID:      storeID,
+		CategorySlug: "apparel",
+		Page:         1,
+		PageSize:     20,
+	})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1, got %d", len(rows))
+	}
+	if rows[0].Product.Handle != "shirt" {
+		t.Fatalf("handle = %s", rows[0].Product.Handle)
+	}
+}
+
+func TestIntegration_ProductRepo_GetPublishedByHandle_HappyPath(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := product.NewRepository(tx)
+	ctx := context.Background()
+
+	storeID, tenantID := seedStore(t, tx)
+	past := time.Now().Add(-1 * time.Hour)
+	a := minimalAggregate(storeID, tenantID, "linen-shirt", "LS-1")
+	a.Product.Status = product.StatusActive
+	a.Product.PublishedAt = &past
+	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err := repo.GetPublishedByHandle(ctx, storeID, "linen-shirt")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Product.Handle != "linen-shirt" {
+		t.Fatalf("handle = %s", got.Product.Handle)
+	}
+	if len(got.Variants) != 1 {
+		t.Fatalf("variants = %d", len(got.Variants))
+	}
+}
+
+func TestIntegration_ProductRepo_GetPublishedByHandle_Draft_Returns_NotFound(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := product.NewRepository(tx)
+	ctx := context.Background()
+
+	storeID, tenantID := seedStore(t, tx)
+	a := minimalAggregate(storeID, tenantID, "linen-shirt", "LS-1")
+	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	_, err := repo.GetPublishedByHandle(ctx, storeID, "linen-shirt")
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestIntegration_ProductRepo_GetPublishedByHandle_SoftDeleted_Returns_NotFound(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := product.NewRepository(tx)
+	ctx := context.Background()
+
+	storeID, tenantID := seedStore(t, tx)
+	past := time.Now().Add(-1 * time.Hour)
+	a := minimalAggregate(storeID, tenantID, "linen-shirt", "LS-1")
+	a.Product.Status = product.StatusActive
+	a.Product.PublishedAt = &past
+	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := repo.SoftDeleteInTx(ctx, tx, a.Product.ID, storeID, tenantID); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	_, err := repo.GetPublishedByHandle(ctx, storeID, "linen-shirt")
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestIntegration_ProductRepo_GetPublishedByHandle_CrossStore_NotFound(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := product.NewRepository(tx)
+	ctx := context.Background()
+
+	storeA, tenantA := seedStore(t, tx)
+	storeB, _ := seedStore(t, tx)
+	past := time.Now().Add(-1 * time.Hour)
+
+	a := minimalAggregate(storeA, tenantA, "linen-shirt", "LS-1")
+	a.Product.Status = product.StatusActive
+	a.Product.PublishedAt = &past
+	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	_, err := repo.GetPublishedByHandle(ctx, storeB, "linen-shirt")
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestIntegration_ProductRepo_GetPublishedByHandle_Archived_NotFound(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := product.NewRepository(tx)
+	ctx := context.Background()
+
+	storeID, tenantID := seedStore(t, tx)
+	past := time.Now().Add(-1 * time.Hour)
+	a := minimalAggregate(storeID, tenantID, "linen-shirt", "LS-1")
+	a.Product.Status = product.StatusArchived
+	a.Product.PublishedAt = &past
+	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	_, err := repo.GetPublishedByHandle(ctx, storeID, "linen-shirt")
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}

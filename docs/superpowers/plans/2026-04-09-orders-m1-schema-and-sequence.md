@@ -60,6 +60,25 @@ Before Task 1 runs, these must exist in the working tree (verified by Task 0):
 
 ---
 
+## Post-Task-0 adjustments (runtime contract discovered during verification)
+
+Task 0 was executed on `feat/orders-m1` against products M2 on main and surfaced four shape mismatches between the plan and the actual scaffold. Every task code block below should be read with these substitutions applied:
+
+| In the task code blocks (as written) | Substitute with |
+|---|---|
+| `testdb.New(t)` | `testdb.NewTx(t)` — transaction-rollback helper. Use this for every M1 test (round-trip, constraints, concurrent sequence benchmark). The benchmark test's `db.Transaction(...)` closure is compatible because GORM nested transactions via savepoints. |
+| `testdb.New(t)` **inside outbox drainer tests (M2 Task 17)** | `testdb.NewDB(t, "outbox_events")` — real-commit helper with per-test truncation. Required because the drainer reads rows through a separate connection; `NewTx` would hide uncommitted rows. |
+| `go run ./cmd/migrate -direction up` | `DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable go run ./cmd/migrate up` |
+| `go run ./cmd/migrate -direction down` | `DATABASE_URL=... go run ./cmd/migrate down 1` — the CLI takes a positional N (number of steps to roll back). |
+| `psql -h localhost -U dev -d marketplace_db ...` | `docker exec dev-postgres-1 psql -U dev -d marketplace_db ...` — Postgres is only reachable inside the docker-compose network; no client on the host. |
+| `pg_isready -h localhost ...` | `docker exec dev-postgres-1 pg_isready -U dev -d marketplace_db` |
+| `//go:build testing` (M2 drainer fake publisher + tests) | `//go:build integration` — matches products' existing tag convention (`internal/product/models_integration_test.go`). |
+| `go test -tags=testing ./...` | `TEST_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable go test -tags=integration ./...` — tests skip silently if `TEST_DATABASE_URL` is unset, so exporting it in the shell before running is critical. |
+
+These are pure text substitutions — none require changes to the task sequence, the migration content, or the GORM model shapes. The deltas were recorded in `.orders-m1-baseline.txt` at the repo root during Task 0 Step 15.
+
+---
+
 ## File structure produced by M1
 
 ```

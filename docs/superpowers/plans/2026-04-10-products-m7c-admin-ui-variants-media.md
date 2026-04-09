@@ -344,6 +344,22 @@ Mark every gap as `closed` with the commit hash. This doc gets deleted at the en
 
 Noted here for Task 15.
 
+- [ ] **Step 10: Fill the exit matrix before closing Task 1**
+
+Task 1 is done only when **every** row of this matrix is marked ✅. If any row is still open, Task 2 must not start. Paste the filled matrix into the PR description when M7c ships.
+
+| # | Spec §2.7 verification item | Test name | Status | Commit |
+|---|---|---|---|---|
+| 1 | `PATCH /products/:id` accepts full aggregate (add/remove options, add/remove values, mixed-id variants, `removed_variant_ids`) | `TestAggregatePatch_FullAggregateRoundTrip` | ⬜ | `_________` |
+| 2 | Soft-delete vs hard-delete for removed variants documented + tested | `TestAggregatePatch_RemovedVariants` | ⬜ | `_________` |
+| 3 | Dedicated media endpoints: `POST /media`, `DELETE /media/:id`, `POST /media/:id/recrop` | `TestMediaEndpoints_Lifecycle` | ⬜ | `_________` |
+| 4 | `variant_id` on `product_media` writable via API | `TestMedia_VariantAssignment` | ⬜ | `_________` |
+| 5 | `gcs_path_original` column exists + populated on upload + backfilled for legacy rows | `TestMedia_GcsPathOriginalBackfill` | ⬜ | `_________` |
+| 6 | 500-variant backend cap returns HTTP 422 `variant_cap_exceeded` | `TestAggregatePatch_VariantCapExceeded` | ⬜ | `_________` |
+| 7 | Recrop endpoint reads original, writes new `gcs_path`, preserves original | `TestMedia_RecropRoundTrip` | ⬜ | `_________` |
+
+Exit criteria: all 7 rows ✅, all named tests green, `go test ./... -race` green, `.planning/m7c-backend-gaps.md` marked fully closed.
+
 ---
 
 ### Task 2: `variantKey.ts` + `generateVariants.ts` pure logic (U)
@@ -573,7 +589,7 @@ describe("generateVariants", () => {
     );
   });
 
-  it("503 combinations is allowed only if exactly at the cap", () => {
+  it("500 combinations is allowed (exactly at the cap)", () => {
     // 500 = 10 × 50
     const options: OptionDraft[] = [
       { name: "A", values: Array.from({ length: 10 }, (_, i) => `a${i}`) },
@@ -1586,16 +1602,199 @@ export function MediaTab({ storeId, productId }: { storeId: string; productId: s
 
 **`VariantImagePicker`** is a small popover launched from a variant row: shows the media grid filtered to the current product, user picks one, writes `variant_id` onto that media row.
 
-- [ ] **Step 1: Scaffold each file with a todo implementation**
-- [ ] **Step 2: Write component tests for handleFiles / handleAction (mock `uploadMediaFile`)**
-- [ ] **Step 3: Run tests (FAIL)**
-- [ ] **Step 4: Implement**
-- [ ] **Step 5: Run tests (PASS)**
-- [ ] **Step 6: Commit**
+This task owns **four** files. Build each in the order below — each with its own failing test → implementation → commit cycle. Do not collapse commits.
+
+#### 6.1 — `MediaUploader.tsx` (dropzone + progress strip + concurrency cap 3)
+
+- [ ] **Step 1: Write failing test**
+
+```typescript
+// apps/admin/components/products/media/MediaUploader.test.tsx
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { MediaUploader } from "./MediaUploader";
+
+describe("MediaUploader", () => {
+  it("calls onFiles when files are dropped", () => {
+    const onFiles = vi.fn();
+    render(<MediaUploader onFiles={onFiles} />);
+    const dropzone = screen.getByRole("button", { name: /drop images/i });
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+    expect(onFiles).toHaveBeenCalledWith([file]);
+  });
+
+  it("enforces concurrency cap of 3 by batching calls", async () => {
+    const onFiles = vi.fn();
+    render(<MediaUploader onFiles={onFiles} concurrencyCap={3} />);
+    const input = screen.getByLabelText(/choose files/i) as HTMLInputElement;
+    const files = Array.from({ length: 5 }, (_, i) => new File([""], `f${i}.jpg`, { type: "image/jpeg" }));
+    fireEvent.change(input, { target: { files } });
+    // All 5 are passed to the single onFiles callback; batching is internal to the MediaTab uploader
+    expect(onFiles).toHaveBeenCalledWith(files);
+  });
+});
+```
+
+- [ ] **Step 2: Run test** — `cd apps/admin && npm run test -- MediaUploader` — expect FAIL.
+
+- [ ] **Step 3: Implement `MediaUploader.tsx`** (use `frontend-design` skill for the editorial dropzone chrome — Paper surface, hairline dashed border, serif empty-state prompt)
+
+- [ ] **Step 4: Run test** — `cd apps/admin && npm run test -- MediaUploader` — expect PASS.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add apps/admin/components/products/form/MediaTab.tsx apps/admin/components/products/media/MediaUploader.tsx apps/admin/components/products/media/MediaAltTextInput.tsx apps/admin/components/products/variants/VariantImagePicker.tsx
-git commit -m "feat(admin): MediaTab composition with dropzone + crop dialog wiring (M7c)"
+git add apps/admin/components/products/media/MediaUploader.tsx apps/admin/components/products/media/MediaUploader.test.tsx
+git commit -m "feat(admin): MediaUploader dropzone with concurrency-cap batching (M7c)"
+```
+
+#### 6.2 — `MediaAltTextInput.tsx` (inline alt-text editor per media card)
+
+- [ ] **Step 1: Write failing test**
+
+```typescript
+// apps/admin/components/products/media/MediaAltTextInput.test.tsx
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { MediaAltTextInput } from "./MediaAltTextInput";
+
+describe("MediaAltTextInput", () => {
+  it("commits value on blur", () => {
+    const onCommit = vi.fn();
+    render(<MediaAltTextInput initialValue="" onCommit={onCommit} />);
+    const input = screen.getByLabelText(/alt text/i);
+    fireEvent.change(input, { target: { value: "Red linen tee" } });
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith("Red linen tee");
+  });
+
+  it("does not commit on every keystroke", () => {
+    const onCommit = vi.fn();
+    render(<MediaAltTextInput initialValue="" onCommit={onCommit} />);
+    const input = screen.getByLabelText(/alt text/i);
+    fireEvent.change(input, { target: { value: "R" } });
+    fireEvent.change(input, { target: { value: "Re" } });
+    fireEvent.change(input, { target: { value: "Red" } });
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 2:** `cd apps/admin && npm run test -- MediaAltTextInput` — FAIL.
+- [ ] **Step 3: Implement** (thin wrapper around `@tesserix/web` Input, commits on blur only).
+- [ ] **Step 4:** rerun — PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/admin/components/products/media/MediaAltTextInput.tsx apps/admin/components/products/media/MediaAltTextInput.test.tsx
+git commit -m "feat(admin): MediaAltTextInput inline alt editor (M7c)"
+```
+
+#### 6.3 — `VariantImagePicker.tsx` (popover assigning a media row to a variant)
+
+**Files:**
+- Create: `apps/admin/components/products/variants/VariantImagePicker.tsx`
+- Create: `apps/admin/components/products/variants/VariantImagePicker.test.tsx`
+
+- [ ] **Step 1: Write failing test**
+
+```typescript
+// apps/admin/components/products/variants/VariantImagePicker.test.tsx
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { VariantImagePicker } from "./VariantImagePicker";
+
+const media = [
+  { id: "m1", url: "https://x/a.jpg", alt: "a", position: 0, variant_id: null, gcs_path: "", gcs_path_original: "" },
+  { id: "m2", url: "https://x/b.jpg", alt: "b", position: 1, variant_id: null, gcs_path: "", gcs_path_original: "" },
+];
+
+describe("VariantImagePicker", () => {
+  it("selecting a media emits its id", () => {
+    const onSelect = vi.fn();
+    render(<VariantImagePicker media={media} currentMediaId={null} onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole("button", { name: /a/i }));
+    expect(onSelect).toHaveBeenCalledWith("m1");
+  });
+
+  it("clearing selection emits null", () => {
+    const onSelect = vi.fn();
+    render(<VariantImagePicker media={media} currentMediaId="m1" onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole("button", { name: /remove image/i }));
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+});
+```
+
+- [ ] **Step 2:** `cd apps/admin && npm run test -- VariantImagePicker` — FAIL.
+- [ ] **Step 3: Implement** — grid of thumbnails with radio semantics, "Remove image" clear button, Paper surface, Moss focus ring.
+- [ ] **Step 4:** rerun — PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/admin/components/products/variants/VariantImagePicker.tsx apps/admin/components/products/variants/VariantImagePicker.test.tsx
+git commit -m "feat(admin): VariantImagePicker popover (M7c)"
+```
+
+#### 6.4 — `MediaTab.tsx` (composition)
+
+- [ ] **Step 1: Write failing test** for the composition (mock `uploadMediaFile`, `recropMedia`):
+
+```typescript
+// apps/admin/components/products/form/MediaTab.test.tsx
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { FormProvider, useForm } from "react-hook-form";
+import { MediaTab } from "./MediaTab";
+
+vi.mock("../media/mediaUploadClient", () => ({
+  uploadMediaFile: vi.fn(async () => ({
+    id: "new-1",
+    url: "https://x/new.jpg",
+    alt: "",
+    position: 0,
+    variant_id: null,
+    gcs_path: "stores/s1/products/p1/new.jpg",
+    gcs_path_original: "stores/s1/products/p1/new-original.jpg",
+  })),
+}));
+
+function Harness({ initialMedia = [] }: { initialMedia?: unknown[] }) {
+  const methods = useForm({ defaultValues: { media: initialMedia } });
+  return (
+    <FormProvider {...methods}>
+      <MediaTab storeId="s1" productId="p1" />
+    </FormProvider>
+  );
+}
+
+describe("MediaTab", () => {
+  it("appends uploaded media to the form state", async () => {
+    render(<Harness />);
+    const input = screen.getByLabelText(/choose files/i) as HTMLInputElement;
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole("img", { name: "" })).toBeInTheDocument());
+  });
+
+  it("delete action removes the card", async () => {
+    render(<Harness initialMedia={[{ id: "m1", url: "https://x/a.jpg", alt: "a", position: 0, variant_id: null, gcs_path: "", gcs_path_original: "" }]} />);
+    expect(screen.getByRole("img", { name: "a" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    await waitFor(() => expect(screen.queryByRole("img", { name: "a" })).not.toBeInTheDocument());
+  });
+});
+```
+
+- [ ] **Step 2:** `cd apps/admin && npm run test -- MediaTab` — FAIL.
+- [ ] **Step 3: Implement `MediaTab.tsx`** using the skeleton already sketched above in this task (composes `MediaUploader`, `MediaGrid`, `MediaCropDialog`, reads/writes `media` field array via RHF `useFieldArray`).
+- [ ] **Step 4:** rerun — PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/admin/components/products/form/MediaTab.tsx apps/admin/components/products/form/MediaTab.test.tsx
+git commit -m "feat(admin): MediaTab composition + crop dialog wiring (M7c)"
 ```
 
 ---
@@ -1715,8 +1914,51 @@ git commit -m "feat(admin): VariantMatrixTable with inline editable cells (M7c)"
 
 **Scope:** Small inline bar above the variant matrix with actions like "Set all prices…", "Set all stock…", "Set all weights…". Opens a small inline input, applies to all variant rows on commit. Idempotent and undo-able within the form (user can still edit individual rows after).
 
-- [ ] **Step 1: Failing test — applying "Set all prices" emits a patch with every row's price updated**
-- [ ] **Step 2–4: Implement + verify**
+- [ ] **Step 1: Write failing test**
+
+```typescript
+// apps/admin/components/products/variants/VariantBulkBar.test.tsx
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { VariantBulkBar } from "./VariantBulkBar";
+
+describe("VariantBulkBar", () => {
+  it("'Set all prices' applies to every row via onBulkPatch", () => {
+    const onBulkPatch = vi.fn();
+    render(<VariantBulkBar variantCount={4} onBulkPatch={onBulkPatch} />);
+    fireEvent.click(screen.getByRole("button", { name: /set all prices/i }));
+    fireEvent.change(screen.getByLabelText(/new price/i), { target: { value: "29.99" } });
+    fireEvent.click(screen.getByRole("button", { name: /apply/i }));
+    expect(onBulkPatch).toHaveBeenCalledWith({ field: "price", value: "29.99" });
+  });
+
+  it("'Set all stock' accepts integer only", () => {
+    const onBulkPatch = vi.fn();
+    render(<VariantBulkBar variantCount={4} onBulkPatch={onBulkPatch} />);
+    fireEvent.click(screen.getByRole("button", { name: /set all stock/i }));
+    const input = screen.getByLabelText(/new stock/i);
+    fireEvent.change(input, { target: { value: "42" } });
+    fireEvent.click(screen.getByRole("button", { name: /apply/i }));
+    expect(onBulkPatch).toHaveBeenCalledWith({ field: "stock", value: 42 });
+  });
+
+  it("cancel does not emit", () => {
+    const onBulkPatch = vi.fn();
+    render(<VariantBulkBar variantCount={4} onBulkPatch={onBulkPatch} />);
+    fireEvent.click(screen.getByRole("button", { name: /set all prices/i }));
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onBulkPatch).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 2: Run test** — `cd apps/admin && npm run test -- VariantBulkBar` — expect FAIL.
+
+- [ ] **Step 3: Implement `VariantBulkBar.tsx`**
+
+Small inline bar above `VariantMatrixTable`. Buttons: "Set all prices…", "Set all stock…", "Set all weights…". Clicking opens an inline single-field form in place of the buttons; Apply emits `onBulkPatch({ field, value })`; Cancel reverts to buttons. Use `@tesserix/web` Input for the field. Paper surface, hairline rule above, no dialog. Integrates with `VariantsTab.tsx` (Task 10) which translates `onBulkPatch` into RHF `setValue` calls on every variant row.
+
+- [ ] **Step 4: Run test** — `cd apps/admin && npm run test -- VariantBulkBar` — expect PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -1803,11 +2045,71 @@ git commit -m "feat(admin): ProductForm tab shell + options→variants derivatio
 
 **Scope:** Extend `updateProductAction` to serialize the full aggregate (options + variants + media + removed_variant_ids) to the backend `PATCH /products/:id`. Existing signature can stay; the payload grows. Error handling maps typed backend errors (like `variant_cap_exceeded`) to form-level messages via `form.setError("root", …)` through the action's return value.
 
-- [ ] **Step 1: Extend `updateProduct` client in `marketplace-api.ts`** to accept the new aggregate fields.
-- [ ] **Step 2: Extend `updateProductAction`** to forward them.
-- [ ] **Step 3: Add a test** (Vitest, mocking `fetchAdminApi`) that verifies the POST body shape.
-- [ ] **Step 4: Run tests**
-- [ ] **Step 5: Commit**
+- [ ] **Step 1: Write failing test** for the aggregate payload shape
+
+```typescript
+// apps/admin/app/products/actions.test.ts
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { updateProductAction } from "./actions";
+
+vi.mock("@/lib/api/marketplace-api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api/marketplace-api")>("@/lib/api/marketplace-api");
+  return {
+    ...actual,
+    updateProduct: vi.fn(async (args) => ({ id: args.id })),
+  };
+});
+
+import { updateProduct } from "@/lib/api/marketplace-api";
+
+describe("updateProductAction aggregate payload", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("forwards options, variants, media, and removed_variant_ids", async () => {
+    await updateProductAction({
+      storeId: "s1",
+      id: "p1",
+      title: "T",
+      handle: "t",
+      description: "",
+      status: "draft",
+      options: [{ name: "Size", values: ["M"] }],
+      variants: [{ key: "Size=M", price: "19.99", sku: "", stock: 0, weight: 0 }],
+      media: [],
+      removed_variant_ids: ["old-1"],
+      categories: [],
+    });
+    const call = (updateProduct as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.options).toHaveLength(1);
+    expect(call.variants[0].key).toBe("Size=M");
+    expect(call.removed_variant_ids).toEqual(["old-1"]);
+  });
+
+  it("maps variant_cap_exceeded backend error to form root error", async () => {
+    (updateProduct as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("variant_cap_exceeded: product has 501 variants, max is 500")
+    );
+    const result = await updateProductAction({
+      storeId: "s1", id: "p1", title: "T", handle: "t", description: "",
+      status: "draft", options: [], variants: [], media: [], removed_variant_ids: [], categories: [],
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "variant_cap_exceeded" },
+    });
+  });
+});
+```
+
+- [ ] **Step 2: Run test** — `cd apps/admin && npm run test -- actions` — expect FAIL.
+
+- [ ] **Step 3: Extend `updateProduct` client in `lib/api/marketplace-api.ts`** to accept `options`, `variants`, `media`, `removed_variant_ids` on the request body. The function is a thin wrapper around `fetchAdminApi("PATCH", ...)`.
+
+- [ ] **Step 4: Extend `updateProductAction` in `app/products/actions.ts`** to forward the new fields from `ProductFormValues` and to map typed backend error strings (`variant_cap_exceeded`, `handle_taken`, `option_value_duplicate`) to a structured `{ ok: false, error: { code, message } }` return so the form can surface them via `form.setError("root", ...)`.
+
+- [ ] **Step 5: Run test** — `cd apps/admin && npm run test -- actions` — expect PASS.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add apps/admin/app/products/actions.ts apps/admin/lib/api/marketplace-api.ts
@@ -1921,13 +2223,32 @@ test.describe("M7c variants flow", () => {
 
 - [ ] **Step 1: Write both test skeletons**
 - [ ] **Step 2: Seed fixtures (test images under `apps/admin/tests/fixtures/`)**
-- [ ] **Step 3: Run the suite locally against a running marketplace-api**
+- [ ] **Step 3: Start marketplace-api + admin in two terminals, then run the suite**
+
+Terminal 1 (marketplace-api):
 
 ```bash
+cd services/marketplace-api
+# Requires Postgres + GCS emulator running per services/marketplace-api/README.md
+make run
+# or: go run ./cmd/marketplace-api
+```
+
+Terminal 2 (admin):
+
+```bash
+cd apps/admin
+npm run dev
+```
+
+Terminal 3 (tests):
+
+```bash
+cd apps/admin
 npm run test:e2e -- products-variants-flow products-media-flow
 ```
 
-Both should PASS.
+Both should PASS. If marketplace-api fails to start, check `.env` and the Postgres connection string — same troubleshooting as M7a/M7b E2E setup.
 
 - [ ] **Step 4: Commit**
 
@@ -1944,13 +2265,22 @@ git commit -m "test(admin): Playwright E2E for M7c variants + media flows"
 
 **Scope:** Run the impeccable skill chain across every new merchant-facing surface. This is a **gate**, not a polish-if-time-permits step.
 
-- [ ] **Step 1: Run `critique` on each new screen**
+- [ ] **Step 1: Run `critique` on each new merchant-facing surface**
 
-```
-Invoke: critique skill on MediaTab, OptionsTab, VariantsTab, MediaCropDialog, VariantMatrixTable
-```
+Target list (invoke `critique` skill once per surface with the file path as the target):
 
-For each, record the 10-point score. Anything <7.5 goes back through `polish`/`arrange`/`typeset` before proceeding.
+1. `apps/admin/components/products/form/MediaTab.tsx` — rendered at `/products/:id` → Media tab
+2. `apps/admin/components/products/form/OptionsTab.tsx` — rendered at `/products/:id` → Options tab
+3. `apps/admin/components/products/form/VariantsTab.tsx` — rendered at `/products/:id` → Variants tab
+4. `apps/admin/components/products/media/MediaCropDialog.tsx` — full-panel crop workbench
+5. `apps/admin/components/products/media/MediaGrid.tsx` — sortable grid + `MediaCard`
+6. `apps/admin/components/products/media/MediaUploader.tsx` — dropzone + progress strip
+7. `apps/admin/components/products/options/OptionsEditor.tsx` — options list + chip values
+8. `apps/admin/components/products/variants/VariantMatrixTable.tsx` — inline-edit data table
+9. `apps/admin/components/products/variants/VariantBulkBar.tsx` — column bulk actions bar
+10. `apps/admin/components/products/variants/VariantImagePicker.tsx` — popover image assignment
+
+For each, record the 10-point `critique` score in a scratch doc `.planning/m7c-critique-scores.md`. Anything <7.5 goes back through `polish`/`arrange`/`typeset` before proceeding to Step 2.
 
 - [ ] **Step 2: Run `polish` on any component flagged**
 

@@ -228,9 +228,10 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Aggregate, er
 	mediaRows := make([]Media, 0, len(req.Media))
 	for _, m := range req.Media {
 		mediaRows = append(mediaRows, Media{
-			ID:         uuid.NewString(),
-			StorageKey: m.StorageKey,
-			URL:        m.URL,
+			ID:              uuid.NewString(),
+			StorageKey:      m.StorageKey,
+			GcsPathOriginal: m.StorageKey,
+			URL:             m.URL,
 			Alt:        m.Alt,
 			Position:   m.Position,
 			MediaType:  defaultMediaType(m.MediaType),
@@ -394,10 +395,11 @@ func (s *Service) ReplaceMedia(ctx context.Context, productID, storeID, tenantID
 	rows := make([]Media, 0, len(mediaInputs))
 	for _, m := range mediaInputs {
 		rows = append(rows, Media{
-			ID:         uuid.NewString(),
-			ProductID:  productID,
-			StorageKey: m.StorageKey,
-			URL:        m.URL,
+			ID:              uuid.NewString(),
+			ProductID:       productID,
+			StorageKey:      m.StorageKey,
+			GcsPathOriginal: m.StorageKey,
+			URL:             m.URL,
 			Alt:        m.Alt,
 			Position:   m.Position,
 			MediaType:  defaultMediaType(m.MediaType),

@@ -53,9 +53,10 @@ func (s *Service) AddMedia(ctx context.Context, req AddMediaRequest) (*Media, er
 	}
 
 	row := &Media{
-		ID:         uuid.NewString(),
-		ProductID:  req.ProductID,
-		StorageKey: req.StorageKey,
+		ID:              uuid.NewString(),
+		ProductID:       req.ProductID,
+		StorageKey:      req.StorageKey,
+		GcsPathOriginal: req.StorageKey,
 		URL:        req.URL,
 		Alt:        req.Alt,
 		Position:   req.Position,

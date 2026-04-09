@@ -56,6 +56,9 @@ func TestIntegration_Service_AddMedia_HappyPath(t *testing.T) {
 	if got == nil || got.ID == "" {
 		t.Fatal("expected returned media row")
 	}
+	if got.GcsPathOriginal != "k-happy" {
+		t.Fatalf("gcs_path_original = %q, want %q", got.GcsPathOriginal, "k-happy")
+	}
 	fresh, err := svc.Get(context.Background(), agg.Product.ID, storeID, tenantID)
 	if err != nil {
 		t.Fatalf("get: %v", err)

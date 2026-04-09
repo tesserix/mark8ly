@@ -138,7 +138,8 @@ type Media struct {
 	ProductID  string    `gorm:"column:product_id;type:uuid;not null"                     json:"product_id"`
 	VariantID  *string   `gorm:"column:variant_id;type:uuid"                              json:"variant_id,omitempty"`
 	URL        string    `gorm:"column:url;type:text;not null"                            json:"url"`
-	StorageKey string    `gorm:"column:storage_key;type:text;not null"                    json:"storage_key"`
+	StorageKey       string `gorm:"column:storage_key;type:text;not null"                    json:"storage_key"`
+	GcsPathOriginal  string `gorm:"column:gcs_path_original;type:text;not null"              json:"gcs_path_original"`
 	Alt        *string   `gorm:"column:alt;type:varchar(300)"                             json:"alt,omitempty"`
 	Position   int       `gorm:"column:position;not null;default:0"                       json:"position"`
 	MediaType  string    `gorm:"column:media_type;type:varchar(20);not null;default:image" json:"media_type"`

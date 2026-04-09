@@ -21,8 +21,13 @@ COPY --from=builder /out/migrate /usr/local/bin/migrate
 ENTRYPOINT ["/usr/local/bin/migrate"]
 
 # ─── runtime ────────────────────────────────────────────────────────────
+# Runtime image carries BOTH binaries — the server (default ENTRYPOINT)
+# and the migrate CLI at /usr/local/bin/migrate. The Helm chart's init
+# container overrides the entrypoint to call /usr/local/bin/migrate.
+# Mirrors platform-api's pattern of one image, two binaries.
 FROM alpine:3.19 AS runtime
 RUN apk add --no-cache ca-certificates wget
 COPY --from=builder /out/marketplace-api /usr/local/bin/marketplace-api
+COPY --from=builder /out/migrate /usr/local/bin/migrate
 EXPOSE 8091
 ENTRYPOINT ["/usr/local/bin/marketplace-api"]

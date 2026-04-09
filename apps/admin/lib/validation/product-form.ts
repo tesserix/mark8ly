@@ -41,7 +41,7 @@ export const productFormSchema = z.object({
     .max(100, "SKU is too long")
     .optional()
     .or(z.literal("")),
-  categoryIds: z.array(z.string().uuid()).default([]),
+  categoryIds: z.array(z.string().uuid()),
 });
 
 export type ProductFormValues = z.infer<typeof productFormSchema>;

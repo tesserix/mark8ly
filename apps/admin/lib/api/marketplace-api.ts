@@ -169,6 +169,207 @@ export async function listProducts(
   return (await res.json()) as ListProductsResponse;
 }
 
-// M7b will add: getProduct, createProduct, updateProduct, deleteProduct, copyProduct
-// M7b will add: listCategories, createCategory, updateCategory, deleteCategory
+// ─────────────────────────────────────────────────────────────────────────
+// M7b: product + category CRUD
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CreateProductVariantInput {
+  sku: string;
+  barcode?: string;
+  price: string;
+  compare_at_price?: string;
+  cost_price?: string;
+  currency_code: string;
+  weight_grams?: number;
+  inventory_quantity: number;
+  inventory_policy?: "deny" | "continue";
+  low_stock_threshold?: number;
+  option_values?: Array<{ option_name: string; value: string }>;
+  position?: number;
+}
+
+export interface CreateProductRequest {
+  handle?: string;
+  title: string;
+  description?: string;
+  status?: "draft" | "active" | "archived";
+  tags?: string[];
+  seo_title?: string;
+  seo_description?: string;
+  primary_category_id?: string;
+  options?: Array<{ name: string; values: string[] }>;
+  variants: CreateProductVariantInput[];
+  media?: Array<{
+    storage_key: string;
+    url: string;
+    alt?: string;
+    position?: number;
+    media_type?: "image" | "video";
+  }>;
+  category_ids?: string[];
+}
+
+export type UpdateProductRequest = Partial<CreateProductRequest>;
+
+export interface AdminCategory {
+  id: string;
+  store_id: string;
+  parent_id: string | null;
+  name: string;
+  slug: string;
+  description: string | null;
+  image_url: string | null;
+  position: number;
+  is_active: boolean;
+}
+
+export interface ListCategoriesResponse {
+  data: AdminCategory[];
+}
+
+/** Typed error returned from mutating endpoints. Callers pattern-match on `code`. */
+export interface MutationError {
+  code: string;
+  message: string;
+  field?: string;
+  details?: Record<string, unknown>;
+}
+
+export type MutationResult<T> = { ok: true; data: T } | { ok: false; error: MutationError };
+
+function commonHeaders(session: SessionHeaders): HeadersInit {
+  return {
+    "X-User-Id": session.userId,
+    "X-Tenant-Id": session.tenantId,
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+}
+
+async function parseMutationError(res: Response): Promise<MutationError> {
+  const body = (await res.json().catch(() => null)) as ApiError | null;
+  return {
+    code: body?.error ?? "unknown_error",
+    message: body?.message ?? `marketplace-api returned ${res.status}`,
+    field:
+      typeof body?.details?.field === "string"
+        ? (body.details.field as string)
+        : undefined,
+    details: body?.details,
+  };
+}
+
+export async function getProduct(
+  storeId: string,
+  productId: string,
+  session: SessionHeaders,
+): Promise<AdminProduct | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}`,
+    {
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+        Accept: "application/json",
+      },
+    },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: getProduct ${res.status}`);
+  }
+  return (await res.json()) as AdminProduct;
+}
+
+export async function createProduct(
+  storeId: string,
+  body: CreateProductRequest,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminProduct>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminProduct };
+}
+
+export async function updateProduct(
+  storeId: string,
+  productId: string,
+  body: UpdateProductRequest,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminProduct>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminProduct };
+}
+
+export async function deleteProduct(
+  storeId: string,
+  productId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}`,
+    {
+      method: "DELETE",
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+      },
+    },
+  );
+  if (res.status === 204 || res.ok) {
+    return { ok: true, data: true };
+  }
+  return { ok: false, error: await parseMutationError(res) };
+}
+
+export async function listCategories(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<AdminCategory[]> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/categories`,
+    {
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+        Accept: "application/json",
+      },
+    },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return [];
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: listCategories ${res.status}`);
+  }
+  const body = (await res.json()) as ListCategoriesResponse;
+  return body.data ?? [];
+}
+
 // M7c will add: uploadUrl, createMedia, updateMedia, deleteMedia, updateVariantBasics

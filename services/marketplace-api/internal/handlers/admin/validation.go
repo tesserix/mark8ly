@@ -72,10 +72,41 @@ type CreateMediaRequest struct {
 
 // UpdateMediaWireRequest is the wire body for PATCH /products/:id/media/:mediaId.
 type UpdateMediaWireRequest struct {
-	Alt       *string `json:"alt,omitempty"`
-	Position  *int    `json:"position,omitempty"`
-	URL       *string `json:"url,omitempty"`
-	VariantID *string `json:"variant_id,omitempty" binding:"omitempty,uuid"`
+	Alt        *string `json:"alt,omitempty"`
+	Position   *int    `json:"position,omitempty"`
+	URL        *string `json:"url,omitempty"`
+	VariantID  *string `json:"variant_id,omitempty" binding:"omitempty,uuid"`
+	StorageKey *string `json:"storage_key,omitempty"`
+}
+
+// CropBox is the pixel-space crop rectangle the frontend applied to the
+// pristine original image before uploading the cropped result.
+type CropBox struct {
+	X      int `json:"x" binding:"gte=0"`
+	Y      int `json:"y" binding:"gte=0"`
+	Width  int `json:"width" binding:"gt=0"`
+	Height int `json:"height" binding:"gt=0"`
+}
+
+// RecropMediaRequest is the wire body for
+// POST /products/:id/media/:mediaId/recrop. The crop_box + rotation are
+// metadata the client sends so the backend can log / audit the transform;
+// the actual pixel work happens in the browser.
+type RecropMediaRequest struct {
+	CropBox  CropBox `json:"crop_box" binding:"required"`
+	Rotation int     `json:"rotation"`
+	Filename string  `json:"filename" binding:"omitempty,max=200"`
+}
+
+// RecropMediaResponse is the wire response for the recrop endpoint.
+// The client downloads source_original_url, applies the crop in a canvas,
+// PUTs the cropped blob to upload_url, then PATCHes the media row with
+// new_storage_key to commit. storage_key_original never moves.
+type RecropMediaResponse struct {
+	SourceOriginalURL string    `json:"source_original_url"`
+	UploadURL         string    `json:"upload_url"`
+	NewStorageKey     string    `json:"new_storage_key"`
+	ExpiresAt         time.Time `json:"expires_at"`
 }
 
 // toServiceCreateCategory maps the wire create body to the category
@@ -166,10 +197,11 @@ func toServiceUpdateMedia(req UpdateMediaWireRequest, productID, mediaID, storeI
 		MediaID:   mediaID,
 		StoreID:   storeID,
 		TenantID:  tenantID,
-		Alt:       req.Alt,
-		Position:  req.Position,
-		URL:       req.URL,
-		VariantID: req.VariantID,
+		Alt:        req.Alt,
+		Position:   req.Position,
+		URL:        req.URL,
+		VariantID:  req.VariantID,
+		StorageKey: req.StorageKey,
 	}
 }
 

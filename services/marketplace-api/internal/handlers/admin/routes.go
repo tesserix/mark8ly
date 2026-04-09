@@ -72,6 +72,9 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			mediaGroup.DELETE("/:mediaId",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
 				deps.MediaHandler.Delete)
+			mediaGroup.POST("/:mediaId/recrop",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+				deps.MediaHandler.Recrop)
 		}
 	}
 }

@@ -3,15 +3,99 @@
 package admin_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/category"
+	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/media"
+	"github.com/mark8ly/marketplace-api/internal/outbox"
+	"github.com/mark8ly/marketplace-api/internal/product"
+	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
+
+// fakeSigningUploader wraps FakeUploader so it also satisfies both
+// media.SignedURLGenerator and media.SignedReadURLGenerator, which the
+// recrop handler type-asserts against. Real GCS is obviously not
+// involved — the returned URLs are deterministic fakes for assertions.
+type fakeSigningUploader struct {
+	inner *media.FakeUploader
+}
+
+func (f *fakeSigningUploader) Verify(ctx context.Context, key string) (*media.Attrs, error) {
+	return f.inner.Verify(ctx, key)
+}
+
+func (f *fakeSigningUploader) Register(a media.Attrs) { f.inner.Register(a) }
+
+func (f *fakeSigningUploader) SignedUploadURL(_ context.Context, key, _ string, expires time.Duration) (string, time.Time, error) {
+	return "https://fake.gcs/put/" + key, time.Now().Add(expires), nil
+}
+
+func (f *fakeSigningUploader) SignedReadURL(_ context.Context, key string, expires time.Duration) (string, time.Time, error) {
+	return "https://fake.gcs/get/" + key, time.Now().Add(expires), nil
+}
+
+// setupTestRouterWithSigningUploader is like setupTestRouter but wires
+// a uploader that implements SignedURLGenerator + SignedReadURLGenerator
+// so the recrop handler's type assertions succeed.
+func setupTestRouterWithSigningUploader(t *testing.T) (*testEnv, *fakeSigningUploader) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	db := testdb.NewDB(t, productsTables...)
+
+	productRepo := product.NewRepository(db)
+	categoryRepo := category.NewRepository(db)
+	outboxRepo := outbox.NewRepository(db)
+	storesRepo := stores.NewRepository(db)
+
+	signer := &fakeSigningUploader{inner: media.NewFakeUploader()}
+	fga := authz.NewFakeClient()
+
+	svc := product.NewService(product.Config{
+		DB:         db,
+		Repo:       productRepo,
+		StoresRepo: storesRepo,
+		OutboxRepo: outboxRepo,
+		Uploader:   signer,
+	})
+	catSvc := category.NewService(category.Config{
+		DB:         db,
+		Repo:       categoryRepo,
+		OutboxRepo: outboxRepo,
+	})
+	storeMW := stores.StoreMiddleware(stores.MiddlewareConfig{
+		Repo:   storesRepo,
+		Client: stubClient{},
+		Flight: &singleflight.Group{},
+	})
+	authzMW := authz.NewMiddleware(fga, nil)
+	handler := admin.NewProductHandler(svc, categoryRepo, nil)
+	catHandler := admin.NewCategoryHandler(catSvc, categoryRepo, nil)
+	variantHandler := admin.NewVariantHandler(svc, nil)
+	mediaHandler := admin.NewMediaHandler(svc, signer, nil)
+
+	r := gin.New()
+	admin.RegisterAdmin(r.Group("/api/v1"), admin.Deps{
+		ProductHandler:   handler,
+		CategoryHandler:  catHandler,
+		VariantHandler:   variantHandler,
+		MediaHandler:     mediaHandler,
+		StoresMiddleware: storeMW,
+		AuthzMiddleware:  authzMW,
+		InternalSecret:   "",
+	})
+	return &testEnv{router: r, uploader: signer.inner, fga: fga, db: db}, signer
+}
 
 func mediaURL(storeID, productID string) string {
 	return "/api/v1/admin/stores/" + storeID + "/products/" + productID + "/media"
@@ -233,6 +317,135 @@ func TestAPI_AdminMedia_Patch_UpdatesVariantID(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("variant_id update not visible: %s", w2.Body.String())
+	}
+}
+
+// ---------------- recrop tests (M7c gaps #3 + #8) ----------------
+
+func recropURL(storeID, productID, mediaID string) string {
+	return mediaURL(storeID, productID) + "/" + mediaID + "/recrop"
+}
+
+func TestAPI_AdminMedia_Recrop_ReturnsSignedUrlsPreservingOriginal(t *testing.T) {
+	env, _ := setupTestRouterWithSigningUploader(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+
+	pid, _, _ := seedProductViaService(t, env, storeID, tenantID)
+	mid := createMediaHTTP(t, env, storeID, tenantID, userID, pid, "orig-key-123")
+
+	body := map[string]any{
+		"crop_box": map[string]any{"x": 10, "y": 20, "width": 300, "height": 400},
+		"rotation": 0,
+	}
+	w := request(t, env.router, http.MethodPost, recropURL(storeID, pid, mid), body, authHeaders(userID, tenantID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["source_original_url"] == nil || resp["source_original_url"] == "" {
+		t.Fatalf("missing source_original_url: %s", w.Body.String())
+	}
+	if resp["upload_url"] == nil || resp["upload_url"] == "" {
+		t.Fatalf("missing upload_url: %s", w.Body.String())
+	}
+	newKey, _ := resp["new_storage_key"].(string)
+	if newKey == "" || newKey == "orig-key-123" {
+		t.Fatalf("new_storage_key must differ from original, got %q", newKey)
+	}
+
+	// DB row must be unchanged — recrop doesn't persist.
+	var row product.Media
+	if err := env.db.Where("id = ?", mid).First(&row).Error; err != nil {
+		t.Fatalf("reload media: %v", err)
+	}
+	if row.StorageKey != "orig-key-123" {
+		t.Fatalf("storage_key mutated prematurely: %q", row.StorageKey)
+	}
+	if row.GcsPathOriginal != "orig-key-123" {
+		t.Fatalf("gcs_path_original mutated: %q", row.GcsPathOriginal)
+	}
+}
+
+func TestAPI_AdminMedia_Recrop_AfterCommit_KeepsOriginalPinned(t *testing.T) {
+	env, _ := setupTestRouterWithSigningUploader(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+
+	pid, _, _ := seedProductViaService(t, env, storeID, tenantID)
+	mid := createMediaHTTP(t, env, storeID, tenantID, userID, pid, "orig-commit")
+
+	// Recrop to obtain a new_storage_key.
+	body := map[string]any{
+		"crop_box": map[string]any{"x": 0, "y": 0, "width": 100, "height": 100},
+		"rotation": 0,
+	}
+	w := request(t, env.router, http.MethodPost, recropURL(storeID, pid, mid), body, authHeaders(userID, tenantID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("recrop status = %d, %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	newKey := resp["new_storage_key"].(string)
+
+	// Commit via PATCH with new storage_key.
+	w2 := request(t, env.router, http.MethodPatch, mediaURL(storeID, pid)+"/"+mid,
+		map[string]any{"storage_key": newKey}, authHeaders(userID, tenantID))
+	if w2.Code != http.StatusNoContent {
+		t.Fatalf("patch commit status = %d, %s", w2.Code, w2.Body.String())
+	}
+
+	var row product.Media
+	if err := env.db.Where("id = ?", mid).First(&row).Error; err != nil {
+		t.Fatalf("reload media: %v", err)
+	}
+	if row.StorageKey != newKey {
+		t.Fatalf("storage_key = %q, want %q", row.StorageKey, newKey)
+	}
+	if row.GcsPathOriginal != "orig-commit" {
+		t.Fatalf("gcs_path_original drifted: %q, want %q", row.GcsPathOriginal, "orig-commit")
+	}
+}
+
+func TestAPI_AdminMedia_Recrop_RejectsOtherTenant_404(t *testing.T) {
+	env, _ := setupTestRouterWithSigningUploader(t)
+	storeA, tenantA := seedStoreRow(t, env.db, "")
+	userA := uuid.NewString()
+	env.fga.Grant(userA, authz.RoleAdmin, tenantA)
+	pidA, _, _ := seedProductViaService(t, env, storeA, tenantA)
+	midA := createMediaHTTP(t, env, storeA, tenantA, userA, pidA, "orig-tenantA")
+
+	// Caller from tenant B with admin role in tenant B.
+	_, tenantB := seedStoreRow(t, env.db, "")
+	userB := uuid.NewString()
+	env.fga.Grant(userB, authz.RoleAdmin, tenantB)
+
+	body := map[string]any{
+		"crop_box": map[string]any{"x": 0, "y": 0, "width": 10, "height": 10},
+	}
+	w := request(t, env.router, http.MethodPost, recropURL(storeA, pidA, midA), body, authHeaders(userB, tenantB))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404 for cross-tenant, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAPI_AdminMedia_Recrop_WithFakeUploader_Returns501(t *testing.T) {
+	env := setupTestRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+	pid, _, _ := seedProductViaService(t, env, storeID, tenantID)
+	mid := createMediaHTTP(t, env, storeID, tenantID, userID, pid, "k-recrop-501")
+
+	body := map[string]any{
+		"crop_box": map[string]any{"x": 0, "y": 0, "width": 1, "height": 1},
+	}
+	w := request(t, env.router, http.MethodPost, recropURL(storeID, pid, mid), body, authHeaders(userID, tenantID))
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, %s", w.Code, w.Body.String())
 	}
 }
 

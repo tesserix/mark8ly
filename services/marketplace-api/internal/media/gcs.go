@@ -93,8 +93,33 @@ func (u *GCSUploader) SignedUploadURL(ctx context.Context, key, contentType stri
 	return url, expiresAt, nil
 }
 
+// SignedReadURLGenerator is the interface the /media/:mediaId/recrop
+// handler uses to hand the client a short-lived GET URL for the
+// pristine original blob. Real GCSUploader implements it; the dev
+// FakeUploader does not (recrop returns 501 in dev).
+type SignedReadURLGenerator interface {
+	SignedReadURL(ctx context.Context, key string, expires time.Duration) (string, time.Time, error)
+}
+
+// SignedReadURL generates a V4 signed GET URL for the given object key.
+// Used by the recrop flow to let the client download the pristine
+// original so it can re-crop against it in the browser.
+func (u *GCSUploader) SignedReadURL(ctx context.Context, key string, expires time.Duration) (string, time.Time, error) {
+	expiresAt := time.Now().Add(expires)
+	url, err := u.bucket.SignedURL(key, &storage.SignedURLOptions{
+		Method:  "GET",
+		Expires: expiresAt,
+		Scheme:  storage.SigningSchemeV4,
+	})
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("media: signed read url: %w", err)
+	}
+	return url, expiresAt, nil
+}
+
 // Compile-time checks.
 var (
-	_ Uploader           = (*GCSUploader)(nil)
-	_ SignedURLGenerator = (*GCSUploader)(nil)
+	_ Uploader               = (*GCSUploader)(nil)
+	_ SignedURLGenerator     = (*GCSUploader)(nil)
+	_ SignedReadURLGenerator = (*GCSUploader)(nil)
 )

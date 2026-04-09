@@ -82,14 +82,15 @@ func (s *Service) AddMedia(ctx context.Context, req AddMediaRequest) (*Media, er
 // UpdateMediaRequest carries the non-nil fields to apply to a single
 // product_media row.
 type UpdateMediaRequest struct {
-	ProductID string
-	MediaID   string
-	StoreID   string
-	TenantID  string
-	Alt       *string
-	Position  *int
-	URL       *string
-	VariantID *string
+	ProductID  string
+	MediaID    string
+	StoreID    string
+	TenantID   string
+	Alt        *string
+	Position   *int
+	URL        *string
+	VariantID  *string
+	StorageKey *string
 }
 
 // UpdateMedia applies non-nil fields to the given media row. Tenant/
@@ -107,6 +108,12 @@ func (s *Service) UpdateMedia(ctx context.Context, req UpdateMediaRequest) error
 	}
 	if req.VariantID != nil {
 		fields["variant_id"] = *req.VariantID
+	}
+	if req.StorageKey != nil {
+		// storage_key updates commit a fresh recrop upload. gcs_path_original
+		// is intentionally NOT touched so future recrops still read the
+		// pristine source.
+		fields["storage_key"] = *req.StorageKey
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

@@ -109,6 +109,57 @@ func (h *MediaHandler) Patch(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// Recrop handles POST /admin/stores/:storeId/products/:id/media/:mediaId/recrop.
+// It loads the target media row, generates a new content-addressed
+// storage key for the cropped result, and returns signed URLs the
+// client uses to download the pristine original and upload the cropped
+// blob directly to GCS. The row is not mutated; the client commits via
+// PATCH /media/:mediaId with the returned new_storage_key.
+//
+// Returns 501 Not Implemented when the wired uploader does not
+// implement the signing interfaces (dev FakeUploader).
+func (h *MediaHandler) Recrop(c *gin.Context) {
+	storeID := c.Param("storeId")
+	productID := c.Param("id")
+	mediaID := c.Param("mediaId")
+	tenantID := c.GetString("tenant_id")
+
+	var req RecropMediaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+
+	putSigner, okPut := h.uploader.(media.SignedURLGenerator)
+	getSigner, okGet := h.uploader.(media.SignedReadURLGenerator)
+	if !okPut || !okGet {
+		c.AbortWithStatusJSON(http.StatusNotImplemented, gin.H{
+			"error":   "not_implemented",
+			"message": "signed recrop URLs require a real GCS bucket",
+		})
+		return
+	}
+
+	svcReq := product.RecropMediaRequest{
+		ProductID: productID,
+		MediaID:   mediaID,
+		StoreID:   storeID,
+		TenantID:  tenantID,
+		Filename:  req.Filename,
+	}
+	resp, err := h.svc.RecropMedia(c.Request.Context(), svcReq, putSigner, getSigner, h.signedURLTTL)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, RecropMediaResponse{
+		SourceOriginalURL: resp.SourceOriginalURL,
+		UploadURL:         resp.UploadURL,
+		NewStorageKey:     resp.NewStorageKey,
+		ExpiresAt:         resp.ExpiresAt,
+	})
+}
+
 // Delete handles DELETE /admin/stores/:storeId/products/:id/media/:mediaId.
 func (h *MediaHandler) Delete(c *gin.Context) {
 	storeID := c.Param("storeId")

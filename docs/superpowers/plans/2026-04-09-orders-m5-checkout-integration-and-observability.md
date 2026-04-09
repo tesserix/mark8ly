@@ -155,17 +155,17 @@ func StoreHeaderMiddleware(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Look up the store's tenant_id + prefix + currency.
+		// Look up the store's tenant_id + slug (for order number prefix) + currency.
 		// This is a small query; cache later if it shows up in profiling.
 		var meta struct {
-			TenantID    uuid.UUID
-			StorePrefix string
-			Currency    string
+			TenantID uuid.UUID
+			Slug     string
+			Currency string
 		}
 		err = db.WithContext(c.Request.Context()).Raw(`
-			SELECT tenant_id, order_prefix AS store_prefix, currency_code AS currency
+			SELECT tenant_id, slug, currency_code AS currency
 			FROM stores
-			WHERE id = ? AND deleted_at IS NULL
+			WHERE id = ?
 		`, storeID).Scan(&meta).Error
 		if err != nil || meta.TenantID == uuid.Nil {
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
@@ -175,9 +175,19 @@ func StoreHeaderMiddleware(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Derive the 3-char order number prefix from slug. If slug is shorter
+		// than 3 chars, left-pad with 'X'. See Orders M1 plan decision 5.
+		prefix := strings.ToUpper(meta.Slug)
+		for len(prefix) < 3 {
+			prefix = "X" + prefix
+		}
+		if len(prefix) > 3 {
+			prefix = prefix[:3]
+		}
+
 		c.Set("store_id", storeID)
 		c.Set("tenant_id", meta.TenantID)
-		c.Set("store_prefix", meta.StorePrefix)
+		c.Set("store_prefix", prefix)
 		c.Set("currency", meta.Currency)
 		c.Next()
 	}
@@ -198,14 +208,14 @@ type storefrontHandler struct {
 }
 ```
 
-Note: the middleware assumes a `stores` table with `order_prefix` and `currency_code` columns exists. If products slice 1 has not landed these columns, the lookup needs to be adjusted to whatever shape products ships. Task 0 step 5 implicitly verifies the network path; verify the table shape in Task 1 step 1.5:
+Note: the middleware reads `tenant_id`, `slug`, and `currency_code` from the `stores` projection that products M2 shipped. There is **no** `order_prefix` column on `stores`; the 3-char prefix is derived from `slug` in the middleware (see Orders M1 plan decision 5). The `stores` table has no `deleted_at` column in the products M2 shape — lookups are unconditional.
 
-- [ ] **Step 1.5: Verify the `stores` table shape**
+- [ ] **Step 1.5: Verify the `stores` table shape matches expectations**
 
 ```bash
 psql -h localhost -U dev -d marketplace_db -c '\d stores'
 ```
-Expected: columns include some equivalent of `tenant_id`, `order_prefix` (or similar), `currency_code`. If the column names differ, adapt the middleware query. If the table doesn't exist at all, products scaffolding is incomplete — **STOP** and file a follow-up.
+Expected: columns include `id`, `tenant_id`, `slug`, `currency_code`. If `slug` or `currency_code` is missing, products M2 has drifted from the expected shape — **STOP** and investigate. If a `deleted_at` column unexpectedly exists on `stores`, the middleware query should add `WHERE deleted_at IS NULL`.
 
 - [ ] **Step 2: Build**
 
@@ -599,14 +609,14 @@ import (
 // Orders groups all order-related metrics so they can be injected into services
 // without importing the package directly (testability).
 type Orders struct {
-	CreateDuration          *prometheus.HistogramVec
-	StateTransitionTotal    *prometheus.CounterVec
-	RefundRecordedTotal     *prometheus.CounterVec
-	DocumentSeqContention   *prometheus.HistogramVec
-	OutboxPublishTotal      *prometheus.CounterVec
-	OutboxDeadLetteredTotal *prometheus.CounterVec
-	OutboxPendingRows       prometheus.Gauge
-	RecoveryEmailSentTotal  *prometheus.CounterVec
+	CreateDuration         *prometheus.HistogramVec
+	StateTransitionTotal   *prometheus.CounterVec
+	RefundRecordedTotal    *prometheus.CounterVec
+	DocumentSeqContention  *prometheus.HistogramVec
+	OutboxPublishTotal     *prometheus.CounterVec
+	OutboxErroredRows      prometheus.Gauge // replaces OutboxDeadLetteredTotal
+	OutboxPendingRows      prometheus.Gauge
+	RecoveryEmailSentTotal *prometheus.CounterVec
 }
 
 // NewOrders constructs the metric collectors WITHOUT registering them.
@@ -634,15 +644,15 @@ func NewOrders() *Orders {
 		}, []string{"kind"}),
 		OutboxPublishTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "outbox_publish_total",
-			Help: "Outbox drainer publish attempts by topic and outcome.",
-		}, []string{"topic", "outcome"}),
-		OutboxDeadLetteredTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "outbox_dead_lettered_total",
-			Help: "Outbox rows dead-lettered after max attempts.",
-		}, []string{"topic"}),
+			Help: "Outbox drainer publish attempts by event_type and outcome.",
+		}, []string{"event_type", "outcome"}),
+		OutboxErroredRows: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "outbox_errored_rows",
+			Help: "Outbox rows with error set and still unpublished, sampled on each drain cycle. Replaces the dead-letter counter from the original M5 design; the shared outbox_events schema has no attempts/dead_lettered_at columns so we report the error backlog as a gauge instead.",
+		}),
 		OutboxPendingRows: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "outbox_pending_rows",
-			Help: "Outbox backlog depth sampled on each drain cycle.",
+			Help: "Outbox backlog depth (rows where published_at IS NULL), sampled on each drain cycle.",
 		}),
 		RecoveryEmailSentTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "abandoned_cart_recovery_sent_total",
@@ -655,7 +665,7 @@ func NewOrders() *Orders {
 func (o *Orders) Register(reg prometheus.Registerer) error {
 	collectors := []prometheus.Collector{
 		o.CreateDuration, o.StateTransitionTotal, o.RefundRecordedTotal,
-		o.DocumentSeqContention, o.OutboxPublishTotal, o.OutboxDeadLetteredTotal,
+		o.DocumentSeqContention, o.OutboxPublishTotal, o.OutboxErroredRows,
 		o.OutboxPendingRows, o.RecoveryEmailSentTotal,
 	}
 	for _, c := range collectors {
@@ -692,7 +702,7 @@ func TestOrdersMetrics_RegisterAll(t *testing.T) {
 	m.RefundRecordedTotal.WithLabelValues("false", "ok").Inc()
 	m.DocumentSeqContention.WithLabelValues("order").Observe(0.001)
 	m.OutboxPublishTotal.WithLabelValues("order.placed", "ok").Inc()
-	m.OutboxDeadLetteredTotal.WithLabelValues("order.placed").Inc()
+	m.OutboxErroredRows.Set(0)
 	m.OutboxPendingRows.Set(5)
 	m.RecoveryEmailSentTotal.WithLabelValues("ok").Inc()
 
@@ -705,7 +715,7 @@ func TestOrdersMetrics_RegisterAll(t *testing.T) {
 	}
 	require.True(t, names["order_create_duration_seconds"])
 	require.True(t, names["order_state_transition_total"])
-	require.True(t, names["outbox_dead_lettered_total"])
+	require.True(t, names["outbox_errored_rows"])
 	require.True(t, names["outbox_pending_rows"])
 }
 ```
@@ -803,7 +813,13 @@ if d.metrics != nil {
 
 // When dead-lettering:
 if d.metrics != nil {
-    d.metrics.OutboxDeadLetteredTotal.WithLabelValues(row.Topic).Inc()
+    // Replace the old per-row dead-letter counter bump with a gauge sample of
+    // unpublished-with-error rows at the end of each drain cycle:
+    var errored int64
+    tx.Model(&outbox.OutboxEvent{}).
+        Where("published_at IS NULL AND error IS NOT NULL").
+        Count(&errored)
+    d.metrics.OutboxErroredRows.Set(float64(errored))
 }
 ```
 
@@ -922,7 +938,7 @@ git commit -m "test(marketplace-api): orders metrics emission integration tests"
 # and asserts the final DB state.
 #
 # Prerequisites: marketplace_db migrated, FGA store bootstrapped, a stores row
-# exists with a known id + order_prefix + currency_code, and an admin user is
+# exists with a known id + slug + currency_code, and an admin user is
 # granted the relevant FGA permissions.
 
 set -euo pipefail
@@ -1030,7 +1046,7 @@ Expected: all tests from products + orders M1/M2/M3/M4/M5 PASS.
 ```bash
 MODE=both go run ./cmd/marketplace-api/ &
 sleep 2
-curl -s localhost:8087/metrics | grep -E 'order_create_duration_seconds|order_state_transition_total|order_refund_recorded_total|order_number_seq_contention_seconds|outbox_publish_total|outbox_dead_lettered_total|outbox_pending_rows|abandoned_cart_recovery_sent_total' | awk '{print $1}' | sort -u
+curl -s localhost:8087/metrics | grep -E 'order_create_duration_seconds|order_state_transition_total|order_refund_recorded_total|order_number_seq_contention_seconds|outbox_publish_total|outbox_errored_rows|outbox_pending_rows|abandoned_cart_recovery_sent_total' | awk '{print $1}' | sort -u
 kill %1
 ```
 Expected: all eight metric names listed.

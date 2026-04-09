@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Land the `0002_orders_initial` migration (nine tables: orders, order_items, order_addresses, order_events, returns, return_items, abandoned_carts, document_number_seq, pending_events), the matching GORM models, and the atomic `document_number_seq` upsert helper — gated by a 50-concurrent-goroutine benchmark proving p99 full-create-transaction latency stays under 50ms on a db-f1-micro-equivalent Postgres. No business logic, no HTTP, no state machine beyond raw CHECK constraints. The exit gate of this milestone is a hard fork: if the benchmark fails, the sequencing strategy is reworked before any other orders milestone starts.
+**Goal:** Land the `000002_orders_initial` migration (**eight tables**: orders, order_items, order_addresses, order_events, returns, return_items, abandoned_carts, document_number_seq), the matching GORM models, and the atomic `document_number_seq` upsert helper — gated by a 50-concurrent-goroutine benchmark proving p99 full-create-transaction latency stays under 50ms on a db-f1-micro-equivalent Postgres. No business logic, no HTTP, no state machine beyond raw CHECK constraints. The exit gate of this milestone is a hard fork: if the benchmark fails, the sequencing strategy is reworked before any other orders milestone starts.
 
-**Architecture:** Migration-first. Nine tables with full constraints, partial indexes for the hot query paths (tab list with `(store_id, status, placed_at DESC)`, prefix search via `varchar_pattern_ops` B-tree, outbox drainer via partial index on unpublished rows). GORM models mirror the schema 1:1 with `gorm:"column:..."` tags. Atomic document number generation via single-statement `INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING` — the row lock is held for microseconds, not across the create transaction. Products slice 1 is a hard prerequisite: this plan depends on the `marketplace-api` service binary, `pkg/db`, `pkg/migrate`, `pkg/testdb`, the `0000_extensions` migration (for `pg_trgm`), and the shared `set_updated_at()` trigger function existing in `marketplace_db`.
+> **Revision note (2026-04-09 post-products-M2):** Products M2 landed the v1.2 spec revisions including the shared `outbox_events` and `idempotency_keys` tables (§14.1, §14.6, §14.7). Orders does **not** create its own outbox table — the drainer work in M2 targets the existing `outbox_events`. This plan was originally written assuming a parallel `pending_events` table; those references have been removed. The plan's original eight-table-plus-outbox shape collapses to the current eight-table shape.
+
+**Architecture:** Migration-first. Eight tables with full constraints, partial indexes for the hot query paths (tab list with `(store_id, status, placed_at DESC)`, prefix search via `varchar_pattern_ops` B-tree). GORM models mirror the schema 1:1 with `gorm:"column:..."` tags. Atomic document number generation via single-statement `INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING` — the row lock is held for microseconds, not across the create transaction. Products slice 1 is a hard prerequisite: this plan depends on the `marketplace-api` service binary, `pkg/db`, `pkg/migrate`, `pkg/testdb`, the shared `set_updated_at()` trigger function, the `stores` projection, and the shared `outbox_events` / `idempotency_keys` tables — all of which ship in the single `000001_products_initial` migration on main.
 
 **Tech Stack:** Go 1.26, GORM v1.25, Postgres 15, golang-migrate, testify, `github.com/shopspring/decimal`, `github.com/google/uuid`. No new external dependencies beyond what Products slice 1 already vendors.
 
@@ -14,7 +16,7 @@
 - Order state machine Go type + exhaustive transition tests → M2
 - Repository query methods beyond raw CRUD → M2
 - `order.Service`, `return.Service`, `abandoned_cart.Service` → M2
-- Outbox drainer goroutine → M2 (the `pending_events` table lands here, the drainer does not)
+- Outbox drainer goroutine → M2 (lives in `internal/outbox/`, consumes the existing shared `outbox_events` table)
 - FGA model additions → M3
 - HTTP handlers, DTOs, error envelope codes → M4
 - Storefront checkout integration → M5
@@ -24,31 +26,32 @@
 
 ## Hard prerequisites from Products slice 1
 
-Orders M1 needs only **Products M1 (service scaffold)** and **Products M2 (schema baseline with extensions + the shared trigger function)**. It does NOT depend on Products M3–M7. The orders branch is stacked on the products branch — when products M1+M2 merge to main, orders M1 can rebase off main cleanly.
+Orders M1 needs **Products M1 (service scaffold) + Products M2 (schema baseline with v1.2 shared primitives)**. Products M2 merged to main in PR #4 and shipped one fat migration `000001_products_initial.up.sql` containing the products domain plus shared infrastructure. Orders M1 can rebase off main cleanly now.
 
-Before Task 1 runs, these must exist in the working tree:
+Before Task 1 runs, these must exist in the working tree (verified by Task 0):
 
 1. **(Products M1)** `services/marketplace-api/` with `cmd/marketplace-api/main.go`, `cmd/migrate/main.go`, `pkg/db`, `pkg/migrate`, `pkg/testdb`, `migrations.go` with `go:embed migrations/*.sql`.
 2. **(Products M1)** `marketplace_db` Postgres database exists in local dev (`docker-compose up` spins it up) and migrates cleanly.
-3. **(Products M2)** `services/marketplace-api/migrations/0000_extensions.up.sql` exists and contains `CREATE EXTENSION IF NOT EXISTS pg_trgm;`. Orders M1 **hard-depends on this** — it does not conditionally create the extension.
-4. **(Products M2)** `services/marketplace-api/migrations/0001_products_initial.up.sql` exists and defines the shared `set_updated_at()` trigger function. Orders M1 **reuses** this function and does not redefine it.
-5. **(Products M1)** CI workflow runs `go test ./...` for `services/marketplace-api` against a real Postgres 15 container. This plan adds tests to the same module and relies on the same CI path — no CI config changes in this plan.
+3. **(Products M2)** `services/marketplace-api/migrations/000001_products_initial.up.sql` exists and defines: the shared `set_updated_at()` trigger function, the `stores` read-only projection, the `store_watermarks` table, the `outbox_events` table (aggregate/event_type shape, not pending_events), and the `idempotency_keys` table. Orders M1 **reuses all of these** — it does not redefine any.
+4. **(Products M2)** Postgres 13+ built-in `gen_random_uuid()` is callable in `marketplace_db`. Products does not enable `pgcrypto` explicitly — the built-in is relied upon. Orders uses the same.
+5. **(Products M2)** GORM packages `internal/outbox` and `internal/idempotency` exist with `OutboxEvent` and `IdempotencyKey` model structs. Orders M2 writes to the `outbox_events` table via these existing types (extended with new aggregate/event_type constants), and Orders M4 uses `idempotency_keys` for the refund endpoint's `Idempotency-Key` header.
+6. **(Products M1)** CI workflow runs `go test ./...` for `services/marketplace-api` against a real Postgres 15 container. No CI config changes in this plan.
 
-**Task 0 verifies all five before any new files are touched.** If any is missing, pause and ask the human: either the upstream products milestone hasn't landed yet on the branch this is stacked on, or the stack base is wrong.
+**Task 0 verifies all six before any new files are touched.** If any is missing, pause and ask the human — do not patch around a missing prereq.
 
 ---
 
 ## Decisions locked for this milestone
 
-1. **Migration filename:** `0002_orders_initial.up.sql` / `.down.sql`. Sequential after products' `0001_products_initial`. No gap for a hypothetical future migration between them.
-2. **Nine tables in one transaction.** The whole migration is wrapped in `BEGIN; ... COMMIT;` so a mid-migration failure rolls back cleanly. The `down` migration drops tables in reverse-dependency order inside the same pattern.
-3. **No seed data.** Test fixtures live in test code, not in the migration.
-4. **Store prefix source deferred.** §13 open question 1 of the spec is not resolved in M1. The GORM models accept `order_number` as an opaque `varchar(40)` string. Order number *generation* (which needs the prefix) is implemented in M2. M1 round-trip tests insert hand-crafted order numbers like `M-TEST-260409-00001`.
-5. **`document_number_seq` helper is a pure SQL function wrapped by a tiny Go helper.** The Go helper — `order.NextDocumentNumber(ctx, tx, storeID uuid.UUID, kind string, day time.Time) (int, error)` — lives in `internal/order/number.go` and is used in M1 **only by the benchmark test**. It will be reused by `order.Service.Create` in M2. Placing the helper in `internal/order/` now (vs a shared `internal/sequence/` package) is intentional: orders is the first caller and the only slice-1 caller. If returns or another module needs it later, promote to `internal/sequence/` — but do not pre-abstract.
-6. **Benchmark is the hard exit gate.** If the 50-goroutine test fails or p99 exceeds 50ms on the CI Postgres container, M1 does not ship. The two fallback strategies — per-store Postgres sequence created at store onboarding, or Redis counter — are documented in §11 risks of the spec. The decision to switch is escalated to the human; this plan does not pre-authorize it.
-7. **`idempotency_key` is `NOT NULL`.** Every order must carry one. Slice 1's only create path is the storefront checkout, which will always supply `cart_session_id`. A "synthetic" idempotency key for test fixtures is `fmt.Sprintf("test-%s", uuid.NewString())`.
-8. **`refunded_amount DEFAULT 0`** and the `CHECK (refunded_amount <= grand_total)` constraint land in M1. The atomic refund `UPDATE` statement is implemented in M2; M1 only proves the column + constraint exist and reject bad data.
-9. **Partial index on `pending_events`** lands in M1 even though no rows are written yet. Cheaper to ship the index with the table than to alter later.
+1. **Migration filename:** `000002_orders_initial.up.sql` / `.down.sql`. Six-digit prefix matches products' `000001_products_initial` convention shipped on main.
+2. **Eight tables in one transaction.** The whole migration is wrapped in `BEGIN; ... COMMIT;` so a mid-migration failure rolls back cleanly. The `down` migration drops tables in reverse-dependency order inside the same pattern. **No `pending_events` or outbox table is created** — orders writes to the existing shared `outbox_events` table (products-owned) in M2.
+3. **Shared primitives reused, not duplicated.** `outbox_events`, `idempotency_keys`, `stores`, `store_watermarks`, and the `set_updated_at()` trigger function all already exist on main (products M2). Orders M1 does not redefine any of them; it only adds new aggregate/event_type constants on the `outbox_events` shape in a subsequent milestone (M2).
+4. **No seed data.** Test fixtures live in test code, not in the migration.
+5. **Order number prefix is derived from `stores.slug`.** §13 open question 1 of the spec is resolved: the order number format is `M-{strings.ToUpper(slug[:3])}-{yymmdd}-{seq:05}`. If `len(slug) < 3`, the helper left-pads with `X` to reach 3 characters (e.g. `a` → `AXX`). The GORM models accept `order_number` as an opaque `varchar(40)` string; order number *generation* lives in M2. M1 round-trip tests insert hand-crafted order numbers like `M-TST-260409-00001`.
+6. **`document_number_seq` helper is a pure SQL function wrapped by a tiny Go helper.** The Go helper — `order.NextDocumentNumber(ctx, tx, storeID uuid.UUID, kind string, day time.Time) (int, error)` — lives in `internal/order/number.go` and is used in M1 **only by the benchmark test**. It will be reused by `order.Service.Create` in M2. Placing the helper in `internal/order/` now (vs a shared `internal/sequence/` package) is intentional: orders is the first caller and the only slice-1 caller. If returns or another module needs it later, promote to `internal/sequence/` — but do not pre-abstract.
+7. **Benchmark is the hard exit gate.** If the 50-goroutine test fails or p99 exceeds 50ms on the CI Postgres container, M1 does not ship. The two fallback strategies — per-store Postgres sequence created at store onboarding, or Redis counter — are documented in §11 risks of the spec. The decision to switch is escalated to the human; this plan does not pre-authorize it.
+8. **`idempotency_key` is `NOT NULL` on `orders`.** This is the **inline** idempotency column for checkout-create specifically: same cart session id → same order row, enforced by `UNIQUE (store_id, idempotency_key)`. This is distinct from the shared `idempotency_keys` table products ships (which caches response bodies for generic `Idempotency-Key` header handling and will be used by the M4 refund endpoint). Both patterns coexist: inline for checkout creates, shared table for header-driven replays on PATCH/POST.
+9. **`refunded_amount DEFAULT 0`** and the `CHECK (refunded_amount <= grand_total)` constraint land in M1. The atomic refund `UPDATE` statement is implemented in M2; M1 only proves the column + constraint exist and reject bad data.
 10. **Soft delete is the only delete path for `orders`.** M1 tests explicitly assert that hard-deleting an order with a linked return fails (due to the `return_items → order_items ON DELETE RESTRICT` chain) and documents this invariant in the model GoDoc.
 11. **`order_addresses` has no `updated_at`.** Immutable snapshot; no trigger registered. GORM model uses `CreatedAt` only.
 12. **GORM model tags use explicit `column:` names** rather than relying on GORM's default camelCase→snake_case conversion. Defensive against future GORM config changes.
@@ -57,24 +60,43 @@ Before Task 1 runs, these must exist in the working tree:
 
 ---
 
+## Post-Task-0 adjustments (runtime contract discovered during verification)
+
+Task 0 was executed on `feat/orders-m1` against products M2 on main and surfaced four shape mismatches between the plan and the actual scaffold. Every task code block below should be read with these substitutions applied:
+
+| In the task code blocks (as written) | Substitute with |
+|---|---|
+| `testdb.New(t)` | `testdb.NewTx(t)` — transaction-rollback helper. Use this for every M1 test (round-trip, constraints, concurrent sequence benchmark). The benchmark test's `db.Transaction(...)` closure is compatible because GORM nested transactions via savepoints. |
+| `testdb.New(t)` **inside outbox drainer tests (M2 Task 17)** | `testdb.NewDB(t, "outbox_events")` — real-commit helper with per-test truncation. Required because the drainer reads rows through a separate connection; `NewTx` would hide uncommitted rows. |
+| `go run ./cmd/migrate -direction up` | `DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable go run ./cmd/migrate up` |
+| `go run ./cmd/migrate -direction down` | `DATABASE_URL=... go run ./cmd/migrate down 1` — the CLI takes a positional N (number of steps to roll back). |
+| `psql -h localhost -U dev -d marketplace_db ...` | `docker exec dev-postgres-1 psql -U dev -d marketplace_db ...` — Postgres is only reachable inside the docker-compose network; no client on the host. |
+| `pg_isready -h localhost ...` | `docker exec dev-postgres-1 pg_isready -U dev -d marketplace_db` |
+| `//go:build testing` (M2 drainer fake publisher + tests) | `//go:build integration` — matches products' existing tag convention (`internal/product/models_integration_test.go`). |
+| `go test -tags=testing ./...` | `TEST_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable go test -tags=integration ./...` — tests skip silently if `TEST_DATABASE_URL` is unset, so exporting it in the shell before running is critical. |
+
+These are pure text substitutions — none require changes to the task sequence, the migration content, or the GORM model shapes. The deltas were recorded in `.orders-m1-baseline.txt` at the repo root during Task 0 Step 15.
+
+---
+
 ## File structure produced by M1
 
 ```
 services/marketplace-api/
 ├── migrations/
-│   ├── 0002_orders_initial.up.sql        # NEW — nine tables, indexes, triggers
-│   └── 0002_orders_initial.down.sql      # NEW — drops in reverse-dep order
+│   ├── 000002_orders_initial.up.sql      # NEW — eight tables, indexes, triggers
+│   └── 000002_orders_initial.down.sql    # NEW — drops in reverse-dep order
 ├── internal/
 │   └── order/
 │       ├── models.go                     # NEW — Order, OrderItem, OrderAddress, OrderEvent
 │       ├── models_returns.go             # NEW — Return, ReturnItem
 │       ├── models_abandoned_cart.go      # NEW — AbandonedCart
-│       ├── models_outbox.go              # NEW — PendingEvent, DocumentNumberSeq
+│       ├── models_document_seq.go        # NEW — DocumentNumberSeq only
 │       ├── number.go                     # NEW — atomic NextDocumentNumber helper
 │       ├── number_test.go                # NEW — unit + concurrent benchmark gate
 │       ├── models_test.go                # NEW — round-trip + constraint integration tests
 │       └── doc.go                        # NEW — package GoDoc with invariants
-└── migrations_test.go                    # MODIFY — append "up → down → up" test for 0002
+└── migrations_test.go                    # MODIFY — append "up → down → up" test for 000002
 ```
 
 No other files are created or modified. No Dockerfile changes, no CI config changes, no infra changes.
@@ -167,23 +189,17 @@ psql -h localhost -U dev -d marketplace_db -c 'SELECT 1;'
 ```
 Expected: prints `1`. If psql errors with "database does not exist", products M1 did not create `marketplace_db` — **STOP**.
 
-- [ ] **Step 8: Verify `pg_trgm` extension is installed in the live DB (not just in a migration file)**
+- [ ] **Step 8: Verify `gen_random_uuid()` is callable in the live DB**
 
-```bash
-psql -h localhost -U dev -d marketplace_db -tAc \
-  "SELECT extname FROM pg_extension WHERE extname = 'pg_trgm';"
-```
-Expected: prints `pg_trgm`. If empty, the `0000_extensions` migration either hasn't run or doesn't include it. **STOP** — orders M1's schema cannot be trusted to function until this is present.
-
-- [ ] **Step 9: Verify `gen_random_uuid()` is callable in the live DB**
-
-The orders migration uses `DEFAULT gen_random_uuid()` on every primary key. On Postgres 13+ this is built-in; on older instances it requires `pgcrypto`. Verify:
+The orders migration uses `DEFAULT gen_random_uuid()` on every primary key. On Postgres 13+ this is built-in; on older instances it requires `pgcrypto`. Products M2 does not enable `pgcrypto` explicitly — it relies on the built-in. Verify:
 ```bash
 psql -h localhost -U dev -d marketplace_db -tAc "SELECT gen_random_uuid();"
 ```
-Expected: prints a UUID. If `function gen_random_uuid() does not exist`, **STOP** — products slice 1 must enable `pgcrypto` before orders M1 can run.
+Expected: prints a UUID. If `function gen_random_uuid() does not exist`, **STOP** — either Postgres is older than 13, or `pgcrypto` needs enabling. Neither is an orders-M1 fix; escalate.
 
-- [ ] **Step 10: Verify the shared `set_updated_at()` trigger function exists in the live DB and is callable**
+(Previous Task 0 Step 8 checked `pg_trgm`. That check is removed: orders M1 uses `varchar_pattern_ops` B-tree for order number prefix search, not GIN trigram, and products M2 does not enable `pg_trgm`.)
+
+- [ ] **Step 9: Verify the shared `set_updated_at()` trigger function exists in the live DB and is callable**
 
 ```bash
 psql -h localhost -U dev -d marketplace_db -tAc \
@@ -191,22 +207,45 @@ psql -h localhost -U dev -d marketplace_db -tAc \
 ```
 Expected: one row, `set_updated_at|0`. If zero rows, products M2 has not landed in the DB — **STOP**. If `pronargs` is not `0`, a different function with the same name exists — **STOP** and investigate before the migration at Task 1 tries to register triggers against it.
 
-- [ ] **Step 11: Verify `marketplace_db_schema_migrations` is at the expected baseline**
+- [ ] **Step 10: Verify the shared `outbox_events` and `idempotency_keys` tables exist**
+
+Orders M2 writes to `outbox_events` via the existing `internal/outbox.OutboxEvent` model. Orders M4 uses `idempotency_keys` for the refund header. Both must exist on this branch.
+
+```bash
+psql -h localhost -U dev -d marketplace_db -tAc "\dt outbox_events" | grep outbox_events && \
+  psql -h localhost -U dev -d marketplace_db -tAc "\dt idempotency_keys" | grep idempotency_keys && \
+  psql -h localhost -U dev -d marketplace_db -tAc "\dt stores" | grep stores && \
+  psql -h localhost -U dev -d marketplace_db -tAc "\dt store_watermarks" | grep store_watermarks && \
+  echo "shared tables OK"
+```
+Expected: `shared tables OK`. If any table is missing, **STOP** — products M2 is either not fully applied or the schema has drifted.
+
+- [ ] **Step 11: Verify the `stores` projection has a `slug` column (used for order number prefix)**
+
+```bash
+psql -h localhost -U dev -d marketplace_db -tAc \
+  "SELECT column_name FROM information_schema.columns WHERE table_name='stores' AND column_name IN ('id','tenant_id','slug','currency_code') ORDER BY column_name;"
+```
+Expected: four rows — `currency_code`, `id`, `slug`, `tenant_id`. If `slug` is missing, the M2 order number generator can't derive a prefix — **STOP** and escalate to the products team.
+
+- [ ] **Step 12: Verify `marketplace_db_schema_migrations` is at the expected baseline**
 
 ```bash
 psql -h localhost -U dev -d marketplace_db -tAc \
   "SELECT version FROM marketplace_db_schema_migrations ORDER BY version DESC LIMIT 1;"
 ```
-Expected: a version that reflects the latest products migration on the stack base. As of this plan's writing, that is `1` (if stacked on products M1+M2 with `0000_extensions` + `0001_products_initial`). Allowable variants: any version ≥ 1 that corresponds to a products migration and does NOT already contain an `orders` table. If the version is 0, migrations have not run — **STOP** and run `go run ./cmd/migrate -direction up` from the products branch first. If the version is greater than the latest products migration, something else has already shipped — **STOP** and investigate (orders might already be partially applied from a failed prior run).
+Expected: `1` (products M2 shipped as migration `000001_products_initial`). Allowable variants: any version ≥ 1 that does NOT already contain an `orders` table. If the version is 0, migrations have not run — **STOP** and run `go run ./cmd/migrate -direction up` first. If greater than expected, something else has already shipped — **STOP** and investigate.
 
-- [ ] **Step 12: Verify products tables exist and orders tables do NOT**
+- [ ] **Step 13: Verify products tables exist and orders tables do NOT**
 
 ```bash
 psql -h localhost -U dev -d marketplace_db -tAc "\dt" | awk '{print $2}' | sort > /tmp/m1_tables.txt
 echo "---- products tables (should be present) ----"
-grep -E '^(products|categories|variants|product_options)?$' /tmp/m1_tables.txt || true
+grep -E '^(products|categories|product_variants|product_options)$' /tmp/m1_tables.txt || true
+echo "---- shared tables (should be present) ----"
+grep -E '^(stores|store_watermarks|outbox_events|idempotency_keys)$' /tmp/m1_tables.txt || true
 echo "---- orders tables (must be absent) ----"
-if grep -qE '^(orders|order_items|returns|abandoned_carts|pending_events|document_number_seq)$' /tmp/m1_tables.txt; then
+if grep -qE '^(orders|order_items|order_addresses|order_events|returns|return_items|abandoned_carts|document_number_seq)$' /tmp/m1_tables.txt; then
   echo "ORDERS TABLES ALREADY EXIST — aborting"
   exit 1
 fi
@@ -214,14 +253,14 @@ echo "db state OK"
 ```
 Expected: `db state OK`. If `ORDERS TABLES ALREADY EXIST`, a previous orders M1 run was partially applied and left the DB dirty — **STOP**, roll back via `go run ./cmd/migrate -direction down` (if the migration file exists on this branch) or manually drop the tables, and start this plan from Task 1.
 
-- [ ] **Step 13: Verify `go test ./...` for the service passes on the current (pre-orders) tree**
+- [ ] **Step 14: Verify `go test ./...` for the service passes on the current (pre-orders) tree**
 
 ```bash
 cd services/marketplace-api && go test ./...
 ```
 Expected: all tests PASS. This is the baseline. If any test fails before orders M1 touches anything, **STOP** — the base is broken and orders M1 would merge on top of a broken baseline.
 
-- [ ] **Step 14: Record the baseline in a scratch note**
+- [ ] **Step 15: Record the baseline in a scratch note**
 
 Create `.orders-m1-baseline.txt` in the repo root (gitignored or deleted at end of plan):
 ```bash
@@ -238,23 +277,27 @@ No commit. This file is a debugging crumb — if Task 12's benchmark fails myste
 
 ---
 
-**Task 0 is read-only and writes no files (except the scratch note). No commit. If all 14 steps pass, proceed to Task 1. If any step fails, STOP and escalate — the plan explicitly forbids patching around a failed prerequisite.**
+**Task 0 is read-only and writes no files (except the scratch note). No commit. If all 15 steps pass, proceed to Task 1. If any step fails, STOP and escalate — the plan explicitly forbids patching around a failed prerequisite.**
 
 ---
 
-### Task 1: Write `0002_orders_initial.up.sql` — tables + CHECK constraints
+### Task 1: Write `000002_orders_initial.up.sql` — tables + CHECK constraints
 
 **Files:**
-- Create: `services/marketplace-api/migrations/0002_orders_initial.up.sql`
+- Create: `services/marketplace-api/migrations/000002_orders_initial.up.sql`
 
 - [ ] **Step 1: Scaffold the migration file with BEGIN/COMMIT**
 
 Create the file with this skeleton:
 ```sql
--- 0002_orders_initial.up.sql
+-- 000002_orders_initial.up.sql
 -- Orders slice 1: orders, order_items, order_addresses, order_events,
--- returns, return_items, abandoned_carts, document_number_seq, pending_events.
+-- returns, return_items, abandoned_carts, document_number_seq.
 -- Spec: docs/superpowers/specs/2026-04-09-orders-feature-slice-1-design.md §4
+--
+-- NOTE: No outbox or pending_events table is created here. Orders writes to
+-- the existing shared outbox_events table (products-owned) via new aggregate
+-- and event_type constants — see the Orders M2 plan.
 
 BEGIN;
 
@@ -294,7 +337,7 @@ From spec §4:
 - `return_items` with `ON DELETE CASCADE` on `returns.id` and `ON DELETE RESTRICT` on `order_items.id` — this is the chain that makes hard-delete of an order impossible when returns exist.
 - `abandoned_carts` **including** the `cart_session_id varchar(100) NOT NULL` column AND the `updated_at timestamptz NOT NULL DEFAULT now()` column directly on the CREATE TABLE (the spec shows them as ALTERs for readability; in the migration they are inline).
 
-- [ ] **Step 5: Add the `document_number_seq` and `pending_events` tables + the `abandoned_carts_set_updated_at` trigger**
+- [ ] **Step 5: Add the `document_number_seq` table + `updated_at` triggers**
 
 ```sql
 CREATE TABLE document_number_seq (
@@ -306,21 +349,6 @@ CREATE TABLE document_number_seq (
     CONSTRAINT document_number_seq_kind_valid CHECK (kind IN ('order','return'))
 );
 
-CREATE TABLE pending_events (
-    id               uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id        uuid         NOT NULL,
-    store_id         uuid         NOT NULL,
-    topic            varchar(80)  NOT NULL,
-    payload          jsonb        NOT NULL,
-    attempts         integer      NOT NULL DEFAULT 0,
-    last_error       text,
-    next_attempt_at  timestamptz  NOT NULL DEFAULT now(),
-    published_at     timestamptz,
-    dead_lettered_at timestamptz,
-    created_at       timestamptz  NOT NULL DEFAULT now(),
-    CONSTRAINT pending_events_attempts_non_negative CHECK (attempts >= 0)
-);
-
 CREATE TRIGGER orders_set_updated_at          BEFORE UPDATE ON orders
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER returns_set_updated_at         BEFORE UPDATE ON returns
@@ -329,7 +357,7 @@ CREATE TRIGGER abandoned_carts_set_updated_at BEFORE UPDATE ON abandoned_carts
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 ```
 
-Note: `order_items`, `order_addresses`, `order_events`, `return_items`, `document_number_seq`, `pending_events` do NOT get `updated_at` triggers — they are immutable (snapshot / append-only) or counter rows.
+Note: `order_items`, `order_addresses`, `order_events`, `return_items`, and `document_number_seq` do NOT get `updated_at` triggers — they are immutable (snapshot / append-only) or counter rows.
 
 - [ ] **Step 6: Run the migration up against local Postgres**
 
@@ -338,27 +366,27 @@ cd services/marketplace-api && go run ./cmd/migrate -direction up
 ```
 Expected: exits 0.
 
-- [ ] **Step 7: Verify all nine tables exist**
+- [ ] **Step 7: Verify all eight orders tables exist**
 
 ```bash
 psql -h localhost -U dev -d marketplace_db -c "\dt" | \
-  grep -E 'orders|order_items|order_addresses|order_events|returns|return_items|abandoned_carts|document_number_seq|pending_events'
+  grep -E 'orders|order_items|order_addresses|order_events|returns|return_items|abandoned_carts|document_number_seq'
 ```
-Expected: all nine tables listed.
+Expected: all eight tables listed (plus the pre-existing products + shared tables).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add services/marketplace-api/migrations/0002_orders_initial.up.sql
-git commit -m "feat(marketplace-api): add 0002 orders initial tables (up)"
+git add services/marketplace-api/migrations/000002_orders_initial.up.sql
+git commit -m "feat(marketplace-api): add 000002 orders initial tables (up)"
 ```
 
 ---
 
-### Task 2: Add indexes to `0002_orders_initial.up.sql`
+### Task 2: Add indexes to `000002_orders_initial.up.sql`
 
 **Files:**
-- Modify: `services/marketplace-api/migrations/0002_orders_initial.up.sql`
+- Modify: `services/marketplace-api/migrations/000002_orders_initial.up.sql`
 
 - [ ] **Step 1: Roll back the migration so we can re-run it with the indexes**
 
@@ -413,11 +441,6 @@ CREATE INDEX        abandoned_carts_tenant_idx           ON abandoned_carts (ten
 CREATE INDEX        abandoned_carts_store_last_active_idx ON abandoned_carts (store_id, last_active_at DESC);
 CREATE INDEX        abandoned_carts_email_idx            ON abandoned_carts (lower(customer_email))
     WHERE customer_email IS NOT NULL;
-
--- pending_events
-CREATE INDEX pending_events_pending_idx
-    ON pending_events (next_attempt_at)
-    WHERE published_at IS NULL AND dead_lettered_at IS NULL;
 ```
 
 - [ ] **Step 4: Run the migration up**
@@ -431,33 +454,32 @@ Expected: exits 0.
 
 ```bash
 psql -h localhost -U dev -d marketplace_db -c "\di" | \
-  grep -E 'orders_store_placed_idx|orders_store_status_placed_idx|orders_number_idx|pending_events_pending_idx|abandoned_carts_session_unique'
+  grep -E 'orders_store_placed_idx|orders_store_status_placed_idx|orders_number_idx|abandoned_carts_session_unique'
 ```
-Expected: all five listed.
+Expected: all four listed.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add services/marketplace-api/migrations/0002_orders_initial.up.sql
-git commit -m "feat(marketplace-api): add 0002 orders partial indexes"
+git add services/marketplace-api/migrations/000002_orders_initial.up.sql
+git commit -m "feat(marketplace-api): add 000002 orders partial indexes"
 ```
 
 ---
 
-### Task 3: Write `0002_orders_initial.down.sql`
+### Task 3: Write `000002_orders_initial.down.sql`
 
 **Files:**
-- Create: `services/marketplace-api/migrations/0002_orders_initial.down.sql`
+- Create: `services/marketplace-api/migrations/000002_orders_initial.down.sql`
 
 - [ ] **Step 1: Create the down migration**
 
 Reverse-dependency order. Drop triggers before tables (implicit when tables drop, but explicit is clearer for reviewers).
 
 ```sql
--- 0002_orders_initial.down.sql
+-- 000002_orders_initial.down.sql
 BEGIN;
 
-DROP TABLE IF EXISTS pending_events;
 DROP TABLE IF EXISTS document_number_seq;
 DROP TABLE IF EXISTS abandoned_carts;
 DROP TABLE IF EXISTS return_items;
@@ -467,7 +489,9 @@ DROP TABLE IF EXISTS order_addresses;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
 
--- set_updated_at() and pg_trgm are owned by upstream migrations. Do NOT drop.
+-- set_updated_at() and all shared tables (stores, store_watermarks,
+-- outbox_events, idempotency_keys) are owned by the upstream products
+-- migration. Do NOT drop any of them here.
 
 COMMIT;
 ```
@@ -497,13 +521,13 @@ Re-run `go run ./cmd/migrate -direction up` to leave the database in the migrate
 - [ ] **Step 4: Commit**
 
 ```bash
-git add services/marketplace-api/migrations/0002_orders_initial.down.sql
-git commit -m "feat(marketplace-api): add 0002 orders down migration"
+git add services/marketplace-api/migrations/000002_orders_initial.down.sql
+git commit -m "feat(marketplace-api): add 000002 orders down migration"
 ```
 
 ---
 
-### Task 4: Append `0002` to `migrations_test.go` up/down cycling test
+### Task 4: Append `000002` to `migrations_test.go` up/down cycling test
 
 **Files:**
 - Modify: `services/marketplace-api/migrations_test.go`
@@ -513,31 +537,31 @@ git commit -m "feat(marketplace-api): add 0002 orders down migration"
 ```bash
 cat services/marketplace-api/migrations_test.go
 ```
-Identify the test that asserts "up → down → up cycles cleanly" for `0001_products_initial`. It should be a `TestMigrations_UpDownUp` or similar with a test case list.
+Identify the test that asserts "up → down → up cycles cleanly" for `000001_products_initial`. It should be a `TestMigrations_UpDownUp` or similar with a test case list.
 
-- [ ] **Step 2: Add the `0002_orders_initial` case**
+- [ ] **Step 2: Add the `000002_orders_initial` case**
 
 Extend the test table (or equivalent) to include the new migration file:
 ```go
 // In the test case slice:
 {
-    name:    "0002_orders_initial",
+    name:    "000002_orders_initial",
     version: 2,
     tables: []string{
         "orders", "order_items", "order_addresses", "order_events",
         "returns", "return_items", "abandoned_carts",
-        "document_number_seq", "pending_events",
+        "document_number_seq",
     },
 },
 ```
 
 The test should:
 1. Run migrate up through version 2
-2. Assert all nine tables exist
+2. Assert all eight orders tables exist
 3. Run migrate down to version 1
-4. Assert none of the nine tables exist (but products tables still do)
+4. Assert none of the eight tables exist (but products + shared tables still do)
 5. Run migrate up back to version 2
-6. Assert all nine tables exist again
+6. Assert all eight tables exist again
 
 - [ ] **Step 3: Run the test**
 
@@ -550,7 +574,7 @@ Expected: PASS with the new subtest visible.
 
 ```bash
 git add services/marketplace-api/migrations_test.go
-git commit -m "test(marketplace-api): cover 0002 orders in migration cycle test"
+git commit -m "test(marketplace-api): cover 000002 orders in migration cycle test"
 ```
 
 ---
@@ -565,8 +589,13 @@ git commit -m "test(marketplace-api): cover 0002 orders in migration cycle test"
 
 ```go
 // Package order owns the orders, order_items, order_addresses, order_events,
-// returns, return_items, abandoned_carts, document_number_seq, and pending_events
-// tables in marketplace_db.
+// returns, return_items, abandoned_carts, and document_number_seq tables in
+// marketplace_db.
+//
+// Note: orders does NOT own an outbox or pending_events table. Customer-facing
+// order events are written to the shared outbox_events table (products-owned,
+// see internal/outbox) using new aggregate and event_type constants added in
+// Orders M2.
 //
 // Invariants (enforced at the DB layer; repeated here so readers don't need to
 // reread the migration to understand them):
@@ -576,6 +605,10 @@ git commit -m "test(marketplace-api): cover 0002 orders in migration cycle test"
 //   - orders.refunded_amount is the atomic running refund total. Refunds are
 //     recorded via a single UPDATE ... WHERE refunded_amount + $new <= grand_total
 //     statement (implemented in M2). M1 only proves the column exists.
+//   - orders.idempotency_key is the INLINE idempotency column for checkout
+//     creates (same cart session id -> same order row). It is separate from
+//     the shared idempotency_keys table products ships, which is used in M4
+//     for the refund endpoint's Idempotency-Key HTTP header.
 //   - order_items is a price snapshot. product_id/variant_id have NO foreign keys
 //     so products can be hard-deleted without corrupting order history. DO NOT
 //     add those foreign keys later.
@@ -766,11 +799,11 @@ git commit -m "feat(marketplace-api): add GORM models for returns"
 
 ---
 
-### Task 7: Write GORM models for abandoned carts, document_number_seq, pending_events
+### Task 7: Write GORM models for abandoned carts and document_number_seq
 
 **Files:**
 - Create: `services/marketplace-api/internal/order/models_abandoned_cart.go`
-- Create: `services/marketplace-api/internal/order/models_outbox.go`
+- Create: `services/marketplace-api/internal/order/models_document_seq.go`
 
 - [ ] **Step 1: Write `AbandonedCart`**
 
@@ -809,9 +842,9 @@ type AbandonedCart struct {
 func (AbandonedCart) TableName() string { return "abandoned_carts" }
 ```
 
-- [ ] **Step 2: Write `DocumentNumberSeq` and `PendingEvent`**
+- [ ] **Step 2: Write `DocumentNumberSeq`**
 
-`models_outbox.go`:
+`models_document_seq.go`:
 ```go
 package order
 
@@ -819,7 +852,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/datatypes"
 )
 
 // DocumentNumberSeq is the per-store per-day counter for orders and returns.
@@ -833,24 +865,9 @@ type DocumentNumberSeq struct {
 }
 
 func (DocumentNumberSeq) TableName() string { return "document_number_seq" }
-
-// PendingEvent is the transactional outbox row.
-type PendingEvent struct {
-	ID             uuid.UUID      `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID       uuid.UUID      `gorm:"column:tenant_id;type:uuid;not null"`
-	StoreID        uuid.UUID      `gorm:"column:store_id;type:uuid;not null"`
-	Topic          string         `gorm:"column:topic;type:varchar(80);not null"`
-	Payload        datatypes.JSON `gorm:"column:payload;type:jsonb;not null"`
-	Attempts       int            `gorm:"column:attempts;type:integer;not null;default:0"`
-	LastError      *string        `gorm:"column:last_error;type:text"`
-	NextAttemptAt  time.Time      `gorm:"column:next_attempt_at;not null;default:now()"`
-	PublishedAt    *time.Time     `gorm:"column:published_at"`
-	DeadLetteredAt *time.Time     `gorm:"column:dead_lettered_at"`
-	CreatedAt      time.Time      `gorm:"column:created_at;not null;default:now()"`
-}
-
-func (PendingEvent) TableName() string { return "pending_events" }
 ```
+
+Note: there is deliberately no `PendingEvent` / outbox struct in this package. The shared `outbox_events` table (and its `outbox.OutboxEvent` GORM model) is owned by products and lives in `internal/outbox/`. Orders M2 writes to it via new aggregate and event_type constants.
 
 - [ ] **Step 3: Run `go build`**
 
@@ -863,8 +880,8 @@ Expected: exits 0.
 
 ```bash
 git add services/marketplace-api/internal/order/models_abandoned_cart.go \
-        services/marketplace-api/internal/order/models_outbox.go
-git commit -m "feat(marketplace-api): add GORM models for abandoned carts and outbox"
+        services/marketplace-api/internal/order/models_document_seq.go
+git commit -m "feat(marketplace-api): add GORM models for abandoned carts and document sequence"
 ```
 
 ---

@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the domain logic on top of Orders M1's schema. Land the three orthogonal status Go types with exhaustive transition coverage, the `order` / `return` / `abandoned_cart` service layer with idempotency-keyed create, atomic refund recording, cross-module transaction threading, and the background outbox drainer that publishes `pending_events` rows to notification-service via `go-shared/messaging`. No HTTP handlers, no authorization middleware, no DTOs — this milestone ends when a Go test script can drive a full order lifecycle (create → confirm → fulfill → refund → return → abandoned cart recovery) against real Postgres with every `order_events` row and every `pending_events` outbox row accounted for.
+**Goal:** Build the domain logic on top of Orders M1's schema. Land the three orthogonal status Go types with exhaustive transition coverage, the `order` / `return` / `abandoned_cart` service layer with idempotency-keyed create, atomic refund recording, cross-module transaction threading, and the background outbox drainer that publishes shared `outbox_events` rows to notification-service via `go-shared/messaging`. No HTTP handlers, no authorization middleware, no DTOs — this milestone ends when a Go test script can drive a full order lifecycle (create → confirm → fulfill → refund → return → abandoned cart recovery) against real Postgres with every `order_events` row and every `outbox_events` row accounted for.
 
-**Architecture:** Three orthogonal Go status types (`OrderStatus`, `PaymentStatus`, `FulfillmentStatus`) with `CanTransitionTo` methods and exhaustive matrix unit tests. A `Service` struct per module (`order.Service`, `return.Service`, `abandoned_cart.Service`) that accepts a `*gorm.DB` in its constructor and exposes a shared `Unit(ctx, fn func(tx *gorm.DB) error) error` helper so cross-module writes share a single transaction. `order.Service.RecordRefund` is a single atomic `UPDATE orders SET refunded_amount = refunded_amount + ?, payment_status = ?, updated_at = now() WHERE id = ? AND refunded_amount + ? <= grand_total RETURNING refunded_amount` — the read-check-write window is eliminated at the SQL layer. `pending_events` rows are written inside the same transaction as the domain change they describe. A dedicated background goroutine (`outbox.Drainer`) polls `pending_events WHERE published_at IS NULL AND dead_lettered_at IS NULL AND next_attempt_at <= now() ORDER BY next_attempt_at LIMIT 100`, publishes each row, and updates the row state. Exponential backoff on publish failure; dead-letter after 10 attempts with a Prometheus counter bump.
+> **Revision note (2026-04-09 post-products-M2):** Products M2 landed the shared `outbox_events` table with columns `id, tenant_id, aggregate, aggregate_id, event_type, payload, created_at, published_at, error`. There is no `store_id`, no `attempts`, no `next_attempt_at`, no `dead_lettered_at`. Orders M2 writes to that shared table via new aggregate/event_type constants, and the drainer is a simple "retry-on-every-tick" design that matches the simpler schema. Exponential backoff + dead-letter tracking were in the original Orders M2 plan but are deferred — they require schema changes owned by products and are not blockers for slice 1. Ops visibility comes from a Prometheus gauge counting unpublished-with-error rows (§11 of the spec).
+
+**Architecture:** Three orthogonal Go status types (`OrderStatus`, `PaymentStatus`, `FulfillmentStatus`) with `CanTransitionTo` methods and exhaustive matrix unit tests. A `Service` struct per module (`order.Service`, `return.Service`, `abandoned_cart.Service`) that accepts a `*gorm.DB` in its constructor and exposes a shared `Unit(ctx, fn func(tx *gorm.DB) error) error` helper so cross-module writes share a single transaction. `order.Service.RecordRefund` is a single atomic `UPDATE orders SET refunded_amount = refunded_amount + ?, payment_status = ?, updated_at = now() WHERE id = ? AND refunded_amount + ? <= grand_total RETURNING refunded_amount` — the read-check-write window is eliminated at the SQL layer. Domain events are written to the shared `outbox_events` table (via `internal/outbox.OutboxEvent`) inside the same transaction as the domain change they describe. A background goroutine (`outbox.Drainer`, added in this milestone to the existing `internal/outbox/` package) polls `outbox_events WHERE published_at IS NULL ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED`, publishes each row, and updates `published_at` on success or `error` on failure. A failing row will be re-picked on the next tick (2s polling interval); ops intervenes if the `outbox_errored_rows` gauge stays non-zero.
 
 **Tech Stack:** Go 1.26, GORM v1.25, Postgres 15, `github.com/shopspring/decimal`, `github.com/google/uuid`, `gorm.io/datatypes`, `github.com/stretchr/testify`, `github.com/mark8ly/go-shared/messaging` (for the outbox publisher interface). No new external deps beyond what M1 + products introduced.
 
@@ -59,10 +61,10 @@ If `go-shared/messaging.Publisher` is not present or has a different signature, 
 4. **`order.Service.Create` looks up by `(store_id, idempotency_key)` first.** Before opening the transaction, `repo.GetByIdempotencyKey(ctx, storeID, key)` is called. If a row is found, return it unchanged with a boolean `reused=true`. This is the happy path for storefront retries. The `UNIQUE (store_id, idempotency_key)` constraint is the second line of defense for concurrent races.
 5. **`RecordRefund` is a single SQL statement, not a service-layer check.** The atomic guarantee comes from the `WHERE refunded_amount + ? <= grand_total` clause and the `CHECK (refunded_amount <= grand_total)` DB constraint — not from `SELECT + compute + UPDATE`. Service-level validation (e.g. "refund reason is non-empty") happens before the statement, but the amount guard is the SQL itself.
 6. **Cross-module transactions use a shared `*gorm.DB` handle, not a wrapper type.** The `Unit` helper is `func (s *Service) Unit(ctx context.Context, fn func(tx *gorm.DB) error) error` and passes the transaction to a closure. Other services' methods that need to run inside the same transaction take a `tx *gorm.DB` as their first parameter (in addition to `ctx`). Example: `return.Service.Approve(ctx, tx, returnID, ...)` — the `tx` is threaded explicitly so the typing system enforces the invariant. No ambient context magic.
-7. **Outbox drainer is a single goroutine per service replica.** Horizontal scaling is achieved by Postgres row locking — `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 100` so two replicas drain different rows. Each row is processed independently: publish, then update `published_at` or `attempts+next_attempt_at`. No in-memory state.
-8. **Exponential backoff: `2^attempts * 10s`, capped at 1 hour.** Attempt 1 fails → next_attempt_at = now + 20s. Attempt 5 → now + 5m20s. Attempt 10 → now + 1h (cap). After 10 failed attempts, `dead_lettered_at = now()` and the row stops being picked up.
-9. **Outbox publisher is an injected interface, not a concrete type.** `order.Service`, `return.Service`, `abandoned_cart.Service` all write to `pending_events` directly (via repository). The drainer takes a `messaging.Publisher` and calls `Publish(ctx, row.Topic, row.Payload)`. Tests inject a fake publisher. Production wires the real `go-shared/messaging` publisher.
-10. **Drainer polling interval is 2 seconds.** Low-enough latency for transactional emails without hammering the DB. Configurable via `ORDERS_OUTBOX_POLL_INTERVAL` env var (default `2s`), so tests can set it to `50ms` for fast iteration.
+7. **Orders writes to the shared `outbox_events` table owned by products.** No parallel `pending_events` table. Orders adds new aggregate constants (`AggregateOrder`, `AggregateReturn`, `AggregateAbandonedCart`) and event type constants (`EventOrderPlaced`, `EventOrderFulfilled`, `EventOrderCancelled`, `EventOrderRefunded`, `EventAbandonedCartRecoveryEmail`) to the existing `internal/outbox` package, then writes `outbox.OutboxEvent` rows inside the same GORM transaction as the domain change.
+8. **Drainer is a single goroutine per service replica, with the simpler retry-on-every-tick model.** `SELECT * FROM outbox_events WHERE published_at IS NULL ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED`. On publish success, set `published_at`. On failure, set `error` to the error message. The next tick re-picks the same row and retries indefinitely until it succeeds or ops intervenes. Ops visibility: a Prometheus gauge `outbox_errored_rows` (§11 of the spec) counts rows where `published_at IS NULL AND error IS NOT NULL` — alerts fire if the gauge stays non-zero for > 5 minutes. Exponential backoff + explicit dead-letter columns are deferred to a future shared migration; neither is a slice-1 blocker.
+9. **Outbox publisher is an injected interface, not a concrete type.** `order.Service`, `return.Service`, `abandoned_cart.Service` all write `outbox.OutboxEvent` rows directly. The drainer takes a `messaging.Publisher` and calls `Publish(ctx, row.EventType, row.Payload)`. Tests inject a fake publisher. Production wires the real `go-shared/messaging` publisher.
+10. **Drainer polling interval is 2 seconds.** Low-enough latency for transactional emails without hammering the DB. Configurable via `MARKETPLACE_OUTBOX_POLL_INTERVAL` env var (default `2s`), so tests can set it to `50ms` for fast iteration.
 11. **`payment_status` transitions are orthogonal but the service still centralizes them.** `order.Service.SetPaymentStatus(ctx, tx, orderID, target, reason)` is the only code path; direct `UPDATE orders SET payment_status = ?` is forbidden by code review.
 12. **`FulfillmentStatus = 'partial'` is forward-compatible only.** M2 never writes it. The Go enum exposes `FulfillmentStatusPartial` so when slice 2 adds partial fulfillment, no enum change is required.
 13. **`return.Service` writes to `order_events` via an `order.Service.RecordReturnEvent(ctx, tx, orderID, kind, payload)` method.** This method is cross-module-tx-safe (takes a `tx`). `return.Service` never touches `order_events` directly — keeps the ownership boundary clean and testable.
@@ -84,7 +86,7 @@ services/marketplace-api/
 │   │   ├── events.go                  # NEW — OrderEventKind constants + payload helpers
 │   │   ├── repository.go              # NEW — OrderRepository with CRUD + list + atomic refund
 │   │   ├── repository_test.go         # NEW — repository integration tests
-│   │   ├── service.go                 # NEW — order.Service + Unit helper
+│   │   ├── service.go                 # NEW — order.Service + Unit helper + outbox writes
 │   │   ├── service_test.go            # NEW — service integration tests
 │   │   ├── return_repository.go       # NEW
 │   │   ├── return_service.go          # NEW — Request, Approve, MarkReceived, MarkRefunded, Reject
@@ -92,14 +94,35 @@ services/marketplace-api/
 │   │   ├── abandoned_cart_repository.go  # NEW
 │   │   ├── abandoned_cart_service.go     # NEW — List, Get, TriggerRecoveryEmail
 │   │   └── abandoned_cart_service_test.go # NEW
-│   └── outbox/
-│       ├── drainer.go                 # NEW — background goroutine
-│       ├── drainer_test.go            # NEW — success, retry, dead-letter integration tests
+│   └── outbox/                        # EXISTING — products owns OutboxEvent model
+│       ├── models.go                  # EXISTING — MODIFY to add order/return/abandoned_cart aggregate + event_type constants
+│       ├── drainer.go                 # NEW — background goroutine consuming outbox_events
+│       ├── drainer_test.go            # NEW — success + failure-retry integration tests
 │       └── fake_publisher.go          # NEW — testing helper (build tag `//go:build testing`)
 └── cmd/
     └── marketplace-api/
         └── main.go                    # MODIFY — wire drainer on boot for admin|both modes
 ```
+
+**Important:** `internal/outbox/` is an **existing** package from products M2. This plan adds files to it (drainer.go, drainer_test.go, fake_publisher.go) and appends new constants to `models.go`. It does NOT rename the package or create a parallel `internal/pending_events/`. Every reference in this plan to "outbox drainer" means "the drainer lives inside the existing products-owned outbox package."
+
+---
+
+## M2-wide translation notes (read before executing tasks)
+
+Several task blocks in this plan contain code that was originally written against a hypothetical `pending_events` table. During execution, translate these references as follows:
+
+| In the task code blocks | Translates to |
+|---|---|
+| `pending_events` table | `outbox_events` table (owned by products) |
+| `order.PendingEvent{}` Go struct | `outbox.OutboxEvent{}` (imported from `github.com/mark8ly/marketplace-api/internal/outbox`) |
+| `s.enqueueOutbox(tx, tenantID, storeID, topic, payload)` helper | `s.enqueueOutbox(tx, tenantID, aggregate, aggregateID, eventType, payload)` — see revised signature in Task 8 |
+| `WHERE store_id = ? AND topic = ?` (counting outbox rows in tests) | `WHERE tenant_id = ? AND aggregate IN ('order','return','abandoned_cart') AND event_type = ?` |
+| `attempts`, `next_attempt_at`, `dead_lettered_at` columns | **do not exist** — drainer does not reference them; on failure it sets `error`, on success it sets `published_at` |
+| Exponential backoff logic | Remove entirely. Failing rows are re-picked on every tick. |
+| Dead-letter counter (`outbox_dead_lettered_total`) | Replace with `outbox_errored_rows` gauge sampled on each drain cycle |
+
+If a task block contains a reference that can't be cleanly translated, prefer the definitions in Task 8 (outbox helper), Task 16 (drainer scaffold), and Task 17 (drainer tests) as the canonical shapes — those sections have been revised inline.
 
 ---
 
@@ -118,10 +141,10 @@ for p in \
   services/marketplace-api/internal/order/models.go \
   services/marketplace-api/internal/order/models_returns.go \
   services/marketplace-api/internal/order/models_abandoned_cart.go \
-  services/marketplace-api/internal/order/models_outbox.go \
+  services/marketplace-api/internal/order/models_document_seq.go \
   services/marketplace-api/internal/order/number.go \
-  services/marketplace-api/migrations/0002_orders_initial.up.sql \
-  services/marketplace-api/migrations/0002_orders_initial.down.sql; do
+  services/marketplace-api/migrations/000002_orders_initial.up.sql \
+  services/marketplace-api/migrations/000002_orders_initial.down.sql; do
   test -f "$p" || { echo "MISSING: $p"; exit 1; }
 done
 cd services/marketplace-api && go build ./internal/order/... && echo "M1 build OK"
@@ -2615,30 +2638,22 @@ type Publisher interface {
 	Publish(ctx context.Context, topic string, payload []byte) error
 }
 
-// Row mirrors order.PendingEvent but the drainer package doesn't import the
-// order package to avoid a cycle. Any new columns must be kept in sync.
-type Row struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	StoreID        uuid.UUID
-	Topic          string
-	Payload        datatypes.JSON
-	Attempts       int
-	LastError      *string
-	NextAttemptAt  time.Time
-	PublishedAt    *time.Time
-	DeadLetteredAt *time.Time
-}
-
-func (Row) TableName() string { return "pending_events" }
+// The drainer uses the existing outbox.OutboxEvent model (from models.go)
+// directly — no parallel Row struct is defined. The OutboxEvent shape is:
+//
+//   ID, TenantID, Aggregate, AggregateID, EventType string
+//   Payload     datatypes.JSON
+//   CreatedAt   time.Time
+//   PublishedAt *time.Time
+//   Error       *string
+//
+// No attempts counter, no next_attempt_at, no dead_lettered_at. On publish
+// failure we set Error and let the next tick re-pick the row.
 
 // Config controls drainer behavior.
 type Config struct {
 	PollInterval time.Duration // default 2s
 	BatchSize    int           // default 100
-	MaxAttempts  int           // default 10
-	BackoffBase  time.Duration // default 10s, doubled per attempt
-	BackoffCap   time.Duration // default 1h
 }
 
 func (c Config) withDefaults() Config {
@@ -2648,19 +2663,10 @@ func (c Config) withDefaults() Config {
 	if c.BatchSize == 0 {
 		c.BatchSize = 100
 	}
-	if c.MaxAttempts == 0 {
-		c.MaxAttempts = 10
-	}
-	if c.BackoffBase == 0 {
-		c.BackoffBase = 10 * time.Second
-	}
-	if c.BackoffCap == 0 {
-		c.BackoffCap = time.Hour
-	}
 	return c
 }
 
-// Drainer is a background goroutine that publishes pending_events rows.
+// Drainer is a background goroutine that publishes outbox_events rows.
 type Drainer struct {
 	db        *gorm.DB
 	publisher Publisher
@@ -2692,15 +2698,18 @@ func (d *Drainer) Run(ctx context.Context) error {
 // drainBatch locks up to BatchSize due rows via SELECT ... FOR UPDATE SKIP LOCKED
 // and publishes each one. Row state is updated in the same transaction as the
 // publish outcome to prevent double-publish if the drainer crashes mid-batch.
+//
+// Retry model: a failed row has error set but published_at stays NULL. The
+// next tick re-picks it. No explicit backoff — at 2s polling, a persistently
+// failing publisher produces 30 retry attempts per minute, which is cheap and
+// correct. Ops sees the outbox_errored_rows gauge go non-zero and intervenes.
 func (d *Drainer) drainBatch(ctx context.Context) error {
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var rows []Row
+		var rows []OutboxEvent
 		err := tx.Raw(`
-			SELECT * FROM pending_events
+			SELECT * FROM outbox_events
 			WHERE published_at IS NULL
-			  AND dead_lettered_at IS NULL
-			  AND next_attempt_at <= now()
-			ORDER BY next_attempt_at
+			ORDER BY created_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT ?
 		`, d.cfg.BatchSize).Scan(&rows).Error
@@ -2709,36 +2718,22 @@ func (d *Drainer) drainBatch(ctx context.Context) error {
 		}
 
 		for _, row := range rows {
-			err := d.publisher.Publish(ctx, row.Topic, []byte(row.Payload))
+			err := d.publisher.Publish(ctx, row.EventType, []byte(row.Payload))
 			if err == nil {
 				now := time.Now()
-				tx.Model(&Row{}).Where("id = ?", row.ID).Updates(map[string]any{
+				tx.Model(&OutboxEvent{}).Where("id = ?", row.ID).Updates(map[string]any{
 					"published_at": now,
+					"error":        nil,
 				})
-				d.log.Info("outbox published", "id", row.ID, "topic", row.Topic)
+				d.log.Info("outbox published", "id", row.ID, "event_type", row.EventType)
 				continue
 			}
-
-			// Failed → schedule retry or dead-letter
-			attempts := row.Attempts + 1
 			errMsg := err.Error()
-			updates := map[string]any{
-				"attempts":   attempts,
-				"last_error": errMsg,
-			}
-			if attempts >= d.cfg.MaxAttempts {
-				now := time.Now()
-				updates["dead_lettered_at"] = now
-				d.log.Error("outbox dead-lettered", "id", row.ID, "topic", row.Topic, "attempts", attempts)
-			} else {
-				backoff := time.Duration(math.Pow(2, float64(attempts))) * d.cfg.BackoffBase
-				if backoff > d.cfg.BackoffCap {
-					backoff = d.cfg.BackoffCap
-				}
-				updates["next_attempt_at"] = time.Now().Add(backoff)
-				d.log.Warn("outbox retrying", "id", row.ID, "attempts", attempts, "backoff", backoff)
-			}
-			tx.Model(&Row{}).Where("id = ?", row.ID).Updates(updates)
+			tx.Model(&OutboxEvent{}).Where("id = ?", row.ID).Updates(map[string]any{
+				"error": errMsg,
+			})
+			d.log.Warn("outbox publish failed, will retry next tick",
+				"id", row.ID, "event_type", row.EventType, "err", errMsg)
 		}
 		return nil
 	})
@@ -2836,20 +2831,17 @@ func newDrainer(t *testing.T, pub outbox.Publisher) (*outbox.Drainer, *gorm.DB) 
 	d := outbox.NewDrainer(db, pub, outbox.Config{
 		PollInterval: 50 * time.Millisecond,
 		BatchSize:    10,
-		MaxAttempts:  3,
-		BackoffBase:  10 * time.Millisecond,
-		BackoffCap:   100 * time.Millisecond,
 	}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	return d, db
 }
 
-func seedPendingEvent(t *testing.T, db *gorm.DB, topic string) uuid.UUID {
-	row := outbox.Row{
-		TenantID: uuid.New(),
-		StoreID:  uuid.New(),
-		Topic:    topic,
-		Payload:  datatypes.JSON([]byte(`{"hello":"world"}`)),
-		NextAttemptAt: time.Now(),
+func seedOutboxEvent(t *testing.T, db *gorm.DB, eventType string) string {
+	row := outbox.OutboxEvent{
+		TenantID:    uuid.NewString(),
+		Aggregate:   "order",
+		AggregateID: uuid.NewString(),
+		EventType:   eventType,
+		Payload:     datatypes.JSON([]byte(`{"hello":"world"}`)),
 	}
 	require.NoError(t, db.Create(&row).Error)
 	return row.ID
@@ -2858,7 +2850,7 @@ func seedPendingEvent(t *testing.T, db *gorm.DB, topic string) uuid.UUID {
 func TestDrainer_HappyPath_Publishes(t *testing.T) {
 	pub := outbox.NewFakePublisher()
 	d, db := newDrainer(t, pub)
-	id := seedPendingEvent(t, db, "order.placed")
+	id := seedOutboxEvent(t, db, "order.placed")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -2866,58 +2858,43 @@ func TestDrainer_HappyPath_Publishes(t *testing.T) {
 
 	require.GreaterOrEqual(t, pub.CallCount(), 1)
 
-	var row outbox.Row
+	var row outbox.OutboxEvent
 	require.NoError(t, db.Where("id = ?", id).First(&row).Error)
 	require.NotNil(t, row.PublishedAt)
+	require.Nil(t, row.Error)
 }
 
-func TestDrainer_TransientFailure_RetriesWithBackoff(t *testing.T) {
+func TestDrainer_Failure_SetsErrorAndLeavesUnpublished(t *testing.T) {
 	pub := outbox.NewFakePublisher()
 	pub.FailWith["order.placed"] = outbox.ErrFakeFailure
 	d, db := newDrainer(t, pub)
-	id := seedPendingEvent(t, db, "order.placed")
+	id := seedOutboxEvent(t, db, "order.placed")
 
-	// Run drainer for 300ms — should see multiple retry attempts
+	// Run drainer for 300ms — multiple ticks hit the same failing row
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	_ = d.Run(ctx)
 
-	var row outbox.Row
+	var row outbox.OutboxEvent
 	db.Where("id = ?", id).First(&row)
-	require.Greater(t, row.Attempts, 0)
 	require.Nil(t, row.PublishedAt)
-	require.Nil(t, row.DeadLetteredAt)
-	require.NotNil(t, row.LastError)
+	require.NotNil(t, row.Error)
+	require.Contains(t, *row.Error, "fake publisher failure")
+
+	// The publisher should have been called multiple times (one per tick)
+	require.GreaterOrEqual(t, pub.CallCount(), 2)
 }
 
-func TestDrainer_DeadLetter_AfterMaxAttempts(t *testing.T) {
+func TestDrainer_SuccessAfterFailureClears(t *testing.T) {
 	pub := outbox.NewFakePublisher()
 	pub.FailWith["order.placed"] = outbox.ErrFakeFailure
 	d, db := newDrainer(t, pub)
-	id := seedPendingEvent(t, db, "order.placed")
+	id := seedOutboxEvent(t, db, "order.placed")
 
-	// With MaxAttempts = 3 and backoff cap of 100ms, 4-5 drain cycles should dead-letter the row
-	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
-	defer cancel()
-	_ = d.Run(ctx)
-
-	var row outbox.Row
-	db.Where("id = ?", id).First(&row)
-	require.GreaterOrEqual(t, row.Attempts, 3)
-	require.NotNil(t, row.DeadLetteredAt)
-}
-
-func TestDrainer_SuccessAfterTransientFailure(t *testing.T) {
-	pub := outbox.NewFakePublisher()
-	pub.FailWith["order.placed"] = outbox.ErrFakeFailure
-	d, db := newDrainer(t, pub)
-	id := seedPendingEvent(t, db, "order.placed")
-
-	// Start the drainer
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	// After 100ms, remove the failure and let it succeed
+	// After 100ms, remove the failure and let the next tick succeed
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		pub.FailWith = map[string]error{}
@@ -2925,26 +2902,27 @@ func TestDrainer_SuccessAfterTransientFailure(t *testing.T) {
 
 	_ = d.Run(ctx)
 
-	var row outbox.Row
+	var row outbox.OutboxEvent
 	db.Where("id = ?", id).First(&row)
 	require.NotNil(t, row.PublishedAt, "should eventually publish after failures clear")
+	require.Nil(t, row.Error, "error should be cleared on successful publish")
 }
 ```
 
-Note: tests use a `testing` build tag to match `fake_publisher.go`. The test runner must be invoked with `-tags=testing`:
+Note: tests use a `testing` build tag to match `fake_publisher.go`. The test runner must be invoked with `-tags=testing`.
 
 - [ ] **Step 2: Run**
 
 ```bash
 cd services/marketplace-api && go test -tags=testing -run TestDrainer -v ./internal/outbox/
 ```
-Expected: all PASS.
+Expected: all three PASS.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add services/marketplace-api/internal/outbox/drainer_test.go
-git commit -m "test(marketplace-api): outbox drainer integration tests (happy, retry, dead-letter)"
+git commit -m "test(marketplace-api): outbox drainer integration tests (happy path + error retry)"
 ```
 
 ---

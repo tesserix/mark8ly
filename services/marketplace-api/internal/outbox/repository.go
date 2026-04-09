@@ -62,7 +62,7 @@ func (r *gormRepository) MarkPublishedInTx(tx *gorm.DB, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	if err := tx.Exec(`UPDATE outbox_events SET published_at = now() WHERE id = ANY(?)`,
+	if err := tx.Exec(`UPDATE outbox_events SET published_at = now() WHERE id IN ?`,
 		ids).Error; err != nil {
 		return fmt.Errorf("outbox: mark published: %w", err)
 	}

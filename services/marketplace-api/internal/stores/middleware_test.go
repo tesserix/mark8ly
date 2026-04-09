@@ -46,6 +46,22 @@ func (r *fakeRepo) GetByIDForTenant(_ context.Context, storeID, tenantID string)
 	return &cp, nil
 }
 
+func (r *fakeRepo) GetBySlug(_ context.Context, slug string) (*stores.Store, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, s := range r.byKey {
+		if s.Slug == slug {
+			cp := *s
+			return &cp, nil
+		}
+	}
+	return nil, stores.ErrNotFound
+}
+
+func (r *fakeRepo) GetProductsWatermark(_ context.Context, _ string) (time.Time, error) {
+	return time.Unix(0, 0), nil
+}
+
 func (r *fakeRepo) Upsert(_ context.Context, s *stores.Store) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -91,6 +107,10 @@ func (c *fakeClient) GetStore(_ context.Context, tenantID, storeID string) (*sto
 	}
 	cp := *c.result
 	return &cp, nil
+}
+
+func (c *fakeClient) GetStoreBySlug(_ context.Context, _ string) (*stores.Store, error) {
+	return nil, stores.ErrPlatformUnavailable
 }
 
 // --- helpers ---

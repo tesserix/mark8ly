@@ -92,6 +92,54 @@ func TestHTTPClient_GetStore_SecretHeader_Sent(t *testing.T) {
 	}
 }
 
+func TestHTTPClient_GetStoreBySlug_HappyPath_200(t *testing.T) {
+	c, srv := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/stores/by-slug/acme" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"id":"s1","slug":"acme","name":"Acme","country_code":"US","currency_code":"USD","timezone":"UTC","status":"active"}}`))
+	}, "")
+	defer srv.Close()
+	got, err := c.GetStoreBySlug(context.Background(), "acme")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got == nil {
+		t.Fatal("got nil store")
+	}
+	if got.ID != "s1" || got.Slug != "acme" || got.Name != "Acme" ||
+		got.CountryCode != "US" || got.CurrencyCode != "USD" ||
+		got.Timezone != "UTC" || got.Status != "active" {
+		t.Fatalf("unexpected store: %+v", got)
+	}
+	if got.TenantID != "" {
+		t.Errorf("TenantID should be empty from public endpoint, got %q", got.TenantID)
+	}
+}
+
+func TestHTTPClient_GetStoreBySlug_404_ReturnsNilNil(t *testing.T) {
+	c, srv := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}, "")
+	defer srv.Close()
+	got, err := c.GetStoreBySlug(context.Background(), "missing")
+	if err != nil || got != nil {
+		t.Fatalf("expected (nil,nil); got (%v,%v)", got, err)
+	}
+}
+
+func TestHTTPClient_GetStoreBySlug_5xx_Returns_ErrPlatformUnavailable(t *testing.T) {
+	c, srv := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}, "")
+	defer srv.Close()
+	_, err := c.GetStoreBySlug(context.Background(), "acme")
+	if err == nil || !errors.Is(err, stores.ErrPlatformUnavailable) {
+		t.Fatalf("expected ErrPlatformUnavailable; got %v", err)
+	}
+}
+
 func TestHTTPClient_GetStore_NoSecret_NoHeader(t *testing.T) {
 	var gotSecret string
 	c, srv := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {

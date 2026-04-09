@@ -232,6 +232,53 @@ func TestIntegration_Category_HasProducts_TrueAndFalse(t *testing.T) {
 	}
 }
 
+func TestIntegration_Category_ListActiveByStoreID_ExcludesInactiveAndDeleted(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := category.NewRepository(tx)
+	ctx := context.Background()
+
+	storeID, tenantID := insertStoreRow(t, tx)
+
+	// 2 active, non-deleted.
+	a1 := newCategory(storeID, tenantID, "apparel")
+	a1.Position = 0
+	if err := repo.Create(ctx, a1); err != nil {
+		t.Fatalf("create a1: %v", err)
+	}
+	a2 := newCategory(storeID, tenantID, "bags")
+	a2.Position = 1
+	if err := repo.Create(ctx, a2); err != nil {
+		t.Fatalf("create a2: %v", err)
+	}
+
+	// Inactive.
+	inactive := newCategory(storeID, tenantID, "inactive")
+	inactive.IsActive = false
+	if err := repo.Create(ctx, inactive); err != nil {
+		t.Fatalf("create inactive: %v", err)
+	}
+
+	// Soft-deleted.
+	softDeleted := newCategory(storeID, tenantID, "gone")
+	if err := repo.Create(ctx, softDeleted); err != nil {
+		t.Fatalf("create soft: %v", err)
+	}
+	if err := tx.Exec("UPDATE categories SET deleted_at = now() WHERE id = ?", softDeleted.ID).Error; err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	got, err := repo.ListActiveByStoreID(ctx, storeID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2, got %d: %+v", len(got), got)
+	}
+	if got[0].Slug != "apparel" || got[1].Slug != "bags" {
+		t.Errorf("unexpected order: %+v", got)
+	}
+}
+
 func TestIntegration_Category_UpdateInTx_NotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
 	repo := category.NewRepository(tx)

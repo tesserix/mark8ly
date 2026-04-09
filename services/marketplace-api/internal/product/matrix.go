@@ -37,10 +37,15 @@ type OptionValueRef struct {
 	Value      string
 }
 
+// MaxVariantsPerProduct is the hard upper bound on variants per product
+// (M7c gap #7). Enforced in ValidateMatrix so both Create and Update
+// paths reject over-cap matrices before any DB work.
+const MaxVariantsPerProduct = 500
+
 // ValidateMatrix asserts the option/variant shape is well-formed per
 // spec §14.17 caps:
 //   - <=3 option axes
-//   - <=100 variants
+//   - <=MaxVariantsPerProduct variants
 //   - variant count == Pi(len(option.values))
 //   - every variant names exactly each option once with a value that
 //     exists on that option
@@ -48,7 +53,7 @@ func ValidateMatrix(options []OptionSpec, variants []VariantSpec) error {
 	if len(options) > 3 {
 		return apperrors.TooManyOptions(len(options))
 	}
-	if len(variants) > 100 {
+	if len(variants) > MaxVariantsPerProduct {
 		return apperrors.TooManyVariants(len(variants))
 	}
 

@@ -159,7 +159,7 @@ func TooManyOptions(got int) *Error {
 
 func TooManyVariants(got int) *Error {
 	return &Error{Code: CodeTooManyVariants,
-		Message: "a product may not have more than 100 variants",
+		Message: "a product may not have more than 500 variants",
 		Details: map[string]any{"got": got}}
 }
 

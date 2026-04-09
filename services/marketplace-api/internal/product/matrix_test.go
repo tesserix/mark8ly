@@ -115,13 +115,13 @@ func TestValidateMatrix_FourOptions_Rejected(t *testing.T) {
 	}
 }
 
-func TestValidateMatrix_101Variants_Rejected(t *testing.T) {
-	values := make([]string, 101)
+func TestValidateMatrix_501Variants_Rejected(t *testing.T) {
+	values := make([]string, 501)
 	for i := range values {
 		values[i] = "v" + itoaTest(i)
 	}
 	opts := []product.OptionSpec{opt("Big", values...)}
-	vs := make([]product.VariantSpec, 101)
+	vs := make([]product.VariantSpec, 501)
 	for i := range vs {
 		vs[i] = variant("Big", "v"+itoaTest(i))
 	}
@@ -130,8 +130,23 @@ func TestValidateMatrix_101Variants_Rejected(t *testing.T) {
 		t.Fatalf("want too many variants, got %v", err)
 	}
 	ae := asAppErr(t, err)
-	if ae.Details["got"] != 101 {
+	if ae.Details["got"] != 501 {
 		t.Fatalf("bad details: %v", ae.Details)
+	}
+}
+
+func TestValidateMatrix_500Variants_Accepted(t *testing.T) {
+	values := make([]string, 500)
+	for i := range values {
+		values[i] = "v" + itoaTest(i)
+	}
+	opts := []product.OptionSpec{opt("Big", values...)}
+	vs := make([]product.VariantSpec, 500)
+	for i := range vs {
+		vs[i] = variant("Big", "v"+itoaTest(i))
+	}
+	if err := product.ValidateMatrix(opts, vs); err != nil {
+		t.Fatalf("want nil, got %v", err)
 	}
 }
 

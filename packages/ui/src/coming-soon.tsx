@@ -1,18 +1,33 @@
+// packages/ui/src/coming-soon.tsx
+//
+// Placeholder rendered by every stub admin route until its real
+// implementation lands. Previously lived in apps/admin/components/shell/;
+// promoted here so onboarding and storefront apps can reuse the same
+// shell if/when they need stub routes.
+//
+// Lives inside the consumer's shell — do NOT wrap in AdminShell here.
+// The consumer owns the chrome.
+
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
-interface ComingSoonProps {
+export interface ComingSoonProps {
   title: string;
   description: string;
   eta?: string;
+  /** Where the "Back to ..." link navigates. Defaults to /dashboard. */
+  backHref?: string;
+  /** Label of the back link. Defaults to "Back to dashboard". */
+  backLabel?: string;
 }
 
-/**
- * Placeholder rendered by every stub admin route until its real
- * implementation lands. Lives inside AdminShell — see the stub page
- * files under app/{products,orders,customers,settings}.
- */
-export function ComingSoon({ title, description, eta }: ComingSoonProps) {
+export function ComingSoon({
+  title,
+  description,
+  eta,
+  backHref = "/dashboard",
+  backLabel = "Back to dashboard",
+}: ComingSoonProps) {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="space-y-4">
@@ -45,10 +60,10 @@ export function ComingSoon({ title, description, eta }: ComingSoonProps) {
         </div>
         <div className="mt-8">
           <Link
-            href="/dashboard"
+            href={backHref}
             className="inline-flex h-12 items-center gap-2 rounded-md bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary-hover"
           >
-            Back to dashboard
+            {backLabel}
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </div>

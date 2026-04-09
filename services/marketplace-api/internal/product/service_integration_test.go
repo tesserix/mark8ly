@@ -308,7 +308,7 @@ func TestIntegration_ProductService_UpdateMedia_ReplacesSet(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if err := svc.UpdateMedia(ctx, agg.Product.ID, storeID, tenantID, []product.MediaInput{
+	if err := svc.ReplaceMedia(ctx, agg.Product.ID, storeID, tenantID, []product.MediaInput{
 		{StorageKey: "k-a", URL: "https://cdn/a.jpg", Position: 0},
 		{StorageKey: "k-b", URL: "https://cdn/b.jpg", Position: 1},
 	}); err != nil {

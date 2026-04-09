@@ -24,6 +24,7 @@ import (
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/health"
 	"github.com/mark8ly/marketplace-api/internal/mode"
+	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
 	"github.com/mark8ly/marketplace-api/pkg/httpserver"
@@ -61,6 +62,24 @@ func main() {
 	if err != nil {
 		log.Error("db open", "err", err)
 		os.Exit(1)
+	}
+
+	// Outbox publisher — runs in admin and both modes; the storefront
+	// process does not produce events, so running it there would just poll
+	// an always-empty table and waste a connection.
+	publisherCtx, publisherCancel := context.WithCancel(context.Background())
+	defer publisherCancel()
+	var publisherDone <-chan struct{}
+	if m == mode.Admin || m == mode.Both {
+		pub := outbox.New(outbox.Config{
+			Repo:      outbox.NewRepository(conn),
+			DB:        conn,
+			Logger:    log,
+			Interval:  2 * time.Second,
+			BatchSize: 100,
+		})
+		publisherDone = pub.Start(publisherCtx)
+		log.Info("outbox publisher started")
 	}
 
 	// Construct Gin engine(s) per MODE.
@@ -112,6 +131,15 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error("shutdown", "err", err)
 		os.Exit(1)
+	}
+	publisherCancel()
+	if publisherDone != nil {
+		select {
+		case <-publisherDone:
+			log.Info("outbox publisher stopped")
+		case <-time.After(5 * time.Second):
+			log.Warn("outbox publisher did not stop in time")
+		}
 	}
 	log.Info("bye")
 }

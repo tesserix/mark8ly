@@ -1,0 +1,204 @@
+// Package apperrors is the marketplace-api typed error envelope.
+// Every error that escapes the service layer flows through *Error so
+// that M5's HTTP handlers render a consistent JSON envelope
+// ({"error": "<code>", "message": "...", "details": {...}}) without
+// type-switching on driver-level errors. Codes match spec §13.4 + §14.13.
+package apperrors
+
+import (
+	"errors"
+	"fmt"
+)
+
+// Code is an enumerated string identifying a failure mode.
+type Code string
+
+const (
+	CodeValidationFailed        Code = "validation_failed"
+	CodeVariantMatrixMismatch   Code = "variant_matrix_mismatch"
+	CodeTooManyOptions          Code = "too_many_options"
+	CodeTooManyVariants         Code = "too_many_variants"
+	CodeCurrencyMismatch        Code = "currency_mismatch"
+	CodeHandleTaken             Code = "handle_taken"
+	CodeSKUTaken                Code = "sku_taken"
+	CodeSlugTaken               Code = "slug_taken"
+	CodeCategoryNotEmpty        Code = "category_not_empty"
+	CodeCategoryHasChildren     Code = "category_has_children"
+	CodeTargetStoreInvalid      Code = "target_store_invalid"
+	CodeUploadNotFound          Code = "upload_not_found"
+	CodeForbidden               Code = "forbidden"
+	CodeNotFound                Code = "not_found"
+	CodePayloadTooLarge         Code = "payload_too_large"
+	CodeUnsupportedMediaType    Code = "unsupported_media_type"
+	CodeRateLimited             Code = "rate_limited"
+	CodeCurrencyChangeForbidden Code = "currency_change_forbidden"
+)
+
+// Error is the marketplace-api envelope. Satisfies the error interface.
+type Error struct {
+	Code    Code           // typed code (stable wire contract)
+	Message string         // human-readable, PII-free
+	Details map[string]any // extra structured data rendered into details{}
+	wrapped error          // underlying cause for errors.Is / %w
+}
+
+func (e *Error) Error() string {
+	if e.wrapped != nil {
+		return fmt.Sprintf("%s: %s: %v", e.Code, e.Message, e.wrapped)
+	}
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
+func (e *Error) Unwrap() error { return e.wrapped }
+
+// Sentinel values for errors.Is comparisons. The wrapped *Error does NOT
+// equal the sentinel; Is() below does the code-level comparison.
+var (
+	ErrValidationFailed        = &Error{Code: CodeValidationFailed}
+	ErrVariantMatrixMismatch   = &Error{Code: CodeVariantMatrixMismatch}
+	ErrTooManyOptions          = &Error{Code: CodeTooManyOptions}
+	ErrTooManyVariants         = &Error{Code: CodeTooManyVariants}
+	ErrCurrencyMismatch        = &Error{Code: CodeCurrencyMismatch}
+	ErrHandleTaken             = &Error{Code: CodeHandleTaken}
+	ErrSKUTaken                = &Error{Code: CodeSKUTaken}
+	ErrSlugTaken               = &Error{Code: CodeSlugTaken}
+	ErrCategoryNotEmpty        = &Error{Code: CodeCategoryNotEmpty}
+	ErrCategoryHasChildren     = &Error{Code: CodeCategoryHasChildren}
+	ErrTargetStoreInvalid      = &Error{Code: CodeTargetStoreInvalid}
+	ErrUploadNotFound          = &Error{Code: CodeUploadNotFound}
+	ErrForbidden               = &Error{Code: CodeForbidden}
+	ErrNotFound                = &Error{Code: CodeNotFound}
+	ErrPayloadTooLarge         = &Error{Code: CodePayloadTooLarge}
+	ErrUnsupportedMediaType    = &Error{Code: CodeUnsupportedMediaType}
+	ErrRateLimited             = &Error{Code: CodeRateLimited}
+	ErrCurrencyChangeForbidden = &Error{Code: CodeCurrencyChangeForbidden}
+)
+
+// Is makes errors.Is(err, sentinel) match when the codes are equal,
+// so callers can write `errors.Is(err, apperrors.ErrHandleTaken)` regardless
+// of which constructor built the error.
+func (e *Error) Is(target error) bool {
+	var t *Error
+	if !errors.As(target, &t) {
+		return false
+	}
+	return e.Code == t.Code
+}
+
+// IsKnownCode reports whether the given code string is one of the
+// enumerated codes. Used by tests to assert enumeration coverage.
+func IsKnownCode(s string) bool {
+	switch Code(s) {
+	case CodeValidationFailed, CodeVariantMatrixMismatch, CodeTooManyOptions,
+		CodeTooManyVariants, CodeCurrencyMismatch, CodeHandleTaken, CodeSKUTaken,
+		CodeSlugTaken, CodeCategoryNotEmpty, CodeCategoryHasChildren,
+		CodeTargetStoreInvalid, CodeUploadNotFound, CodeForbidden, CodeNotFound,
+		CodePayloadTooLarge, CodeUnsupportedMediaType, CodeRateLimited,
+		CodeCurrencyChangeForbidden:
+		return true
+	}
+	return false
+}
+
+// ---------- constructors ----------
+
+func New(code Code, msg string) *Error { return &Error{Code: code, Message: msg} }
+
+func Wrap(code Code, msg string, err error) *Error {
+	return &Error{Code: code, Message: msg, wrapped: err}
+}
+
+func ValidationFailed(field, msg string) *Error {
+	return &Error{Code: CodeValidationFailed, Message: msg,
+		Details: map[string]any{"field": field}}
+}
+
+func HandleTaken(attempted, suggested string) *Error {
+	return &Error{Code: CodeHandleTaken,
+		Message: fmt.Sprintf("handle %q is already in use in this store", attempted),
+		Details: map[string]any{"attempted": attempted, "suggested": suggested}}
+}
+
+func SKUTaken(sku string) *Error {
+	return &Error{Code: CodeSKUTaken,
+		Message: fmt.Sprintf("SKU %q is already in use in this store", sku),
+		Details: map[string]any{"sku": sku}}
+}
+
+func SlugTaken(attempted, suggested string) *Error {
+	return &Error{Code: CodeSlugTaken,
+		Message: fmt.Sprintf("slug %q is already in use in this store", attempted),
+		Details: map[string]any{"attempted": attempted, "suggested": suggested}}
+}
+
+func CategoryNotEmpty(productCount int64) *Error {
+	return &Error{Code: CodeCategoryNotEmpty,
+		Message: "category still has products and cannot be deleted",
+		Details: map[string]any{"product_count": productCount}}
+}
+
+func CategoryHasChildren(childCount int64) *Error {
+	return &Error{Code: CodeCategoryHasChildren,
+		Message: "category has sub-categories and cannot be deleted",
+		Details: map[string]any{"child_count": childCount}}
+}
+
+func VariantMatrixMismatch(expected, got int) *Error {
+	return &Error{Code: CodeVariantMatrixMismatch,
+		Message: "variant count does not match option-value product",
+		Details: map[string]any{"expected": expected, "got": got}}
+}
+
+func TooManyOptions(got int) *Error {
+	return &Error{Code: CodeTooManyOptions,
+		Message: "a product may not have more than 3 option axes",
+		Details: map[string]any{"got": got}}
+}
+
+func TooManyVariants(got int) *Error {
+	return &Error{Code: CodeTooManyVariants,
+		Message: "a product may not have more than 100 variants",
+		Details: map[string]any{"got": got}}
+}
+
+func UploadNotFound(key string) *Error {
+	return &Error{Code: CodeUploadNotFound,
+		Message: "referenced upload was not found in storage",
+		Details: map[string]any{"storage_key": key}}
+}
+
+func PayloadTooLarge(key string, size int64) *Error {
+	return &Error{Code: CodePayloadTooLarge,
+		Message: "uploaded object exceeds the maximum size",
+		Details: map[string]any{"storage_key": key, "bytes": size}}
+}
+
+func UnsupportedMediaType(key, ct string) *Error {
+	return &Error{Code: CodeUnsupportedMediaType,
+		Message: "uploaded object has an unsupported content type",
+		Details: map[string]any{"storage_key": key, "content_type": ct}}
+}
+
+func TargetStoreInvalid(storeID, reason string) *Error {
+	return &Error{Code: CodeTargetStoreInvalid,
+		Message: "copy target store is invalid",
+		Details: map[string]any{"store_id": storeID, "reason": reason}}
+}
+
+func CurrencyChangeForbidden() *Error {
+	return &Error{Code: CodeCurrencyChangeForbidden,
+		Message: "changing currency is not supported in slice 1"}
+}
+
+func CurrencyMismatch(source, target string) *Error {
+	return &Error{Code: CodeCurrencyMismatch,
+		Message: "variant currency does not match store currency",
+		Details: map[string]any{"source": source, "target": target}}
+}
+
+func NotFound(resource string) *Error {
+	return &Error{Code: CodeNotFound,
+		Message: fmt.Sprintf("%s not found", resource)}
+}
+
+func Forbidden() *Error { return &Error{Code: CodeForbidden, Message: "forbidden"} }

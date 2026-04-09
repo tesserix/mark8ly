@@ -44,17 +44,23 @@ func (r *gormRepository) ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, 
 	for i := range diff.Adds {
 		diff.Adds[i].ProductID = productID
 		diff.Adds[i].StoreID = storeID
+		// Detach OptionValueLinks so GORM's cascade doesn't double-insert
+		// (see repository.go CreateAggregateInTx comment).
+		links := diff.Adds[i].OptionValueLinks
+		diff.Adds[i].OptionValueLinks = nil
 		if err := tx.Create(&diff.Adds[i]).Error; err != nil {
+			diff.Adds[i].OptionValueLinks = links
 			return translateUniqueViolation(err, "", diff.Adds[i].SKU)
 		}
-		for j := range diff.Adds[i].OptionValueLinks {
-			diff.Adds[i].OptionValueLinks[j].VariantID = diff.Adds[i].ID
+		for j := range links {
+			links[j].VariantID = diff.Adds[i].ID
 		}
-		if len(diff.Adds[i].OptionValueLinks) > 0 {
-			if err := tx.Create(&diff.Adds[i].OptionValueLinks).Error; err != nil {
+		if len(links) > 0 {
+			if err := tx.Create(&links).Error; err != nil {
 				return fmt.Errorf("product: link new variant %q: %w", diff.Adds[i].SKU, err)
 			}
 		}
+		diff.Adds[i].OptionValueLinks = links
 	}
 
 	// Updates — deliberately whitelisted so we never touch

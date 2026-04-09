@@ -147,20 +147,24 @@ func (r *gormRepository) CreateAggregateInTx(ctx context.Context, tx *gorm.DB, a
 	for i := range a.Variants {
 		a.Variants[i].ProductID = a.Product.ID
 		a.Variants[i].StoreID = a.Product.StoreID
+		// Detach OptionValueLinks so GORM's HasMany cascade does not
+		// insert them during the parent Create — we insert them
+		// explicitly below once VariantID is known.
+		links := a.Variants[i].OptionValueLinks
+		a.Variants[i].OptionValueLinks = nil
 		if err := tx.Create(&a.Variants[i]).Error; err != nil {
+			a.Variants[i].OptionValueLinks = links
 			return translateUniqueViolation(err, a.Product.Handle, a.Variants[i].SKU)
 		}
-		// Variant.OptionValueLinks are cascaded by the HasMany relation
-		// on Variant. The caller populates VariantID after knowing the
-		// variant ID; since we use pre-assigned UUIDs that's fine.
-		for j := range a.Variants[i].OptionValueLinks {
-			a.Variants[i].OptionValueLinks[j].VariantID = a.Variants[i].ID
+		for j := range links {
+			links[j].VariantID = a.Variants[i].ID
 		}
-		if len(a.Variants[i].OptionValueLinks) > 0 {
-			if err := tx.Create(&a.Variants[i].OptionValueLinks).Error; err != nil {
+		if len(links) > 0 {
+			if err := tx.Create(&links).Error; err != nil {
 				return fmt.Errorf("product: link variant %q to option values: %w", a.Variants[i].SKU, err)
 			}
 		}
+		a.Variants[i].OptionValueLinks = links
 	}
 
 	// 4. Media.

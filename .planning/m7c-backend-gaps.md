@@ -7,8 +7,8 @@ Scope: services/marketplace-api aggregate PATCH readiness for M7c variants + ric
 
 | # | Verification item | Status | Blocking |
 |---|---|---|---|
-| 1 | Aggregate PATCH round-trip | PARTIAL | yes |
-| 2 | Removed variants handling | MISSING | yes |
+| 1 | Aggregate PATCH round-trip | DONE | yes |
+| 2 | Removed variants handling | DONE | yes |
 | 3 | Dedicated media endpoints (create/delete/recrop) | PARTIAL | yes |
 | 4 | Signed URL endpoint | PARTIAL | no |
 | 5 | `variant_id` on `product_media` | PARTIAL | yes |
@@ -41,7 +41,7 @@ Scope: services/marketplace-api aggregate PATCH readiness for M7c variants + ric
 - `services/marketplace-api/internal/product/service.go:160-166` — `UpdateVariantsRequest` type has `Options` and `Variants` but no removed-ids field.
 - Migration `000001_products_initial.up.sql` declares `product_variants.deleted_at` (soft-delete column exists at the DB layer), but no service code paths write to it for individual variants (`Delete` at `service.go:421` soft-deletes the whole product).
 
-**Gap:** No wire field, no service field, no repository method, no handler logic for removing variants as part of an aggregate PATCH.
+**Gap (closed):** `UpdateAggregateRequest` now accepts `RemovedVariantIDs` and soft-deletes via the existing `ApplyVariantDiffInTx`, preserving order-history FKs. The handler wires `req.RemovedVariantIDs` through the wire DTO (`UpdateProductRequest.RemovedVariantIDs`) into the aggregate path. No hard-delete code path was added; orphaned IDs route through the same soft-delete as diffed-out variants. Covered by `TestIntegration_ProductService_UpdateAggregate_RemovedVariantIDsSoftDelete`.
 
 ### 3. Dedicated media endpoints
 
@@ -151,8 +151,8 @@ Ordered by dependency so the frontend can unblock as early as possible.
 
 | # | Spec §2.7 verification item | Test name | Status | Commit |
 |---|---|---|---|---|
-| 1 | PATCH aggregate round-trip | TestAggregatePatch_FullAggregateRoundTrip | ⬜ | _________ |
-| 2 | Removed variants handling | TestAggregatePatch_RemovedVariants | ⬜ | _________ |
+| 1 | PATCH aggregate round-trip | TestIntegration_ProductService_UpdateAggregate_FullRoundTrip | ✅ | (pending) |
+| 2 | Removed variants handling | TestIntegration_ProductService_UpdateAggregate_RemovedVariantIDsSoftDelete | ✅ | (pending) |
 | 3 | Media endpoints lifecycle | TestMediaEndpoints_Lifecycle | ⬜ | _________ |
 | 4 | variant_id on product_media | TestMedia_VariantAssignment | ⬜ | _________ |
 | 5 | gcs_path_original column + backfill | TestMedia_GcsPathOriginalBackfill | ⬜ | _________ |

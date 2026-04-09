@@ -146,10 +146,20 @@ func (h *ProductHandler) Patch(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// 1. Basics — any scalar/SEO/handle field present triggers this.
-	if req.Title != nil || req.Handle != nil || req.Description != nil ||
+	// If the request touches options, variants, or removed variant IDs,
+	// route through the aggregate path which handles scalar + options +
+	// variants + categories in a single transaction and enqueues one
+	// product.updated event.
+	if req.Options != nil || req.Variants != nil || req.RemovedVariantIDs != nil {
+		aggReq := toServiceUpdateAggregateRequest(req, id, tenantID, storeID, userID)
+		if _, err := h.svc.UpdateAggregate(ctx, aggReq); err != nil {
+			RespondErr(c, err, h.logger)
+			return
+		}
+	} else if req.Title != nil || req.Handle != nil || req.Description != nil ||
 		req.Status != nil || req.Tags != nil || req.SEOTitle != nil ||
 		req.SEODescription != nil || req.PrimaryCategoryID != nil {
+		// 1. Basics-only path — any scalar/SEO/handle field present triggers this.
 		basicsReq := toServiceUpdateBasicsRequest(req, id, tenantID, storeID, userID)
 		if _, err := h.svc.UpdateBasics(ctx, basicsReq); err != nil {
 			RespondErr(c, err, h.logger)
@@ -179,18 +189,15 @@ func (h *ProductHandler) Patch(c *gin.Context) {
 		}
 	}
 
-	// 3. Category link replacement.
-	if req.CategoryIDs != nil {
+	// 3. Category link replacement. If the aggregate path already ran
+	//    and the request also carried CategoryIDs, UpdateAggregate already
+	//    handled them in the same tx, so skip the secondary call.
+	if req.CategoryIDs != nil && req.Options == nil && req.Variants == nil && req.RemovedVariantIDs == nil {
 		if err := h.svc.UpdateCategoryLinks(ctx, id, storeID, tenantID, *req.CategoryIDs); err != nil {
 			RespondErr(c, err, h.logger)
 			return
 		}
 	}
-
-	// 4. Variants/Options — deferred to M5b.
-	// TODO(M5b): route req.Variants + req.Options to a future
-	// svc.UpdateVariants once the service exposes one. For now, the
-	// handler silently accepts and ignores these fields.
 
 	agg, err := h.svc.Get(ctx, id, storeID, tenantID)
 	if err != nil {

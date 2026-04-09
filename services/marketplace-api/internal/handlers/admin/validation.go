@@ -236,6 +236,7 @@ type UpdateProductRequest struct {
 	Variants          *[]CreateProductVariantInput `json:"variants,omitempty"`
 	Media             *[]CreateProductMediaInput   `json:"media,omitempty"`
 	CategoryIDs       *[]string                    `json:"category_ids,omitempty"`
+	RemovedVariantIDs *[]string                    `json:"removed_variant_ids,omitempty"`
 }
 
 // CopyProductRequest is the wire body for POST admin copy.
@@ -343,6 +344,63 @@ func toServiceUpdateBasicsRequest(req UpdateProductRequest, id, tenantID, storeI
 	}
 	if updatedBy != "" {
 		out.UpdatedBy = &updatedBy
+	}
+	return out
+}
+
+// toServiceUpdateAggregateRequest maps the wire patch body to the M7c
+// aggregate service request. Handles options, variants, removed variant
+// IDs, and category links in one call. Scalar fields are carried
+// through so the service can apply them in the same transaction.
+func toServiceUpdateAggregateRequest(req UpdateProductRequest, id, tenantID, storeID, updatedBy string) product.UpdateAggregateRequest {
+	out := product.UpdateAggregateRequest{
+		ID:                id,
+		StoreID:           storeID,
+		TenantID:          tenantID,
+		Title:             req.Title,
+		Handle:            req.Handle,
+		Description:       req.Description,
+		Status:            req.Status,
+		Tags:              req.Tags,
+		SEOTitle:          req.SEOTitle,
+		SEODescription:    req.SEODescription,
+		PrimaryCategoryID: req.PrimaryCategoryID,
+		CategoryIDs:       req.CategoryIDs,
+		RemovedVariantIDs: req.RemovedVariantIDs,
+	}
+	if updatedBy != "" {
+		out.UpdatedBy = &updatedBy
+	}
+	if req.Options != nil {
+		opts := make([]product.OptionSpec, 0, len(*req.Options))
+		for _, o := range *req.Options {
+			vals := make([]product.OptionValueSpec, 0, len(o.Values))
+			for _, v := range o.Values {
+				vals = append(vals, product.OptionValueSpec{Value: v})
+			}
+			opts = append(opts, product.OptionSpec{Name: o.Name, Values: vals})
+		}
+		out.Options = &opts
+	}
+	if req.Variants != nil {
+		vars := make([]product.VariantInput, 0, len(*req.Variants))
+		for _, v := range *req.Variants {
+			ovs := make([]product.OptionValueRef, 0, len(v.OptionValues))
+			for _, ref := range v.OptionValues {
+				ovs = append(ovs, product.OptionValueRef{OptionName: ref.OptionName, Value: ref.Value})
+			}
+			vars = append(vars, product.VariantInput{
+				SKU: v.SKU, Barcode: v.Barcode,
+				Price: v.Price, CompareAtPrice: v.CompareAtPrice, CostPrice: v.CostPrice,
+				CurrencyCode: v.CurrencyCode, WeightGrams: v.WeightGrams,
+				InitialStock:      v.InventoryQuantity,
+				InventoryPolicy:   v.InventoryPolicy,
+				LowStockThreshold: v.LowStockThreshold,
+				OptionValues:      ovs,
+				Position:          v.Position,
+			})
+		}
+		out.Variants = &vars
 	}
 	return out
 }

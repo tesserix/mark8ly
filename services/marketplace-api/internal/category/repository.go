@@ -16,6 +16,7 @@ type Repository interface {
 	Create(ctx context.Context, c *Category) error
 	GetByIDForStore(ctx context.Context, id, storeID, tenantID string) (*Category, error)
 	ListByStore(ctx context.Context, storeID, tenantID string) ([]Category, error)
+	ListActiveByStoreID(ctx context.Context, storeID string) ([]Category, error)
 	UpdateInTx(ctx context.Context, tx *gorm.DB, id, storeID, tenantID string, fields map[string]any) error
 	SoftDeleteInTx(ctx context.Context, tx *gorm.DB, id, storeID, tenantID string) error
 	HasChildren(ctx context.Context, parentID string) (int64, error)
@@ -61,6 +62,20 @@ func (r *gormRepository) ListByStore(ctx context.Context, storeID, tenantID stri
 		Order("position ASC, name ASC").
 		Find(&cats).Error; err != nil {
 		return nil, fmt.Errorf("category: list by store: %w", err)
+	}
+	return cats, nil
+}
+
+// ListActiveByStoreID returns the storefront-visible category tree for a
+// store: active, non-deleted, ordered by (position, name). No tenant
+// filter — the storefront path resolves store by slug, not tenant.
+func (r *gormRepository) ListActiveByStoreID(ctx context.Context, storeID string) ([]Category, error) {
+	var cats []Category
+	if err := r.db.WithContext(ctx).
+		Where("store_id = ? AND is_active = ? AND deleted_at IS NULL", storeID, true).
+		Order("position ASC, name ASC").
+		Find(&cats).Error; err != nil {
+		return nil, fmt.Errorf("category: list active by store id: %w", err)
 	}
 	return cats, nil
 }

@@ -5,8 +5,78 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/product"
 )
+
+// AdminCategoryResponse is the wire DTO for a category rendered to admin
+// callers. It mirrors the M3 Category model minus soft-delete internals.
+type AdminCategoryResponse struct {
+	ID          string    `json:"id"`
+	StoreID     string    `json:"store_id"`
+	ParentID    *string   `json:"parent_id,omitempty"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	Description *string   `json:"description,omitempty"`
+	ImageURL    *string   `json:"image_url,omitempty"`
+	Position    int       `json:"position"`
+	IsActive    bool      `json:"is_active"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// ToAdminCategoryResponse converts the domain Category to its wire DTO.
+func ToAdminCategoryResponse(c *category.Category) AdminCategoryResponse {
+	return AdminCategoryResponse{
+		ID:          c.ID,
+		StoreID:     c.StoreID,
+		ParentID:    c.ParentID,
+		Name:        c.Name,
+		Slug:        c.Slug,
+		Description: c.Description,
+		ImageURL:    c.ImageURL,
+		Position:    c.Position,
+		IsActive:    c.IsActive,
+		CreatedAt:   c.CreatedAt,
+		UpdatedAt:   c.UpdatedAt,
+	}
+}
+
+// ToAdminVariantResponse converts a product.Variant to its wire DTO.
+// Option value references are left empty; use ToAdminProductResponse for
+// the full product aggregate view.
+func ToAdminVariantResponse(v *product.Variant) AdminVariantResponse {
+	return AdminVariantResponse{
+		ID:                v.ID,
+		SKU:               v.SKU,
+		Barcode:           v.Barcode,
+		Price:             v.Price,
+		CompareAtPrice:    v.CompareAtPrice,
+		CostPrice:         v.CostPrice,
+		CurrencyCode:      v.CurrencyCode,
+		WeightGrams:       v.WeightGrams,
+		InventoryQuantity: v.InventoryQuantity,
+		InventoryPolicy:   v.InventoryPolicy,
+		LowStockThreshold: v.LowStockThreshold,
+		OptionValues:      []AdminVariantOptionRef{},
+		Position:          v.Position,
+	}
+}
+
+// ToAdminMediaResponse converts a product.Media row to its wire DTO.
+func ToAdminMediaResponse(m *product.Media) AdminMediaResponse {
+	return AdminMediaResponse{
+		ID:         m.ID,
+		URL:        m.URL,
+		StorageKey: m.StorageKey,
+		Alt:        m.Alt,
+		Position:   m.Position,
+		MediaType:  m.MediaType,
+		Width:      m.Width,
+		Height:     m.Height,
+		Bytes:      m.Bytes,
+	}
+}
 
 // AdminProductResponse is the wire DTO for a product as rendered to admin
 // callers. Storefront has its own (narrower) DTO in M6.

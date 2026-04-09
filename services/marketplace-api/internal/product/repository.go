@@ -47,7 +47,11 @@ type Repository interface {
 	ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, productID, storeID string, diff VariantDiff) error
 	ReplaceCategoryLinksInTx(ctx context.Context, tx *gorm.DB, productID string, categoryIDs []string) error
 	ReplaceMediaInTx(ctx context.Context, tx *gorm.DB, productID string, media []Media) error
+	InsertMediaInTx(ctx context.Context, tx *gorm.DB, m *Media) error
+	UpdateMediaInTx(ctx context.Context, tx *gorm.DB, productID, mediaID, storeID, tenantID string, fields map[string]any) error
+	DeleteMediaInTx(ctx context.Context, tx *gorm.DB, productID, mediaID, storeID, tenantID string) error
 	UpdateVariantStockInTx(ctx context.Context, tx *gorm.DB, variantID, locationID string, quantity int) error
+	UpdateVariantBasicsInTx(ctx context.Context, tx *gorm.DB, productID, variantID, storeID, tenantID string, fields map[string]any) error
 	SoftDeleteInTx(ctx context.Context, tx *gorm.DB, id, storeID, tenantID string) error
 }
 

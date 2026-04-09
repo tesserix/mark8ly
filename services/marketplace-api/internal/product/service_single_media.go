@@ -1,0 +1,126 @@
+// Package product — service_single_media.go: AddMedia, UpdateMedia,
+// DeleteMedia operate on ONE product_media row at a time. Each opens
+// its own tx and enqueues one product.updated outbox event.
+package product
+
+import (
+	"context"
+	"errors"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/internal/media"
+	"github.com/mark8ly/marketplace-api/internal/outbox"
+	"github.com/mark8ly/marketplace-api/pkg/apperrors"
+)
+
+// AddMediaRequest is the service-level DTO for inserting a single
+// product_media row.
+type AddMediaRequest struct {
+	ProductID  string
+	StoreID    string
+	TenantID   string
+	StorageKey string
+	URL        string
+	Alt        *string
+	Position   int
+	MediaType  string
+	VariantID  *string
+	Width      *int
+	Height     *int
+	Bytes      *int64
+}
+
+// AddMedia verifies the upload exists (pre-tx) then inserts one
+// product_media row and enqueues product.updated.
+func (s *Service) AddMedia(ctx context.Context, req AddMediaRequest) (*Media, error) {
+	if req.StorageKey == "" {
+		return nil, apperrors.ValidationFailed("media.storage_key", "storage_key must not be empty")
+	}
+	// Verify product belongs to this tenant/store.
+	if _, err := s.repo.GetByIDForStore(ctx, req.ProductID, req.StoreID, req.TenantID); err != nil {
+		return nil, err
+	}
+	// Pre-tx upload verification.
+	if s.uploader != nil {
+		if _, err := s.uploader.Verify(ctx, req.StorageKey); err != nil {
+			if errors.Is(err, media.ErrNotFound) {
+				return nil, apperrors.UploadNotFound(req.StorageKey)
+			}
+			return nil, apperrors.UploadNotFound(req.StorageKey)
+		}
+	}
+
+	row := &Media{
+		ID:         uuid.NewString(),
+		ProductID:  req.ProductID,
+		StorageKey: req.StorageKey,
+		URL:        req.URL,
+		Alt:        req.Alt,
+		Position:   req.Position,
+		MediaType:  defaultMediaType(req.MediaType),
+		VariantID:  req.VariantID,
+		Width:      req.Width,
+		Height:     req.Height,
+		Bytes:      req.Bytes,
+	}
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.repo.InsertMediaInTx(ctx, tx, row); err != nil {
+			return err
+		}
+		return s.enqueue(ctx, tx, req.TenantID, req.StoreID, req.ProductID, outbox.EventProductUpdated)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+// UpdateMediaRequest carries the non-nil fields to apply to a single
+// product_media row.
+type UpdateMediaRequest struct {
+	ProductID string
+	MediaID   string
+	StoreID   string
+	TenantID  string
+	Alt       *string
+	Position  *int
+	URL       *string
+}
+
+// UpdateMedia applies non-nil fields to the given media row. Tenant/
+// store scoping is enforced by the repo via a products subquery.
+func (s *Service) UpdateMedia(ctx context.Context, req UpdateMediaRequest) error {
+	fields := map[string]any{}
+	if req.Alt != nil {
+		fields["alt"] = *req.Alt
+	}
+	if req.Position != nil {
+		fields["position"] = *req.Position
+	}
+	if req.URL != nil {
+		fields["url"] = *req.URL
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(fields) > 0 {
+			if err := s.repo.UpdateMediaInTx(ctx, tx, req.ProductID, req.MediaID, req.StoreID, req.TenantID, fields); err != nil {
+				return err
+			}
+		}
+		return s.enqueue(ctx, tx, req.TenantID, req.StoreID, req.ProductID, outbox.EventProductUpdated)
+	})
+}
+
+// DeleteMedia removes a single product_media row. The GCS object itself
+// is not touched — a later sweep handles orphaned storage keys.
+func (s *Service) DeleteMedia(ctx context.Context, productID, mediaID, storeID, tenantID string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.repo.DeleteMediaInTx(ctx, tx, productID, mediaID, storeID, tenantID); err != nil {
+			return err
+		}
+		return s.enqueue(ctx, tx, tenantID, storeID, productID, outbox.EventProductUpdated)
+	})
+}

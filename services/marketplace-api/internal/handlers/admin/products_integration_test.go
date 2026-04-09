@@ -87,6 +87,12 @@ func setupTestRouter(t *testing.T) *testEnv {
 		Uploader:   uploader,
 	})
 
+	catSvc := category.NewService(category.Config{
+		DB:         db,
+		Repo:       categoryRepo,
+		OutboxRepo: outboxRepo,
+	})
+
 	storeMW := stores.StoreMiddleware(stores.MiddlewareConfig{
 		Repo:   storesRepo,
 		Client: stubClient{},
@@ -94,10 +100,16 @@ func setupTestRouter(t *testing.T) *testEnv {
 	})
 	authzMW := authz.NewMiddleware(fga, nil)
 	handler := admin.NewProductHandler(svc, categoryRepo, nil)
+	catHandler := admin.NewCategoryHandler(catSvc, categoryRepo, nil)
+	variantHandler := admin.NewVariantHandler(svc, nil)
+	mediaHandler := admin.NewMediaHandler(svc, uploader, nil)
 
 	r := gin.New()
 	admin.RegisterAdmin(r.Group("/api/v1"), admin.Deps{
 		ProductHandler:   handler,
+		CategoryHandler:  catHandler,
+		VariantHandler:   variantHandler,
+		MediaHandler:     mediaHandler,
 		StoresMiddleware: storeMW,
 		AuthzMiddleware:  authzMW,
 		InternalSecret:   "",

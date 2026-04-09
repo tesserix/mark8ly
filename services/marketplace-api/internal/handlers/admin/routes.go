@@ -15,6 +15,9 @@ import (
 // Constructed in cmd/marketplace-api/main.go.
 type Deps struct {
 	ProductHandler   *ProductHandler
+	CategoryHandler  *CategoryHandler
+	VariantHandler   *VariantHandler
+	MediaHandler     *MediaHandler
 	StoresMiddleware gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware  *authz.Middleware
 	InternalSecret   string
@@ -43,6 +46,32 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			products.DELETE("/:id", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner), deps.ProductHandler.Delete)
 			products.POST("/:id/copy", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.ProductHandler.Copy)
 		}
-		// TODO(M5b): mount categories, variant quick-PATCH, and media routes here.
+		categories := storeRoute.Group("/categories")
+		{
+			categories.GET("", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff), deps.CategoryHandler.List)
+			categories.POST("", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.CategoryHandler.Create)
+			categories.PATCH("/:id", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.CategoryHandler.Patch)
+			categories.DELETE("/:id", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.CategoryHandler.Delete)
+		}
+
+		storeRoute.PATCH("/products/:id/variants/:variantId",
+			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+			deps.VariantHandler.Patch)
+
+		mediaGroup := storeRoute.Group("/products/:id/media")
+		{
+			mediaGroup.POST("/upload-url",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+				deps.MediaHandler.UploadURL)
+			mediaGroup.POST("",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+				deps.MediaHandler.Create)
+			mediaGroup.PATCH("/:mediaId",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+				deps.MediaHandler.Patch)
+			mediaGroup.DELETE("/:mediaId",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+				deps.MediaHandler.Delete)
+		}
 	}
 }

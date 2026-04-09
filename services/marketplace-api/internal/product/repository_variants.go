@@ -103,6 +103,32 @@ func (r *gormRepository) ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, 
 	return nil
 }
 
+// UpdateVariantBasicsInTx applies a whitelisted field map to one
+// product_variants row. Scoped to (product, store, tenant) via a
+// join subquery so cross-tenant writes are impossible. Translates
+// unique-SKU violations to apperrors.SKUTaken.
+func (r *gormRepository) UpdateVariantBasicsInTx(ctx context.Context, tx *gorm.DB, productID, variantID, storeID, tenantID string, fields map[string]any) error {
+	tx = tx.WithContext(ctx)
+	if len(fields) == 0 {
+		return nil
+	}
+	sku, _ := fields["sku"].(string)
+	res := tx.Model(&Variant{}).
+		Where(`id = ? AND product_id = ? AND deleted_at IS NULL AND EXISTS (
+				SELECT 1 FROM products p
+				WHERE p.id = product_variants.product_id
+				  AND p.store_id = ? AND p.tenant_id = ? AND p.deleted_at IS NULL)`,
+			variantID, productID, storeID, tenantID).
+		Updates(fields)
+	if res.Error != nil {
+		return translateUniqueViolation(res.Error, "", sku)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("variant")
+	}
+	return nil
+}
+
 // UpdateVariantStockInTx upserts a single variant_stock row. This is
 // the ONLY place in the whole service where we mutate
 // variant_stock.quantity; the sync_variant_inventory trigger propagates

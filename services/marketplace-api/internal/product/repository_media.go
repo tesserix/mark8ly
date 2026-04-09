@@ -8,7 +8,62 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
+
+// InsertMediaInTx inserts a single product_media row. The caller must
+// have already set ProductID on m. Returns an unwrapped error on any
+// DB failure.
+func (r *gormRepository) InsertMediaInTx(ctx context.Context, tx *gorm.DB, m *Media) error {
+	tx = tx.WithContext(ctx)
+	if err := tx.Create(m).Error; err != nil {
+		return fmt.Errorf("product: insert media: %w", err)
+	}
+	return nil
+}
+
+// UpdateMediaInTx applies the given fields to a single product_media row,
+// scoped so cross-tenant / cross-store / deleted-product writes are
+// impossible. Returns apperrors.NotFound when no row matches.
+func (r *gormRepository) UpdateMediaInTx(ctx context.Context, tx *gorm.DB, productID, mediaID, storeID, tenantID string, fields map[string]any) error {
+	tx = tx.WithContext(ctx)
+	res := tx.Model(&Media{}).
+		Where(`id = ? AND product_id = ? AND EXISTS (
+				SELECT 1 FROM products p
+				WHERE p.id = product_media.product_id
+				  AND p.store_id = ? AND p.tenant_id = ? AND p.deleted_at IS NULL)`,
+			mediaID, productID, storeID, tenantID).
+		Updates(fields)
+	if res.Error != nil {
+		return fmt.Errorf("product: update media: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("media")
+	}
+	return nil
+}
+
+// DeleteMediaInTx hard-deletes a product_media row under the same
+// scoping as UpdateMediaInTx. Returns apperrors.NotFound when no row
+// matches.
+func (r *gormRepository) DeleteMediaInTx(ctx context.Context, tx *gorm.DB, productID, mediaID, storeID, tenantID string) error {
+	tx = tx.WithContext(ctx)
+	res := tx.
+		Where(`id = ? AND product_id = ? AND EXISTS (
+				SELECT 1 FROM products p
+				WHERE p.id = product_media.product_id
+				  AND p.store_id = ? AND p.tenant_id = ? AND p.deleted_at IS NULL)`,
+			mediaID, productID, storeID, tenantID).
+		Delete(&Media{})
+	if res.Error != nil {
+		return fmt.Errorf("product: delete media: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("media")
+	}
+	return nil
+}
 
 // ReplaceMediaInTx reconciles product_media for a product to match the
 // target set. Existing rows matched by (product_id, storage_key) are

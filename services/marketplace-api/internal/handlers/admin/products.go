@@ -173,7 +173,7 @@ func (h *ProductHandler) Patch(c *gin.Context) {
 				MediaType:  mt,
 			})
 		}
-		if err := h.svc.UpdateMedia(ctx, id, storeID, tenantID, media); err != nil {
+		if err := h.svc.ReplaceMedia(ctx, id, storeID, tenantID, media); err != nil {
 			RespondErr(c, err, h.logger)
 			return
 		}

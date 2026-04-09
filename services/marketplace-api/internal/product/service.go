@@ -380,11 +380,11 @@ func (s *Service) UpdateCategoryLinks(ctx context.Context, productID, storeID, t
 	})
 }
 
-// ---------- UpdateMedia ----------
+// ---------- ReplaceMedia ----------
 
-// UpdateMedia replaces the media set for a product. Every StorageKey is
+// ReplaceMedia replaces the media set for a product. Every StorageKey is
 // verified against the Uploader before the transaction opens.
-func (s *Service) UpdateMedia(ctx context.Context, productID, storeID, tenantID string, mediaInputs []MediaInput) error {
+func (s *Service) ReplaceMedia(ctx context.Context, productID, storeID, tenantID string, mediaInputs []MediaInput) error {
 	if _, err := s.repo.GetByIDForStore(ctx, productID, storeID, tenantID); err != nil {
 		return err
 	}

@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"golang.org/x/sync/singleflight"
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
@@ -112,25 +113,66 @@ func main() {
 		categoryRepo := category.NewRepository(conn)
 		outboxRepo := outbox.NewRepository(conn)
 		storesRepo := stores.NewRepository(conn)
-		fakeUploader := media.NewFakeUploader() // M5b replaces with real GCS
+
+		// Media uploader — real GCS when MARKETPLACE_GCS_BUCKET is set,
+		// FakeUploader otherwise so `make dev` works without credentials.
+		var uploader media.Uploader
+		if cfg.GCSBucket != "" {
+			gcsCtx, gcsCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			sc, err := storage.NewClient(gcsCtx)
+			gcsCancel()
+			if err != nil {
+				log.Error("media: gcs client", "err", err)
+				os.Exit(1)
+			}
+			uploader = media.NewGCSUploader(sc, cfg.GCSBucket)
+			log.Info("media: using real GCS uploader", "bucket", cfg.GCSBucket)
+		} else {
+			uploader = media.NewFakeUploader()
+			log.Info("media: using fake uploader (MARKETPLACE_GCS_BUCKET is empty)")
+		}
+
+		// Platform client — real HTTP client when MARKETPLACE_PLATFORM_API_URL
+		// is set, stub otherwise.
+		var platformClient stores.Client
+		if cfg.PlatformAPIURL != "" {
+			platformClient = stores.NewHTTPClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+			log.Info("stores: using real platform-api client", "url", cfg.PlatformAPIURL)
+		} else {
+			platformClient = stubPlatformClient{}
+			log.Info("stores: using stub platform client (MARKETPLACE_PLATFORM_API_URL is empty)")
+		}
+
 		productSvc := product.NewService(product.Config{
 			DB:         conn,
 			Repo:       productRepo,
 			StoresRepo: storesRepo,
 			OutboxRepo: outboxRepo,
-			Uploader:   fakeUploader,
+			Uploader:   uploader,
+			Logger:     log,
+		})
+		categorySvc := category.NewService(category.Config{
+			DB:         conn,
+			Repo:       categoryRepo,
+			OutboxRepo: outboxRepo,
 			Logger:     log,
 		})
 		storeFlight := &singleflight.Group{}
 		storeMW := stores.StoreMiddleware(stores.MiddlewareConfig{
 			Repo:   storesRepo,
-			Client: stubPlatformClient{},
+			Client: platformClient,
 			Logger: log,
 			Flight: storeFlight,
 		})
 		productHandler := admin.NewProductHandler(productSvc, categoryRepo, log)
+		categoryHandler := admin.NewCategoryHandler(categorySvc, categoryRepo, log)
+		variantHandler := admin.NewVariantHandler(productSvc, log)
+		mediaHandler := admin.NewMediaHandler(productSvc, uploader, log)
 		adminDeps = admin.Deps{
 			ProductHandler:   productHandler,
+			CategoryHandler:  categoryHandler,
+			VariantHandler:   variantHandler,
+			MediaHandler:     mediaHandler,
 			StoresMiddleware: storeMW,
 			AuthzMiddleware:  authzMW,
 			InternalSecret:   cfg.InternalAuthSecret,

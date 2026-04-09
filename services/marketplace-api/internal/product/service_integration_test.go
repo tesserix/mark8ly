@@ -399,3 +399,293 @@ func TestIntegration_ProductService_Delete_NotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+// ---------------- Copy ----------------
+
+// seedStoreWithCurrency seeds a store under the given tenant with the
+// given currency. Returns the new store ID.
+func seedStoreWithCurrency(t *testing.T, db *gorm.DB, tenantID, currency string) string {
+	t.Helper()
+	storeID := uuid.NewString()
+	s := &stores.Store{
+		ID:           storeID,
+		TenantID:     tenantID,
+		Slug:         "copy-" + storeID[:8],
+		Name:         "Copy Store " + currency,
+		CountryCode:  "US",
+		CurrencyCode: currency,
+		Timezone:     "UTC",
+		Status:       stores.StatusActive,
+	}
+	if err := db.Create(s).Error; err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+	return storeID
+}
+
+// seedRichSourceProduct creates a source product in srcStore with 2
+// options × 2 values × 4 variants, 2 media, and 1 category link.
+// Returns the created aggregate. Uses the service so currency is
+// validated against the seeded store.
+func seedRichSourceProduct(t *testing.T, tx *gorm.DB, srcStoreID, tenantID, currency string, catID string) *product.Aggregate {
+	t.Helper()
+	up := media.NewFakeUploader()
+	up.Register(media.Attrs{StorageKey: "src-a", Size: 1, ContentType: "image/jpeg"})
+	up.Register(media.Attrs{StorageKey: "src-b", Size: 1, ContentType: "image/jpeg"})
+	svc := buildService(tx, up)
+
+	agg, err := svc.Create(context.Background(), product.CreateRequest{
+		StoreID:  srcStoreID,
+		TenantID: tenantID,
+		Title:    "Source Tee",
+		Options: []product.OptionSpec{
+			{Name: "Size", Values: []product.OptionValueSpec{{Value: "S"}, {Value: "M"}}},
+			{Name: "Color", Values: []product.OptionValueSpec{{Value: "Red"}, {Value: "Blue"}}},
+		},
+		Variants: []product.VariantInput{
+			{SKU: "SRC-S-R", Price: decimal.NewFromInt(10), CurrencyCode: currency, InitialStock: 3, OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "S"}, {OptionName: "Color", Value: "Red"}}},
+			{SKU: "SRC-S-B", Price: decimal.NewFromInt(11), CurrencyCode: currency, InitialStock: 4, OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "S"}, {OptionName: "Color", Value: "Blue"}}},
+			{SKU: "SRC-M-R", Price: decimal.NewFromInt(12), CurrencyCode: currency, InitialStock: 5, OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "M"}, {OptionName: "Color", Value: "Red"}}},
+			{SKU: "SRC-M-B", Price: decimal.NewFromInt(13), CurrencyCode: currency, InitialStock: 6, OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "M"}, {OptionName: "Color", Value: "Blue"}}},
+		},
+		Media: []product.MediaInput{
+			{StorageKey: "src-a", URL: "https://cdn/a.jpg", Position: 0},
+			{StorageKey: "src-b", URL: "https://cdn/b.jpg", Position: 1},
+		},
+		CategoryIDs: []string{catID},
+	})
+	if err != nil {
+		t.Fatalf("seed source product: %v", err)
+	}
+	return agg
+}
+
+func TestIntegration_ProductService_Copy_CrossStore_Success(t *testing.T) {
+	tx := testdb.NewTx(t)
+	ctx := context.Background()
+
+	// Same tenant, two stores with DIFFERENT currencies.
+	tenantID := uuid.NewString()
+	srcStoreID := seedStoreWithCurrency(t, tx, tenantID, "EUR")
+	tgtStoreID := seedStoreWithCurrency(t, tx, tenantID, "USD")
+
+	// Seed a category in source store.
+	srcCatID := seedCategory(t, tx, srcStoreID, tenantID, "apparel")
+
+	source := seedRichSourceProduct(t, tx, srcStoreID, tenantID, "EUR", srcCatID)
+
+	svc := buildService(tx, media.NewFakeUploader())
+	got, err := svc.Copy(ctx, product.CopyRequest{
+		SourceProductID: source.Product.ID,
+		SourceTenantID:  tenantID,
+		SourceStoreID:   srcStoreID,
+		TargetStoreID:   tgtStoreID,
+	})
+	if err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+
+	if got.Product.StoreID != tgtStoreID {
+		t.Fatalf("store_id = %q, want %q", got.Product.StoreID, tgtStoreID)
+	}
+	if got.Product.Status != product.StatusDraft {
+		t.Fatalf("status = %q, want draft", got.Product.Status)
+	}
+	if got.Product.PublishedAt != nil {
+		t.Fatalf("published_at = %v, want nil", got.Product.PublishedAt)
+	}
+	if got.Product.CopySourceProductID == nil || *got.Product.CopySourceProductID != source.Product.ID {
+		t.Fatalf("copy_source_product_id = %v, want %s", got.Product.CopySourceProductID, source.Product.ID)
+	}
+	if len(got.Variants) != 4 {
+		t.Fatalf("variants = %d, want 4", len(got.Variants))
+	}
+	for i, v := range got.Variants {
+		if v.CurrencyCode != "EUR" {
+			t.Fatalf("variant[%d] currency = %q, want EUR (source preserved)", i, v.CurrencyCode)
+		}
+		if v.InventoryQuantity != 0 {
+			t.Fatalf("variant[%d] inventory_quantity = %d, want 0 in target store", i, v.InventoryQuantity)
+		}
+	}
+	// Media: rows share storage_keys with source.
+	if len(got.Media) != 2 {
+		t.Fatalf("media = %d, want 2", len(got.Media))
+	}
+	srcKeys := map[string]bool{}
+	for _, m := range source.Media {
+		srcKeys[m.StorageKey] = true
+	}
+	for _, m := range got.Media {
+		if !srcKeys[m.StorageKey] {
+			t.Fatalf("media storage_key %q not found in source", m.StorageKey)
+		}
+	}
+	// Category link present in target store.
+	if len(got.CategoryLinks) != 1 {
+		t.Fatalf("category links = %d, want 1", len(got.CategoryLinks))
+	}
+	var tgtCatSlug string
+	if err := tx.Raw(`SELECT slug FROM categories WHERE id = ? AND store_id = ?`,
+		got.CategoryLinks[0].CategoryID, tgtStoreID).Scan(&tgtCatSlug).Error; err != nil {
+		t.Fatalf("select target cat: %v", err)
+	}
+	if tgtCatSlug != "apparel" {
+		t.Fatalf("target category slug = %q, want apparel", tgtCatSlug)
+	}
+	// Outbox: exactly one product.created carrying store_id + copy_source_product_id.
+	var payloadJSON string
+	err = tx.Raw(`
+		SELECT payload::text FROM outbox_events
+		WHERE aggregate = 'product' AND aggregate_id = ? AND event_type = 'product.created'`,
+		got.Product.ID).Scan(&payloadJSON).Error
+	if err != nil {
+		t.Fatalf("select outbox: %v", err)
+	}
+	if !strings.Contains(payloadJSON, tgtStoreID) {
+		t.Fatalf("outbox payload missing target store_id: %s", payloadJSON)
+	}
+	if !strings.Contains(payloadJSON, source.Product.ID) {
+		t.Fatalf("outbox payload missing copy_source_product_id: %s", payloadJSON)
+	}
+	if n := countProductOutbox(t, tx, got.Product.ID, "product.created"); n != 1 {
+		t.Fatalf("expected 1 product.created outbox row for copy, got %d", n)
+	}
+}
+
+func TestIntegration_ProductService_Copy_TargetInvalid_SameStore(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID := seedStore(t, tx)
+	srcCatID := seedCategory(t, tx, storeID, tenantID, "same-store-cat")
+	source := seedRichSourceProduct(t, tx, storeID, tenantID, "USD", srcCatID)
+	svc := buildService(tx, media.NewFakeUploader())
+
+	_, err := svc.Copy(context.Background(), product.CopyRequest{
+		SourceProductID: source.Product.ID,
+		SourceTenantID:  tenantID,
+		SourceStoreID:   storeID,
+		TargetStoreID:   storeID,
+	})
+	if !errors.Is(err, apperrors.ErrTargetStoreInvalid) {
+		t.Fatalf("expected ErrTargetStoreInvalid, got %v", err)
+	}
+}
+
+func TestIntegration_ProductService_Copy_TargetInvalid_NotFound(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID := seedStore(t, tx)
+	srcCatID := seedCategory(t, tx, storeID, tenantID, "notfound-cat")
+	source := seedRichSourceProduct(t, tx, storeID, tenantID, "USD", srcCatID)
+	svc := buildService(tx, media.NewFakeUploader())
+
+	_, err := svc.Copy(context.Background(), product.CopyRequest{
+		SourceProductID: source.Product.ID,
+		SourceTenantID:  tenantID,
+		SourceStoreID:   storeID,
+		TargetStoreID:   uuid.NewString(),
+	})
+	if !errors.Is(err, apperrors.ErrTargetStoreInvalid) {
+		t.Fatalf("expected ErrTargetStoreInvalid, got %v", err)
+	}
+}
+
+func TestIntegration_ProductService_Copy_TargetInvalid_OtherTenant(t *testing.T) {
+	tx := testdb.NewTx(t)
+	srcStoreID, srcTenantID := seedStore(t, tx)
+	srcCatID := seedCategory(t, tx, srcStoreID, srcTenantID, "other-tenant-cat")
+	source := seedRichSourceProduct(t, tx, srcStoreID, srcTenantID, "USD", srcCatID)
+
+	// Target store lives under a different tenant.
+	otherTenantID := uuid.NewString()
+	otherStoreID := seedStoreWithCurrency(t, tx, otherTenantID, "USD")
+
+	svc := buildService(tx, media.NewFakeUploader())
+	_, err := svc.Copy(context.Background(), product.CopyRequest{
+		SourceProductID: source.Product.ID,
+		SourceTenantID:  srcTenantID,
+		SourceStoreID:   srcStoreID,
+		TargetStoreID:   otherStoreID,
+	})
+	if !errors.Is(err, apperrors.ErrTargetStoreInvalid) {
+		t.Fatalf("expected ErrTargetStoreInvalid, got %v", err)
+	}
+}
+
+func TestIntegration_ProductService_Copy_HandleCollision_AutoSuffixed(t *testing.T) {
+	tx := testdb.NewTx(t)
+	ctx := context.Background()
+	tenantID := uuid.NewString()
+	srcStoreID := seedStoreWithCurrency(t, tx, tenantID, "USD")
+	tgtStoreID := seedStoreWithCurrency(t, tx, tenantID, "USD")
+
+	srcCatID := seedCategory(t, tx, srcStoreID, tenantID, "collide-cat")
+	source := seedRichSourceProduct(t, tx, srcStoreID, tenantID, "USD", srcCatID)
+
+	// Pre-create a product in the TARGET store with the same handle.
+	svc := buildService(tx, media.NewFakeUploader())
+	if _, err := svc.Create(ctx, product.CreateRequest{
+		StoreID:  tgtStoreID,
+		TenantID: tenantID,
+		Title:    "Source Tee",
+		Handle:   source.Product.Handle,
+		Variants: []product.VariantInput{{SKU: "PRE-1", Price: decimal.NewFromInt(1), CurrencyCode: "USD"}},
+	}); err != nil {
+		t.Fatalf("pre-seed in target: %v", err)
+	}
+
+	got, err := svc.Copy(ctx, product.CopyRequest{
+		SourceProductID: source.Product.ID,
+		SourceTenantID:  tenantID,
+		SourceStoreID:   srcStoreID,
+		TargetStoreID:   tgtStoreID,
+	})
+	if err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	if got.Product.Handle == source.Product.Handle {
+		t.Fatalf("handle = %q, expected auto-suffixed", got.Product.Handle)
+	}
+	if !strings.HasPrefix(got.Product.Handle, source.Product.Handle+"-") {
+		t.Fatalf("handle = %q, expected prefix %q-", got.Product.Handle, source.Product.Handle)
+	}
+}
+
+func TestIntegration_ProductService_Copy_CategoriesCreatedInTarget(t *testing.T) {
+	tx := testdb.NewTx(t)
+	ctx := context.Background()
+	tenantID := uuid.NewString()
+	srcStoreID := seedStoreWithCurrency(t, tx, tenantID, "USD")
+	tgtStoreID := seedStoreWithCurrency(t, tx, tenantID, "USD")
+
+	srcCatID := seedCategory(t, tx, srcStoreID, tenantID, "only-in-source")
+	source := seedRichSourceProduct(t, tx, srcStoreID, tenantID, "USD", srcCatID)
+
+	// Precondition: target does NOT have "only-in-source".
+	var preCount int64
+	if err := tx.Raw(`SELECT count(*) FROM categories WHERE store_id = ? AND slug = ?`,
+		tgtStoreID, "only-in-source").Scan(&preCount).Error; err != nil {
+		t.Fatalf("pre count: %v", err)
+	}
+	if preCount != 0 {
+		t.Fatalf("target store unexpectedly has slug")
+	}
+
+	svc := buildService(tx, media.NewFakeUploader())
+	if _, err := svc.Copy(ctx, product.CopyRequest{
+		SourceProductID: source.Product.ID,
+		SourceTenantID:  tenantID,
+		SourceStoreID:   srcStoreID,
+		TargetStoreID:   tgtStoreID,
+	}); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+
+	var postCount int64
+	if err := tx.Raw(`SELECT count(*) FROM categories WHERE store_id = ? AND slug = ? AND deleted_at IS NULL`,
+		tgtStoreID, "only-in-source").Scan(&postCount).Error; err != nil {
+		t.Fatalf("post count: %v", err)
+	}
+	if postCount != 1 {
+		t.Fatalf("expected category created in target store, got count = %d", postCount)
+	}
+}

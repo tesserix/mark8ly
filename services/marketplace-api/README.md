@@ -84,26 +84,35 @@ integration tests starting in M3.
 
 ## Database
 
-- DB name: `marketplace_db` (on the shared dev Postgres instance)
-- User: `dev` (dev only) / `marketplace_user` (prod)
-- Migrations tracking table: `marketplace_db_schema_migrations`
-- Slice 1 schema lands in M2 (not yet landed as of M1 completion)
+| | Local dev | Production |
+|---|---|---|
+| DB name | `marketplace_db` | `mark8ly_marketplace_api` |
+| Login role | `dev` (compose default) | `marketplace_api` |
+| Postgres host | `localhost:5432` (compose) | `mark8ly-postgres-rw.mark8ly.svc.cluster.local:5432` (CNPG) |
+| Migrations tracking table | `marketplace_db_schema_migrations` | `marketplace_db_schema_migrations` |
+| Provisioned by | `infra/dev/docker-compose.yml` + `postgres-init.sh` | CNPG cluster + `marketplace-api-bootstrap-job` Helm template in `tesserix-k8s` |
 
-## Migrations — scaffold placeholder
+The local/prod database name divergence mirrors `platform-api`'s
+(`platform_api` locally, `mark8ly_platform_api` in prod). Application
+code reads `DATABASE_URL` from env and is name-agnostic. The migrations
+tracking table name is `marketplace_db_schema_migrations` in both
+environments because that constant is hard-coded in `pkg/migrate`.
 
-M1 ships a **no-op scaffold migration** at `migrations/000001_init.up.sql`
-(and matching `.down.sql`). It exists only to satisfy `golang-migrate`'s
-`iofs` source, which refuses an empty migration set. The migration runs a
-`SELECT 1` and does nothing. `ExpectedSchemaVersion = 1` in `migrations.go`
-matches this state.
+## Migrations
 
-**When M2 lands the real products schema, it must REPLACE `000001_init.*`
-entirely** — delete both files, add `0001_products_initial.up.sql` /
-`0001_products_initial.down.sql` (or whatever final naming the M2 plan
-chooses), and keep `ExpectedSchemaVersion = 1`. The scaffold migration is
-ephemeral and was never intended to ship to production. The `.keep.sql`
-file in the migrations directory is a leftover from Task 2 of the M1 plan
-and is also safe to delete alongside the scaffold migration in M2.
+The schema is owned by SQL migration files in `migrations/`. They are
+embedded into both binaries via `//go:embed migrations/*.sql` (see
+`migrations.go`). The server refuses to start if the database's tracking
+table version doesn't match `ExpectedSchemaVersion` — that's the safety
+net that guarantees the API never runs against a wrong schema.
+
+Slice 1 lands two migrations:
+
+- `000001_products_initial.{up,down}.sql` — products module schema (13 tables, partial unique indexes, composite FK, `sync_variant_inventory` trigger). Owned by the products feature track.
+- `000002_orders_initial.{up,down}.sql` — orders module schema. Owned by the orders feature track.
+
+When you add a new migration, increment `ExpectedSchemaVersion` in
+`migrations.go` to match.
 
 ## Related
 

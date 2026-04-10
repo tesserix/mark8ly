@@ -1,7 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { MediaGrid } from "./MediaGrid";
 import type { AdminMediaResponse } from "@/lib/api/marketplace-api";
+
+// Capture onDragEnd so we can trigger the handler directly from tests.
+let capturedOnDragEnd: ((e: unknown) => void) | null = null;
+vi.mock("@dnd-kit/core", async () => {
+  const actual = await vi.importActual<Record<string, unknown>>("@dnd-kit/core");
+  return {
+    ...actual,
+    DndContext: ({ children, onDragEnd }: { children: ReactNode; onDragEnd: (e: unknown) => void }) => {
+      capturedOnDragEnd = onDragEnd;
+      return <div>{children}</div>;
+    },
+  };
+});
 
 function makeMedia(id: string, position: number, alt: string): AdminMediaResponse {
   return {
@@ -50,5 +64,21 @@ describe("MediaGrid", () => {
     fireEvent.click(buttons[0]!);
     fireEvent.click(screen.getByRole("menuitem", { name: /delete/i }));
     expect(onAction).toHaveBeenCalledWith("delete", items[0]);
+  });
+
+  it("drag end reorders when active and over differ; no-op branches return early", () => {
+    const onReorder = vi.fn();
+    render(<MediaGrid items={items} onReorder={onReorder} onAction={vi.fn()} />);
+    // Real reorder: move "a" onto "c"
+    capturedOnDragEnd?.({ active: { id: "a" }, over: { id: "c" } });
+    expect(onReorder).toHaveBeenCalledTimes(1);
+    expect(onReorder.mock.calls[0]![0].map((m: AdminMediaResponse) => m.id)).toEqual(["b", "c", "a"]);
+    // Same id → early return
+    capturedOnDragEnd?.({ active: { id: "a" }, over: { id: "a" } });
+    // over null → early return
+    capturedOnDragEnd?.({ active: { id: "a" }, over: null });
+    // unknown id → findIndex < 0 branch
+    capturedOnDragEnd?.({ active: { id: "zzz" }, over: { id: "a" } });
+    expect(onReorder).toHaveBeenCalledTimes(1);
   });
 });

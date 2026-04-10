@@ -1,27 +1,30 @@
-// apps/storefront/app/products/page.tsx
+// apps/storefront/app/categories/[slug]/page.tsx
 //
-// Storefront product catalogue. Resolves the store from the host
-// (subdomain) or query param fallback (matching the home-page pattern),
-// fetches the published-products list from M6's marketplace-api, and
-// renders a simple grid. Detail pages live at /products/[handle].
+// Storefront category landing page. Reuses the same store-by-host
+// resolution and pricing helpers as the catalogue page; the only
+// difference is the category-slug filter passed to listProducts.
 
 import Link from "next/link";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { notFound } from "next/navigation";
 
-import { fetchStoreBySlug, type PublicStore } from "@/lib/api/platform-api";
-import { listProducts, type StorefrontProduct } from "@/lib/api/marketplace-api";
+import { fetchStoreBySlug } from "@/lib/api/platform-api";
+import {
+  listProducts,
+  type StorefrontProduct,
+} from "@/lib/api/marketplace-api";
 import { slugFromHost } from "@/lib/slug";
-import { makeTenantMetadata } from "@/lib/seo";
 import { StorefrontNav } from "@/components/StorefrontNav";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
+  params: Promise<{ slug: string }>;
   searchParams: Promise<{ slug?: string; page?: string }>;
 }
 
-async function resolveSlug(query: { slug?: string }): Promise<string> {
+async function resolveStoreSlug(query: { slug?: string }): Promise<string> {
   const h = await headers();
   const host = h.get("host");
   return (
@@ -33,25 +36,31 @@ async function resolveSlug(query: { slug?: string }): Promise<string> {
 }
 
 export async function generateMetadata({
-  searchParams,
+  params,
 }: PageProps): Promise<Metadata> {
-  const params = await searchParams;
-  const slug = await resolveSlug(params);
-  const store = slug ? await fetchStoreBySlug(slug).catch(() => null) : null;
-  return makeTenantMetadata(store, slug);
+  const { slug: categorySlug } = await params;
+  return {
+    title: `${prettify(categorySlug)} — Shop`,
+  };
 }
 
-export default async function StoreProductsPage({ searchParams }: PageProps) {
-  const params = await searchParams;
-  const slug = await resolveSlug(params);
-  const page = params.page ? Number.parseInt(params.page, 10) || 1 : 1;
+export default async function CategoryLandingPage({
+  params,
+  searchParams,
+}: PageProps) {
+  const { slug: categorySlug } = await params;
+  const sp = await searchParams;
+  const storeSlug = await resolveStoreSlug(sp);
+  const page = sp.page ? Number.parseInt(sp.page, 10) || 1 : 1;
 
-  const store = slug ? await fetchStoreBySlug(slug) : null;
-  if (!store) {
-    return <NotFound slug={slug} />;
-  }
+  const store = storeSlug ? await fetchStoreBySlug(storeSlug) : null;
+  if (!store) notFound();
 
-  const response = await listProducts(slug, { page, pageSize: 24 });
+  const response = await listProducts(storeSlug, {
+    categorySlug,
+    page,
+    pageSize: 24,
+  });
   const products = response?.data ?? [];
 
   return (
@@ -60,45 +69,39 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
         <StorefrontNav storeName={store.name} />
         <header className="mb-10 flex flex-col gap-2 border-b border-[color:var(--ink-900)] border-opacity-10 pb-6">
           <Link
-            href="/"
+            href="/products"
             className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
-            ← {store.name}
+            ← Shop all
           </Link>
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--ink-900)]">
-            Shop
+            {prettify(categorySlug)}
           </h1>
           <p className="text-sm text-[color:var(--ink-900)] opacity-60">
             {products.length === 0
-              ? "No products yet — check back soon."
+              ? "Nothing in this category yet."
               : `${products.length} ${products.length === 1 ? "product" : "products"}`}
           </p>
         </header>
 
-        {products.length === 0 ? (
-          <EmptyCatalogue />
-        ) : (
-          <ProductGrid products={products} />
+        {products.length > 0 && (
+          <ul className="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+            {products.map((p) => (
+              <ProductCard key={p.id} product={p} />
+            ))}
+          </ul>
         )}
       </div>
     </main>
   );
 }
 
-function ProductGrid({ products }: { products: StorefrontProduct[] }) {
-  return (
-    <ul className="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
-      {products.map((p) => (
-        <ProductCard key={p.id} product={p} />
-      ))}
-    </ul>
-  );
-}
-
 function ProductCard({ product }: { product: StorefrontProduct }) {
   const cover = product.media[0];
-  const min = formatPrice(product.price_range.min, product.price_range.currency_code);
-  const max = formatPrice(product.price_range.max, product.price_range.currency_code);
+  const min = formatPrice(
+    product.price_range.min,
+    product.price_range.currency_code,
+  );
   const isRange = product.price_range.min !== product.price_range.max;
   return (
     <li>
@@ -136,37 +139,6 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
   );
 }
 
-function EmptyCatalogue() {
-  return (
-    <div className="mx-auto max-w-xl py-16 text-center">
-      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
-        Nothing in the shop yet
-      </h2>
-      <p className="mt-4 text-[color:var(--ink-900)] opacity-60">
-        New arrivals are on their way. Check back soon.
-      </p>
-    </div>
-  );
-}
-
-function NotFound({ slug }: { slug: string }) {
-  return (
-    <main id="main" className="mx-auto flex min-h-screen max-w-2xl flex-col items-start justify-center gap-6 px-6 py-20">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--ink-900)] opacity-60">
-        Store not found
-      </p>
-      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--ink-900)]">
-        Nothing here yet
-      </h1>
-      <p className="max-w-xl text-lg text-[color:var(--ink-900)] opacity-70">
-        {slug
-          ? `We couldn't find a store at "${slug}". The URL may be wrong, or the store isn't live yet.`
-          : "This domain isn't pointed at a live store yet."}
-      </p>
-    </main>
-  );
-}
-
 function formatPrice(amount: string, currencyCode: string): string {
   const n = Number.parseFloat(amount);
   if (!Number.isFinite(n)) return `${currencyCode} ${amount}`;
@@ -180,5 +152,9 @@ function formatPrice(amount: string, currencyCode: string): string {
   }
 }
 
-// Suppress unused-import warning for PublicStore until detail page lands.
-type _Unused = PublicStore;
+function prettify(slug: string): string {
+  return slug
+    .split("-")
+    .map((s) => (s.length > 0 ? s[0]!.toUpperCase() + s.slice(1) : s))
+    .join(" ");
+}

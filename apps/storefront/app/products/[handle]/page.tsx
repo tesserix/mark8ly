@@ -17,6 +17,7 @@ import {
   type StorefrontProduct,
 } from "@/lib/api/marketplace-api";
 import { slugFromHost } from "@/lib/slug";
+import { StorefrontNav } from "@/components/StorefrontNav";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,8 @@ export default async function StorefrontProductPage({
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
-      <div className="mx-auto max-w-6xl px-6 py-12 sm:px-8">
+      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
+        <StorefrontNav storeName={store.name} />
         <Link
           href="/products"
           className="mb-8 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"

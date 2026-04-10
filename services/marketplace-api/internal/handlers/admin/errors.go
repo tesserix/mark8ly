@@ -46,6 +46,11 @@ var codeStatus = map[apperrors.Code]int{
 	apperrors.CodeCouponUsageLimitReached: http.StatusUnprocessableEntity,
 	apperrors.CodeCouponInvalid:           http.StatusUnprocessableEntity,
 	apperrors.CodeCouponMinPurchaseNotMet: http.StatusUnprocessableEntity,
+
+	// Gift cards — Marketing M2.
+	apperrors.CodeInsufficientGiftCardBalance: http.StatusUnprocessableEntity,
+	apperrors.CodeGiftCardExpired:             http.StatusGone,
+	apperrors.CodeGiftCardNotFound:            http.StatusNotFound,
 }
 
 // RespondErr writes the standard error envelope for the given error.

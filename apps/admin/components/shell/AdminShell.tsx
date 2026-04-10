@@ -122,7 +122,7 @@ const navigation: NavSection[] = [
     children: [
       { label: "Campaigns", href: "/dashboard" },
       { label: "Coupons", href: "/marketing/coupons" },
-      { label: "Gift Cards", href: "/dashboard" },
+      { label: "Gift Cards", href: "/marketing/gift-cards" },
       { label: "Loyalty", href: "/dashboard" },
     ],
   },

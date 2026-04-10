@@ -8,6 +8,7 @@ package storefront
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
 	"github.com/mark8ly/marketplace-api/internal/discount"
+	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
@@ -32,15 +34,16 @@ import (
 // CheckoutExtHandler is the extended storefront checkout that integrates
 // payment intent creation, tax calculation, and shipping rate selection.
 type CheckoutExtHandler struct {
-	db        *gorm.DB
-	orderSvc  *order.Service
-	couponSvc *coupon.Service
-	logger    *slog.Logger
+	db          *gorm.DB
+	orderSvc    *order.Service
+	couponSvc   *coupon.Service
+	giftCardSvc *giftcard.Service // nil-safe: no-ops when nil
+	logger      *slog.Logger
 }
 
 // NewCheckoutExtHandler constructs a CheckoutExtHandler.
-func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coupon.Service, logger *slog.Logger) *CheckoutExtHandler {
-	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, couponSvc: couponSvc, logger: logger}
+func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coupon.Service, giftCardSvc *giftcard.Service, logger *slog.Logger) *CheckoutExtHandler {
+	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, couponSvc: couponSvc, giftCardSvc: giftCardSvc, logger: logger}
 }
 
 // CheckoutExtRequest is the wire body for the extended checkout endpoint.
@@ -57,6 +60,7 @@ type CheckoutExtRequest struct {
 	Subtotal        decimal.Decimal        `json:"subtotal"         binding:"required"`
 	DiscountTotal   decimal.Decimal        `json:"discount_total"`
 	CouponCode      *string                `json:"coupon_code"`
+	GiftCardCode    *string                `json:"gift_card_code"`
 }
 
 // CheckoutExtResponse is the extended checkout response including payment
@@ -68,9 +72,10 @@ type CheckoutExtResponse struct {
 	Provider      string          `json:"provider"`
 	TaxTotal      decimal.Decimal `json:"tax_total"`
 	ShippingTotal decimal.Decimal `json:"shipping_total"`
-	DiscountTotal decimal.Decimal `json:"discount_total"`
-	Total         decimal.Decimal `json:"total"`
-	CouponCode    *string         `json:"coupon_code,omitempty"`
+	DiscountTotal   decimal.Decimal `json:"discount_total"`
+	Total           decimal.Decimal `json:"total"`
+	GiftCardApplied decimal.Decimal `json:"gift_card_applied"`
+	CouponCode      *string         `json:"coupon_code,omitempty"`
 }
 
 // Checkout handles POST /storefront/stores/:storeSlug/checkout (extended).
@@ -205,6 +210,32 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	}
 	grandTotal := req.Subtotal.Add(shippingTotal).Add(taxBreakdown.TaxTotal).Sub(effectiveDiscount)
 
+	// ── Step 3.5: Gift card lookup (before tx) ─────────────────────────
+	var giftCardApplied decimal.Decimal
+	var giftCardID *uuid.UUID
+	if req.GiftCardCode != nil && *req.GiftCardCode != "" && h.giftCardSvc != nil {
+		gcResult, err := h.giftCardSvc.CheckBalance(ctx, storeID, *req.GiftCardCode)
+		if err != nil {
+			h.respondErr(c, err)
+			return
+		}
+		// Amendment HIGH FIX 5: debit min(balance, grandTotal).
+		debitAmount := grandTotal
+		if gcResult.CurrentBalance.LessThan(grandTotal) {
+			debitAmount = gcResult.CurrentBalance
+		}
+		if debitAmount.GreaterThan(decimal.Zero) {
+			gcCard, err := h.giftCardSvc.GetByCode(ctx, storeID, *req.GiftCardCode)
+			if err != nil {
+				h.respondErr(c, err)
+				return
+			}
+			giftCardID = &gcCard.ID
+			giftCardApplied = debitAmount
+			grandTotal = grandTotal.Sub(debitAmount)
+		}
+	}
+
 	// Use billing address if provided, otherwise mirror shipping.
 	billing := req.ShippingAddress
 	if req.BillingAddress != nil {
@@ -244,15 +275,16 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	// payment intents or tax lines.
 	if result.Reused {
 		c.JSON(http.StatusOK, CheckoutExtResponse{
-			OrderID:       result.Order.ID.String(),
-			OrderNumber:   result.Order.OrderNumber,
-			PaymentToken:  "", // caller should use the original token
-			Provider:      req.PaymentProvider,
-			TaxTotal:      result.Order.TaxTotal,
-			ShippingTotal: result.Order.ShippingTotal,
-			DiscountTotal: result.Order.DiscountTotal,
-			Total:         result.Order.GrandTotal,
-			CouponCode:    appliedCouponCode,
+			OrderID:         result.Order.ID.String(),
+			OrderNumber:     result.Order.OrderNumber,
+			PaymentToken:    "", // caller should use the original token
+			Provider:        req.PaymentProvider,
+			TaxTotal:        result.Order.TaxTotal,
+			ShippingTotal:   result.Order.ShippingTotal,
+			DiscountTotal:   result.Order.DiscountTotal,
+			Total:           result.Order.GrandTotal,
+			GiftCardApplied: giftCardApplied,
+			CouponCode:      appliedCouponCode,
 		})
 		return
 	}
@@ -279,6 +311,21 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		}
 	}
 
+	// ── Step 4.6: Debit gift card (in tx) ──────────────────────────────
+	// Amendment CRITICAL FIX 1: debit runs inside a transaction so it
+	// rolls back if anything downstream fails.
+	if giftCardID != nil && giftCardApplied.GreaterThan(decimal.Zero) && h.giftCardSvc != nil {
+		if err := h.orderSvc.Unit(ctx, func(tx *gorm.DB) error {
+			_, err := h.giftCardSvc.Debit(tx, *giftCardID, giftCardApplied, result.Order.ID, tenantID)
+			return err
+		}); err != nil {
+			h.logWarn("checkout_ext: gift card debit failed",
+				"order_id", result.Order.ID.String(), "err", err)
+			h.respondErr(c, err)
+			return
+		}
+	}
+
 	// ── Step 5: Save tax lines ──────────────────────────────────────────
 	if len(taxBreakdown.Lines) > 0 {
 		taxRepo := tax.NewRepository()
@@ -297,15 +344,16 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 			"order_id", result.Order.ID.String(), "err", err)
 		// Return the order anyway — the storefront can retry payment.
 		c.JSON(http.StatusCreated, CheckoutExtResponse{
-			OrderID:       result.Order.ID.String(),
-			OrderNumber:   result.Order.OrderNumber,
-			PaymentToken:  "",
-			Provider:      req.PaymentProvider,
-			TaxTotal:      taxBreakdown.TaxTotal,
-			ShippingTotal: shippingTotal,
-			DiscountTotal: effectiveDiscount,
-			Total:         grandTotal,
-			CouponCode:    appliedCouponCode,
+			OrderID:         result.Order.ID.String(),
+			OrderNumber:     result.Order.OrderNumber,
+			PaymentToken:    "",
+			Provider:        req.PaymentProvider,
+			TaxTotal:        taxBreakdown.TaxTotal,
+			ShippingTotal:   shippingTotal,
+			DiscountTotal:   effectiveDiscount,
+			Total:           grandTotal,
+			GiftCardApplied: giftCardApplied,
+			CouponCode:      appliedCouponCode,
 		})
 		return
 	}
@@ -321,15 +369,16 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, CheckoutExtResponse{
-		OrderID:       result.Order.ID.String(),
-		OrderNumber:   result.Order.OrderNumber,
-		PaymentToken:  paymentToken,
-		Provider:      req.PaymentProvider,
-		TaxTotal:      taxBreakdown.TaxTotal,
-		ShippingTotal: shippingTotal,
-		DiscountTotal: effectiveDiscount,
-		Total:         grandTotal,
-		CouponCode:    appliedCouponCode,
+		OrderID:         result.Order.ID.String(),
+		OrderNumber:     result.Order.OrderNumber,
+		PaymentToken:    paymentToken,
+		Provider:        req.PaymentProvider,
+		TaxTotal:        taxBreakdown.TaxTotal,
+		ShippingTotal:   shippingTotal,
+		DiscountTotal:   effectiveDiscount,
+		Total:           grandTotal,
+		GiftCardApplied: giftCardApplied,
+		CouponCode:      appliedCouponCode,
 	})
 }
 
@@ -576,11 +625,9 @@ func (paymentGatewayConfigRow) TableName() string { return "payment_gateway_conf
 
 // respondErr mirrors the checkout.go error response pattern.
 func (h *CheckoutExtHandler) respondErr(c *gin.Context, err error) {
+	// Amendment LOW FIX 9: use errors.As instead of manual type assertion.
 	var ae *apperrors.Error
-	if asErr, ok := err.(*apperrors.Error); ok {
-		ae = asErr
-	}
-	if ae != nil {
+	if errors.As(err, &ae) {
 		switch ae.Code {
 		case apperrors.CodeValidationFailed,
 			apperrors.CodeCurrencyMismatch,
@@ -593,8 +640,21 @@ func (h *CheckoutExtHandler) respondErr(c *gin.Context, err error) {
 				"message": ae.Message,
 			})
 			return
-		case apperrors.CodeCouponNotFound:
+		case apperrors.CodeCouponNotFound,
+			apperrors.CodeGiftCardNotFound:
 			respondNotFound(c)
+			return
+		case apperrors.CodeGiftCardExpired:
+			c.AbortWithStatusJSON(http.StatusGone, map[string]any{
+				"error":   string(ae.Code),
+				"message": ae.Message,
+			})
+			return
+		case apperrors.CodeInsufficientGiftCardBalance:
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, map[string]any{
+				"error":   string(ae.Code),
+				"message": ae.Message,
+			})
 			return
 		case apperrors.CodeCouponExpired,
 			apperrors.CodeCouponUsageLimitReached:

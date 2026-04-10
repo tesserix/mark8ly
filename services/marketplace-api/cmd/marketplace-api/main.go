@@ -28,6 +28,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
+	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
@@ -217,6 +218,11 @@ func main() {
 		// Coupon handler (Marketing M1).
 		couponHandler := admin.NewCouponHandler(couponSvc, log)
 
+		// Gift cards — Marketing M2.
+		giftCardRepo := giftcard.NewRepository()
+		giftCardSvc := giftcard.NewService(conn, giftCardRepo, log)
+		giftCardHandler := admin.NewGiftCardHandler(giftCardSvc, log)
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -232,6 +238,7 @@ func main() {
 			ShippingSettingsHandler: shippingSettingsHandler,
 			TaxSettingsHandler:      taxSettingsHandler,
 			CouponHandler:          couponHandler,
+			GiftCardHandler:        giftCardHandler,
 			StoresMiddleware:        storeMW,
 			AuthzMiddleware:         authzMW,
 			InternalSecret:          cfg.InternalAuthSecret,
@@ -270,8 +277,13 @@ func main() {
 		// Coupon storefront wiring (Marketing M1) — shares couponSvc instance.
 		couponValidateHandler := storefront.NewCouponValidateHandler(couponSvc, log)
 
+		// Gift cards — Marketing M2.
+		giftCardRepoSF := giftcard.NewRepository()
+		giftCardSvcSF := giftcard.NewService(conn, giftCardRepoSF, log)
+		giftCardSFHandler := storefront.NewGiftCardStorefrontHandler(giftCardSvcSF, log)
+
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
-		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, log)
+		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, log)
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log)
@@ -286,6 +298,7 @@ func main() {
 			WebhookHandler:        webhookHandler,
 			OrderDetailHandler:    orderDetailHandler,
 			CouponValidateHandler: couponValidateHandler,
+			GiftCardHandler:       giftCardSFHandler,
 			SlugCache:             slugCache,
 			StorefrontKey:         cfg.StorefrontKey,
 			CountryHandler:        countryHandler,

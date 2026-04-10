@@ -21,6 +21,7 @@ type Deps struct {
 	WebhookHandler        *WebhookHandler
 	OrderDetailHandler    *OrderDetailHandler
 	CouponValidateHandler *CouponValidateHandler
+	GiftCardHandler       *GiftCardStorefrontHandler
 	SlugCache             *stores.SlugCache
 	StorefrontKey        string
 	CountryHandler       CountryLister // optional — set when country handler is wired
@@ -70,6 +71,14 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 			group.POST("/coupons/validate",
 				ratelimit.PerIP(0.167, 10), // ~10 req/min
 				deps.CouponValidateHandler.Validate)
+		}
+
+		// Gift cards — Marketing M2.
+		// Rate-limited: 10 req/min per IP.
+		if deps.GiftCardHandler != nil {
+			group.POST("/gift-cards/check-balance",
+				ratelimit.PerIP(0.167, 10), // ~10 req/min
+				deps.GiftCardHandler.CheckBalance)
 		}
 	}
 

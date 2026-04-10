@@ -1,0 +1,151 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { AdminGiftCard, ListProductsMeta } from "@/lib/api/marketplace-api";
+
+interface GiftCardsListProps {
+  giftCards: AdminGiftCard[];
+  meta?: ListProductsMeta;
+  currentStatus?: string;
+}
+
+function statusBadge(status: string) {
+  const base = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium";
+  switch (status) {
+    case "active":
+      return <span className={`${base} bg-moss-700/10 text-moss-700`}>Active</span>;
+    case "depleted":
+      return <span className={`${base} bg-ink-900/10 text-ink-900`}>Depleted</span>;
+    case "disabled":
+      return <span className={`${base} bg-signal/10 text-signal`}>Disabled</span>;
+    default:
+      return <span className={`${base} bg-ink-900/10 text-ink-900`}>{status}</span>;
+  }
+}
+
+function formatCurrency(amount: string, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+    }).format(Number(amount));
+  } catch {
+    return `${currency} ${amount}`;
+  }
+}
+
+export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  function setStatusFilter(status: string | undefined) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (status) {
+      params.set("status", status);
+    } else {
+      params.delete("status");
+    }
+    params.set("page", "1");
+    router.push(`/marketing/gift-cards?${params.toString()}`);
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Status filter tabs */}
+      <div className="flex gap-3 border-b border-ink-900/10 pb-2">
+        {[
+          { label: "All", value: undefined },
+          { label: "Active", value: "active" },
+          { label: "Depleted", value: "depleted" },
+          { label: "Disabled", value: "disabled" },
+        ].map((tab) => (
+          <button
+            key={tab.label}
+            onClick={() => setStatusFilter(tab.value)}
+            className={`text-sm font-medium transition-colors ${
+              currentStatus === tab.value
+                ? "text-ink-900 border-b-2 border-ink-900 -mb-[9px] pb-2"
+                : "text-ink-900/50 hover:text-ink-900"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-ink-900/10 text-left text-xs font-medium uppercase tracking-wider text-ink-900/50">
+              <th className="pb-3 pr-4">Code</th>
+              <th className="pb-3 pr-4">Balance</th>
+              <th className="pb-3 pr-4">Initial</th>
+              <th className="pb-3 pr-4">Status</th>
+              <th className="pb-3 pr-4">Recipient</th>
+              <th className="pb-3">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {giftCards.map((gc) => (
+              <tr key={gc.id} className="border-b border-ink-900/5 hover:bg-paper-200/50">
+                <td className="py-3 pr-4">
+                  <Link
+                    href={`/marketing/gift-cards/${gc.id}`}
+                    className="font-mono text-sm text-moss-700 hover:underline"
+                  >
+                    {gc.code_display}
+                  </Link>
+                </td>
+                <td className="py-3 pr-4 font-serif tabular-nums">
+                  {formatCurrency(gc.current_balance, gc.currency_code)}
+                </td>
+                <td className="py-3 pr-4 text-ink-900/50 tabular-nums">
+                  {formatCurrency(gc.initial_balance, gc.currency_code)}
+                </td>
+                <td className="py-3 pr-4">{statusBadge(gc.status)}</td>
+                <td className="py-3 pr-4 text-ink-900/70">
+                  {gc.recipient_name ?? gc.recipient_email ?? "\u2014"}
+                </td>
+                <td className="py-3 text-ink-900/50">
+                  {new Date(gc.created_at).toLocaleDateString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {meta && meta.total_pages > 1 && (
+        <div className="flex items-center justify-between text-sm text-ink-900/50">
+          <span>
+            {meta.total} gift card{meta.total !== 1 ? "s" : ""}
+          </span>
+          <div className="flex gap-2">
+            {meta.page > 1 && (
+              <Link
+                href={`/marketing/gift-cards?page=${meta.page - 1}${currentStatus ? `&status=${currentStatus}` : ""}`}
+                className="text-moss-700 hover:underline"
+              >
+                Previous
+              </Link>
+            )}
+            <span>
+              Page {meta.page} of {meta.total_pages}
+            </span>
+            {meta.page < meta.total_pages && (
+              <Link
+                href={`/marketing/gift-cards?page=${meta.page + 1}${currentStatus ? `&status=${currentStatus}` : ""}`}
+                className="text-moss-700 hover:underline"
+              >
+                Next
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

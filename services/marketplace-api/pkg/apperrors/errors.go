@@ -47,6 +47,11 @@ const (
 	CodeCouponUsageLimitReached Code = "coupon_usage_limit_reached"
 	CodeCouponInvalid           Code = "coupon_invalid"
 	CodeCouponMinPurchaseNotMet Code = "coupon_min_purchase_not_met"
+
+	// Gift cards — Marketing M2.
+	CodeInsufficientGiftCardBalance Code = "insufficient_gift_card_balance"
+	CodeGiftCardExpired             Code = "gift_card_expired"
+	CodeGiftCardNotFound            Code = "gift_card_not_found"
 )
 
 // Error is the marketplace-api envelope. Satisfies the error interface.
@@ -102,6 +107,11 @@ var (
 	ErrCouponUsageLimitReached = &Error{Code: CodeCouponUsageLimitReached}
 	ErrCouponInvalid           = &Error{Code: CodeCouponInvalid}
 	ErrCouponMinPurchaseNotMet = &Error{Code: CodeCouponMinPurchaseNotMet}
+
+	// Gift card sentinels.
+	ErrInsufficientGiftCardBalance = &Error{Code: CodeInsufficientGiftCardBalance}
+	ErrGiftCardExpired             = &Error{Code: CodeGiftCardExpired}
+	ErrGiftCardNotFound            = &Error{Code: CodeGiftCardNotFound}
 )
 
 // Is makes errors.Is(err, sentinel) match when the codes are equal,
@@ -128,7 +138,8 @@ func IsKnownCode(s string) bool {
 		CodeInvalidTransition, CodeRefundExceedsTotal, CodeIdempotencyConflict,
 		CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent,
 		CodeCouponNotFound, CodeCouponExpired, CodeCouponUsageLimitReached,
-		CodeCouponInvalid, CodeCouponMinPurchaseNotMet:
+		CodeCouponInvalid, CodeCouponMinPurchaseNotMet,
+		CodeInsufficientGiftCardBalance, CodeGiftCardExpired, CodeGiftCardNotFound:
 		return true
 	}
 	return false

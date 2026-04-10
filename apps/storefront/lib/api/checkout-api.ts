@@ -96,6 +96,7 @@ export interface CheckoutBody {
   subtotal: string;
   discount_total?: string;
   coupon_code?: string;
+  gift_card_code?: string;
 }
 
 export interface CheckoutResult {
@@ -107,6 +108,7 @@ export interface CheckoutResult {
   shipping_total: string;
   discount_total?: string;
   coupon_code?: string;
+  gift_card_applied?: string;
   total: string;
 }
 
@@ -237,4 +239,41 @@ export async function fetchOrder(
   } catch {
     return null;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Marketing M2: Gift Card balance check
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface GiftCardBalanceResult {
+  code: string;
+  current_balance: string;
+  currency_code: string;
+  status: string;
+  expires_at?: string;
+}
+
+export async function checkGiftCardBalance(
+  storeSlug: string,
+  code: string,
+): Promise<GiftCardBalanceResult | null> {
+  const res = await fetch(`${storeUrl(storeSlug)}/gift-cards/check-balance`, {
+    method: "POST",
+    headers: commonHeaders(),
+    body: JSON.stringify({ code }),
+  });
+
+  if (res.status === 404 || res.status === 410) {
+    return null;
+  }
+  if (res.status === 429) {
+    throw new Error("Too many requests. Please wait a moment and try again.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? "Failed to check balance");
+  }
+
+  const json = await res.json();
+  return json.data as GiftCardBalanceResult;
 }

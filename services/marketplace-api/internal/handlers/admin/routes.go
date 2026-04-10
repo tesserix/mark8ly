@@ -28,6 +28,7 @@ type Deps struct {
 	ShippingSettingsHandler  *ShippingSettingsHandler
 	TaxSettingsHandler       *TaxSettingsHandler
 	CouponHandler            *CouponHandler
+	GiftCardHandler          *GiftCardHandler
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware          *authz.Middleware
 	InternalSecret           string
@@ -252,6 +253,22 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				coupons.DELETE("/:id",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
 					deps.CouponHandler.Delete)
+			}
+		}
+
+		// Gift cards — Marketing M2.
+		if deps.GiftCardHandler != nil {
+			gc := storeRoute.Group("/gift-cards")
+			{
+				gc.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsViewRole),
+					deps.GiftCardHandler.List)
+				gc.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsEditRole),
+					deps.GiftCardHandler.Issue)
+				gc.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsViewRole),
+					deps.GiftCardHandler.Get)
 			}
 		}
 

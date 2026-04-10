@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { CouponInput } from "@/components/checkout/CouponInput";
+import { GiftCardInput } from "@/components/checkout/GiftCardInput";
 import {
   fetchPaymentMethods,
   fetchShippingRates,
@@ -128,11 +129,17 @@ export default function CheckoutPage() {
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponFreeShipping, setCouponFreeShipping] = useState(false);
 
+  // Gift card state
+  const [giftCardCode, setGiftCardCode] = useState<string | null>(null);
+  const [giftCardAmount, setGiftCardAmount] = useState(0);
+
   // Computed totals
   const selectedRate = shippingRates.find((r) => r.service === selectedShipping);
   const shippingTotal = selectedRate ? Number.parseFloat(selectedRate.price) : 0;
   // Tax is computed server-side at checkout; show 0 until order is placed.
-  const total = subtotal + (couponFreeShipping ? 0 : shippingTotal) - couponDiscount;
+  const totalBeforeGC = subtotal + (couponFreeShipping ? 0 : shippingTotal) - couponDiscount;
+  const giftCardDeduction = Math.min(giftCardAmount, Math.max(0, totalBeforeGC));
+  const total = totalBeforeGC - giftCardDeduction;
 
   const canSubmit =
     items.length > 0 &&
@@ -215,6 +222,7 @@ export default function CheckoutPage() {
       payment_provider: selectedProvider,
       subtotal: subtotal.toFixed(2),
       coupon_code: couponCode ?? undefined,
+      gift_card_code: giftCardCode ?? undefined,
     };
 
     const result = await submitCheckout(storeSlug, body);
@@ -338,6 +346,22 @@ export default function CheckoutPage() {
               setCouponCode(null);
               setCouponDiscount(0);
               setCouponFreeShipping(false);
+            }}
+          />
+        </div>
+
+        {/* Gift card input — below coupon */}
+        <div className="mt-4">
+          <GiftCardInput
+            storeSlug={storeSlug}
+            currencyCode={currencyCode}
+            onApplied={(code, balance) => {
+              setGiftCardCode(code);
+              setGiftCardAmount(Number.parseFloat(balance));
+            }}
+            onRemoved={() => {
+              setGiftCardCode(null);
+              setGiftCardAmount(0);
             }}
           />
         </div>
@@ -539,6 +563,14 @@ export default function CheckoutPage() {
                 <dt className="opacity-60">Shipping</dt>
                 <dd className="text-[color:var(--moss-700)]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
                   Free
+                </dd>
+              </div>
+            )}
+            {giftCardDeduction > 0 && (
+              <div className="flex justify-between">
+                <dt className="opacity-60">Gift card</dt>
+                <dd className="text-[color:var(--moss-700)]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                  -{formatPrice(giftCardDeduction, currencyCode)}
                 </dd>
               </div>
             )}

@@ -957,3 +957,150 @@ export async function refundOrder(
   }
   return { ok: true, data: (await res.json()) as AdminOrder };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Marketing M2: Gift Cards
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AdminGiftCard {
+  id: string;
+  code: string;
+  code_display: string;
+  initial_balance: string;
+  current_balance: string;
+  currency_code: string;
+  status: "active" | "disabled" | "depleted";
+  sender_name?: string;
+  sender_email?: string;
+  recipient_name?: string;
+  recipient_email?: string;
+  message?: string;
+  purchased_at?: string;
+  expires_at?: string;
+  created_at: string;
+}
+
+export interface AdminGiftCardTransaction {
+  id: string;
+  type: "purchase" | "redeem" | "refund" | "adjustment";
+  amount: string;
+  balance_after: string;
+  order_id?: string;
+  note?: string;
+  created_at: string;
+}
+
+export interface AdminGiftCardDetail extends AdminGiftCard {
+  transactions: AdminGiftCardTransaction[];
+}
+
+export interface ListGiftCardsQuery {
+  status?: "active" | "disabled" | "depleted";
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ListGiftCardsResponse {
+  data: AdminGiftCard[];
+  meta: ListProductsMeta;
+}
+
+export interface IssueGiftCardInput {
+  initial_balance: string;
+  currency_code: string;
+  sender_name?: string;
+  sender_email?: string;
+  recipient_name?: string;
+  recipient_email?: string;
+  message?: string;
+  expires_at?: string;
+}
+
+export async function listGiftCards(
+  storeId: string,
+  query: ListGiftCardsQuery,
+  session: SessionHeaders,
+): Promise<ListGiftCardsResponse | null> {
+  const params = new URLSearchParams();
+  if (query.status) params.set("status", query.status);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("page_size", String(query.pageSize));
+  const qs = params.toString();
+
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/gift-cards${
+    qs ? `?${qs}` : ""
+  }`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      "X-User-Id": session.userId,
+      "X-Tenant-Id": session.tenantId,
+      Accept: "application/json",
+    },
+  });
+
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: listGiftCards ${res.status}: ${errBody?.message ?? "unknown error"}`,
+    );
+  }
+  return (await res.json()) as ListGiftCardsResponse;
+}
+
+export async function getGiftCard(
+  storeId: string,
+  giftCardId: string,
+  session: SessionHeaders,
+): Promise<{ data: AdminGiftCardDetail } | null> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/gift-cards/${giftCardId}`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      "X-User-Id": session.userId,
+      "X-Tenant-Id": session.tenantId,
+      Accept: "application/json",
+    },
+  });
+
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: getGiftCard ${res.status}: ${errBody?.message ?? "unknown error"}`,
+    );
+  }
+  return (await res.json()) as { data: AdminGiftCardDetail };
+}
+
+export async function issueGiftCard(
+  storeId: string,
+  input: IssueGiftCardInput,
+  session: SessionHeaders,
+): Promise<{ data: AdminGiftCard }> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/gift-cards`;
+  const res = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "X-User-Id": session.userId,
+      "X-Tenant-Id": session.tenantId,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: issueGiftCard ${res.status}: ${errBody?.message ?? "unknown error"}`,
+    );
+  }
+  return (await res.json()) as { data: AdminGiftCard };
+}

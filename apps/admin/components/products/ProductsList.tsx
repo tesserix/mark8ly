@@ -1,16 +1,16 @@
+"use client";
+
 // apps/admin/components/products/ProductsList.tsx
 //
-// The products data-table. Hairline rules, 56px row height, columns per
-// spec §7.2: checkbox (disabled — bulk actions land in M7d), image
-// (Paper placeholder), product (serif title + muted handle), status
-// (StatusDot), stock (muted for drafts, signal vermillion for low),
-// price (PriceDisplay with "from" prefix for variant-priced products),
-// overflow menu trigger (no menu yet — M7d wires it).
+// The products data-table. M7d: wired with useProductSelection hook,
+// BulkActionsBar, CopyToStoreDialog (single + bulk), BulkDeleteConfirmDialog,
+// and BulkCategoryAssignPopover. Overflow menu per row with "Copy to store".
 
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type { ReactNode } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Copy } from "lucide-react";
 
 import { StatusDot } from "@repo/ui/status-dot";
 import { PriceDisplay } from "@repo/ui/price-display";
@@ -18,13 +18,131 @@ import { PriceDisplay } from "@repo/ui/price-display";
 import type {
   AdminProduct,
   AdminMediaResponse,
+  AdminStore,
+  AdminCategory,
 } from "@/lib/api/marketplace-api";
+import { useProductSelection } from "@/lib/products/useProductSelection";
+import { BulkActionsBar, type StoreRole } from "./BulkActionsBar";
+import { CopyToStoreDialog, type CopyToStoreRequest } from "./CopyToStoreDialog";
+import { BulkDeleteConfirmDialog } from "./BulkDeleteConfirmDialog";
+import { BulkCategoryAssignPopover } from "./BulkCategoryAssignPopover";
+import {
+  copyProductAction,
+  bulkArchiveAction,
+  bulkUnarchiveAction,
+  bulkPublishAction,
+  bulkUnpublishAction,
+  bulkDeleteAction,
+  bulkAssignCategoryAction,
+} from "@/app/products/actions";
 
 export interface ProductsListProps {
   products: AdminProduct[];
+  storeId: string;
+  role: StoreRole;
+  stores: AdminStore[];
+  categories: AdminCategory[];
 }
 
-export function ProductsList({ products }: ProductsListProps) {
+export function ProductsList({
+  products,
+  storeId,
+  role,
+  stores,
+  categories,
+}: ProductsListProps) {
+  const selection = useProductSelection(storeId);
+
+  // Copy dialog state
+  const [copyProductIds, setCopyProductIds] = useState<string[]>([]);
+  const [isCopyOpen, setIsCopyOpen] = useState(false);
+
+  // Delete confirm state
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+
+  // Category assign state
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
+
+  // Overflow menu state
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  const allProductIds = products.map((p) => p.id);
+  const allSelected =
+    products.length > 0 && products.every((p) => selection.isSelected(p.id));
+
+  const handleSelectAll = useCallback(() => {
+    if (allSelected) {
+      selection.clearAll();
+    } else {
+      selection.selectAll(allProductIds);
+    }
+  }, [allSelected, allProductIds, selection]);
+
+  const handleCopySingle = useCallback(
+    (productId: string) => {
+      setCopyProductIds([productId]);
+      setIsCopyOpen(true);
+      setOpenMenuId(null);
+    },
+    [],
+  );
+
+  const handleCopyBulk = useCallback(() => {
+    setCopyProductIds([...selection.selectedIds]);
+    setIsCopyOpen(true);
+  }, [selection.selectedIds]);
+
+  const handleCopySubmit = useCallback(
+    async (req: CopyToStoreRequest) => {
+      for (const id of req.productIds) {
+        await copyProductAction(storeId, id, {
+          targetStoreId: req.targetStoreId,
+          copyMedia: req.copyMedia,
+        });
+      }
+      setIsCopyOpen(false);
+      selection.clearAll();
+    },
+    [storeId, selection],
+  );
+
+  const handleBulkAction = useCallback(
+    async (action: string) => {
+      const ids = [...selection.selectedIds];
+      const actionMap: Record<string, (s: string, ids: string[]) => Promise<unknown>> = {
+        archive: bulkArchiveAction,
+        unarchive: bulkUnarchiveAction,
+        publish: bulkPublishAction,
+        unpublish: bulkUnpublishAction,
+      };
+      const fn = actionMap[action];
+      if (fn) {
+        await fn(storeId, ids);
+        selection.clearAll();
+      }
+    },
+    [storeId, selection],
+  );
+
+  const handleDeleteConfirm = useCallback(async () => {
+    await bulkDeleteAction(storeId, [...selection.selectedIds]);
+    setIsDeleteOpen(false);
+    selection.clearAll();
+  }, [storeId, selection]);
+
+  const handleCategoryApply = useCallback(
+    async (categoryIds: string[]) => {
+      await bulkAssignCategoryAction(
+        storeId,
+        [...selection.selectedIds],
+        categoryIds,
+      );
+      setIsCategoryOpen(false);
+      selection.clearAll();
+    },
+    [storeId, selection],
+  );
+
   return (
     <div className="w-full">
       <table
@@ -33,7 +151,15 @@ export function ProductsList({ products }: ProductsListProps) {
       >
         <thead>
           <tr className="border-b border-[color:var(--ink-900)] border-opacity-10 text-left text-xs font-medium uppercase tracking-wide text-[color:var(--ink-900)] opacity-60">
-            <th scope="col" className="w-10 py-3" aria-hidden="true" />
+            <th scope="col" className="w-10 py-3">
+              <input
+                type="checkbox"
+                aria-label="Select all products"
+                checked={allSelected}
+                onChange={handleSelectAll}
+                className="h-4 w-4 rounded border-[color:var(--ink-900)] border-opacity-30 text-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
+              />
+            </th>
             <th scope="col" className="w-14 py-3" aria-hidden="true" />
             <th scope="col" className="py-3">
               Product
@@ -52,15 +178,75 @@ export function ProductsList({ products }: ProductsListProps) {
         </thead>
         <tbody>
           {products.map((p) => (
-            <ProductRow key={p.id} product={p} />
+            <ProductRow
+              key={p.id}
+              product={p}
+              isSelected={selection.isSelected(p.id)}
+              onToggle={() => selection.toggle(p.id)}
+              isMenuOpen={openMenuId === p.id}
+              onMenuToggle={() =>
+                setOpenMenuId(openMenuId === p.id ? null : p.id)
+              }
+              onCopyToStore={() => handleCopySingle(p.id)}
+            />
           ))}
         </tbody>
       </table>
+
+      <BulkActionsBar
+        selectedIds={selection.selectedIds}
+        role={role}
+        storeId={storeId}
+        categories={categories}
+        onActionComplete={() => selection.clearAll()}
+        onCopyClick={handleCopyBulk}
+        onDeleteClick={() => setIsDeleteOpen(true)}
+        onCategoryAssignClick={() => setIsCategoryOpen(true)}
+        onBulkAction={handleBulkAction}
+      />
+
+      <CopyToStoreDialog
+        isOpen={isCopyOpen}
+        onClose={() => setIsCopyOpen(false)}
+        stores={stores}
+        currentStoreId={storeId}
+        productIds={copyProductIds}
+        onCopy={handleCopySubmit}
+      />
+
+      <BulkDeleteConfirmDialog
+        isOpen={isDeleteOpen}
+        count={selection.count}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setIsDeleteOpen(false)}
+      />
+
+      <BulkCategoryAssignPopover
+        isOpen={isCategoryOpen}
+        categories={categories}
+        count={selection.count}
+        onApply={handleCategoryApply}
+        onClose={() => setIsCategoryOpen(false)}
+      />
     </div>
   );
 }
 
-function ProductRow({ product }: { product: AdminProduct }) {
+function ProductRow({
+  product,
+  isSelected,
+  onToggle,
+  isMenuOpen,
+  onMenuToggle,
+  onCopyToStore,
+}: {
+  product: AdminProduct;
+  isSelected: boolean;
+  onToggle: () => void;
+  isMenuOpen: boolean;
+  onMenuToggle: () => void;
+  onCopyToStore: () => void;
+}) {
   const firstMedia = product.media[0];
   const variantCount = product.variants.length;
 
@@ -94,9 +280,9 @@ function ProductRow({ product }: { product: AdminProduct }) {
         <input
           type="checkbox"
           aria-label={`Select ${product.title}`}
-          disabled
-          title="Bulk actions land in M7d"
-          className="h-4 w-4 rounded border-[color:var(--ink-900)] border-opacity-30 disabled:opacity-30"
+          checked={isSelected}
+          onChange={onToggle}
+          className="h-4 w-4 rounded border-[color:var(--ink-900)] border-opacity-30 text-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
         />
       </td>
       <td className="py-3">
@@ -134,14 +320,27 @@ function ProductRow({ product }: { product: AdminProduct }) {
           currency={currency}
         />
       </td>
-      <td className="py-3 text-right">
+      <td className="relative py-3 text-right">
         <button
           type="button"
           aria-label={`More actions for ${product.title}`}
+          onClick={onMenuToggle}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--ink-900)] opacity-60 hover:bg-[color:var(--ink-900)] hover:bg-opacity-5 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </button>
+        {isMenuOpen && (
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--background-elevated,white)] py-1 shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))]">
+            <button
+              type="button"
+              onClick={onCopyToStore}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5"
+            >
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              Copy to store
+            </button>
+          </div>
+        )}
       </td>
     </tr>
   );
@@ -164,7 +363,6 @@ function MediaThumb({
   }
   return (
     <div className="relative h-10 w-10 overflow-hidden rounded border border-[color:var(--ink-900)] border-opacity-10">
-      {/* unoptimized to avoid the Next Image domain allowlist requirement on dev */}
       <Image
         src={media.url}
         alt={media.alt ?? productTitle}

@@ -574,6 +574,123 @@ export async function recropMedia(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// M7d: copy-to-store + bulk actions
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AdminStore {
+  id: string;
+  name: string;
+  slug: string;
+  country_code: string;
+  currency_code: string;
+  status: string;
+}
+
+export interface ListStoresResponse {
+  data: AdminStore[];
+}
+
+export interface CopyProductInput {
+  target_store_id: string;
+  copy_media: boolean;
+}
+
+export interface CopyProductResult {
+  new_product_id: string;
+  new_store_id: string;
+}
+
+export interface BulkActionInput {
+  action: string;
+  product_ids: string[];
+  params?: Record<string, unknown>;
+}
+
+export interface BulkResultRow {
+  id: string;
+  status: "ok" | "error";
+  error?: string;
+}
+
+export interface BulkActionResult {
+  results: BulkResultRow[];
+}
+
+/**
+ * List stores the current user has access to.
+ */
+export async function listMyStores(
+  session: SessionHeaders,
+): Promise<AdminStore[]> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores`,
+    {
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+        Accept: "application/json",
+      },
+    },
+  );
+  if (res.status === 401 || res.status === 403) {
+    return [];
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: listMyStores ${res.status}`);
+  }
+  const body = (await res.json()) as ListStoresResponse;
+  return body.data ?? [];
+}
+
+/**
+ * Copy a product to another store.
+ */
+export async function copyProduct(
+  storeId: string,
+  productId: string,
+  body: CopyProductInput,
+  session: SessionHeaders,
+): Promise<MutationResult<CopyProductResult>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/copy`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as CopyProductResult };
+}
+
+/**
+ * Execute a bulk action on multiple products.
+ */
+export async function bulkProductAction(
+  storeId: string,
+  body: BulkActionInput,
+  session: SessionHeaders,
+): Promise<MutationResult<BulkActionResult>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/bulk`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as BulkActionResult };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Orders slice 1 — admin orders, returns, abandoned-carts (M4 backend).
 // Phase 1: list types + listOrders + getOrder. Detail/mutation methods land
 // in Phase 2.

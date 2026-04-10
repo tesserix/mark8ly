@@ -57,7 +57,7 @@ export function VariantBulkBar({
 
   return (
     <div className="flex items-center justify-between gap-4 border-t border-[var(--ink-100)] bg-[var(--paper-200)] px-4 py-3">
-      <span className="font-[var(--font-serif)] text-sm text-[var(--ink-900)]" style={{ fontFamily: "var(--font-serif, 'Source Serif 4', serif)" }}>
+      <span className="font-[family-name:var(--font-serif)] text-sm text-[var(--ink-900)]">
         {variantCount} variants
       </span>
       {active === null ? (

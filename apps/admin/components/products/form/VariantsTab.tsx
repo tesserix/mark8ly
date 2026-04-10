@@ -27,7 +27,7 @@ export function VariantsTab({ currencyCode }: VariantsTabProps) {
 
   if (variants.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-[color:var(--ink-900)] border-opacity-20 p-12 text-center">
+      <div className="border-t border-[color:var(--ink-100)] py-12 pl-1">
         <p className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-lg text-[color:var(--ink-900)] opacity-80">
           Add options on the Options tab to generate variants.
         </p>

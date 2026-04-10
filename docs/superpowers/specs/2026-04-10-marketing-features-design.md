@@ -378,29 +378,117 @@ All pages follow the established Paper/Ink/Moss editorial pattern:
 
 ### 7.1 Checkout additions
 
-- Coupon code input field below order summary (validate on blur/enter)
-- Gift card code input field with balance display
-- Loyalty points redemption toggle (show available points + dollar value)
-- Updated totals section: subtotal, discount, gift card, points, shipping, tax, total
+Single collapsed "Have a promo code or gift card?" link below order summary that expands an accordion with:
+- Coupon code input (validate on blur/enter, show discount preview or error inline)
+- Gift card code input with balance display after validation
+- Loyalty points redemption toggle shown inline under subtotal ONLY when customer is enrolled and has redeemable points (not inside the accordion)
+
+Updated totals section: subtotal, discount (if coupon), gift card applied (if any), points redeemed (if any), shipping, tax, total.
 
 ### 7.2 New pages
 
 - `/gift-cards` — purchase page: select amount, recipient details, preview card
 - `/account/loyalty` — points balance, tier badge, referral code + share link, transaction history
 
-## 8. Testing
+## 8. Concurrency & Safety (from specialist reviews)
+
+### 8.1 Atomic balance/counter mutations
+
+**Gift card debit:** Single `UPDATE gift_cards SET current_balance = current_balance - $amount WHERE id = $id AND current_balance >= $amount RETURNING current_balance` inside the same DB transaction as order creation. Zero rows = insufficient balance. Never read-then-write.
+
+**Coupon usage increment:** Single `UPDATE coupons SET usage_count = usage_count + 1 WHERE id = $id AND (usage_limit IS NULL OR usage_count < usage_limit) RETURNING usage_count` inside the checkout transaction. Zero rows = limit reached.
+
+**Loyalty point redemption:** Same pattern — `UPDATE customer_loyalties SET points_balance = points_balance - $points WHERE id = $id AND points_balance >= $points RETURNING points_balance`.
+
+**Campaign analytics counters:** `UPDATE campaigns SET delivered = delivered + 1` — never ORM read-modify-write.
+
+### 8.2 Checkout transaction boundary
+
+All discount steps (coupon apply, gift card debit, order creation, tax line saves) MUST be in a single `db.Transaction()` call. Payment intent creation stays outside. If payment fails, the transaction rolls back — no orphaned debits.
+
+### 8.3 Discount interface
+
+Define `internal/discount/applier.go`:
+```go
+type Applier interface {
+    Apply(ctx context.Context, tx *gorm.DB, orderID uuid.UUID, amount decimal.Decimal) (discountAmount decimal.Decimal, err error)
+}
+```
+Coupon, gift card, and loyalty redemption each implement it. `checkout_ext.go` iterates `[]discount.Applier` in order.
+
+### 8.4 Domain errors
+
+Add to `pkg/apperrors`:
+- `CodeCouponNotFound`, `CodeCouponExpired`, `CodeCouponUsageLimitReached`, `CodeCouponInvalid`
+- `CodeInsufficientGiftCardBalance`, `CodeGiftCardExpired`, `CodeGiftCardNotFound`
+- `CodeInsufficientLoyaltyPoints`, `CodeLoyaltyNotEnrolled`
+
+### 8.5 Code generation
+
+Gift card codes and referral codes MUST use `crypto/rand` with minimum 128-bit entropy. Rendered as 16-character base32 strings. Never `math/rand`.
+
+### 8.6 Rate limiting
+
+Per-IP sliding window (10 req/min) on:
+- `POST /storefront/.../coupons/validate`
+- `POST /storefront/.../gift-cards/check-balance`
+
+Implement as a Gin middleware using an in-memory token bucket (no Redis dependency).
+
+### 8.7 Content sanitization
+
+Campaign `content` field routed through the existing `internal/product/sanitizer.go` before storage and before send. Prevents stored XSS.
+
+### 8.8 Background jobs
+
+**Loyalty point expiry:** Cron job in the marketplace-api binary (same pattern as csvjob worker). Runs daily, batches of 500 rows using `FOR UPDATE SKIP LOCKED`. Inserts `type='expire'` transaction rows and decrements `points_balance` atomically. Indexed on `loyalty_transactions.created_at`.
+
+**Campaign send:** Batch dispatch to notification-service via Pub/Sub. 500 recipients per batch, 1s inter-batch delay. Stuck-in-`sending` recovery: heartbeat timestamp on campaign row, stale after 15 min → status reset to `paused` on startup (same pattern as csvjob orphan recovery).
+
+## 9. Data Model Fixes (from specialist reviews)
+
+- Add `tenant_id` to `coupon_usage`, `gift_card_transactions`, `loyalty_transactions` for consistency
+- Add `adjusted_by VARCHAR(200)` to `loyalty_transactions` for admin audit trail
+- Add `CHECK (balance_after >= 0)` to `loyalty_transactions`
+- Add `CHECK (current_balance >= 0)` to `gift_cards`
+- Validate `segments.rules` and `loyalty_programs.tiers` JSON schemas at the service layer before write
+
+## 10. UX Refinements (from specialist reviews)
+
+### 10.1 Coupon create form — progressive disclosure
+- **Always visible (4 fields):** code, discount type, value, expiry date
+- **Behind "Advanced options" toggle:** min purchase, max discount, usage limit, per-customer limit, target type, target IDs, stackable, start date
+
+### 10.2 Loyalty tiers — structured builder (not JSONB editor)
+- Fixed-structure tier rows: name, minimum lifetime points, points multiplier
+- Max 4 tiers. Rendered as an editable list, not raw JSON.
+
+### 10.3 Campaign wizard — starter templates
+- 3 named templates for step 2 (Content): "Announce a sale", "Re-engage inactive customers", "Welcome new subscribers"
+- Pre-populate subject + body. Merchant edits, not creates from nothing.
+
+### 10.4 Empty states + success feedback
+- Every list page (coupons, gift cards, campaigns, loyalty members) has a defined empty state with primary CTA
+- Toast notifications on create/save/delete/send actions
+- Campaign send requires explicit confirmation dialog ("Send to N recipients?")
+
+## 11. Dependency Note
+
+M4 (Campaigns) depends on M3 (Loyalty) — the segment engine needs `customer_loyalties` for email lists. M4 cannot ship before M3.
+
+## 12. Testing
 
 Each milestone includes:
-- Go unit tests for service layer (validation, calculation)
+- Go unit tests for service layer (validation, calculation, edge cases)
 - Go integration tests for handlers (HTTP round-trip with real Postgres via testdb)
-- Coupon: validate + apply + usage limit enforcement + expiry + stacking rules
-- Gift card: balance check + debit + insufficient funds + concurrent debit safety
-- Loyalty: points earn + redeem + tier promotion + point expiry + referral
-- Campaign: create + schedule + send + pause + analytics increment
+- Coupon: validate + apply + usage limit enforcement + expiry + stacking + **concurrent usage race test**
+- Gift card: balance check + debit + insufficient funds + **concurrent debit race test** + expiry
+- Loyalty: points earn + redeem + tier promotion + point expiry batch + referral + **concurrent redemption race test**
+- Campaign: create + schedule + send + pause + analytics increment + **batch recipient insert** + stuck recovery
 
-## 9. Out of Scope
+## 13. Out of Scope
 
-- Email template builder/WYSIWYG for campaigns (use plain text/HTML for M4)
+- Email template builder/WYSIWYG for campaigns (use plain text/HTML + 3 starter templates for M4)
 - Automatic coupon generation (batch create 1000 codes) — follow-up
 - Gift card visual templates/PDF generation — follow-up
 - Advanced segment builder UI with drag-and-drop rules — follow-up

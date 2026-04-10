@@ -734,3 +734,109 @@ export async function getOrder(
   }
   return (await res.json()) as AdminOrder;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Orders Phase 2 — admin mutations: confirm, fulfill, cancel, refund.
+// All return MutationResult<AdminOrder> so callers (server actions) can
+// pattern-match on .ok and surface typed errors to the form UI.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ConfirmOrderInput {
+  /** Optional payment status to set in the same step (e.g. "paid"). */
+  payment_status?: PaymentStatus;
+  reason?: string;
+}
+
+export async function confirmOrder(
+  storeId: string,
+  orderId: string,
+  body: ConfirmOrderInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminOrder>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/confirm`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminOrder };
+}
+
+export async function fulfillOrder(
+  storeId: string,
+  orderId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminOrder>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/fulfill`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminOrder };
+}
+
+export interface CancelOrderInput {
+  reason: string;
+}
+
+export async function cancelOrder(
+  storeId: string,
+  orderId: string,
+  body: CancelOrderInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminOrder>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/cancel`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminOrder };
+}
+
+export interface RefundOrderInput {
+  /** Decimal string. */
+  amount: string;
+  /** Target payment_status: "partially_refunded" or "refunded". */
+  payment_status: PaymentStatus;
+  reason?: string;
+}
+
+export async function refundOrder(
+  storeId: string,
+  orderId: string,
+  body: RefundOrderInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminOrder>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/refund`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminOrder };
+}

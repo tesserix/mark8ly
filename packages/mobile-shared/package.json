@@ -6,10 +6,14 @@
   "types": "./api/client.ts",
   "exports": {
     "./api/*": "./api/*.ts",
+    "./api/storefront-client": "./api/storefront-client.ts",
+    "./api/storefront-types": "./api/storefront-types.ts",
     "./auth/*": "./auth/*.ts",
     "./auth/provider": "./auth/provider.tsx",
     "./push/*": "./push/*.ts",
-    "./stores/*": "./stores/*.ts"
+    "./stores/*": "./stores/*.ts",
+    "./deep-links/*": "./deep-links/*.ts",
+    "./haptics/*": "./haptics/*.ts"
   },
   "dependencies": {
     "zustand": "^5.0.0",

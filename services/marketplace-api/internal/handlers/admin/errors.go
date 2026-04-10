@@ -55,6 +55,16 @@ var codeStatus = map[apperrors.Code]int{
 	// Loyalty M3.
 	apperrors.CodeInsufficientLoyaltyPoints: http.StatusUnprocessableEntity,
 	apperrors.CodeLoyaltyNotEnrolled:        http.StatusBadRequest,
+
+	// Campaign M4.
+	apperrors.CodeCampaignNotFound:     http.StatusNotFound,
+	apperrors.CodeCampaignNotDraft:     http.StatusConflict,
+	apperrors.CodeCampaignNotSending:   http.StatusConflict,
+	apperrors.CodeCampaignNotPaused:    http.StatusConflict,
+	apperrors.CodeSegmentNotFound:      http.StatusNotFound,
+	apperrors.CodeSegmentInvalidRules:  http.StatusBadRequest,
+	apperrors.CodeCampaignNoRecipients: http.StatusUnprocessableEntity,
+	apperrors.CodeCampaignSchedulePast: http.StatusUnprocessableEntity,
 }
 
 // RespondErr writes the standard error envelope for the given error.

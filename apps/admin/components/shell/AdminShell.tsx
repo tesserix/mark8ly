@@ -120,7 +120,8 @@ const navigation: NavSection[] = [
     label: "Marketing",
     icon: Megaphone,
     children: [
-      { label: "Campaigns", href: "/dashboard" },
+      { label: "Campaigns", href: "/marketing/campaigns" },
+      { label: "Segments", href: "/marketing/segments" },
       { label: "Coupons", href: "/marketing/coupons" },
       { label: "Gift Cards", href: "/marketing/gift-cards" },
       { label: "Loyalty", href: "/marketing/loyalty" },

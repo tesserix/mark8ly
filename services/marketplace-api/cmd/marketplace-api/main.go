@@ -26,6 +26,7 @@ import (
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
@@ -229,6 +230,18 @@ func main() {
 		loyaltySvc := loyalty.NewService(conn, loyaltyRepo, log)
 		loyaltyHandler := admin.NewLoyaltyHandler(loyaltySvc, log)
 
+		// Campaign wiring (Marketing M4).
+		campaignRepo := campaign.NewRepository(conn)
+		segmentEngine := campaign.NewSegmentEngine(conn)
+		campaignSvc := campaign.NewService(campaign.ServiceConfig{
+			DB:            conn,
+			Repo:          campaignRepo,
+			SegmentEngine: segmentEngine,
+			Logger:        log,
+		})
+		campaignHandler := admin.NewCampaignHandler(campaignSvc, campaignRepo, log)
+		segmentHandler := admin.NewSegmentHandler(campaignSvc, log)
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -246,6 +259,8 @@ func main() {
 			CouponHandler:          couponHandler,
 			GiftCardHandler:        giftCardHandler,
 			LoyaltyHandler:         loyaltyHandler,
+			CampaignHandler:        campaignHandler,
+			SegmentHandler:         segmentHandler,
 			StoresMiddleware:        storeMW,
 			AuthzMiddleware:         authzMW,
 			InternalSecret:          cfg.InternalAuthSecret,
@@ -371,6 +386,37 @@ func main() {
 		log.Info("loyalty: expiry worker started (24h interval)")
 	}
 
+	// Campaign send worker — runs in admin and both modes.
+	// On startup, recover stuck campaigns (stale heartbeat > 15 min → paused).
+	// Then poll for sendable campaigns every 5s.
+	var campaignWorkerDone <-chan struct{}
+	if m == mode.Admin || m == mode.Both {
+		campaignRepo := campaign.NewRepository(conn)
+
+		// Recovery scan on startup.
+		if err := campaign.RecoverStuckCampaigns(context.Background(), campaignRepo, conn, campaign.StaleDuration, log); err != nil {
+			log.Error("campaign: recovery scan failed", "err", err)
+			// Non-fatal — proceed without recovery.
+		} else {
+			log.Info("campaign: recovery scan complete")
+		}
+
+		// Polling goroutine.
+		campaignDone := make(chan struct{})
+		campaignWorkerDone = campaignDone
+		sendWorker := campaign.NewSendWorker(campaign.SendWorkerConfig{
+			DB:         conn,
+			Repo:       campaignRepo,
+			Dispatcher: &campaign.LogDispatcher{Logger: log},
+			Logger:     log,
+		})
+		go func() {
+			defer close(campaignDone)
+			sendWorker.Run(workerCtx)
+		}()
+		log.Info("campaign: send worker started")
+	}
+
 	// Outbox publisher — runs in admin and both modes; the storefront
 	// process does not produce events, so running it there would just poll
 	// an always-empty table and waste a connection.
@@ -484,6 +530,14 @@ func main() {
 			log.Info("loyalty: expiry worker stopped")
 		case <-time.After(5 * time.Second):
 			log.Warn("loyalty: expiry worker did not stop in time")
+		}
+	}
+	if campaignWorkerDone != nil {
+		select {
+		case <-campaignWorkerDone:
+			log.Info("campaign: send worker stopped")
+		case <-time.After(5 * time.Second):
+			log.Warn("campaign: send worker did not stop in time")
 		}
 	}
 	log.Info("bye")

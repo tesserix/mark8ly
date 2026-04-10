@@ -30,6 +30,8 @@ type Deps struct {
 	CouponHandler            *CouponHandler
 	GiftCardHandler          *GiftCardHandler
 	LoyaltyHandler           *LoyaltyHandler
+	CampaignHandler          *CampaignHandler
+	SegmentHandler           *SegmentHandler
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware          *authz.Middleware
 	InternalSecret           string
@@ -314,6 +316,56 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				carts.POST("/:id/recovery-email",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.AbandonedCartsEditRole),
 					deps.AbandonedCartsHandler.TriggerRecoveryEmail)
+			}
+		}
+
+		// Campaigns — Marketing M4.
+		if deps.CampaignHandler != nil {
+			campaigns := storeRoute.Group("/campaigns")
+			{
+				campaigns.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsViewRole),
+					deps.CampaignHandler.List)
+				campaigns.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Create)
+				campaigns.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsViewRole),
+					deps.CampaignHandler.Get)
+				campaigns.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Patch)
+				campaigns.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Delete)
+				campaigns.POST("/:id/send",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Send)
+				campaigns.POST("/:id/schedule",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Schedule)
+				campaigns.POST("/:id/pause",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Pause)
+				campaigns.POST("/:id/resume",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Resume)
+			}
+		}
+
+		// Segments — Marketing M4.
+		if deps.SegmentHandler != nil {
+			segments := storeRoute.Group("/segments")
+			{
+				segments.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsViewRole),
+					deps.SegmentHandler.List)
+				segments.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.SegmentHandler.Create)
+				segments.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.SegmentHandler.Delete)
 			}
 		}
 	}

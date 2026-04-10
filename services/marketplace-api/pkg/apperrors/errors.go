@@ -56,6 +56,16 @@ const (
 	// Loyalty M3.
 	CodeInsufficientLoyaltyPoints Code = "insufficient_loyalty_points"
 	CodeLoyaltyNotEnrolled        Code = "loyalty_not_enrolled"
+
+	// Campaign M4.
+	CodeCampaignNotFound     Code = "campaign_not_found"
+	CodeCampaignNotDraft     Code = "campaign_not_draft"
+	CodeCampaignNotSending   Code = "campaign_not_sending"
+	CodeCampaignNotPaused    Code = "campaign_not_paused"
+	CodeSegmentNotFound      Code = "segment_not_found"
+	CodeSegmentInvalidRules  Code = "segment_invalid_rules"
+	CodeCampaignNoRecipients Code = "campaign_no_recipients"
+	CodeCampaignSchedulePast Code = "campaign_schedule_past"
 )
 
 // Error is the marketplace-api envelope. Satisfies the error interface.
@@ -120,6 +130,16 @@ var (
 	// Loyalty M3 sentinels.
 	ErrInsufficientLoyaltyPoints = &Error{Code: CodeInsufficientLoyaltyPoints}
 	ErrLoyaltyNotEnrolled        = &Error{Code: CodeLoyaltyNotEnrolled}
+
+	// Campaign M4 sentinels.
+	ErrCampaignNotFound     = &Error{Code: CodeCampaignNotFound}
+	ErrCampaignNotDraft     = &Error{Code: CodeCampaignNotDraft}
+	ErrCampaignNotSending   = &Error{Code: CodeCampaignNotSending}
+	ErrCampaignNotPaused    = &Error{Code: CodeCampaignNotPaused}
+	ErrSegmentNotFound      = &Error{Code: CodeSegmentNotFound}
+	ErrSegmentInvalidRules  = &Error{Code: CodeSegmentInvalidRules}
+	ErrCampaignNoRecipients = &Error{Code: CodeCampaignNoRecipients}
+	ErrCampaignSchedulePast = &Error{Code: CodeCampaignSchedulePast}
 )
 
 // Is makes errors.Is(err, sentinel) match when the codes are equal,
@@ -148,7 +168,10 @@ func IsKnownCode(s string) bool {
 		CodeCouponNotFound, CodeCouponExpired, CodeCouponUsageLimitReached,
 		CodeCouponInvalid, CodeCouponMinPurchaseNotMet,
 		CodeInsufficientGiftCardBalance, CodeGiftCardExpired, CodeGiftCardNotFound,
-		CodeInsufficientLoyaltyPoints, CodeLoyaltyNotEnrolled:
+		CodeInsufficientLoyaltyPoints, CodeLoyaltyNotEnrolled,
+		CodeCampaignNotFound, CodeCampaignNotDraft, CodeCampaignNotSending,
+		CodeCampaignNotPaused, CodeSegmentNotFound, CodeSegmentInvalidRules,
+		CodeCampaignNoRecipients, CodeCampaignSchedulePast:
 		return true
 	}
 	return false

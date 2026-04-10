@@ -105,6 +105,7 @@ interface ListProductsOptions {
   page?: number;
   pageSize?: number;
   categorySlug?: string;
+  search?: string;
 }
 
 /**
@@ -118,6 +119,7 @@ export async function listProducts(
   const params = new URLSearchParams();
   if (options.page) params.set("page", String(options.page));
   if (options.pageSize) params.set("page_size", String(options.pageSize));
+  if (options.search) params.set("search", options.search);
   const qs = params.toString();
   const path = options.categorySlug
     ? `categories/${encodeURIComponent(options.categorySlug)}/products`

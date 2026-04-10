@@ -11,7 +11,7 @@ describe("MediaUploader", () => {
     const file2 = new File(["b"], "b.jpg", { type: "image/jpeg" });
     fireEvent.change(input, { target: { files: [file1, file2] } });
     expect(onFiles).toHaveBeenCalledTimes(1);
-    expect(onFiles.mock.calls[0][0]).toHaveLength(2);
+    expect(onFiles.mock.calls[0]?.[0]).toHaveLength(2);
   });
 
   it("renders progress items", () => {

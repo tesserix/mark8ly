@@ -41,7 +41,9 @@ describe("MediaCropDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /apply/i }));
 
     await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
-    const [blob, box, rotation] = onApply.mock.calls[0];
+    const call = onApply.mock.calls[0];
+    if (!call) throw new Error("onApply not called");
+    const [blob, box, rotation] = call;
     expect(blob).toBeInstanceOf(Blob);
     expect(box).toEqual({ x: 10, y: 20, width: 200, height: 300 });
     expect(rotation).toBe(0);

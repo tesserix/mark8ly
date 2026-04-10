@@ -38,14 +38,16 @@ describe("MediaGrid", () => {
     );
     const primary = container.querySelectorAll('[data-primary="true"]');
     expect(primary).toHaveLength(1);
-    expect(within(primary[0] as HTMLElement).getByAltText("Front view")).toBeInTheDocument();
+    const firstPrimary = primary[0];
+    expect(firstPrimary).toBeTruthy();
+    expect(within(firstPrimary as HTMLElement).getByAltText("Front view")).toBeInTheDocument();
   });
 
   it("calls onAction with delete when Delete menu item clicked", () => {
     const onAction = vi.fn();
     render(<MediaGrid items={items} onReorder={vi.fn()} onAction={onAction} />);
     const buttons = screen.getAllByRole("button", { name: /image actions/i });
-    fireEvent.click(buttons[0]);
+    fireEvent.click(buttons[0]!);
     fireEvent.click(screen.getByRole("menuitem", { name: /delete/i }));
     expect(onAction).toHaveBeenCalledWith("delete", items[0]);
   });

@@ -14,6 +14,7 @@ import { slugFromHost } from "@/lib/slug";
 import { makeTenantMetadata } from "@/lib/seo";
 import { StorefrontLayoutRenderer } from "@/components/layouts";
 import { FeaturedProducts } from "@/components/FeaturedProducts";
+import { StorefrontNav } from "@/components/StorefrontNav";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +76,7 @@ function StoreLanding({ store }: { store: PublicStore }) {
       }}
     >
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
+        <StorefrontNav storeName={store.name} />
         <TopBar store={store} theme={theme} />
         <StorefrontLayoutRenderer store={store} theme={theme} />
         <FeaturedProducts storeSlug={store.slug} />

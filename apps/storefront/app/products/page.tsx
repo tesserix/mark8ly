@@ -14,11 +14,12 @@ import { listProducts, type StorefrontProduct } from "@/lib/api/marketplace-api"
 import { slugFromHost } from "@/lib/slug";
 import { makeTenantMetadata } from "@/lib/seo";
 import { StorefrontNav } from "@/components/StorefrontNav";
+import { ProductSearchInput } from "@/components/ProductSearchInput";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  searchParams: Promise<{ slug?: string; page?: string }>;
+  searchParams: Promise<{ slug?: string; page?: string; search?: string }>;
 }
 
 async function resolveSlug(query: { slug?: string }): Promise<string> {
@@ -45,13 +46,14 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const slug = await resolveSlug(params);
   const page = params.page ? Number.parseInt(params.page, 10) || 1 : 1;
+  const search = params.search?.trim() || undefined;
 
   const store = slug ? await fetchStoreBySlug(slug) : null;
   if (!store) {
     return <NotFound slug={slug} />;
   }
 
-  const response = await listProducts(slug, { page, pageSize: 24 });
+  const response = await listProducts(slug, { page, pageSize: 24, search });
   const products = response?.data ?? [];
 
   return (
@@ -70,9 +72,14 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
           </h1>
           <p className="text-sm text-[color:var(--ink-900)] opacity-60">
             {products.length === 0
-              ? "No products yet — check back soon."
-              : `${products.length} ${products.length === 1 ? "product" : "products"}`}
+              ? search
+                ? `No matches for “${search}”.`
+                : "No products yet — check back soon."
+              : `${products.length} ${products.length === 1 ? "product" : "products"}${search ? ` matching “${search}”` : ""}`}
           </p>
+          <div className="mt-4">
+            <ProductSearchInput />
+          </div>
         </header>
 
         {products.length === 0 ? (

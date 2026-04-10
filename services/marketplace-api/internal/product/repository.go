@@ -82,6 +82,7 @@ type ListAdminQuery struct {
 type ListPublishedQuery struct {
 	StoreID      string
 	CategorySlug string // optional
+	Search       string // optional case-insensitive substring match on title
 	Page         int
 	PageSize     int
 }
@@ -332,6 +333,14 @@ func (r *gormRepository) ListPublished(ctx context.Context, q ListPublishedQuery
 				JOIN categories c ON c.id = pc.category_id
 				WHERE c.slug = ? AND c.store_id = ? AND c.deleted_at IS NULL AND c.is_active = true
 			)`, q.CategorySlug, q.StoreID)
+	}
+
+	if q.Search != "" {
+		// Case-insensitive substring match against the title. The
+		// storefront `Search` field is intentionally narrower than the
+		// admin's full-text search to avoid matching draft or
+		// admin-only fields. Bound by the storefront query's max=200.
+		base = base.Where("title ILIKE ?", "%"+q.Search+"%")
 	}
 
 	var rows []Product

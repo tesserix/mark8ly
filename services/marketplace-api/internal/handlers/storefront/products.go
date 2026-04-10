@@ -42,8 +42,9 @@ func NewStorefrontHandler(
 // listPublishedQuery is the storefront pagination input. Validation
 // failures translate to 404 — the anonymous path never leaks field names.
 type listPublishedQuery struct {
-	Page     int `form:"page" binding:"omitempty,min=1"`
-	PageSize int `form:"page_size" binding:"omitempty,min=1,max=100"`
+	Page     int    `form:"page" binding:"omitempty,min=1"`
+	PageSize int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	Search   string `form:"search" binding:"omitempty,max=200"`
 }
 
 func (q *listPublishedQuery) defaults() {
@@ -78,6 +79,7 @@ func (h *StorefrontHandler) List(c *gin.Context) {
 		StoreID:  store.ID,
 		Page:     q.Page,
 		PageSize: q.PageSize,
+		Search:   q.Search,
 	})
 	if err != nil {
 		respondInternal(c, h.logger, err)

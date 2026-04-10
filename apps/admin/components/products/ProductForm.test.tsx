@@ -29,6 +29,7 @@ const baseProps = {
   currencyCode: "USD",
   canDelete: false,
   canArchive: false,
+  session: { userId: "u1", tenantId: "t1" },
 };
 
 describe("ProductForm (Task 10 tab shell)", () => {

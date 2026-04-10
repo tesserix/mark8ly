@@ -43,6 +43,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
           currencyCode={currentStore.currency_code}
           canDelete={role === "owner"}
           canArchive={role === "owner" || role === "admin"}
+          session={{ userId, tenantId }}
         />
       </main>
     </AdminShell>

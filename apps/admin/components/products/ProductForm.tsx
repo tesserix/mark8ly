@@ -23,7 +23,11 @@ import {
   productFormSchema,
   type ProductFormValues,
 } from "@/lib/validation/product-form";
-import type { AdminProduct, AdminCategory } from "@/lib/api/marketplace-api";
+import type {
+  AdminProduct,
+  AdminCategory,
+  SessionHeaders,
+} from "@/lib/api/marketplace-api";
 import {
   createProductAction,
   updateProductAction,
@@ -59,6 +63,7 @@ export interface ProductFormProps {
   currencyCode: string;
   canDelete: boolean;
   canArchive: boolean;
+  session: SessionHeaders;
 }
 
 export function ProductForm({
@@ -68,6 +73,7 @@ export function ProductForm({
   categories,
   currencyCode,
   canDelete,
+  session,
 }: ProductFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -331,7 +337,7 @@ export function ProductForm({
             <MediaTab
               storeId={storeId}
               productId={initialProduct.id}
-              session={{} as never}
+              session={session}
             />
           )}
           {currentTab === "options" && <OptionsTab />}

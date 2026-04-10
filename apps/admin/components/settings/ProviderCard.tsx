@@ -1,0 +1,233 @@
+"use client";
+
+// ProviderCard — reusable client component for payment/shipping provider
+// configuration cards. Renders provider identity, status, masked key,
+// mode badge, and action buttons. Accepts a children slot for the
+// inline configuration form that expands on "Configure".
+
+import { useState, useTransition, type ReactNode } from "react";
+
+// ─────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────
+
+interface ProviderCardProps {
+  providerName: string;
+  isActive: boolean;
+  maskedKey: string;
+  mode: "test" | "live" | string;
+  onConfigure: () => Promise<void> | void;
+  onRemove: () => Promise<void> | void;
+  onTest?: () => Promise<{ success: boolean; error?: string }>;
+  /** The inline configuration form rendered when expanded. */
+  children?: ReactNode;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────────
+
+export function ProviderCard({
+  providerName,
+  isActive,
+  maskedKey,
+  mode,
+  onConfigure,
+  onRemove,
+  onTest,
+  children,
+}: ProviderCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, startRemoveTransition] = useTransition();
+  const [testing, startTestTransition] = useTransition();
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    error?: string;
+  } | null>(null);
+
+  function handleConfigure() {
+    setExpanded((prev) => !prev);
+    setConfirmRemove(false);
+    setTestResult(null);
+  }
+
+  function handleRemove() {
+    if (!confirmRemove) {
+      setConfirmRemove(true);
+      return;
+    }
+    startRemoveTransition(async () => {
+      await onRemove();
+      setConfirmRemove(false);
+    });
+  }
+
+  function handleTest() {
+    if (!onTest) return;
+    setTestResult(null);
+    startTestTransition(async () => {
+      const result = await onTest();
+      setTestResult(result);
+    });
+  }
+
+  return (
+    <article className="rounded-[6px] bg-white">
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-4 px-6 py-5">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-3">
+            <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-[color:var(--ink-900)]">
+              {formatProviderName(providerName)}
+            </h3>
+            <StatusPill active={isActive} />
+            <ModeBadge mode={mode} />
+          </div>
+          {maskedKey && (
+            <p className="text-sm text-[color:var(--ink-900)]/60 font-mono">
+              {maskedKey}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {onTest && (
+            <button
+              type="button"
+              onClick={handleTest}
+              disabled={testing || !isActive}
+              className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--ink-900)]/25 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              {testing ? "Testing..." : "Test connection"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleConfigure}
+            className="rounded-[6px] bg-[color:var(--ink-900)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          >
+            {expanded ? "Close" : "Configure"}
+          </button>
+          <button
+            type="button"
+            onClick={handleRemove}
+            disabled={removing}
+            className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          >
+            {removing
+              ? "Removing..."
+              : confirmRemove
+                ? "Confirm remove"
+                : "Remove"}
+          </button>
+        </div>
+      </div>
+
+      {/* Test connection feedback */}
+      {testResult && (
+        <div className="px-6 pb-4">
+          {testResult.success ? (
+            <div
+              role="status"
+              className="rounded-[6px] border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800"
+            >
+              Connection successful.
+            </div>
+          ) : (
+            <div
+              role="alert"
+              className="rounded-[6px] border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800"
+            >
+              Connection failed{testResult.error ? `: ${testResult.error}` : "."}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Confirm remove warning */}
+      {confirmRemove && !removing && (
+        <div className="px-6 pb-4">
+          <div
+            role="alert"
+            className="rounded-[6px] border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
+          >
+            Are you sure? This will remove the {formatProviderName(providerName)}{" "}
+            configuration. Click &quot;Confirm remove&quot; again to proceed, or
+            configure/close to cancel.
+          </div>
+        </div>
+      )}
+
+      {/* Hairline rule before expanded form */}
+      {expanded && (
+        <>
+          <hr className="border-t border-[color:var(--ink-900)]/6 mx-6" />
+          <div className="px-6 py-5">{children}</div>
+        </>
+      )}
+    </article>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────────────────
+
+function StatusPill({ active }: { active: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        active
+          ? "bg-emerald-50 text-emerald-700"
+          : "bg-[color:var(--ink-900)]/5 text-[color:var(--ink-900)]/50"
+      }`}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          active ? "bg-emerald-500" : "bg-[color:var(--ink-900)]/30"
+        }`}
+        aria-hidden="true"
+      />
+      {active ? "Active" : "Inactive"}
+    </span>
+  );
+}
+
+function ModeBadge({ mode }: { mode: string }) {
+  const isLive = mode === "live";
+  return (
+    <span
+      className={`inline-block rounded-[4px] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${
+        isLive
+          ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
+          : "bg-amber-50 text-amber-700"
+      }`}
+    >
+      {mode}
+    </span>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Utility
+// ─────────────────────────────────────────────────────────────────────────
+
+function formatProviderName(provider: string): string {
+  const names: Record<string, string> = {
+    stripe: "Stripe",
+    razorpay: "Razorpay",
+    paypal: "PayPal",
+    dhl: "DHL",
+    fedex: "FedEx",
+    ups: "UPS",
+    usps: "USPS",
+    delhivery: "Delhivery",
+    shiprocket: "Shiprocket",
+    bluedart: "BlueDart",
+    taxjar: "TaxJar",
+    australia_post: "Australia Post",
+    royal_mail: "Royal Mail",
+  };
+  return names[provider.toLowerCase()] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+}

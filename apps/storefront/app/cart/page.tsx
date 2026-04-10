@@ -50,14 +50,12 @@ export default function CartPage() {
               </div>
 
               <div className="mt-6 flex items-center gap-4">
-                <button
-                  type="button"
-                  disabled
-                  className="rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm text-[color:var(--paper-200)] opacity-50 cursor-not-allowed"
-                  title="Checkout lands in a follow-up slice"
+                <Link
+                  href="/checkout"
+                  className="rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm text-[color:var(--paper-200)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
                 >
-                  Checkout (coming soon)
-                </button>
+                  Checkout
+                </Link>
                 <button
                   type="button"
                   onClick={clear}

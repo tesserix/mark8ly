@@ -45,6 +45,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/push"
+	"github.com/mark8ly/marketplace-api/internal/pushtoken"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
@@ -487,6 +488,36 @@ func main() {
 		}
 	}
 
+	// Mobile storefront wiring — Bearer auth for mobile app clients.
+	var mobileSFDeps storefront.MobileDeps
+	if m == mode.Storefront || m == mode.Both {
+		sfPushTokenRepo := pushtoken.NewRepository(conn)
+		sfPushTokenHandler := storefront.NewPushTokenHandler(sfPushTokenRepo, log)
+		sfNotifyMeHandler := storefront.NewNotifyMeHandler(log)
+
+		mobileSFDeps = storefront.MobileDeps{
+			Handler:                storefrontDeps.Handler,
+			CheckoutHandler:       storefrontDeps.CheckoutHandler,
+			CheckoutExtHandler:    storefrontDeps.CheckoutExtHandler,
+			PaymentMethodsHandler: storefrontDeps.PaymentMethodsHandler,
+			ShippingRatesHandler:  storefrontDeps.ShippingRatesHandler,
+			OrderDetailHandler:    storefrontDeps.OrderDetailHandler,
+			CouponValidateHandler: storefrontDeps.CouponValidateHandler,
+			GiftCardHandler:       storefrontDeps.GiftCardHandler,
+			LoyaltyHandler:        storefrontDeps.LoyaltyHandler,
+			SlugCache:             storefrontDeps.SlugCache,
+			CustomerAccountHandler: storefrontDeps.CustomerAccountHandler,
+			CustomerService:        storefrontDeps.CustomerService,
+			ReviewsHandler:        storefrontDeps.ReviewsHandler,
+			WishlistHandler:       storefrontDeps.WishlistHandler,
+			BrandingHandler:       storefrontDeps.BrandingHandler,
+			PushTokenHandler:      sfPushTokenHandler,
+			NotifyMeHandler:       sfNotifyMeHandler,
+			DevMode:               cfg.Env == "development" || cfg.Env == "dev",
+			Logger:                log,
+		}
+	}
+
 	// CSV import worker — runs in admin and both modes. On startup, recover
 	// orphaned jobs (stale heartbeat > 15 min → paused). Then poll for
 	// queued jobs every 5s and run the worker.
@@ -612,6 +643,7 @@ func main() {
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
 		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
+		storefront.RegisterMobileStorefront(r.Group("/api/v1"), mobileSFDeps)
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
 			Handler: r,
@@ -633,6 +665,7 @@ func main() {
 		}
 		if m == mode.Storefront {
 			storefront.RegisterStorefront(engine.Group("/api/v1"), storefrontDeps)
+			storefront.RegisterMobileStorefront(engine.Group("/api/v1"), mobileSFDeps)
 		}
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),

@@ -10,7 +10,8 @@ import (
 // MobileDeps extends Deps with the mobile-specific GIP token verifier.
 type MobileDeps struct {
 	Deps
-	TokenVerifier auth.TokenVerifier
+	TokenVerifier    auth.TokenVerifier
+	PushTokenHandler *PushTokenHandler
 }
 
 // RegisterAdminMobile mounts the mobile admin route group. Uses GIPBearerAuth
@@ -125,6 +126,15 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 				customers.POST("/:id/unblock",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.CustomersEditRole),
 					deps.CustomersHandler.Unblock)
+			}
+		}
+
+		// Push tokens
+		if deps.PushTokenHandler != nil {
+			pushTokens := storeRoute.Group("/push-tokens")
+			{
+				pushTokens.POST("", deps.PushTokenHandler.Register)
+				pushTokens.DELETE("/:tokenId", deps.PushTokenHandler.Delete)
 			}
 		}
 

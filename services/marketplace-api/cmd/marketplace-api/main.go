@@ -44,6 +44,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
+	"github.com/mark8ly/marketplace-api/internal/push"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
@@ -375,9 +376,13 @@ func main() {
 				}
 			}
 		}
+		pushRepo := push.NewRepository(conn)
+		pushTokenHandler := admin.NewPushTokenHandler(pushRepo, log)
+
 		mobileDeps = admin.MobileDeps{
-			Deps:          adminDeps,
-			TokenVerifier: tokenVerifier,
+			Deps:             adminDeps,
+			TokenVerifier:    tokenVerifier,
+			PushTokenHandler: pushTokenHandler,
 		}
 	}
 

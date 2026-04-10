@@ -190,7 +190,7 @@ jobs:
           done
 
       - name: Open PR on tesserix-k8s
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           path: tesserix-k8s
           token: ${{ secrets.TESSERIX_K8S_BOT }}

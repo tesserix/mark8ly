@@ -336,6 +336,40 @@ func (s *Service) RecordRefund(ctx context.Context, tx *gorm.DB, orderID uuid.UU
 	})
 }
 
+// LinkAbandonedCart marks an open abandoned_carts row as converted to the
+// given order. Storefront checkout calls this immediately after a fresh
+// Create to close the recovery loop. The match is by (store_id,
+// cart_session_id) so a session that switched stores cannot accidentally
+// claim a cart from a different store. Setting converted_order_id is
+// idempotent — a second call with the same arguments is a no-op.
+//
+// If tx is nil the method opens its own short tx; otherwise it runs
+// inside the supplied one.
+func (s *Service) LinkAbandonedCart(ctx context.Context, tx *gorm.DB, storeID uuid.UUID, cartSessionID string, orderID uuid.UUID) error {
+	if cartSessionID == "" {
+		return apperrors.ValidationFailed("cart_session_id", "cart_session_id is required")
+	}
+	return s.runMaybeOwnTx(ctx, tx, func(tx *gorm.DB) error {
+		res := tx.Exec(
+			`UPDATE abandoned_carts
+			    SET converted_order_id = ?,
+			        updated_at         = now()
+			  WHERE store_id           = ?
+			    AND cart_session_id    = ?
+			    AND converted_order_id IS NULL`,
+			orderID, storeID, cartSessionID,
+		)
+		if res.Error != nil {
+			return res.Error
+		}
+		// Zero rows affected is fine — the cart may have already been
+		// linked, or there may be no abandoned cart row at all (the
+		// customer typed in the URL directly). Return nil so callers
+		// don't have to special-case the absence.
+		return nil
+	})
+}
+
 // RecordReturnEvent is the cross-module hook return.Service uses to drop
 // a return_* row into order_events + outbox_events without owning the
 // orders aggregate. The caller MUST pass an active tx; this method never

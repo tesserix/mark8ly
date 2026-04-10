@@ -29,6 +29,7 @@ type Deps struct {
 	TaxSettingsHandler       *TaxSettingsHandler
 	CouponHandler            *CouponHandler
 	GiftCardHandler          *GiftCardHandler
+	LoyaltyHandler           *LoyaltyHandler
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware          *authz.Middleware
 	InternalSecret           string
@@ -269,6 +270,34 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				gc.GET("/:id",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsViewRole),
 					deps.GiftCardHandler.Get)
+			}
+		}
+
+		// Loyalty program — Marketing M3.
+		if deps.LoyaltyHandler != nil {
+			loyaltyGroup := storeRoute.Group("/loyalty")
+			{
+				loyaltyGroup.GET("/program",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyViewRole),
+					deps.LoyaltyHandler.GetProgram)
+				loyaltyGroup.PUT("/program",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyEditRole),
+					deps.LoyaltyHandler.UpdateProgram)
+				members := loyaltyGroup.Group("/members")
+				{
+					members.GET("",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyViewRole),
+						deps.LoyaltyHandler.ListMembers)
+					members.GET("/:id",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyViewRole),
+						deps.LoyaltyHandler.GetMember)
+					members.POST("/:id/adjust",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyEditRole),
+						deps.LoyaltyHandler.AdjustPoints)
+				}
+				loyaltyGroup.GET("/referrals",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyViewRole),
+					deps.LoyaltyHandler.ListReferrals)
 			}
 		}
 

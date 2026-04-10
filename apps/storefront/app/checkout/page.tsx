@@ -14,6 +14,7 @@ import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { CouponInput } from "@/components/checkout/CouponInput";
 import { GiftCardInput } from "@/components/checkout/GiftCardInput";
+import { LoyaltyRedemption } from "@/components/checkout/LoyaltyRedemption";
 import {
   fetchPaymentMethods,
   fetchShippingRates,
@@ -133,11 +134,19 @@ export default function CheckoutPage() {
   const [giftCardCode, setGiftCardCode] = useState<string | null>(null);
   const [giftCardAmount, setGiftCardAmount] = useState(0);
 
+  // Loyalty points state
+  const [redeemPoints, setRedeemPoints] = useState<number | null>(null);
+  const [loyaltyBalance] = useState(0); // TODO: fetch from getMe when email is set
+  const [loyaltyPointsValue] = useState("0.01");
+  const [loyaltyPointsCurrency] = useState("points");
+  const [loyaltyMinRedeem] = useState(100);
+
   // Computed totals
   const selectedRate = shippingRates.find((r) => r.service === selectedShipping);
   const shippingTotal = selectedRate ? Number.parseFloat(selectedRate.price) : 0;
   // Tax is computed server-side at checkout; show 0 until order is placed.
-  const totalBeforeGC = subtotal + (couponFreeShipping ? 0 : shippingTotal) - couponDiscount;
+  const loyaltyDiscount = redeemPoints ? redeemPoints * parseFloat(loyaltyPointsValue) : 0;
+  const totalBeforeGC = subtotal + (couponFreeShipping ? 0 : shippingTotal) - couponDiscount - loyaltyDiscount;
   const giftCardDeduction = Math.min(giftCardAmount, Math.max(0, totalBeforeGC));
   const total = totalBeforeGC - giftCardDeduction;
 
@@ -223,6 +232,7 @@ export default function CheckoutPage() {
       subtotal: subtotal.toFixed(2),
       coupon_code: couponCode ?? undefined,
       gift_card_code: giftCardCode ?? undefined,
+      redeem_points: redeemPoints ?? undefined,
     };
 
     const result = await submitCheckout(storeSlug, body);
@@ -542,6 +552,23 @@ export default function CheckoutPage() {
                 {formatPrice(subtotal, currencyCode)}
               </dd>
             </div>
+            {loyaltyBalance > 0 && (
+              <LoyaltyRedemption
+                pointsBalance={loyaltyBalance}
+                pointsValue={loyaltyPointsValue}
+                pointsCurrency={loyaltyPointsCurrency}
+                minRedeemPoints={loyaltyMinRedeem}
+                onToggle={setRedeemPoints}
+              />
+            )}
+            {loyaltyDiscount > 0 && (
+              <div className="flex justify-between">
+                <dt className="opacity-60">Loyalty discount</dt>
+                <dd className="text-[color:var(--moss-700)]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                  -{formatPrice(loyaltyDiscount, currencyCode)}
+                </dd>
+              </div>
+            )}
             <div className="flex justify-between">
               <dt className="opacity-60">Shipping</dt>
               <dd style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>

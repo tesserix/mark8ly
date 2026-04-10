@@ -97,6 +97,7 @@ export interface CheckoutBody {
   discount_total?: string;
   coupon_code?: string;
   gift_card_code?: string;
+  redeem_points?: number;
 }
 
 export interface CheckoutResult {
@@ -109,6 +110,8 @@ export interface CheckoutResult {
   discount_total?: string;
   coupon_code?: string;
   gift_card_applied?: string;
+  points_redeemed?: number;
+  points_earned?: number;
   total: string;
 }
 

@@ -34,6 +34,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
 	"github.com/mark8ly/marketplace-api/internal/health"
+	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/order"
@@ -223,6 +224,11 @@ func main() {
 		giftCardSvc := giftcard.NewService(conn, giftCardRepo, log)
 		giftCardHandler := admin.NewGiftCardHandler(giftCardSvc, log)
 
+		// Loyalty M3 wiring.
+		loyaltyRepo := loyalty.NewRepository()
+		loyaltySvc := loyalty.NewService(conn, loyaltyRepo, log)
+		loyaltyHandler := admin.NewLoyaltyHandler(loyaltySvc, log)
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -239,6 +245,7 @@ func main() {
 			TaxSettingsHandler:      taxSettingsHandler,
 			CouponHandler:          couponHandler,
 			GiftCardHandler:        giftCardHandler,
+			LoyaltyHandler:         loyaltyHandler,
 			StoresMiddleware:        storeMW,
 			AuthzMiddleware:         authzMW,
 			InternalSecret:          cfg.InternalAuthSecret,
@@ -282,8 +289,14 @@ func main() {
 		giftCardSvcSF := giftcard.NewService(conn, giftCardRepoSF, log)
 		giftCardSFHandler := storefront.NewGiftCardStorefrontHandler(giftCardSvcSF, log)
 
+		// Loyalty M3 storefront wiring.
+		loyaltyRepoSF := loyalty.NewRepository()
+		loyaltySvcSF := loyalty.NewService(conn, loyaltyRepoSF, log)
+		sfLoyaltyHandler := storefront.NewLoyaltyHandler(loyaltySvcSF, log)
+
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
 		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, log)
+		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log)
@@ -299,6 +312,7 @@ func main() {
 			OrderDetailHandler:    orderDetailHandler,
 			CouponValidateHandler: couponValidateHandler,
 			GiftCardHandler:       giftCardSFHandler,
+			LoyaltyHandler:        sfLoyaltyHandler,
 			SlugCache:             slugCache,
 			StorefrontKey:         cfg.StorefrontKey,
 			CountryHandler:        countryHandler,
@@ -346,6 +360,15 @@ func main() {
 			}
 		}()
 		log.Info("csvjob: worker polling started")
+	}
+
+	// Loyalty point expiry worker — runs daily, admin/both modes only.
+	var expiryWorkerDone <-chan struct{}
+	if m == mode.Admin || m == mode.Both {
+		loyaltyRepoWorker := loyalty.NewRepository()
+		expiryWorker := loyalty.NewExpiryWorker(conn, loyaltyRepoWorker, log)
+		expiryWorkerDone = expiryWorker.Start(workerCtx, 24*time.Hour)
+		log.Info("loyalty: expiry worker started (24h interval)")
 	}
 
 	// Outbox publisher — runs in admin and both modes; the storefront
@@ -453,6 +476,14 @@ func main() {
 			log.Info("csvjob: worker polling stopped")
 		case <-time.After(5 * time.Second):
 			log.Warn("csvjob: worker polling did not stop in time")
+		}
+	}
+	if expiryWorkerDone != nil {
+		select {
+		case <-expiryWorkerDone:
+			log.Info("loyalty: expiry worker stopped")
+		case <-time.After(5 * time.Second):
+			log.Warn("loyalty: expiry worker did not stop in time")
 		}
 	}
 	log.Info("bye")

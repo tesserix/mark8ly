@@ -22,6 +22,7 @@ type Deps struct {
 	OrderDetailHandler    *OrderDetailHandler
 	CouponValidateHandler *CouponValidateHandler
 	GiftCardHandler       *GiftCardStorefrontHandler
+	LoyaltyHandler        *LoyaltyHandler
 	SlugCache             *stores.SlugCache
 	StorefrontKey        string
 	CountryHandler       CountryLister // optional — set when country handler is wired
@@ -79,6 +80,24 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 			group.POST("/gift-cards/check-balance",
 				ratelimit.PerIP(0.167, 10), // ~10 req/min
 				deps.GiftCardHandler.CheckBalance)
+		}
+
+		// Loyalty — Marketing M3. Public endpoints, no auth.
+		// Rate-limited: 10 req/min per IP for enroll and redeem.
+		if deps.LoyaltyHandler != nil {
+			loyaltyGroup := group.Group("/loyalty")
+			{
+				loyaltyGroup.GET("/program", deps.LoyaltyHandler.GetProgram)
+				loyaltyGroup.POST("/enroll",
+					ratelimit.PerIP(0.167, 10),
+					deps.LoyaltyHandler.Enroll)
+				loyaltyGroup.GET("/me",
+					ratelimit.PerIP(0.167, 10),
+					deps.LoyaltyHandler.GetMe)
+				loyaltyGroup.POST("/redeem",
+					ratelimit.PerIP(0.167, 10),
+					deps.LoyaltyHandler.Redeem)
+			}
 		}
 	}
 

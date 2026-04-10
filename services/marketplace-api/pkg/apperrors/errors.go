@@ -52,6 +52,10 @@ const (
 	CodeInsufficientGiftCardBalance Code = "insufficient_gift_card_balance"
 	CodeGiftCardExpired             Code = "gift_card_expired"
 	CodeGiftCardNotFound            Code = "gift_card_not_found"
+
+	// Loyalty M3.
+	CodeInsufficientLoyaltyPoints Code = "insufficient_loyalty_points"
+	CodeLoyaltyNotEnrolled        Code = "loyalty_not_enrolled"
 )
 
 // Error is the marketplace-api envelope. Satisfies the error interface.
@@ -112,6 +116,10 @@ var (
 	ErrInsufficientGiftCardBalance = &Error{Code: CodeInsufficientGiftCardBalance}
 	ErrGiftCardExpired             = &Error{Code: CodeGiftCardExpired}
 	ErrGiftCardNotFound            = &Error{Code: CodeGiftCardNotFound}
+
+	// Loyalty M3 sentinels.
+	ErrInsufficientLoyaltyPoints = &Error{Code: CodeInsufficientLoyaltyPoints}
+	ErrLoyaltyNotEnrolled        = &Error{Code: CodeLoyaltyNotEnrolled}
 )
 
 // Is makes errors.Is(err, sentinel) match when the codes are equal,
@@ -139,7 +147,8 @@ func IsKnownCode(s string) bool {
 		CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent,
 		CodeCouponNotFound, CodeCouponExpired, CodeCouponUsageLimitReached,
 		CodeCouponInvalid, CodeCouponMinPurchaseNotMet,
-		CodeInsufficientGiftCardBalance, CodeGiftCardExpired, CodeGiftCardNotFound:
+		CodeInsufficientGiftCardBalance, CodeGiftCardExpired, CodeGiftCardNotFound,
+		CodeInsufficientLoyaltyPoints, CodeLoyaltyNotEnrolled:
 		return true
 	}
 	return false
@@ -337,4 +346,18 @@ func CouponMinPurchaseNotMet(code, minPurchase, subtotal string) *Error {
 	return &Error{Code: CodeCouponMinPurchaseNotMet,
 		Message: fmt.Sprintf("coupon %q requires a minimum purchase of %s (subtotal: %s)", code, minPurchase, subtotal),
 		Details: map[string]any{"code": code, "min_purchase": minPurchase, "subtotal": subtotal}}
+}
+
+// ---------- Loyalty M3 constructors ----------
+
+func InsufficientLoyaltyPoints(available, requested int) *Error {
+	return &Error{Code: CodeInsufficientLoyaltyPoints,
+		Message: "customer does not have enough loyalty points",
+		Details: map[string]any{"available": available, "requested": requested}}
+}
+
+func LoyaltyNotEnrolled(email string) *Error {
+	return &Error{Code: CodeLoyaltyNotEnrolled,
+		Message: "customer is not enrolled in the loyalty program",
+		Details: map[string]any{"email": email}}
 }

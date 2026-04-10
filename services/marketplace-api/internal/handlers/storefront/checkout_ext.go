@@ -23,6 +23,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/coupon"
 	"github.com/mark8ly/marketplace-api/internal/discount"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
+	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
@@ -38,12 +39,18 @@ type CheckoutExtHandler struct {
 	orderSvc    *order.Service
 	couponSvc   *coupon.Service
 	giftCardSvc *giftcard.Service // nil-safe: no-ops when nil
+	loyaltySvc  *loyalty.Service  // nil-safe: no-ops when nil
 	logger      *slog.Logger
 }
 
 // NewCheckoutExtHandler constructs a CheckoutExtHandler.
 func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coupon.Service, giftCardSvc *giftcard.Service, logger *slog.Logger) *CheckoutExtHandler {
 	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, couponSvc: couponSvc, giftCardSvc: giftCardSvc, logger: logger}
+}
+
+// SetLoyaltyService wires the loyalty service for post-checkout point awards.
+func (h *CheckoutExtHandler) SetLoyaltyService(svc *loyalty.Service) {
+	h.loyaltySvc = svc
 }
 
 // CheckoutExtRequest is the wire body for the extended checkout endpoint.

@@ -51,6 +51,10 @@ var codeStatus = map[apperrors.Code]int{
 	apperrors.CodeInsufficientGiftCardBalance: http.StatusUnprocessableEntity,
 	apperrors.CodeGiftCardExpired:             http.StatusGone,
 	apperrors.CodeGiftCardNotFound:            http.StatusNotFound,
+
+	// Loyalty M3.
+	apperrors.CodeInsufficientLoyaltyPoints: http.StatusUnprocessableEntity,
+	apperrors.CodeLoyaltyNotEnrolled:        http.StatusBadRequest,
 }
 
 // RespondErr writes the standard error envelope for the given error.

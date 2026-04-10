@@ -123,7 +123,7 @@ const navigation: NavSection[] = [
       { label: "Campaigns", href: "/dashboard" },
       { label: "Coupons", href: "/marketing/coupons" },
       { label: "Gift Cards", href: "/marketing/gift-cards" },
-      { label: "Loyalty", href: "/dashboard" },
+      { label: "Loyalty", href: "/marketing/loyalty" },
     ],
   },
   {
@@ -501,6 +501,12 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/marketing/coupons")) {
     return { eyebrow: "Marketing", title: "Coupons" };
+  }
+  if (pathname.startsWith("/marketing/gift-cards")) {
+    return { eyebrow: "Marketing", title: "Gift Cards" };
+  }
+  if (pathname.startsWith("/marketing/loyalty")) {
+    return { eyebrow: "Marketing", title: "Loyalty" };
   }
   if (pathname.startsWith("/marketing")) {
     return { eyebrow: "Growth", title: "Marketing" };

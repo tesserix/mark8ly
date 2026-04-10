@@ -19,10 +19,13 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  copyProduct,
+  bulkProductAction,
   type CreateProductRequest,
   type UpdateProductRequest,
 } from "@/lib/api/marketplace-api";
 import { productFormSchema, type ProductFormValues } from "@/lib/validation/product-form";
+import { bulkActionSchema } from "@/lib/validation/bulk-action";
 
 // listStoresByTenant is from platform-api — we need the store id + currency
 // from the session, which is already resolved in the page caller. Instead of
@@ -190,4 +193,112 @@ export async function deleteProductAction(
 
   revalidatePath("/products");
   redirect("/products");
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// M7d: copy-to-store + bulk actions
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CopyActionInput {
+  targetStoreId: string;
+  copyMedia: boolean;
+}
+
+export async function copyProductAction(
+  storeId: string,
+  productId: string,
+  input: CopyActionInput,
+): Promise<ActionResult> {
+  const ctx = await readContext(storeId, "USD");
+  if (!ctx) return { ok: false, error: { code: "no_session", message: "Your session has expired. Please sign in again." } };
+
+  const result = await copyProduct(ctx.storeId, productId, {
+    target_store_id: input.targetStoreId,
+    copy_media: input.copyMedia,
+  }, { userId: ctx.userId, tenantId: ctx.tenantId });
+
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidatePath("/products");
+  return { ok: true };
+}
+
+export interface BulkActionResult {
+  ok: boolean;
+  results?: Array<{ id: string; status: "ok" | "error"; error?: string }>;
+  error?: { code: string; message: string };
+}
+
+async function executeBulkAction(
+  storeId: string,
+  action: string,
+  productIds: string[],
+  params?: Record<string, unknown>,
+): Promise<BulkActionResult> {
+  const ctx = await readContext(storeId, "USD");
+  if (!ctx) return { ok: false, error: { code: "no_session", message: "Your session has expired. Please sign in again." } };
+
+  const parsed = bulkActionSchema.safeParse({ product_ids: productIds });
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return { ok: false, error: { code: "validation_failed", message: first?.message ?? "Invalid input" } };
+  }
+
+  const result = await bulkProductAction(ctx.storeId, {
+    action,
+    product_ids: productIds,
+    params,
+  }, { userId: ctx.userId, tenantId: ctx.tenantId });
+
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidatePath("/products");
+  return { ok: true, results: result.data.results };
+}
+
+export async function bulkArchiveAction(
+  storeId: string,
+  productIds: string[],
+): Promise<BulkActionResult> {
+  return executeBulkAction(storeId, "archive", productIds);
+}
+
+export async function bulkUnarchiveAction(
+  storeId: string,
+  productIds: string[],
+): Promise<BulkActionResult> {
+  return executeBulkAction(storeId, "unarchive", productIds);
+}
+
+export async function bulkPublishAction(
+  storeId: string,
+  productIds: string[],
+): Promise<BulkActionResult> {
+  return executeBulkAction(storeId, "publish", productIds);
+}
+
+export async function bulkUnpublishAction(
+  storeId: string,
+  productIds: string[],
+): Promise<BulkActionResult> {
+  return executeBulkAction(storeId, "unpublish", productIds);
+}
+
+export async function bulkDeleteAction(
+  storeId: string,
+  productIds: string[],
+): Promise<BulkActionResult> {
+  return executeBulkAction(storeId, "delete", productIds);
+}
+
+export async function bulkAssignCategoryAction(
+  storeId: string,
+  productIds: string[],
+  categoryIds: string[],
+): Promise<BulkActionResult> {
+  return executeBulkAction(storeId, "assign_category", productIds, { category_ids: categoryIds });
 }

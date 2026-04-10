@@ -1602,3 +1602,80 @@ export async function updateTicketStatus(
   }
   return { ok: true, data: (await res.json()) as AdminTicket };
 }
+
+// ─── B1: Storefront Branding ────────────────────────────────────────
+
+export interface StoreBranding {
+  id: string;
+  store_id: string;
+  logo_url: string | null;
+  favicon_url: string | null;
+  tagline: string | null;
+  color_background: string;
+  color_text: string;
+  color_accent: string;
+  color_button_bg: string;
+  color_button_text: string;
+  heading_font: string;
+  body_font: string;
+  layout_variant: string;
+  hero_image_url: string | null;
+  announcement_text: string | null;
+  announcement_link: string | null;
+  announcement_bg: string | null;
+  announcement_active: boolean;
+  footer_tagline: string | null;
+  footer_copyright: string | null;
+  social_instagram: string | null;
+  social_twitter: string | null;
+  social_facebook: string | null;
+  social_tiktok: string | null;
+  social_youtube: string | null;
+  custom_css: string | null;
+  show_powered_by: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type UpdateBrandingInput = Partial<
+  Omit<StoreBranding, "id" | "store_id" | "created_at" | "updated_at">
+>;
+
+export async function getBranding(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<StoreBranding | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/branding`,
+    {
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+        Accept: "application/json",
+      },
+    },
+  );
+  if (!res.ok) return null;
+  return (await res.json()) as StoreBranding;
+}
+
+export async function updateBranding(
+  storeId: string,
+  input: UpdateBrandingInput,
+  session: SessionHeaders,
+): Promise<MutationResult<StoreBranding>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/branding`,
+    {
+      method: "PUT",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as StoreBranding };
+}

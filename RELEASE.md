@@ -34,8 +34,8 @@
 | 23 | D2: Support Tickets (create, list, reply, resolve) | Done | `dashboard-d2-tickets.md` |
 | 24 | D3: Help Center (markdown articles, search, contextual links) | Done | `dashboard-d3-help-center.md` |
 | **Branding & Subscriptions** |
-| 25 | B1: Storefront Branding (logo, colors, fonts, preview) | Planned | `branding-b1-storefront-branding.md` |
-| 26 | B2: Subscription Tiers (gating, pricing, soft downgrade) | Planned | `branding-b2-subscription-tiers.md` |
+| 25 | B1: Storefront Branding (logo, colors, fonts, preview) | Done | `branding-b1-storefront-branding.md` |
+| 26 | B2: Subscription Tiers (gating, pricing, soft downgrade) | Done | `branding-b2-subscription-tiers.md` |
 | 27 | B3: React Native Mobile App (Enterprise) | Planned | `branding-b3-mobile-app.md` |
 | **Production Readiness** |
 | 28 | P0: Critical Security (encryption, headers, CORS) | Planned | `prod-p0-critical-security.md` |
@@ -43,7 +43,7 @@
 | 30 | P2: Performance (Next.js Image, N+1 audit, bundles) | Planned | `prod-p2-performance.md` |
 | 31 | P3: Dependencies & Tooling (updates, Dependabot, docs) | Planned | `prod-p3-dependencies-tooling.md` |
 
-**Progress: 24 of 31 done (77%)**
+**Progress: 26 of 31 done (84%)**
 
 ---
 

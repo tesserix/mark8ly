@@ -27,17 +27,50 @@ const STATUS_STYLES: Record<string, string> = {
   incomplete: "bg-[color:var(--warning)]/10 text-[color:var(--warning)]",
 };
 
-const PLAN_FEATURES: { feature: string; free: boolean; starter: boolean; pro: boolean; enterprise: boolean }[] = [
-  { feature: "Products", free: true, starter: true, pro: true, enterprise: true },
-  { feature: "Staff accounts", free: false, starter: true, pro: true, enterprise: true },
-  { feature: "Custom domain", free: false, starter: true, pro: true, enterprise: true },
-  { feature: "Gift cards", free: false, starter: false, pro: true, enterprise: true },
-  { feature: "Coupons & discounts", free: false, starter: true, pro: true, enterprise: true },
-  { feature: "Analytics", free: false, starter: false, pro: true, enterprise: true },
-  { feature: "Audit logs", free: false, starter: false, pro: true, enterprise: true },
-  { feature: "Loyalty program", free: false, starter: false, pro: false, enterprise: true },
-  { feature: "Priority support", free: false, starter: false, pro: false, enterprise: true },
-  { feature: "API access", free: false, starter: false, pro: true, enterprise: true },
+const PLAN_PRICES: Record<string, string> = {
+  free: "$0",
+  starter: "$9.99",
+  pro: "$29.99",
+  enterprise: "$99.99",
+};
+
+const PLAN_PRICES_ANNUAL: Record<string, string> = {
+  free: "$0",
+  starter: "$7.99",
+  pro: "$24.99",
+  enterprise: "$83.99",
+};
+
+type FeatureRow = {
+  feature: string;
+  free: string;
+  starter: string;
+  pro: string;
+  enterprise: string;
+};
+
+const PLAN_FEATURES: FeatureRow[] = [
+  { feature: "Products", free: "25", starter: "500", pro: "Unlimited", enterprise: "Unlimited" },
+  { feature: "Categories", free: "5", starter: "25", pro: "Unlimited", enterprise: "Unlimited" },
+  { feature: "Staff members", free: "1", starter: "3", pro: "10", enterprise: "Unlimited" },
+  { feature: "Stores", free: "1", starter: "1", pro: "3", enterprise: "10" },
+  { feature: "Orders / month", free: "50", starter: "500", pro: "Unlimited", enterprise: "Unlimited" },
+  { feature: "Transaction fees", free: "0%", starter: "0%", pro: "0%", enterprise: "0%" },
+  { feature: "Full color palette", free: "---", starter: "\u2713", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "Announcement bar", free: "---", starter: "\u2713", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "Remove powered-by", free: "---", starter: "---", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "Custom CSS", free: "---", starter: "---", pro: "---", enterprise: "\u2713" },
+  { feature: "Custom domain", free: "---", starter: "---", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "Active coupons", free: "5", starter: "50", pro: "Unlimited", enterprise: "Unlimited" },
+  { feature: "Gift cards", free: "---", starter: "\u2713", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "Loyalty program", free: "---", starter: "---", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "Campaigns / month", free: "---", starter: "5", pro: "50", enterprise: "Unlimited" },
+  { feature: "Reviews", free: "---", starter: "\u2713", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "Support tickets", free: "---", starter: "\u2713", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "Priority support", free: "---", starter: "---", pro: "---", enterprise: "\u2713" },
+  { feature: "Audit logs", free: "---", starter: "---", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "CSV import/export", free: "---", starter: "\u2713", pro: "\u2713", enterprise: "\u2713" },
+  { feature: "Mobile app", free: "---", starter: "---", pro: "---", enterprise: "\u2713" },
 ];
 
 export function SubscriptionSettingsClient({
@@ -180,7 +213,7 @@ function PlanComparison({
           Compare plans
         </h2>
         <p className="text-sm text-foreground-secondary">
-          Choose the plan that fits your business.
+          0% transaction fees on every plan. Your revenue is yours.
         </p>
       </div>
       {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
@@ -188,48 +221,62 @@ function PlanComparison({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              <th className="pb-3 pr-4 text-left font-medium text-foreground-secondary">Feature</th>
+              <th className="pb-3 pr-4 text-left font-medium text-foreground-secondary" />
               {plans.map((p) => (
                 <th
                   key={p}
-                  className={`pb-3 px-4 text-center font-medium ${
+                  className={`pb-3 px-4 text-center ${
                     p === currentPlan ? "text-[color:var(--moss-700)]" : "text-foreground-secondary"
                   }`}
                 >
-                  {PLAN_LABELS[p]}
-                  {p === currentPlan && (
-                    <span className="ml-1 text-xs font-normal">(current)</span>
-                  )}
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium">
+                      {PLAN_LABELS[p]}
+                      {p === currentPlan && (
+                        <span className="ml-1 text-xs font-normal">(current)</span>
+                      )}
+                    </span>
+                    <div className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl font-medium text-foreground">
+                      {PLAN_PRICES[p]}
+                      <span className="text-xs font-normal text-foreground-secondary">/mo</span>
+                    </div>
+                    <div className="text-xs text-foreground-tertiary">
+                      {PLAN_PRICES_ANNUAL[p]}/mo billed annually
+                    </div>
+                  </div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {PLAN_FEATURES.map((row) => (
-              <tr key={row.feature} className="border-b border-border">
-                <td className="py-3 pr-4 text-foreground">{row.feature}</td>
-                {plans.map((p) => (
-                  <td key={p} className="py-3 px-4 text-center">
-                    {row[p] ? (
-                      <span className="text-[color:var(--moss-700)]" aria-label="Included">
-                        &#10003;
-                      </span>
-                    ) : (
-                      <span className="text-[color:var(--ink-900)]/20" aria-label="Not included">
-                        ---
-                      </span>
-                    )}
-                  </td>
-                ))}
+              <tr key={row.feature} className="border-b border-border-subtle">
+                <td className="py-2.5 pr-4 text-foreground">{row.feature}</td>
+                {plans.map((p) => {
+                  const val = row[p];
+                  const isCheck = val === "\u2713";
+                  const isDash = val === "---";
+                  return (
+                    <td key={p} className="py-2.5 px-4 text-center">
+                      {isCheck ? (
+                        <span className="text-[color:var(--moss-700)]" aria-label="Included">{val}</span>
+                      ) : isDash ? (
+                        <span className="text-[color:var(--ink-900)]/20" aria-label="Not included">{val}</span>
+                      ) : (
+                        <span className="text-foreground tabular-nums">{val}</span>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
           {editable && (
             <tfoot>
               <tr>
-                <td className="pt-4" />
+                <td className="pt-5" />
                 {plans.map((p) => (
-                  <td key={p} className="pt-4 px-4 text-center">
+                  <td key={p} className="pt-5 px-4 text-center">
                     {p === currentPlan ? (
                       <span className="text-xs text-foreground-secondary">Current plan</span>
                     ) : p === "free" ? null : (
@@ -251,30 +298,41 @@ function PlanComparison({
         </table>
       </div>
       {/* Mobile stacked layout */}
-      <div className="sm:hidden space-y-6">
+      <div className="sm:hidden space-y-8">
         {plans.map((p) => (
           <div key={p} className="space-y-3">
-            <h3
-              className={`text-sm font-medium ${
-                p === currentPlan ? "text-[color:var(--moss-700)]" : "text-foreground"
-              }`}
-            >
-              {PLAN_LABELS[p]}
-              {p === currentPlan && (
-                <span className="ml-1 text-xs font-normal">(current)</span>
-              )}
-            </h3>
+            <div className="flex items-baseline justify-between">
+              <h3
+                className={`text-sm font-medium ${
+                  p === currentPlan ? "text-[color:var(--moss-700)]" : "text-foreground"
+                }`}
+              >
+                {PLAN_LABELS[p]}
+                {p === currentPlan && (
+                  <span className="ml-1 text-xs font-normal">(current)</span>
+                )}
+              </h3>
+              <span className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-foreground">
+                {PLAN_PRICES[p]}<span className="text-xs font-normal text-foreground-secondary">/mo</span>
+              </span>
+            </div>
             <ul className="space-y-1.5">
-              {PLAN_FEATURES.map((row) => (
-                <li key={row.feature} className="flex items-center gap-2 text-sm">
-                  {row[p] ? (
-                    <span className="text-[color:var(--moss-700)]" aria-label="Included">&#10003;</span>
-                  ) : (
-                    <span className="text-[color:var(--ink-900)]/20" aria-label="Not included">---</span>
-                  )}
-                  <span className="text-foreground-secondary">{row.feature}</span>
-                </li>
-              ))}
+              {PLAN_FEATURES.map((row) => {
+                const val = row[p];
+                const isDash = val === "---";
+                return (
+                  <li key={row.feature} className="flex items-center justify-between text-sm">
+                    <span className={isDash ? "text-foreground-tertiary" : "text-foreground-secondary"}>{row.feature}</span>
+                    {isDash ? (
+                      <span className="text-[color:var(--ink-900)]/20">---</span>
+                    ) : val === "\u2713" ? (
+                      <span className="text-[color:var(--moss-700)]">{val}</span>
+                    ) : (
+                      <span className="tabular-nums text-foreground">{val}</span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
             {editable && p !== currentPlan && p !== "free" && (
               <button

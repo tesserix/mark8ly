@@ -1,9 +1,11 @@
 import { AdminShell } from "@/components/shell/AdminShell";
 import { StorefrontThemeForm } from "@/components/settings/StorefrontThemeForm";
+import { BrandingSettingsClient } from "@/components/settings/BrandingSettingsClient";
 import {
   canEditSettings,
   getServerSessionContext,
 } from "@/lib/auth/serverSession";
+import { getBranding, type SessionHeaders } from "@/lib/api/marketplace-api";
 
 export default async function StorefrontSettingsPage() {
   const {
@@ -15,6 +17,16 @@ export default async function StorefrontSettingsPage() {
     currentStore,
   } = await getServerSessionContext();
   const editable = canEditSettings(role);
+
+  // Fetch branding from marketplace-api (B1).
+  let branding = null;
+  if (currentStore) {
+    const session: SessionHeaders = {
+      userId: email,
+      tenantId,
+    };
+    branding = await getBranding(currentStore.id, session);
+  }
 
   return (
     <AdminShell
@@ -28,12 +40,11 @@ export default async function StorefrontSettingsPage() {
         <header className="space-y-3">
           <p className="eyebrow">Storefront</p>
           <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
-            Theme &amp; layout
+            Branding &amp; theme
           </h1>
           <p className="max-w-3xl text-base leading-7 text-foreground-secondary">
-            Choose a storefront layout, apply a visual preset, then personalize
-            the colors, typography, and motion. The current store will pick
-            these settings up directly.
+            Define your store identity, color palette, typography, layout, and
+            footer. Changes are reflected on your live storefront immediately.
           </p>
           {!editable && (
             <p className="text-sm text-warning">
@@ -43,7 +54,9 @@ export default async function StorefrontSettingsPage() {
           )}
         </header>
 
-        {currentStore ? (
+        {currentStore && branding ? (
+          <BrandingSettingsClient branding={branding} editable={editable} />
+        ) : currentStore ? (
           <StorefrontThemeForm store={currentStore} editable={editable} />
         ) : (
           <p className="text-sm text-danger">

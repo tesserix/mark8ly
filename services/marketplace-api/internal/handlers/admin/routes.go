@@ -9,6 +9,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 )
 
 // Deps groups every dependency the admin route registrar needs.
@@ -41,6 +42,8 @@ type Deps struct {
 	NotificationsHandler     *NotificationsHandler
 	DashboardHandler         *DashboardHandler
 	TicketsHandler           *TicketsHandler
+	BrandingHandler          *BrandingHandler
+	PlanResolver             *plangate.PlanResolver
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware          *authz.Middleware
 	InternalSecret           string
@@ -562,6 +565,19 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			storeRoute.PATCH("/notification-preferences",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsEditRole),
 				deps.NotificationsHandler.UpdatePreferences)
+		}
+
+		// Branding — B1.
+		if deps.BrandingHandler != nil {
+			brandingGroup := storeRoute.Group("/branding")
+			{
+				brandingGroup.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.BrandingViewRole),
+					deps.BrandingHandler.Get)
+				brandingGroup.PUT("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.BrandingEditRole),
+					deps.BrandingHandler.Update)
+			}
 		}
 	}
 }

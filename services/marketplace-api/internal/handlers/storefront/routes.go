@@ -37,6 +37,8 @@ type Deps struct {
 	ReviewsHandler *ReviewsHandler
 	// C4 wishlists.
 	WishlistHandler *WishlistHandler
+	// B1 branding.
+	BrandingHandler *BrandingHandler
 	Logger          *slog.Logger
 }
 
@@ -97,6 +99,11 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		// Reviews — C3. Public read endpoint (no auth).
 		if deps.ReviewsHandler != nil {
 			group.GET("/products/:handle/reviews", deps.ReviewsHandler.ListProductReviews)
+		}
+
+		// Branding — B1. Public, cached, no auth.
+		if deps.BrandingHandler != nil {
+			group.GET("/branding", deps.BrandingHandler.Get)
 		}
 
 		// Loyalty — Marketing M3. Public endpoints, no auth.

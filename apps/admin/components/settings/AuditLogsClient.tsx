@@ -88,7 +88,7 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
     });
   }
 
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const entries = initialData?.data ?? [];
   const meta = initialData?.meta ?? { page: 1, page_size: 25, total: 0, total_pages: 1 };
@@ -334,7 +334,7 @@ function FilterInput({
   onChange: (value: string) => void;
 }) {
   const inputId = `filter-${label.toLowerCase().replace(/\s+/g, "-")}`;
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   return (
     <div className="space-y-1">
       <label htmlFor={inputId} className="text-[10px] font-medium uppercase tracking-widest text-foreground-tertiary">

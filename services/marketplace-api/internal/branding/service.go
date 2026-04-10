@@ -300,14 +300,23 @@ var unsafeCSSPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)behavior\s*:`),
 }
 
-// externalURLPattern matches url() with non-GCS domains.
-var externalURLPattern = regexp.MustCompile(`(?i)url\s*\(\s*['"]?https?://(?!storage\.googleapis\.com)`)
+// externalURLPattern matches url() with any http/https URL.
+var externalURLPattern = regexp.MustCompile(`(?i)url\s*\(\s*['"]?https?://[^\s)'"]+`)
+
+// gcsURLPattern matches allowed GCS URLs inside url().
+var gcsURLPattern = regexp.MustCompile(`(?i)^url\s*\(\s*['"]?https?://storage\.googleapis\.com`)
 
 // SanitizeCSS strips dangerous patterns from custom CSS input.
 func SanitizeCSS(css string) string {
 	for _, p := range unsafeCSSPatterns {
 		css = p.ReplaceAllString(css, "/* removed */")
 	}
-	css = externalURLPattern.ReplaceAllString(css, "/* removed: external url(")
+	// Replace external URLs but preserve GCS URLs.
+	css = externalURLPattern.ReplaceAllStringFunc(css, func(match string) string {
+		if gcsURLPattern.MatchString(match) {
+			return match
+		}
+		return "/* removed: external url */"
+	})
 	return css
 }

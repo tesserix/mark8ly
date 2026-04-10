@@ -33,6 +33,13 @@ const (
 	CodeRateLimited             Code = "rate_limited"
 	CodeCurrencyChangeForbidden Code = "currency_change_forbidden"
 	CodeOptionValueInUse        Code = "option_value_in_use"
+
+	// Orders slice 1 — added in Orders M2.
+	CodeInvalidTransition       Code = "invalid_transition"
+	CodeRefundExceedsTotal      Code = "refund_exceeds_total"
+	CodeIdempotencyConflict     Code = "idempotency_conflict"
+	CodeReturnItemsExceedOrdered Code = "return_items_exceed_ordered"
+	CodeRecoveryTooRecent       Code = "recovery_too_recent"
 )
 
 // Error is the marketplace-api envelope. Satisfies the error interface.
@@ -74,6 +81,13 @@ var (
 	ErrRateLimited             = &Error{Code: CodeRateLimited}
 	ErrCurrencyChangeForbidden = &Error{Code: CodeCurrencyChangeForbidden}
 	ErrOptionValueInUse        = &Error{Code: CodeOptionValueInUse}
+
+	// Orders slice 1 sentinels.
+	ErrInvalidTransition        = &Error{Code: CodeInvalidTransition}
+	ErrRefundExceedsTotal       = &Error{Code: CodeRefundExceedsTotal}
+	ErrIdempotencyConflict      = &Error{Code: CodeIdempotencyConflict}
+	ErrReturnItemsExceedOrdered = &Error{Code: CodeReturnItemsExceedOrdered}
+	ErrRecoveryTooRecent        = &Error{Code: CodeRecoveryTooRecent}
 )
 
 // Is makes errors.Is(err, sentinel) match when the codes are equal,
@@ -96,7 +110,9 @@ func IsKnownCode(s string) bool {
 		CodeSlugTaken, CodeCategoryNotEmpty, CodeCategoryHasChildren,
 		CodeTargetStoreInvalid, CodeUploadNotFound, CodeForbidden, CodeNotFound,
 		CodePayloadTooLarge, CodeUnsupportedMediaType, CodeRateLimited,
-		CodeCurrencyChangeForbidden, CodeOptionValueInUse:
+		CodeCurrencyChangeForbidden, CodeOptionValueInUse,
+		CodeInvalidTransition, CodeRefundExceedsTotal, CodeIdempotencyConflict,
+		CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent:
 		return true
 	}
 	return false
@@ -213,4 +229,54 @@ func OptionValueInUse(option, value string) *Error {
 	return &Error{Code: CodeOptionValueInUse,
 		Message: fmt.Sprintf("option value %q on %q is still referenced by a surviving variant", value, option),
 		Details: map[string]any{"option": option, "value": value}}
+}
+
+// ---------- Orders slice 1 constructors ----------
+
+// InvalidTransition is returned when a status change is requested from a
+// state that does not legally transition to the target state. Used across
+// OrderStatus, PaymentStatus, and FulfillmentStatus axes.
+func InvalidTransition(axis, from, to string) *Error {
+	return &Error{Code: CodeInvalidTransition,
+		Message: fmt.Sprintf("%s cannot transition from %q to %q", axis, from, to),
+		Details: map[string]any{"axis": axis, "from": from, "to": to}}
+}
+
+// RefundExceedsTotal is returned when a refund amount plus the existing
+// refunded_amount would exceed grand_total. The atomic single-UPDATE in
+// order.Service.RecordRefund is the authoritative guard; this error is
+// returned when that UPDATE matches zero rows.
+func RefundExceedsTotal(grandTotal, requested, alreadyRefunded string) *Error {
+	return &Error{Code: CodeRefundExceedsTotal,
+		Message: "refund amount would exceed the order grand total",
+		Details: map[string]any{
+			"grand_total":       grandTotal,
+			"requested":         requested,
+			"already_refunded":  alreadyRefunded,
+		}}
+}
+
+// IdempotencyConflict is returned when a Create call reuses an existing
+// (store_id, idempotency_key) pair with a different payload shape. Storefront
+// clients that receive this should regenerate the key for the new request.
+func IdempotencyConflict(key string) *Error {
+	return &Error{Code: CodeIdempotencyConflict,
+		Message: "idempotency key was previously used with a different payload",
+		Details: map[string]any{"idempotency_key": key}}
+}
+
+// ReturnItemsExceedOrdered is returned when a return request asks for more
+// of an item than the underlying order contained.
+func ReturnItemsExceedOrdered(sku string, requested, ordered int) *Error {
+	return &Error{Code: CodeReturnItemsExceedOrdered,
+		Message: fmt.Sprintf("return requests %d of %q but only %d were ordered", requested, sku, ordered),
+		Details: map[string]any{"sku": sku, "requested": requested, "ordered": ordered}}
+}
+
+// RecoveryTooRecent is returned when abandoned_cart.TriggerRecoveryEmail is
+// called for a cart whose recovery_sent_at is inside the 24h dedup window.
+func RecoveryTooRecent(lastSentAt string) *Error {
+	return &Error{Code: CodeRecoveryTooRecent,
+		Message: "recovery email was already sent within the last 24 hours",
+		Details: map[string]any{"last_sent_at": lastSentAt}}
 }

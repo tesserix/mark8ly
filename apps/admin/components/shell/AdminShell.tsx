@@ -80,15 +80,10 @@ interface NavSection {
 
 const navigation: NavSection[] = [
   {
-    key: "analytics",
-    label: "Analytics",
+    key: "dashboard",
+    label: "Dashboard",
     icon: BarChart3,
-    children: [
-      { label: "Overview", href: "/dashboard" },
-      { label: "Sales", href: "/dashboard" },
-      { label: "Customers", href: "/dashboard" },
-      { label: "Inventory", href: "/dashboard" },
-    ],
+    href: "/dashboard",
   },
   {
     key: "catalog",
@@ -150,7 +145,10 @@ const navigation: NavSection[] = [
     key: "support",
     label: "Support",
     icon: HelpCircle,
-    href: "/dashboard",
+    children: [
+      { label: "Tickets", href: "/support/tickets" },
+      { label: "Help Center", href: "/support/help" },
+    ],
   },
 ];
 
@@ -475,12 +473,12 @@ function isChildActive(
 }
 
 const canonicalChildLabelBySection: Record<string, string> = {
-  analytics: "Overview",
   catalog: "Products",
   orders: "All Orders",
   customers: "All Customers",
   marketing: "Campaigns",
   settings: "Store Settings",
+  support: "Tickets",
 };
 
 function getPageTitle(pathname: string | null): {
@@ -534,6 +532,12 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/settings")) {
     return { eyebrow: "Configuration", title: "Settings" };
+  }
+  if (pathname.startsWith("/support/tickets")) {
+    return { eyebrow: "Support", title: "Tickets" };
+  }
+  if (pathname.startsWith("/support/help")) {
+    return { eyebrow: "Support", title: "Help Center" };
   }
   return { eyebrow: "Workspace", title: "Admin" };
 }

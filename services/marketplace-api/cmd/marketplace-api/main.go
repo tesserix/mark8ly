@@ -47,6 +47,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/review"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/wishlist"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
@@ -282,6 +283,18 @@ func main() {
 		// Settings S4 — Audit Logs.
 		auditLogsHandler := admin.NewAuditLogsHandler(cfg.AuditServiceURL, log)
 
+		// Dashboard D1 wiring.
+		dashboardHandler := admin.NewDashboardHandler(conn, log)
+
+		// Tickets D2 wiring.
+		ticketRepo := ticket.NewRepository()
+		ticketSvc := ticket.NewService(ticket.ServiceConfig{
+			DB:     conn,
+			Repo:   ticketRepo,
+			Logger: log,
+		})
+		ticketsHandler := admin.NewTicketsHandler(ticketSvc, log)
+
 		// Settings S5 — Notifications.
 		notificationRepo := notification.NewRepository()
 		notificationSvc := notification.NewService(notification.ServiceConfig{
@@ -317,6 +330,8 @@ func main() {
 			SubscriptionHandler:    subscriptionHandler,
 			AuditLogsHandler:       auditLogsHandler,
 			NotificationsHandler:   notificationsHandler,
+			DashboardHandler:       dashboardHandler,
+			TicketsHandler:         ticketsHandler,
 			StoresMiddleware:        storeMW,
 			AuthzMiddleware:         authzMW,
 			InternalSecret:          cfg.InternalAuthSecret,

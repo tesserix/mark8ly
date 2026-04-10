@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS ticket_replies;
+DROP TABLE IF EXISTS tickets;

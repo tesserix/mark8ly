@@ -1,0 +1,174 @@
+package ticket
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/pkg/apperrors"
+)
+
+// ListFilter holds the query parameters for listing tickets.
+type ListFilter struct {
+	StoreID  uuid.UUID
+	TenantID uuid.UUID
+	Status   string // optional filter
+	Search   string // optional subject/description search
+	Page     int
+	PerPage  int
+}
+
+// ListResult holds a page of tickets and the total count.
+type ListResult struct {
+	Tickets []Ticket
+	Total   int64
+}
+
+// Repository is the data-access surface for tickets.
+type Repository interface {
+	// List returns a filtered, paginated list of tickets.
+	List(ctx context.Context, db *gorm.DB, f ListFilter) (ListResult, error)
+
+	// GetByID returns a single ticket by primary key, scoped to store and tenant.
+	GetByID(ctx context.Context, db *gorm.DB, storeID, tenantID, id uuid.UUID) (*Ticket, error)
+
+	// Create inserts a new ticket row.
+	Create(ctx context.Context, db *gorm.DB, t *Ticket) error
+
+	// UpdateStatus patches the status (and resolved_at) on a ticket.
+	UpdateStatus(ctx context.Context, db *gorm.DB, t *Ticket) error
+
+	// CreateReply inserts a new ticket_replies row.
+	CreateReply(ctx context.Context, db *gorm.DB, r *TicketReply) error
+
+	// NextTicketNumber returns the next ticket number for a store inside a tx.
+	NextTicketNumber(tx *gorm.DB, storeID uuid.UUID) (string, error)
+
+	// CountByStatus returns a map of status -> count for a store.
+	CountByStatus(ctx context.Context, db *gorm.DB, storeID, tenantID uuid.UUID) (map[string]int64, error)
+}
+
+type gormRepository struct{}
+
+// NewRepository constructs a stateless GORM-backed repository.
+func NewRepository() Repository { return &gormRepository{} }
+
+func (gormRepository) List(ctx context.Context, db *gorm.DB, f ListFilter) (ListResult, error) {
+	var result ListResult
+	q := db.WithContext(ctx).Model(&Ticket{}).
+		Where("store_id = ? AND tenant_id = ?", f.StoreID, f.TenantID)
+
+	if f.Status != "" {
+		q = q.Where("status = ?", f.Status)
+	}
+	if f.Search != "" {
+		like := "%" + strings.ToLower(f.Search) + "%"
+		q = q.Where("LOWER(subject) LIKE ? OR LOWER(description) LIKE ?", like, like)
+	}
+
+	if err := q.Count(&result.Total).Error; err != nil {
+		return result, fmt.Errorf("ticket list count: %w", err)
+	}
+
+	page := f.Page
+	if page < 1 {
+		page = 1
+	}
+	perPage := f.PerPage
+	if perPage < 1 || perPage > 100 {
+		perPage = 20
+	}
+	offset := (page - 1) * perPage
+
+	if err := q.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&result.Tickets).Error; err != nil {
+		return result, fmt.Errorf("ticket list: %w", err)
+	}
+	return result, nil
+}
+
+func (gormRepository) GetByID(ctx context.Context, db *gorm.DB, storeID, tenantID, id uuid.UUID) (*Ticket, error) {
+	var t Ticket
+	if err := db.WithContext(ctx).
+		Preload("Replies", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at ASC")
+		}).
+		Where("store_id = ? AND tenant_id = ? AND id = ?", storeID, tenantID, id).
+		First(&t).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperrors.NotFound("ticket")
+		}
+		return nil, fmt.Errorf("ticket get by id: %w", err)
+	}
+	return &t, nil
+}
+
+func (gormRepository) Create(ctx context.Context, db *gorm.DB, t *Ticket) error {
+	if err := db.WithContext(ctx).Create(t).Error; err != nil {
+		return fmt.Errorf("ticket create: %w", err)
+	}
+	return nil
+}
+
+func (gormRepository) UpdateStatus(ctx context.Context, db *gorm.DB, t *Ticket) error {
+	res := db.WithContext(ctx).Model(t).
+		Select("status", "resolved_at", "updated_at").
+		Updates(t)
+	if res.Error != nil {
+		return fmt.Errorf("ticket update status: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("ticket")
+	}
+	return nil
+}
+
+func (gormRepository) CreateReply(ctx context.Context, db *gorm.DB, r *TicketReply) error {
+	if err := db.WithContext(ctx).Create(r).Error; err != nil {
+		return fmt.Errorf("ticket reply create: %w", err)
+	}
+	return nil
+}
+
+// NextTicketNumber returns the next ticket number formatted as "TKT-NNNNN".
+// Must be called inside a transaction for row-level locking safety.
+func (gormRepository) NextTicketNumber(tx *gorm.DB, storeID uuid.UUID) (string, error) {
+	var next int
+	row := tx.Raw(`
+		SELECT COALESCE(MAX(CAST(SUBSTRING(ticket_number FROM 5) AS INT)), 0) + 1
+		FROM tickets
+		WHERE store_id = ?
+		FOR UPDATE
+	`, storeID).Row()
+	if err := row.Scan(&next); err != nil {
+		return "", fmt.Errorf("ticket next number: %w", err)
+	}
+	return fmt.Sprintf("TKT-%05d", next), nil
+}
+
+func (gormRepository) CountByStatus(ctx context.Context, db *gorm.DB, storeID, tenantID uuid.UUID) (map[string]int64, error) {
+	type row struct {
+		Status string
+		Count  int64
+	}
+	var rows []row
+	if err := db.WithContext(ctx).Model(&Ticket{}).
+		Select("status, COUNT(*) as count").
+		Where("store_id = ? AND tenant_id = ?", storeID, tenantID).
+		Group("status").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("ticket count by status: %w", err)
+	}
+
+	counts := map[string]int64{
+		string(TicketStatusOpen):     0,
+		string(TicketStatusResolved): 0,
+		string(TicketStatusClosed):   0,
+	}
+	for _, r := range rows {
+		counts[r.Status] = r.Count
+	}
+	return counts, nil
+}

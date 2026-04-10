@@ -1,30 +1,33 @@
-import { headers } from "next/headers";
-
 import { AdminShell } from "@/components/shell/AdminShell";
-import {
-  fetchTenant,
-  listMemberTenants,
-  type TenantRole,
-} from "@/lib/api/platform-api";
+import { getServerSessionContext } from "@/lib/auth/serverSession";
+import { fetchDashboard } from "@/lib/api/marketplace-api";
+import type { DashboardResponse } from "@/lib/api/marketplace-api";
+
+import { StatCard } from "@/components/dashboard/StatCard";
+import { RevenueSparkline } from "@/components/dashboard/RevenueSparkline";
+import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
+import { RecentOrders } from "@/components/dashboard/RecentOrders";
+import { TopProducts } from "@/components/dashboard/TopProducts";
+import { LowStockAlerts } from "@/components/dashboard/LowStockAlerts";
 
 /**
- * Dashboard — reads the resolved session from headers set by
- * middleware.ts, looks up the tenant row on platform-api, and renders
- * the merchant-facing home.
+ * Dashboard — data-driven merchant home with stats, orders, products,
+ * setup checklist, and low-stock alerts.
  */
 export default async function DashboardPage() {
-  const h = await headers();
-  const tenantId = h.get("x-session-tenant-id") ?? "";
-  const userId = h.get("x-session-user-id") ?? "";
-  const email = h.get("x-session-email") ?? "";
-  const role = (h.get("x-session-role") ?? "viewer") as TenantRole;
-  const [tenant, memberships] = await Promise.all([
-    fetchTenant(tenantId),
-    userId ? listMemberTenants(userId).catch(() => []) : Promise.resolve([]),
-  ]);
+  const {
+    tenantName,
+    email,
+    role,
+    memberships,
+    tenantId,
+    userId,
+    currentStore,
+  } = await getServerSessionContext();
 
-  const tenantName = tenant?.name ?? "your store";
-  const headline = tenant ? `${tenant.name} is live.` : "Your store is live.";
+  const dashboard = currentStore
+    ? await fetchDashboard(currentStore.id, { userId, tenantId })
+    : null;
 
   return (
     <AdminShell
@@ -34,139 +37,137 @@ export default async function DashboardPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto max-w-7xl space-y-16">
-        <section className="grid gap-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.9fr)] lg:items-end">
-          <div className="space-y-5">
-            <p className="eyebrow">
-              Welcome back{email ? `, ${email}` : ""}
-            </p>
-            <h1 className="font-serif text-5xl font-medium leading-[1.05] tracking-tight text-foreground sm:text-6xl">
-              {headline}
-            </h1>
-            <p className="max-w-2xl text-lg leading-8 text-foreground-secondary">
-              This is your working surface for products, orders, and storefront
-              setup. The migrated shell is ready, and the first feature slices
-              can layer in cleanly from here.
-            </p>
-
-            <div className="flex flex-wrap gap-3 pt-2">
-              <a
-                href="/products"
-                className="inline-flex h-12 items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
-              >
-                Add products
-              </a>
-              <a
-                href="/settings/general"
-                className="inline-flex h-12 items-center justify-center rounded-md border border-border bg-background-elevated px-6 text-base font-medium text-foreground hover:border-border-strong"
-              >
-                Review settings
-              </a>
-            </div>
-          </div>
-
-          <aside className="border-t border-border-subtle pt-8 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-10">
-            <p className="eyebrow">Workspace notes</p>
-            <ul className="mt-4 divide-y divide-border-subtle">
-              {workspaceNotes.map((note) => (
-                <li key={note.title} className="py-4 first:pt-0 last:pb-0">
-                  <p className="text-sm font-semibold text-foreground">
-                    {note.title}
-                  </p>
-                  <p className="mt-1 text-sm leading-6 text-foreground-secondary">
-                    {note.body}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </aside>
-        </section>
-
-        <section className="border-t border-border-subtle pt-10">
-          <p className="eyebrow">By the numbers</p>
-          <div className="mt-6 grid gap-10 sm:grid-cols-3">
-            {metrics.map((m) => (
-              <div key={m.label}>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
-                  {m.label}
-                </p>
-                <p className="mt-3 font-serif text-5xl font-medium text-foreground">
-                  {m.value}
-                </p>
-                <p className="mt-2 text-sm leading-6 text-foreground-secondary">
-                  {m.hint}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="border-t border-border-subtle pt-10">
-          <p className="eyebrow">Next up</p>
-          <ol className="mt-6 grid gap-8 sm:grid-cols-3">
-            {launchSteps.map((step) => (
-              <li key={step.title}>
-                <p className="font-serif text-3xl font-medium text-moss-700">
-                  {step.id}
-                </p>
-                <p className="mt-3 text-sm font-semibold text-foreground">
-                  {step.title}
-                </p>
-                <p className="mt-1 text-sm leading-6 text-foreground-secondary">
-                  {step.body}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </section>
+      <div className="mx-auto w-full max-w-5xl space-y-10">
+        {!currentStore ? (
+          <EmptyStoreState />
+        ) : !dashboard ? (
+          <DashboardError />
+        ) : (
+          <DashboardContent dashboard={dashboard} email={email} />
+        )}
       </div>
     </AdminShell>
   );
 }
 
-const metrics = [
-  {
-    label: "Products",
-    value: "0",
-    hint: "Add your first product to start selling.",
-  },
-  {
-    label: "Orders",
-    value: "0",
-    hint: "They'll show up here when customers buy.",
-  },
-  {
-    label: "Visitors",
-    value: "—",
-    hint: "Analytics lands in a later slice.",
-  },
-];
+function EmptyStoreState() {
+  return (
+    <div className="py-16 text-center">
+      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-foreground">
+        Create a store to get started
+      </h2>
+      <p className="mt-3 text-base text-foreground-secondary">
+        Set up your first store to access your dashboard.
+      </p>
+      <a
+        href="/settings/stores"
+        className="mt-6 inline-flex h-12 items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
+      >
+        Create store
+      </a>
+    </div>
+  );
+}
 
-const workspaceNotes = [
-  {
-    title: "Products and settings are the first solid surfaces",
-    body: "Use the current shell to shape how inventory, pricing, and store configuration will feel day to day.",
-  },
-  {
-    title: "The chrome is ready for feature growth",
-    body: "Navigation, account access, and route structure are already in place, so new slices can stay visually consistent.",
-  },
-];
+function DashboardError() {
+  return (
+    <div className="py-16 text-center" role="alert">
+      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-foreground">
+        Unable to load dashboard
+      </h2>
+      <p className="mt-3 text-base text-foreground-secondary">
+        We could not reach the server. Please try refreshing the page.
+      </p>
+    </div>
+  );
+}
 
-const launchSteps = [
-  {
-    id: "01",
-    title: "Stock the catalog",
-    body: "Add your first product and define the shape of your inventory model.",
-  },
-  {
-    id: "02",
-    title: "Lock in store details",
-    body: "Review your business name, region, and currency before more customer-facing features land.",
-  },
-  {
-    id: "03",
-    title: "Expand into orders and customers",
-    body: "Those sections are scaffolded and ready for the next migration slices.",
-  },
-];
+function DashboardContent({
+  dashboard,
+  email,
+}: {
+  dashboard: DashboardResponse;
+  email: string;
+}) {
+  const { stats, setup_checklist, recent_orders, top_products, low_stock_items } =
+    dashboard;
+  const isNewStore =
+    !setup_checklist.has_test_order && !setup_checklist.has_product;
+
+  return (
+    <>
+      <header className="space-y-1">
+        <p className="eyebrow">
+          Welcome back{email ? `, ${email}` : ""}
+        </p>
+        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium tracking-tight text-foreground sm:text-5xl">
+          Dashboard
+        </h1>
+      </header>
+
+      <SetupChecklist checklist={setup_checklist} />
+
+      {isNewStore ? (
+        <section className="py-10 text-center">
+          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-foreground">
+            Complete your store setup to see your dashboard
+          </h2>
+          <p className="mt-3 max-w-md mx-auto text-sm text-foreground-secondary">
+            Add your first product and place a test order to unlock your stats,
+            recent orders, and product performance data.
+          </p>
+        </section>
+      ) : (
+        <>
+          {/* Stat cards — 4 across on desktop, 2x2 tablet, 1 on mobile */}
+          <div className="grid grid-cols-1 gap-px border border-border-subtle sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              label="Revenue today"
+              value={formatCurrency(stats.revenue_today)}
+              changePercent={stats.revenue_change_pct}
+              sparkline={
+                <RevenueSparkline data={stats.revenue_sparkline} />
+              }
+            />
+            <StatCard
+              label="Orders today"
+              value={String(stats.orders_today)}
+              subtitle={`${stats.orders_pending} pending / ${stats.orders_fulfilled} fulfilled`}
+            />
+            <StatCard
+              label="Total customers"
+              value={String(stats.total_customers)}
+              subtitle={
+                stats.new_customers_this_week > 0
+                  ? `+${stats.new_customers_this_week} this week`
+                  : undefined
+              }
+            />
+            <StatCard
+              label="Pending reviews"
+              value={String(stats.pending_reviews)}
+            />
+          </div>
+
+          {/* Two-column: recent orders + top products */}
+          <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
+            <RecentOrders orders={recent_orders} />
+            <TopProducts products={top_products} />
+          </div>
+
+          {/* Low stock alerts */}
+          <LowStockAlerts items={low_stock_items} />
+        </>
+      )}
+    </>
+  );
+}
+
+function formatCurrency(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+}

@@ -30,9 +30,9 @@
 | 20 | S4: Audit Logs (viewer, search, CSV export) | Done | `settings-s4-audit-logs.md` |
 | 21 | S5: Notifications (preferences, bell dropdown, poll) | Done | `settings-s5-notifications.md` |
 | **Dashboard & Support** |
-| 22 | D1: Dashboard (stats, sparkline, checklist, recent orders) | Planned | `dashboard-d1-dashboard.md` |
-| 23 | D2: Support Tickets (create, list, reply, resolve) | Planned | `dashboard-d2-tickets.md` |
-| 24 | D3: Help Center (markdown articles, search, contextual links) | Planned | `dashboard-d3-help-center.md` |
+| 22 | D1: Dashboard (stats, sparkline, checklist, recent orders) | Done | `dashboard-d1-dashboard.md` |
+| 23 | D2: Support Tickets (create, list, reply, resolve) | Done | `dashboard-d2-tickets.md` |
+| 24 | D3: Help Center (markdown articles, search, contextual links) | Done | `dashboard-d3-help-center.md` |
 | **Branding & Subscriptions** |
 | 25 | B1: Storefront Branding (logo, colors, fonts, preview) | Planned | `branding-b1-storefront-branding.md` |
 | 26 | B2: Subscription Tiers (gating, pricing, soft downgrade) | Planned | `branding-b2-subscription-tiers.md` |
@@ -43,7 +43,7 @@
 | 30 | P2: Performance (Next.js Image, N+1 audit, bundles) | Planned | `prod-p2-performance.md` |
 | 31 | P3: Dependencies & Tooling (updates, Dependabot, docs) | Planned | `prod-p3-dependencies-tooling.md` |
 
-**Progress: 21 of 31 done (68%)**
+**Progress: 24 of 31 done (77%)**
 
 ---
 

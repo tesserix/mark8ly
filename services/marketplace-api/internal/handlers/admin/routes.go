@@ -39,6 +39,8 @@ type Deps struct {
 	SubscriptionHandler      *SubscriptionHandler
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
+	DashboardHandler         *DashboardHandler
+	TicketsHandler           *TicketsHandler
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware          *authz.Middleware
 	InternalSecret           string
@@ -504,6 +506,35 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				auditLogs.GET("/export",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.AuditLogsViewRole),
 					deps.AuditLogsHandler.ExportCSV)
+			}
+		}
+
+		// Dashboard — D1.
+		if deps.DashboardHandler != nil {
+			storeRoute.GET("/dashboard",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+				deps.DashboardHandler.Get)
+		}
+
+		// Tickets — D2.
+		if deps.TicketsHandler != nil {
+			tickets := storeRoute.Group("/tickets")
+			{
+				tickets.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsViewRole),
+					deps.TicketsHandler.List)
+				tickets.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsEditRole),
+					deps.TicketsHandler.Create)
+				tickets.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsViewRole),
+					deps.TicketsHandler.Get)
+				tickets.POST("/:id/reply",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsEditRole),
+					deps.TicketsHandler.Reply)
+				tickets.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsEditRole),
+					deps.TicketsHandler.UpdateStatus)
 			}
 		}
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -10,11 +10,13 @@ import {
   ActivityIndicator,
   ScrollView,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useRouter } from "expo-router";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 
 export default function RegisterScreen() {
+  const theme = useTheme();
   const { signIn } = useAuth();
   const router = useRouter();
   const client = useApiClient();
@@ -24,6 +26,21 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const themed = useMemo(
+    () => ({
+      container: { backgroundColor: theme.background },
+      logo: { color: theme.text },
+      subtitle: { color: theme.textSecondary },
+      label: { color: theme.text },
+      input: { backgroundColor: theme.elevated, color: theme.text, borderColor: theme.border },
+      button: { backgroundColor: theme.primary },
+      buttonText: { color: theme.elevated },
+      loginLabel: { color: theme.textSecondary },
+      loginLink: { color: theme.accent },
+    }),
+    [theme],
+  );
 
   const handleRegister = async () => {
     const trimmedEmail = email.trim();
@@ -73,7 +90,7 @@ export default function RegisterScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, themed.container]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
@@ -82,8 +99,8 @@ export default function RegisterScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.form}>
-          <Text style={styles.logo}>Mark8ly Store</Text>
-          <Text style={styles.subtitle}>Create your account</Text>
+          <Text style={[styles.logo, themed.logo]}>Mark8ly Store</Text>
+          <Text style={[styles.subtitle, themed.subtitle]}>Create your account</Text>
 
           {error && (
             <View style={styles.errorBanner}>
@@ -93,7 +110,7 @@ export default function RegisterScreen() {
 
           <View style={styles.nameRow}>
             <View style={[styles.field, styles.nameField]}>
-              <Text style={styles.label}>First name</Text>
+              <Text style={[styles.label, themed.label]}>First name</Text>
               <TextInput
                 placeholder="Jane"
                 value={firstName}
@@ -101,14 +118,14 @@ export default function RegisterScreen() {
                 autoCapitalize="words"
                 autoComplete="given-name"
                 textContentType="givenName"
-                style={styles.input}
-                placeholderTextColor="#999999"
+                style={[styles.input, themed.input]}
+                placeholderTextColor={theme.textSecondary}
                 editable={!loading}
                 accessibilityLabel="First name"
               />
             </View>
             <View style={[styles.field, styles.nameField]}>
-              <Text style={styles.label}>Last name</Text>
+              <Text style={[styles.label, themed.label]}>Last name</Text>
               <TextInput
                 placeholder="Doe"
                 value={lastName}
@@ -116,8 +133,8 @@ export default function RegisterScreen() {
                 autoCapitalize="words"
                 autoComplete="family-name"
                 textContentType="familyName"
-                style={styles.input}
-                placeholderTextColor="#999999"
+                style={[styles.input, themed.input]}
+                placeholderTextColor={theme.textSecondary}
                 editable={!loading}
                 accessibilityLabel="Last name"
               />
@@ -125,7 +142,7 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={[styles.label, themed.label]}>Email</Text>
             <TextInput
               placeholder="you@example.com"
               value={email}
@@ -134,15 +151,15 @@ export default function RegisterScreen() {
               keyboardType="email-address"
               autoComplete="email"
               textContentType="emailAddress"
-              style={styles.input}
-              placeholderTextColor="#999999"
+              style={[styles.input, themed.input]}
+              placeholderTextColor={theme.textSecondary}
               editable={!loading}
               accessibilityLabel="Email address"
             />
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
+            <Text style={[styles.label, themed.label]}>Password</Text>
             <TextInput
               placeholder="At least 8 characters"
               value={password}
@@ -150,8 +167,8 @@ export default function RegisterScreen() {
               secureTextEntry
               autoComplete="new-password"
               textContentType="newPassword"
-              style={styles.input}
-              placeholderTextColor="#999999"
+              style={[styles.input, themed.input]}
+              placeholderTextColor={theme.textSecondary}
               editable={!loading}
               accessibilityLabel="Password"
             />
@@ -160,25 +177,27 @@ export default function RegisterScreen() {
           <Pressable
             onPress={handleRegister}
             disabled={loading}
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, themed.button, loading && styles.buttonDisabled]}
             accessibilityRole="button"
             accessibilityLabel="Create account"
           >
             {loading ? (
-              <ActivityIndicator size="small" color="#F7F6F2" />
+              <ActivityIndicator size="small" color={theme.background} />
             ) : (
-              <Text style={styles.buttonText}>Create account</Text>
+              <Text style={[styles.buttonText, themed.buttonText]}>Create account</Text>
             )}
           </Pressable>
 
           <View style={styles.loginRow}>
-            <Text style={styles.loginLabel}>Already have an account?</Text>
+            <Text style={[styles.loginLabel, themed.loginLabel]}>
+              Already have an account?
+            </Text>
             <Pressable
               onPress={() => router.back()}
               accessibilityRole="link"
               accessibilityLabel="Sign in"
             >
-              <Text style={styles.loginLink}>Sign in</Text>
+              <Text style={[styles.loginLink, themed.loginLink]}>Sign in</Text>
             </Pressable>
           </View>
         </View>
@@ -190,7 +209,6 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
   },
   scrollContent: {
     flexGrow: 1,
@@ -204,13 +222,11 @@ const styles = StyleSheet.create({
   logo: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#0E0E0C",
     fontFamily: "SourceSerif4",
     textAlign: "center",
   },
   subtitle: {
     fontSize: 16,
-    color: "#666666",
     textAlign: "center",
     marginBottom: 8,
   },
@@ -237,20 +253,15 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#0E0E0C",
   },
   input: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 6,
     height: 48,
     paddingHorizontal: 14,
     fontSize: 15,
-    color: "#0E0E0C",
     borderWidth: 1,
-    borderColor: "#E5E4DF",
   },
   button: {
-    backgroundColor: "#0E0E0C",
     height: 48,
     borderRadius: 6,
     alignItems: "center",
@@ -261,7 +272,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
   },
@@ -274,11 +284,9 @@ const styles = StyleSheet.create({
   },
   loginLabel: {
     fontSize: 14,
-    color: "#666666",
   },
   loginLink: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#2D4A2B",
   },
 });

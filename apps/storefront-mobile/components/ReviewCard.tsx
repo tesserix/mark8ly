@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { StarRating } from "./StarRating";
 
 interface ReviewCardProps {
@@ -22,6 +24,8 @@ function formatDate(iso: string): string {
 }
 
 export function ReviewCard({ rating, title, body, date }: ReviewCardProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -38,11 +42,12 @@ export function ReviewCard({ rating, title, body, date }: ReviewCardProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   card: {
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E5E4DF",
+    borderBottomColor: theme.border,
   },
   header: {
     flexDirection: "row",
@@ -52,17 +57,18 @@ const styles = StyleSheet.create({
   },
   date: {
     fontSize: 12,
-    color: "#666666",
+    color: theme.textSecondary,
   },
   title: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
     marginBottom: 4,
   },
   body: {
     fontSize: 13,
-    color: "#666666",
+    color: theme.textSecondary,
     lineHeight: 18,
   },
 });
+}

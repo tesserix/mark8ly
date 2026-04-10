@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 
 interface LoginModalProps {
@@ -25,6 +26,8 @@ export function LoginModal({
   onDismiss,
   onSuccess,
 }: LoginModalProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const { signIn } = useAuth();
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
@@ -90,7 +93,7 @@ export function LoginModal({
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
-              placeholderTextColor="#999999"
+              placeholderTextColor={theme.textSecondary}
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
@@ -107,7 +110,7 @@ export function LoginModal({
               value={password}
               onChangeText={setPassword}
               placeholder="Enter your password"
-              placeholderTextColor="#999999"
+              placeholderTextColor={theme.textSecondary}
               secureTextEntry
               autoComplete="password"
               textContentType="password"
@@ -124,7 +127,7 @@ export function LoginModal({
             accessibilityLabel="Sign in"
           >
             {loading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <ActivityIndicator size="small" color={theme.elevated} />
             ) : (
               <Text style={styles.signInButtonText}>Sign in</Text>
             )}
@@ -145,14 +148,15 @@ export function LoginModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "flex-end",
   },
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 24,
@@ -162,12 +166,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
     fontFamily: "SourceSerif4",
   },
   subtitle: {
     fontSize: 14,
-    color: "#666666",
+    color: theme.textSecondary,
     lineHeight: 20,
   },
   errorBanner: {
@@ -186,20 +190,20 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   input: {
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 15,
-    color: "#0E0E0C",
-    backgroundColor: "#FFFFFF",
+    color: theme.text,
+    backgroundColor: theme.elevated,
   },
   signInButton: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
     paddingVertical: 14,
     borderRadius: 6,
     alignItems: "center",
@@ -209,7 +213,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   signInButtonText: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 15,
     fontWeight: "600",
   },
@@ -219,6 +223,7 @@ const styles = StyleSheet.create({
   },
   cancelText: {
     fontSize: 14,
-    color: "#666666",
+    color: theme.textSecondary,
   },
 });
+}

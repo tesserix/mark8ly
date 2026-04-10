@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useRouter } from "expo-router";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { haptics } from "@repo/mobile-shared/haptics/feedback";
@@ -37,6 +38,8 @@ interface FormErrors {
 }
 
 export default function CheckoutDetailsScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const router = useRouter();
   const { user } = useAuth();
   const isAuthenticated = !!user;
@@ -213,7 +216,7 @@ export default function CheckoutDetailsScreen() {
               onChangeText={setEmail}
               onBlur={handleEmailBlur}
               placeholder="you@example.com"
-              placeholderTextColor="#999999"
+              placeholderTextColor={theme.textSecondary}
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
@@ -245,7 +248,7 @@ export default function CheckoutDetailsScreen() {
               value={customerName}
               onChangeText={setCustomerName}
               placeholder="Jane Doe"
-              placeholderTextColor="#999999"
+              placeholderTextColor={theme.textSecondary}
               autoComplete="name"
               textContentType="name"
               accessibilityLabel="Full name"
@@ -335,7 +338,7 @@ export default function CheckoutDetailsScreen() {
                   value={addressName}
                   onChangeText={setAddressName}
                   placeholder="Recipient name"
-                  placeholderTextColor="#999999"
+                  placeholderTextColor={theme.textSecondary}
                   accessibilityLabel="Recipient name"
                 />
               </View>
@@ -347,7 +350,7 @@ export default function CheckoutDetailsScreen() {
                   value={line1}
                   onChangeText={setLine1}
                   placeholder="Street address"
-                  placeholderTextColor="#999999"
+                  placeholderTextColor={theme.textSecondary}
                   autoComplete="street-address"
                   textContentType="streetAddressLine1"
                   accessibilityLabel="Address line 1"
@@ -364,7 +367,7 @@ export default function CheckoutDetailsScreen() {
                   value={line2}
                   onChangeText={setLine2}
                   placeholder="Apartment, suite, etc."
-                  placeholderTextColor="#999999"
+                  placeholderTextColor={theme.textSecondary}
                   textContentType="streetAddressLine2"
                   accessibilityLabel="Address line 2"
                 />
@@ -378,7 +381,7 @@ export default function CheckoutDetailsScreen() {
                     value={city}
                     onChangeText={setCity}
                     placeholder="City"
-                    placeholderTextColor="#999999"
+                    placeholderTextColor={theme.textSecondary}
                     textContentType="addressCity"
                     accessibilityLabel="City"
                   />
@@ -394,7 +397,7 @@ export default function CheckoutDetailsScreen() {
                     value={region}
                     onChangeText={setRegion}
                     placeholder="Region"
-                    placeholderTextColor="#999999"
+                    placeholderTextColor={theme.textSecondary}
                     textContentType="addressState"
                     accessibilityLabel="Region or state"
                   />
@@ -415,7 +418,7 @@ export default function CheckoutDetailsScreen() {
                     value={postalCode}
                     onChangeText={setPostalCode}
                     placeholder="Postal code"
-                    placeholderTextColor="#999999"
+                    placeholderTextColor={theme.textSecondary}
                     textContentType="postalCode"
                     accessibilityLabel="Postal code"
                   />
@@ -509,10 +512,11 @@ export default function CheckoutDetailsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
   },
   scrollContent: {
     paddingBottom: 100,
@@ -524,12 +528,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
     fontFamily: "SourceSerif4",
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   field: {
     gap: 6,
@@ -540,17 +544,17 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   input: {
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 15,
-    color: "#0E0E0C",
-    backgroundColor: "#FFFFFF",
+    color: theme.text,
+    backgroundColor: theme.elevated,
   },
   inputError: {
     borderColor: "#8B2500",
@@ -570,11 +574,11 @@ const styles = StyleSheet.create({
   },
   nudgeText: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.text,
   },
   nudgeLink: {
     fontSize: 13,
-    color: "#2D4A2B",
+    color: theme.accent,
     fontWeight: "700",
     textDecorationLine: "underline",
   },
@@ -588,22 +592,22 @@ const styles = StyleSheet.create({
   savedCard: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     padding: 14,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     gap: 10,
   },
   savedCardSelected: {
-    borderColor: "#0E0E0C",
+    borderColor: theme.primary,
   },
   radioOuter: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 2,
@@ -612,7 +616,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
   },
   savedText: {
     flex: 1,
@@ -621,11 +625,11 @@ const styles = StyleSheet.create({
   savedName: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   savedAddr: {
     fontSize: 13,
-    color: "#666666",
+    color: theme.textSecondary,
   },
   defaultBadge: {
     backgroundColor: "#EDF4ED",
@@ -636,12 +640,12 @@ const styles = StyleSheet.create({
   defaultBadgeText: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#2D4A2B",
+    color: theme.accent,
   },
   addNewText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#2D4A2B",
+    color: theme.accent,
   },
   addressForm: {
     gap: 14,
@@ -657,21 +661,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 6,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
   },
   countryChipActive: {
-    backgroundColor: "#0E0E0C",
-    borderColor: "#0E0E0C",
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
   },
   countryChipText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   countryChipTextActive: {
-    color: "#FFFFFF",
+    color: theme.elevated,
   },
   checkboxRow: {
     flexDirection: "row",
@@ -684,45 +688,46 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 4,
     borderWidth: 1.5,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
   },
   checkboxChecked: {
-    backgroundColor: "#0E0E0C",
-    borderColor: "#0E0E0C",
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
   },
   checkmark: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 13,
     fontWeight: "700",
   },
   checkboxLabel: {
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.text,
   },
   stickyBar: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 32,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#E5E4DF",
+    borderTopColor: theme.border,
   },
   continueButton: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
     paddingVertical: 16,
     borderRadius: 6,
     alignItems: "center",
   },
   continueButtonText: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 16,
     fontWeight: "600",
   },
 });
+}

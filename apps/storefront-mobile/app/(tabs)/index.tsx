@@ -1,3 +1,4 @@
+import { useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,9 +7,10 @@ import {
   RefreshControl,
   ActivityIndicator,
   Pressable,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useStoreBranding } from "@/lib/hooks/use-store-branding";
 import { useCategories } from "@/lib/hooks/use-categories";
 import { useProducts } from "@/lib/hooks/use-products";
@@ -18,17 +20,19 @@ import { ProductCard } from "@/components/ProductCard";
 import { RecentlyViewed } from "@/components/RecentlyViewed";
 import type { StorefrontProduct } from "@repo/mobile-shared/api/storefront-types";
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
 const GRID_GAP = 12;
 const GRID_PADDING = 16;
-const CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 
 export default function HomeScreen() {
   const router = useRouter();
+  const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
   const branding = useStoreBranding();
   const categories = useCategories();
   const featured = useProducts({ sort: "featured" });
   const newArrivals = useProducts({ sort: "newest" });
+
+  const cardWidth = (screenWidth - GRID_PADDING * 2 - GRID_GAP) / 2;
 
   const isLoading =
     branding.isLoading || categories.isLoading || featured.isLoading;
@@ -52,42 +56,67 @@ export default function HomeScreen() {
   const hasAnyContent =
     featuredProducts.length > 0 || newArrivalProducts.length > 0;
 
+  const themedStyles = useMemo(
+    () => ({
+      centered: { backgroundColor: theme.background },
+      content: { backgroundColor: theme.background },
+      sectionTitle: { color: theme.text },
+      emptyTitle: { color: theme.text },
+      emptySubtitle: { color: theme.textSecondary },
+      ctaButton: { backgroundColor: theme.primary },
+      ctaText: { color: theme.background },
+    }),
+    [theme],
+  );
+
+  const renderFeaturedItem = useCallback(
+    ({ item }: { item: StorefrontProduct }) => (
+      <View style={styles.featuredCardWrapper}>
+        <ProductCard product={item} compact />
+      </View>
+    ),
+    [],
+  );
+
+  const renderGridItem = useCallback(
+    ({ item }: { item: StorefrontProduct }) => (
+      <View style={[styles.gridItem, { width: cardWidth }]}>
+        <ProductCard product={item} />
+      </View>
+    ),
+    [cardWidth],
+  );
+
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#0E0E0C" />
+      <View style={[styles.centered, themedStyles.centered]}>
+        <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
   }
 
   if (!hasAnyContent && !hasBranding) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.emptyTitle}>Store coming soon</Text>
-        <Text style={styles.emptySubtitle}>
+      <View style={[styles.centered, themedStyles.centered]}>
+        <Text style={[styles.emptyTitle, themedStyles.emptyTitle]}>
+          Store coming soon
+        </Text>
+        <Text style={[styles.emptySubtitle, themedStyles.emptySubtitle]}>
           This store is being set up. Check back later.
         </Text>
         <Pressable
-          style={styles.ctaButton}
+          style={[styles.ctaButton, themedStyles.ctaButton]}
           onPress={() => router.push("/(tabs)/browse")}
+          accessibilityRole="button"
+          accessibilityLabel="Browse all products"
         >
-          <Text style={styles.ctaText}>Browse all products</Text>
+          <Text style={[styles.ctaText, themedStyles.ctaText]}>
+            Browse all products
+          </Text>
         </Pressable>
       </View>
     );
   }
-
-  const renderFeaturedItem = ({ item }: { item: StorefrontProduct }) => (
-    <View style={styles.featuredCardWrapper}>
-      <ProductCard product={item} compact />
-    </View>
-  );
-
-  const renderGridItem = ({ item }: { item: StorefrontProduct }) => (
-    <View style={[styles.gridItem, { width: CARD_WIDTH }]}>
-      <ProductCard product={item} />
-    </View>
-  );
 
   return (
     <FlatList
@@ -96,12 +125,12 @@ export default function HomeScreen() {
       numColumns={2}
       columnWrapperStyle={styles.gridRow}
       renderItem={renderGridItem}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, themedStyles.content]}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={handleRefresh}
-          tintColor="#0E0E0C"
+          tintColor={theme.primary}
         />
       }
       ListHeaderComponent={
@@ -117,7 +146,9 @@ export default function HomeScreen() {
 
           {featuredProducts.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Featured</Text>
+              <Text style={[styles.sectionTitle, themedStyles.sectionTitle]}>
+                Featured
+              </Text>
               <FlatList
                 data={featuredProducts}
                 keyExtractor={(item) => `feat-${item.id}`}
@@ -133,7 +164,9 @@ export default function HomeScreen() {
 
           {newArrivalProducts.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>New arrivals</Text>
+              <Text style={[styles.sectionTitle, themedStyles.sectionTitle]}>
+                New arrivals
+              </Text>
             </View>
           )}
         </>
@@ -148,7 +181,7 @@ export default function HomeScreen() {
         newArrivals.isFetchingNextPage ? (
           <ActivityIndicator
             size="small"
-            color="#0E0E0C"
+            color={theme.primary}
             style={styles.footerLoader}
           />
         ) : null
@@ -160,13 +193,11 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   centered: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
     alignItems: "center",
     justifyContent: "center",
     padding: 32,
   },
   content: {
-    backgroundColor: "#F7F6F2",
     paddingBottom: 32,
   },
   section: {
@@ -175,7 +206,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#0E0E0C",
     paddingHorizontal: 16,
     marginBottom: 12,
     fontFamily: "SourceSerif4",
@@ -199,25 +229,21 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#0E0E0C",
     fontFamily: "SourceSerif4",
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: "#666666",
     textAlign: "center",
     marginBottom: 24,
     lineHeight: 20,
   },
   ctaButton: {
-    backgroundColor: "#0E0E0C",
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 6,
   },
   ctaText: {
-    color: "#F7F6F2",
     fontSize: 14,
     fontWeight: "600",
   },

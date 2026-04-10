@@ -1,12 +1,13 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useMemo } from "react";
 import {
   View,
   FlatList,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { Image } from "expo-image";
 import type { StorefrontProductImage } from "@repo/mobile-shared/api/storefront-types";
 
@@ -14,16 +15,18 @@ interface ProductGalleryProps {
   images: StorefrontProductImage[];
 }
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
 
 export function ProductGallery({ images }: ProductGalleryProps) {
+  const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offset = event.nativeEvent.contentOffset.x;
-      const index = Math.round(offset / SCREEN_WIDTH);
+      const index = Math.round(offset / screenWidth);
       setActiveIndex(index);
     },
     [],
@@ -31,12 +34,12 @@ export function ProductGallery({ images }: ProductGalleryProps) {
 
   if (images.length === 0) {
     return (
-      <View style={styles.placeholder} />
+      <View style={[styles.placeholder, { width: screenWidth }]} />
     );
   }
 
   const renderItem = ({ item }: { item: StorefrontProductImage }) => (
-    <View style={styles.slide}>
+    <View style={[styles.slide, { width: screenWidth }]}>
       <Image
         source={{ uri: item.url }}
         style={styles.image}
@@ -74,12 +77,13 @@ export function ProductGallery({ images }: ProductGalleryProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
   },
   slide: {
-    width: SCREEN_WIDTH,
+    
     aspectRatio: 1,
   },
   image: {
@@ -87,9 +91,9 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   placeholder: {
-    width: SCREEN_WIDTH,
+    
     aspectRatio: 1,
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   dots: {
     flexDirection: "row",
@@ -102,12 +106,13 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   dotActive: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
     width: 8,
     height: 8,
     borderRadius: 4,
   },
 });
+}

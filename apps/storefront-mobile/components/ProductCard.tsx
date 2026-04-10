@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { StarRating } from "./StarRating";
@@ -10,6 +12,8 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, compact = false }: ProductCardProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const router = useRouter();
 
   const hasDiscount =
@@ -87,18 +91,19 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   card: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     borderRadius: 6,
     overflow: "hidden",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
   },
   imageContainer: {
     aspectRatio: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
   },
   image: {
     width: "100%",
@@ -107,7 +112,7 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: "100%",
     height: "100%",
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   info: {
     padding: 10,
@@ -116,7 +121,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#0E0E0C",
+    color: theme.text,
     lineHeight: 18,
   },
   priceRow: {
@@ -127,11 +132,11 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   comparePrice: {
     fontSize: 12,
-    color: "#666666",
+    color: theme.textSecondary,
     textDecorationLine: "line-through",
   },
   compactCard: {
@@ -143,9 +148,9 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 6,
     overflow: "hidden",
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
   },
   compactImage: {
     width: "100%",
@@ -154,18 +159,19 @@ const styles = StyleSheet.create({
   compactImagePlaceholder: {
     width: "100%",
     height: "100%",
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   compactTitle: {
     fontSize: 12,
     fontWeight: "500",
-    color: "#0E0E0C",
+    color: theme.text,
     marginTop: 6,
   },
   compactPrice: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
     marginTop: 2,
   },
 });
+}

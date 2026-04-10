@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useRouter } from "expo-router";
 import { useNotifyMe } from "@/lib/hooks/use-notify-me";
@@ -8,6 +10,8 @@ interface NotifyMeButtonProps {
 }
 
 export function NotifyMeButton({ productId }: NotifyMeButtonProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const { user } = useAuth();
   const router = useRouter();
   const { subscribe } = useNotifyMe({ productId });
@@ -27,7 +31,7 @@ export function NotifyMeButton({ productId }: NotifyMeButtonProps) {
       disabled={subscribe.isPending || subscribe.isSuccess}
     >
       {subscribe.isPending ? (
-        <ActivityIndicator size="small" color="#FFFFFF" />
+        <ActivityIndicator size="small" color={theme.elevated} />
       ) : subscribe.isSuccess ? (
         <Text style={styles.text}>You'll be notified</Text>
       ) : (
@@ -37,9 +41,10 @@ export function NotifyMeButton({ productId }: NotifyMeButtonProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   button: {
-    backgroundColor: "#2D4A2B",
+    backgroundColor: theme.accent,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 6,
@@ -47,8 +52,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   text: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 14,
     fontWeight: "600",
   },
 });
+}

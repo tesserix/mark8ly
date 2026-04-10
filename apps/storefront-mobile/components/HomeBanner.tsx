@@ -1,4 +1,6 @@
-import { View, Text, StyleSheet, Dimensions } from "react-native";
+import { useMemo } from "react";
+import { View, Text, StyleSheet, useWindowDimensions } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { Image } from "expo-image";
 
 interface HomeBannerProps {
@@ -6,14 +8,16 @@ interface HomeBannerProps {
   title?: string;
 }
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
 const BANNER_HEIGHT = 200;
 
 export function HomeBanner({ imageUrl, title }: HomeBannerProps) {
+  const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   if (!imageUrl) return null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { width: screenWidth }]}>
       <Image
         source={{ uri: imageUrl }}
         style={styles.image}
@@ -29,11 +33,12 @@ export function HomeBanner({ imageUrl, title }: HomeBannerProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
-    width: SCREEN_WIDTH,
+    
     height: BANNER_HEIGHT,
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   image: {
     width: "100%",
@@ -48,7 +53,8 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontFamily: "SourceSerif4",
   },
 });
+}

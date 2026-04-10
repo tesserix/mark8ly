@@ -1,25 +1,31 @@
 import { Pressable } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { Search } from "lucide-react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 
 function SearchHeaderButton() {
   const router = useRouter();
+  const theme = useTheme();
   return (
     <Pressable
       onPress={() => router.push("/(tabs)/browse/search")}
       hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel="Search products"
     >
-      <Search size={22} color="#0E0E0C" />
+      <Search size={22} color={theme.text} />
     </Pressable>
   );
 }
 
 export default function BrowseLayout() {
+  const theme = useTheme();
+
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: "#F7F6F2" },
-        headerTintColor: "#0E0E0C",
+        headerStyle: { backgroundColor: theme.background },
+        headerTintColor: theme.text,
         headerShadowVisible: false,
       }}
     >

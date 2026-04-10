@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useRouter } from "expo-router";
 import { haptics } from "@repo/mobile-shared/haptics/feedback";
 import { useCheckoutStore } from "@/stores/checkout-store";
@@ -35,6 +36,8 @@ function getDigitalWalletIcon(): string {
 }
 
 export default function CheckoutPaymentScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const router = useRouter();
   const checkoutStore = useCheckoutStore();
 
@@ -213,14 +216,15 @@ export default function CheckoutPaymentScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
   },
   centeredContainer: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
     alignItems: "center",
     justifyContent: "center",
     padding: 32,
@@ -236,7 +240,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
     fontFamily: "SourceSerif4",
   },
   methodsList: {
@@ -245,23 +249,23 @@ const styles = StyleSheet.create({
   methodCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     padding: 14,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     gap: 12,
     flexWrap: "wrap",
   },
   methodCardSelected: {
-    borderColor: "#0E0E0C",
+    borderColor: theme.primary,
   },
   radioOuter: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -269,7 +273,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
   },
   methodIcon: {
     fontSize: 20,
@@ -281,30 +285,30 @@ const styles = StyleSheet.create({
   methodLabel: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   methodNote: {
     fontSize: 12,
-    color: "#666666",
+    color: theme.textSecondary,
   },
   cardStub: {
     width: "100%",
     marginTop: 8,
     marginLeft: 44,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
     padding: 12,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     borderStyle: "dashed",
   },
   cardStubText: {
     fontSize: 13,
-    color: "#999999",
+    color: theme.textSecondary,
     textAlign: "center",
   },
   skeletonCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     padding: 16,
     borderRadius: 6,
     gap: 8,
@@ -312,24 +316,24 @@ const styles = StyleSheet.create({
   skeletonLine: {
     height: 14,
     width: "60%",
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
     borderRadius: 4,
   },
   skeletonLineShort: {
     height: 12,
     width: "30%",
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
     borderRadius: 4,
   },
   errorTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
     textAlign: "center",
   },
   errorSubtitle: {
     fontSize: 14,
-    color: "#666666",
+    color: theme.textSecondary,
     textAlign: "center",
     lineHeight: 20,
   },
@@ -339,37 +343,38 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#0E0E0C",
+    borderColor: theme.primary,
   },
   retryText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   stickyBar: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 32,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#E5E4DF",
+    borderTopColor: theme.border,
   },
   continueButton: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
     paddingVertical: 16,
     borderRadius: 6,
     alignItems: "center",
   },
   continueButtonDisabled: {
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   continueButtonText: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 16,
     fontWeight: "600",
   },
 });
+}

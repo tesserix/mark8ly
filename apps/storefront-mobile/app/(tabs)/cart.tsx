@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { haptics } from "@repo/mobile-shared/haptics/feedback";
 import { useCartStore, type CartItem as CartItemType } from "@/stores/cart-store";
@@ -18,6 +19,7 @@ import { CartItem } from "@/components/CartItem";
 
 export default function CartScreen() {
   const router = useRouter();
+  const theme = useTheme();
   const { user } = useAuth();
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore((s) => s.subtotal);
@@ -27,11 +29,31 @@ export default function CartScreen() {
 
   const { stockMap, hasOutOfStock, refetchAll } = useCartStockCheck(items);
 
+  const themed = useMemo(
+    () => ({
+      container: { backgroundColor: theme.background },
+      separator: { backgroundColor: theme.border },
+      subtotalLabel: { color: theme.text },
+      subtotalValue: { color: theme.text },
+      stickyBar: { backgroundColor: theme.elevated, borderTopColor: theme.border },
+      checkoutButton: { backgroundColor: theme.primary },
+      checkoutButtonDisabled: { backgroundColor: theme.border },
+      checkoutButtonText: { color: theme.elevated },
+      emptyContainer: { backgroundColor: theme.background },
+      emptyIllustration: { backgroundColor: theme.elevated },
+      emptyTitle: { color: theme.text },
+      emptySubtitle: { color: theme.textSecondary },
+      shopButton: { backgroundColor: theme.primary },
+      shopButtonText: { color: theme.elevated },
+      subtotalBorderTop: { borderTopColor: theme.border },
+    }),
+    [theme],
+  );
+
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await haptics.pullToRefresh();
     refetchAll();
-    // Brief delay so the spinner is visible
     setTimeout(() => setIsRefreshing(false), 800);
   }, [refetchAll]);
 
@@ -92,46 +114,61 @@ export default function CartScreen() {
 
   if (items.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <View style={styles.emptyIllustration}>
+      <View style={[styles.emptyContainer, themed.emptyContainer]}>
+        <View style={[styles.emptyIllustration, themed.emptyIllustration]}>
           <Text style={styles.emptyIcon}>🛒</Text>
         </View>
-        <Text style={styles.emptyTitle}>Your cart is empty</Text>
-        <Text style={styles.emptySubtitle}>
+        <Text style={[styles.emptyTitle, themed.emptyTitle]}>
+          Your cart is empty
+        </Text>
+        <Text style={[styles.emptySubtitle, themed.emptySubtitle]}>
           Browse our collection and find something you love.
         </Text>
-        <Pressable style={styles.shopButton} onPress={handleStartShopping}>
-          <Text style={styles.shopButtonText}>Start shopping</Text>
+        <Pressable
+          style={[styles.shopButton, themed.shopButton]}
+          onPress={handleStartShopping}
+          accessibilityRole="button"
+          accessibilityLabel="Start shopping"
+        >
+          <Text style={[styles.shopButtonText, themed.shopButtonText]}>
+            Start shopping
+          </Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, themed.container]}>
       <FlatList
         data={items}
         keyExtractor={(item) => item.variantId}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={Separator}
+        ItemSeparatorComponent={() => (
+          <View style={[styles.separator, themed.separator]} />
+        )}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            tintColor="#0E0E0C"
+            tintColor={theme.primary}
           />
         }
         ListFooterComponent={
-          <View style={styles.subtotalRow}>
-            <Text style={styles.subtotalLabel}>Subtotal</Text>
-            <Text style={styles.subtotalValue}>{subtotal()}</Text>
+          <View style={[styles.subtotalRow, themed.subtotalBorderTop]}>
+            <Text style={[styles.subtotalLabel, themed.subtotalLabel]}>
+              Subtotal
+            </Text>
+            <Text style={[styles.subtotalValue, themed.subtotalValue]}>
+              {subtotal()}
+            </Text>
           </View>
         }
       />
 
-      <View style={styles.stickyBar}>
+      <View style={[styles.stickyBar, themed.stickyBar]}>
         {hasOutOfStock && (
           <Text style={styles.stockWarning}>
             Some items are out of stock or have limited availability
@@ -140,35 +177,32 @@ export default function CartScreen() {
         <Pressable
           style={[
             styles.checkoutButton,
-            hasOutOfStock && styles.checkoutButtonDisabled,
+            themed.checkoutButton,
+            hasOutOfStock && [styles.checkoutButtonDisabled, themed.checkoutButtonDisabled],
           ]}
           onPress={handleCheckout}
           disabled={hasOutOfStock}
           accessibilityRole="button"
           accessibilityLabel="Proceed to checkout"
         >
-          <Text style={styles.checkoutButtonText}>Checkout</Text>
+          <Text style={[styles.checkoutButtonText, themed.checkoutButtonText]}>
+            Checkout
+          </Text>
         </Pressable>
       </View>
     </View>
   );
 }
 
-function Separator() {
-  return <View style={styles.separator} />;
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
   },
   listContent: {
     paddingBottom: 140,
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "#E5E4DF",
   },
   subtotalRow: {
     flexDirection: "row",
@@ -176,17 +210,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#E5E4DF",
   },
   subtotalLabel: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#0E0E0C",
   },
   subtotalValue: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0E0E0C",
     fontFamily: "SourceSerif4",
   },
   stickyBar: {
@@ -194,12 +225,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 32,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#E5E4DF",
     gap: 8,
   },
   stockWarning: {
@@ -208,22 +237,19 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   checkoutButton: {
-    backgroundColor: "#0E0E0C",
     paddingVertical: 16,
     borderRadius: 6,
     alignItems: "center",
   },
   checkoutButtonDisabled: {
-    backgroundColor: "#E5E4DF",
+    opacity: 1,
   },
   checkoutButtonText: {
-    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
   },
   emptyContainer: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
     alignItems: "center",
     justifyContent: "center",
     padding: 32,
@@ -233,7 +259,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
@@ -244,24 +269,20 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#0E0E0C",
     fontFamily: "SourceSerif4",
   },
   emptySubtitle: {
     fontSize: 14,
-    color: "#666666",
     textAlign: "center",
     lineHeight: 20,
   },
   shopButton: {
     marginTop: 8,
-    backgroundColor: "#0E0E0C",
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 6,
   },
   shopButtonText: {
-    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "600",
   },

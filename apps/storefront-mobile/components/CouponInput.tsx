@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useValidateCoupon } from "@/lib/hooks/use-checkout";
 import { useCheckoutStore, type CouponDiscount } from "@/stores/checkout-store";
 
 export function CouponInput() {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const [code, setCode] = useState("");
   const coupon = useCheckoutStore((s) => s.coupon);
   const setCoupon = useCheckoutStore((s) => s.setCoupon);
@@ -67,7 +70,7 @@ export function CouponInput() {
           value={code}
           onChangeText={setCode}
           placeholder="Coupon code"
-          placeholderTextColor="#999999"
+          placeholderTextColor={theme.textSecondary}
           autoCapitalize="characters"
           accessibilityLabel="Coupon code"
         />
@@ -79,7 +82,7 @@ export function CouponInput() {
           accessibilityLabel="Apply coupon"
         >
           {validate.isPending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color={theme.elevated} />
           ) : (
             <Text style={styles.applyText}>Apply</Text>
           )}
@@ -92,7 +95,8 @@ export function CouponInput() {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
     gap: 6,
   },
@@ -103,16 +107,16 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
-    backgroundColor: "#FFFFFF",
+    color: theme.text,
+    backgroundColor: theme.elevated,
   },
   applyButton: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 6,
@@ -123,7 +127,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   applyText: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -148,11 +152,11 @@ const styles = StyleSheet.create({
   appliedCode: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#2D4A2B",
+    color: theme.accent,
   },
   appliedDiscount: {
     fontSize: 13,
-    color: "#2D4A2B",
+    color: theme.accent,
   },
   removeText: {
     fontSize: 13,
@@ -160,3 +164,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+}

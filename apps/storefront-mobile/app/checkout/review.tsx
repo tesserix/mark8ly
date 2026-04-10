@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useRouter } from "expo-router";
 import { useCartStore } from "@/stores/cart-store";
 import { useCheckoutStore } from "@/stores/checkout-store";
@@ -25,6 +26,8 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 export default function CheckoutReviewScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const router = useRouter();
   const cartItems = useCartStore((s) => s.items);
   const subtotalStr = useCartStore((s) => s.subtotal);
@@ -250,7 +253,7 @@ export default function CheckoutReviewScreen() {
           accessibilityLabel="Place order"
         >
           {submitMutation.isPending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color={theme.elevated} />
           ) : (
             <Text style={styles.placeOrderText}>Place order</Text>
           )}
@@ -260,10 +263,11 @@ export default function CheckoutReviewScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
   },
   scrollContent: {
     paddingBottom: 120,
@@ -280,17 +284,17 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
     fontFamily: "SourceSerif4",
   },
   editLink: {
     fontSize: 14,
-    color: "#2D4A2B",
+    color: theme.accent,
     fontWeight: "600",
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   itemsList: {
     gap: 10,
@@ -305,7 +309,7 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 6,
     overflow: "hidden",
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   lineImage: {
     width: 44,
@@ -314,7 +318,7 @@ const styles = StyleSheet.create({
   lineImagePlaceholder: {
     width: 44,
     height: 44,
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   lineDetails: {
     flex: 1,
@@ -323,16 +327,16 @@ const styles = StyleSheet.create({
   lineTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   lineQty: {
     fontSize: 12,
-    color: "#666666",
+    color: theme.textSecondary,
   },
   linePrice: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   detailBlock: {
     gap: 2,
@@ -340,13 +344,13 @@ const styles = StyleSheet.create({
   detailLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#999999",
+    color: theme.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   detailValue: {
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.text,
     lineHeight: 20,
   },
   discountGroup: {
@@ -359,31 +363,31 @@ const styles = StyleSheet.create({
   },
   totalLabel: {
     fontSize: 14,
-    color: "#666666",
+    color: theme.textSecondary,
   },
   totalValue: {
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.text,
   },
   discountValue: {
     fontSize: 14,
-    color: "#2D4A2B",
+    color: theme.accent,
     fontWeight: "600",
   },
   totalDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
     marginVertical: 4,
   },
   grandTotalLabel: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   grandTotalValue: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
     fontFamily: "SourceSerif4",
   },
   stickyBar: {
@@ -391,12 +395,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 32,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#E5E4DF",
+    borderTopColor: theme.border,
     gap: 8,
   },
   errorText: {
@@ -405,7 +409,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   placeOrderButton: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
     paddingVertical: 16,
     borderRadius: 6,
     alignItems: "center",
@@ -414,8 +418,9 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   placeOrderText: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 16,
     fontWeight: "600",
   },
 });
+}

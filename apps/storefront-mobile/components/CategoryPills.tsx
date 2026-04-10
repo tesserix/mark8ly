@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { ScrollView, Text, StyleSheet, Pressable } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useRouter } from "expo-router";
 import type { StorefrontCategory } from "@repo/mobile-shared/api/storefront-types";
 
@@ -7,6 +9,8 @@ interface CategoryPillsProps {
 }
 
 export function CategoryPills({ categories }: CategoryPillsProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const router = useRouter();
 
   if (categories.length === 0) return null;
@@ -30,7 +34,8 @@ export function CategoryPills({ categories }: CategoryPillsProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -40,14 +45,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     marginRight: 8,
   },
   pillText: {
     fontSize: 13,
     fontWeight: "500",
-    color: "#0E0E0C",
+    color: theme.text,
   },
 });
+}

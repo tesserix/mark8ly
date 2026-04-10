@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { haptics } from "@repo/mobile-shared/haptics/feedback";
@@ -14,6 +15,8 @@ import { useCheckoutStore } from "@/stores/checkout-store";
 import { GuestAccountPrompt } from "@/components/GuestAccountPrompt";
 
 export default function OrderConfirmationScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
@@ -91,10 +94,11 @@ export default function OrderConfirmationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
   },
   scrollContent: {
     paddingBottom: 40,
@@ -109,52 +113,52 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "#2D4A2B",
+    backgroundColor: theme.accent,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
   },
   checkMark: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 28,
     fontWeight: "700",
   },
   thankYou: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
     fontFamily: "SourceSerif4",
   },
   subtitle: {
     fontSize: 16,
-    color: "#666666",
+    color: theme.textSecondary,
   },
   orderCard: {
     marginHorizontal: 16,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     borderRadius: 6,
     padding: 20,
     alignItems: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
   },
   orderLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#999999",
+    color: theme.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   orderNumber: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
     fontFamily: "SourceSerif4",
   },
   orderNote: {
     fontSize: 13,
-    color: "#666666",
+    color: theme.textSecondary,
     textAlign: "center",
     lineHeight: 18,
   },
@@ -165,14 +169,15 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   continueButton: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
     paddingVertical: 16,
     borderRadius: 6,
     alignItems: "center",
   },
   continueButtonText: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 16,
     fontWeight: "600",
   },
 });
+}

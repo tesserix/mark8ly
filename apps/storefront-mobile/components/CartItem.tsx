@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   PanResponder,
   Alert,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { haptics } from "@repo/mobile-shared/haptics/feedback";
 
 interface StockInfo {
@@ -44,6 +45,8 @@ export function CartItem({
   onRemove,
   onSaveForLater,
 }: CartItemProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const translateX = useRef(new Animated.Value(0)).current;
 
   const panResponder = useRef(
@@ -228,7 +231,8 @@ export function CartItem({
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   wrapper: {
     overflow: "hidden",
   },
@@ -240,7 +244,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   saveAction: {
-    backgroundColor: "#2D4A2B",
+    backgroundColor: theme.accent,
     width: ACTION_WIDTH,
     alignItems: "center",
     justifyContent: "center",
@@ -252,13 +256,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   actionText: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 13,
     fontWeight: "600",
   },
   row: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     padding: 16,
     gap: 12,
   },
@@ -267,7 +271,7 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 6,
     overflow: "hidden",
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
   },
   image: {
     width: 60,
@@ -278,11 +282,11 @@ const styles = StyleSheet.create({
     height: 60,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
   },
   imagePlaceholderText: {
     fontSize: 10,
-    color: "#666666",
+    color: theme.textSecondary,
   },
   details: {
     flex: 1,
@@ -291,12 +295,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
     lineHeight: 18,
   },
   unitPrice: {
     fontSize: 13,
-    color: "#666666",
+    color: theme.textSecondary,
   },
   stockBanner: {
     backgroundColor: "#FDE8E8",
@@ -332,7 +336,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     borderRadius: 6,
   },
   stepperButton: {
@@ -347,21 +351,22 @@ const styles = StyleSheet.create({
   stepperText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   stepperTextDisabled: {
-    color: "#999999",
+    color: theme.textSecondary,
   },
   qtyText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
     minWidth: 24,
     textAlign: "center",
   },
   lineTotal: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
   },
 });
+}

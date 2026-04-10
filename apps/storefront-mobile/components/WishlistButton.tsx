@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { Pressable, StyleSheet } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { Heart } from "lucide-react-native";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useRouter } from "expo-router";
@@ -18,6 +20,8 @@ export function WishlistButton({
   productId,
   initialWishlisted: _initialWishlisted = false,
 }: WishlistButtonProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const { user } = useAuth();
   const router = useRouter();
   const wishlisted = useIsWishlisted(productId);
@@ -49,19 +53,20 @@ export function WishlistButton({
     >
       <Heart
         size={24}
-        color={wishlisted ? "#0E0E0C" : "#666666"}
-        fill={wishlisted ? "#0E0E0C" : "none"}
+        color={wishlisted ? theme.text : theme.textSecondary}
+        fill={wishlisted ? theme.text : "none"}
       />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   button: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -71,3 +76,4 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 });
+}

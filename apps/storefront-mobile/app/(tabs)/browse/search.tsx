@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -7,21 +7,24 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { X } from "lucide-react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useProducts } from "@/lib/hooks/use-products";
 import { useSearchHistoryStore } from "@/stores/search-history-store";
 import { ProductCard } from "@/components/ProductCard";
 import type { StorefrontProduct } from "@repo/mobile-shared/api/storefront-types";
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
 const GRID_GAP = 12;
 const GRID_PADDING = 16;
-const CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 const DEBOUNCE_MS = 400;
 
 export default function SearchScreen() {
+  const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
+  const cardWidth = (screenWidth - GRID_PADDING * 2 - GRID_GAP) / 2;
+
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const inputRef = useRef<TextInput>(null);
@@ -29,6 +32,21 @@ export default function SearchScreen() {
   const addSearch = useSearchHistoryStore((s) => s.addSearch);
   const removeSearch = useSearchHistoryStore((s) => s.removeSearch);
   const clearHistory = useSearchHistoryStore((s) => s.clear);
+
+  const themed = useMemo(
+    () => ({
+      container: { backgroundColor: theme.background },
+      inputContainer: { backgroundColor: theme.elevated, borderColor: theme.border },
+      input: { color: theme.text },
+      recentTitle: { color: theme.text },
+      clearText: { color: theme.accent },
+      recentRow: { borderBottomColor: theme.border },
+      recentTermText: { color: theme.text },
+      emptyTitle: { color: theme.text },
+      emptySubtitle: { color: theme.textSecondary },
+    }),
+    [theme],
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -70,31 +88,40 @@ export default function SearchScreen() {
     [addSearch],
   );
 
-  const renderProduct = ({ item }: { item: StorefrontProduct }) => (
-    <View style={[styles.gridItem, { width: CARD_WIDTH }]}>
-      <ProductCard product={item} />
-    </View>
+  const renderProduct = useCallback(
+    ({ item }: { item: StorefrontProduct }) => (
+      <View style={[styles.gridItem, { width: cardWidth }]}>
+        <ProductCard product={item} />
+      </View>
+    ),
+    [cardWidth],
   );
 
   if (!isSearching) {
     return (
-      <View style={styles.container}>
-        <View style={styles.inputContainer}>
+      <View style={[styles.container, themed.container]}>
+        <View style={[styles.inputContainer, themed.inputContainer]}>
           <TextInput
             ref={inputRef}
-            style={styles.input}
+            style={[styles.input, themed.input]}
             placeholder="Search products..."
-            placeholderTextColor="#999999"
+            placeholderTextColor={theme.textSecondary}
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={handleSubmit}
             returnKeyType="search"
             autoCapitalize="none"
             autoCorrect={false}
+            accessibilityLabel="Search products"
           />
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery("")} style={styles.clearButton}>
-              <X size={18} color="#666666" />
+            <Pressable
+              onPress={() => setQuery("")}
+              style={styles.clearButton}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+            >
+              <X size={18} color={theme.textSecondary} />
             </Pressable>
           )}
         </View>
@@ -102,21 +129,35 @@ export default function SearchScreen() {
         {searches.length > 0 && (
           <View style={styles.recentSection}>
             <View style={styles.recentHeader}>
-              <Text style={styles.recentTitle}>Recent searches</Text>
-              <Pressable onPress={clearHistory}>
-                <Text style={styles.clearText}>Clear</Text>
+              <Text style={[styles.recentTitle, themed.recentTitle]}>
+                Recent searches
+              </Text>
+              <Pressable
+                onPress={clearHistory}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search history"
+              >
+                <Text style={[styles.clearText, themed.clearText]}>Clear</Text>
               </Pressable>
             </View>
             {searches.map((term) => (
-              <View key={term} style={styles.recentRow}>
+              <View key={term} style={[styles.recentRow, themed.recentRow]}>
                 <Pressable
                   style={styles.recentTerm}
                   onPress={() => handleRecentPress(term)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Search for ${term}`}
                 >
-                  <Text style={styles.recentTermText}>{term}</Text>
+                  <Text style={[styles.recentTermText, themed.recentTermText]}>
+                    {term}
+                  </Text>
                 </Pressable>
-                <Pressable onPress={() => removeSearch(term)}>
-                  <X size={16} color="#999999" />
+                <Pressable
+                  onPress={() => removeSearch(term)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${term} from history`}
+                >
+                  <X size={16} color={theme.textSecondary} />
                 </Pressable>
               </View>
             ))}
@@ -127,35 +168,41 @@ export default function SearchScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.inputContainer}>
+    <View style={[styles.container, themed.container]}>
+      <View style={[styles.inputContainer, themed.inputContainer]}>
         <TextInput
           ref={inputRef}
-          style={styles.input}
+          style={[styles.input, themed.input]}
           placeholder="Search products..."
-          placeholderTextColor="#999999"
+          placeholderTextColor={theme.textSecondary}
           value={query}
           onChangeText={setQuery}
           onSubmitEditing={handleSubmit}
           returnKeyType="search"
           autoCapitalize="none"
           autoCorrect={false}
+          accessibilityLabel="Search products"
         />
         {query.length > 0 && (
-          <Pressable onPress={() => setQuery("")} style={styles.clearButton}>
-            <X size={18} color="#666666" />
+          <Pressable
+            onPress={() => setQuery("")}
+            style={styles.clearButton}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+          >
+            <X size={18} color={theme.textSecondary} />
           </Pressable>
         )}
       </View>
 
       {isLoading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#0E0E0C" />
+          <ActivityIndicator size="large" color={theme.primary} />
         </View>
       ) : products.length === 0 ? (
         <View style={styles.centered}>
-          <Text style={styles.emptyTitle}>No results</Text>
-          <Text style={styles.emptySubtitle}>
+          <Text style={[styles.emptyTitle, themed.emptyTitle]}>No results</Text>
+          <Text style={[styles.emptySubtitle, themed.emptySubtitle]}>
             No products match "{debouncedQuery}"
           </Text>
         </View>
@@ -177,7 +224,7 @@ export default function SearchScreen() {
             isFetchingNextPage ? (
               <ActivityIndicator
                 size="small"
-                color="#0E0E0C"
+                color={theme.primary}
                 style={styles.footerLoader}
               />
             ) : null
@@ -191,7 +238,6 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
   },
   centered: {
     flex: 1,
@@ -203,17 +249,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     margin: 16,
-    backgroundColor: "#FFFFFF",
     borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E4DF",
     paddingHorizontal: 12,
   },
   input: {
     flex: 1,
     height: 44,
     fontSize: 15,
-    color: "#0E0E0C",
   },
   clearButton: {
     padding: 4,
@@ -230,11 +273,9 @@ const styles = StyleSheet.create({
   recentTitle: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#0E0E0C",
   },
   clearText: {
     fontSize: 13,
-    color: "#2D4A2B",
     fontWeight: "500",
   },
   recentRow: {
@@ -243,14 +284,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E5E4DF",
   },
   recentTerm: {
     flex: 1,
   },
   recentTermText: {
     fontSize: 14,
-    color: "#0E0E0C",
   },
   gridContent: {
     paddingHorizontal: GRID_PADDING,
@@ -269,12 +308,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#0E0E0C",
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: "#666666",
     textAlign: "center",
   },
 });

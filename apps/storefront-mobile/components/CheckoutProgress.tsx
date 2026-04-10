@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 
 interface CheckoutProgressProps {
   currentStep: 1 | 2 | 3 | 4;
@@ -7,6 +9,8 @@ interface CheckoutProgressProps {
 const STEPS = ["Details", "Shipping", "Payment", "Review"] as const;
 
 export function CheckoutProgress({ currentStep }: CheckoutProgressProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   return (
     <View style={styles.container} accessibilityRole="progressbar">
       {STEPS.map((label, index) => {
@@ -53,14 +57,15 @@ export function CheckoutProgress({ currentStep }: CheckoutProgressProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "center",
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.background,
   },
   stepWrapper: {
     flex: 1,
@@ -73,45 +78,46 @@ const styles = StyleSheet.create({
     right: "50%",
     width: "100%",
     height: 2,
-    backgroundColor: "#E5E4DF",
+    backgroundColor: theme.border,
     zIndex: -1,
   },
   lineActive: {
-    backgroundColor: "#2D4A2B",
+    backgroundColor: theme.accent,
   },
   circle: {
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     borderWidth: 2,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     alignItems: "center",
     justifyContent: "center",
   },
   circleActive: {
-    borderColor: "#0E0E0C",
-    backgroundColor: "#0E0E0C",
+    borderColor: theme.primary,
+    backgroundColor: theme.primary,
   },
   circleCompleted: {
-    borderColor: "#2D4A2B",
-    backgroundColor: "#2D4A2B",
+    borderColor: theme.accent,
+    backgroundColor: theme.accent,
   },
   circleText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#999999",
+    color: theme.textSecondary,
   },
   circleTextActive: {
-    color: "#FFFFFF",
+    color: theme.elevated,
   },
   label: {
     fontSize: 11,
-    color: "#999999",
+    color: theme.textSecondary,
     fontWeight: "500",
   },
   labelActive: {
-    color: "#0E0E0C",
+    color: theme.text,
     fontWeight: "600",
   },
 });
+}

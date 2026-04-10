@@ -1,16 +1,20 @@
 import { Tabs } from "expo-router";
 import { Home, Search, ShoppingBag, User } from "lucide-react-native";
 import { View, Text, StyleSheet } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 
 function CartIcon({ color, size }: { color: string; size: number }) {
+  const theme = useTheme();
   // Badge count hardcoded to 0; will be wired in Phase 5
   const count = 0;
   return (
     <View>
       <ShoppingBag color={color} size={size} />
       {count > 0 && (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{count > 99 ? "99+" : count}</Text>
+        <View style={[styles.badge, { backgroundColor: theme.primary }]}>
+          <Text style={[styles.badgeText, { color: theme.background }]}>
+            {count > 99 ? "99+" : count}
+          </Text>
         </View>
       )}
     </View>
@@ -18,18 +22,20 @@ function CartIcon({ color, size }: { color: string; size: number }) {
 }
 
 export default function TabLayout() {
+  const theme = useTheme();
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#0E0E0C",
-        tabBarInactiveTintColor: "#999999",
+        tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.textSecondary,
         tabBarStyle: {
-          backgroundColor: "#FFFFFF",
-          borderTopColor: "#0E0E0C10",
+          backgroundColor: theme.elevated,
+          borderTopColor: `${theme.primary}10`,
           borderTopWidth: 0.5,
         },
-        headerStyle: { backgroundColor: "#F7F6F2" },
-        headerTintColor: "#0E0E0C",
+        headerStyle: { backgroundColor: theme.background },
+        headerTintColor: theme.primary,
         headerShadowVisible: false,
       }}
     >
@@ -72,7 +78,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: -6,
     top: -4,
-    backgroundColor: "#0E0E0C",
     borderRadius: 8,
     minWidth: 16,
     height: 16,
@@ -81,7 +86,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: {
-    color: "#F7F6F2",
     fontSize: 10,
     fontWeight: "700",
   },

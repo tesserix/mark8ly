@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useCheckGiftCardBalance } from "@/lib/hooks/use-checkout";
 import { useCheckoutStore, type GiftCardCredit } from "@/stores/checkout-store";
 
 export function GiftCardInput() {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const [code, setCode] = useState("");
   const giftCard = useCheckoutStore((s) => s.giftCard);
   const setGiftCard = useCheckoutStore((s) => s.setGiftCard);
@@ -64,7 +67,7 @@ export function GiftCardInput() {
           value={code}
           onChangeText={setCode}
           placeholder="Gift card code"
-          placeholderTextColor="#999999"
+          placeholderTextColor={theme.textSecondary}
           autoCapitalize="characters"
           accessibilityLabel="Gift card code"
         />
@@ -79,7 +82,7 @@ export function GiftCardInput() {
           accessibilityLabel="Check gift card balance"
         >
           {checkBalance.isPending ? (
-            <ActivityIndicator size="small" color="#0E0E0C" />
+            <ActivityIndicator size="small" color={theme.primary} />
           ) : (
             <Text style={styles.checkText}>Check balance</Text>
           )}
@@ -92,7 +95,8 @@ export function GiftCardInput() {
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
     gap: 6,
   },
@@ -103,17 +107,17 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
-    backgroundColor: "#FFFFFF",
+    color: theme.text,
+    backgroundColor: theme.elevated,
   },
   checkButton: {
     borderWidth: 1,
-    borderColor: "#0E0E0C",
+    borderColor: theme.primary,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 6,
@@ -126,7 +130,7 @@ const styles = StyleSheet.create({
   checkText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   errorText: {
     fontSize: 12,
@@ -149,11 +153,11 @@ const styles = StyleSheet.create({
   appliedCode: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#2D4A2B",
+    color: theme.accent,
   },
   appliedAmount: {
     fontSize: 13,
-    color: "#2D4A2B",
+    color: theme.accent,
   },
   removeText: {
     fontSize: 13,
@@ -161,3 +165,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+}

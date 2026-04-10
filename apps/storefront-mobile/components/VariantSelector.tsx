@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import type {
   StorefrontProductOption,
   StorefrontVariant,
@@ -32,6 +34,8 @@ export function VariantSelector({
   selectedValues,
   onSelect,
 }: VariantSelectorProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   if (options.length === 0) return null;
 
   return (
@@ -79,7 +83,8 @@ export function VariantSelector({
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
     gap: 16,
   },
@@ -89,7 +94,7 @@ const styles = StyleSheet.create({
   optionLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -103,28 +108,29 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#E5E4DF",
-    backgroundColor: "#FFFFFF",
+    borderColor: theme.border,
+    backgroundColor: theme.elevated,
   },
   chipSelected: {
-    borderColor: "#0E0E0C",
-    backgroundColor: "#0E0E0C",
+    borderColor: theme.primary,
+    backgroundColor: theme.primary,
   },
   chipUnavailable: {
-    borderColor: "#E5E4DF",
-    backgroundColor: "#F7F6F2",
+    borderColor: theme.border,
+    backgroundColor: theme.background,
     opacity: 0.5,
   },
   chipText: {
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.text,
     fontWeight: "500",
   },
   chipTextSelected: {
-    color: "#FFFFFF",
+    color: theme.elevated,
   },
   chipTextUnavailable: {
-    color: "#999999",
+    color: theme.textSecondary,
     textDecorationLine: "line-through",
   },
 });
+}

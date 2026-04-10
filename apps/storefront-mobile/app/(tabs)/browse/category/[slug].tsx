@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -6,19 +6,18 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  Dimensions,
+  useWindowDimensions,
   RefreshControl,
   Modal,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useCategoryProducts } from "@/lib/hooks/use-categories";
 import { ProductCard } from "@/components/ProductCard";
 import type { StorefrontProduct } from "@repo/mobile-shared/api/storefront-types";
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
 const GRID_GAP = 12;
 const GRID_PADDING = 16;
-const CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 
 const SORT_OPTIONS = [
   { label: "Newest", value: "newest" },
@@ -30,6 +29,9 @@ type SortValue = (typeof SORT_OPTIONS)[number]["value"];
 
 export default function CategoryScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
+  const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
+  const cardWidth = (screenWidth - GRID_PADDING * 2 - GRID_GAP) / 2;
   const [sort, setSort] = useState<SortValue>("newest");
   const [showSort, setShowSort] = useState(false);
 
@@ -46,6 +48,26 @@ export default function CategoryScreen() {
   const products = data?.pages.flatMap((p) => p.products) ?? [];
   const total = data?.pages[0]?.total ?? 0;
 
+  const themed = useMemo(
+    () => ({
+      container: { backgroundColor: theme.background },
+      toolbar: { borderBottomColor: theme.border },
+      resultCount: { color: theme.textSecondary },
+      sortButton: { borderColor: theme.border, backgroundColor: theme.elevated },
+      sortButtonText: { color: theme.text },
+      emptyTitle: { color: theme.text },
+      emptySubtitle: { color: theme.textSecondary },
+      modalSheet: { backgroundColor: theme.elevated },
+      modalHandle: { backgroundColor: theme.border },
+      modalTitle: { color: theme.text },
+      modalOption: { borderBottomColor: theme.border },
+      modalOptionActive: { backgroundColor: theme.background },
+      modalOptionText: { color: theme.text },
+      modalOptionTextActive: { color: theme.accent },
+    }),
+    [theme],
+  );
+
   const handleSortSelect = useCallback((value: SortValue) => {
     setSort(value);
     setShowSort(false);
@@ -54,35 +76,45 @@ export default function CategoryScreen() {
   const currentSortLabel =
     SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "Sort";
 
+  const renderItem = useCallback(
+    ({ item }: { item: StorefrontProduct }) => (
+      <View style={[styles.gridItem, { width: cardWidth }]}>
+        <ProductCard product={item} />
+      </View>
+    ),
+    [cardWidth],
+  );
+
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#0E0E0C" />
+      <View style={[styles.centered, themed.container]}>
+        <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
   }
 
-  const renderItem = ({ item }: { item: StorefrontProduct }) => (
-    <View style={[styles.gridItem, { width: CARD_WIDTH }]}>
-      <ProductCard product={item} />
-    </View>
-  );
-
   return (
-    <View style={styles.container}>
-      <View style={styles.toolbar}>
-        <Text style={styles.resultCount}>
+    <View style={[styles.container, themed.container]}>
+      <View style={[styles.toolbar, themed.toolbar]}>
+        <Text style={[styles.resultCount, themed.resultCount]}>
           {total} {total === 1 ? "product" : "products"}
         </Text>
-        <Pressable style={styles.sortButton} onPress={() => setShowSort(true)}>
-          <Text style={styles.sortButtonText}>{currentSortLabel}</Text>
+        <Pressable
+          style={[styles.sortButton, themed.sortButton]}
+          onPress={() => setShowSort(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Sort by ${currentSortLabel}`}
+        >
+          <Text style={[styles.sortButtonText, themed.sortButtonText]}>
+            {currentSortLabel}
+          </Text>
         </Pressable>
       </View>
 
       {products.length === 0 ? (
         <View style={styles.centered}>
-          <Text style={styles.emptyTitle}>No products</Text>
-          <Text style={styles.emptySubtitle}>
+          <Text style={[styles.emptyTitle, themed.emptyTitle]}>No products</Text>
+          <Text style={[styles.emptySubtitle, themed.emptySubtitle]}>
             This category doesn't have any products yet.
           </Text>
         </View>
@@ -98,7 +130,7 @@ export default function CategoryScreen() {
             <RefreshControl
               refreshing={isRefetching}
               onRefresh={refetch}
-              tintColor="#0E0E0C"
+              tintColor={theme.primary}
             />
           }
           onEndReached={() => {
@@ -111,7 +143,7 @@ export default function CategoryScreen() {
             isFetchingNextPage ? (
               <ActivityIndicator
                 size="small"
-                color="#0E0E0C"
+                color={theme.primary}
                 style={styles.footerLoader}
               />
             ) : null
@@ -125,23 +157,33 @@ export default function CategoryScreen() {
         animationType="slide"
         onRequestClose={() => setShowSort(false)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setShowSort(false)}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Sort by</Text>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowSort(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Close sort menu"
+        >
+          <View style={[styles.modalSheet, themed.modalSheet]}>
+            <View style={[styles.modalHandle, themed.modalHandle]} />
+            <Text style={[styles.modalTitle, themed.modalTitle]}>Sort by</Text>
             {SORT_OPTIONS.map((option) => (
               <Pressable
                 key={option.value}
                 style={[
                   styles.modalOption,
-                  sort === option.value && styles.modalOptionActive,
+                  themed.modalOption,
+                  sort === option.value && [styles.modalOptionActive, themed.modalOptionActive],
                 ]}
                 onPress={() => handleSortSelect(option.value)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: sort === option.value }}
+                accessibilityLabel={option.label}
               >
                 <Text
                   style={[
                     styles.modalOptionText,
-                    sort === option.value && styles.modalOptionTextActive,
+                    themed.modalOptionText,
+                    sort === option.value && [styles.modalOptionTextActive, themed.modalOptionTextActive],
                   ]}
                 >
                   {option.label}
@@ -158,7 +200,6 @@ export default function CategoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
   },
   centered: {
     flex: 1,
@@ -173,24 +214,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E5E4DF",
   },
   resultCount: {
     fontSize: 13,
-    color: "#666666",
   },
   sortButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E4DF",
-    backgroundColor: "#FFFFFF",
   },
   sortButtonText: {
     fontSize: 13,
     fontWeight: "500",
-    color: "#0E0E0C",
   },
   gridContent: {
     padding: GRID_PADDING,
@@ -208,12 +244,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#0E0E0C",
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: "#666666",
     textAlign: "center",
   },
   modalOverlay: {
@@ -222,7 +256,6 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalSheet: {
-    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingBottom: 40,
@@ -233,32 +266,26 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#E5E4DF",
     alignSelf: "center",
     marginBottom: 16,
   },
   modalTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#0E0E0C",
     marginBottom: 16,
   },
   modalOption: {
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E5E4DF",
   },
   modalOptionActive: {
-    backgroundColor: "#F7F6F2",
     marginHorizontal: -16,
     paddingHorizontal: 16,
   },
   modalOptionText: {
     fontSize: 15,
-    color: "#0E0E0C",
   },
   modalOptionTextActive: {
     fontWeight: "600",
-    color: "#2D4A2B",
   },
 });

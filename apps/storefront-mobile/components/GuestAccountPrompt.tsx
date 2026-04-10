@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
+import { useTheme } from "@/lib/theme/theme-provider";
 import { useCreateGuestAccount } from "@/lib/hooks/use-checkout";
 
 interface GuestAccountPromptProps {
@@ -21,6 +22,8 @@ export function GuestAccountPrompt({
   name,
   onDismiss,
 }: GuestAccountPromptProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createThemedStyles(theme), [theme]);
   const [password, setPassword] = useState("");
   const [dismissed, setDismissed] = useState(false);
   const createAccount = useCreateGuestAccount();
@@ -71,7 +74,7 @@ export function GuestAccountPrompt({
           value={password}
           onChangeText={setPassword}
           placeholder="At least 8 characters"
-          placeholderTextColor="#999999"
+          placeholderTextColor={theme.textSecondary}
           secureTextEntry
           autoComplete="new-password"
           textContentType="newPassword"
@@ -90,7 +93,7 @@ export function GuestAccountPrompt({
         accessibilityLabel="Create account"
       >
         {createAccount.isPending ? (
-          <ActivityIndicator size="small" color="#FFFFFF" />
+          <ActivityIndicator size="small" color={theme.elevated} />
         ) : (
           <Text style={styles.createButtonText}>Create account</Text>
         )}
@@ -108,24 +111,25 @@ export function GuestAccountPrompt({
   );
 }
 
-const styles = StyleSheet.create({
+function createThemedStyles(theme: { primary: string; accent: string; background: string; elevated: string; text: string; textSecondary: string; border: string; fontFamily: string }) {
+  return StyleSheet.create({
   container: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.elevated,
     borderRadius: 6,
     padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
   },
   title: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.text,
     fontFamily: "SourceSerif4",
   },
   subtitle: {
     fontSize: 14,
-    color: "#666666",
+    color: theme.textSecondary,
     lineHeight: 20,
   },
   field: {
@@ -134,24 +138,24 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.text,
   },
   input: {
     borderWidth: 1,
-    borderColor: "#E5E4DF",
+    borderColor: theme.border,
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
-    backgroundColor: "#FFFFFF",
+    color: theme.text,
+    backgroundColor: theme.elevated,
   },
   inputDisabled: {
-    backgroundColor: "#F7F6F2",
-    color: "#666666",
+    backgroundColor: theme.background,
+    color: theme.textSecondary,
   },
   createButton: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.primary,
     paddingVertical: 14,
     borderRadius: 6,
     alignItems: "center",
@@ -160,7 +164,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   createButtonText: {
-    color: "#FFFFFF",
+    color: theme.elevated,
     fontSize: 15,
     fontWeight: "600",
   },
@@ -170,6 +174,7 @@ const styles = StyleSheet.create({
   },
   dismissText: {
     fontSize: 14,
-    color: "#666666",
+    color: theme.textSecondary,
   },
 });
+}

@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Mark8ly Store",
+    "slug": "mark8ly-store",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "mark8ly-store",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F7F6F2"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.mark8ly.store"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F7F6F2"
+      },
+      "package": "com.mark8ly.store"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-notifications",
+      "@react-native-firebase/app",
+      "@stripe/stripe-react-native"
+    ],
+    "extra": {
+      "eas": { "projectId": "your-eas-project-id" },
+      "storeSlug": "default",
+      "apiBaseUrl": "https://api.mark8ly.com"
+    }
+  }
+}

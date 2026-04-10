@@ -18,7 +18,7 @@ import {
 
 import type { AdminCategory } from "@/lib/api/marketplace-api";
 
-export type StoreRole = "owner" | "admin" | "staff";
+export type StoreRole = "owner" | "admin" | "staff" | "viewer";
 
 export interface BulkActionsBarProps {
   selectedIds: string[];
@@ -41,7 +41,7 @@ export function BulkActionsBar({
   onBulkAction,
 }: BulkActionsBarProps) {
   if (selectedIds.length === 0) return null;
-  if (role === "staff") return null;
+  if (role === "staff" || role === "viewer") return null;
 
   const count = selectedIds.length;
   const isOwner = role === "owner";

@@ -2,7 +2,9 @@ import { AdminShell } from "@/components/shell/AdminShell";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import {
   listProducts,
+  listCategories,
   type ListProductsQuery,
+  type AdminStore,
 } from "@/lib/api/marketplace-api";
 
 import { ProductsListHeader } from "@/components/products/ProductsListHeader";
@@ -20,7 +22,7 @@ export default async function ProductsPage({
   searchParams,
 }: ProductsPageProps) {
   const session = await getServerSessionContext();
-  const { tenantName, email, currentStore, role, userId, tenantId } = session;
+  const { tenantName, email, currentStore, role, userId, tenantId, stores } = session;
   const params = await searchParams;
 
   const query = parseSearchParams(params);
@@ -37,12 +39,22 @@ export default async function ProductsPage({
     );
   }
 
-  const response = await listProducts(currentStore.id, query, {
-    userId,
-    tenantId,
-  });
+  const [response, categories] = await Promise.all([
+    listProducts(currentStore.id, query, { userId, tenantId }),
+    listCategories(currentStore.id, { userId, tenantId }),
+  ]);
 
   const products = response?.data ?? [];
+
+  // Map platform-api Store[] to AdminStore[] for the copy dialog
+  const adminStores: AdminStore[] = stores.map((s) => ({
+    id: s.id,
+    name: s.name,
+    slug: s.slug,
+    country_code: s.country_code,
+    currency_code: s.currency_code,
+    status: s.status,
+  }));
   const meta = response?.meta ?? {
     page: 1,
     page_size: query.pageSize ?? 20,
@@ -81,7 +93,13 @@ export default async function ProductsPage({
           />
         ) : (
           <>
-            <ProductsList products={products} />
+            <ProductsList
+              products={products}
+              storeId={currentStore.id}
+              role={role}
+              stores={adminStores}
+              categories={categories}
+            />
             <ProductsListPagination
               currentPage={meta.page}
               totalPages={meta.total_pages}

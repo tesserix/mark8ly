@@ -5,13 +5,14 @@
 
 ## 1. Overview
 
-Three milestones adding storefront customer authentication, admin customer profiles (aggregation view), and product reviews with photos, helpful reactions, featured flag, and merchant replies. All inside the existing `marketplace-api` binary. Customer auth leverages the existing `auth-bff` + GIP `mp-customer` tenant pool.
+Four milestones adding storefront customer authentication, admin customer profiles (aggregation view), product reviews with photos, and wishlists. All inside the existing `marketplace-api` binary. Customer auth leverages the existing `auth-bff` + GIP `mp-customer` tenant pool.
 
 ### Build order
 
 1. **C1 — Storefront Auth** (customer login/register, session middleware, /account shell)
 2. **C2 — Customer Profiles** (admin customer list + detail, lightweight profile table)
 3. **C3 — Reviews** (product reviews with moderation, photos, helpful, merchant replies)
+4. **C4 — Wishlists** (save products, storefront wishlist page, account tab)
 
 ### Constraints
 
@@ -386,18 +387,72 @@ Define empty states for:
 ### 10.7 Customer list skeleton loading
 Show row-level skeleton states on initial load. Defer computed stats (order_count, total_spent) to a separate async call so name/email/status render immediately.
 
-## 11. Testing
+## 11. C4 — Wishlists
+
+### 11.1 Data model
+
+Added to migration 000013 (or separate 000015 if C1-C3 already shipped):
+
+```sql
+CREATE TABLE wishlists (
+    id              UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       UUID          NOT NULL,
+    store_id        UUID          NOT NULL,
+    customer_id     UUID          NOT NULL REFERENCES customer_profiles(id) ON DELETE CASCADE,
+    product_id      UUID          NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    UNIQUE (customer_id, product_id)
+);
+CREATE INDEX wishlists_customer_idx ON wishlists (customer_id);
+CREATE INDEX wishlists_product_idx ON wishlists (product_id);
+```
+
+Simple junction table — customer saves a product. No lists, no naming, no sharing (v1).
+
+### 11.2 API endpoints
+
+**Storefront (auth required):**
+- `GET /storefront/stores/:slug/wishlist` — list customer's saved products (with product details)
+- `POST /storefront/stores/:slug/wishlist` — add product (body: `{ product_id }`)
+- `DELETE /storefront/stores/:slug/wishlist/:productId` — remove product
+- `GET /storefront/stores/:slug/wishlist/check?product_id=` — check if product is saved (for heart icon state)
+
+### 11.3 Storefront UI
+
+**Heart icon on product cards + detail page:**
+- Outlined heart: not saved. Filled moss-700 heart: saved.
+- Click toggles (add/remove). Requires auth — redirect to login if not signed in.
+- Optimistic UI update (fill immediately, revert on error).
+
+**Wishlist page (`/account/wishlist`):**
+- Grid of saved products (same ProductCard component as catalog)
+- "Remove" button per item
+- "Add to cart" button per item
+- Empty state: "Your wishlist is empty. Browse products to save your favorites."
+
+**Account nav:** Add "Wishlist" tab between "Addresses" and "Loyalty".
+
+### 11.4 Admin visibility
+
+Customer detail page (C2) shows wishlist count in the overview stats. No admin CRUD for wishlists — customer-only feature.
+
+### 11.5 Concurrency
+
+`UNIQUE (customer_id, product_id)` prevents double-saves. `INSERT ON CONFLICT DO NOTHING` for idempotent add. `DELETE` is naturally idempotent.
+
+## 12. Testing
 
 Each milestone includes:
 - **C1:** Auth middleware unit tests (valid/invalid/expired cookie, missing flags), profile auto-creation idempotency, auth-required route 401, blocked customer rejection, redirect_uri validation
 - **C2:** Customer list with computed stats integration test (verify index usage), tag/note update, block/unblock flow, search by email/name, skeleton loading, admin-only fields excluded from storefront
 - **C3:** Review CRUD + approval workflow, one-per-product constraint, verified purchase detection, helpful count atomic toggle (helpful→not_helpful), concurrent reaction idempotency, photo upload limit (concurrent race test with FOR UPDATE), merchant reply, featured toggle, self-review prevention, blocked customer review rejection, storefront review list (only approved), review summary (avg rating, distribution)
+- **C4:** Wishlist add/remove idempotency, UNIQUE constraint prevents duplicates, auth required (401 without session), heart icon toggle, wishlist page renders saved products, "Add to cart" from wishlist, remove from wishlist, empty state
 
-## 12. Out of Scope
+## 13. Out of Scope
 
 - Customer segments/dynamic grouping — use marketing campaigns (M4) for targeting
 - Customer communication log — campaigns feature handles outbound
-- Wishlist/saved lists — follow-up feature
+- Named wishlists / multiple lists / sharing — v1 is a single flat list
 - Customer payment methods — payment providers (Stripe/Razorpay) handle stored cards
 - Review spam detection/sentiment analysis — follow-up with ML pipeline
 - Video reviews — images only for now

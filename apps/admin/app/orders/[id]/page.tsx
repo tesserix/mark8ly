@@ -49,12 +49,11 @@ export default async function OrderDetailPage({ params }: PageProps) {
             />
             <OrderAddressCard addresses={order.addresses} />
           </div>
-          <div className="flex flex-col gap-10">
+          <div className="flex flex-col gap-10 lg:sticky lg:top-8 lg:self-start">
             <OrderTotalsCard order={order} />
+            <OrderActionsBar order={order} />
           </div>
         </div>
-
-        <OrderActionsBar order={order} />
       </main>
     </AdminShell>
   );

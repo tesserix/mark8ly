@@ -15,7 +15,7 @@
 // server action and either closes the panel + lets the page revalidate,
 // or surfaces the typed error inline.
 
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 
 import type { AdminOrder, PaymentStatus } from "@/lib/api/marketplace-api";
 
@@ -37,6 +37,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
   const [panel, setPanel] = useState<Panel>("none");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const canConfirm = order.status === "pending";
   const canFulfill = order.status === "confirmed";
@@ -45,10 +46,22 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
     order.payment_status === "paid" ||
     order.payment_status === "partially_refunded";
 
-  const close = () => {
+  // Auto-clear success strip after 4 seconds.
+  useEffect(() => {
+    if (!success) return;
+    const t = setTimeout(() => setSuccess(null), 4000);
+    return () => clearTimeout(t);
+  }, [success]);
+
+  const close = useCallback(() => {
     setPanel("none");
     setError(null);
-  };
+  }, []);
+
+  const onSuccess = useCallback((msg: string) => {
+    close();
+    setSuccess(msg);
+  }, [close]);
 
   const runFulfill = () => {
     setError(null);
@@ -56,6 +69,8 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
       const r = await fulfillOrderAction(order.store_id, order.id);
       if (!r.ok) {
         setError(r.error?.message ?? "Action failed");
+      } else {
+        onSuccess("Order marked as fulfilled.");
       }
     });
   };
@@ -63,7 +78,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
   return (
     <section
       aria-labelledby="order-actions-heading"
-      className="flex flex-col gap-4 border-t border-[color:var(--ink-900)] border-opacity-15 pt-6"
+      className="flex flex-col gap-4"
     >
       <h2
         id="order-actions-heading"
@@ -71,6 +86,18 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
       >
         Actions
       </h2>
+
+      {/* Success feedback strip — editorial style: serif italic, hairline rules. */}
+      {success && (
+        <div
+          role="status"
+          className="border-y border-[color:var(--moss-700)] border-opacity-40 py-3"
+        >
+          <p className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-sm italic text-[color:var(--moss-700)]">
+            {success}
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         {canConfirm && (
@@ -126,14 +153,15 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
         <ConfirmForm
           orderId={order.id}
           storeId={order.store_id}
-          onDone={close}
+          onDone={(msg) => onSuccess(msg ?? "Order confirmed.")}
         />
       )}
       {panel === "cancel" && (
         <CancelForm
           orderId={order.id}
           storeId={order.store_id}
-          onDone={close}
+          customerEmail={order.customer_email}
+          onDone={(msg) => onSuccess(msg ?? "Order cancelled.")}
         />
       )}
       {panel === "refund" && (
@@ -143,7 +171,8 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
           grandTotal={order.grand_total}
           refundedAmount={order.refunded_amount}
           currencyCode={order.currency_code}
-          onDone={close}
+          customerEmail={order.customer_email}
+          onDone={(msg) => onSuccess(msg ?? "Refund issued.")}
         />
       )}
     </section>
@@ -232,7 +261,7 @@ function FormError({ error }: { error: OrderActionResult["error"] | undefined })
 interface ConfirmFormProps {
   storeId: string;
   orderId: string;
-  onDone: () => void;
+  onDone: (msg?: string) => void;
 }
 
 function ConfirmForm({ storeId, orderId, onDone }: ConfirmFormProps) {
@@ -253,7 +282,8 @@ function ConfirmForm({ storeId, orderId, onDone }: ConfirmFormProps) {
         setError(r.error);
         return;
       }
-      onDone();
+      const ps = paymentStatus ? ` Payment marked as ${paymentStatus}.` : "";
+      onDone(`Order confirmed.${ps}`);
     });
   };
 
@@ -267,7 +297,7 @@ function ConfirmForm({ storeId, orderId, onDone }: ConfirmFormProps) {
             onChange={(e) =>
               setPaymentStatus(e.target.value as PaymentStatus | "")
             }
-            className="rounded-md border border-[color:var(--ink-900)] border-opacity-30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none"
+            className={inputCls}
           >
             <option value="">Don&apos;t change</option>
             <option value="authorized">Authorized</option>
@@ -281,46 +311,73 @@ function ConfirmForm({ storeId, orderId, onDone }: ConfirmFormProps) {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="e.g. stripe-auth"
-            className="rounded-md border border-[color:var(--ink-900)] border-opacity-30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none"
+            className={inputCls}
           />
         </label>
         <FormError error={error} />
         <div className="flex items-center gap-3">
           <SubmitButton pending={pending} label="Confirm" />
-          <CancelButton onClick={onDone} disabled={pending} />
+          <DismissButton onClick={() => onDone()} disabled={pending} />
         </div>
       </form>
     </PanelShell>
   );
 }
 
+// ── Cancel (two-step: form → review → confirm) ──────────────────────────
+
 interface CancelFormProps {
   storeId: string;
   orderId: string;
-  onDone: () => void;
+  customerEmail: string;
+  onDone: (msg?: string) => void;
 }
 
-function CancelForm({ storeId, orderId, onDone }: CancelFormProps) {
+function CancelForm({ storeId, orderId, customerEmail, onDone }: CancelFormProps) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<OrderActionResult["error"] | undefined>();
   const [reason, setReason] = useState("");
+  const [step, setStep] = useState<"form" | "review">("form");
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submit = () => {
     setError(undefined);
     startTransition(async () => {
       const r = await cancelOrderAction(storeId, orderId, { reason });
       if (!r.ok) {
         setError(r.error);
+        setStep("form");
         return;
       }
-      onDone();
+      onDone("Order cancelled.");
     });
   };
 
+  if (step === "review") {
+    return (
+      <PanelShell title="Review cancellation">
+        <div className="flex flex-col gap-3 text-sm text-[color:var(--ink-900)]">
+          <p>You are about to <strong>cancel</strong> this order. This cannot be undone.</p>
+          <p className="opacity-70">Customer ({customerEmail}) will be notified.</p>
+          {reason && <p className="opacity-70">Reason: {reason}</p>}
+        </div>
+        <FormError error={error} />
+        <div className="flex items-center gap-3">
+          <SubmitButton pending={pending} label="Cancel order" />
+          <DismissButton onClick={() => setStep("form")} disabled={pending} label="Go back" />
+        </div>
+      </PanelShell>
+    );
+  }
+
   return (
     <PanelShell title="Cancel this order">
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setStep("review");
+        }}
+        className="flex flex-col gap-4"
+      >
         <label className="flex flex-col gap-2">
           <FieldLabel>Reason (required)</FieldLabel>
           <input
@@ -329,18 +386,19 @@ function CancelForm({ storeId, orderId, onDone }: CancelFormProps) {
             onChange={(e) => setReason(e.target.value)}
             required
             placeholder="e.g. customer requested cancellation"
-            className="rounded-md border border-[color:var(--ink-900)] border-opacity-30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none"
+            className={inputCls}
           />
         </label>
-        <FormError error={error} />
         <div className="flex items-center gap-3">
-          <SubmitButton pending={pending} label="Cancel order" />
-          <CancelButton onClick={onDone} disabled={pending} />
+          <SubmitButton pending={false} label="Review" />
+          <DismissButton onClick={() => onDone()} />
         </div>
       </form>
     </PanelShell>
   );
 }
+
+// ── Refund (two-step: form → review → confirm) ─────────────────────────
 
 interface RefundFormProps {
   storeId: string;
@@ -348,7 +406,8 @@ interface RefundFormProps {
   grandTotal: string;
   refundedAmount: string;
   currencyCode: string;
-  onDone: () => void;
+  customerEmail: string;
+  onDone: (msg?: string) => void;
 }
 
 function RefundForm({
@@ -357,6 +416,7 @@ function RefundForm({
   grandTotal,
   refundedAmount,
   currencyCode,
+  customerEmail,
   onDone,
 }: RefundFormProps) {
   const [pending, startTransition] = useTransition();
@@ -366,13 +426,13 @@ function RefundForm({
     "partially_refunded",
   );
   const [reason, setReason] = useState("");
+  const [step, setStep] = useState<"form" | "review">("form");
 
   const remaining = (
     Number.parseFloat(grandTotal) - Number.parseFloat(refundedAmount)
   ).toFixed(2);
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submit = () => {
     setError(undefined);
     startTransition(async () => {
       const r = await refundOrderAction(storeId, orderId, {
@@ -382,18 +442,49 @@ function RefundForm({
       });
       if (!r.ok) {
         setError(r.error);
+        setStep("form");
         return;
       }
-      onDone();
+      onDone(`Refund of ${currencyCode} ${amount} issued.`);
     });
   };
+
+  if (step === "review") {
+    const label = paymentStatus === "refunded" ? "fully refunded" : "partially refunded";
+    return (
+      <PanelShell title="Review refund">
+        <div className="flex flex-col gap-3 text-sm text-[color:var(--ink-900)]">
+          <p>
+            You are about to refund{" "}
+            <strong>{currencyCode} {amount}</strong> to {customerEmail}.
+            The order will be marked <strong>{label}</strong>.
+          </p>
+          <p className="text-[color:var(--danger,#5a1010)]">
+            This cannot be undone.
+          </p>
+          {reason && <p className="opacity-70">Note: {reason}</p>}
+        </div>
+        <FormError error={error} />
+        <div className="flex items-center gap-3">
+          <SubmitButton pending={pending} label="Confirm refund" />
+          <DismissButton onClick={() => setStep("form")} disabled={pending} label="Go back" />
+        </div>
+      </PanelShell>
+    );
+  }
 
   return (
     <PanelShell title="Issue a refund">
       <p className="text-sm text-[color:var(--ink-900)] opacity-70">
         Refundable: {currencyCode} {remaining}
       </p>
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setStep("review");
+        }}
+        className="flex flex-col gap-4"
+      >
         <label className="flex flex-col gap-2">
           <FieldLabel>Amount</FieldLabel>
           <input
@@ -404,7 +495,7 @@ function RefundForm({
             onChange={(e) => setAmount(e.target.value)}
             required
             placeholder="0.00"
-            className="rounded-md border border-[color:var(--ink-900)] border-opacity-30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none"
+            className={inputCls}
           />
         </label>
         <label className="flex flex-col gap-2">
@@ -412,7 +503,7 @@ function RefundForm({
           <select
             value={paymentStatus}
             onChange={(e) => setPaymentStatus(e.target.value as PaymentStatus)}
-            className="rounded-md border border-[color:var(--ink-900)] border-opacity-30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none"
+            className={inputCls}
           >
             <option value="partially_refunded">Partially refunded</option>
             <option value="refunded">Fully refunded</option>
@@ -425,18 +516,24 @@ function RefundForm({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="e.g. damaged in transit"
-            className="rounded-md border border-[color:var(--ink-900)] border-opacity-30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none"
+            className={inputCls}
           />
         </label>
-        <FormError error={error} />
         <div className="flex items-center gap-3">
-          <SubmitButton pending={pending} label="Refund" />
-          <CancelButton onClick={onDone} disabled={pending} />
+          <SubmitButton pending={false} label="Review" />
+          <DismissButton onClick={() => onDone()} />
         </div>
       </form>
     </PanelShell>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Shared form primitives
+// ─────────────────────────────────────────────────────────────────────────
+
+const inputCls =
+  "rounded-md border border-[color:var(--ink-900)] border-opacity-30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none";
 
 function SubmitButton({ pending, label }: { pending: boolean; label: string }) {
   return (
@@ -450,12 +547,14 @@ function SubmitButton({ pending, label }: { pending: boolean; label: string }) {
   );
 }
 
-function CancelButton({
+function DismissButton({
   onClick,
   disabled,
+  label = "Cancel",
 }: {
   onClick: () => void;
   disabled?: boolean;
+  label?: string;
 }) {
   return (
     <button
@@ -464,7 +563,7 @@ function CancelButton({
       disabled={disabled}
       className="text-sm text-[color:var(--ink-900)] opacity-70 hover:opacity-100 hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
     >
-      Cancel
+      {label}
     </button>
   );
 }

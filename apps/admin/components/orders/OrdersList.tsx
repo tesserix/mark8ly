@@ -30,9 +30,9 @@ export function OrdersList({ orders }: OrdersListProps) {
       >
         <span>Order</span>
         <span>Customer</span>
-        <span>Status</span>
-        <span>Payment</span>
-        <span>Fulfillment</span>
+        <span title="Operational lifecycle — pending, confirmed, fulfilled, or cancelled">Status</span>
+        <span title="Money state — pending, authorized, paid, failed, or refunded">Payment</span>
+        <span title="Shipping state — unfulfilled, partial, or fulfilled">Fulfillment</span>
         <span className="text-right">Total</span>
       </div>
 

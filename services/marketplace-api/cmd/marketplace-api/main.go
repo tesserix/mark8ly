@@ -257,6 +257,7 @@ func main() {
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log)
+		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, log)
 
 		storefrontDeps = storefront.Deps{
 			Handler:               storefrontHandler,
@@ -265,6 +266,7 @@ func main() {
 			PaymentMethodsHandler: paymentMethodsHandler,
 			ShippingRatesHandler:  shippingRatesHandler,
 			WebhookHandler:        webhookHandler,
+			OrderDetailHandler:    orderDetailHandler,
 			SlugCache:             slugCache,
 			StorefrontKey:         cfg.StorefrontKey,
 			CountryHandler:        countryHandler,

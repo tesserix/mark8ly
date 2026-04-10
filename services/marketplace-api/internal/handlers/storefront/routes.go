@@ -18,6 +18,7 @@ type Deps struct {
 	PaymentMethodsHandler *PaymentMethodsHandler
 	ShippingRatesHandler *ShippingRatesHandler
 	WebhookHandler       *WebhookHandler
+	OrderDetailHandler   *OrderDetailHandler
 	SlugCache            *stores.SlugCache
 	StorefrontKey        string
 	CountryHandler       CountryLister // optional — set when country handler is wired
@@ -56,6 +57,9 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		}
 		if deps.ShippingRatesHandler != nil {
 			group.POST("/shipping-rates", deps.ShippingRatesHandler.GetRates)
+		}
+		if deps.OrderDetailHandler != nil {
+			group.GET("/orders/:id", deps.OrderDetailHandler.GetOrder)
 		}
 	}
 

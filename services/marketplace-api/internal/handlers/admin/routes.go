@@ -32,6 +32,11 @@ type Deps struct {
 	LoyaltyHandler           *LoyaltyHandler
 	CampaignHandler          *CampaignHandler
 	SegmentHandler           *SegmentHandler
+	AccountHandler           *AccountHandler
+	DomainsHandler           *DomainsHandler
+	SubscriptionHandler      *SubscriptionHandler
+	AuditLogsHandler         *AuditLogsHandler
+	NotificationsHandler     *NotificationsHandler
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware          *authz.Middleware
 	InternalSecret           string
@@ -56,6 +61,39 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		adminRoot.GET("/stores",
 			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
 			deps.StoresHandler.List)
+	}
+
+	// Account — S1. Lives outside /stores/:storeId because it's user-scoped.
+	if deps.AccountHandler != nil {
+		account := router.Group("/admin/account", authMW)
+		{
+			account.GET("",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountViewRole),
+				deps.AccountHandler.GetProfile)
+			account.PATCH("",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountEditRole),
+				deps.AccountHandler.UpdateProfile)
+			account.DELETE("",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountDeleteRole),
+				deps.AccountHandler.DeleteAccount)
+			account.POST("/mfa/enable",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountEditRole),
+				deps.AccountHandler.EnableMFA)
+			account.POST("/mfa/disable",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountEditRole),
+				deps.AccountHandler.DisableMFA)
+			account.GET("/sessions",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountViewRole),
+				deps.AccountHandler.ListSessions)
+			account.DELETE("/sessions/:id",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountEditRole),
+				deps.AccountHandler.RevokeSession)
+		}
+	}
+
+	// Stripe billing webhook — outside auth chain, signature verified inside handler.
+	if deps.SubscriptionHandler != nil {
+		router.POST("/webhooks/stripe-billing", deps.SubscriptionHandler.HandleWebhook)
 	}
 
 	storeRoute := router.Group("/admin/stores/:storeId", authMW, deps.StoresMiddleware)
@@ -367,6 +405,80 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
 					deps.SegmentHandler.Delete)
 			}
+		}
+
+		// Custom domains — Settings S2.
+		if deps.DomainsHandler != nil {
+			domains := storeRoute.Group("/domains")
+			{
+				domains.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.DomainsViewRole),
+					deps.DomainsHandler.List)
+				domains.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.DomainsEditRole),
+					deps.DomainsHandler.Add)
+				domains.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.DomainsEditRole),
+					deps.DomainsHandler.Remove)
+				domains.POST("/:id/verify",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.DomainsViewRole),
+					deps.DomainsHandler.Verify)
+			}
+		}
+
+		// Subscription — Settings S3.
+		if deps.SubscriptionHandler != nil {
+			sub := storeRoute.Group("/subscription")
+			{
+				sub.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionViewRole),
+					deps.SubscriptionHandler.GetSubscription)
+				sub.POST("/checkout",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+					deps.SubscriptionHandler.CreateCheckout)
+				sub.POST("/portal",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+					deps.SubscriptionHandler.CreatePortal)
+			}
+		}
+
+		// Audit logs — Settings S4.
+		if deps.AuditLogsHandler != nil {
+			auditLogs := storeRoute.Group("/audit-logs")
+			{
+				auditLogs.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.AuditLogsViewRole),
+					deps.AuditLogsHandler.List)
+				auditLogs.GET("/export",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.AuditLogsViewRole),
+					deps.AuditLogsHandler.ExportCSV)
+			}
+		}
+
+		// Notifications — Settings S5.
+		if deps.NotificationsHandler != nil {
+			notifs := storeRoute.Group("/notifications")
+			{
+				notifs.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsViewRole),
+					deps.NotificationsHandler.List)
+				notifs.GET("/unread-count",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsViewRole),
+					deps.NotificationsHandler.GetUnreadCount)
+				notifs.PATCH("/:id/read",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsEditRole),
+					deps.NotificationsHandler.MarkRead)
+				notifs.PATCH("/read-all",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsEditRole),
+					deps.NotificationsHandler.MarkAllRead)
+			}
+			// Notification preferences — same store scope, different path.
+			storeRoute.GET("/notification-preferences",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsViewRole),
+				deps.NotificationsHandler.GetPreferences)
+			storeRoute.PATCH("/notification-preferences",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsEditRole),
+				deps.NotificationsHandler.UpdatePreferences)
 		}
 	}
 }

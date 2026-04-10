@@ -1,0 +1,376 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { formatDistanceToNow } from "date-fns";
+import { Shield, Monitor, Trash2 } from "lucide-react";
+
+import type { AccountProfile, AccountSession } from "@/lib/api/settings-tier2-api";
+import {
+  updateProfile,
+  toggleMFA,
+  revokeSessionAction,
+  deleteAccountAction,
+} from "@/app/settings/actions";
+
+interface AccountSettingsClientProps {
+  profile: AccountProfile | null;
+  sessions: AccountSession[];
+  editable: boolean;
+}
+
+export function AccountSettingsClient({
+  profile,
+  sessions,
+  editable,
+}: AccountSettingsClientProps) {
+  return (
+    <div className="space-y-10">
+      <ProfileSection profile={profile} editable={editable} />
+      <hr className="border-border" />
+      <MFASection mfaEnabled={profile?.mfa_enabled ?? false} editable={editable} />
+      <hr className="border-border" />
+      <SessionsSection sessions={sessions} />
+      <hr className="border-border" />
+      <DangerZone editable={editable} />
+    </div>
+  );
+}
+
+// ─── Profile Form ─────────────────────────────────────────────────────
+
+function ProfileSection({
+  profile,
+  editable,
+}: {
+  profile: AccountProfile | null;
+  editable: boolean;
+}) {
+  const [name, setName] = useState(profile?.name ?? "");
+  const [email, setEmail] = useState(profile?.email ?? "");
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const router = useRouter();
+
+  function handleSave() {
+    setError(null);
+    setSuccess(false);
+    startTransition(async () => {
+      const result = await updateProfile({ name: name.trim(), email: email.trim() });
+      if (!result.ok) {
+        setError(result.message);
+      } else {
+        setSuccess(true);
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
+          Profile
+        </h2>
+        <p className="text-sm text-foreground-secondary">
+          Your personal account details.
+        </p>
+      </div>
+      <div className="grid max-w-md gap-4">
+        <div className="space-y-1.5">
+          <label htmlFor="profile-name" className="text-sm font-medium text-foreground">
+            Name
+          </label>
+          <input
+            id="profile-name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={!editable || isPending}
+            className="h-10 w-full rounded-[6px] border border-border bg-white px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            placeholder="Your name"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor="profile-email" className="text-sm font-medium text-foreground">
+            Email
+          </label>
+          <input
+            id="profile-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={!editable || isPending}
+            className="h-10 w-full rounded-[6px] border border-border bg-white px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            placeholder="you@example.com"
+          />
+        </div>
+      </div>
+      {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+      {success && <p className="text-sm text-[color:var(--moss-700)]">Profile updated.</p>}
+      {editable && (
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isPending}
+          className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
+        >
+          {isPending ? "Saving..." : "Save changes"}
+        </button>
+      )}
+    </section>
+  );
+}
+
+// ─── MFA Section ──────────────────────────────────────────────────────
+
+function MFASection({
+  mfaEnabled,
+  editable,
+}: {
+  mfaEnabled: boolean;
+  editable: boolean;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  function handleToggle() {
+    setError(null);
+    setQrUrl(null);
+    startTransition(async () => {
+      const result = await toggleMFA(!mfaEnabled);
+      if (!result.ok) {
+        setError(result.message);
+      } else {
+        if (result.data.qr_code_url) {
+          setQrUrl(result.data.qr_code_url);
+        }
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="flex items-start gap-4">
+        <Shield className="mt-0.5 h-5 w-5 text-foreground-secondary" aria-hidden="true" />
+        <div className="flex-1 space-y-1">
+          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
+            Two-factor authentication
+          </h2>
+          <p className="text-sm text-foreground-secondary">
+            Add an extra layer of security to your account.
+          </p>
+        </div>
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+            mfaEnabled
+              ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
+              : "bg-[color:var(--ink-900)]/10 text-[color:var(--ink-900)]/60"
+          }`}
+        >
+          {mfaEnabled ? "Enabled" : "Disabled"}
+        </span>
+      </div>
+      {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+      {qrUrl && (
+        <div className="max-w-xs space-y-2 rounded-[6px] bg-white p-4">
+          <p className="text-sm font-medium text-foreground">Scan this QR code with your authenticator app:</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qrUrl} alt="MFA QR code" className="mx-auto h-48 w-48" />
+        </div>
+      )}
+      {editable && (
+        <button
+          type="button"
+          onClick={handleToggle}
+          disabled={isPending}
+          className={`h-10 rounded-[6px] px-5 text-sm font-medium transition-colors disabled:opacity-50 ${
+            mfaEnabled
+              ? "border border-border bg-white text-foreground hover:bg-[color:var(--paper-200)]"
+              : "bg-[color:var(--ink-900)] text-white hover:bg-[color:var(--ink-900)]/90"
+          }`}
+        >
+          {isPending
+            ? "Processing..."
+            : mfaEnabled
+              ? "Disable MFA"
+              : "Enable MFA"}
+        </button>
+      )}
+    </section>
+  );
+}
+
+// ─── Active Sessions ──────────────────────────────────────────────────
+
+function SessionsSection({ sessions }: { sessions: AccountSession[] }) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  function handleRevoke(sessionId: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await revokeSessionAction(sessionId);
+      if (!result.ok) {
+        setError(result.message);
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="flex items-start gap-4">
+        <Monitor className="mt-0.5 h-5 w-5 text-foreground-secondary" aria-hidden="true" />
+        <div className="space-y-1">
+          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
+            Active sessions
+          </h2>
+          <p className="text-sm text-foreground-secondary">
+            Devices where your account is currently signed in.
+          </p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+      {sessions.length === 0 ? (
+        <p className="text-sm text-foreground-secondary">No active sessions found.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="pb-3 pr-4 font-medium text-foreground-secondary">Device</th>
+                <th className="pb-3 pr-4 font-medium text-foreground-secondary">IP address</th>
+                <th className="pb-3 pr-4 font-medium text-foreground-secondary">Last active</th>
+                <th className="pb-3 font-medium text-foreground-secondary" />
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.id} className="border-b border-border">
+                  <td className="py-3 pr-4 text-foreground">
+                    {s.device}
+                    {s.current && (
+                      <span className="ml-2 inline-flex items-center rounded-full bg-[color:var(--moss-700)]/10 px-2 py-0.5 text-xs font-medium text-[color:var(--moss-700)]">
+                        Current
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-4 font-mono text-xs text-foreground-secondary">{s.ip_address}</td>
+                  <td className="py-3 pr-4 text-foreground-secondary">
+                    {formatDistanceToNow(new Date(s.last_active), { addSuffix: true })}
+                  </td>
+                  <td className="py-3 text-right">
+                    {!s.current && (
+                      <button
+                        type="button"
+                        onClick={() => handleRevoke(s.id)}
+                        disabled={isPending}
+                        className="text-xs font-medium text-[color:var(--signal)] hover:underline disabled:opacity-50"
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Danger Zone ──────────────────────────────────────────────────────
+
+function DangerZone({ editable }: { editable: boolean }) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function handleDelete() {
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteAccountAction(confirmation);
+      if (!result.ok) {
+        setError(result.message);
+      } else {
+        window.location.href = "/logout";
+      }
+    });
+  }
+
+  if (!editable) return null;
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[color:var(--danger)]">
+        Danger zone
+      </h2>
+      <div className="rounded-[6px] border border-[color:var(--danger)]/30 p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <Trash2 className="mt-0.5 h-5 w-5 text-[color:var(--danger)]" aria-hidden="true" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-foreground">Delete your account</p>
+            <p className="text-sm text-foreground-secondary">
+              This will permanently delete your account, all stores, and all data. This action cannot be undone.
+            </p>
+          </div>
+        </div>
+        {!showConfirm ? (
+          <button
+            type="button"
+            onClick={() => setShowConfirm(true)}
+            className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90"
+          >
+            Delete account
+          </button>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-foreground">
+              Type <strong>delete my store</strong> to confirm:
+            </p>
+            <input
+              type="text"
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              disabled={isPending}
+              className="h-10 w-full max-w-xs rounded-[6px] border border-[color:var(--danger)]/30 bg-white px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--danger)] focus:outline-none focus:ring-1 focus:ring-[color:var(--danger)] disabled:opacity-50"
+              placeholder="delete my store"
+            />
+            {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isPending || confirmation !== "delete my store"}
+                className="h-10 rounded-[6px] bg-[color:var(--danger)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--danger)]/90 disabled:opacity-50"
+              >
+                {isPending ? "Deleting..." : "Permanently delete"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirm(false);
+                  setConfirmation("");
+                  setError(null);
+                }}
+                className="h-10 rounded-[6px] border border-border bg-white px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)]"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

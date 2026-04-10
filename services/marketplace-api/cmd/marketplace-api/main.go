@@ -29,6 +29,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
+	"github.com/mark8ly/marketplace-api/internal/domain"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
@@ -37,11 +38,13 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/health"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/media"
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
 	"github.com/mark8ly/marketplace-api/pkg/httpserver"
@@ -242,6 +245,41 @@ func main() {
 		campaignHandler := admin.NewCampaignHandler(campaignSvc, campaignRepo, log)
 		segmentHandler := admin.NewSegmentHandler(campaignSvc, log)
 
+		// Settings S1 — Account & Security.
+		accountHandler := admin.NewAccountHandler(cfg.AuthBFFURL, log)
+
+		// Settings S2 — Custom Domains.
+		domainRepo := domain.NewRepository()
+		domainSvc := domain.NewService(domain.ServiceConfig{
+			DB:     conn,
+			Repo:   domainRepo,
+			CF:     nil, // Stub — real Cloudflare client wired in production config
+			Logger: log,
+		})
+		domainsHandler := admin.NewDomainsHandler(domainSvc, log)
+
+		// Settings S3 — Subscription/Billing.
+		subscriptionRepo := subscription.NewRepository()
+		subscriptionSvc := subscription.NewService(subscription.ServiceConfig{
+			DB:     conn,
+			Repo:   subscriptionRepo,
+			Stripe: nil, // Stub — real Stripe client wired in production config
+			Logger: log,
+		})
+		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, cfg.StripeBillingWebhookSecret, log)
+
+		// Settings S4 — Audit Logs.
+		auditLogsHandler := admin.NewAuditLogsHandler(cfg.AuditServiceURL, log)
+
+		// Settings S5 — Notifications.
+		notificationRepo := notification.NewRepository()
+		notificationSvc := notification.NewService(notification.ServiceConfig{
+			DB:     conn,
+			Repo:   notificationRepo,
+			Logger: log,
+		})
+		notificationsHandler := admin.NewNotificationsHandler(notificationSvc, log)
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -261,6 +299,11 @@ func main() {
 			LoyaltyHandler:         loyaltyHandler,
 			CampaignHandler:        campaignHandler,
 			SegmentHandler:         segmentHandler,
+			AccountHandler:         accountHandler,
+			DomainsHandler:         domainsHandler,
+			SubscriptionHandler:    subscriptionHandler,
+			AuditLogsHandler:       auditLogsHandler,
+			NotificationsHandler:   notificationsHandler,
 			StoresMiddleware:        storeMW,
 			AuthzMiddleware:         authzMW,
 			InternalSecret:          cfg.InternalAuthSecret,

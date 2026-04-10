@@ -139,6 +139,11 @@ const navigation: NavSection[] = [
       { label: "Payments", href: "/settings/payments" },
       { label: "Shipping", href: "/settings/shipping" },
       { label: "Tax", href: "/settings/tax" },
+      { label: "Domains", href: "/settings/domains" },
+      { label: "Subscription", href: "/settings/subscription" },
+      { label: "Account", href: "/settings/account" },
+      { label: "Audit Logs", href: "/settings/audit-logs" },
+      { label: "Notifications", href: "/settings/notifications" },
     ],
   },
   {
@@ -499,6 +504,21 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/settings/storefront")) {
     return { eyebrow: "Storefront", title: "Theme & Layout" };
+  }
+  if (pathname.startsWith("/settings/account")) {
+    return { eyebrow: "Settings", title: "Account" };
+  }
+  if (pathname.startsWith("/settings/domains")) {
+    return { eyebrow: "Settings", title: "Custom Domains" };
+  }
+  if (pathname.startsWith("/settings/subscription")) {
+    return { eyebrow: "Settings", title: "Subscription" };
+  }
+  if (pathname.startsWith("/settings/audit-logs")) {
+    return { eyebrow: "Settings", title: "Audit Logs" };
+  }
+  if (pathname.startsWith("/settings/notifications")) {
+    return { eyebrow: "Settings", title: "Notifications" };
   }
   if (pathname.startsWith("/marketing/coupons")) {
     return { eyebrow: "Marketing", title: "Coupons" };

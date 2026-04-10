@@ -1,0 +1,611 @@
+// apps/admin/lib/api/settings-tier2-api.ts
+//
+// Typed API client for Settings Tier 2 (S1–S5) endpoints:
+// S1 Account, S2 Custom Domains, S3 Subscription, S4 Audit Logs,
+// S5 Notifications. Follows the same calling convention as
+// marketplace-api.ts and settings-api.ts.
+
+import type { SessionHeaders, MutationResult, MutationError } from "./marketplace-api";
+
+const MARKETPLACE_API_URL =
+  process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
+
+// ─────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────
+
+interface ApiError {
+  error: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+function commonHeaders(session: SessionHeaders): HeadersInit {
+  return {
+    "X-User-Id": session.userId,
+    "X-Tenant-Id": session.tenantId,
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+}
+
+function readHeaders(session: SessionHeaders): HeadersInit {
+  return {
+    "X-User-Id": session.userId,
+    "X-Tenant-Id": session.tenantId,
+    Accept: "application/json",
+  };
+}
+
+async function parseMutationError(res: Response): Promise<MutationError> {
+  const body = (await res.json().catch(() => null)) as ApiError | null;
+  return {
+    code: body?.error ?? "unknown_error",
+    message: body?.message ?? `marketplace-api returned ${res.status}`,
+    field:
+      typeof body?.details?.field === "string"
+        ? (body.details.field as string)
+        : undefined,
+    details: body?.details,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// S1 — Account
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AccountProfile {
+  user_id: string;
+  name: string;
+  email: string;
+  mfa_enabled: boolean;
+  created_at: string;
+}
+
+export interface AccountSession {
+  id: string;
+  device: string;
+  ip_address: string;
+  last_active: string;
+  current: boolean;
+}
+
+export async function getAccountProfile(
+  session: SessionHeaders,
+): Promise<AccountProfile | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/account/profile`,
+    { cache: "no-store", headers: readHeaders(session) },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: getAccountProfile ${res.status}`);
+  }
+  const body = (await res.json()) as { data: AccountProfile };
+  return body.data;
+}
+
+export async function updateAccountProfile(
+  body: { name?: string; email?: string },
+  session: SessionHeaders,
+): Promise<MutationResult<AccountProfile>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/account/profile`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const data = (await res.json()) as { data: AccountProfile };
+  return { ok: true, data: data.data };
+}
+
+export async function listAccountSessions(
+  session: SessionHeaders,
+): Promise<AccountSession[]> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/account/sessions`,
+    { cache: "no-store", headers: readHeaders(session) },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return [];
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: listAccountSessions ${res.status}`);
+  }
+  const body = (await res.json()) as { data: AccountSession[] };
+  return body.data ?? [];
+}
+
+export async function enableMFA(
+  session: SessionHeaders,
+): Promise<MutationResult<{ qr_code_url: string }>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/account/mfa/enable`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const data = (await res.json()) as { data: { qr_code_url: string } };
+  return { ok: true, data: data.data };
+}
+
+export async function disableMFA(
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/account/mfa/disable`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: true };
+}
+
+export async function revokeSession(
+  sessionId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/account/sessions/${sessionId}`,
+    {
+      method: "DELETE",
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+      },
+    },
+  );
+  if (res.status === 204 || res.ok) {
+    return { ok: true, data: true };
+  }
+  return { ok: false, error: await parseMutationError(res) };
+}
+
+export async function deleteAccount(
+  confirmation: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/account`,
+    {
+      method: "DELETE",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ confirmation }),
+    },
+  );
+  if (res.status === 204 || res.ok) {
+    return { ok: true, data: true };
+  }
+  return { ok: false, error: await parseMutationError(res) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// S2 — Custom Domains
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CustomDomain {
+  id: string;
+  domain: string;
+  status: "pending" | "verifying" | "active" | "error" | "removing";
+  ssl_status: "pending" | "active" | "error";
+  verified_at: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export async function listDomains(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<CustomDomain[]> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/domains`,
+    { cache: "no-store", headers: readHeaders(session) },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return [];
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: listDomains ${res.status}`);
+  }
+  const body = (await res.json()) as { data: CustomDomain[] };
+  return body.data ?? [];
+}
+
+export async function addDomain(
+  storeId: string,
+  body: { domain: string; cf_api_token: string },
+  session: SessionHeaders,
+): Promise<MutationResult<CustomDomain>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/domains`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const data = (await res.json()) as { data: CustomDomain };
+  return { ok: true, data: data.data };
+}
+
+export async function removeDomain(
+  storeId: string,
+  domainId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/domains/${domainId}`,
+    {
+      method: "DELETE",
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+      },
+    },
+  );
+  if (res.status === 204 || res.ok) {
+    return { ok: true, data: true };
+  }
+  return { ok: false, error: await parseMutationError(res) };
+}
+
+export async function verifyDomain(
+  storeId: string,
+  domainId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<CustomDomain>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/domains/${domainId}/verify`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const data = (await res.json()) as { data: CustomDomain };
+  return { ok: true, data: data.data };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// S3 — Subscription
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface StoreSubscription {
+  id: string;
+  plan: "free" | "starter" | "pro" | "enterprise";
+  status: "active" | "trialing" | "past_due" | "cancelled" | "incomplete";
+  current_period_start: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+}
+
+export async function getSubscription(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<StoreSubscription | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/subscription`,
+    { cache: "no-store", headers: readHeaders(session) },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: getSubscription ${res.status}`);
+  }
+  const body = (await res.json()) as { data: StoreSubscription };
+  return body.data;
+}
+
+export async function createCheckoutSession(
+  storeId: string,
+  plan: string,
+  session: SessionHeaders,
+): Promise<MutationResult<{ checkout_url: string }>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/subscription/checkout`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ plan }),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const data = (await res.json()) as { data: { checkout_url: string } };
+  return { ok: true, data: data.data };
+}
+
+export async function createPortalSession(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<{ portal_url: string }>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/subscription/portal`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const data = (await res.json()) as { data: { portal_url: string } };
+  return { ok: true, data: data.data };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// S4 — Audit Logs
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  user_email: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  status: string;
+  severity: string;
+  ip_address: string;
+  user_agent: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuditLogsQuery {
+  user?: string;
+  action?: string;
+  resource_type?: string;
+  severity?: string;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AuditLogsResponse {
+  data: AuditLogEntry[];
+  meta: { page: number; page_size: number; total: number; total_pages: number };
+}
+
+export async function listAuditLogs(
+  storeId: string,
+  query: AuditLogsQuery,
+  session: SessionHeaders,
+): Promise<AuditLogsResponse | null> {
+  const params = new URLSearchParams();
+  if (query.user) params.set("user", query.user);
+  if (query.action) params.set("action", query.action);
+  if (query.resource_type) params.set("resource_type", query.resource_type);
+  if (query.severity) params.set("severity", query.severity);
+  if (query.date_from) params.set("date_from", query.date_from);
+  if (query.date_to) params.set("date_to", query.date_to);
+  if (query.search) params.set("search", query.search);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("page_size", String(query.pageSize));
+  const qs = params.toString();
+
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/audit-logs${
+    qs ? `?${qs}` : ""
+  }`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: readHeaders(session),
+  });
+
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: listAuditLogs ${res.status}: ${errBody?.message ?? "unknown error"}`,
+    );
+  }
+  return (await res.json()) as AuditLogsResponse;
+}
+
+export async function exportAuditLogsCSV(
+  storeId: string,
+  query: AuditLogsQuery,
+  session: SessionHeaders,
+): Promise<string> {
+  const params = new URLSearchParams();
+  if (query.user) params.set("user", query.user);
+  if (query.action) params.set("action", query.action);
+  if (query.resource_type) params.set("resource_type", query.resource_type);
+  if (query.severity) params.set("severity", query.severity);
+  if (query.date_from) params.set("date_from", query.date_from);
+  if (query.date_to) params.set("date_to", query.date_to);
+  if (query.search) params.set("search", query.search);
+  const qs = params.toString();
+
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/audit-logs/export${
+    qs ? `?${qs}` : ""
+  }`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      "X-User-Id": session.userId,
+      "X-Tenant-Id": session.tenantId,
+      Accept: "text/csv",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`marketplace-api: exportAuditLogsCSV ${res.status}`);
+  }
+  return await res.text();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// S5 — Notifications
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string | null;
+  resource_type: string | null;
+  resource_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationPreferences {
+  new_order: boolean;
+  low_stock: boolean;
+  return_requested: boolean;
+  payment_received: boolean;
+  review_submitted: boolean;
+}
+
+export async function listNotifications(
+  storeId: string,
+  unreadOnly: boolean,
+  session: SessionHeaders,
+): Promise<Notification[]> {
+  const params = new URLSearchParams();
+  if (unreadOnly) params.set("unread_only", "true");
+  const qs = params.toString();
+
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications${
+    qs ? `?${qs}` : ""
+  }`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: readHeaders(session),
+  });
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return [];
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: listNotifications ${res.status}`);
+  }
+  const body = (await res.json()) as { data: Notification[] };
+  return body.data ?? [];
+}
+
+export async function getUnreadCount(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<number> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications/unread-count`,
+    { cache: "no-store", headers: readHeaders(session) },
+  );
+  if (!res.ok) {
+    return 0;
+  }
+  const body = (await res.json()) as { data: { count: number } };
+  return body.data?.count ?? 0;
+}
+
+export async function markNotificationRead(
+  storeId: string,
+  notificationId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications/${notificationId}/read`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: true };
+}
+
+export async function markAllNotificationsRead(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications/read-all`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: true };
+}
+
+export async function getNotificationPreferences(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<NotificationPreferences | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications/preferences`,
+    { cache: "no-store", headers: readHeaders(session) },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: getNotificationPreferences ${res.status}`);
+  }
+  const body = (await res.json()) as { data: NotificationPreferences };
+  return body.data;
+}
+
+export async function updateNotificationPreferences(
+  storeId: string,
+  prefs: Partial<NotificationPreferences>,
+  session: SessionHeaders,
+): Promise<MutationResult<NotificationPreferences>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications/preferences`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(prefs),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const data = (await res.json()) as { data: NotificationPreferences };
+  return { ok: true, data: data.data };
+}

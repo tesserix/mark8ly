@@ -17,7 +17,7 @@
 | 9 | M1: Coupons (CRUD, validate, checkout, rate limiting) | Done | `marketing-m1-coupons.md` |
 | 10 | M2: Gift Cards (issue, balance, checkout as payment) | Done | `marketing-m2-gift-cards.md` |
 | 11 | M3: Loyalty Program (points, tiers, referrals, expiry) | Done | `marketing-m3-loyalty.md` |
-| 12 | M4: Campaigns (email, segments, send worker, templates) | In Progress | `marketing-m4-campaigns.md` |
+| 12 | M4: Campaigns (email, segments, send worker, templates) | Done | `marketing-m4-campaigns.md` |
 | **Customers & Reviews** |
 | 13 | C1: Storefront Auth (GIP, session middleware, /account) | Planned | `customers-c1-storefront-auth.md` |
 | 14 | C2: Customer Profiles (admin list, detail, block/unblock) | Planned | `customers-c2-profiles.md` |
@@ -43,7 +43,7 @@
 | 30 | P2: Performance (Next.js Image, N+1 audit, bundles) | Planned | `prod-p2-performance.md` |
 | 31 | P3: Dependencies & Tooling (updates, Dependabot, docs) | Planned | `prod-p3-dependencies-tooling.md` |
 
-**Progress: 11 of 31 done (35%)**
+**Progress: 12 of 31 done (39%)**
 
 ---
 
@@ -51,7 +51,7 @@
 
 | Phase | Items | Focus |
 |-------|-------|-------|
-| **Now** | M4 (finishing) | Complete marketing suite |
+| **Now** | P0 + D1 | Security fixes + Dashboard |
 | **Week 1-2** | P0 + D1 | Security fixes + Dashboard (first thing merchants see) |
 | **Week 3-4** | B1 + C1 | Branding (store identity) + Customer auth (shopper accounts) |
 | **Week 5-6** | C2 + C3 + C4 | Customer profiles, reviews, wishlists |

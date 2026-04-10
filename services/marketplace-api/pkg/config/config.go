@@ -42,6 +42,10 @@ type Config struct {
 	// session cookies. When empty, OptionalCustomerAuth always yields
 	// guest context — fine for local dev without auth-bff.
 	CustomerSessionSecret string `envconfig:"CUSTOMER_SESSION_SECRET" default:""`
+	// GIPProjectID is the Google Identity Platform project ID used to verify
+	// mobile Bearer tokens. When empty, GIPBearerAuth rejects all requests —
+	// fine for dev environments that don't use mobile auth.
+	GIPProjectID string `envconfig:"GIP_PROJECT_ID" default:""`
 
 	// S1 — auth-bff URL for MFA/session proxying.
 	AuthBFFURL string `envconfig:"AUTH_BFF_URL" default:""`

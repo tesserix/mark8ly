@@ -32,6 +32,13 @@ var codeStatus = map[apperrors.Code]int{
 	apperrors.CodePayloadTooLarge:         http.StatusRequestEntityTooLarge,
 	apperrors.CodeUnsupportedMediaType:    http.StatusUnsupportedMediaType,
 	apperrors.CodeRateLimited:             http.StatusTooManyRequests,
+
+	// Orders slice 1.
+	apperrors.CodeInvalidTransition:        http.StatusConflict,
+	apperrors.CodeRefundExceedsTotal:       http.StatusUnprocessableEntity,
+	apperrors.CodeIdempotencyConflict:      http.StatusConflict,
+	apperrors.CodeReturnItemsExceedOrdered: http.StatusUnprocessableEntity,
+	apperrors.CodeRecoveryTooRecent:        http.StatusTooManyRequests,
 }
 
 // RespondErr writes the standard error envelope for the given error.

@@ -32,6 +32,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/health"
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/mode"
+	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -173,14 +174,29 @@ func main() {
 		categoryHandler := admin.NewCategoryHandler(categorySvc, categoryRepo, log)
 		variantHandler := admin.NewVariantHandler(productSvc, log)
 		mediaHandler := admin.NewMediaHandler(productSvc, uploader, log)
+
+		// Orders slice 1 wiring (M2/M4).
+		orderRepo := order.NewRepository()
+		returnRepo := order.NewReturnRepository()
+		abandonedCartRepo := order.NewAbandonedCartRepository()
+		orderSvc := order.NewService(conn, orderRepo, outboxRepo)
+		returnSvc := order.NewReturnService(conn, returnRepo, orderRepo, orderSvc, outboxRepo)
+		abandonedCartSvc := order.NewAbandonedCartService(conn, abandonedCartRepo, outboxRepo)
+		ordersHandler := admin.NewOrdersHandler(conn, orderSvc, orderRepo, log)
+		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log)
+		abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, log)
+
 		adminDeps = admin.Deps{
-			ProductHandler:   productHandler,
-			CategoryHandler:  categoryHandler,
-			VariantHandler:   variantHandler,
-			MediaHandler:     mediaHandler,
-			StoresMiddleware: storeMW,
-			AuthzMiddleware:  authzMW,
-			InternalSecret:   cfg.InternalAuthSecret,
+			ProductHandler:        productHandler,
+			CategoryHandler:       categoryHandler,
+			VariantHandler:        variantHandler,
+			MediaHandler:          mediaHandler,
+			OrdersHandler:         ordersHandler,
+			ReturnsHandler:        returnsHandler,
+			AbandonedCartsHandler: abandonedCartsHandler,
+			StoresMiddleware:      storeMW,
+			AuthzMiddleware:       authzMW,
+			InternalSecret:        cfg.InternalAuthSecret,
 		}
 	}
 

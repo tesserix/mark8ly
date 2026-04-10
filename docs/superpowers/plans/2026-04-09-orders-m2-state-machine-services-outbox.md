@@ -1,5 +1,18 @@
 # Orders M2 — state machine, services, and transactional outbox drainer
 
+> **STATUS — SHIPPED 2026-04-10.** All 11 tasks landed on `main` across 11 commits (T1 `30bee4a` through T11 `f0635db`). Three deliberate deviations from the plan as written:
+>
+> 1. **Tasks 16/17 dropped (drainer scaffold + tests).** Products M3 had already shipped `internal/outbox/publisher.go` — a watermark-bumping loop, NOT the external-delivery drainer this plan assumed. The plan's `go-shared/messaging.Publisher` interface was never imported (Products built its own outbox surface). The decision was **Option A**: orders writes to the existing `outbox_events` and the existing publisher routes events by aggregate to the right `store_watermarks` column.
+> 2. **Migration `000006_store_watermarks_orders`** (replaces M2 Tasks 16/17) adds `store_watermarks.orders_updated_at` and the publisher branches by `outbox.IsOrderAggregate(...)` to bump it independently of `products_updated_at`. Storefront clients can poll the orders signal without being woken on every product edit.
+> 3. **Typed errors live in `pkg/apperrors`, not `internal/order/errors.go`.** New codes (`InvalidTransition`, `RefundExceedsTotal`, `IdempotencyConflict`, `ReturnItemsExceedOrdered`, `RecoveryTooRecent`) plus constructors are appended to the shared envelope. Services return `*apperrors.Error` directly. M4 handlers map them via the existing `codeStatus` table.
+>
+> Other notes:
+> - Cross-package integration tests **require `-p 1`** — without it `internal/outbox` and `internal/order` test packages truncate `outbox_events` mid-flight in each other. Documented in the M2 lifecycle test header.
+> - Within-tx `order_events` rows share Postgres transaction-start `created_at`, so the lifecycle test asserts kinds via `ElementsMatch`, not sequence.
+> - The M2 exit gate (`TestOrderLifecycle_FullJourney` + `TestOrderLifecycle_RefundOverflowGuard`) drives create → confirm → fulfill → return → approve → received → refunded and asserts every `order_events` + every `outbox_events` row + the watermark bump.
+>
+> **The sections below are preserved as historical context.** Future agents should treat the actual files (`internal/order/{status,events,repository,service,return_service,abandoned_cart_service,lifecycle_integration_test}.go`, `migrations/000006_*.sql`) as the source of truth.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the domain logic on top of Orders M1's schema. Land the three orthogonal status Go types with exhaustive transition coverage, the `order` / `return` / `abandoned_cart` service layer with idempotency-keyed create, atomic refund recording, cross-module transaction threading, and the background outbox drainer that publishes shared `outbox_events` rows to notification-service via `go-shared/messaging`. No HTTP handlers, no authorization middleware, no DTOs — this milestone ends when a Go test script can drive a full order lifecycle (create → confirm → fulfill → refund → return → abandoned cart recovery) against real Postgres with every `order_events` row and every `outbox_events` row accounted for.

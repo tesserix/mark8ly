@@ -1,5 +1,15 @@
 # Orders M3 — OpenFGA model additions and permission constants
 
+> **STATUS — SHIPPED 2026-04-10 (heavily reduced scope).** Single commit `8f1b7ea` on `main`. The plan as written is mostly **moot** — reality diverged in three big ways:
+>
+> 1. **There is no `authz/model.fga` file in marketplace-api.** The FGA model lives in `platform-api`. Per the comment in `internal/authz/client.go`: *"marketplace-api NEVER writes tuples — all writes happen in platform-api during onboarding and invitation accept."* The bootstrap program, the model file, and the model-update arc all belong to a different repo.
+> 2. **Authorization is role-based, not permission-based.** Products M4 (already on `main` when Orders M3 ran) settled on `Middleware.RequireTenantRelation(authz.RoleStaff/RoleAdmin/RoleOwner)`. There are no `MarketplaceCanCreateProducts`-style permission constants anywhere in the codebase.
+> 3. **Cross-tenant denial is already enforced generically** by `internal/authz/middleware.go` (404-on-deny per spec §13.1.1). The existing `middleware_test.go` covers it. M3's planned cross-tenant denial integration tests would have been pure duplication.
+>
+> **What actually shipped:** `internal/authz/orders_roles.go` — a single Go file with named role constants for orders / returns / abandoned-carts operations (`OrdersViewRole = RoleStaff`, `OrdersEditRole = RoleAdmin`, `OrdersRefundRole = RoleAdmin`, etc.). M4's route registration imports these instead of inlining role values, giving a single source of truth that documents the role policy in one reviewable place.
+>
+> **The sections below are preserved as historical context.** Future agents extending the orders authz policy should edit `internal/authz/orders_roles.go`, not the model file.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend the committed OpenFGA model in `authz/model.fga` with three new types (`order`, `return`, `abandoned_cart`), extend the existing authz-bootstrap program so it writes the updated model idempotently to the marketplace FGA store, add typed permission constants to `internal/authz/`, and prove cross-tenant denial via integration tests. Zero per-object tuples are written for any order-related entity — the entire model is tenant-scoped, matching Products slice 1.

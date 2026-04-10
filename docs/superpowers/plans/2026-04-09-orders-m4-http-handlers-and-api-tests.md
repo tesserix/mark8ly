@@ -1,5 +1,39 @@
 # Orders M4 — admin HTTP handlers, DTOs, and API integration tests
 
+> **STATUS — SHIPPED 2026-04-10.** All 5 tasks landed on `main` across 5 commits (`6b1484c` through `557a7a3`). The implementation followed the **products-M5a admin handler pattern** rather than this plan's task code blocks (which were authored before the products M4/M5a/M6 work shipped and didn't reflect the actual conventions on main).
+>
+> **What shipped:**
+>
+> - `internal/handlers/admin/orders_dto.go` — request + response DTOs for orders, returns, abandoned-carts (3 wire families, ~370 lines).
+> - `internal/handlers/admin/orders.go` — `OrdersHandler` with `List`, `Get`, `Create` (idempotent), `Confirm`, `MarkFulfilled`, `Cancel`, `Refund`. Sequence-allocation runs inside `order.Service.Unit` so the human order number is consistent with the DB. `storePrefixFromStore` derives the 3-char prefix from the store slug.
+> - `internal/handlers/admin/returns.go` — `ReturnsHandler` with `List`, `Get`, `Request`, `Approve`, `Reject`, `MarkReceived`, `MarkRefunded`. The Request route lives at `/orders/:id/returns` (not `:orderId`) to satisfy gin's per-level param-name uniqueness rule.
+> - `internal/handlers/admin/abandoned_carts.go` — `AbandonedCartsHandler` with `List`, `Get`, `TriggerRecoveryEmail`.
+> - `internal/handlers/admin/routes.go` — extended `Deps` with the 3 new handler fields and registered 14 new routes, all gated via `internal/authz/orders_roles.go` constants.
+> - `internal/handlers/admin/errors.go` — extended `codeStatus` with 5 new mappings (`InvalidTransition→409`, `RefundExceedsTotal→422`, `IdempotencyConflict→409`, `ReturnItemsExceedOrdered→422`, `RecoveryTooRecent→429`).
+> - `cmd/marketplace-api/main.go` — wired `order.Repository`, `order.Service`, `order.ReturnService`, `order.AbandonedCartService` and the three handlers into `adminDeps` for admin/both modes.
+> - `internal/handlers/admin/orders_integration_test.go` — end-to-end happy path (`TestAPI_OrdersHappyPath`) drives create → confirm → fulfill → refund through HTTP and asserts response shape; plus `TestAPI_OrdersAuthDenied` proving viewer-role gets a 404 (not 403) per spec §13.1.1.
+>
+> **Endpoint surface delivered:**
+>
+> ```
+> GET    /api/v1/admin/stores/:storeId/orders                          # OrdersViewRole (staff)
+> POST   /api/v1/admin/stores/:storeId/orders                          # OrdersEditRole (admin)
+> GET    /api/v1/admin/stores/:storeId/orders/:id                      # OrdersViewRole
+> POST   /api/v1/admin/stores/:storeId/orders/:id/confirm              # OrdersEditRole
+> POST   /api/v1/admin/stores/:storeId/orders/:id/fulfill              # OrdersEditRole
+> POST   /api/v1/admin/stores/:storeId/orders/:id/cancel               # OrdersEditRole
+> POST   /api/v1/admin/stores/:storeId/orders/:id/refund               # OrdersRefundRole (admin)
+> POST   /api/v1/admin/stores/:storeId/orders/:id/returns              # ReturnsEditRole
+> GET    /api/v1/admin/stores/:storeId/returns                         # ReturnsViewRole (staff)
+> GET    /api/v1/admin/stores/:storeId/returns/:id                     # ReturnsViewRole
+> POST   /api/v1/admin/stores/:storeId/returns/:id/{approve,reject,received,refunded}  # ReturnsEditRole
+> GET    /api/v1/admin/stores/:storeId/abandoned-carts                 # AbandonedCartsViewRole
+> GET    /api/v1/admin/stores/:storeId/abandoned-carts/:id             # AbandonedCartsViewRole
+> POST   /api/v1/admin/stores/:storeId/abandoned-carts/:id/recovery-email  # AbandonedCartsEditRole
+> ```
+>
+> **The sections below are preserved as historical context.** Future agents should treat the actual handler files as the source of truth; the plan's task code blocks reference helper signatures and DTO names that don't match what's on main.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Expose every method from Orders M2 through a typed, authz-gated admin HTTP surface nested under `/api/v1/admin/stores/:storeId/`. Add the two DTO families (`AdminOrderListItem`, `AdminOrderResponse`, `AdminOrderEvent`, `AdminReturnResponse`, `AdminAbandonedCartListItem`) with strict projection hygiene, map typed service errors to the spec §6.6 error envelope, register routes into the existing marketplace-api Gin engine with `StoreMiddleware` + `fgaMw.Require(...)`, and prove the full lifecycle via HTTP integration tests. At M4 exit, a merchant admin user can drive the entire order → return → refund flow via curl against the running service.

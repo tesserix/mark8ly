@@ -14,13 +14,16 @@ import (
 // Deps groups every dependency the admin route registrar needs.
 // Constructed in cmd/marketplace-api/main.go.
 type Deps struct {
-	ProductHandler   *ProductHandler
-	CategoryHandler  *CategoryHandler
-	VariantHandler   *VariantHandler
-	MediaHandler     *MediaHandler
-	StoresMiddleware gin.HandlerFunc // from stores.StoreMiddleware
-	AuthzMiddleware  *authz.Middleware
-	InternalSecret   string
+	ProductHandler        *ProductHandler
+	CategoryHandler       *CategoryHandler
+	VariantHandler        *VariantHandler
+	MediaHandler          *MediaHandler
+	OrdersHandler         *OrdersHandler
+	ReturnsHandler        *ReturnsHandler
+	AbandonedCartsHandler *AbandonedCartsHandler
+	StoresMiddleware      gin.HandlerFunc // from stores.StoreMiddleware
+	AuthzMiddleware       *authz.Middleware
+	InternalSecret        string
 }
 
 // RegisterAdmin mounts the admin route group on the given router. The
@@ -75,6 +78,81 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			mediaGroup.POST("/:mediaId/recrop",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
 				deps.MediaHandler.Recrop)
+		}
+
+		// Orders — role policy from internal/authz/orders_roles.go.
+		if deps.OrdersHandler != nil {
+			orders := storeRoute.Group("/orders")
+			{
+				orders.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+					deps.OrdersHandler.List)
+				orders.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+					deps.OrdersHandler.Create)
+				orders.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+					deps.OrdersHandler.Get)
+				orders.POST("/:id/confirm",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+					deps.OrdersHandler.Confirm)
+				orders.POST("/:id/fulfill",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+					deps.OrdersHandler.MarkFulfilled)
+				orders.POST("/:id/cancel",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+					deps.OrdersHandler.Cancel)
+				orders.POST("/:id/refund",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersRefundRole),
+					deps.OrdersHandler.Refund)
+			}
+		}
+
+		// Returns — Request lives under /orders/:id/returns (same :id
+		// parameter name as the orders subtree to satisfy gin's per-level
+		// param-name uniqueness rule). State-change actions live under
+		// /returns/:id/<verb>.
+		if deps.ReturnsHandler != nil {
+			storeRoute.POST("/orders/:id/returns",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
+				deps.ReturnsHandler.Request)
+			returns := storeRoute.Group("/returns")
+			{
+				returns.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsViewRole),
+					deps.ReturnsHandler.List)
+				returns.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsViewRole),
+					deps.ReturnsHandler.Get)
+				returns.POST("/:id/approve",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
+					deps.ReturnsHandler.Approve)
+				returns.POST("/:id/reject",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
+					deps.ReturnsHandler.Reject)
+				returns.POST("/:id/received",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
+					deps.ReturnsHandler.MarkReceived)
+				returns.POST("/:id/refunded",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
+					deps.ReturnsHandler.MarkRefunded)
+			}
+		}
+
+		// Abandoned carts.
+		if deps.AbandonedCartsHandler != nil {
+			carts := storeRoute.Group("/abandoned-carts")
+			{
+				carts.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.AbandonedCartsViewRole),
+					deps.AbandonedCartsHandler.List)
+				carts.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.AbandonedCartsViewRole),
+					deps.AbandonedCartsHandler.Get)
+				carts.POST("/:id/recovery-email",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.AbandonedCartsEditRole),
+					deps.AbandonedCartsHandler.TriggerRecoveryEmail)
+			}
 		}
 	}
 }

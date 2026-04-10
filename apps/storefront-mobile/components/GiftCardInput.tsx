@@ -52,7 +52,7 @@ export function GiftCardInput() {
             ${giftCard.amount.toFixed(2)} balance
           </Text>
         </View>
-        <Pressable onPress={handleRemove} accessibilityLabel="Remove gift card">
+        <Pressable onPress={handleRemove} accessibilityLabel="Remove gift card" accessibilityRole="button">
           <Text style={styles.removeText}>Remove</Text>
         </Pressable>
       </View>

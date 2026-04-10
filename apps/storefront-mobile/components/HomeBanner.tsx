@@ -22,6 +22,7 @@ export function HomeBanner({ imageUrl, title }: HomeBannerProps) {
         source={{ uri: imageUrl }}
         style={styles.image}
         contentFit="cover"
+        accessibilityLabel={title || "Store banner"}
         transition={300}
       />
       {title ? (

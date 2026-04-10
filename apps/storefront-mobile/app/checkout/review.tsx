@@ -112,7 +112,7 @@ export default function CheckoutReviewScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Order summary</Text>
-            <Pressable onPress={handleEdit} accessibilityLabel="Edit order details">
+            <Pressable onPress={handleEdit} accessibilityLabel="Edit order details" accessibilityRole="button">
               <Text style={styles.editLink}>Edit</Text>
             </Pressable>
           </View>
@@ -125,6 +125,7 @@ export default function CheckoutReviewScreen() {
                     <Image
                       source={{ uri: item.imageUrl }}
                       style={styles.lineImage}
+                      accessibilityLabel={item.title}
                       accessibilityLabel={item.title}
                     />
                   ) : (

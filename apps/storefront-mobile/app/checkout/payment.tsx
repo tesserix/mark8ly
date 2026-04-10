@@ -92,7 +92,7 @@ export default function CheckoutPaymentScreen() {
         <Text style={styles.errorSubtitle}>
           Please check your connection and try again.
         </Text>
-        <Pressable style={styles.retryButton} onPress={() => refetch()}>
+        <Pressable style={styles.retryButton} onPress={() => refetch()} accessibilityRole="button">
           <Text style={styles.retryText}>Retry</Text>
         </Pressable>
       </View>

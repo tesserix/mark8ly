@@ -55,7 +55,7 @@ export function CouponInput() {
               : `-$${coupon.amount.toFixed(2)}`}
           </Text>
         </View>
-        <Pressable onPress={handleRemove} accessibilityLabel="Remove coupon">
+        <Pressable onPress={handleRemove} accessibilityLabel="Remove coupon" accessibilityRole="button">
           <Text style={styles.removeText}>Remove</Text>
         </Pressable>
       </View>

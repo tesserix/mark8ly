@@ -231,7 +231,7 @@ export default function CheckoutDetailsScreen() {
                 <Text style={styles.nudgeText}>
                   We found an account with this email.{" "}
                 </Text>
-                <Pressable onPress={() => setLoginModalVisible(true)}>
+                <Pressable onPress={() => setLoginModalVisible(true)} accessibilityRole="button">
                   <Text style={styles.nudgeLink}>Sign in</Text>
                 </Pressable>
                 <Text style={styles.nudgeText}>

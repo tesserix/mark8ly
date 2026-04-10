@@ -29,7 +29,7 @@ export function NotifyMeButton({ productId }: NotifyMeButtonProps) {
       style={styles.button}
       onPress={handlePress}
       disabled={subscribe.isPending || subscribe.isSuccess}
-    >
+     accessibilityRole="button">
       {subscribe.isPending ? (
         <ActivityIndicator size="small" color={theme.elevated} />
       ) : subscribe.isSuccess ? (

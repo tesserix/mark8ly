@@ -28,7 +28,7 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
 
   if (compact) {
     return (
-      <Pressable style={styles.compactCard} onPress={handlePress}>
+      <Pressable style={styles.compactCard} onPress={handlePress} accessibilityRole="button">
         <View style={styles.compactImageContainer}>
           {thumbnail ? (
             <Image
@@ -52,7 +52,7 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
   }
 
   return (
-    <Pressable style={styles.card} onPress={handlePress}>
+    <Pressable style={styles.card} onPress={handlePress} accessibilityRole="button">
       <View style={styles.imageContainer}>
         {thumbnail ? (
           <Image

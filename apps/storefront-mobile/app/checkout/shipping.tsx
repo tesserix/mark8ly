@@ -86,7 +86,7 @@ export default function CheckoutShippingScreen() {
         <Text style={styles.errorSubtitle}>
           Please check your connection and try again.
         </Text>
-        <Pressable style={styles.retryButton} onPress={() => refetch()}>
+        <Pressable style={styles.retryButton} onPress={() => refetch()} accessibilityRole="button">
           <Text style={styles.retryText}>Retry</Text>
         </Pressable>
       </View>
@@ -102,7 +102,7 @@ export default function CheckoutShippingScreen() {
           We couldn't find shipping options for this address. Please go back and
           check your address.
         </Text>
-        <Pressable style={styles.retryButton} onPress={() => router.back()}>
+        <Pressable style={styles.retryButton} onPress={() => router.back()} accessibilityRole="button">
           <Text style={styles.retryText}>Go back</Text>
         </Pressable>
       </View>

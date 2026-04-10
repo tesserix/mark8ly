@@ -158,6 +158,7 @@ export function CartItem({
               source={{ uri: imageUrl }}
               style={styles.image}
               accessibilityLabel={title}
+              accessibilityLabel={title}
             />
           ) : (
             <View style={styles.imagePlaceholder}>
@@ -340,8 +341,8 @@ function createThemedStyles(theme: { primary: string; accent: string; background
     borderRadius: 6,
   },
   stepperButton: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },

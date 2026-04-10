@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
@@ -309,12 +310,15 @@ export default function CheckoutPage() {
                   className="flex gap-4 py-4"
                 >
                   {item.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={item.imageUrl}
-                      alt={item.title}
-                      className="h-16 w-16 shrink-0 rounded-md bg-[color:var(--paper-200)] object-cover"
-                    />
+                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-[color:var(--paper-200)]">
+                      <Image
+                        src={item.imageUrl}
+                        alt={item.title}
+                        fill
+                        sizes="64px"
+                        className="object-cover"
+                      />
+                    </div>
                   ) : (
                     <div className="h-16 w-16 shrink-0 rounded-md bg-[color:var(--ink-900)]/5" />
                   )}

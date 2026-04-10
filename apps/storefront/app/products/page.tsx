@@ -5,6 +5,7 @@
 // and categories, renders a grid with search, category filter, and
 // pagination.
 
+import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
@@ -153,11 +154,12 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
       >
         <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]">
           {cover ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={cover.url}
               alt={cover.alt ?? product.title}
-              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+              fill
+              sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+              className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-widest text-[color:var(--ink-900)] opacity-30">

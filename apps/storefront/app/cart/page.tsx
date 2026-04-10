@@ -6,6 +6,7 @@
 // subtotal, and a disabled checkout button. Per-store via the
 // CartProvider's slug scoping.
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 
@@ -113,12 +114,15 @@ function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
   return (
     <li className="flex gap-4 py-6">
       {item.imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={item.imageUrl}
-          alt={item.title}
-          className="h-20 w-20 shrink-0 rounded-md bg-[color:var(--paper-200)] object-cover"
-        />
+        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md bg-[color:var(--paper-200)]">
+          <Image
+            src={item.imageUrl}
+            alt={item.title}
+            fill
+            sizes="80px"
+            className="object-cover"
+          />
+        </div>
       ) : (
         <div className="h-20 w-20 shrink-0 rounded-md bg-[color:var(--paper-200)]" />
       )}

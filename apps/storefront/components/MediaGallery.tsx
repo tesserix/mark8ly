@@ -7,6 +7,7 @@
 // Falls back to a placeholder when the product has no media.
 
 import { useState } from "react";
+import Image from "next/image";
 import type { StorefrontMedia } from "@/lib/api/marketplace-api";
 
 interface MediaGalleryProps {
@@ -33,11 +34,13 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
     <div className="flex flex-col gap-3">
       {/* Main image */}
       <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <Image
           src={active.url}
           alt={active.alt ?? productTitle}
-          className="h-full w-full object-cover"
+          fill
+          sizes="(min-width: 1024px) 50vw, 100vw"
+          priority
+          className="object-cover"
         />
         {media.length > 1 && (
           <p
@@ -71,11 +74,12 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
                   : "opacity-50 hover:opacity-100",
               ].join(" ")}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <Image
                 src={m.url}
-                alt={m.alt ?? `${productTitle} ${i + 1}`}
-                className="h-full w-full object-cover"
+                alt={m.alt ?? `${productTitle} — thumbnail ${i + 1}`}
+                fill
+                sizes="64px"
+                className="object-cover"
               />
             </button>
           ))}

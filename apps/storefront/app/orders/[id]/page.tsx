@@ -5,6 +5,7 @@
 // read-only summary: order number, status, items, shipping address,
 // payment status, and totals breakdown.
 
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
@@ -182,12 +183,15 @@ function OrderItemRow({ item }: { item: OrderItem }) {
   return (
     <li className="flex gap-4 py-4">
       {item.image_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={item.image_url}
-          alt={item.title_snapshot}
-          className="h-16 w-16 shrink-0 rounded-md bg-[color:var(--paper-200)] object-cover"
-        />
+        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-[color:var(--paper-200)]">
+          <Image
+            src={item.image_url}
+            alt={item.title_snapshot}
+            fill
+            sizes="64px"
+            className="object-cover"
+          />
+        </div>
       ) : (
         <div className="h-16 w-16 shrink-0 rounded-md bg-[color:var(--ink-900)]/5" />
       )}

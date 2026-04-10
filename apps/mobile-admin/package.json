@@ -1,0 +1,50 @@
+{
+  "name": "@repo/mobile-admin",
+  "version": "0.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "dev": "expo start",
+    "build": "echo 'use eas build'",
+    "lint": "eslint .",
+    "check-types": "tsc --noEmit",
+    "test": "jest"
+  },
+  "dependencies": {
+    "expo": "~52.0.0",
+    "expo-router": "~4.0.0",
+    "expo-camera": "~16.0.0",
+    "expo-image-picker": "~16.0.0",
+    "expo-image-manipulator": "~13.0.0",
+    "expo-secure-store": "~14.0.0",
+    "expo-notifications": "~0.29.0",
+    "expo-device": "~7.0.0",
+    "expo-linking": "~7.0.0",
+    "expo-splash-screen": "~0.29.0",
+    "expo-status-bar": "~2.0.0",
+    "@react-native-firebase/app": "^21.0.0",
+    "@react-native-firebase/auth": "^21.0.0",
+    "@tanstack/react-query": "^5.83.0",
+    "zustand": "^5.0.0",
+    "zod": "^3.23.0",
+    "react": "^19.0.0",
+    "react-native": "~0.76.0",
+    "react-native-safe-area-context": "~5.0.0",
+    "react-native-screens": "~4.4.0",
+    "react-native-gesture-handler": "~2.20.0",
+    "react-native-reanimated": "~3.16.0",
+    "react-native-svg": "~15.8.0",
+    "@tesserix/native": "*",
+    "@tesserix/tokens": "*",
+    "@tesserix/hooks": "*",
+    "@tesserix/icons": "*",
+    "@repo/mobile-shared": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/react": "^19.0.0",
+    "jest": "^29.0.0",
+    "jest-expo": "~52.0.0",
+    "@testing-library/react-native": "^12.0.0"
+  }
+}

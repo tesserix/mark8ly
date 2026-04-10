@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mark8ly/marketplace-api/internal/middleware"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 )
 
@@ -32,6 +33,7 @@ func New(env string, m mode.Mode, log *slog.Logger) Engines {
 	build := func(label string) *gin.Engine {
 		r := gin.New()
 		r.Use(gin.Recovery())
+		r.Use(middleware.SecurityHeaders())
 		r.Use(requestLogger(log.With(slog.String("engine", label))))
 		return r
 	}
@@ -56,6 +58,7 @@ func MergedForBoth(env string, log *slog.Logger) *gin.Engine {
 	}
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.SecurityHeaders())
 	r.Use(requestLogger(log))
 	return r
 }

@@ -38,12 +38,12 @@
 | 26 | B2: Subscription Tiers (gating, pricing, soft downgrade) | Done | `branding-b2-subscription-tiers.md` |
 | 27 | B3: React Native Mobile App (Enterprise) | Planned | `branding-b3-mobile-app.md` |
 | **Production Readiness** |
-| 28 | P0: Critical Security (encryption, headers, CORS) | Planned | `prod-p0-critical-security.md` |
-| 29 | P1: Observability (Prometheus, Sentry, logging) | Planned | `prod-p1-observability.md` |
-| 30 | P2: Performance (Next.js Image, N+1 audit, bundles) | Planned | `prod-p2-performance.md` |
-| 31 | P3: Dependencies & Tooling (updates, Dependabot, docs) | Planned | `prod-p3-dependencies-tooling.md` |
+| 28 | P0: Critical Security (encryption, headers, CORS) | Done | `prod-p0-critical-security.md` |
+| 29 | P1: Observability (Prometheus, Sentry, logging) | Done | `prod-p1-observability.md` |
+| 30 | P2: Performance (Next.js Image, N+1 audit, bundles) | Done | `prod-p2-performance.md` |
+| 31 | P3: Dependencies & Tooling (updates, Dependabot, docs) | Done | `prod-p3-dependencies-tooling.md` |
 
-**Progress: 26 of 31 done (84%)**
+**Progress: 30 of 31 done (97%)**
 
 ---
 

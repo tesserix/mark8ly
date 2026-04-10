@@ -54,6 +54,15 @@ type Config struct {
 	StripeBillingWebhookSecret string `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
 	// S4 — Audit service URL for proxy.
 	AuditServiceURL string `envconfig:"AUDIT_SERVICE_URL" default:""`
+
+	// P0 — CORS allowed origins (comma-separated, storefront engine only).
+	CORSAllowedOrigins string `envconfig:"CORS_ALLOWED_ORIGINS" default:"https://*.mark8ly.com"`
+	// P0 — Encryption mode: "kms" for GCP KMS, "noop" for base64 dev stub.
+	EncryptionMode string `envconfig:"ENCRYPTION_MODE" default:"noop"`
+	// P0 — Sentry DSN for error tracking. Empty disables Sentry.
+	SentryDSN string `envconfig:"SENTRY_DSN" default:""`
+	// P1 — Prometheus metrics port. 0 disables the metrics server.
+	MetricsPort int `envconfig:"METRICS_PORT" default:"9090"`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

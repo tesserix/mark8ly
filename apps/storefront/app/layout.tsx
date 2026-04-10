@@ -8,7 +8,11 @@ import {
   Newsreader,
   Space_Grotesk,
 } from "next/font/google";
+import { headers } from "next/headers";
 import { SkipLink } from "@repo/ui/skip-link";
+
+import { CartProvider } from "@/components/CartProvider";
+import { slugFromHost } from "@/lib/slug";
 
 import "./globals.css";
 
@@ -96,7 +100,7 @@ interface RootLayoutProps {
   children: ReactNode;
 }
 
-export default function RootLayout({ children }: RootLayoutProps) {
+export default async function RootLayout({ children }: RootLayoutProps) {
   const fontVars = [
     sourceSans.variable,
     sourceSerif.variable,
@@ -106,11 +110,16 @@ export default function RootLayout({ children }: RootLayoutProps) {
     spaceGrotesk.variable,
   ].join(" ");
 
+  const h = await headers();
+  const host = h.get("host");
+  const storeSlug =
+    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+
   return (
     <html lang="en" className={fontVars}>
       <body>
         <SkipLink />
-        {children}
+        <CartProvider storeSlug={storeSlug}>{children}</CartProvider>
       </body>
     </html>
   );

@@ -1,9 +1,11 @@
 // apps/storefront/components/StorefrontNav.tsx
 //
-// Minimal storefront navigation bar. Home / Shop / (future Cart). Uses
+// Minimal storefront navigation bar. Home / Shop / Cart. Uses
 // Paper · Ink · Moss tokens so it sits cleanly on any theme background.
 
+import { Suspense } from "react";
 import Link from "next/link";
+import { CartCountBadge } from "./CartCountBadge";
 
 export interface StorefrontNavProps {
   /** Optional store name shown as the left-hand brand slot. */
@@ -37,6 +39,17 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
             className="text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
             Shop
+          </Link>
+        </li>
+        <li>
+          <Link
+            href="/cart"
+            className="inline-flex items-center gap-1.5 text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          >
+            Cart
+            <Suspense fallback={null}>
+              <CartCountBadge />
+            </Suspense>
           </Link>
         </li>
       </ul>

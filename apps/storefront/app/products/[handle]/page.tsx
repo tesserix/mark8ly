@@ -18,6 +18,7 @@ import {
 } from "@/lib/api/marketplace-api";
 import { slugFromHost } from "@/lib/slug";
 import { StorefrontNav } from "@/components/StorefrontNav";
+import { AddToCartButton } from "@/components/AddToCartButton";
 
 export const dynamic = "force-dynamic";
 
@@ -171,14 +172,16 @@ function Details({ product }: { product: StorefrontProduct }) {
         </section>
       )}
 
-      <button
-        type="button"
-        disabled
-        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm text-[color:var(--paper-200)] opacity-50"
-        title="Cart lands in a follow-up slice"
-      >
-        Add to cart (coming soon)
-      </button>
+      <AddToCartButton
+        productId={product.id}
+        variantId={firstVariant?.id ?? product.id}
+        handle={product.handle}
+        title={product.title}
+        priceAmount={firstVariant?.price ?? product.price_range.min}
+        currencyCode={firstVariant?.currency_code ?? product.price_range.currency_code}
+        imageUrl={product.media[0]?.url}
+        inStock={firstVariant?.in_stock ?? true}
+      />
 
       {product.categories.length > 0 && (
         <footer className="border-t border-[color:var(--ink-900)] border-opacity-10 pt-6">

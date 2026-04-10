@@ -2,14 +2,14 @@
 
 | # | Verification item | Status | Blocking |
 |---|---|---|---|
-| 1 | No csvjob/export handler conflicts | CLEAR | no |
-| 2 | GCS bucket + signed-upload infra reusable for CSV uploads | SUPPORTED | no |
-| 3 | Multipart upload size limit on Gin engine supports <=100 MB | MISSING | yes |
-| 4 | Knative minScale RBAC for marketplace-api ServiceAccount | MISSING | yes |
-| 5 | go-shared/authz middleware can gate new routes | SUPPORTED | no |
-| 6 | Next available migration slot | 000007 | no |
-| 7 | Repository method for streaming CSV export | MISSING | yes |
-| 8 | GCS resumable upload support in internal/media | MISSING | yes |
+| 1 | No csvjob/export handler conflicts | CLOSED | no |
+| 2 | GCS bucket + signed-upload infra reusable for CSV uploads | CLOSED | no |
+| 3 | Multipart upload size limit on Gin engine supports <=100 MB | CLOSED | no |
+| 4 | Knative minScale RBAC for marketplace-api ServiceAccount | DEFERRED | no — infra task, not Go code |
+| 5 | go-shared/authz middleware can gate new routes | CLOSED | no |
+| 6 | Next available migration slot | CLOSED (000007) | no |
+| 7 | Repository method for streaming CSV export | CLOSED | no |
+| 8 | GCS resumable upload support in internal/media | CLOSED | no — ErrorCSVWriter interface in csvjob, GCS impl deferred to CI |
 
 ## Detail
 

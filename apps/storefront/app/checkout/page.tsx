@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
+import { StorefrontNav } from "@/components/StorefrontNav";
 import {
   fetchPaymentMethods,
   fetchShippingRates,
@@ -223,7 +224,8 @@ export default function CheckoutPage() {
   if (items.length === 0 && !submitting) {
     return (
       <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
-        <div className="mx-auto max-w-3xl px-6 py-12 sm:px-8">
+        <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
+          <StorefrontNav storeName="" />
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
             Checkout
           </h1>
@@ -245,16 +247,25 @@ export default function CheckoutPage() {
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
-      <div className="mx-auto max-w-3xl px-6 py-12 sm:px-8">
+      <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
+        <StorefrontNav storeName="" />
         <Link
           href="/cart"
           className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
-          Back to cart
+          ← Back to cart
         </Link>
         <h1 className="mt-4 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
           Checkout
         </h1>
+
+        {/* Step indicator */}
+        <CheckoutSteps
+          contactDone={email.trim() !== ""}
+          addressDone={isAddressFilled(address)}
+          shippingDone={selectedShipping !== ""}
+          paymentDone={selectedProvider !== ""}
+        />
 
         {/* Order summary */}
         <section aria-labelledby="order-summary-heading" className="mt-8">
@@ -454,7 +465,7 @@ export default function CheckoutPage() {
                       className="accent-[color:var(--moss-700)]"
                     />
                     <span className="text-sm font-medium text-[color:var(--ink-900)]">
-                      Pay with {pm.provider}
+                      {providerLabel(pm.provider)}
                     </span>
                   </label>
                 ))}
@@ -503,7 +514,7 @@ export default function CheckoutPage() {
 
         {/* Error */}
         {error && (
-          <div role="alert" className="mt-6 rounded-md bg-red-50 px-4 py-3 text-sm text-red-800">
+          <div role="alert" className="mt-6 rounded-md border border-[color:var(--danger,#8B2500)]/20 bg-[color:var(--danger,#8B2500)]/5 px-4 py-3 text-sm text-[color:var(--danger,#8B2500)]">
             {error}
           </div>
         )}
@@ -628,20 +639,97 @@ function AddressForm({ address, onChange }: AddressFormProps) {
       </div>
       <div>
         <label htmlFor="ship-country" className="block text-sm text-[color:var(--ink-900)]">
-          Country code
+          Country
         </label>
-        <input
+        <select
           id="ship-country"
-          type="text"
           required
-          maxLength={2}
           autoComplete="shipping country"
           value={address.country_code}
-          onChange={(e) => update("country_code", e.target.value.toUpperCase())}
+          onChange={(e) => update("country_code", e.target.value)}
           className={inputClass}
-          placeholder="US"
-        />
+        >
+          <option value="">Select country</option>
+          {SUPPORTED_COUNTRIES.map((c) => (
+            <option key={c.code} value={c.code}>{c.name}</option>
+          ))}
+        </select>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Supported countries (matches migration 000008 seed)
+// ---------------------------------------------------------------------------
+
+const SUPPORTED_COUNTRIES = [
+  { code: "AU", name: "Australia" },
+  { code: "CA", name: "Canada" },
+  { code: "DE", name: "Germany" },
+  { code: "ES", name: "Spain" },
+  { code: "FR", name: "France" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "ID", name: "Indonesia" },
+  { code: "IN", name: "India" },
+  { code: "IT", name: "Italy" },
+  { code: "MY", name: "Malaysia" },
+  { code: "NL", name: "Netherlands" },
+  { code: "PH", name: "Philippines" },
+  { code: "SG", name: "Singapore" },
+  { code: "TH", name: "Thailand" },
+  { code: "US", name: "United States" },
+];
+
+// ---------------------------------------------------------------------------
+// Provider label helper
+// ---------------------------------------------------------------------------
+
+function providerLabel(provider: string): string {
+  switch (provider) {
+    case "stripe": return "Credit / Debit card";
+    case "razorpay": return "Card, UPI, or Netbanking";
+    case "paypal": return "PayPal";
+    default: return provider.charAt(0).toUpperCase() + provider.slice(1);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Step indicator
+// ---------------------------------------------------------------------------
+
+interface CheckoutStepsProps {
+  contactDone: boolean;
+  addressDone: boolean;
+  shippingDone: boolean;
+  paymentDone: boolean;
+}
+
+function CheckoutSteps({ contactDone, addressDone, shippingDone, paymentDone }: CheckoutStepsProps) {
+  const steps = [
+    { label: "Contact", done: contactDone },
+    { label: "Address", done: addressDone },
+    { label: "Shipping", done: shippingDone },
+    { label: "Payment", done: paymentDone },
+  ];
+  return (
+    <nav aria-label="Checkout progress" className="mt-6 flex items-center gap-1">
+      {steps.map((step, i) => (
+        <div key={step.label} className="flex items-center gap-1">
+          {i > 0 && (
+            <div className={`h-px w-6 ${step.done || steps[i - 1]!.done ? "bg-[color:var(--moss-700)]" : "bg-[color:var(--ink-900)]/15"}`} />
+          )}
+          <span
+            className={`text-xs tracking-wide ${
+              step.done
+                ? "font-semibold text-[color:var(--moss-700)]"
+                : "text-[color:var(--ink-900)] opacity-40"
+            }`}
+          >
+            {step.label}
+          </span>
+        </div>
+      ))}
+    </nav>
   );
 }

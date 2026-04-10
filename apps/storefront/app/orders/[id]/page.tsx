@@ -10,7 +10,9 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 
 import { slugFromHost } from "@/lib/slug";
+import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
+import { StorefrontNav } from "@/components/StorefrontNav";
 
 export const dynamic = "force-dynamic";
 
@@ -38,14 +40,18 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
     notFound();
   }
 
-  const order = await fetchOrder(slug, id);
+  const [order, store] = await Promise.all([
+    fetchOrder(slug, id),
+    fetchStoreBySlug(slug).catch(() => null),
+  ]);
   if (!order) {
     notFound();
   }
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
-      <div className="mx-auto max-w-3xl px-6 py-12 sm:px-8">
+      <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
+        <StorefrontNav storeName={store?.name ?? ""} />
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60">
           Order confirmed
         </p>

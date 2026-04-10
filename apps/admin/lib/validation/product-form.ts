@@ -42,6 +42,55 @@ export const productFormSchema = z.object({
     .optional()
     .or(z.literal("")),
   categoryIds: z.array(z.string().uuid()),
+  // M7c: full aggregate fields — all optional with `.default([])` so M7b
+  // callers that omit them parse successfully.
+  options: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        name: z.string().min(1),
+        values: z.array(
+          z.object({
+            id: z.string().optional(),
+            value: z.string().min(1),
+          }),
+        ),
+      }),
+    )
+    .optional(),
+  variants: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        key: z.string(),
+        price: z.string(),
+        sku: z.string(),
+        stock: z.number().int().min(0),
+        weight: z.number().min(0),
+        variantImageId: z.string().nullable().optional(),
+        optionValues: z.array(
+          z.object({
+            optionName: z.string(),
+            value: z.string(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
+  media: z
+    .array(
+      z.object({
+        id: z.string(),
+        url: z.string(),
+        alt: z.string(),
+        position: z.number().int(),
+        variant_id: z.string().nullable(),
+        storage_key: z.string(),
+        gcs_path_original: z.string(),
+      }),
+    )
+    .optional(),
+  removed_variant_ids: z.array(z.string()).optional(),
 });
 
 export type ProductFormValues = z.infer<typeof productFormSchema>;

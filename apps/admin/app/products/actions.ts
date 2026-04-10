@@ -128,17 +128,42 @@ export async function updateProductAction(
     return { ok: false, error: { code: "validation_failed", message: first?.message ?? "Invalid input", field: String(first?.path?.[0] ?? "") } };
   }
 
-  // M7b only updates basics. The simple-product price/stock update path
-  // goes through the variant quick-PATCH endpoint, NOT through the product
-  // PATCH. For M7b, we only PATCH the basics (title, handle, description,
-  // status, category_ids); price/stock updates on the simple product form
-  // are deferred to a follow-up that wires the variant quick-PATCH action.
+  // M7c: full aggregate PATCH. Options, variants, media, and
+  // removed_variant_ids are forwarded as-is when the caller supplies
+  // them. M7b callers that don't populate the new arrays still work
+  // because Zod `.default([])` fills them in.
   const body: UpdateProductRequest = {
     handle: parsed.data.handle && parsed.data.handle.length > 0 ? parsed.data.handle : undefined,
     title: parsed.data.title,
     description: parsed.data.description && parsed.data.description.length > 0 ? parsed.data.description : undefined,
     status: parsed.data.status,
     category_ids: parsed.data.categoryIds,
+    options: (parsed.data.options ?? []).map((o) => ({
+      id: o.id,
+      name: o.name,
+      values: o.values.map((v) => ({ id: v.id, value: v.value })),
+    })),
+    variants: (parsed.data.variants ?? []).map((v) => ({
+      id: v.id,
+      sku: v.sku,
+      price: v.price,
+      inventory_quantity: v.stock,
+      weight_grams: Math.round(v.weight * 1000),
+      currency_code: ctx.currencyCode,
+      option_values: v.optionValues.map((ov) => ({
+        option_name: ov.optionName,
+        value: ov.value,
+      })),
+    })),
+    media: (parsed.data.media ?? []).map((m) => ({
+      id: m.id,
+      storage_key: m.storage_key,
+      url: m.url,
+      alt: m.alt,
+      position: m.position,
+      variant_id: m.variant_id,
+    })),
+    removed_variant_ids: parsed.data.removed_variant_ids ?? [],
   };
 
   const result = await updateProduct(ctx.storeId, productId, body, { userId: ctx.userId, tenantId: ctx.tenantId });

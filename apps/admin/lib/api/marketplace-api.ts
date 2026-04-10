@@ -210,7 +210,39 @@ export interface CreateProductRequest {
   category_ids?: string[];
 }
 
-export type UpdateProductRequest = Partial<CreateProductRequest>;
+export type UpdateProductRequest = Partial<
+  Omit<CreateProductRequest, "options" | "variants" | "media">
+> & {
+  // M7c aggregate PATCH fields — forwarded as-is to the backend
+  // PATCH /products/:id endpoint. Wider shapes than the M7b create
+  // endpoint to accommodate option-value ids and media ids.
+  options?: Array<{
+    id?: string;
+    name: string;
+    values: Array<{ id?: string; value: string }>;
+  }>;
+  variants?: Array<{
+    id?: string;
+    sku?: string;
+    price?: string;
+    inventory_quantity?: number;
+    weight_grams?: number;
+    currency_code?: string;
+    inventory_policy?: "deny" | "continue";
+    position?: number;
+    option_values?: Array<{ option_name: string; value: string }>;
+  }>;
+  media?: Array<{
+    id?: string;
+    storage_key: string;
+    url: string;
+    alt?: string;
+    position?: number;
+    media_type?: "image" | "video";
+    variant_id?: string | null;
+  }>;
+  removed_variant_ids?: string[];
+};
 
 export interface AdminCategory {
   id: string;

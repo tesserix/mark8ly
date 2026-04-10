@@ -38,6 +38,10 @@ type Config struct {
 	// fine for local dev and tests; production wiring sets this via
 	// ExternalSecret.
 	StorefrontKey string `envconfig:"MARKETPLACE_STOREFRONT_KEY" default:""`
+	// CustomerSessionSecret is the HMAC key used to validate auth-bff
+	// session cookies. When empty, OptionalCustomerAuth always yields
+	// guest context — fine for local dev without auth-bff.
+	CustomerSessionSecret string `envconfig:"CUSTOMER_SESSION_SECRET" default:""`
 
 	// S1 — auth-bff URL for MFA/session proxying.
 	AuthBFFURL string `envconfig:"AUTH_BFF_URL" default:""`

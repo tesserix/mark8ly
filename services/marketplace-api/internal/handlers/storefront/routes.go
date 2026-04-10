@@ -4,8 +4,11 @@
 package storefront
 
 import (
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 
+	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/ratelimit"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
@@ -26,6 +29,15 @@ type Deps struct {
 	SlugCache             *stores.SlugCache
 	StorefrontKey        string
 	CountryHandler       CountryLister // optional — set when country handler is wired
+	// C1 customer auth.
+	CustomerAccountHandler *CustomerAccountHandler
+	CustomerService        *customer.Service
+	CustomerSessionSecret  string
+	// C3 reviews.
+	ReviewsHandler *ReviewsHandler
+	// C4 wishlists.
+	WishlistHandler *WishlistHandler
+	Logger          *slog.Logger
 }
 
 // CountryLister is satisfied by country.Handler.ListSupported.
@@ -82,6 +94,11 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 				deps.GiftCardHandler.CheckBalance)
 		}
 
+		// Reviews — C3. Public read endpoint (no auth).
+		if deps.ReviewsHandler != nil {
+			group.GET("/products/:handle/reviews", deps.ReviewsHandler.ListProductReviews)
+		}
+
 		// Loyalty — Marketing M3. Public endpoints, no auth.
 		// Rate-limited: 10 req/min per IP for enroll and redeem.
 		if deps.LoyaltyHandler != nil {
@@ -97,6 +114,44 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 				loyaltyGroup.POST("/redeem",
 					ratelimit.PerIP(0.167, 10),
 					deps.LoyaltyHandler.Redeem)
+			}
+		}
+	}
+
+	// C1 — Customer account routes (auth required).
+	if deps.CustomerAccountHandler != nil {
+		optionalAuth := OptionalCustomerAuth(deps.CustomerSessionSecret, deps.CustomerService, deps.Logger)
+		requireAuth := RequireCustomerAuth()
+
+		// Apply optional auth to ALL storefront routes so customer context
+		// is available even on product pages (for future review submission).
+		group.Use(optionalAuth)
+
+		account := group.Group("/account", requireAuth)
+		{
+			account.GET("", deps.CustomerAccountHandler.GetProfile)
+			account.PATCH("", deps.CustomerAccountHandler.UpdateProfile)
+			account.GET("/addresses", deps.CustomerAccountHandler.ListAddresses)
+			account.POST("/addresses", deps.CustomerAccountHandler.CreateAddress)
+			account.PATCH("/addresses/:id", deps.CustomerAccountHandler.UpdateAddress)
+			account.DELETE("/addresses/:id", deps.CustomerAccountHandler.DeleteAddress)
+
+			// C3 — Reviews (authenticated: submit + react).
+			if deps.ReviewsHandler != nil {
+				account.POST("/products/:handle/reviews",
+					ratelimit.PerIP(0.167, 10), // ~10 req/min
+					deps.ReviewsHandler.SubmitReview)
+				account.POST("/reviews/:id/reactions",
+					ratelimit.PerIP(0.167, 10), // ~10 req/min
+					deps.ReviewsHandler.AddReaction)
+			}
+
+			// C4 — Wishlists.
+			if deps.WishlistHandler != nil {
+				account.GET("/wishlist", deps.WishlistHandler.List)
+				account.POST("/wishlist", deps.WishlistHandler.Add)
+				account.DELETE("/wishlist/:productId", deps.WishlistHandler.Remove)
+				account.GET("/wishlist/check/:productId", deps.WishlistHandler.Check)
 			}
 		}
 	}

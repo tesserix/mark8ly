@@ -1078,6 +1078,222 @@ export async function getGiftCard(
   return (await res.json()) as { data: AdminGiftCardDetail };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Customers C2 — admin customer profiles
+// ─────────────────────────────────────────────────────────────────────────
+
+export type CustomerStatus = "active" | "blocked";
+
+export interface AdminCustomer {
+  id: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  avatar_url?: string;
+  tags: string[];
+  status: CustomerStatus;
+  block_reason?: string;
+  notes?: string;
+  marketing_opt_in: boolean;
+  order_count: number;
+  total_spent: number;
+  last_order_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminCustomerAddress {
+  id: string;
+  label?: string;
+  is_default: boolean;
+  name: string;
+  line1: string;
+  line2?: string;
+  city: string;
+  region?: string;
+  postal_code?: string;
+  country_code: string;
+  phone?: string;
+}
+
+export interface AdminCustomerDetail extends AdminCustomer {
+  addresses: AdminCustomerAddress[];
+}
+
+export interface ListCustomersMeta {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+
+export interface ListCustomersResponse {
+  data: AdminCustomer[];
+  meta: ListCustomersMeta;
+}
+
+export interface ListCustomersQuery {
+  search?: string;
+  status?: CustomerStatus;
+  tag?: string;
+  sortBy?: string;
+  sortDir?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listCustomers(
+  storeId: string,
+  query: ListCustomersQuery,
+  session: SessionHeaders,
+): Promise<ListCustomersResponse | null> {
+  const params = new URLSearchParams();
+  if (query.search) params.set("search", query.search);
+  if (query.status) params.set("status", query.status);
+  if (query.tag) params.set("tag", query.tag);
+  if (query.sortBy) params.set("sort_by", query.sortBy);
+  if (query.sortDir) params.set("sort_dir", query.sortDir);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("page_size", String(query.pageSize));
+  const qs = params.toString();
+
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/customers${
+    qs ? `?${qs}` : ""
+  }`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      "X-User-Id": session.userId,
+      "X-Tenant-Id": session.tenantId,
+      Accept: "application/json",
+    },
+  });
+
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: listCustomers ${res.status}: ${
+        errBody?.message ?? "unknown error"
+      }`,
+    );
+  }
+  return (await res.json()) as ListCustomersResponse;
+}
+
+export async function getCustomer(
+  storeId: string,
+  customerId: string,
+  session: SessionHeaders,
+): Promise<AdminCustomerDetail | null> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/customers/${customerId}`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      "X-User-Id": session.userId,
+      "X-Tenant-Id": session.tenantId,
+      Accept: "application/json",
+    },
+  });
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: getCustomer ${res.status}: ${
+        errBody?.message ?? "unknown error"
+      }`,
+    );
+  }
+  return (await res.json()) as AdminCustomerDetail;
+}
+
+export async function updateCustomerTags(
+  storeId: string,
+  customerId: string,
+  tags: string[],
+  session: SessionHeaders,
+): Promise<MutationResult<AdminCustomer>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/customers/${customerId}/tags`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ tags }),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminCustomer };
+}
+
+export async function updateCustomerNotes(
+  storeId: string,
+  customerId: string,
+  notes: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminCustomer>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/customers/${customerId}/notes`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ notes }),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminCustomer };
+}
+
+export async function blockCustomer(
+  storeId: string,
+  customerId: string,
+  reason: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminCustomer>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/customers/${customerId}/block`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ reason }),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminCustomer };
+}
+
+export async function unblockCustomer(
+  storeId: string,
+  customerId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminCustomer>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/customers/${customerId}/unblock`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminCustomer };
+}
+
 export async function issueGiftCard(
   storeId: string,
   input: IssueGiftCardInput,

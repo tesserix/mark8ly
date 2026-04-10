@@ -8,11 +8,14 @@ import {
   Newsreader,
   Space_Grotesk,
 } from "next/font/google";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { SkipLink } from "@repo/ui/skip-link";
 
 import { CartProvider } from "@/components/CartProvider";
+import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
 import { slugFromHost } from "@/lib/slug";
+import { buildLoginUrl, buildLogoutUrl, hasSessionCookie } from "@/lib/auth";
+import { fetchProfile } from "@/lib/api/customer-api";
 
 import "./globals.css";
 
@@ -115,11 +118,44 @@ export default async function RootLayout({ children }: RootLayoutProps) {
   const storeSlug =
     slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
 
+  // --- Customer auth state ---
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore.toString();
+  const authenticated = hasSessionCookie(cookieHeader);
+
+  const protocol = h.get("x-forwarded-proto") ?? "https";
+  const origin = host ? `${protocol}://${host}` : "";
+  const loginUrl = buildLoginUrl(`${origin}/`);
+  const logoutUrl = buildLogoutUrl(`${origin}/`);
+
+  let displayName: string | null = null;
+  let email: string | null = null;
+
+  if (authenticated) {
+    const profile = await fetchProfile(storeSlug, cookieHeader);
+    if (profile) {
+      displayName =
+        [profile.first_name, profile.last_name].filter(Boolean).join(" ") ||
+        null;
+      email = profile.email;
+    }
+  }
+
+  const authState = {
+    isAuthenticated: authenticated,
+    displayName,
+    email,
+    loginUrl,
+    logoutUrl,
+  };
+
   return (
     <html lang="en" className={fontVars}>
       <body>
         <SkipLink />
-        <CartProvider storeSlug={storeSlug}>{children}</CartProvider>
+        <CustomerAuthProvider value={authState}>
+          <CartProvider storeSlug={storeSlug}>{children}</CartProvider>
+        </CustomerAuthProvider>
       </body>
     </html>
   );

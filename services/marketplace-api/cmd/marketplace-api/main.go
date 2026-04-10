@@ -28,6 +28,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/category"
+	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
 	"github.com/mark8ly/marketplace-api/internal/domain"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
@@ -43,8 +44,10 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/product"
+	"github.com/mark8ly/marketplace-api/internal/review"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/internal/wishlist"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
 	"github.com/mark8ly/marketplace-api/pkg/httpserver"
@@ -245,6 +248,14 @@ func main() {
 		campaignHandler := admin.NewCampaignHandler(campaignSvc, campaignRepo, log)
 		segmentHandler := admin.NewSegmentHandler(campaignSvc, log)
 
+		// Customers C2 wiring.
+		customerRepo := customer.NewRepository(conn)
+		customersHandler := admin.NewCustomersHandler(customerRepo, log)
+
+		// Reviews C3 wiring.
+		reviewRepoAdmin := review.NewRepository(conn)
+		reviewsHandler := admin.NewReviewsHandler(reviewRepoAdmin, log)
+
 		// Settings S1 — Account & Security.
 		accountHandler := admin.NewAccountHandler(cfg.AuthBFFURL, log)
 
@@ -299,6 +310,8 @@ func main() {
 			LoyaltyHandler:         loyaltyHandler,
 			CampaignHandler:        campaignHandler,
 			SegmentHandler:         segmentHandler,
+			CustomersHandler:       customersHandler,
+			ReviewsHandler:        reviewsHandler,
 			AccountHandler:         accountHandler,
 			DomainsHandler:         domainsHandler,
 			SubscriptionHandler:    subscriptionHandler,
@@ -352,6 +365,20 @@ func main() {
 		loyaltySvcSF := loyalty.NewService(conn, loyaltyRepoSF, log)
 		sfLoyaltyHandler := storefront.NewLoyaltyHandler(loyaltySvcSF, log)
 
+		// C1 — Customer profiles and account.
+		customerRepo := customer.NewRepository(conn)
+		customerSvc := customer.NewService(conn, customerRepo, log)
+		customerAccountHandler := storefront.NewCustomerAccountHandler(conn, customerRepo, customerSvc, log)
+
+		// C3 — Reviews.
+		reviewRepoSF := review.NewRepository(conn)
+		reviewSvcSF := review.NewService(conn, reviewRepoSF, log)
+		sfReviewsHandler := storefront.NewReviewsHandler(reviewSvcSF, reviewRepoSF, productRepoSF, log)
+
+		// C4 — Wishlists.
+		wishlistRepo := wishlist.NewRepository(conn)
+		wishlistHandler := storefront.NewWishlistHandler(wishlistRepo, log)
+
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
 		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, log)
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
@@ -374,6 +401,15 @@ func main() {
 			SlugCache:             slugCache,
 			StorefrontKey:         cfg.StorefrontKey,
 			CountryHandler:        countryHandler,
+			// C1 customer auth.
+			CustomerAccountHandler: customerAccountHandler,
+			CustomerService:        customerSvc,
+			CustomerSessionSecret:  cfg.CustomerSessionSecret,
+			// C3 reviews.
+			ReviewsHandler: sfReviewsHandler,
+			// C4 wishlists.
+			WishlistHandler: wishlistHandler,
+			Logger:          log,
 		}
 	}
 

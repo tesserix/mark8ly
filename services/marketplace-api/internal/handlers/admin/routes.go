@@ -32,6 +32,8 @@ type Deps struct {
 	LoyaltyHandler           *LoyaltyHandler
 	CampaignHandler          *CampaignHandler
 	SegmentHandler           *SegmentHandler
+	CustomersHandler         *CustomersHandler
+	ReviewsHandler           *ReviewsHandler
 	AccountHandler           *AccountHandler
 	DomainsHandler           *DomainsHandler
 	SubscriptionHandler      *SubscriptionHandler
@@ -388,6 +390,56 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				campaigns.POST("/:id/resume",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
 					deps.CampaignHandler.Resume)
+			}
+		}
+
+		// Customers — C2.
+		if deps.CustomersHandler != nil {
+			customers := storeRoute.Group("/customers")
+			{
+				customers.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CustomersViewRole),
+					deps.CustomersHandler.List)
+				customers.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CustomersViewRole),
+					deps.CustomersHandler.Get)
+				customers.PATCH("/:id/tags",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CustomersEditRole),
+					deps.CustomersHandler.UpdateTags)
+				customers.PATCH("/:id/notes",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CustomersEditRole),
+					deps.CustomersHandler.UpdateNotes)
+				customers.POST("/:id/block",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CustomersEditRole),
+					deps.CustomersHandler.Block)
+				customers.POST("/:id/unblock",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CustomersEditRole),
+					deps.CustomersHandler.Unblock)
+			}
+		}
+
+		// Reviews — C3.
+		if deps.ReviewsHandler != nil {
+			reviews := storeRoute.Group("/reviews")
+			{
+				reviews.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsViewRole),
+					deps.ReviewsHandler.List)
+				reviews.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsViewRole),
+					deps.ReviewsHandler.Get)
+				reviews.POST("/:id/approve",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsEditRole),
+					deps.ReviewsHandler.Approve)
+				reviews.POST("/:id/reject",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsEditRole),
+					deps.ReviewsHandler.Reject)
+				reviews.POST("/:id/featured",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsEditRole),
+					deps.ReviewsHandler.ToggleFeatured)
+				reviews.POST("/:id/reply",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsEditRole),
+					deps.ReviewsHandler.Reply)
 			}
 		}
 

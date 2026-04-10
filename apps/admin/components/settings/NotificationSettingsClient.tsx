@@ -142,8 +142,8 @@ export function NotificationSettingsClient({
           );
         })}
       </div>
-      {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
-      {success && <p className="text-sm text-[color:var(--moss-700)]">Preferences saved.</p>}
+      {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
+      {success && <p role="status" className="text-sm text-[color:var(--moss-700)]">Preferences saved.</p>}
       {editable && (
         <button
           type="button"

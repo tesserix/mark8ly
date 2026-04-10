@@ -92,7 +92,7 @@ function AddDomainForm() {
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
             disabled={isPending}
-            className="h-10 w-full rounded-[6px] border border-border bg-white px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             placeholder="shop.example.com"
           />
         </div>
@@ -106,11 +106,11 @@ function AddDomainForm() {
             value={cfToken}
             onChange={(e) => setCfToken(e.target.value)}
             disabled={isPending}
-            className="h-10 w-full rounded-[6px] border border-border bg-white px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             placeholder="Your Cloudflare API token"
           />
         </div>
-        {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+        {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
         <button
           type="submit"
           disabled={isPending || !domain.trim() || !cfToken.trim()}
@@ -175,9 +175,9 @@ function DomainsList({
           </p>
         </div>
       </div>
-      {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+      {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
       {domains.length === 0 ? (
-        <div className="rounded-[6px] bg-white px-6 py-10 text-center">
+        <div className="py-10 text-center">
           <p className="text-sm text-[color:var(--ink-900)]/50">
             No custom domains configured yet. Add a domain above to get started.
           </p>
@@ -229,7 +229,7 @@ function DomainsList({
                             type="button"
                             onClick={() => handleVerify(d.id)}
                             disabled={isPending}
-                            className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--moss-700)] hover:underline disabled:opacity-50"
+                            className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center gap-1 py-2 px-3 text-xs font-medium text-[color:var(--moss-700)] hover:underline disabled:opacity-50"
                           >
                             <RefreshCw className="h-3 w-3" aria-hidden="true" />
                             Verify
@@ -241,14 +241,14 @@ function DomainsList({
                               type="button"
                               onClick={() => handleRemove(d.id)}
                               disabled={isPending}
-                              className="text-xs font-medium text-[color:var(--danger)] hover:underline disabled:opacity-50"
+                              className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center py-2 px-3 text-xs font-medium text-[color:var(--danger)] hover:underline disabled:opacity-50"
                             >
                               Confirm
                             </button>
                             <button
                               type="button"
                               onClick={() => setConfirmRemoveId(null)}
-                              className="text-xs font-medium text-foreground-secondary hover:underline"
+                              className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center py-2 px-3 text-xs font-medium text-foreground-secondary hover:underline"
                             >
                               Cancel
                             </button>
@@ -258,7 +258,7 @@ function DomainsList({
                             type="button"
                             onClick={() => setConfirmRemoveId(d.id)}
                             disabled={isPending}
-                            className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--signal)] hover:underline disabled:opacity-50"
+                            className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center gap-1 py-2 px-3 text-xs font-medium text-[color:var(--signal)] hover:underline disabled:opacity-50"
                           >
                             <Trash2 className="h-3 w-3" aria-hidden="true" />
                             Remove

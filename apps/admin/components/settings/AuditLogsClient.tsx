@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useCallback } from "react";
+import { useState, useTransition, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatDistanceToNow, format } from "date-fns";
 import {
@@ -88,6 +88,8 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
     });
   }
 
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
   const entries = initialData?.data ?? [];
   const meta = initialData?.meta ?? { page: 1, page_size: 25, total: 0, total_pages: 1 };
 
@@ -100,8 +102,12 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
           <input
             type="text"
             defaultValue={currentSearch}
-            onChange={(e) => updateFilters({ search: e.target.value })}
-            className="h-10 w-full rounded-[6px] border border-border bg-white pl-9 pr-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+            onChange={(e) => {
+              const value = e.target.value;
+              clearTimeout(searchTimeoutRef.current);
+              searchTimeoutRef.current = setTimeout(() => updateFilters({ search: value }), 300);
+            }}
+            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] pl-9 pr-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
             placeholder="Search audit logs..."
           />
         </div>
@@ -109,7 +115,7 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
           type="button"
           onClick={handleExportCSV}
           disabled={isExporting}
-          className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-border bg-white px-4 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+          className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-4 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
         >
           <Download className="h-4 w-4" aria-hidden="true" />
           {isExporting ? "Exporting..." : "Export CSV"}
@@ -147,19 +153,21 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
           label="From"
           value={currentDateFrom}
           type="date"
+          ariaLabel="Filter from date"
           onChange={(v) => updateFilters({ date_from: v })}
         />
         <FilterInput
           label="To"
           value={currentDateTo}
           type="date"
+          ariaLabel="Filter to date"
           onChange={(v) => updateFilters({ date_to: v })}
         />
       </div>
 
       {/* Table */}
       {entries.length === 0 ? (
-        <div className="rounded-[6px] bg-white px-6 py-10 text-center">
+        <div className="py-10 text-center">
           <p className="text-sm text-[color:var(--ink-900)]/50">
             No audit log entries found matching your filters.
           </p>
@@ -205,7 +213,7 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
               type="button"
               disabled={meta.page <= 1}
               onClick={() => updateFilters({ page: String(meta.page - 1) })}
-              className="h-8 rounded-[6px] border border-border bg-white px-3 text-xs font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+              className="h-8 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-xs font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
             >
               Previous
             </button>
@@ -213,7 +221,7 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
               type="button"
               disabled={meta.page >= meta.total_pages}
               onClick={() => updateFilters({ page: String(meta.page + 1) })}
-              className="h-8 rounded-[6px] border border-border bg-white px-3 text-xs font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+              className="h-8 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-xs font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
             >
               Next
             </button>
@@ -240,6 +248,10 @@ function AuditLogRow({
       <tr
         className="border-b border-border cursor-pointer hover:bg-[color:var(--paper-200)]/50"
         onClick={onToggle}
+        tabIndex={0}
+        role="button"
+        aria-expanded={expanded}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
       >
         <td className="py-3 pr-2">
           {expanded ? (
@@ -291,7 +303,7 @@ function AuditLogRow({
               {Object.keys(entry.metadata).length > 0 && (
                 <div className="sm:col-span-2">
                   <span className="font-medium text-foreground-secondary">Metadata:</span>
-                  <pre className="mt-1 overflow-x-auto rounded-[6px] bg-white p-3 text-xs text-foreground">
+                  <pre className="mt-1 overflow-x-auto rounded-[6px] bg-[color:var(--background-elevated)] p-3 text-xs text-foreground">
                     {JSON.stringify(entry.metadata, null, 2)}
                   </pre>
                 </div>
@@ -311,25 +323,35 @@ function FilterInput({
   value,
   placeholder,
   type = "text",
+  ariaLabel,
   onChange,
 }: {
   label: string;
   value: string;
   placeholder?: string;
   type?: string;
+  ariaLabel?: string;
   onChange: (value: string) => void;
 }) {
+  const inputId = `filter-${label.toLowerCase().replace(/\s+/g, "-")}`;
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
   return (
     <div className="space-y-1">
-      <label className="text-[10px] font-medium uppercase tracking-widest text-foreground-tertiary">
+      <label htmlFor={inputId} className="text-[10px] font-medium uppercase tracking-widest text-foreground-tertiary">
         {label}
       </label>
       <input
+        id={inputId}
         type={type}
         defaultValue={value}
         placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 w-36 rounded-[6px] border border-border bg-white px-2 text-xs text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+        aria-label={ariaLabel}
+        onChange={(e) => {
+          const v = e.target.value;
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = setTimeout(() => onChange(v), 300);
+        }}
+        className="h-8 w-full sm:w-36 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-2 text-xs text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
       />
     </div>
   );
@@ -346,15 +368,17 @@ function FilterSelect({
   options: string[];
   onChange: (value: string) => void;
 }) {
+  const selectId = `filter-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <div className="space-y-1">
-      <label className="text-[10px] font-medium uppercase tracking-widest text-foreground-tertiary">
+      <label htmlFor={selectId} className="text-[10px] font-medium uppercase tracking-widest text-foreground-tertiary">
         {label}
       </label>
       <select
+        id={selectId}
         defaultValue={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 w-36 rounded-[6px] border border-border bg-white px-2 text-xs text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+        className="h-8 w-full sm:w-36 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-2 text-xs text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
       >
         <option value="">All</option>
         {options

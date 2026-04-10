@@ -86,9 +86,9 @@ function ProfileSection({
             id="profile-name"
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => { setName(e.target.value); setSuccess(false); }}
             disabled={!editable || isPending}
-            className="h-10 w-full rounded-[6px] border border-border bg-white px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             placeholder="Your name"
           />
         </div>
@@ -100,15 +100,15 @@ function ProfileSection({
             id="profile-email"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => { setEmail(e.target.value); setSuccess(false); }}
             disabled={!editable || isPending}
-            className="h-10 w-full rounded-[6px] border border-border bg-white px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             placeholder="you@example.com"
           />
         </div>
       </div>
-      {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
-      {success && <p className="text-sm text-[color:var(--moss-700)]">Profile updated.</p>}
+      {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
+      {success && <p role="status" className="text-sm text-[color:var(--moss-700)]">Profile updated.</p>}
       {editable && (
         <button
           type="button"
@@ -175,12 +175,12 @@ function MFASection({
           {mfaEnabled ? "Enabled" : "Disabled"}
         </span>
       </div>
-      {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+      {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
       {qrUrl && (
-        <div className="max-w-xs space-y-2 rounded-[6px] bg-white p-4">
+        <div className="max-w-xs space-y-2">
           <p className="text-sm font-medium text-foreground">Scan this QR code with your authenticator app:</p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={qrUrl} alt="MFA QR code" className="mx-auto h-48 w-48" />
+          <img src={qrUrl} alt="MFA QR code" className="h-48 w-48" />
         </div>
       )}
       {editable && (
@@ -190,7 +190,7 @@ function MFASection({
           disabled={isPending}
           className={`h-10 rounded-[6px] px-5 text-sm font-medium transition-colors disabled:opacity-50 ${
             mfaEnabled
-              ? "border border-border bg-white text-foreground hover:bg-[color:var(--paper-200)]"
+              ? "border border-border bg-[color:var(--background-elevated)] text-foreground hover:bg-[color:var(--paper-200)]"
               : "bg-[color:var(--ink-900)] text-white hover:bg-[color:var(--ink-900)]/90"
           }`}
         >
@@ -237,7 +237,7 @@ function SessionsSection({ sessions }: { sessions: AccountSession[] }) {
           </p>
         </div>
       </div>
-      {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+      {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
       {sessions.length === 0 ? (
         <p className="text-sm text-foreground-secondary">No active sessions found.</p>
       ) : (
@@ -343,10 +343,10 @@ function DangerZone({ editable }: { editable: boolean }) {
               value={confirmation}
               onChange={(e) => setConfirmation(e.target.value)}
               disabled={isPending}
-              className="h-10 w-full max-w-xs rounded-[6px] border border-[color:var(--danger)]/30 bg-white px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--danger)] focus:outline-none focus:ring-1 focus:ring-[color:var(--danger)] disabled:opacity-50"
+              className="h-10 w-full max-w-xs rounded-[6px] border border-[color:var(--danger)]/30 bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--danger)] focus:outline-none focus:ring-1 focus:ring-[color:var(--danger)] disabled:opacity-50"
               placeholder="delete my store"
             />
-            {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+            {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
             <div className="flex gap-3">
               <button
                 type="button"
@@ -363,7 +363,7 @@ function DangerZone({ editable }: { editable: boolean }) {
                   setConfirmation("");
                   setError(null);
                 }}
-                className="h-10 rounded-[6px] border border-border bg-white px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)]"
+                className="h-10 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)]"
               >
                 Cancel
               </button>

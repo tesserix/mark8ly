@@ -109,7 +109,7 @@ function CurrentPlanCard({
           </p>
         </div>
       </div>
-      <div className="rounded-[6px] bg-white p-6 space-y-4">
+      <div className="space-y-4">
         <div className="flex items-baseline gap-3">
           <span className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-foreground">
             {PLAN_LABELS[plan] ?? plan}
@@ -132,13 +132,13 @@ function CurrentPlanCard({
             Cancels at end of current period
           </p>
         )}
-        {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
+        {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
         {editable && plan !== "free" && (
           <button
             type="button"
             onClick={handleManageBilling}
             disabled={isPending}
-            className="h-10 rounded-[6px] border border-border bg-white px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+            className="h-10 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
           >
             {isPending ? "Redirecting..." : "Manage billing"}
           </button>
@@ -183,8 +183,8 @@ function PlanComparison({
           Choose the plan that fits your business.
         </p>
       </div>
-      {error && <p className="text-sm text-[color:var(--signal)]">{error}</p>}
-      <div className="overflow-x-auto">
+      {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
+      <div className="hidden sm:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
@@ -237,7 +237,7 @@ function PlanComparison({
                         type="button"
                         onClick={() => handleChangePlan(p)}
                         disabled={isPending}
-                        className="inline-flex items-center gap-1 rounded-[6px] bg-[color:var(--ink-900)] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded-[6px] bg-[color:var(--ink-900)] h-10 px-4 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
                       >
                         {isPending ? "..." : "Choose"}
                         <ArrowRight className="h-3 w-3" aria-hidden="true" />
@@ -249,6 +249,49 @@ function PlanComparison({
             </tfoot>
           )}
         </table>
+      </div>
+      {/* Mobile stacked layout */}
+      <div className="sm:hidden space-y-6">
+        {plans.map((p) => (
+          <div key={p} className="space-y-3">
+            <h3
+              className={`text-sm font-medium ${
+                p === currentPlan ? "text-[color:var(--moss-700)]" : "text-foreground"
+              }`}
+            >
+              {PLAN_LABELS[p]}
+              {p === currentPlan && (
+                <span className="ml-1 text-xs font-normal">(current)</span>
+              )}
+            </h3>
+            <ul className="space-y-1.5">
+              {PLAN_FEATURES.map((row) => (
+                <li key={row.feature} className="flex items-center gap-2 text-sm">
+                  {row[p] ? (
+                    <span className="text-[color:var(--moss-700)]" aria-label="Included">&#10003;</span>
+                  ) : (
+                    <span className="text-[color:var(--ink-900)]/20" aria-label="Not included">---</span>
+                  )}
+                  <span className="text-foreground-secondary">{row.feature}</span>
+                </li>
+              ))}
+            </ul>
+            {editable && p !== currentPlan && p !== "free" && (
+              <button
+                type="button"
+                onClick={() => handleChangePlan(p)}
+                disabled={isPending}
+                className="inline-flex items-center gap-1 rounded-[6px] bg-[color:var(--ink-900)] h-10 px-4 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
+              >
+                {isPending ? "..." : "Choose"}
+                <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              </button>
+            )}
+            {p === currentPlan && (
+              <span className="text-xs text-foreground-secondary">Current plan</span>
+            )}
+          </div>
+        ))}
       </div>
     </section>
   );

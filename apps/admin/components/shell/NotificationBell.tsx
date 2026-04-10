@@ -122,12 +122,23 @@ export function NotificationBell({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
+  // Close on Escape key
+  useEffect(() => {
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    if (open) {
+      document.addEventListener("keydown", handleEscape);
+    }
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [open]);
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         type="button"
         onClick={handleOpen}
-        className="hidden h-11 w-11 items-center justify-center rounded-md text-foreground-secondary transition-colors hover:bg-paper-100 hover:text-foreground sm:inline-flex"
+        className="relative inline-flex h-11 w-11 items-center justify-center rounded-md text-foreground-secondary transition-colors hover:bg-paper-100 hover:text-foreground"
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
       >
         <Bell className="h-4 w-4" aria-hidden="true" />
@@ -137,7 +148,7 @@ export function NotificationBell({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 max-h-96 overflow-y-auto rounded-[6px] border border-border bg-white shadow-lg">
+        <div className="absolute right-0 left-auto top-full z-50 mt-2 w-[calc(100vw-2rem)] sm:w-80 max-h-96 overflow-y-auto rounded-[6px] border border-border bg-[color:var(--background-elevated)] shadow-lg">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="text-sm font-medium text-foreground">Notifications</p>
             {unreadCount > 0 && (

@@ -572,3 +572,165 @@ export async function recropMedia(
   }
   return { ok: true, data: (await res.json()) as RecropMediaResult };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Orders slice 1 — admin orders, returns, abandoned-carts (M4 backend).
+// Phase 1: list types + listOrders + getOrder. Detail/mutation methods land
+// in Phase 2.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type OrderStatus = "pending" | "confirmed" | "fulfilled" | "cancelled";
+export type PaymentStatus =
+  | "pending"
+  | "authorized"
+  | "paid"
+  | "failed"
+  | "refunded"
+  | "partially_refunded";
+export type FulfillmentStatus = "unfulfilled" | "partial" | "fulfilled";
+
+export interface AdminOrderItem {
+  id: string;
+  product_id?: string;
+  variant_id?: string;
+  title_snapshot: string;
+  sku_snapshot: string;
+  option_summary?: string;
+  unit_price: string; // decimal as string
+  quantity: number;
+  line_total: string;
+  currency_code: string;
+}
+
+export interface AdminOrderAddress {
+  kind: string; // "shipping" | "billing"
+  name: string;
+  line1: string;
+  line2?: string;
+  city: string;
+  region?: string;
+  postal_code?: string;
+  country_code: string;
+  phone?: string;
+}
+
+export interface AdminOrder {
+  id: string;
+  tenant_id: string;
+  store_id: string;
+  order_number: string;
+  idempotency_key: string;
+  customer_email: string;
+  customer_name?: string;
+  status: OrderStatus;
+  payment_status: PaymentStatus;
+  fulfillment_status: FulfillmentStatus;
+  subtotal: string;
+  shipping_total: string;
+  tax_total: string;
+  discount_total: string;
+  grand_total: string;
+  refunded_amount: string;
+  currency_code: string;
+  items: AdminOrderItem[];
+  addresses: AdminOrderAddress[];
+  placed_at: string;
+  cancelled_at?: string;
+  fulfilled_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListOrdersMeta {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+
+export interface ListOrdersResponse {
+  data: AdminOrder[];
+  meta: ListOrdersMeta;
+}
+
+export interface ListOrdersQuery {
+  status?: OrderStatus;
+  paymentStatus?: PaymentStatus;
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * Fetch a paginated list of admin orders for a store. Returns null on
+ * 401/403/404 (no-leak pattern matching listProducts) so the page can
+ * render an empty state without surfacing the auth failure to the user.
+ */
+export async function listOrders(
+  storeId: string,
+  query: ListOrdersQuery,
+  session: SessionHeaders,
+): Promise<ListOrdersResponse | null> {
+  const params = new URLSearchParams();
+  if (query.status) params.set("status", query.status);
+  if (query.paymentStatus) params.set("payment_status", query.paymentStatus);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("page_size", String(query.pageSize));
+  const qs = params.toString();
+
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders${
+    qs ? `?${qs}` : ""
+  }`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      "X-User-Id": session.userId,
+      "X-Tenant-Id": session.tenantId,
+      Accept: "application/json",
+    },
+  });
+
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: listOrders ${res.status}: ${
+        errBody?.message ?? "unknown error"
+      }`,
+    );
+  }
+  return (await res.json()) as ListOrdersResponse;
+}
+
+/**
+ * Fetch a single admin order by id. Returns null on not-found / auth
+ * failure for the same no-leak reason as listOrders.
+ */
+export async function getOrder(
+  storeId: string,
+  orderId: string,
+  session: SessionHeaders,
+): Promise<AdminOrder | null> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      "X-User-Id": session.userId,
+      "X-Tenant-Id": session.tenantId,
+      Accept: "application/json",
+    },
+  });
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: getOrder ${res.status}: ${
+        errBody?.message ?? "unknown error"
+      }`,
+    );
+  }
+  return (await res.json()) as AdminOrder;
+}

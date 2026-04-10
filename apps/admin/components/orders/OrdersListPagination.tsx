@@ -1,0 +1,126 @@
+// components/orders/OrdersListPagination.tsx
+//
+// Numbered pagination with prev/next + ellipsis. URL-driven via a
+// callback the caller supplies that preserves other search params.
+// Mirrors components/products/ProductsListPagination — duplicated rather
+// than shared to keep the orders surface independent of products
+// internals during slice 1. A shared `<Pagination/>` primitive is a
+// future refactor when both pages need a third variant.
+
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
+export interface OrdersListPaginationProps {
+  currentPage: number;
+  totalPages: number;
+  /** Builds an href for the given target page, preserving other search params. */
+  buildHref: (page: number) => string;
+}
+
+export function OrdersListPagination({
+  currentPage,
+  totalPages,
+  buildHref,
+}: OrdersListPaginationProps) {
+  if (totalPages <= 1) return null;
+  const pages = buildPageList(currentPage, totalPages);
+  const prevDisabled = currentPage <= 1;
+  const nextDisabled = currentPage >= totalPages;
+  return (
+    <nav className="flex items-center gap-1 pt-4" aria-label="Orders pagination">
+      <PageButton
+        href={prevDisabled ? undefined : buildHref(currentPage - 1)}
+        disabled={prevDisabled}
+        ariaLabel="Previous page"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </PageButton>
+      {pages.map((p, i) =>
+        p === "…" ? (
+          <span
+            key={`ellipsis-${i}`}
+            className="px-2 text-sm text-[color:var(--ink-900)] opacity-50"
+            aria-hidden="true"
+          >
+            …
+          </span>
+        ) : (
+          <PageButton
+            key={p}
+            href={p === currentPage ? undefined : buildHref(p)}
+            current={p === currentPage}
+            ariaLabel={`Page ${p}`}
+          >
+            {p}
+          </PageButton>
+        ),
+      )}
+      <PageButton
+        href={nextDisabled ? undefined : buildHref(currentPage + 1)}
+        disabled={nextDisabled}
+        ariaLabel="Next page"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </PageButton>
+    </nav>
+  );
+}
+
+interface PageButtonProps {
+  href?: string;
+  children: ReactNode;
+  disabled?: boolean;
+  current?: boolean;
+  ariaLabel: string;
+}
+
+function PageButton({
+  href,
+  children,
+  disabled,
+  current,
+  ariaLabel,
+}: PageButtonProps) {
+  const base =
+    "inline-flex h-9 min-w-9 items-center justify-center rounded-md px-3 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]";
+  const variants = current
+    ? "bg-[color:var(--ink-900)] text-[color:var(--paper-200)]"
+    : disabled
+      ? "text-[color:var(--ink-900)] opacity-30"
+      : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5";
+  if (href) {
+    return (
+      <Link
+        href={href}
+        aria-label={ariaLabel}
+        aria-current={current ? "page" : undefined}
+        className={`${base} ${variants}`}
+      >
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <span
+      aria-label={ariaLabel}
+      aria-current={current ? "page" : undefined}
+      aria-disabled={disabled || undefined}
+      className={`${base} ${variants}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function buildPageList(current: number, total: number): (number | "…")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "…")[] = [1];
+  if (current > 3) pages.push("…");
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (current < total - 2) pages.push("…");
+  pages.push(total);
+  return pages;
+}

@@ -47,7 +47,7 @@ export function ReferralsTable({ referrals, total }: ReferralsTableProps) {
           {referrals.map((r) => (
             <tr
               key={r.id}
-              className="border-b border-[color:var(--ink-900)]/6 last:border-0"
+              className="border-b border-ink-200 last:border-0"
             >
               <td className="px-4 py-3 text-xs font-mono text-[color:var(--ink-900)]">
                 {r.referrer_id.slice(0, 8)}...
@@ -57,7 +57,7 @@ export function ReferralsTable({ referrals, total }: ReferralsTableProps) {
               </td>
               <td className="px-4 py-3">
                 <span
-                  className={`inline-block rounded-[4px] px-2 py-0.5 text-xs font-medium capitalize ${
+                  className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium capitalize ${
                     r.status === "completed"
                       ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
                       : "bg-[color:var(--ink-900)]/5 text-ink-500"

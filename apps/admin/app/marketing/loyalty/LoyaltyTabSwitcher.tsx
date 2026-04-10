@@ -27,7 +27,7 @@ export function LoyaltyTabSwitcher({
     <div className="space-y-6">
       {/* Tab bar */}
       <nav
-        className="flex gap-0 border-b border-[color:var(--ink-900)]/6"
+        className="flex gap-0 border-b border-ink-200"
         role="tablist"
       >
         {tabs.map((tab) => (
@@ -39,7 +39,7 @@ export function LoyaltyTabSwitcher({
             className={`px-4 py-2.5 text-sm font-medium transition-colors ${
               activeTab === tab.key
                 ? "border-b-2 border-[color:var(--ink-900)] text-[color:var(--ink-900)]"
-                : "text-[color:var(--ink-900)]/40 hover:text-[color:var(--ink-900)]/70"
+                : "text-ink-500 hover:text-[color:var(--ink-900)]/70"
             }`}
           >
             {tab.label}

@@ -329,7 +329,7 @@ export function ProductForm({
         {rootError && (
           <div
             role="alert"
-            className="rounded-md border border-[color:var(--signal,#C23B22)] border-opacity-40 bg-[color:var(--signal,#C23B22)] bg-opacity-5 px-4 py-3 text-sm text-[color:var(--signal,#C23B22)]"
+            className="rounded-md border border-[color:var(--signal)] border-opacity-40 bg-[color:var(--signal)] bg-opacity-5 px-4 py-3 text-sm text-[color:var(--signal)]"
           >
             {rootError}
           </div>
@@ -378,7 +378,7 @@ export function ProductForm({
                 type="button"
                 onClick={handleDelete}
                 disabled={isPending}
-                className="inline-flex items-center gap-1 rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-3 py-2 text-sm text-[color:var(--signal,#C23B22)] transition-colors hover:bg-[color:var(--signal,#C23B22)] hover:bg-opacity-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-3 py-2 text-sm text-[color:var(--signal)] transition-colors hover:bg-[color:var(--signal)] hover:bg-opacity-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
                 aria-label="Delete product"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete

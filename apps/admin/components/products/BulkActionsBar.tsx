@@ -48,7 +48,7 @@ export function BulkActionsBar({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--paper-200)] shadow-[var(--shadow-1,0_-1px_3px_rgba(0,0,0,0.06))]"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--paper-200)] pb-[env(safe-area-inset-bottom)] shadow-[var(--shadow-1,0_-1px_3px_rgba(0,0,0,0.06))]"
       role="toolbar"
       aria-label="Bulk actions"
     >
@@ -119,7 +119,7 @@ function ActionButton({
 }) {
   const colorClass =
     variant === "danger"
-      ? "text-[color:var(--danger,#8B2500)] hover:bg-[color:var(--danger,#8B2500)] hover:bg-opacity-[0.08]"
+      ? "text-[color:var(--danger)] hover:bg-[color:var(--danger)] hover:bg-opacity-[0.08]"
       : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5";
 
   return (

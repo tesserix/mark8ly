@@ -6,7 +6,7 @@
 // BulkActionsBar, CopyToStoreDialog (single + bulk), BulkDeleteConfirmDialog,
 // and BulkCategoryAssignPopover. Overflow menu per row with "Copy to store".
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, memo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type { ReactNode } from "react";
@@ -66,9 +66,11 @@ export function ProductsList({
   // Overflow menu state
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  const allProductIds = products.map((p) => p.id);
-  const allSelected =
-    products.length > 0 && products.every((p) => selection.isSelected(p.id));
+  const allProductIds = useMemo(() => products.map((p) => p.id), [products]);
+  const allSelected = useMemo(
+    () => products.length > 0 && products.every((p) => selection.isSelected(p.id)),
+    [products, selection],
+  );
 
   const handleSelectAll = useCallback(() => {
     if (allSelected) {
@@ -234,7 +236,7 @@ export function ProductsList({
   );
 }
 
-function ProductRow({
+const ProductRow = memo(function ProductRow({
   product,
   isSelected,
   onToggle,
@@ -352,7 +354,7 @@ function ProductRow({
       </td>
     </tr>
   );
-}
+});
 
 function MediaThumb({
   media,
@@ -402,12 +404,12 @@ function StockCell({
   }
   if (isOutOfStock) {
     return (
-      <span className="text-[color:var(--signal,#C23B22)]">Out of stock</span>
+      <span className="text-[color:var(--signal)]">Out of stock</span>
     );
   }
   if (isLowStock) {
     return (
-      <span className="text-[color:var(--signal,#C23B22)]">
+      <span className="text-[color:var(--signal)]">
         {stock} in stock
       </span>
     );

@@ -1320,3 +1320,285 @@ export async function issueGiftCard(
   }
   return (await res.json()) as { data: AdminGiftCard };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// D1: Dashboard
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface DashboardStats {
+  revenue_today: number;
+  revenue_change_pct: number;
+  revenue_sparkline: number[];
+  orders_today: number;
+  orders_pending: number;
+  orders_fulfilled: number;
+  total_customers: number;
+  new_customers_this_week: number;
+  pending_reviews: number;
+}
+
+export interface RecentOrder {
+  id: string;
+  order_number: string;
+  customer_email: string;
+  grand_total: string;
+  currency_code: string;
+  status: OrderStatus;
+  placed_at: string;
+}
+
+export interface TopProduct {
+  id: string;
+  title: string;
+  image_url: string | null;
+  revenue: string;
+  units_sold: number;
+}
+
+export interface LowStockItem {
+  product_id: string;
+  variant_id: string;
+  product_title: string;
+  variant_title: string;
+  current_quantity: number;
+  threshold: number;
+}
+
+export interface SetupChecklist {
+  has_store_settings: boolean;
+  has_product: boolean;
+  has_storefront: boolean;
+  has_payment: boolean;
+  has_shipping: boolean;
+  has_tax: boolean;
+  has_domain: boolean;
+  has_test_order: boolean;
+}
+
+export interface DashboardResponse {
+  stats: DashboardStats;
+  recent_orders: RecentOrder[];
+  top_products: TopProduct[];
+  low_stock_items: LowStockItem[];
+  setup_checklist: SetupChecklist;
+}
+
+/**
+ * Fetch the admin dashboard overview for a store.
+ */
+export async function fetchDashboard(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<DashboardResponse | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/dashboard`,
+    {
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+        Accept: "application/json",
+      },
+    },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: fetchDashboard ${res.status}: ${errBody?.message ?? "unknown error"}`,
+    );
+  }
+  return (await res.json()) as DashboardResponse;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// D2: Support Tickets
+// ─────────────────────────────────────────────────────────────────────────
+
+export type TicketStatus = "open" | "resolved" | "closed";
+export type TicketPriority = "low" | "medium" | "high";
+
+export interface AdminTicketReply {
+  id: string;
+  ticket_id: string;
+  author_email: string;
+  author_type: "merchant" | "platform";
+  body: string;
+  created_at: string;
+}
+
+export interface AdminTicket {
+  id: string;
+  store_id: string;
+  ticket_number: string;
+  subject: string;
+  description: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  author_email: string;
+  replies: AdminTicketReply[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListTicketsQuery {
+  status?: TicketStatus;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ListTicketsResponse {
+  data: AdminTicket[];
+  meta: ListProductsMeta;
+  counts: { open: number; resolved: number; closed: number };
+}
+
+export interface CreateTicketInput {
+  subject: string;
+  description: string;
+  priority: TicketPriority;
+}
+
+export interface TicketReplyInput {
+  body: string;
+}
+
+/**
+ * List support tickets for a store with optional status/search filtering.
+ */
+export async function listTickets(
+  storeId: string,
+  query: ListTicketsQuery,
+  session: SessionHeaders,
+): Promise<ListTicketsResponse | null> {
+  const params = new URLSearchParams();
+  if (query.status) params.set("status", query.status);
+  if (query.search) params.set("search", query.search);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("page_size", String(query.pageSize));
+  const qs = params.toString();
+
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets${
+    qs ? `?${qs}` : ""
+  }`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      "X-User-Id": session.userId,
+      "X-Tenant-Id": session.tenantId,
+      Accept: "application/json",
+    },
+  });
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: listTickets ${res.status}: ${errBody?.message ?? "unknown error"}`,
+    );
+  }
+  return (await res.json()) as ListTicketsResponse;
+}
+
+/**
+ * Fetch a single ticket by ID with all replies.
+ */
+export async function getTicket(
+  storeId: string,
+  ticketId: string,
+  session: SessionHeaders,
+): Promise<AdminTicket | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets/${ticketId}`,
+    {
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+        Accept: "application/json",
+      },
+    },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: getTicket ${res.status}`);
+  }
+  return (await res.json()) as AdminTicket;
+}
+
+/**
+ * Create a new support ticket.
+ */
+export async function createTicket(
+  storeId: string,
+  input: CreateTicketInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminTicket>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminTicket };
+}
+
+/**
+ * Reply to an existing ticket.
+ */
+export async function replyToTicket(
+  storeId: string,
+  ticketId: string,
+  input: TicketReplyInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminTicketReply>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets/${ticketId}/replies`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminTicketReply };
+}
+
+/**
+ * Update a ticket's status (resolve, close, reopen).
+ */
+export async function updateTicketStatus(
+  storeId: string,
+  ticketId: string,
+  status: TicketStatus,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminTicket>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets/${ticketId}/status`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ status }),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminTicket };
+}

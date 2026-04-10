@@ -26,6 +26,7 @@
     "postcss": "^8.5.8",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "react-easy-crop": "^5.5.7",
     "react-hook-form": "^7.72.1",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",

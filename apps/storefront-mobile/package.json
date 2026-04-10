@@ -8,7 +8,8 @@
     "build": "echo 'use eas build'",
     "lint": "eslint .",
     "check-types": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate-brand": "tsx scripts/generate-brand.ts"
   },
   "dependencies": {
     "expo": "~52.0.0",

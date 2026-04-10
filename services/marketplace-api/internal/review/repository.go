@@ -29,6 +29,7 @@ type Repository interface {
 	UpdateHelpfulCounts(ctx context.Context, reviewID string) error
 	GetAverageRating(ctx context.Context, productID string) (float64, int64, error)
 	HasReviewed(ctx context.Context, storeID, productID, customerEmail string) (bool, error)
+	ListByCustomer(ctx context.Context, storeID, customerProfileID string, page, pageSize int) ([]Review, int64, error)
 }
 
 type gormRepo struct {
@@ -250,6 +251,38 @@ func (r *gormRepo) HasReviewed(ctx context.Context, storeID, productID, customer
 		return false, fmt.Errorf("review: has reviewed: %w", err)
 	}
 	return count > 0, nil
+}
+
+func (r *gormRepo) ListByCustomer(ctx context.Context, storeID, customerProfileID string, page, pageSize int) ([]Review, int64, error) {
+	page, pageSize = defaultPagination(page, pageSize)
+
+	base := r.db.WithContext(ctx).Model(&Review{}).
+		Where("store_id = ? AND customer_profile_id = ?", storeID, customerProfileID)
+
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("review: list by customer count: %w", err)
+	}
+
+	var rows []Review
+	err := base.
+		Preload("Media", func(db *gorm.DB) *gorm.DB {
+			return db.Order("position ASC")
+		}).
+		Preload("Replies", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at ASC")
+		}).
+		Order("created_at DESC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&rows).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("review: list by customer: %w", err)
+	}
+	if rows == nil {
+		rows = []Review{}
+	}
+	return rows, total, nil
 }
 
 // defaultPagination normalises page/pageSize values.

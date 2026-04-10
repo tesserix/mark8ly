@@ -46,6 +46,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/push"
 	"github.com/mark8ly/marketplace-api/internal/pushtoken"
+	"github.com/mark8ly/marketplace-api/internal/notifyme"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
@@ -493,7 +494,8 @@ func main() {
 	if m == mode.Storefront || m == mode.Both {
 		sfPushTokenRepo := pushtoken.NewRepository(conn)
 		sfPushTokenHandler := storefront.NewPushTokenHandler(sfPushTokenRepo, log)
-		sfNotifyMeHandler := storefront.NewNotifyMeHandler(log)
+		sfNotifyMeRepo := notifyme.NewRepository(conn)
+		sfNotifyMeHandler := storefront.NewNotifyMeHandler(sfNotifyMeRepo, log)
 
 		mobileSFDeps = storefront.MobileDeps{
 			Handler:                storefrontDeps.Handler,

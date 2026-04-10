@@ -74,16 +74,6 @@ export function ProductDetails({ product }: ProductDetailsProps) {
             </p>
           )}
         </div>
-        {!inStock && (
-          <p className="text-sm text-[color:var(--signal,#C23B22)]">
-            Out of stock
-          </p>
-        )}
-        {inStock && lowStock && (
-          <p className="text-sm text-[color:var(--warning,#B08A30)]">
-            Low stock — order soon
-          </p>
-        )}
       </header>
 
       {product.description && (
@@ -101,6 +91,19 @@ export function ProductDetails({ product }: ProductDetailsProps) {
           />
         </section>
       )}
+
+      <div aria-live="polite">
+        {!inStock && (
+          <p className="text-sm text-[color:var(--signal,#C23B22)]" role="status">
+            Out of stock
+          </p>
+        )}
+        {inStock && lowStock && (
+          <p className="text-sm text-[color:var(--warning,#B08A30)]" role="status">
+            Low stock — order soon
+          </p>
+        )}
+      </div>
 
       <AddToCartButton
         productId={product.id}

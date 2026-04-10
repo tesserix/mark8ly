@@ -91,7 +91,8 @@ export function ShippingConfigForm({
           <Field label="API key" htmlFor={`${provider}-api-key`}>
             <input
               id={`${provider}-api-key`}
-              type="text"
+              type="password"
+              autoComplete="off"
               value={apiKey}
               onChange={(e) => { setApiKey(e.target.value); setSuccess(false); }}
               placeholder={existing ? "Enter new key to update" : "API key"}
@@ -104,6 +105,7 @@ export function ShippingConfigForm({
             <input
               id={`${provider}-secret-key`}
               type="password"
+              autoComplete="off"
               value={secretKey}
               onChange={(e) => { setSecretKey(e.target.value); setSuccess(false); }}
               placeholder="Optional"
@@ -122,8 +124,8 @@ export function ShippingConfigForm({
               disabled={pending}
               className={inputClass}
             >
-              <option value="test">Test</option>
-              <option value="live">Live</option>
+              <option value="test">Test mode</option>
+              <option value="live">Live mode</option>
             </select>
           </Field>
 
@@ -146,31 +148,31 @@ export function ShippingConfigForm({
           Warehouse address
         </legend>
         <Field label="Warehouse name" htmlFor={`${provider}-wh-name`}>
-          <input id={`${provider}-wh-name`} type="text" value={whName} onChange={(e) => setWhName(e.target.value)} disabled={pending} className={inputClass} />
+          <input id={`${provider}-wh-name`} type="text" autoComplete="organization" value={whName} onChange={(e) => setWhName(e.target.value)} disabled={pending} className={inputClass} />
         </Field>
         <Field label="Address line 1" htmlFor={`${provider}-wh-line1`}>
-          <input id={`${provider}-wh-line1`} type="text" value={whLine1} onChange={(e) => setWhLine1(e.target.value)} disabled={pending} className={inputClass} />
+          <input id={`${provider}-wh-line1`} type="text" autoComplete="address-line1" value={whLine1} onChange={(e) => setWhLine1(e.target.value)} disabled={pending} className={inputClass} />
         </Field>
         <Field label="Address line 2" htmlFor={`${provider}-wh-line2`}>
-          <input id={`${provider}-wh-line2`} type="text" value={whLine2} onChange={(e) => setWhLine2(e.target.value)} disabled={pending} className={inputClass} />
+          <input id={`${provider}-wh-line2`} type="text" autoComplete="address-line2" value={whLine2} onChange={(e) => setWhLine2(e.target.value)} disabled={pending} className={inputClass} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="City" htmlFor={`${provider}-wh-city`}>
-            <input id={`${provider}-wh-city`} type="text" value={whCity} onChange={(e) => setWhCity(e.target.value)} disabled={pending} className={inputClass} />
+            <input id={`${provider}-wh-city`} type="text" autoComplete="address-level2" value={whCity} onChange={(e) => setWhCity(e.target.value)} disabled={pending} className={inputClass} />
           </Field>
           <Field label="Region / State" htmlFor={`${provider}-wh-region`}>
-            <input id={`${provider}-wh-region`} type="text" value={whRegion} onChange={(e) => setWhRegion(e.target.value)} disabled={pending} className={inputClass} />
+            <input id={`${provider}-wh-region`} type="text" autoComplete="address-level1" value={whRegion} onChange={(e) => setWhRegion(e.target.value)} disabled={pending} className={inputClass} />
           </Field>
           <Field label="Postal code" htmlFor={`${provider}-wh-postal`}>
-            <input id={`${provider}-wh-postal`} type="text" value={whPostal} onChange={(e) => setWhPostal(e.target.value)} disabled={pending} className={inputClass} />
+            <input id={`${provider}-wh-postal`} type="text" autoComplete="postal-code" value={whPostal} onChange={(e) => setWhPostal(e.target.value)} disabled={pending} className={inputClass} />
           </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Country" htmlFor={`${provider}-wh-country`}>
-            <input id={`${provider}-wh-country`} type="text" value={whCountry} onChange={(e) => setWhCountry(e.target.value)} disabled={pending} maxLength={2} placeholder="US" className={inputClass} />
+            <input id={`${provider}-wh-country`} type="text" autoComplete="country" value={whCountry} onChange={(e) => setWhCountry(e.target.value)} disabled={pending} maxLength={2} placeholder="US" className={inputClass} />
           </Field>
           <Field label="Phone" htmlFor={`${provider}-wh-phone`}>
-            <input id={`${provider}-wh-phone`} type="tel" value={whPhone} onChange={(e) => setWhPhone(e.target.value)} disabled={pending} className={inputClass} />
+            <input id={`${provider}-wh-phone`} type="tel" autoComplete="tel" value={whPhone} onChange={(e) => setWhPhone(e.target.value)} disabled={pending} className={inputClass} />
           </Field>
         </div>
       </fieldset>
@@ -192,6 +194,9 @@ export function ShippingConfigForm({
               disabled={pending}
               className={inputClass}
             />
+            <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
+              A flat fee added to every shipment to cover packaging and processing costs.
+            </p>
           </Field>
           <Field label="Free shipping threshold" htmlFor={`${provider}-free-shipping`}>
             <input
@@ -217,7 +222,7 @@ export function ShippingConfigForm({
         </div>
       )}
       {success && (
-        <div role="status" className="rounded-[6px] border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+        <div role="status" className="animate-in fade-in duration-300 rounded-[6px] border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-2.5 text-sm text-[color:var(--moss-700)]">
           Configuration saved.
         </div>
       )}

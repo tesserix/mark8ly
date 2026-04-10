@@ -5,7 +5,7 @@
 // mode badge, and action buttons. Accepts a children slot for the
 // inline configuration form that expands on "Configure".
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useRef, useState, useTransition, type ReactNode } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Types
@@ -45,6 +45,7 @@ export function ProviderCard({
     success: boolean;
     error?: string;
   } | null>(null);
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   function handleConfigure() {
     setExpanded((prev) => !prev);
@@ -55,6 +56,8 @@ export function ProviderCard({
   function handleRemove() {
     if (!confirmRemove) {
       setConfirmRemove(true);
+      // Focus the button after React re-renders with confirmation state
+      requestAnimationFrame(() => confirmBtnRef.current?.focus());
       return;
     }
     startRemoveTransition(async () => {
@@ -110,6 +113,7 @@ export function ProviderCard({
             {expanded ? "Close" : "Configure"}
           </button>
           <button
+            ref={confirmBtnRef}
             type="button"
             onClick={handleRemove}
             disabled={removing}
@@ -125,25 +129,27 @@ export function ProviderCard({
       </div>
 
       {/* Test connection feedback */}
-      {testResult && (
-        <div className="px-6 pb-4">
-          {testResult.success ? (
-            <div
-              role="status"
-              className="rounded-[6px] border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800"
-            >
-              Connection successful.
-            </div>
-          ) : (
-            <div
-              role="alert"
-              className="rounded-[6px] border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800"
-            >
-              Connection failed{testResult.error ? `: ${testResult.error}` : "."}
-            </div>
-          )}
-        </div>
-      )}
+      <div aria-live="polite" aria-atomic="true">
+        {testResult && (
+          <div className="px-6 pb-4">
+            {testResult.success ? (
+              <div
+                role="status"
+                className="animate-in fade-in duration-300 rounded-[6px] border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-2.5 text-sm text-[color:var(--moss-700)]"
+              >
+                Connection successful.
+              </div>
+            ) : (
+              <div
+                role="alert"
+                className="rounded-[6px] border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800"
+              >
+                Connection failed{testResult.error ? `: ${testResult.error}` : "."}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Confirm remove warning */}
       {confirmRemove && !removing && (
@@ -159,13 +165,20 @@ export function ProviderCard({
         </div>
       )}
 
-      {/* Hairline rule before expanded form */}
-      {expanded && (
-        <>
-          <hr className="border-t border-[color:var(--ink-900)]/6 mx-6" />
-          <div className="px-6 py-5">{children}</div>
-        </>
-      )}
+      {/* Expandable form with smooth height transition */}
+      <div
+        className="grid transition-[grid-template-rows] duration-300 ease-in-out"
+        style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
+      >
+        <div className="overflow-hidden">
+          {expanded && (
+            <>
+              <hr className="border-t border-[color:var(--ink-900)]/6 mx-6" />
+              <div className="px-6 py-5">{children}</div>
+            </>
+          )}
+        </div>
+      </div>
     </article>
   );
 }
@@ -179,13 +192,13 @@ function StatusPill({ active }: { active: boolean }) {
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
         active
-          ? "bg-emerald-50 text-emerald-700"
+          ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
           : "bg-[color:var(--ink-900)]/5 text-[color:var(--ink-900)]/50"
       }`}
     >
       <span
         className={`h-1.5 w-1.5 rounded-full ${
-          active ? "bg-emerald-500" : "bg-[color:var(--ink-900)]/30"
+          active ? "bg-[color:var(--moss-700)]" : "bg-[color:var(--ink-900)]/30"
         }`}
         aria-hidden="true"
       />
@@ -198,13 +211,13 @@ function ModeBadge({ mode }: { mode: string }) {
   const isLive = mode === "live";
   return (
     <span
-      className={`inline-block rounded-[4px] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${
+      className={`inline-block rounded-[4px] px-2 py-0.5 text-[11px] uppercase tracking-wider ${
         isLive
-          ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
-          : "bg-amber-50 text-amber-700"
+          ? "bg-[color:var(--moss-700)]/10 font-bold text-[color:var(--moss-700)]"
+          : "bg-amber-50 font-semibold text-amber-700"
       }`}
     >
-      {mode}
+      {isLive ? "Live mode" : "Test mode"}
     </span>
   );
 }

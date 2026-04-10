@@ -375,6 +375,7 @@ export default function CheckoutPage() {
           >
             Shipping method
           </h2>
+          <div aria-live="polite" aria-atomic="true">
           {!isAddressFilled(address) ? (
             <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-40">
               Enter your shipping address to see available methods.
@@ -385,7 +386,7 @@ export default function CheckoutPage() {
             </p>
           ) : shippingRates.length === 0 ? (
             <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-40">
-              No shipping methods available for this address.
+              We couldn&apos;t find shipping options for this address. Please double-check your details or try a different address.
             </p>
           ) : (
             <fieldset className="mt-4">
@@ -394,10 +395,10 @@ export default function CheckoutPage() {
                 {shippingRates.map((rate) => (
                   <label
                     key={rate.service}
-                    className={`flex cursor-pointer items-center justify-between rounded-md border px-4 py-3 transition-colors ${
+                    className={`flex cursor-pointer items-center justify-between rounded-md border px-4 py-3 transition-all duration-150 ${
                       selectedShipping === rate.service
                         ? "border-[color:var(--moss-700)] bg-[color:var(--moss-700)]/5"
-                        : "border-[color:var(--ink-900)]/15"
+                        : "border-[color:var(--ink-900)]/15 hover:border-[color:var(--ink-900)]/30"
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -411,10 +412,10 @@ export default function CheckoutPage() {
                       />
                       <div>
                         <p className="text-sm font-medium text-[color:var(--ink-900)]">
-                          {rate.service}
+                          {humanizeService(rate.service)}
                         </p>
                         <p className="text-xs text-[color:var(--ink-900)] opacity-50">
-                          {rate.carrier} — {rate.estimated_days} day{rate.estimated_days !== 1 ? "s" : ""}
+                          Est. {rate.estimated_days} business day{rate.estimated_days !== 1 ? "s" : ""}
                         </p>
                       </div>
                     </div>
@@ -429,6 +430,7 @@ export default function CheckoutPage() {
               </div>
             </fieldset>
           )}
+          </div>
         </section>
 
         {/* Payment */}
@@ -441,7 +443,7 @@ export default function CheckoutPage() {
           </h2>
           {paymentMethods.length === 0 ? (
             <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-40">
-              No payment methods available.
+              Payment methods are being loaded. If this persists, please refresh the page.
             </p>
           ) : (
             <fieldset className="mt-4">
@@ -450,10 +452,10 @@ export default function CheckoutPage() {
                 {paymentMethods.map((pm) => (
                   <label
                     key={pm.provider}
-                    className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 transition-colors ${
+                    className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 transition-all duration-150 ${
                       selectedProvider === pm.provider
                         ? "border-[color:var(--moss-700)] bg-[color:var(--moss-700)]/5"
-                        : "border-[color:var(--ink-900)]/15"
+                        : "border-[color:var(--ink-900)]/15 hover:border-[color:var(--ink-900)]/30"
                     }`}
                   >
                     <input
@@ -472,6 +474,9 @@ export default function CheckoutPage() {
               </div>
             </fieldset>
           )}
+          <p className="mt-3 text-xs text-[color:var(--ink-900)] opacity-40">
+            Your payment is processed securely. We never store your card details.
+          </p>
         </section>
 
         {/* Order totals */}
@@ -479,7 +484,7 @@ export default function CheckoutPage() {
           <h2 id="totals-heading" className="sr-only">
             Order totals
           </h2>
-          <dl className="space-y-2 text-sm text-[color:var(--ink-900)]">
+          <dl aria-live="polite" className="space-y-2 text-sm text-[color:var(--ink-900)]">
             <div className="flex justify-between">
               <dt className="opacity-60">Subtotal ({count} {count === 1 ? "item" : "items"})</dt>
               <dd style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
@@ -525,7 +530,7 @@ export default function CheckoutPage() {
             type="button"
             disabled={!canSubmit}
             onClick={handleSubmit}
-            className="w-full rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-[color:var(--paper-200)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="w-full rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-[color:var(--paper-200)] transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
             {submitting ? "Placing order..." : "Place order"}
           </button>
@@ -692,6 +697,24 @@ function providerLabel(provider: string): string {
     case "paypal": return "PayPal";
     default: return provider.charAt(0).toUpperCase() + provider.slice(1);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Human-friendly shipping service name
+// ---------------------------------------------------------------------------
+
+function humanizeService(service: string): string {
+  const map: Record<string, string> = {
+    ground: "Standard Ground",
+    express: "Express",
+    priority: "Priority",
+    economy: "Economy",
+    overnight: "Overnight",
+    two_day: "2-Day Shipping",
+    standard: "Standard Shipping",
+  };
+  const key = service.toLowerCase().replace(/[\s-]+/g, "_");
+  return map[key] ?? service.charAt(0).toUpperCase() + service.slice(1).replace(/_/g, " ");
 }
 
 // ---------------------------------------------------------------------------

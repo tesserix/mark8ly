@@ -58,7 +58,8 @@ export function PaymentConfigForm({
         <FieldGroup label="API key" htmlFor={`${provider}-api-key`}>
           <input
             id={`${provider}-api-key`}
-            type="text"
+            type="password"
+            autoComplete="off"
             value={apiKey}
             onChange={(e) => { setApiKey(e.target.value); setSuccess(false); }}
             placeholder="pk_test_..."
@@ -72,6 +73,7 @@ export function PaymentConfigForm({
           <input
             id={`${provider}-secret-key`}
             type="password"
+            autoComplete="off"
             value={secretKey}
             onChange={(e) => { setSecretKey(e.target.value); setSuccess(false); }}
             placeholder="sk_test_..."
@@ -93,8 +95,8 @@ export function PaymentConfigForm({
             disabled={pending}
             className="rounded-[6px] border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
           >
-            <option value="test">Test</option>
-            <option value="live">Live</option>
+            <option value="test">Test mode</option>
+            <option value="live">Live mode</option>
           </select>
         </FieldGroup>
 
@@ -121,7 +123,7 @@ export function PaymentConfigForm({
       {success && (
         <div
           role="status"
-          className="rounded-[6px] border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800"
+          className="animate-in fade-in duration-300 rounded-[6px] border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-2.5 text-sm text-[color:var(--moss-700)]"
         >
           Configuration saved.
         </div>

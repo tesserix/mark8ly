@@ -52,12 +52,15 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
     <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
       <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store?.name ?? ""} />
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60">
-          Order confirmed
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--moss-700)]">
+          Thank you for your order
         </p>
         <h1 className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
           {order.order_number}
         </h1>
+        <p className="mt-2 text-sm text-[color:var(--ink-900)] opacity-60">
+          We&apos;ve received your order and will send you a confirmation email shortly.
+        </p>
 
         {/* Status badges */}
         <div className="mt-4 flex flex-wrap gap-3">
@@ -149,7 +152,7 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
         <div className="mt-10">
           <Link
             href="/products"
-            className="inline-block rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-[color:var(--paper-200)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="inline-block rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-[color:var(--paper-200)] transition-all duration-150 hover:opacity-90 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
             Continue shopping
           </Link>
@@ -164,10 +167,13 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
 // ---------------------------------------------------------------------------
 
 function StatusBadge({ label, value }: { label: string; value: string }) {
+  const humanized = value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--ink-900)]/15 px-3 py-1 text-xs text-[color:var(--ink-900)]">
       <span className="opacity-50">{label}:</span>
-      <span className="font-medium">{value.replace(/_/g, " ")}</span>
+      <span className="font-medium">{humanized}</span>
     </span>
   );
 }

@@ -62,11 +62,12 @@ export function TaxJarConfigForm({
             htmlFor="taxjar-api-key"
             className="block text-sm font-medium text-[color:var(--ink-900)]"
           >
-            TaxJar API key
+            API Key
           </label>
           <input
             id="taxjar-api-key"
-            type="text"
+            type="password"
+            autoComplete="off"
             value={apiKey}
             onChange={(e) => {
               setApiKey(e.target.value);
@@ -96,8 +97,8 @@ export function TaxJarConfigForm({
             disabled={pending}
             className={inputClass}
           >
-            <option value="test">Test (sandbox)</option>
-            <option value="live">Live</option>
+            <option value="test">Test mode (sandbox)</option>
+            <option value="live">Live mode</option>
           </select>
         </div>
       </div>
@@ -113,7 +114,7 @@ export function TaxJarConfigForm({
       {success && (
         <div
           role="status"
-          className="rounded-[6px] border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800"
+          className="animate-in fade-in duration-300 rounded-[6px] border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-2.5 text-sm text-[color:var(--moss-700)]"
         >
           TaxJar configuration saved.
         </div>

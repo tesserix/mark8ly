@@ -54,7 +54,10 @@ export function Pagination({
         <span />
       )}
 
-      <span className="text-xs text-[color:var(--ink-900)] opacity-40">
+      <span
+        className="text-xs text-[color:var(--ink-900)] opacity-40"
+        style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
+      >
         Page {currentPage}
       </span>
 

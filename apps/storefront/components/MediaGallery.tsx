@@ -40,7 +40,10 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
           className="h-full w-full object-cover"
         />
         {media.length > 1 && (
-          <p className="absolute bottom-3 right-3 rounded-full bg-[color:var(--ink-900)]/60 px-2.5 py-1 text-xs text-[color:var(--paper-200)]">
+          <p
+            className="absolute bottom-3 right-3 rounded-full bg-[color:var(--ink-900)]/60 px-2.5 py-1 text-xs text-[color:var(--paper-200)]"
+            style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
+          >
             {activeIndex + 1} / {media.length}
           </p>
         )}
@@ -61,11 +64,11 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
               aria-selected={i === activeIndex}
               onClick={() => setActiveIndex(i)}
               className={[
-                "relative h-16 w-16 shrink-0 overflow-hidden rounded-md transition-all",
+                "relative h-16 w-16 shrink-0 overflow-hidden rounded-md transition-all duration-150",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]",
                 i === activeIndex
                   ? "ring-2 ring-[color:var(--ink-900)]"
-                  : "opacity-60 hover:opacity-100",
+                  : "opacity-50 hover:opacity-100",
               ].join(" ")}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}

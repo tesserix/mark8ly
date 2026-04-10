@@ -37,7 +37,7 @@ export default function CartPage() {
             </ul>
 
             <footer className="mt-8 border-t border-[color:var(--ink-900)]/10 pt-6">
-              <div className="flex items-baseline justify-between">
+              <div aria-live="polite" className="flex items-baseline justify-between">
                 <p className="text-sm text-[color:var(--ink-900)] opacity-60">
                   {count} {count === 1 ? "item" : "items"}
                 </p>
@@ -52,7 +52,7 @@ export default function CartPage() {
               <div className="mt-6 flex items-center gap-4">
                 <Link
                   href="/checkout"
-                  className="rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm text-[color:var(--paper-200)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  className="rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-[color:var(--paper-200)] transition-all duration-150 hover:opacity-90 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
                 >
                   Checkout
                 </Link>
@@ -146,9 +146,10 @@ function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
           <div className="flex items-center rounded-md border border-[color:var(--ink-900)]/15">
             <button
               type="button"
+              disabled={item.qty <= 1}
               onClick={() => onQtyChange(item.qty - 1)}
               aria-label={`Decrease quantity of ${item.title}`}
-              className="px-2 py-1 text-sm text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="px-2 py-1 text-sm text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
             >
               −
             </button>

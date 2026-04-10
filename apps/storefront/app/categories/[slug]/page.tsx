@@ -86,7 +86,7 @@ export default async function CategoryLandingPage({
           </h1>
           <p className="text-sm text-[color:var(--ink-900)] opacity-60">
             {products.length === 0
-              ? "Nothing in this category yet."
+              ? "Nothing in this category yet. Try browsing all products instead."
               : `${products.length} ${products.length === 1 ? "product" : "products"}`}
           </p>
           {categories.length > 0 && (

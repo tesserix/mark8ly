@@ -162,14 +162,14 @@ async function TaxSettingsContent({
               <span
                 className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
                   taxConfig.taxjar.is_active
-                    ? "bg-emerald-50 text-emerald-700"
+                    ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
                     : "bg-[color:var(--ink-900)]/5 text-[color:var(--ink-900)]/50"
                 }`}
               >
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
                     taxConfig.taxjar.is_active
-                      ? "bg-emerald-500"
+                      ? "bg-[color:var(--moss-700)]"
                       : "bg-[color:var(--ink-900)]/30"
                   }`}
                   aria-hidden="true"

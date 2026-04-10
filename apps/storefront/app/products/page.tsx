@@ -188,7 +188,7 @@ function EmptyCatalogue() {
         Nothing in the shop yet
       </h2>
       <p className="mt-4 text-[color:var(--ink-900)] opacity-60">
-        New arrivals are on their way. Check back soon.
+        New arrivals are on their way. Check back soon or browse our categories.
       </p>
     </div>
   );

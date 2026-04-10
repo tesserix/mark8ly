@@ -90,6 +90,7 @@ export interface AdminMediaResponse {
   alt: string | null;
   position: number;
   media_type: "image" | "video";
+  variant_id: string | null;
   width: number | null;
   height: number | null;
   bytes: number | null;
@@ -372,4 +373,170 @@ export async function listCategories(
   return body.data ?? [];
 }
 
-// M7c will add: uploadUrl, createMedia, updateMedia, deleteMedia, updateVariantBasics
+// ─────────────────────────────────────────────────────────────────────────
+// M7c: media CRUD + signed URL flow
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface MediaUploadUrl {
+  upload_url: string;
+  storage_key: string;
+  expires_at: string;
+}
+
+export interface RequestMediaUploadUrlInput {
+  content_hash: string;
+  filename: string;
+  content_type: "image/png" | "image/jpeg" | "image/webp";
+}
+
+export async function requestMediaUploadUrl(
+  storeId: string,
+  productId: string,
+  body: RequestMediaUploadUrlInput,
+  session: SessionHeaders,
+): Promise<MutationResult<MediaUploadUrl>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/media/upload-url`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  // Wire DTO uses `url`; we expose as `upload_url` for clarity.
+  const raw = (await res.json()) as {
+    url: string;
+    storage_key: string;
+    expires_at: string;
+  };
+  return {
+    ok: true,
+    data: {
+      upload_url: raw.url,
+      storage_key: raw.storage_key,
+      expires_at: raw.expires_at,
+    },
+  };
+}
+
+export interface FinalizeMediaInput {
+  storage_key: string;
+  url: string;
+  alt?: string;
+  position?: number;
+  media_type?: "image" | "video";
+  variant_id?: string;
+}
+
+export async function finalizeMedia(
+  storeId: string,
+  productId: string,
+  body: FinalizeMediaInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminMediaResponse>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/media`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminMediaResponse };
+}
+
+export interface UpdateMediaInput {
+  alt?: string;
+  position?: number;
+  url?: string;
+  variant_id?: string | null;
+  storage_key?: string;
+}
+
+export async function updateMedia(
+  storeId: string,
+  productId: string,
+  mediaId: string,
+  body: UpdateMediaInput,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/media/${mediaId}`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (res.status === 204 || res.ok) {
+    return { ok: true, data: true };
+  }
+  return { ok: false, error: await parseMutationError(res) };
+}
+
+export async function deleteMedia(
+  storeId: string,
+  productId: string,
+  mediaId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/media/${mediaId}`,
+    {
+      method: "DELETE",
+      cache: "no-store",
+      headers: {
+        "X-User-Id": session.userId,
+        "X-Tenant-Id": session.tenantId,
+      },
+    },
+  );
+  if (res.status === 204 || res.ok) {
+    return { ok: true, data: true };
+  }
+  return { ok: false, error: await parseMutationError(res) };
+}
+
+export interface RecropMediaInput {
+  crop_box: { x: number; y: number; width: number; height: number };
+  rotation?: number;
+  filename?: string;
+}
+
+export interface RecropMediaResult {
+  source_original_url: string;
+  upload_url: string;
+  new_storage_key: string;
+  expires_at: string;
+}
+
+export async function recropMedia(
+  storeId: string,
+  productId: string,
+  mediaId: string,
+  body: RecropMediaInput,
+  session: SessionHeaders,
+): Promise<MutationResult<RecropMediaResult>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/media/${mediaId}/recrop`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as RecropMediaResult };
+}

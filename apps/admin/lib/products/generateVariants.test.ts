@@ -71,7 +71,7 @@ describe("generateVariants", () => {
       stock: 0,
       sku: "",
     });
-    expect(result.variants[0].id).toBeUndefined();
+    expect(result.variants[0]?.id).toBeUndefined();
   });
 
   it("renaming an option value does NOT preserve data", () => {
@@ -87,8 +87,8 @@ describe("generateVariants", () => {
       },
     ];
     const result = generateVariants(options, existing, baseDefaults);
-    expect(result.variants[0].key).toBe("Size=Medium");
-    expect(result.variants[0].id).toBeUndefined();
+    expect(result.variants[0]?.key).toBe("Size=Medium");
+    expect(result.variants[0]?.id).toBeUndefined();
     expect(result.removedIds).toEqual(["var-1"]);
   });
 
@@ -108,8 +108,8 @@ describe("generateVariants", () => {
       { name: "Color", values: ["Red"] },
     ];
     const result = generateVariants(options, existing, baseDefaults);
-    expect(result.variants[0].id).toBe("var-1");
-    expect(result.variants[0].sku).toBe("R-M");
+    expect(result.variants[0]?.id).toBe("var-1");
+    expect(result.variants[0]?.sku).toBe("R-M");
     expect(result.removedIds).toEqual([]);
   });
 

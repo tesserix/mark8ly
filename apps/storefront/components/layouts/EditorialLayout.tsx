@@ -89,12 +89,12 @@ export function EditorialLayout({ store, theme }: LayoutProps) {
       >
         <div className="space-y-4">
           <Eyebrow theme={theme}>Letter from the studio</Eyebrow>
-          <h3
+          <h2
             className="text-3xl font-medium tracking-tight sm:text-4xl"
             style={headingStyle()}
           >
             Built for the long shelf life.
-          </h3>
+          </h2>
           <p className="text-base leading-8 opacity-75">
             Every piece in {store.name} is chosen to outlast a season. Paper
             packaging, repairable construction, and a quiet attitude toward

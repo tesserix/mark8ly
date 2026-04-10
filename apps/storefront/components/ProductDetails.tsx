@@ -99,7 +99,7 @@ export function ProductDetails({ product }: ProductDetailsProps) {
           </p>
         )}
         {inStock && lowStock && (
-          <p className="text-sm text-[color:var(--warning,#B08A30)]" role="status">
+          <p className="text-sm text-[color:var(--warning,#A67C00)]" role="status">
             Low stock — order soon
           </p>
         )}

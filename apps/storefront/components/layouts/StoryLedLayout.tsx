@@ -56,12 +56,12 @@ export function StoryLedLayout({ store, theme }: LayoutProps) {
       <footer className="border-t pt-10"
         style={{ borderColor: `${theme.colors.primary}22` }}
       >
-        <h3
+        <h2
           className="text-3xl font-medium tracking-tight sm:text-4xl"
           style={headingStyle()}
         >
           When you&apos;re ready, we&apos;re ready.
-        </h3>
+        </h2>
         <p className="mt-4 max-w-xl text-base leading-8 opacity-75">
           No urgency, no countdown timers. Just quiet things we made because
           we wanted them to exist.

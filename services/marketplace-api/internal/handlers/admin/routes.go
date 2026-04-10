@@ -21,12 +21,15 @@ type Deps struct {
 	OrdersHandler         *OrdersHandler
 	ReturnsHandler        *ReturnsHandler
 	AbandonedCartsHandler *AbandonedCartsHandler
-	StoresHandler         *StoresHandler
-	BulkHandler           *BulkHandler
-	CSVImportsHandler     *CSVImportsHandler
-	StoresMiddleware      gin.HandlerFunc // from stores.StoreMiddleware
-	AuthzMiddleware       *authz.Middleware
-	InternalSecret        string
+	StoresHandler            *StoresHandler
+	BulkHandler              *BulkHandler
+	CSVImportsHandler        *CSVImportsHandler
+	PaymentSettingsHandler   *PaymentSettingsHandler
+	ShippingSettingsHandler  *ShippingSettingsHandler
+	TaxSettingsHandler       *TaxSettingsHandler
+	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
+	AuthzMiddleware          *authz.Middleware
+	InternalSecret           string
 }
 
 // RegisterAdmin mounts the admin route group on the given router. The
@@ -182,6 +185,50 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				returns.POST("/:id/refunded",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
 					deps.ReturnsHandler.MarkRefunded)
+			}
+		}
+
+		// Settings — payment, shipping, tax configuration.
+		if deps.PaymentSettingsHandler != nil {
+			ps := storeRoute.Group("/settings/payments")
+			{
+				ps.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.PaymentSettingsHandler.List)
+				ps.PUT("/:provider",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.PaymentSettingsHandler.Upsert)
+				ps.DELETE("/:provider",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.PaymentSettingsHandler.Delete)
+				ps.POST("/:provider/test",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.PaymentSettingsHandler.TestConnection)
+			}
+		}
+		if deps.ShippingSettingsHandler != nil {
+			ss := storeRoute.Group("/settings/shipping")
+			{
+				ss.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.ShippingSettingsHandler.List)
+				ss.PUT("/:provider",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.ShippingSettingsHandler.Upsert)
+				ss.DELETE("/:provider",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.ShippingSettingsHandler.Delete)
+			}
+		}
+		if deps.TaxSettingsHandler != nil {
+			ts := storeRoute.Group("/settings/tax")
+			{
+				ts.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.TaxSettingsHandler.Get)
+				ts.PUT("/taxjar",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.TaxSettingsHandler.UpsertTaxJar)
 			}
 		}
 

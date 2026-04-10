@@ -197,20 +197,29 @@ func main() {
 		exportRepo := product.NewExportRepository(conn)
 		csvImportsHandler := admin.NewCSVImportsHandler(csvSvc, exportRepo, log)
 
+		// Settings handlers (P5a).
+		countryRepoAdmin := country.NewRepository(conn)
+		paymentSettingsHandler := admin.NewPaymentSettingsHandler(conn, countryRepoAdmin, log)
+		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, log)
+		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, log)
+
 		adminDeps = admin.Deps{
-			ProductHandler:        productHandler,
-			CategoryHandler:       categoryHandler,
-			VariantHandler:        variantHandler,
-			MediaHandler:          mediaHandler,
-			OrdersHandler:         ordersHandler,
-			ReturnsHandler:        returnsHandler,
-			AbandonedCartsHandler: abandonedCartsHandler,
-			StoresHandler:         storesHandler,
-			BulkHandler:           bulkHandler,
-			CSVImportsHandler:     csvImportsHandler,
-			StoresMiddleware:      storeMW,
-			AuthzMiddleware:       authzMW,
-			InternalSecret:        cfg.InternalAuthSecret,
+			ProductHandler:          productHandler,
+			CategoryHandler:         categoryHandler,
+			VariantHandler:          variantHandler,
+			MediaHandler:            mediaHandler,
+			OrdersHandler:           ordersHandler,
+			ReturnsHandler:          returnsHandler,
+			AbandonedCartsHandler:   abandonedCartsHandler,
+			StoresHandler:           storesHandler,
+			BulkHandler:             bulkHandler,
+			CSVImportsHandler:       csvImportsHandler,
+			PaymentSettingsHandler:  paymentSettingsHandler,
+			ShippingSettingsHandler: shippingSettingsHandler,
+			TaxSettingsHandler:      taxSettingsHandler,
+			StoresMiddleware:        storeMW,
+			AuthzMiddleware:         authzMW,
+			InternalSecret:          cfg.InternalAuthSecret,
 		}
 	}
 
@@ -243,12 +252,22 @@ func main() {
 		countryRepo := country.NewRepository(conn)
 		countryHandler := country.NewHandler(countryRepo)
 
+		// P5b — extended checkout, payment methods, shipping rates, webhooks.
+		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, log)
+		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
+		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)
+		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log)
+
 		storefrontDeps = storefront.Deps{
-			Handler:         storefrontHandler,
-			CheckoutHandler: checkoutHandler,
-			SlugCache:       slugCache,
-			StorefrontKey:   cfg.StorefrontKey,
-			CountryHandler:  countryHandler,
+			Handler:               storefrontHandler,
+			CheckoutHandler:       checkoutHandler,
+			CheckoutExtHandler:    checkoutExtHandler,
+			PaymentMethodsHandler: paymentMethodsHandler,
+			ShippingRatesHandler:  shippingRatesHandler,
+			WebhookHandler:        webhookHandler,
+			SlugCache:             slugCache,
+			StorefrontKey:         cfg.StorefrontKey,
+			CountryHandler:        countryHandler,
 		}
 	}
 

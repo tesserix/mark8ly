@@ -12,11 +12,15 @@ import (
 // Deps groups every dependency the storefront route registrar needs.
 // Constructed in cmd/marketplace-api/main.go.
 type Deps struct {
-	Handler         *StorefrontHandler
-	CheckoutHandler *CheckoutHandler
-	SlugCache       *stores.SlugCache
-	StorefrontKey   string
-	CountryHandler  CountryLister // optional — set when country handler is wired
+	Handler              *StorefrontHandler
+	CheckoutHandler      *CheckoutHandler
+	CheckoutExtHandler   *CheckoutExtHandler
+	PaymentMethodsHandler *PaymentMethodsHandler
+	ShippingRatesHandler *ShippingRatesHandler
+	WebhookHandler       *WebhookHandler
+	SlugCache            *stores.SlugCache
+	StorefrontKey        string
+	CountryHandler       CountryLister // optional — set when country handler is wired
 }
 
 // CountryLister is satisfied by country.Handler.ListSupported.
@@ -38,10 +42,26 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		group.GET("/categories", deps.Handler.ListCategories)
 		group.GET("/categories/:slug/products", deps.Handler.ListByCategorySlug)
 
-		// Orders M5 — public checkout endpoint.
-		if deps.CheckoutHandler != nil {
+		// Checkout — use extended handler (with payment/tax/shipping) if
+		// available, fall back to the simple M5 checkout.
+		if deps.CheckoutExtHandler != nil {
+			group.POST("/checkout", deps.CheckoutExtHandler.Checkout)
+		} else if deps.CheckoutHandler != nil {
 			group.POST("/checkout", deps.CheckoutHandler.Checkout)
 		}
+
+		// Payment methods and shipping rates for checkout UI.
+		if deps.PaymentMethodsHandler != nil {
+			group.GET("/payment-methods", deps.PaymentMethodsHandler.ListPaymentMethods)
+		}
+		if deps.ShippingRatesHandler != nil {
+			group.POST("/shipping-rates", deps.ShippingRatesHandler.GetRates)
+		}
+	}
+
+	// Webhook endpoints — at the API root, not under /storefront/stores.
+	if deps.WebhookHandler != nil {
+		router.POST("/webhooks/:provider", deps.WebhookHandler.HandleWebhook)
 	}
 
 	// Public reference data — no auth, no store context.

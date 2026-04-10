@@ -12,12 +12,13 @@ import (
 // Deps groups every dependency the storefront route registrar needs.
 // Constructed in cmd/marketplace-api/main.go.
 type Deps struct {
-	Handler       *StorefrontHandler
-	SlugCache     *stores.SlugCache
-	StorefrontKey string
+	Handler         *StorefrontHandler
+	CheckoutHandler *CheckoutHandler
+	SlugCache       *stores.SlugCache
+	StorefrontKey   string
 }
 
-// RegisterStorefront mounts the 4 storefront routes on the given router
+// RegisterStorefront mounts the storefront routes on the given router
 // group. Chain: RequireStorefrontKey → StoreContext → handler. No auth,
 // no authz, no admin middleware.
 func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
@@ -30,5 +31,10 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		group.GET("/products/:handle", deps.Handler.GetByHandle)
 		group.GET("/categories", deps.Handler.ListCategories)
 		group.GET("/categories/:slug/products", deps.Handler.ListByCategorySlug)
+
+		// Orders M5 — public checkout endpoint.
+		if deps.CheckoutHandler != nil {
+			group.POST("/checkout", deps.CheckoutHandler.Checkout)
+		}
 	}
 }

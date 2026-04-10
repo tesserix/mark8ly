@@ -217,10 +217,20 @@ func main() {
 		slugFlight := &singleflight.Group{}
 		slugCache := stores.NewSlugCache(storesRepoSF, storefrontPlatformClient, slugFlight, 5*time.Minute)
 		storefrontHandler := storefront.NewStorefrontHandler(productRepoSF, categoryRepoSF, storesRepoSF, log)
+
+		// Orders M5 — public checkout endpoint. Storefront mode does not
+		// run the outbox publisher (admin mode owns that), but it DOES
+		// produce outbox_events rows that the admin replica drains.
+		orderRepoSF := order.NewRepository()
+		outboxRepoSF := outbox.NewRepository(conn)
+		orderSvcSF := order.NewService(conn, orderRepoSF, outboxRepoSF)
+		checkoutHandler := storefront.NewCheckoutHandler(conn, orderSvcSF, orderRepoSF, log)
+
 		storefrontDeps = storefront.Deps{
-			Handler:       storefrontHandler,
-			SlugCache:     slugCache,
-			StorefrontKey: cfg.StorefrontKey,
+			Handler:         storefrontHandler,
+			CheckoutHandler: checkoutHandler,
+			SlugCache:       slugCache,
+			StorefrontKey:   cfg.StorefrontKey,
 		}
 	}
 

@@ -29,8 +29,9 @@ export function VariantMatrixTable({
   onPatch,
 }: VariantMatrixTableProps): React.ReactElement {
   const optionNames = React.useMemo<string[]>(() => {
-    if (variants.length === 0) return [];
-    return variants[0].optionValues.map((ov) => ov.optionName);
+    const first = variants[0];
+    if (!first) return [];
+    return first.optionValues.map((ov) => ov.optionName);
   }, [variants]);
 
   const priceHeader = React.useMemo(() => {

@@ -30,7 +30,7 @@ describe("OptionsEditor", () => {
     const onChange = vi.fn();
     render(<OptionsEditor value={sample()} onChange={onChange} />);
     const removeButtons = screen.getAllByRole("button", { name: /remove option/i });
-    fireEvent.click(removeButtons[0]);
+    fireEvent.click(removeButtons[0]!);
     expect(onChange).toHaveBeenCalledWith([sample()[1]]);
   });
 
@@ -38,11 +38,13 @@ describe("OptionsEditor", () => {
     const onChange = vi.fn();
     render(<OptionsEditor value={sample()} onChange={onChange} />);
     const addInputs = screen.getAllByPlaceholderText(/add a value/i);
-    fireEvent.change(addInputs[1], { target: { value: "Blue" } });
-    fireEvent.keyDown(addInputs[1], { key: "Enter", code: "Enter" });
+    const target = addInputs[1]!;
+    fireEvent.change(target, { target: { value: "Blue" } });
+    fireEvent.keyDown(target, { key: "Enter", code: "Enter" });
+    const second = sample()[1]!;
     expect(onChange).toHaveBeenCalledWith([
       sample()[0],
-      { ...sample()[1], values: [...sample()[1].values, { value: "Blue" }] },
+      { ...second, values: [...second.values, { value: "Blue" }] },
     ]);
   });
 

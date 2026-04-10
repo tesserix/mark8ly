@@ -25,5 +25,8 @@
   ],
   "dependencies": {
     "lucide-react": "^1.7.0"
+  },
+  "overrides": {
+    "@xmldom/xmldom": ">=0.8.12"
   }
 }

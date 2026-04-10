@@ -12,6 +12,52 @@
 
 ---
 
+## Post-Review Amendments (2026-04-10)
+
+> These amendments override the corresponding sections in the plan below.
+
+### HIGH FIX 1: Define a `Dispatcher` interface for email delivery
+
+The send worker logs instead of publishing to Pub/Sub (acknowledged as deferred). But without an interface, real email integration will require refactoring worker internals.
+
+**Required change:** Define a `Dispatcher` interface in the campaign package:
+```go
+type Dispatcher interface {
+    Send(ctx context.Context, recipient, subject, body string) error
+}
+```
+Ship a `LogDispatcher` (no-op) implementation. The Pub/Sub follow-up becomes a clean interface swap.
+
+### HIGH FIX 2: Fix `pollAndDispatch` query — uses wrong method
+
+Task 6.4 calls `ListCampaignsByStore` with `uuid.Nil` as the store ID, which matches zero rows. **Fix:** Use the dedicated `FindSendableCampaigns` repository method (Task 6.6) instead. Remove the dead code path and the `_ = err` swallow.
+
+### MEDIUM FIX 3: Segment engine needs memory cap
+
+`ResolveEmails` returns `[]string` with no pagination or limit. A store with 500K loyalty members loads all into memory. **Fix:** Add a `LIMIT 50000` guard to segment queries. Document the ceiling. For M4 launch (SMB merchants) this is acceptable; streaming is a follow-up.
+
+### MEDIUM FIX 4: Add `tenant_id` to segment engine queries
+
+`allEnrolled`, `byLoyaltyTier`, `hasOrdered`, and `inactiveDays` filter by `store_id` only. This works (store_id is unique within tenant) but breaks codebase convention. **Fix:** Add `tenant_id` to all segment queries for consistency.
+
+### MEDIUM FIX 5: `FindStuckCampaigns` must run inside a transaction
+
+The `FOR UPDATE SKIP LOCKED` query runs on bare `db.WithContext(ctx)` without a transaction wrapper. `FOR UPDATE SKIP LOCKED` without a wrapping transaction acquires no lock. **Fix:** Wrap in `db.Transaction()`.
+
+### MEDIUM FIX 6: Add DELETE and PATCH for segments
+
+Spec §4.4 lists GET and POST for segments but no way to edit or delete. A segment with wrong rules persists forever. **Fix:** Add `DELETE /admin/stores/:storeId/segments/:id` at minimum.
+
+### LOW FIX 7: Add `/resume` route
+
+`ResumeCampaign` service method exists (Task 5.7) but the route table (Task 9.2) only registers `/pause`, not `/resume`. **Fix:** Add `POST /admin/stores/:storeId/campaigns/:id/resume` route.
+
+### LOW FIX 8: Use typed constants for analytics columns
+
+`IncrementAnalytics` allowlist map prevents SQL injection (good), but callers pass raw strings. **Fix:** Define typed constants (`AnalyticsDelivered`, `AnalyticsFailed`, etc.) to catch typos at compile time.
+
+---
+
 ## Status
 
 > **Pending.** All tasks open. Branch: `feat/marketing-m4-campaigns`.

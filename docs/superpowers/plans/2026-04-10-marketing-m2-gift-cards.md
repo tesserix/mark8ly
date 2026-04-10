@@ -10,6 +10,50 @@
 
 ---
 
+## Post-Review Amendments (2026-04-10)
+
+> These amendments override the corresponding sections in the plan below.
+
+### CRITICAL FIX 1: Gift card debit MUST run inside the order creation transaction
+
+The plan acknowledges (Key Design Decisions item 3) that gift card debit happens in a separate transaction after order creation. This violates spec §8.2: "All discount steps (coupon apply, gift card debit, order creation, tax line saves) MUST be in a single `db.Transaction()` call." If payment creation fails after the gift card debit succeeds, the customer loses balance with no order.
+
+**Required change:** `GiftCardApplier.Apply(ctx, tx, orderID, amount)` must receive the `tx` from the order creation transaction and call `repo.DebitInTx(tx, ...)` inside it. The debit rolls back if order creation fails.
+
+### CRITICAL FIX 2: Code generation entropy must be 128 bits
+
+The plan uses 10 bytes = 80 bits and incorrectly claims this "exceeds the 128-bit spec requirement." 10 bytes is 80 bits, not 128. **Fix:** Use 16 bytes (128 bits) of `crypto/rand`, then base32-encode and take the first 26 characters. Update `GenerateCode()` accordingly.
+
+### HIGH FIX 3: Use atomic UPDATE WHERE instead of SELECT FOR UPDATE
+
+Spec §8.1 prescribes: `UPDATE gift_cards SET current_balance = current_balance - $amount WHERE id = $id AND current_balance >= $amount RETURNING current_balance`. The plan uses SELECT FOR UPDATE + app-level check + separate UPDATE — two round trips, longer lock hold. **Fix:** Use the single atomic UPDATE pattern. Zero rows = insufficient balance.
+
+### HIGH FIX 4: Add concurrent debit race test
+
+Spec §12 requires a "concurrent debit race test." The plan's tests only cover `GenerateCode` and `FormatCodeDisplay`. **Fix:** Add an integration test that spawns N goroutines calling `DebitInTx` against real Postgres with `go test -race`. Only one should succeed when balance < 2×amount.
+
+### HIGH FIX 5: `GiftCardApplier.Apply` must handle partial debit
+
+When gift card balance < order total, `Apply` should compute `min(balance, amount)` and debit that partial amount, returning the actual deducted amount. Currently it passes the full `amount` to `Debit` which fails with `CodeInsufficientGiftCardBalance` instead of partially applying.
+
+### MEDIUM FIX 6: Rate limiter needs cleanup goroutine
+
+Same as M1 — `RateLimiter.clients` map grows unboundedly. Add periodic cleanup (every 5 min, remove entries older than 2× window).
+
+### MEDIUM FIX 7: Issue page missing AdminShell wrapper
+
+`IssueGiftCardPage` is `"use client"` but doesn't wrap in `AdminShell`. The list page wraps correctly but the issue page renders bare `<main>`. Wrap consistently.
+
+### LOW FIX 8: Add `GetByCode` to Service public API
+
+Checkout integration calls `h.giftCardSvc.GetByCode(ctx, storeID, code)` but the Service only exposes `CheckBalance` and `GetByID`. Add a public `GetByCode` method.
+
+### LOW FIX 9: Use `errors.As` instead of manual type assertion
+
+Storefront handler uses `err.(*apperrors.Error)` — wrapped errors won't match. Use `errors.As(&ae, err)` instead.
+
+---
+
 ## Pre-requisites
 
 - M1 (Coupons) must be merged — migration 000009 must exist. M2 uses migration 000010.

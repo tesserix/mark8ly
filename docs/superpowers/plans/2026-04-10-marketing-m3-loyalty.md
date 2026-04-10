@@ -10,6 +10,64 @@
 
 ---
 
+## Post-Review Amendments (2026-04-10)
+
+> These amendments override the corresponding sections in the plan below.
+
+### CRITICAL FIX 1: Points redemption MUST run inside the order creation transaction
+
+The plan's checkout integration (Task 9) validates and redeems points in a standalone `h.orderSvc.Unit()` call *before* order creation. This violates spec §8.2. If order creation fails after points are deducted, the customer loses points with no order.
+
+**Required change:** `LoyaltyApplier.Apply(ctx, tx, orderID, amount)` must use the `tx` passed in (the order creation transaction), NOT open its own via `s.db.Transaction()`. `RedeemPoints` must accept and use the caller's `tx` parameter.
+
+### CRITICAL FIX 2: Self-referral prevention at both service and DB level
+
+The `Enroll` method checks referral code but never compares `referrer.CustomerEmail == enrollingEmail`. A customer using an email alias can self-refer.
+
+**Required changes:**
+1. Service layer: add `referrer.CustomerEmail == req.CustomerEmail` guard → return validation error
+2. Migration: add `CHECK (referrer_id != referee_id)` constraint to `referrals` table
+
+### HIGH FIX 3: Expiry batch job must use FOR UPDATE SKIP LOCKED correctly
+
+The plan's expiry worker uses `LIMIT 500 OFFSET` pagination without locking. Concurrent workers would double-expire rows. Spec §8.8 requires `FOR UPDATE SKIP LOCKED`.
+
+**Required change:** The `FindExpiredPoints` query must NOT use `FOR UPDATE` with aggregate functions (PostgreSQL rejects this). Restructure: first `SELECT ... FOR UPDATE SKIP LOCKED` individual `loyalty_transactions` rows, then aggregate in the application layer. Each batch must run in its own transaction.
+
+### HIGH FIX 4: Add concurrent redemption race test
+
+Spec §12 requires a "concurrent redemption race test." The plan's tests only cover `GenerateReferralCode` and `CalculateTier`. **Fix:** Add integration test spawning N goroutines calling `DebitPoints` with `go test -race`. Only one should succeed when balance < 2×points.
+
+### HIGH FIX 5: Remove dead `UpdateLifetimePoints` method
+
+`CreditPoints` already atomically increments both `points_balance` and `lifetime_points`. The separate `UpdateLifetimePoints` method is dead code that risks double-increment if mistakenly called. Remove it.
+
+### MEDIUM FIX 6: `CalculateTier` requires sorted tiers
+
+The "last match wins" logic requires tiers sorted by `min_lifetime_points` descending. The plan does not validate or enforce sort order on save. **Fix:** Sort tiers by `min_lifetime_points` descending in `CalculateTier` before iterating, or validate sort order in the service layer on program save.
+
+### MEDIUM FIX 7: Rate limiter cleanup (same as M1/M2)
+
+`sync.Map` grows unboundedly. Add periodic cleanup goroutine.
+
+### MEDIUM FIX 8: Round points_value calculations to 2 decimal places
+
+`points_value` is `NUMERIC(8,4)` but `redeemPoints * pointsValue` can produce >2 decimal places. `.Round(2)` the discount amount before applying.
+
+### MEDIUM FIX 9: Referral code entropy
+
+Spec §8.5 requires 128-bit entropy for codes. `GenerateReferralCode` uses 8 bytes (64 bits). For per-store referral codes this is acceptable but doesn't meet the stated spec. If enforcing spec literally, use 16 bytes.
+
+### LOW FIX 10: Paginate member transaction history
+
+`GET /admin/.../loyalty/members/:id` loads all `loyalty_transactions` unbounded. Add pagination (limit/offset).
+
+### LOW FIX 11: Storefront `/loyalty/me` endpoint leaks data
+
+Anyone can query any customer's loyalty balance by email without auth. Add rate limiting at minimum (not listed in spec §8.6 rate-limit targets but should be).
+
+---
+
 ## Pre-flight Checks
 
 Before starting, verify the codebase is in the expected state:

@@ -10,6 +10,53 @@
 
 ---
 
+## Post-Review Amendments (2026-04-10)
+
+> These amendments override the corresponding sections in the plan below.
+
+### CRITICAL FIX 1: Coupon apply MUST run inside the order creation transaction
+
+The plan's checkout integration (Task 8) validates the coupon before order creation, then calls `applier.Apply()` in a separate transaction after the order is already created. This violates spec §8.2 which requires coupon apply, usage increment, and order creation inside a **single** `db.Transaction()`.
+
+**Required change:** In `checkout_ext.go`, the coupon validation + `applier.Apply()` + `orderSvc.Create()` must all run inside ONE `orderSvc.Unit()` call. The validate-then-apply double-read is racy (coupon could expire/hit limit between reads). Fix: validate + increment atomically inside the order transaction. If `applier.Apply()` fails, the entire order rolls back. Do NOT swallow the error as "non-fatal".
+
+### CRITICAL FIX 2: Validate-then-apply TOCTOU race
+
+Remove the separate `couponSvc.Validate()` call before the transaction. Instead, pass the coupon code into the transaction and do validate + apply atomically inside. The two-phase approach allows the coupon to hit its limit between validate and apply.
+
+### HIGH FIX 3: Add `tenant_id` to `coupon_usage` queries
+
+`ListUsage` and `CountCustomerUsage` in `repository.go` must include `tenant_id` in WHERE clauses, not just `coupon_id` / `customer_email`. Spec §9 explicitly adds `tenant_id` to `coupon_usage`.
+
+### HIGH FIX 4: Rate limiter needs TTL-based eviction
+
+The `sync.Map` in the rate limiter grows unboundedly. Add a cleanup goroutine that runs every 5 minutes and removes entries older than 2× the window duration.
+
+### HIGH FIX 5: `Patch` must validate `status` field
+
+`PatchInput.Status` is `*string` with no validation. Add enum validation: only `"active"` and `"disabled"` are valid patch targets. Never allow patching to `"expired"` (that's system-managed).
+
+### MEDIUM FIX 6: Repository + handler tests need real Postgres integration tests
+
+The plan's tests are trivially shallow (constructor non-nil checks). Add integration tests for:
+- `IncrementUsageInTx` atomic path
+- Concurrent usage race test (spec §12)
+- HTTP round-trip tests for validate endpoint (expired, rate-limited, not found)
+
+### MEDIUM FIX 7: `TargetIDs` UUID validation
+
+`pq.StringArray` for a PostgreSQL `UUID[]` column bypasses format validation. Validate UUIDs in the service layer before write.
+
+### LOW FIX 8: `CouponForm` state consolidation
+
+Replace 14 individual `useState` calls with `useReducer` or a single state object.
+
+### LOW FIX 9: Share coupon repo/service instances
+
+`couponRepoSF` / `couponSvcSF` in `main.go` are unnecessary — `gormRepository` is stateless and `Service` is read-safe. Share the same instances between admin and storefront.
+
+---
+
 ## Decisions Locked
 
 1. **Atomic usage_count:** Coupon usage is incremented via a single `UPDATE coupons SET usage_count = usage_count + 1 WHERE id = $id AND (usage_limit IS NULL OR usage_count < usage_limit) RETURNING usage_count` inside the checkout transaction. Zero rows = limit reached. Never read-then-write.

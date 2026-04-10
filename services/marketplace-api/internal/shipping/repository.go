@@ -1,0 +1,210 @@
+package shipping
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
+)
+
+// ──────────────────────────────────────────────────────────────────────
+// GORM models
+// ──────────────────────────────────────────────────────────────────────
+
+// ShipmentRecord is the GORM model for the shipments table.
+type ShipmentRecord struct {
+	ID                 uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID           uuid.UUID `gorm:"column:tenant_id;type:uuid;not null;index"`
+	StoreID            uuid.UUID `gorm:"column:store_id;type:uuid;not null;index"`
+	OrderID            uuid.UUID `gorm:"column:order_id;type:uuid;not null;index"`
+	Provider           string    `gorm:"column:provider;type:varchar(40);not null"`
+	ProviderShipmentID string    `gorm:"column:provider_shipment_id;type:varchar(200);not null"`
+	TrackingNumber     string    `gorm:"column:tracking_number;type:varchar(200)"`
+	LabelURL           string    `gorm:"column:label_url;type:text"`
+	Service            string    `gorm:"column:service;type:varchar(100)"`
+	Status             string    `gorm:"column:status;type:varchar(40);not null;default:created"`
+	CurrencyCode       string    `gorm:"column:currency_code;type:char(3);not null"`
+	EstimatedDelivery  *time.Time `gorm:"column:estimated_delivery"`
+	CreatedAt          time.Time `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt          time.Time `gorm:"column:updated_at;not null;default:now()"`
+}
+
+func (ShipmentRecord) TableName() string { return "shipments" }
+
+// CarrierConfig is the GORM model for the shipping_carrier_configs table.
+type CarrierConfig struct {
+	ID                    uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID              uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null;index"`
+	StoreID               uuid.UUID       `gorm:"column:store_id;type:uuid;not null;index"`
+	Provider              string          `gorm:"column:provider;type:varchar(40);not null"`
+	APIKey                string          `gorm:"column:api_key;type:text;not null"`
+	SecretKey             string          `gorm:"column:secret_key;type:text"`
+	Mode                  string          `gorm:"column:mode;type:varchar(10);not null;default:test"`
+	HandlingFee           decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
+	FreeShippingThreshold decimal.Decimal `gorm:"column:free_shipping_threshold;type:numeric(12,2);not null;default:0"`
+	Enabled               bool            `gorm:"column:enabled;not null;default:true"`
+	CreatedAt             time.Time       `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt             time.Time       `gorm:"column:updated_at;not null;default:now()"`
+}
+
+func (CarrierConfig) TableName() string { return "shipping_carrier_configs" }
+
+// ──────────────────────────────────────────────────────────────────────
+// Repository interface
+// ──────────────────────────────────────────────────────────────────────
+
+// Repository is the data-access surface for shipping persistence.
+type Repository interface {
+	// Shipments
+	CreateShipment(ctx context.Context, rec *ShipmentRecord) error
+	GetShipmentByID(ctx context.Context, id uuid.UUID) (*ShipmentRecord, error)
+	GetShipmentByOrderID(ctx context.Context, orderID uuid.UUID) (*ShipmentRecord, error)
+	ListShipmentsByStore(ctx context.Context, storeID uuid.UUID, limit, offset int) ([]ShipmentRecord, int64, error)
+	UpdateShipmentStatus(ctx context.Context, id uuid.UUID, status string) error
+
+	// Carrier configs
+	GetCarrierConfig(ctx context.Context, storeID, provider string) (*CarrierConfig, error)
+	ListCarrierConfigs(ctx context.Context, storeID string) ([]CarrierConfig, error)
+	UpsertCarrierConfig(ctx context.Context, cfg *CarrierConfig) error
+	DeleteCarrierConfig(ctx context.Context, id uuid.UUID) error
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// GORM implementation
+// ──────────────────────────────────────────────────────────────────────
+
+type gormRepository struct {
+	db *gorm.DB
+}
+
+// NewRepository constructs a Repository backed by GORM.
+func NewRepository(db *gorm.DB) Repository { return &gormRepository{db: db} }
+
+// --- Shipments ---
+
+func (r *gormRepository) CreateShipment(ctx context.Context, rec *ShipmentRecord) error {
+	if rec.ID == uuid.Nil {
+		rec.ID = uuid.New()
+	}
+	if err := r.db.WithContext(ctx).Create(rec).Error; err != nil {
+		return fmt.Errorf("shipping: create shipment record: %w", err)
+	}
+	return nil
+}
+
+func (r *gormRepository) GetShipmentByID(ctx context.Context, id uuid.UUID) (*ShipmentRecord, error) {
+	var rec ShipmentRecord
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&rec).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("shipping: shipment not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("shipping: get shipment by id: %w", err)
+	}
+	return &rec, nil
+}
+
+func (r *gormRepository) GetShipmentByOrderID(ctx context.Context, orderID uuid.UUID) (*ShipmentRecord, error) {
+	var rec ShipmentRecord
+	err := r.db.WithContext(ctx).Where("order_id = ?", orderID).First(&rec).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("shipping: shipment not found for order")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("shipping: get shipment by order id: %w", err)
+	}
+	return &rec, nil
+}
+
+func (r *gormRepository) ListShipmentsByStore(ctx context.Context, storeID uuid.UUID, limit, offset int) ([]ShipmentRecord, int64, error) {
+	var total int64
+	q := r.db.WithContext(ctx).Model(&ShipmentRecord{}).Where("store_id = ?", storeID)
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("shipping: list shipments count: %w", err)
+	}
+
+	var recs []ShipmentRecord
+	err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&recs).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("shipping: list shipments: %w", err)
+	}
+	return recs, total, nil
+}
+
+func (r *gormRepository) UpdateShipmentStatus(ctx context.Context, id uuid.UUID, status string) error {
+	res := r.db.WithContext(ctx).
+		Model(&ShipmentRecord{}).
+		Where("id = ?", id).
+		Update("status", status)
+	if res.Error != nil {
+		return fmt.Errorf("shipping: update shipment status: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("shipping: shipment not found")
+	}
+	return nil
+}
+
+// --- Carrier configs ---
+
+func (r *gormRepository) GetCarrierConfig(ctx context.Context, storeID, provider string) (*CarrierConfig, error) {
+	var cfg CarrierConfig
+	err := r.db.WithContext(ctx).
+		Where("store_id = ? AND provider = ? AND enabled = true", storeID, provider).
+		First(&cfg).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("shipping: carrier config not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("shipping: get carrier config: %w", err)
+	}
+	return &cfg, nil
+}
+
+func (r *gormRepository) ListCarrierConfigs(ctx context.Context, storeID string) ([]CarrierConfig, error) {
+	var cfgs []CarrierConfig
+	err := r.db.WithContext(ctx).
+		Where("store_id = ?", storeID).
+		Order("provider ASC").
+		Find(&cfgs).Error
+	if err != nil {
+		return nil, fmt.Errorf("shipping: list carrier configs: %w", err)
+	}
+	return cfgs, nil
+}
+
+func (r *gormRepository) UpsertCarrierConfig(ctx context.Context, cfg *CarrierConfig) error {
+	if cfg.ID == uuid.Nil {
+		cfg.ID = uuid.New()
+	}
+	err := r.db.WithContext(ctx).
+		Where("store_id = ? AND provider = ?", cfg.StoreID, cfg.Provider).
+		Assign(CarrierConfig{
+			APIKey:                cfg.APIKey,
+			SecretKey:             cfg.SecretKey,
+			Mode:                  cfg.Mode,
+			HandlingFee:           cfg.HandlingFee,
+			FreeShippingThreshold: cfg.FreeShippingThreshold,
+			Enabled:               cfg.Enabled,
+		}).
+		FirstOrCreate(cfg).Error
+	if err != nil {
+		return fmt.Errorf("shipping: upsert carrier config: %w", err)
+	}
+	return nil
+}
+
+func (r *gormRepository) DeleteCarrierConfig(ctx context.Context, id uuid.UUID) error {
+	res := r.db.WithContext(ctx).Where("id = ?", id).Delete(&CarrierConfig{})
+	if res.Error != nil {
+		return fmt.Errorf("shipping: delete carrier config: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("shipping: carrier config not found")
+	}
+	return nil
+}

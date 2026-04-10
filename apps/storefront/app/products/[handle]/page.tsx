@@ -1,10 +1,8 @@
 // apps/storefront/app/products/[handle]/page.tsx
 //
-// Storefront product detail page. Resolves the store from the host
-// (matching the catalogue page), then fetches a single published
-// product by its handle from M6's marketplace-api. Renders an
-// editorial single-column layout with media gallery, price, options,
-// description, and category links.
+// Storefront product detail page. Server component fetches the product,
+// then hands off to client components for interactive variant selection,
+// media gallery, and add-to-cart.
 
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -12,13 +10,11 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
-import {
-  getProductByHandle,
-  type StorefrontProduct,
-} from "@/lib/api/marketplace-api";
+import { getProductByHandle } from "@/lib/api/marketplace-api";
 import { slugFromHost } from "@/lib/slug";
 import { StorefrontNav } from "@/components/StorefrontNav";
-import { AddToCartButton } from "@/components/AddToCartButton";
+import { MediaGallery } from "@/components/MediaGallery";
+import { ProductDetails } from "@/components/ProductDetails";
 
 export const dynamic = "force-dynamic";
 
@@ -80,138 +76,10 @@ export default async function StorefrontProductPage({
         </Link>
 
         <div className="grid gap-12 lg:grid-cols-2">
-          <Gallery product={product} />
-          <Details product={product} />
+          <MediaGallery media={product.media} productTitle={product.title} />
+          <ProductDetails product={product} />
         </div>
       </div>
     </main>
   );
-}
-
-function Gallery({ product }: { product: StorefrontProduct }) {
-  if (product.media.length === 0) {
-    return (
-      <div className="aspect-square rounded-md bg-[color:var(--paper-200)]" />
-    );
-  }
-  return (
-    <div className="flex flex-col gap-4">
-      {product.media.map((m, i) => (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={`${m.url}-${i}`}
-          src={m.url}
-          alt={m.alt ?? product.title}
-          className="w-full rounded-md bg-[color:var(--paper-200)] object-cover"
-        />
-      ))}
-    </div>
-  );
-}
-
-function Details({ product }: { product: StorefrontProduct }) {
-  const min = formatPrice(
-    product.price_range.min,
-    product.price_range.currency_code,
-  );
-  const max = formatPrice(
-    product.price_range.max,
-    product.price_range.currency_code,
-  );
-  const isRange = product.price_range.min !== product.price_range.max;
-  const firstVariant = product.variants[0];
-
-  return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl leading-tight text-[color:var(--ink-900)]">
-          {product.title}
-        </h1>
-        <p
-          className="text-2xl text-[color:var(--ink-900)]"
-          style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
-        >
-          {isRange ? `${min} – ${max}` : min}
-        </p>
-        {firstVariant && !firstVariant.in_stock && (
-          <p className="text-sm text-[color:var(--signal,#C23B22)]">
-            Out of stock
-          </p>
-        )}
-        {firstVariant && firstVariant.in_stock && firstVariant.low_stock && (
-          <p className="text-sm text-[color:var(--signal,#C23B22)]">
-            Low stock
-          </p>
-        )}
-      </header>
-
-      {product.description && (
-        <p className="whitespace-pre-line text-base leading-7 text-[color:var(--ink-900)] opacity-80">
-          {product.description}
-        </p>
-      )}
-
-      {product.options.length > 0 && (
-        <section className="border-t border-[color:var(--ink-900)] border-opacity-10 pt-6">
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-[color:var(--ink-900)] opacity-60">
-            Options
-          </h2>
-          <ul className="mt-3 space-y-2">
-            {product.options.map((opt) => (
-              <li
-                key={opt.name}
-                className="text-sm text-[color:var(--ink-900)]"
-              >
-                <span className="font-semibold">{opt.name}:</span>{" "}
-                <span className="opacity-70">
-                  {opt.values.map((v) => v.value).join(", ")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <AddToCartButton
-        productId={product.id}
-        variantId={firstVariant?.id ?? product.id}
-        handle={product.handle}
-        title={product.title}
-        priceAmount={firstVariant?.price ?? product.price_range.min}
-        currencyCode={firstVariant?.currency_code ?? product.price_range.currency_code}
-        imageUrl={product.media[0]?.url}
-        inStock={firstVariant?.in_stock ?? true}
-      />
-
-      {product.categories.length > 0 && (
-        <footer className="border-t border-[color:var(--ink-900)] border-opacity-10 pt-6">
-          <p className="text-xs uppercase tracking-widest text-[color:var(--ink-900)] opacity-50">
-            In
-          </p>
-          <ul className="mt-2 flex flex-wrap gap-2">
-            {product.categories.map((c) => (
-              <li key={c.slug}>
-                <span className="rounded-full border border-[color:var(--ink-900)] border-opacity-15 px-3 py-1 text-sm text-[color:var(--ink-900)] opacity-80">
-                  {c.name}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </footer>
-      )}
-    </div>
-  );
-}
-
-function formatPrice(amount: string, currencyCode: string): string {
-  const n = Number.parseFloat(amount);
-  if (!Number.isFinite(n)) return `${currencyCode} ${amount}`;
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currencyCode,
-    }).format(n);
-  } catch {
-    return `${currencyCode} ${amount}`;
-  }
 }

@@ -18,6 +18,8 @@ export interface AddToCartButtonProps {
   currencyCode: string;
   imageUrl?: string;
   inStock: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 export function AddToCartButton({
@@ -29,6 +31,8 @@ export function AddToCartButton({
   currencyCode,
   imageUrl,
   inStock,
+  disabled = false,
+  disabledReason,
 }: AddToCartButtonProps) {
   const { add } = useCart();
   const [justAdded, setJustAdded] = useState(false);
@@ -56,6 +60,18 @@ export function AddToCartButton({
         className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm text-[color:var(--paper-200)] opacity-40 cursor-not-allowed"
       >
         Out of stock
+      </button>
+    );
+  }
+
+  if (disabled) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm text-[color:var(--paper-200)] opacity-40 cursor-not-allowed"
+      >
+        {disabledReason ?? "Add to cart"}
       </button>
     );
   }

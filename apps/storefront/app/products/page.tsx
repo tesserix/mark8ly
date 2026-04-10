@@ -1,22 +1,30 @@
 // apps/storefront/app/products/page.tsx
 //
 // Storefront product catalogue. Resolves the store from the host
-// (subdomain) or query param fallback (matching the home-page pattern),
-// fetches the published-products list from M6's marketplace-api, and
-// renders a simple grid. Detail pages live at /products/[handle].
+// (subdomain) or query param fallback, fetches published products
+// and categories, renders a grid with search, category filter, and
+// pagination.
 
 import Link from "next/link";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 
-import { fetchStoreBySlug, type PublicStore } from "@/lib/api/platform-api";
-import { listProducts, type StorefrontProduct } from "@/lib/api/marketplace-api";
+import { fetchStoreBySlug } from "@/lib/api/platform-api";
+import {
+  listProducts,
+  listCategories,
+  type StorefrontProduct,
+} from "@/lib/api/marketplace-api";
 import { slugFromHost } from "@/lib/slug";
 import { makeTenantMetadata } from "@/lib/seo";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { ProductSearchInput } from "@/components/ProductSearchInput";
+import { CategoryFilter } from "@/components/CategoryFilter";
+import { Pagination } from "@/components/Pagination";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 24;
 
 interface PageProps {
   searchParams: Promise<{ slug?: string; page?: string; search?: string }>;
@@ -53,14 +61,22 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
     return <NotFound slug={slug} />;
   }
 
-  const response = await listProducts(slug, { page, pageSize: 24, search });
+  const [response, categories] = await Promise.all([
+    listProducts(slug, { page, pageSize: PAGE_SIZE, search }),
+    listCategories(slug),
+  ]);
   const products = response?.data ?? [];
+
+  // Build extra params to preserve across pagination links
+  const extraParams: Record<string, string> = {};
+  if (params.slug) extraParams.slug = params.slug;
+  if (search) extraParams.search = search;
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store.name} />
-        <header className="mb-10 flex flex-col gap-2 border-b border-[color:var(--ink-900)] border-opacity-10 pb-6">
+        <header className="mb-10 flex flex-col gap-4 border-b border-[color:var(--ink-900)]/10 pb-6">
           <Link
             href="/"
             className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
@@ -75,27 +91,39 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
               ? search
                 ? (
                     <span>
-                      No matches for &quot;{search}&quot;.{“ “}
+                      No matches for &quot;{search}&quot;.{" "}
                       <a
-                        href=”/products”
-                        className=”text-[color:var(--moss-700)] underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]”
+                        href="/products"
+                        className="text-[color:var(--moss-700)] underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
                       >
                         Clear search
                       </a>
                     </span>
                   )
-                : “No products yet — check back soon.”
-              : `${products.length} ${products.length === 1 ? “product” : “products”}${search ? ` matching “${search}”` : “”}`}
+                : "No products yet — check back soon."
+              : `${products.length} ${products.length === 1 ? "product" : "products"}${search ? ` matching "${search}"` : ""}`}
           </p>
-          <div className="mt-4">
+          <div className="mt-2">
             <ProductSearchInput />
           </div>
+          {!search && categories.length > 0 && (
+            <CategoryFilter categories={categories} />
+          )}
         </header>
 
         {products.length === 0 ? (
           <EmptyCatalogue />
         ) : (
-          <ProductGrid products={products} />
+          <>
+            <ProductGrid products={products} />
+            <Pagination
+              currentPage={page}
+              pageSize={PAGE_SIZE}
+              itemCount={products.length}
+              basePath="/products"
+              extraParams={extraParams}
+            />
+          </>
         )}
       </div>
     </main>
@@ -196,6 +224,3 @@ function formatPrice(amount: string, currencyCode: string): string {
     return `${currencyCode} ${amount}`;
   }
 }
-
-// Suppress unused-import warning for PublicStore until detail page lands.
-type _Unused = PublicStore;

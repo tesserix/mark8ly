@@ -1,8 +1,8 @@
 // apps/storefront/app/categories/[slug]/page.tsx
 //
 // Storefront category landing page. Reuses the same store-by-host
-// resolution and pricing helpers as the catalogue page; the only
-// difference is the category-slug filter passed to listProducts.
+// resolution and pricing helpers as the catalogue page; filters
+// products by category slug and includes pagination.
 
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -12,12 +12,17 @@ import { notFound } from "next/navigation";
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import {
   listProducts,
+  listCategories,
   type StorefrontProduct,
 } from "@/lib/api/marketplace-api";
 import { slugFromHost } from "@/lib/slug";
 import { StorefrontNav } from "@/components/StorefrontNav";
+import { CategoryFilter } from "@/components/CategoryFilter";
+import { Pagination } from "@/components/Pagination";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 24;
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -56,18 +61,20 @@ export default async function CategoryLandingPage({
   const store = storeSlug ? await fetchStoreBySlug(storeSlug) : null;
   if (!store) notFound();
 
-  const response = await listProducts(storeSlug, {
-    categorySlug,
-    page,
-    pageSize: 24,
-  });
+  const [response, categories] = await Promise.all([
+    listProducts(storeSlug, { categorySlug, page, pageSize: PAGE_SIZE }),
+    listCategories(storeSlug),
+  ]);
   const products = response?.data ?? [];
+
+  const extraParams: Record<string, string> = {};
+  if (sp.slug) extraParams.slug = sp.slug;
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store.name} />
-        <header className="mb-10 flex flex-col gap-2 border-b border-[color:var(--ink-900)] border-opacity-10 pb-6">
+        <header className="mb-10 flex flex-col gap-4 border-b border-[color:var(--ink-900)]/10 pb-6">
           <Link
             href="/products"
             className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
@@ -82,14 +89,29 @@ export default async function CategoryLandingPage({
               ? "Nothing in this category yet."
               : `${products.length} ${products.length === 1 ? "product" : "products"}`}
           </p>
+          {categories.length > 0 && (
+            <CategoryFilter
+              categories={categories}
+              activeCategorySlug={categorySlug}
+            />
+          )}
         </header>
 
         {products.length > 0 && (
-          <ul className="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </ul>
+          <>
+            <ul className="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+              {products.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </ul>
+            <Pagination
+              currentPage={page}
+              pageSize={PAGE_SIZE}
+              itemCount={products.length}
+              basePath={`/categories/${encodeURIComponent(categorySlug)}`}
+              extraParams={extraParams}
+            />
+          </>
         )}
       </div>
     </main>

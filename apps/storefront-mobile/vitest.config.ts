@@ -10,5 +10,8 @@ export default defineConfig({
     ],
     exclude: ["node_modules/**"],
     environment: "node",
+    typecheck: {
+      tsconfig: "./tsconfig.test.json",
+    },
   },
 });

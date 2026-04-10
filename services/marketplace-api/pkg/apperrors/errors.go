@@ -40,6 +40,13 @@ const (
 	CodeIdempotencyConflict     Code = "idempotency_conflict"
 	CodeReturnItemsExceedOrdered Code = "return_items_exceed_ordered"
 	CodeRecoveryTooRecent       Code = "recovery_too_recent"
+
+	// Coupons M1.
+	CodeCouponNotFound          Code = "coupon_not_found"
+	CodeCouponExpired           Code = "coupon_expired"
+	CodeCouponUsageLimitReached Code = "coupon_usage_limit_reached"
+	CodeCouponInvalid           Code = "coupon_invalid"
+	CodeCouponMinPurchaseNotMet Code = "coupon_min_purchase_not_met"
 )
 
 // Error is the marketplace-api envelope. Satisfies the error interface.
@@ -88,6 +95,13 @@ var (
 	ErrIdempotencyConflict      = &Error{Code: CodeIdempotencyConflict}
 	ErrReturnItemsExceedOrdered = &Error{Code: CodeReturnItemsExceedOrdered}
 	ErrRecoveryTooRecent        = &Error{Code: CodeRecoveryTooRecent}
+
+	// Coupons M1 sentinels.
+	ErrCouponNotFound          = &Error{Code: CodeCouponNotFound}
+	ErrCouponExpired           = &Error{Code: CodeCouponExpired}
+	ErrCouponUsageLimitReached = &Error{Code: CodeCouponUsageLimitReached}
+	ErrCouponInvalid           = &Error{Code: CodeCouponInvalid}
+	ErrCouponMinPurchaseNotMet = &Error{Code: CodeCouponMinPurchaseNotMet}
 )
 
 // Is makes errors.Is(err, sentinel) match when the codes are equal,
@@ -112,7 +126,9 @@ func IsKnownCode(s string) bool {
 		CodePayloadTooLarge, CodeUnsupportedMediaType, CodeRateLimited,
 		CodeCurrencyChangeForbidden, CodeOptionValueInUse,
 		CodeInvalidTransition, CodeRefundExceedsTotal, CodeIdempotencyConflict,
-		CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent:
+		CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent,
+		CodeCouponNotFound, CodeCouponExpired, CodeCouponUsageLimitReached,
+		CodeCouponInvalid, CodeCouponMinPurchaseNotMet:
 		return true
 	}
 	return false
@@ -279,4 +295,35 @@ func RecoveryTooRecent(lastSentAt string) *Error {
 	return &Error{Code: CodeRecoveryTooRecent,
 		Message: "recovery email was already sent within the last 24 hours",
 		Details: map[string]any{"last_sent_at": lastSentAt}}
+}
+
+// ---------- Coupons M1 constructors ----------
+
+func CouponNotFound(code string) *Error {
+	return &Error{Code: CodeCouponNotFound,
+		Message: fmt.Sprintf("coupon %q not found", code),
+		Details: map[string]any{"code": code}}
+}
+
+func CouponExpired(code string) *Error {
+	return &Error{Code: CodeCouponExpired,
+		Message: fmt.Sprintf("coupon %q has expired", code),
+		Details: map[string]any{"code": code}}
+}
+
+func CouponUsageLimitReached(code string, limit int) *Error {
+	return &Error{Code: CodeCouponUsageLimitReached,
+		Message: fmt.Sprintf("coupon %q has reached its usage limit", code),
+		Details: map[string]any{"code": code, "usage_limit": limit}}
+}
+
+func CouponInvalid(reason string) *Error {
+	return &Error{Code: CodeCouponInvalid,
+		Message: reason}
+}
+
+func CouponMinPurchaseNotMet(code, minPurchase, subtotal string) *Error {
+	return &Error{Code: CodeCouponMinPurchaseNotMet,
+		Message: fmt.Sprintf("coupon %q requires a minimum purchase of %s (subtotal: %s)", code, minPurchase, subtotal),
+		Details: map[string]any{"code": code, "min_purchase": minPurchase, "subtotal": subtotal}}
 }

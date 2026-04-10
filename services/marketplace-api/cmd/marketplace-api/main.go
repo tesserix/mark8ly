@@ -27,6 +27,7 @@ import (
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/category"
+	"github.com/mark8ly/marketplace-api/internal/coupon"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
@@ -111,6 +112,16 @@ func main() {
 		os.Exit(1)
 	}
 	authzMW := authz.NewMiddleware(fgaClient, log)
+
+	// Coupon wiring — shared between admin and storefront (amendment FIX 9:
+	// gormRepository is stateless and Service is read-safe, so one instance
+	// serves both modes).
+	couponRepo := coupon.NewRepository()
+	couponSvc := coupon.NewService(coupon.ServiceConfig{
+		DB:     conn,
+		Repo:   couponRepo,
+		Logger: log,
+	})
 
 	// Admin wiring — constructed for admin and both modes. The storefront
 	// process never mounts the admin group so these dependencies would go
@@ -203,6 +214,9 @@ func main() {
 		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, log)
 		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, log)
 
+		// Coupon handler (Marketing M1).
+		couponHandler := admin.NewCouponHandler(couponSvc, log)
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -217,6 +231,7 @@ func main() {
 			PaymentSettingsHandler:  paymentSettingsHandler,
 			ShippingSettingsHandler: shippingSettingsHandler,
 			TaxSettingsHandler:      taxSettingsHandler,
+			CouponHandler:          couponHandler,
 			StoresMiddleware:        storeMW,
 			AuthzMiddleware:         authzMW,
 			InternalSecret:          cfg.InternalAuthSecret,
@@ -252,8 +267,11 @@ func main() {
 		countryRepo := country.NewRepository(conn)
 		countryHandler := country.NewHandler(countryRepo)
 
+		// Coupon storefront wiring (Marketing M1) — shares couponSvc instance.
+		couponValidateHandler := storefront.NewCouponValidateHandler(couponSvc, log)
+
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
-		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, log)
+		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, log)
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log)
@@ -267,6 +285,7 @@ func main() {
 			ShippingRatesHandler:  shippingRatesHandler,
 			WebhookHandler:        webhookHandler,
 			OrderDetailHandler:    orderDetailHandler,
+			CouponValidateHandler: couponValidateHandler,
 			SlugCache:             slugCache,
 			StorefrontKey:         cfg.StorefrontKey,
 			CountryHandler:        countryHandler,

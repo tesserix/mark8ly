@@ -39,6 +39,13 @@ var codeStatus = map[apperrors.Code]int{
 	apperrors.CodeIdempotencyConflict:      http.StatusConflict,
 	apperrors.CodeReturnItemsExceedOrdered: http.StatusUnprocessableEntity,
 	apperrors.CodeRecoveryTooRecent:        http.StatusTooManyRequests,
+
+	// Coupons M1.
+	apperrors.CodeCouponNotFound:          http.StatusNotFound,
+	apperrors.CodeCouponExpired:           http.StatusUnprocessableEntity,
+	apperrors.CodeCouponUsageLimitReached: http.StatusUnprocessableEntity,
+	apperrors.CodeCouponInvalid:           http.StatusUnprocessableEntity,
+	apperrors.CodeCouponMinPurchaseNotMet: http.StatusUnprocessableEntity,
 }
 
 // RespondErr writes the standard error envelope for the given error.

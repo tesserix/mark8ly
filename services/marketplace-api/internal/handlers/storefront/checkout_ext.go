@@ -19,6 +19,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/country"
+	"github.com/mark8ly/marketplace-api/internal/coupon"
+	"github.com/mark8ly/marketplace-api/internal/discount"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
@@ -30,14 +32,15 @@ import (
 // CheckoutExtHandler is the extended storefront checkout that integrates
 // payment intent creation, tax calculation, and shipping rate selection.
 type CheckoutExtHandler struct {
-	db       *gorm.DB
-	orderSvc *order.Service
-	logger   *slog.Logger
+	db        *gorm.DB
+	orderSvc  *order.Service
+	couponSvc *coupon.Service
+	logger    *slog.Logger
 }
 
 // NewCheckoutExtHandler constructs a CheckoutExtHandler.
-func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, logger *slog.Logger) *CheckoutExtHandler {
-	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, logger: logger}
+func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coupon.Service, logger *slog.Logger) *CheckoutExtHandler {
+	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, couponSvc: couponSvc, logger: logger}
 }
 
 // CheckoutExtRequest is the wire body for the extended checkout endpoint.
@@ -53,6 +56,7 @@ type CheckoutExtRequest struct {
 	PaymentProvider string                 `json:"payment_provider" binding:"required"`
 	Subtotal        decimal.Decimal        `json:"subtotal"         binding:"required"`
 	DiscountTotal   decimal.Decimal        `json:"discount_total"`
+	CouponCode      *string                `json:"coupon_code"`
 }
 
 // CheckoutExtResponse is the extended checkout response including payment
@@ -64,7 +68,9 @@ type CheckoutExtResponse struct {
 	Provider      string          `json:"provider"`
 	TaxTotal      decimal.Decimal `json:"tax_total"`
 	ShippingTotal decimal.Decimal `json:"shipping_total"`
+	DiscountTotal decimal.Decimal `json:"discount_total"`
 	Total         decimal.Decimal `json:"total"`
+	CouponCode    *string         `json:"coupon_code,omitempty"`
 }
 
 // Checkout handles POST /storefront/stores/:storeSlug/checkout (extended).
@@ -146,12 +152,41 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		return
 	}
 
+	// ── Step 1.5: Coupon preview (for shipping/tax calc) ───────────────
+	// We do a lightweight validation here to compute the discount amount
+	// for the grand total calculation. The authoritative validate+apply
+	// happens atomically inside the order transaction (amendment FIX 1+2).
+	var couponDiscount decimal.Decimal
+	var appliedCouponCode *string
+	var freeShippingCoupon bool
+	if req.CouponCode != nil && *req.CouponCode != "" && h.couponSvc != nil {
+		validateResult, err := h.couponSvc.Validate(ctx, coupon.ValidateInput{
+			TenantID:      tenantID,
+			StoreID:       storeID,
+			Code:          *req.CouponCode,
+			CustomerEmail: req.CustomerEmail,
+			Subtotal:      req.Subtotal,
+		})
+		if err != nil {
+			h.respondErr(c, err)
+			return
+		}
+		couponDiscount = validateResult.DiscountAmount
+		appliedCouponCode = &validateResult.Code
+		freeShippingCoupon = validateResult.FreeShipping
+	}
+
 	// ── Step 2: Calculate shipping ──────────────────────────────────────
 	shippingTotal, err := h.calculateShipping(ctx, store, &sc, req)
 	if err != nil {
 		// M8 fix: return error instead of silently falling back to zero.
 		h.respondErr(c, fmt.Errorf("shipping calculation failed: %w", err))
 		return
+	}
+
+	// Free shipping coupon override.
+	if freeShippingCoupon {
+		shippingTotal = decimal.Zero
 	}
 
 	// ── Step 3: Calculate tax ───────────────────────────────────────────
@@ -163,7 +198,12 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	}
 
 	// ── Step 4: Create order ────────────────────────────────────────────
-	grandTotal := req.Subtotal.Add(shippingTotal).Add(taxBreakdown.TaxTotal).Sub(req.DiscountTotal)
+	// Use coupon discount if a coupon was applied, otherwise use client-supplied discount.
+	effectiveDiscount := req.DiscountTotal
+	if couponDiscount.GreaterThan(decimal.Zero) {
+		effectiveDiscount = couponDiscount
+	}
+	grandTotal := req.Subtotal.Add(shippingTotal).Add(taxBreakdown.TaxTotal).Sub(effectiveDiscount)
 
 	// Use billing address if provided, otherwise mirror shipping.
 	billing := req.ShippingAddress
@@ -189,7 +229,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		Subtotal:       req.Subtotal,
 		ShippingTotal:  shippingTotal,
 		TaxTotal:       taxBreakdown.TaxTotal,
-		DiscountTotal:  req.DiscountTotal,
+		DiscountTotal:  effectiveDiscount,
 		GrandTotal:     grandTotal,
 		CurrencyCode:   store.CurrencyCode,
 	}
@@ -210,9 +250,33 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 			Provider:      req.PaymentProvider,
 			TaxTotal:      result.Order.TaxTotal,
 			ShippingTotal: result.Order.ShippingTotal,
+			DiscountTotal: result.Order.DiscountTotal,
 			Total:         result.Order.GrandTotal,
+			CouponCode:    appliedCouponCode,
 		})
 		return
+	}
+
+	// ── Step 4.5: Atomic coupon apply ──────────────────────────────────
+	// Amendment CRITICAL FIX 1+2: validate + apply + usage increment
+	// inside a single transaction. If this fails, the order exists but
+	// the coupon was NOT consumed — we return an error.
+	if appliedCouponCode != nil && h.couponSvc != nil {
+		applier := coupon.NewCouponApplier(h.couponSvc, *appliedCouponCode, req.CustomerEmail)
+		if err := h.orderSvc.Unit(ctx, func(tx *gorm.DB) error {
+			_, applyErr := applier.Apply(ctx, tx, discount.ApplyInput{
+				TenantID:      tenantID,
+				StoreID:       storeID,
+				OrderID:       result.Order.ID,
+				CustomerEmail: req.CustomerEmail,
+				Subtotal:      req.Subtotal,
+				CurrencyCode:  store.CurrencyCode,
+			})
+			return applyErr
+		}); err != nil {
+			h.respondErr(c, err)
+			return
+		}
 	}
 
 	// ── Step 5: Save tax lines ──────────────────────────────────────────
@@ -239,7 +303,9 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 			Provider:      req.PaymentProvider,
 			TaxTotal:      taxBreakdown.TaxTotal,
 			ShippingTotal: shippingTotal,
+			DiscountTotal: effectiveDiscount,
 			Total:         grandTotal,
+			CouponCode:    appliedCouponCode,
 		})
 		return
 	}
@@ -261,7 +327,9 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		Provider:      req.PaymentProvider,
 		TaxTotal:      taxBreakdown.TaxTotal,
 		ShippingTotal: shippingTotal,
+		DiscountTotal: effectiveDiscount,
 		Total:         grandTotal,
+		CouponCode:    appliedCouponCode,
 	})
 }
 
@@ -517,8 +585,20 @@ func (h *CheckoutExtHandler) respondErr(c *gin.Context, err error) {
 		case apperrors.CodeValidationFailed,
 			apperrors.CodeCurrencyMismatch,
 			apperrors.CodeInvalidTransition,
-			apperrors.CodeIdempotencyConflict:
+			apperrors.CodeIdempotencyConflict,
+			apperrors.CodeCouponInvalid,
+			apperrors.CodeCouponMinPurchaseNotMet:
 			c.AbortWithStatusJSON(http.StatusBadRequest, map[string]any{
+				"error":   string(ae.Code),
+				"message": ae.Message,
+			})
+			return
+		case apperrors.CodeCouponNotFound:
+			respondNotFound(c)
+			return
+		case apperrors.CodeCouponExpired,
+			apperrors.CodeCouponUsageLimitReached:
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, map[string]any{
 				"error":   string(ae.Code),
 				"message": ae.Message,
 			})

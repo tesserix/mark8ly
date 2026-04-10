@@ -6,6 +6,7 @@ package storefront
 import (
 	"github.com/gin-gonic/gin"
 
+	"github.com/mark8ly/marketplace-api/internal/ratelimit"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
@@ -17,9 +18,10 @@ type Deps struct {
 	CheckoutExtHandler   *CheckoutExtHandler
 	PaymentMethodsHandler *PaymentMethodsHandler
 	ShippingRatesHandler *ShippingRatesHandler
-	WebhookHandler       *WebhookHandler
-	OrderDetailHandler   *OrderDetailHandler
-	SlugCache            *stores.SlugCache
+	WebhookHandler        *WebhookHandler
+	OrderDetailHandler    *OrderDetailHandler
+	CouponValidateHandler *CouponValidateHandler
+	SlugCache             *stores.SlugCache
 	StorefrontKey        string
 	CountryHandler       CountryLister // optional — set when country handler is wired
 }
@@ -60,6 +62,14 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		}
 		if deps.OrderDetailHandler != nil {
 			group.GET("/orders/:id", deps.OrderDetailHandler.GetOrder)
+		}
+
+		// Coupon validation — Marketing M1.
+		// Rate-limited: 10 req/min per IP.
+		if deps.CouponValidateHandler != nil {
+			group.POST("/coupons/validate",
+				ratelimit.PerIP(0.167, 10), // ~10 req/min
+				deps.CouponValidateHandler.Validate)
 		}
 	}
 

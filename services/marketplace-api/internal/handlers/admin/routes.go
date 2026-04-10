@@ -27,6 +27,7 @@ type Deps struct {
 	PaymentSettingsHandler   *PaymentSettingsHandler
 	ShippingSettingsHandler  *ShippingSettingsHandler
 	TaxSettingsHandler       *TaxSettingsHandler
+	CouponHandler            *CouponHandler
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware          *authz.Middleware
 	InternalSecret           string
@@ -229,6 +230,28 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				ts.PUT("/taxjar",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
 					deps.TaxSettingsHandler.UpsertTaxJar)
+			}
+		}
+
+		// Coupons — Marketing M1.
+		if deps.CouponHandler != nil {
+			coupons := storeRoute.Group("/coupons")
+			{
+				coupons.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+					deps.CouponHandler.List)
+				coupons.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.CouponHandler.Create)
+				coupons.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+					deps.CouponHandler.Get)
+				coupons.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.CouponHandler.Patch)
+				coupons.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.CouponHandler.Delete)
 			}
 		}
 

@@ -23,6 +23,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	firebase "firebase.google.com/go/v4"
+	"github.com/gin-gonic/gin"
 	"golang.org/x/sync/singleflight"
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
@@ -361,6 +362,7 @@ func main() {
 
 	// Mobile admin deps — Bearer auth for external mobile clients.
 	var mobileDeps admin.MobileDeps
+	var pushWebhookHandler gin.HandlerFunc
 	if m == mode.Admin || m == mode.Both {
 		var tokenVerifier auth.TokenVerifier
 		if cfg.GIPProjectID != "" {
@@ -380,6 +382,8 @@ func main() {
 		}
 		pushRepo := push.NewRepository(conn)
 		pushTokenHandler := admin.NewPushTokenHandler(pushRepo, log)
+		pushSender := push.NewSender(&http.Client{Timeout: 10 * time.Second})
+		pushWebhookHandler = push.NewWebhookHandler(pushSender, pushRepo, log)
 
 		mobileDeps = admin.MobileDeps{
 			Deps:             adminDeps,
@@ -646,6 +650,9 @@ func main() {
 		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefront(r.Group("/api/v1"), mobileSFDeps)
+		if pushWebhookHandler != nil {
+			r.POST("/internal/push-webhook", pushWebhookHandler)
+		}
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
 			Handler: r,
@@ -663,6 +670,9 @@ func main() {
 			admin.RegisterAdminMobile(engine.Group("/api/v1"), mobileDeps)
 			if countryPublicHandler != nil {
 				engine.GET("/api/v1/public/supported-countries", countryPublicHandler.ListSupported)
+			}
+			if pushWebhookHandler != nil {
+				engine.POST("/internal/push-webhook", pushWebhookHandler)
 			}
 		}
 		if m == mode.Storefront {

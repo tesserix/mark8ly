@@ -188,6 +188,8 @@ function AdminShellFrame({
     <>
       <Sidebar
         collapsible="icon"
+        role="navigation"
+        aria-label="Main navigation"
         className="border-r border-border-subtle bg-background-elevated text-foreground"
       >
         <SidebarHeader className="border-b border-border-subtle px-4 py-5 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-3">

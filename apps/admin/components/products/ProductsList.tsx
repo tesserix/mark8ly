@@ -145,6 +145,7 @@ export function ProductsList({
 
   return (
     <div className="w-full">
+      <div className="table-responsive">
       <table
         className="w-full border-collapse text-sm"
         aria-label="Products"
@@ -192,6 +193,7 @@ export function ProductsList({
           ))}
         </tbody>
       </table>
+      </div>
 
       <BulkActionsBar
         selectedIds={selection.selectedIds}
@@ -324,15 +326,21 @@ function ProductRow({
         <button
           type="button"
           aria-label={`More actions for ${product.title}`}
+          aria-haspopup="menu"
+          aria-expanded={isMenuOpen}
           onClick={onMenuToggle}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--ink-900)] opacity-60 hover:bg-[color:var(--ink-900)] hover:bg-opacity-5 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </button>
         {isMenuOpen && (
-          <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--background-elevated,white)] py-1 shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))]">
+          <div
+            role="menu"
+            className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--background-elevated,white)] py-1 shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))]"
+          >
             <button
               type="button"
+              role="menuitem"
               onClick={onCopyToStore}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5"
             >

@@ -27,6 +27,7 @@ import (
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/category"
+	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
@@ -239,11 +240,15 @@ func main() {
 		orderSvcSF := order.NewService(conn, orderRepoSF, outboxRepoSF)
 		checkoutHandler := storefront.NewCheckoutHandler(conn, orderSvcSF, orderRepoSF, log)
 
+		countryRepo := country.NewRepository(conn)
+		countryHandler := country.NewHandler(countryRepo)
+
 		storefrontDeps = storefront.Deps{
 			Handler:         storefrontHandler,
 			CheckoutHandler: checkoutHandler,
 			SlugCache:       slugCache,
 			StorefrontKey:   cfg.StorefrontKey,
+			CountryHandler:  countryHandler,
 		}
 	}
 
@@ -308,6 +313,15 @@ func main() {
 		log.Info("outbox publisher started")
 	}
 
+	// Public country endpoint — available in ALL modes (admin, storefront, both).
+	// When storefront mode is active, it's already wired via storefrontDeps.
+	// For admin-only mode, we register it directly on the admin engine below.
+	var countryPublicHandler *country.Handler
+	if m == mode.Admin {
+		countryRepo := country.NewRepository(conn)
+		countryPublicHandler = country.NewHandler(countryRepo)
+	}
+
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)
 
@@ -336,6 +350,9 @@ func main() {
 		healthHandler.Register(engine)
 		if m == mode.Admin {
 			admin.RegisterAdmin(engine.Group("/api/v1"), adminDeps)
+			if countryPublicHandler != nil {
+				engine.GET("/api/v1/public/supported-countries", countryPublicHandler.ListSupported)
+			}
 		}
 		if m == mode.Storefront {
 			storefront.RegisterStorefront(engine.Group("/api/v1"), storefrontDeps)

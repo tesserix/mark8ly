@@ -16,6 +16,12 @@ type Deps struct {
 	CheckoutHandler *CheckoutHandler
 	SlugCache       *stores.SlugCache
 	StorefrontKey   string
+	CountryHandler  CountryLister // optional — set when country handler is wired
+}
+
+// CountryLister is satisfied by country.Handler.ListSupported.
+type CountryLister interface {
+	ListSupported(c *gin.Context)
 }
 
 // RegisterStorefront mounts the storefront routes on the given router
@@ -36,5 +42,10 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		if deps.CheckoutHandler != nil {
 			group.POST("/checkout", deps.CheckoutHandler.Checkout)
 		}
+	}
+
+	// Public reference data — no auth, no store context.
+	if deps.CountryHandler != nil {
+		router.GET("/public/supported-countries", deps.CountryHandler.ListSupported)
 	}
 }

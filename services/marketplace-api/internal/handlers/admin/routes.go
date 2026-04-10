@@ -108,10 +108,12 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			}
 		}
 
-		// Returns — Request lives under /orders/:orderId/returns; the
-		// state-change actions live under /returns/:id/<verb>.
+		// Returns — Request lives under /orders/:id/returns (same :id
+		// parameter name as the orders subtree to satisfy gin's per-level
+		// param-name uniqueness rule). State-change actions live under
+		// /returns/:id/<verb>.
 		if deps.ReturnsHandler != nil {
-			storeRoute.POST("/orders/:orderId/returns",
+			storeRoute.POST("/orders/:id/returns",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
 				deps.ReturnsHandler.Request)
 			returns := storeRoute.Group("/returns")

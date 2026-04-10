@@ -76,14 +76,16 @@ func (h *ReturnsHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, ToAdminReturnResponse(r, items))
 }
 
-// Request handles POST /admin/stores/:storeId/orders/:orderId/returns.
+// Request handles POST /admin/stores/:storeId/orders/:id/returns.
 //
 // Allocates a per-store return sequence number, then calls
 // ReturnService.Request which validates ordered quantities and writes the
-// return + cross-module return_requested event in one tx.
+// return + cross-module return_requested event in one tx. The :id path
+// param is the order id (gin requires the same param name across the
+// whole /orders subtree).
 func (h *ReturnsHandler) Request(c *gin.Context) {
 	storeID := c.Param("storeId")
-	orderID := c.Param("orderId")
+	orderID := c.Param("id")
 	tenantID := c.GetString("tenant_id")
 
 	storeUUID, err := uuid.Parse(storeID)

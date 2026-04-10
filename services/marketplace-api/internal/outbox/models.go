@@ -30,9 +30,12 @@ func (OutboxEvent) TableName() string { return "outbox_events" }
 
 // Aggregate constants used by producers.
 const (
-	AggregateProduct  = "product"
-	AggregateCategory = "category"
-	AggregateMedia    = "media"
+	AggregateProduct        = "product"
+	AggregateCategory       = "category"
+	AggregateMedia          = "media"
+	AggregateOrder          = "order"
+	AggregateReturn         = "return"
+	AggregateAbandonedCart  = "abandoned_cart"
 )
 
 // EventType constants.
@@ -43,4 +46,28 @@ const (
 	EventCategoryCreated = "category.created"
 	EventCategoryUpdated = "category.updated"
 	EventCategoryDeleted = "category.deleted"
+
+	// Orders slice 1.
+	EventOrderPlaced               = "order.placed"
+	EventOrderConfirmed            = "order.confirmed"
+	EventOrderFulfilled            = "order.fulfilled"
+	EventOrderCancelled            = "order.cancelled"
+	EventOrderRefunded             = "order.refunded"
+	EventReturnRequested           = "return.requested"
+	EventReturnApproved            = "return.approved"
+	EventReturnReceived            = "return.received"
+	EventReturnRefunded            = "return.refunded"
+	EventReturnRejected            = "return.rejected"
+	EventAbandonedCartRecoveryEmail = "abandoned_cart.recovery_email"
 )
+
+// IsOrderAggregate reports whether an aggregate string belongs to the orders
+// domain. The watermark publisher uses this to decide which store_watermarks
+// column to bump (orders_updated_at vs products_updated_at).
+func IsOrderAggregate(a string) bool {
+	switch a {
+	case AggregateOrder, AggregateReturn, AggregateAbandonedCart:
+		return true
+	}
+	return false
+}

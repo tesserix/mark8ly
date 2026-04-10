@@ -54,7 +54,7 @@ jobs:
           node-version: "22"
           cache: "npm"
       - run: npm install --legacy-peer-deps
-      - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff'
+      - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-admin' --filter='!@repo/mobile-shared'
 
   # ─── Image build + push ────────────────────────────────────────────
   # Builds 5 immutable images tagged sha-<12-char-commit> and pushes

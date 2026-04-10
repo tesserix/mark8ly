@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity, Linking, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useNotifications } from "../../../lib/hooks/use-notifications";
+import { theme } from "@/lib/theme";
 
 const APP_VERSION = "1.0.0";
 
@@ -18,6 +19,7 @@ export default function MoreScreen() {
           onPress={() => router.push("/(tabs)/more/notifications")}
           activeOpacity={0.7}
           accessibilityRole="button"
+          accessibilityLabel={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
         >
           <Text style={styles.menuLabel}>Notifications</Text>
           {unreadCount > 0 && (
@@ -37,6 +39,7 @@ export default function MoreScreen() {
           onPress={() => router.push("/(tabs)/more/account")}
           activeOpacity={0.7}
           accessibilityRole="button"
+          accessibilityLabel="Account settings"
         >
           <Text style={styles.menuLabel}>Account</Text>
           <Text style={styles.chevron}>&#x203A;</Text>
@@ -49,6 +52,7 @@ export default function MoreScreen() {
           onPress={() => Linking.openURL("https://admin.mark8ly.com")}
           activeOpacity={0.7}
           accessibilityRole="link"
+          accessibilityLabel="Open admin dashboard in browser"
         >
           <Text style={styles.menuLabel}>Open in Browser</Text>
           <Text style={styles.chevron}>&#x203A;</Text>
@@ -63,58 +67,59 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
-    paddingTop: 16,
+    backgroundColor: theme.colors.background,
+    paddingTop: theme.spacing.lg,
   },
   menu: {
-    backgroundColor: "#FFFFFF",
-    marginHorizontal: 16,
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    marginHorizontal: theme.spacing.lg,
+    borderRadius: theme.radius,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.lg,
+    minHeight: 48,
   },
   menuLabel: {
     flex: 1,
     fontSize: 15,
     fontWeight: "500",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   badge: {
-    backgroundColor: "#8B2020",
+    backgroundColor: theme.colors.danger,
     borderRadius: 10,
     minWidth: 20,
     height: 20,
-    paddingHorizontal: 6,
+    paddingHorizontal: theme.spacing.sm,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 8,
+    marginRight: theme.spacing.sm,
   },
   badgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
   chevron: {
     fontSize: 20,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.3,
   },
   separator: {
     height: 0.5,
-    backgroundColor: "#0E0E0C10",
-    marginLeft: 16,
+    backgroundColor: `${theme.colors.text}10`,
+    marginLeft: theme.spacing.lg,
   },
   version: {
     textAlign: "center",
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.3,
-    marginTop: 24,
+    marginTop: theme.spacing.xxl,
   },
 });

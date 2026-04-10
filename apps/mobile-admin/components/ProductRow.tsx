@@ -1,4 +1,5 @@
 import { View, Text, Image, TouchableOpacity, StyleSheet } from "react-native";
+import { theme } from "@/lib/theme";
 import type { Product } from "@repo/mobile-shared/api/types";
 
 interface ProductRowProps {
@@ -29,6 +30,7 @@ export function ProductRow({ product, onPress }: ProductRowProps) {
         <Image
           source={{ uri: product.thumbnail_url }}
           style={styles.thumbnail}
+          accessibilityLabel={`${product.name} thumbnail`}
         />
       ) : (
         <View style={[styles.thumbnail, styles.thumbnailPlaceholder]} />
@@ -45,8 +47,9 @@ export function ProductRow({ product, onPress }: ProductRowProps) {
       <View
         style={[
           styles.statusDot,
-          { backgroundColor: isActive ? "#2D4A2B" : "#0E0E0C40" },
+          { backgroundColor: isActive ? theme.colors.accent : `${theme.colors.text}40` },
         ]}
+        accessibilityLabel={isActive ? "Active" : "Inactive"}
       />
     </TouchableOpacity>
   );
@@ -54,32 +57,32 @@ export function ProductRow({ product, onPress }: ProductRowProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
-    padding: 12,
-    marginHorizontal: 16,
-    marginBottom: 8,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
+    padding: theme.spacing.md,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
     flexDirection: "row",
     alignItems: "center",
   },
   thumbnail: {
     width: 48,
     height: 48,
-    borderRadius: 6,
+    borderRadius: theme.radius,
   },
   thumbnailPlaceholder: {
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   info: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: theme.spacing.md,
   },
   name: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 3,
   },
   metaRow: {
@@ -90,17 +93,17 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   stock: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
   },
   statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginLeft: 8,
+    marginLeft: theme.spacing.sm,
   },
 });

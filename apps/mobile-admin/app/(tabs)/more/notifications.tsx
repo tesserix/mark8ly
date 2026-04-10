@@ -10,13 +10,14 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useNotifications, useMarkAllRead } from "../../../lib/hooks/use-notifications";
+import { theme } from "@/lib/theme";
 import type { Notification } from "@repo/mobile-shared/api/types";
 
 const TYPE_COLORS: Record<string, string> = {
-  order: "#2D4A2B",
+  order: theme.colors.accent,
   payment: "#F59E0B",
-  alert: "#8B2020",
-  system: "#0E0E0C",
+  alert: theme.colors.danger,
+  system: theme.colors.text,
 };
 
 function formatRelativeTime(dateString: string): string {
@@ -41,7 +42,7 @@ function NotificationItem({
   notification: Notification;
   onPress: (n: Notification) => void;
 }) {
-  const dotColor = TYPE_COLORS[notification.type] ?? "#0E0E0C";
+  const dotColor = TYPE_COLORS[notification.type] ?? theme.colors.text;
   const isUnread = !notification.read;
 
   return (
@@ -107,6 +108,7 @@ export default function NotificationsScreen() {
           onPress={() => markAllRead.mutate()}
           disabled={markAllRead.isPending}
           accessibilityRole="button"
+          accessibilityLabel={markAllRead.isPending ? "Marking all as read" : "Mark all as read"}
         >
           <Text style={styles.markAllText}>
             {markAllRead.isPending ? "Marking..." : "Mark all as read"}
@@ -116,7 +118,7 @@ export default function NotificationsScreen() {
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#0E0E0C" />
+          <ActivityIndicator size="large" color={theme.colors.text} />
         </View>
       ) : (
         <FlatList
@@ -128,7 +130,7 @@ export default function NotificationsScreen() {
             <RefreshControl
               refreshing={isRefetching}
               onRefresh={refetch}
-              tintColor="#0E0E0C"
+              tintColor={theme.colors.text}
             />
           }
           ListEmptyComponent={
@@ -148,29 +150,31 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   markAllBtn: {
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: 10,
     alignItems: "flex-end",
+    minHeight: 44,
+    justifyContent: "center",
   },
   markAllText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#2D4A2B",
+    color: theme.colors.accent,
   },
   listContent: {
-    paddingBottom: 24,
+    paddingBottom: theme.spacing.xxl,
     flexGrow: 1,
   },
   notifRow: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.colors.elevated,
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.lg,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#0E0E0C10",
+    borderBottomColor: `${theme.colors.text}10`,
   },
   notifRowUnread: {
     backgroundColor: "#FAFAF6",
@@ -184,7 +188,7 @@ const styles = StyleSheet.create({
   },
   dotContainer: {
     width: 24,
-    paddingTop: 4,
+    paddingTop: theme.spacing.xs,
   },
   dot: {
     width: 8,
@@ -197,7 +201,7 @@ const styles = StyleSheet.create({
   notifTitle: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 2,
   },
   notifTitleUnread: {
@@ -205,14 +209,14 @@ const styles = StyleSheet.create({
   },
   notifBody: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
     lineHeight: 18,
-    marginBottom: 4,
+    marginBottom: theme.spacing.xs,
   },
   notifTime: {
     fontSize: 11,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.35,
   },
   centered: {
@@ -224,12 +228,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#0E0E0C",
-    marginBottom: 4,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   emptySubtitle: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
   },
 });

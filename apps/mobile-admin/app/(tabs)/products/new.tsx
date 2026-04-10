@@ -12,6 +12,7 @@ import {
 import { useRouter } from "expo-router";
 import { ProductMediaPicker } from "../../../components/ProductMediaPicker";
 import { useCreateProduct, useUploadMedia } from "../../../lib/admin-api/product-crud";
+import { theme } from "@/lib/theme";
 
 const TOTAL_STEPS = 4;
 
@@ -38,27 +39,27 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
 
 const stepStyles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.lg,
   },
   label: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
-    marginBottom: 6,
+    marginBottom: theme.spacing.sm,
   },
   track: {
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#0E0E0C15",
+    backgroundColor: `${theme.colors.text}15`,
     overflow: "hidden",
   },
   fill: {
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#2D4A2B",
+    backgroundColor: theme.colors.accent,
   },
 });
 
@@ -199,8 +200,9 @@ export default function NewProductScreen() {
               value={name}
               onChangeText={setName}
               placeholder="e.g. Handmade Ceramic Mug"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
               autoFocus
+              accessibilityLabel="Product name"
             />
             <FieldLabel label="Description" />
             <TextInput
@@ -208,10 +210,11 @@ export default function NewProductScreen() {
               value={description}
               onChangeText={setDescription}
               placeholder="Describe your product..."
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              accessibilityLabel="Product description"
             />
             <View style={styles.row}>
               <View style={styles.halfField}>
@@ -222,7 +225,8 @@ export default function NewProductScreen() {
                   onChangeText={setPrice}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
-                  placeholderTextColor="#0E0E0C50"
+                  placeholderTextColor={`${theme.colors.text}50`}
+                  accessibilityLabel="Product price"
                 />
               </View>
               <View style={styles.halfField}>
@@ -233,7 +237,8 @@ export default function NewProductScreen() {
                   onChangeText={setCompareAtPrice}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
-                  placeholderTextColor="#0E0E0C50"
+                  placeholderTextColor={`${theme.colors.text}50`}
+                  accessibilityLabel="Compare at price"
                 />
               </View>
             </View>
@@ -245,8 +250,9 @@ export default function NewProductScreen() {
                   value={sku}
                   onChangeText={setSku}
                   placeholder="SKU-001"
-                  placeholderTextColor="#0E0E0C50"
+                  placeholderTextColor={`${theme.colors.text}50`}
                   autoCapitalize="characters"
+                  accessibilityLabel="Product SKU"
                 />
               </View>
               <View style={styles.halfField}>
@@ -257,7 +263,8 @@ export default function NewProductScreen() {
                   onChangeText={setStock}
                   keyboardType="number-pad"
                   placeholder="0"
-                  placeholderTextColor="#0E0E0C50"
+                  placeholderTextColor={`${theme.colors.text}50`}
+                  accessibilityLabel="Stock quantity"
                 />
               </View>
             </View>
@@ -274,7 +281,8 @@ export default function NewProductScreen() {
               value={categoryId}
               onChangeText={setCategoryId}
               placeholder="Category ID (optional)"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
+              accessibilityLabel="Category ID"
             />
             <FieldLabel label="Tags" />
             <TextInput
@@ -282,8 +290,9 @@ export default function NewProductScreen() {
               value={tags}
               onChangeText={setTags}
               placeholder="tag1, tag2, tag3"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
               autoCapitalize="none"
+              accessibilityLabel="Product tags"
             />
             <FieldLabel label="Status" />
             <View style={styles.statusRow}>
@@ -299,6 +308,7 @@ export default function NewProductScreen() {
                     onPress={() => setStatus(opt.key)}
                     accessibilityRole="button"
                     accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`Status: ${opt.label}`}
                   >
                     <Text
                       style={[
@@ -341,7 +351,7 @@ export default function NewProductScreen() {
   if (isSubmitting) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0E0E0C" />
+        <ActivityIndicator size="large" color={theme.colors.text} />
         <Text style={styles.loadingText}>Creating product...</Text>
       </View>
     );
@@ -364,6 +374,7 @@ export default function NewProductScreen() {
             onPress={handleBack}
             activeOpacity={0.7}
             accessibilityRole="button"
+            accessibilityLabel="Go back to previous step"
           >
             <Text style={styles.backBtnText}>Back</Text>
           </TouchableOpacity>
@@ -376,6 +387,7 @@ export default function NewProductScreen() {
               onPress={() => handleCreate(true)}
               activeOpacity={0.7}
               accessibilityRole="button"
+              accessibilityLabel="Save product as draft"
             >
               <Text style={styles.draftBtnText}>Save as Draft</Text>
             </TouchableOpacity>
@@ -384,6 +396,7 @@ export default function NewProductScreen() {
               onPress={() => handleCreate(false)}
               activeOpacity={0.7}
               accessibilityRole="button"
+              accessibilityLabel="Create product"
             >
               <Text style={styles.createBtnText}>Create Product</Text>
             </TouchableOpacity>
@@ -394,6 +407,7 @@ export default function NewProductScreen() {
             onPress={handleNext}
             activeOpacity={0.7}
             accessibilityRole="button"
+            accessibilityLabel="Go to next step"
           >
             <Text style={styles.nextBtnText}>Next</Text>
           </TouchableOpacity>
@@ -415,54 +429,54 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   scrollArea: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 24,
+    paddingBottom: theme.spacing.xxl,
   },
   stepContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.lg,
   },
   stepTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#0E0E0C",
-    marginBottom: 4,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   stepSubtitle: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
-    marginBottom: 16,
+    marginBottom: theme.spacing.lg,
   },
   hint: {
     fontSize: 12,
-    color: "#2D4A2B",
+    color: theme.colors.accent,
     opacity: 0.7,
     fontStyle: "italic",
-    marginTop: 16,
+    marginTop: theme.spacing.lg,
     textAlign: "center",
   },
   fieldLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
-    marginBottom: 4,
-    marginTop: 12,
+    marginBottom: theme.spacing.xs,
+    marginTop: theme.spacing.md,
   },
   input: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   multilineInput: {
     minHeight: 80,
@@ -476,54 +490,54 @@ const styles = StyleSheet.create({
   },
   statusRow: {
     flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
   },
   statusOption: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: theme.radius,
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.colors.elevated,
     borderWidth: 1,
-    borderColor: "#0E0E0C20",
+    borderColor: `${theme.colors.text}20`,
   },
   statusOptionSelected: {
-    backgroundColor: "#0E0E0C",
-    borderColor: "#0E0E0C",
+    backgroundColor: theme.colors.text,
+    borderColor: theme.colors.text,
   },
   statusOptionText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   statusOptionTextSelected: {
-    color: "#F7F6F2",
+    color: theme.colors.background,
   },
   reviewCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     padding: 14,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
-    marginTop: 12,
+    borderColor: `${theme.colors.text}10`,
+    marginTop: theme.spacing.md,
   },
   reviewRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 8,
+    paddingVertical: theme.spacing.sm,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#0E0E0C10",
+    borderBottomColor: `${theme.colors.text}10`,
   },
   reviewLabel: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     flex: 1,
   },
   reviewValue: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     fontWeight: "500",
     flex: 2,
     textAlign: "right",
@@ -532,75 +546,75 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
     borderTopWidth: 0.5,
-    borderTopColor: "#0E0E0C10",
-    backgroundColor: "#F7F6F2",
+    borderTopColor: `${theme.colors.text}10`,
+    backgroundColor: theme.colors.background,
   },
   footerSpacer: {
     flex: 1,
   },
   backBtn: {
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: theme.radius,
   },
   backBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
   },
   nextBtn: {
-    backgroundColor: "#0E0E0C",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 6,
+    backgroundColor: theme.colors.text,
+    paddingHorizontal: theme.spacing.xxl,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius,
   },
   nextBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#F7F6F2",
+    color: theme.colors.background,
   },
   finalActions: {
     flexDirection: "row",
-    gap: 8,
+    gap: theme.spacing.sm,
   },
   draftBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 6,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius,
     borderWidth: 1,
-    borderColor: "#0E0E0C20",
+    borderColor: `${theme.colors.text}20`,
   },
   draftBtnText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.7,
   },
   createBtn: {
-    backgroundColor: "#2D4A2B",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 6,
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius,
   },
   createBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
     justifyContent: "center",
     alignItems: "center",
-    gap: 12,
+    gap: theme.spacing.md,
   },
   loadingText: {
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
   },
 });

@@ -22,6 +22,7 @@ import {
   useUpdateVariant,
 } from "../../../lib/admin-api/product-crud";
 import { ProductMediaPicker } from "../../../components/ProductMediaPicker";
+import { theme } from "@/lib/theme";
 import type { Variant } from "@repo/mobile-shared/api/types";
 
 function formatCurrency(amount: number): string {
@@ -76,6 +77,7 @@ function VariantRow({ variant, onUpdate }: VariantRowProps) {
             onChangeText={setPrice}
             onBlur={handleBlurPrice}
             keyboardType="decimal-pad"
+            accessibilityLabel={`${variant.name} price`}
           />
         </View>
         <View style={styles.variantField}>
@@ -86,6 +88,7 @@ function VariantRow({ variant, onUpdate }: VariantRowProps) {
             onChangeText={setStock}
             onBlur={handleBlurStock}
             keyboardType="number-pad"
+            accessibilityLabel={`${variant.name} stock`}
           />
         </View>
       </View>
@@ -167,6 +170,7 @@ export default function ProductDetailScreen() {
           disabled={updateMutation.isPending}
           style={styles.headerSaveBtn}
           accessibilityRole="button"
+          accessibilityLabel={updateMutation.isPending ? "Saving product" : "Save product"}
         >
           <Text style={styles.headerSaveText}>
             {updateMutation.isPending ? "Saving..." : "Save"}
@@ -241,7 +245,7 @@ export default function ProductDetailScreen() {
   if (isLoading || !product) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0E0E0C" />
+        <ActivityIndicator size="large" color={theme.colors.text} />
       </View>
     );
   }
@@ -266,9 +270,15 @@ export default function ProductDetailScreen() {
                 key={m.id}
                 onLongPress={() => handleDeleteExistingMedia(m.id)}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={`Product image. Long press to delete`}
                 accessibilityHint="Long press to delete"
               >
-                <Image source={{ uri: m.url }} style={styles.mediaThumb} />
+                <Image
+                  source={{ uri: m.url }}
+                  style={styles.mediaThumb}
+                  accessibilityLabel="Product image"
+                />
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -289,7 +299,8 @@ export default function ProductDetailScreen() {
           value={name}
           onChangeText={setName}
           placeholder="Product name"
-          placeholderTextColor="#0E0E0C50"
+          placeholderTextColor={`${theme.colors.text}50`}
+          accessibilityLabel="Product name"
         />
         <FieldLabel label="Description" />
         <TextInput
@@ -297,10 +308,11 @@ export default function ProductDetailScreen() {
           value={description}
           onChangeText={setDescription}
           placeholder="Product description"
-          placeholderTextColor="#0E0E0C50"
+          placeholderTextColor={`${theme.colors.text}50`}
           multiline
           numberOfLines={4}
           textAlignVertical="top"
+          accessibilityLabel="Product description"
         />
         <View style={styles.row}>
           <View style={styles.halfField}>
@@ -311,7 +323,8 @@ export default function ProductDetailScreen() {
               onChangeText={setPrice}
               keyboardType="decimal-pad"
               placeholder="0.00"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
+              accessibilityLabel="Product price"
             />
           </View>
           <View style={styles.halfField}>
@@ -322,7 +335,8 @@ export default function ProductDetailScreen() {
               onChangeText={setCompareAtPrice}
               keyboardType="decimal-pad"
               placeholder="0.00"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
+              accessibilityLabel="Compare at price"
             />
           </View>
         </View>
@@ -334,8 +348,9 @@ export default function ProductDetailScreen() {
               value={sku}
               onChangeText={setSku}
               placeholder="SKU"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
               autoCapitalize="characters"
+              accessibilityLabel="SKU"
             />
           </View>
           <View style={styles.halfField}>
@@ -346,7 +361,8 @@ export default function ProductDetailScreen() {
               onChangeText={setStock}
               keyboardType="number-pad"
               placeholder="0"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
+              accessibilityLabel="Stock quantity"
             />
           </View>
         </View>
@@ -355,8 +371,9 @@ export default function ProductDetailScreen() {
           <Switch
             value={isActive}
             onValueChange={setIsActive}
-            trackColor={{ false: "#0E0E0C20", true: "#2D4A2B" }}
-            thumbColor="#FFFFFF"
+            trackColor={{ false: `${theme.colors.text}20`, true: theme.colors.accent }}
+            thumbColor={theme.colors.elevated}
+            accessibilityLabel="Product active status"
           />
         </View>
       </View>
@@ -376,6 +393,7 @@ export default function ProductDetailScreen() {
           onPress={() => setVariantModalVisible(true)}
           activeOpacity={0.7}
           accessibilityRole="button"
+          accessibilityLabel="Add variant"
         >
           <Text style={styles.addVariantText}>+ Add Variant</Text>
         </TouchableOpacity>
@@ -389,34 +407,38 @@ export default function ProductDetailScreen() {
             <TextInput
               style={styles.modalInput}
               placeholder="Variant name (e.g. Large, Red)"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
               value={newVariantName}
               onChangeText={setNewVariantName}
               autoFocus
+              accessibilityLabel="Variant name"
             />
             <TextInput
               style={styles.modalInput}
               placeholder="Price"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
               value={newVariantPrice}
               onChangeText={setNewVariantPrice}
               keyboardType="decimal-pad"
+              accessibilityLabel="Variant price"
             />
             <TextInput
               style={styles.modalInput}
               placeholder="SKU (optional)"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
               value={newVariantSku}
               onChangeText={setNewVariantSku}
               autoCapitalize="characters"
+              accessibilityLabel="Variant SKU"
             />
             <TextInput
               style={styles.modalInput}
               placeholder="Stock (optional)"
-              placeholderTextColor="#0E0E0C50"
+              placeholderTextColor={`${theme.colors.text}50`}
               value={newVariantStock}
               onChangeText={setNewVariantStock}
               keyboardType="number-pad"
+              accessibilityLabel="Variant stock"
             />
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -428,6 +450,8 @@ export default function ProductDetailScreen() {
                   setNewVariantSku("");
                   setNewVariantStock("");
                 }}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel adding variant"
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -435,6 +459,8 @@ export default function ProductDetailScreen() {
                 style={styles.modalSubmitBtn}
                 onPress={handleAddVariant}
                 disabled={createVariantMutation.isPending}
+                accessibilityRole="button"
+                accessibilityLabel={createVariantMutation.isPending ? "Adding variant" : "Add variant"}
               >
                 <Text style={styles.modalSubmitText}>
                   {createVariantMutation.isPending ? "Adding..." : "Add Variant"}
@@ -451,35 +477,35 @@ export default function ProductDetailScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   content: {
-    padding: 16,
+    padding: theme.spacing.lg,
     paddingBottom: 40,
-    gap: 12,
+    gap: theme.spacing.md,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
     justifyContent: "center",
     alignItems: "center",
   },
   errorText: {
     fontSize: 15,
-    color: "#8B2020",
+    color: theme.colors.danger,
     fontWeight: "500",
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     padding: 14,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   sectionHeader: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -488,36 +514,36 @@ const styles = StyleSheet.create({
   mediaThumb: {
     width: 100,
     height: 100,
-    borderRadius: 6,
-    marginRight: 8,
+    borderRadius: theme.radius,
+    marginRight: theme.spacing.sm,
   },
   pickerWrap: {
-    marginTop: 12,
+    marginTop: theme.spacing.md,
   },
   emptyText: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
     fontStyle: "italic",
-    marginBottom: 8,
+    marginBottom: theme.spacing.sm,
   },
   fieldLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
-    marginBottom: 4,
+    marginBottom: theme.spacing.xs,
     marginTop: 10,
   },
   input: {
-    backgroundColor: "#F7F6F2",
-    borderRadius: 6,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.radius,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   multilineInput: {
     minHeight: 80,
@@ -538,24 +564,24 @@ const styles = StyleSheet.create({
   switchLabel: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   variantRow: {
     paddingVertical: 10,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#0E0E0C10",
+    borderBottomColor: `${theme.colors.text}10`,
   },
   variantName: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 2,
   },
   variantSku: {
     fontSize: 11,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
-    marginBottom: 6,
+    marginBottom: theme.spacing.sm,
   },
   variantFields: {
     flexDirection: "row",
@@ -566,100 +592,100 @@ const styles = StyleSheet.create({
   },
   variantFieldLabel: {
     fontSize: 11,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     marginBottom: 2,
   },
   variantInput: {
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
     borderRadius: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   addVariantBtn: {
     marginTop: 10,
     paddingVertical: 10,
     alignItems: "center",
-    borderRadius: 6,
+    borderRadius: theme.radius,
     borderWidth: 1,
-    borderColor: "#0E0E0C20",
+    borderColor: `${theme.colors.text}20`,
     borderStyle: "dashed",
   },
   addVariantText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#2D4A2B",
+    color: theme.colors.accent,
   },
   headerSaveBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
   },
   headerSaveText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#2D4A2B",
+    color: theme.colors.accent,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.4)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
+    padding: theme.spacing.xxl,
   },
   modalContent: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.colors.elevated,
     borderRadius: 10,
-    padding: 20,
+    padding: theme.spacing.xl,
     width: "100%",
     maxWidth: 340,
   },
   modalTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 14,
   },
   modalInput: {
-    backgroundColor: "#F7F6F2",
-    borderRadius: 6,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.radius,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
     marginBottom: 10,
   },
   modalActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
     gap: 10,
-    marginTop: 6,
+    marginTop: theme.spacing.sm,
   },
   modalCancelBtn: {
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: theme.radius,
   },
   modalCancelText: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
   },
   modalSubmitBtn: {
-    backgroundColor: "#2D4A2B",
-    paddingHorizontal: 16,
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: theme.radius,
   },
   modalSubmitText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
 });

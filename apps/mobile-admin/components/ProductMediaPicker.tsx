@@ -1,5 +1,6 @@
 import { View, Text, Image, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { theme } from "@/lib/theme";
 
 interface ProductMediaPickerProps {
   images: string[];
@@ -38,10 +39,22 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
   return (
     <View style={styles.container}>
       <View style={styles.buttons}>
-        <TouchableOpacity style={styles.button} onPress={takePhoto} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={takePhoto}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Take photo"
+        >
           <Text style={styles.buttonText}>Take Photo</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={pickFromLibrary} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={pickFromLibrary}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Choose from library"
+        >
           <Text style={styles.buttonText}>Choose from Library</Text>
         </TouchableOpacity>
       </View>
@@ -49,14 +62,18 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gallery}>
           {images.map((uri, i) => (
             <View key={`${uri}-${i}`} style={styles.thumbWrap}>
-              <Image source={{ uri }} style={styles.thumb} />
+              <Image
+                source={{ uri }}
+                style={styles.thumb}
+                accessibilityLabel={`Selected image ${i + 1}`}
+              />
               <TouchableOpacity
                 style={styles.removeBtn}
                 onPress={() => removeImage(i)}
                 accessibilityRole="button"
                 accessibilityLabel={`Remove image ${i + 1}`}
               >
-                <Text style={styles.removeText}>×</Text>
+                <Text style={styles.removeText}>x</Text>
               </TouchableOpacity>
             </View>
           ))}
@@ -67,20 +84,20 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 12 },
-  buttons: { flexDirection: "row", gap: 8 },
+  container: { gap: theme.spacing.md },
+  buttons: { flexDirection: "row", gap: theme.spacing.sm },
   button: {
     flex: 1,
-    backgroundColor: "#0E0E0C",
-    borderRadius: 6,
+    backgroundColor: theme.colors.text,
+    borderRadius: theme.radius,
     height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
-  buttonText: { color: "#F7F6F2", fontSize: 14, fontWeight: "600" },
-  gallery: { marginTop: 8 },
-  thumbWrap: { position: "relative", marginRight: 8 },
-  thumb: { width: 80, height: 80, borderRadius: 6 },
+  buttonText: { color: theme.colors.background, fontSize: 14, fontWeight: "600" },
+  gallery: { marginTop: theme.spacing.sm },
+  thumbWrap: { position: "relative", marginRight: theme.spacing.sm },
+  thumb: { width: 80, height: 80, borderRadius: theme.radius },
   removeBtn: {
     position: "absolute",
     top: -6,
@@ -88,9 +105,9 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: "#8B2020",
+    backgroundColor: theme.colors.danger,
     alignItems: "center",
     justifyContent: "center",
   },
-  removeText: { color: "#FFF", fontSize: 14, fontWeight: "700", marginTop: -1 },
+  removeText: { color: theme.colors.elevated, fontSize: 14, fontWeight: "700", marginTop: -1 },
 });

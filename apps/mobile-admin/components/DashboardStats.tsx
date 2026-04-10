@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
+import { theme } from "@/lib/theme";
 import type { DashboardStats as DashboardStatsType } from "@repo/mobile-shared/api/types";
 
 interface Props {
@@ -24,7 +25,7 @@ function StatCard({
   subtitle?: string;
 }) {
   return (
-    <View style={styles.card}>
+    <View style={styles.card} accessibilityLabel={`${label}: ${value}${subtitle ? `, ${subtitle}` : ""}`}>
       <Text style={styles.cardLabel}>{label}</Text>
       <Text style={styles.cardValue}>{value}</Text>
       {subtitle && <Text style={styles.cardSubtitle}>{subtitle}</Text>}
@@ -34,7 +35,7 @@ function StatCard({
 
 function CompactStat({ label, value }: { label: string; value: number }) {
   return (
-    <View style={styles.compactCard}>
+    <View style={styles.compactCard} accessibilityLabel={`${label}: ${value}`}>
       <Text style={styles.compactValue}>{value}</Text>
       <Text style={styles.compactLabel}>{label}</Text>
     </View>
@@ -43,7 +44,7 @@ function CompactStat({ label, value }: { label: string; value: number }) {
 
 export function DashboardStats({ stats }: Props) {
   const changePct = stats.revenue_change_pct;
-  const changeColor = changePct >= 0 ? "#2D4A2B" : "#8B2020";
+  const changeColor = changePct >= 0 ? theme.colors.accent : theme.colors.danger;
   const changeArrow = changePct >= 0 ? "↑" : "↓";
 
   return (
@@ -83,45 +84,45 @@ export function DashboardStats({ stats }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 16 },
+  container: { gap: theme.spacing.lg },
   sectionTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  row: { flexDirection: "row", gap: 8 },
+  row: { flexDirection: "row", gap: theme.spacing.sm },
   card: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
-    padding: 12,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
+    padding: theme.spacing.md,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
-  cardLabel: { fontSize: 12, color: "#0E0E0C", opacity: 0.5 },
+  cardLabel: { fontSize: 12, color: theme.colors.text, opacity: 0.5 },
   cardValue: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#0E0E0C",
-    marginTop: 4,
+    color: theme.colors.text,
+    marginTop: theme.spacing.xs,
   },
-  cardSubtitle: { fontSize: 12, color: "#2D4A2B", marginTop: 2 },
+  cardSubtitle: { fontSize: 12, color: theme.colors.accent, marginTop: 2 },
   compactCard: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     padding: 10,
     alignItems: "center",
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
-  compactValue: { fontSize: 18, fontWeight: "700", color: "#0E0E0C" },
+  compactValue: { fontSize: 18, fontWeight: "700", color: theme.colors.text },
   compactLabel: {
     fontSize: 11,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     marginTop: 2,
   },

@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import {
   View,
   Text,
@@ -9,6 +10,7 @@ import {
 } from "react-native";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useStores, useSwitchStore } from "../lib/hooks/use-store";
+import { theme } from "@/lib/theme";
 import type { Store } from "@repo/mobile-shared/api/types";
 
 interface StoreSelectorProps {
@@ -21,12 +23,12 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
   const { data: stores, isLoading } = useStores();
   const switchStore = useSwitchStore();
 
-  const handleSelect = (store: Store) => {
+  const handleSelect = useCallback((store: Store) => {
     switchStore(store);
     onClose();
-  };
+  }, [switchStore, onClose]);
 
-  const renderItem = ({ item }: { item: Store }) => {
+  const renderItem = useCallback(({ item }: { item: Store }) => {
     const isActive = activeStore?.id === item.id;
     return (
       <TouchableOpacity
@@ -35,6 +37,7 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
         activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityState={{ selected: isActive }}
+        accessibilityLabel={`${item.name}${isActive ? ", currently selected" : ""}`}
       >
         <View style={styles.storeInfo}>
           <Text style={styles.storeName}>{item.name}</Text>
@@ -43,7 +46,9 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
         {isActive && <Text style={styles.checkmark}>&#x2713;</Text>}
       </TouchableOpacity>
     );
-  };
+  }, [activeStore?.id, handleSelect]);
+
+  const keyExtractor = useCallback((item: Store) => item.id, []);
 
   return (
     <Modal visible={visible} transparent animationType="fade">
@@ -51,19 +56,23 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
         <View style={styles.sheet}>
           <View style={styles.header}>
             <Text style={styles.title}>Select Store</Text>
-            <TouchableOpacity onPress={onClose} accessibilityRole="button">
+            <TouchableOpacity
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Done selecting store"
+            >
               <Text style={styles.closeText}>Done</Text>
             </TouchableOpacity>
           </View>
           {isLoading ? (
             <View style={styles.loading}>
-              <ActivityIndicator size="small" color="#0E0E0C" />
+              <ActivityIndicator size="small" color={theme.colors.text} />
             </View>
           ) : (
             <FlatList
               data={stores ?? []}
               renderItem={renderItem}
-              keyExtractor={(item) => item.id}
+              keyExtractor={keyExtractor}
               contentContainerStyle={styles.listContent}
               ListEmptyComponent={
                 <Text style={styles.emptyText}>No stores available</Text>
@@ -83,7 +92,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.colors.elevated,
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
     maxHeight: "60%",
@@ -93,36 +102,37 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: 14,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#0E0E0C10",
+    borderBottomColor: `${theme.colors.text}10`,
   },
   title: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   closeText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#2D4A2B",
+    color: theme.colors.accent,
   },
   loading: {
     padding: 40,
     alignItems: "center",
   },
   listContent: {
-    paddingVertical: 8,
+    paddingVertical: theme.spacing.sm,
   },
   storeRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: 14,
+    minHeight: 48,
   },
   storeRowActive: {
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   storeInfo: {
     flex: 1,
@@ -130,26 +140,26 @@ const styles = StyleSheet.create({
   storeName: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 2,
   },
   storeSlug: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
   },
   checkmark: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#2D4A2B",
-    marginLeft: 8,
+    color: theme.colors.accent,
+    marginLeft: theme.spacing.sm,
   },
   emptyText: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
     fontStyle: "italic",
     textAlign: "center",
-    padding: 24,
+    padding: theme.spacing.xxl,
   },
 });

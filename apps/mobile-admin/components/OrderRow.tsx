@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { theme } from "@/lib/theme";
 import type { Order } from "@repo/mobile-shared/api/types";
 
 interface OrderRowProps {
@@ -8,9 +9,9 @@ interface OrderRowProps {
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
-  confirmed: "#2D4A2B",
-  fulfilled: "#0E0E0C",
-  cancelled: "#8B2020",
+  confirmed: theme.colors.accent,
+  fulfilled: theme.colors.text,
+  cancelled: theme.colors.danger,
 };
 
 function formatCurrency(amount: number): string {
@@ -37,7 +38,7 @@ function formatRelativeTime(dateString: string): string {
 }
 
 export function OrderRow({ order, onPress }: OrderRowProps) {
-  const badgeBg = STATUS_COLORS[order.status] ?? "#0E0E0C";
+  const badgeBg = STATUS_COLORS[order.status] ?? theme.colors.text;
   const displayName = order.customer_name || order.customer_email;
 
   return (
@@ -67,41 +68,41 @@ export function OrderRow({ order, onPress }: OrderRowProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     padding: 14,
-    marginHorizontal: 16,
-    marginBottom: 8,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: theme.spacing.xs,
   },
   orderNumber: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   badge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: theme.spacing.sm,
     paddingVertical: 3,
     borderRadius: 4,
   },
   badgeText: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
     textTransform: "capitalize",
   },
   customer: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
-    marginBottom: 6,
+    marginBottom: theme.spacing.sm,
   },
   bottomRow: {
     flexDirection: "row",
@@ -111,11 +112,11 @@ const styles = StyleSheet.create({
   total: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   time: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
   },
 });

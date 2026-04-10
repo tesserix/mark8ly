@@ -12,6 +12,7 @@ import {
 import { useRouter } from "expo-router";
 import { useProducts } from "../../../lib/hooks/use-products";
 import { ProductRow } from "../../../components/ProductRow";
+import { theme } from "@/lib/theme";
 import type { Product } from "@repo/mobile-shared/api/types";
 
 type FilterKey = "all" | "low_stock" | "inactive";
@@ -77,6 +78,7 @@ export default function ProductsScreen() {
               onPress={() => setActiveFilter(filter.key)}
               accessibilityRole="button"
               accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`Filter by ${filter.label}`}
             >
               <Text
                 style={[
@@ -95,7 +97,7 @@ export default function ProductsScreen() {
         <TextInput
           style={styles.searchInput}
           placeholder="Search products..."
-          placeholderTextColor="#0E0E0C50"
+          placeholderTextColor={`${theme.colors.text}50`}
           value={searchText}
           onChangeText={setSearchText}
           autoCapitalize="none"
@@ -107,7 +109,7 @@ export default function ProductsScreen() {
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#0E0E0C" />
+          <ActivityIndicator size="large" color={theme.colors.text} />
         </View>
       ) : (
         <FlatList
@@ -119,7 +121,7 @@ export default function ProductsScreen() {
             <RefreshControl
               refreshing={isRefetching}
               onRefresh={refetch}
-              tintColor="#0E0E0C"
+              tintColor={theme.colors.text}
             />
           }
           ListEmptyComponent={
@@ -151,48 +153,48 @@ export default function ProductsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   filtersRow: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 8,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+    gap: theme.spacing.sm,
   },
   filterBtn: {
     paddingHorizontal: 14,
     paddingVertical: 7,
-    borderRadius: 6,
+    borderRadius: theme.radius,
     backgroundColor: "transparent",
   },
   filterBtnActive: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.colors.text,
   },
   filterText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   filterTextActive: {
-    color: "#F7F6F2",
+    color: theme.colors.background,
   },
   searchContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.md,
   },
   searchInput: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   listContent: {
-    paddingTop: 4,
+    paddingTop: theme.spacing.xs,
     paddingBottom: 80,
     flexGrow: 1,
   },
@@ -205,22 +207,22 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#0E0E0C",
-    marginBottom: 4,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   emptySubtitle: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
   },
   fab: {
     position: "absolute",
-    bottom: 24,
-    right: 20,
+    bottom: theme.spacing.xxl,
+    right: theme.spacing.xl,
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.colors.text,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -230,7 +232,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   fabText: {
-    color: "#F7F6F2",
+    color: theme.colors.background,
     fontSize: 28,
     fontWeight: "400",
     marginTop: -2,

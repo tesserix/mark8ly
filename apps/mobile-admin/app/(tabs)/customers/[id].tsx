@@ -11,6 +11,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCustomer } from "../../../lib/hooks/use-customers";
 import { useBlockCustomer, useUnblockCustomer } from "../../../lib/admin-api/customer-actions";
+import { theme } from "@/lib/theme";
 import type { RecentOrder } from "@repo/mobile-shared/api/types";
 
 function formatCurrency(amount: number): string {
@@ -47,7 +48,7 @@ function SectionHeader({ title }: { title: string }) {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.statCard}>
+    <View style={styles.statCard} accessibilityLabel={`${label}: ${value}`}>
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
@@ -78,7 +79,7 @@ function RecentOrderRow({
         <View
           style={[
             styles.statusBadge,
-            { backgroundColor: order.status === "cancelled" ? "#8B2020" : "#2D4A2B" },
+            { backgroundColor: order.status === "cancelled" ? theme.colors.danger : theme.colors.accent },
           ]}
         >
           <Text style={styles.statusText}>{order.status}</Text>
@@ -133,7 +134,7 @@ export default function CustomerDetailScreen() {
   if (isLoading || !customer) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0E0E0C" />
+        <ActivityIndicator size="large" color={theme.colors.text} />
       </View>
     );
   }
@@ -146,7 +147,7 @@ export default function CustomerDetailScreen() {
       {/* Profile header */}
       <View style={styles.card}>
         <View style={styles.profileHeader}>
-          <View style={styles.avatar}>
+          <View style={styles.avatar} accessibilityLabel={`Avatar for ${displayName}`}>
             <Text style={styles.avatarText}>{initial}</Text>
           </View>
           <Text style={styles.profileName}>{displayName}</Text>
@@ -198,6 +199,11 @@ export default function CustomerDetailScreen() {
           onPress={handleBlockToggle}
           disabled={isMutating}
           accessibilityRole="button"
+          accessibilityLabel={
+            isMutating
+              ? isBlocked ? "Unblocking customer" : "Blocking customer"
+              : isBlocked ? "Unblock customer" : "Block customer"
+          }
         >
           <Text style={isBlocked ? styles.primaryBtnText : styles.dangerBtnText}>
             {isMutating
@@ -217,108 +223,108 @@ export default function CustomerDetailScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   content: {
-    padding: 16,
+    padding: theme.spacing.lg,
     paddingBottom: 40,
-    gap: 12,
+    gap: theme.spacing.md,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
     justifyContent: "center",
     alignItems: "center",
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     padding: 14,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   profileHeader: {
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: theme.spacing.sm,
   },
   avatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#2D4A2B",
+    backgroundColor: theme.colors.accent,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: theme.spacing.md,
   },
   avatarText: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
   profileName: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 2,
   },
   profileEmail: {
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
     marginBottom: 2,
   },
   profilePhone: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
-    marginBottom: 4,
+    marginBottom: theme.spacing.xs,
   },
   profileJoined: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
-    marginTop: 4,
+    marginTop: theme.spacing.xs,
   },
   blockedBadge: {
-    marginTop: 8,
-    backgroundColor: "#8B2020",
+    marginTop: theme.spacing.sm,
+    backgroundColor: theme.colors.danger,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: theme.spacing.xs,
     borderRadius: 4,
   },
   blockedText: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
   statsRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: theme.spacing.sm,
   },
   statCard: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
-    padding: 12,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
+    padding: theme.spacing.md,
     alignItems: "center",
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   statValue: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 2,
   },
   statLabel: {
     fontSize: 11,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
   },
   sectionHeader: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -330,7 +336,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 10,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#0E0E0C10",
+    borderBottomColor: `${theme.colors.text}10`,
   },
   orderInfo: {
     flex: 1,
@@ -338,12 +344,12 @@ const styles = StyleSheet.create({
   orderNumber: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 2,
   },
   orderDate: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
   },
   orderRight: {
@@ -352,52 +358,52 @@ const styles = StyleSheet.create({
   orderTotal: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#0E0E0C",
-    marginBottom: 4,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   statusBadge: {
-    paddingHorizontal: 6,
+    paddingHorizontal: theme.spacing.sm,
     paddingVertical: 2,
     borderRadius: 4,
   },
   statusText: {
     fontSize: 10,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
     textTransform: "capitalize",
   },
   emptyText: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
     fontStyle: "italic",
   },
   actionsSection: {
     gap: 10,
-    marginTop: 4,
+    marginTop: theme.spacing.xs,
   },
   primaryBtn: {
-    backgroundColor: "#2D4A2B",
-    borderRadius: 6,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius,
     paddingVertical: 14,
     alignItems: "center",
   },
   primaryBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
   dangerBtn: {
     backgroundColor: "transparent",
-    borderRadius: 6,
+    borderRadius: theme.radius,
     paddingVertical: 14,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#8B2020",
+    borderColor: theme.colors.danger,
   },
   dangerBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#8B2020",
+    color: theme.colors.danger,
   },
 });

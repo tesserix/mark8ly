@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 import { useRouter } from "expo-router";
 import { useOrders } from "../../../lib/hooks/use-orders";
 import { OrderRow } from "../../../components/OrderRow";
+import { theme } from "@/lib/theme";
 import type { Order } from "@repo/mobile-shared/api/types";
 
 type FilterKey = "all" | "active" | "completed" | "cancelled";
@@ -74,6 +75,7 @@ export default function OrdersScreen() {
               onPress={() => setActiveFilter(filter.key)}
               accessibilityRole="button"
               accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`Filter by ${filter.label}`}
             >
               <Text
                 style={[
@@ -92,7 +94,7 @@ export default function OrdersScreen() {
         <TextInput
           style={styles.searchInput}
           placeholder="Search orders..."
-          placeholderTextColor="#0E0E0C50"
+          placeholderTextColor={`${theme.colors.text}50`}
           value={searchText}
           onChangeText={setSearchText}
           autoCapitalize="none"
@@ -104,7 +106,7 @@ export default function OrdersScreen() {
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#0E0E0C" />
+          <ActivityIndicator size="large" color={theme.colors.text} />
         </View>
       ) : (
         <FlatList
@@ -116,7 +118,7 @@ export default function OrdersScreen() {
             <RefreshControl
               refreshing={isRefetching}
               onRefresh={refetch}
-              tintColor="#0E0E0C"
+              tintColor={theme.colors.text}
             />
           }
           ListEmptyComponent={
@@ -138,49 +140,49 @@ export default function OrdersScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   filtersRow: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 8,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+    gap: theme.spacing.sm,
   },
   filterBtn: {
     paddingHorizontal: 14,
     paddingVertical: 7,
-    borderRadius: 6,
+    borderRadius: theme.radius,
     backgroundColor: "transparent",
   },
   filterBtnActive: {
-    backgroundColor: "#0E0E0C",
+    backgroundColor: theme.colors.text,
   },
   filterText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   filterTextActive: {
-    color: "#F7F6F2",
+    color: theme.colors.background,
   },
   searchContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.md,
   },
   searchInput: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   listContent: {
-    paddingTop: 4,
-    paddingBottom: 24,
+    paddingTop: theme.spacing.xs,
+    paddingBottom: theme.spacing.xxl,
     flexGrow: 1,
   },
   centered: {
@@ -192,12 +194,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#0E0E0C",
-    marginBottom: 4,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   emptySubtitle: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
   },
 });

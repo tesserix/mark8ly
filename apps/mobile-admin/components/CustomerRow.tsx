@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { theme } from "@/lib/theme";
 import type { Customer } from "@repo/mobile-shared/api/types";
 
 interface CustomerRowProps {
@@ -37,7 +38,7 @@ export function CustomerRow({ customer, onPress }: CustomerRowProps) {
       accessibilityRole="button"
       accessibilityLabel={`${displayName}, ${customer.email}, ${customer.order_count} orders, ${formatCurrency(customer.total_spent)} spent`}
     >
-      <View style={styles.avatar}>
+      <View style={styles.avatar} accessibilityLabel={`Avatar for ${displayName}`}>
         <Text style={styles.avatarText}>{getInitial(customer)}</Text>
       </View>
       <View style={styles.info}>
@@ -60,13 +61,13 @@ export function CustomerRow({ customer, onPress }: CustomerRowProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     padding: 14,
-    marginHorizontal: 16,
-    marginBottom: 8,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -74,29 +75,29 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#2D4A2B",
+    backgroundColor: theme.colors.accent,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    marginRight: theme.spacing.md,
   },
   avatarText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
   info: {
     flex: 1,
-    marginRight: 8,
+    marginRight: theme.spacing.sm,
   },
   name: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 2,
   },
   email: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
   },
   stats: {
@@ -105,12 +106,12 @@ const styles = StyleSheet.create({
   spent: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 2,
   },
   orders: {
     fontSize: 11,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
   },
 });

@@ -18,13 +18,14 @@ import {
   useCancelOrder,
   useRefundOrder,
 } from "../../../lib/admin-api/order-actions";
+import { theme } from "@/lib/theme";
 import type { LineItem, Address } from "@repo/mobile-shared/api/types";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
-  confirmed: "#2D4A2B",
-  fulfilled: "#0E0E0C",
-  cancelled: "#8B2020",
+  confirmed: theme.colors.accent,
+  fulfilled: theme.colors.text,
+  cancelled: theme.colors.danger,
 };
 
 function formatCurrency(amount: number): string {
@@ -54,9 +55,9 @@ function formatAddress(address: Address): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const bg = STATUS_COLORS[status] ?? "#0E0E0C";
+  const bg = STATUS_COLORS[status] ?? theme.colors.text;
   return (
-    <View style={[styles.badge, { backgroundColor: bg }]}>
+    <View style={[styles.badge, { backgroundColor: bg }]} accessibilityLabel={`Status: ${status}`}>
       <Text style={styles.badgeText}>{status}</Text>
     </View>
   );
@@ -78,7 +79,7 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
 
 function LineItemRow({ item }: { item: LineItem }) {
   return (
-    <View style={styles.lineItem}>
+    <View style={styles.lineItem} accessibilityLabel={`${item.product_name}, quantity ${item.quantity}, ${formatCurrency(item.quantity * item.unit_price)}`}>
       <View style={styles.thumbnail} />
       <View style={styles.lineItemInfo}>
         <Text style={styles.lineItemName} numberOfLines={1}>
@@ -127,17 +128,28 @@ function InputModal({
           <TextInput
             style={styles.modalInput}
             placeholder={placeholder}
-            placeholderTextColor="#0E0E0C50"
+            placeholderTextColor={`${theme.colors.text}50`}
             value={value}
             onChangeText={onChangeText}
             keyboardType={keyboardType ?? "default"}
             autoFocus
+            accessibilityLabel={title}
           />
           <View style={styles.modalActions}>
-            <TouchableOpacity style={styles.modalCancelBtn} onPress={onCancel}>
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={onCancel}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+            >
               <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modalSubmitBtn} onPress={onSubmit}>
+            <TouchableOpacity
+              style={styles.modalSubmitBtn}
+              onPress={onSubmit}
+              accessibilityRole="button"
+              accessibilityLabel={submitLabel}
+            >
               <Text style={styles.modalSubmitText}>{submitLabel}</Text>
             </TouchableOpacity>
           </View>
@@ -208,7 +220,7 @@ export default function OrderDetailScreen() {
   if (isLoading || !order) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0E0E0C" />
+        <ActivityIndicator size="large" color={theme.colors.text} />
       </View>
     );
   }
@@ -280,6 +292,7 @@ export default function OrderDetailScreen() {
               onPress={handleConfirm}
               disabled={isMutating}
               accessibilityRole="button"
+              accessibilityLabel={confirmMutation.isPending ? "Confirming order" : "Confirm order"}
             >
               <Text style={styles.primaryBtnText}>
                 {confirmMutation.isPending ? "Confirming..." : "Confirm Order"}
@@ -293,6 +306,7 @@ export default function OrderDetailScreen() {
               onPress={() => setFulfillModalVisible(true)}
               disabled={isMutating}
               accessibilityRole="button"
+              accessibilityLabel="Mark order as fulfilled"
             >
               <Text style={styles.primaryBtnText}>Mark Fulfilled</Text>
             </TouchableOpacity>
@@ -304,6 +318,7 @@ export default function OrderDetailScreen() {
               onPress={() => setRefundModalVisible(true)}
               disabled={isMutating}
               accessibilityRole="button"
+              accessibilityLabel="Refund order"
             >
               <Text style={styles.secondaryBtnText}>Refund</Text>
             </TouchableOpacity>
@@ -314,6 +329,7 @@ export default function OrderDetailScreen() {
             onPress={handleCancel}
             disabled={isMutating}
             accessibilityRole="button"
+            accessibilityLabel={cancelMutation.isPending ? "Cancelling order" : "Cancel order"}
           >
             <Text style={styles.dangerBtnText}>
               {cancelMutation.isPending ? "Cancelling..." : "Cancel Order"}
@@ -359,57 +375,57 @@ export default function OrderDetailScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   content: {
-    padding: 16,
+    padding: theme.spacing.lg,
     paddingBottom: 40,
-    gap: 12,
+    gap: theme.spacing.md,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
     justifyContent: "center",
     alignItems: "center",
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     padding: 14,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: theme.spacing.xs,
   },
   orderNumber: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   badge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: theme.spacing.sm,
     paddingVertical: 3,
     borderRadius: 4,
   },
   badgeText: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
     textTransform: "capitalize",
   },
   date: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
   },
   sectionHeader: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -418,15 +434,15 @@ const styles = StyleSheet.create({
   lineItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: theme.spacing.sm,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#0E0E0C10",
+    borderBottomColor: `${theme.colors.text}10`,
   },
   thumbnail: {
     width: 40,
     height: 40,
     borderRadius: 4,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
     marginRight: 10,
   },
   lineItemInfo: {
@@ -435,136 +451,136 @@ const styles = StyleSheet.create({
   lineItemName: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   lineItemVariant: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     marginTop: 1,
   },
   lineItemQty: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
     marginTop: 2,
   },
   lineItemTotal: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
-    marginLeft: 8,
+    color: theme.colors.text,
+    marginLeft: theme.spacing.sm,
   },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingTop: 10,
-    marginTop: 4,
+    marginTop: theme.spacing.xs,
   },
   totalLabel: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   totalValue: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
   },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 6,
+    paddingVertical: theme.spacing.sm,
   },
   infoLabel: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     flex: 1,
   },
   infoValue: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     fontWeight: "500",
     flex: 2,
     textAlign: "right",
   },
   emptyText: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
     fontStyle: "italic",
   },
   actionsSection: {
     gap: 10,
-    marginTop: 4,
+    marginTop: theme.spacing.xs,
   },
   primaryBtn: {
-    backgroundColor: "#2D4A2B",
-    borderRadius: 6,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius,
     paddingVertical: 14,
     alignItems: "center",
   },
   primaryBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
   secondaryBtn: {
-    backgroundColor: "#0E0E0C",
-    borderRadius: 6,
+    backgroundColor: theme.colors.text,
+    borderRadius: theme.radius,
     paddingVertical: 14,
     alignItems: "center",
   },
   secondaryBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
   dangerBtn: {
     backgroundColor: "transparent",
-    borderRadius: 6,
+    borderRadius: theme.radius,
     paddingVertical: 14,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#8B2020",
+    borderColor: theme.colors.danger,
   },
   dangerBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#8B2020",
+    color: theme.colors.danger,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.4)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
+    padding: theme.spacing.xxl,
   },
   modalContent: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.colors.elevated,
     borderRadius: 10,
-    padding: 20,
+    padding: theme.spacing.xl,
     width: "100%",
     maxWidth: 340,
   },
   modalTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 14,
   },
   modalInput: {
-    backgroundColor: "#F7F6F2",
-    borderRadius: 6,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.radius,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
-    marginBottom: 16,
+    borderColor: `${theme.colors.text}10`,
+    marginBottom: theme.spacing.lg,
   },
   modalActions: {
     flexDirection: "row",
@@ -572,25 +588,25 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   modalCancelBtn: {
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: theme.radius,
   },
   modalCancelText: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.6,
   },
   modalSubmitBtn: {
-    backgroundColor: "#2D4A2B",
-    paddingHorizontal: 16,
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: theme.radius,
   },
   modalSubmitText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: theme.colors.elevated,
   },
 });

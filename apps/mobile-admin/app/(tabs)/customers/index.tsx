@@ -11,6 +11,7 @@ import {
 import { useRouter } from "expo-router";
 import { useCustomers } from "../../../lib/hooks/use-customers";
 import { CustomerRow } from "../../../components/CustomerRow";
+import { theme } from "@/lib/theme";
 import type { Customer } from "@repo/mobile-shared/api/types";
 
 function useDebounce(value: string, delay: number): string {
@@ -55,7 +56,7 @@ export default function CustomersScreen() {
         <TextInput
           style={styles.searchInput}
           placeholder="Search customers..."
-          placeholderTextColor="#0E0E0C50"
+          placeholderTextColor={`${theme.colors.text}50`}
           value={searchText}
           onChangeText={setSearchText}
           autoCapitalize="none"
@@ -67,7 +68,7 @@ export default function CustomersScreen() {
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#0E0E0C" />
+          <ActivityIndicator size="large" color={theme.colors.text} />
         </View>
       ) : (
         <FlatList
@@ -79,7 +80,7 @@ export default function CustomersScreen() {
             <RefreshControl
               refreshing={isRefetching}
               onRefresh={refetch}
-              tintColor="#0E0E0C"
+              tintColor={theme.colors.text}
             />
           }
           ListEmptyComponent={
@@ -101,26 +102,26 @@ export default function CustomersScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
   },
   searchContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.md,
   },
   searchInput: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   listContent: {
-    paddingTop: 4,
-    paddingBottom: 24,
+    paddingTop: theme.spacing.xs,
+    paddingBottom: theme.spacing.xxl,
     flexGrow: 1,
   },
   centered: {
@@ -132,12 +133,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#0E0E0C",
-    marginBottom: 4,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   emptySubtitle: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
   },
 });

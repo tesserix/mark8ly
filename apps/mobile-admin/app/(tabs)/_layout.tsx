@@ -6,6 +6,7 @@ import { createNotificationsApi } from "@repo/mobile-shared/api/notifications";
 import { registerForPushNotifications } from "@repo/mobile-shared/push/registration";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
+import { theme } from "@/lib/theme";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -58,15 +59,15 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#0E0E0C",
-        tabBarInactiveTintColor: "#0E0E0C80",
+        tabBarActiveTintColor: theme.colors.text,
+        tabBarInactiveTintColor: `${theme.colors.text}80`,
         tabBarStyle: {
-          backgroundColor: "#FFFFFF",
-          borderTopColor: "#0E0E0C10",
+          backgroundColor: theme.colors.elevated,
+          borderTopColor: `${theme.colors.text}10`,
           borderTopWidth: 0.5,
         },
-        headerStyle: { backgroundColor: "#F7F6F2" },
-        headerTintColor: "#0E0E0C",
+        headerStyle: { backgroundColor: theme.colors.background },
+        headerTintColor: theme.colors.text,
         headerShadowVisible: false,
       }}
     >

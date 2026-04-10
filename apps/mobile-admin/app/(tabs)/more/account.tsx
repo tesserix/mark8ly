@@ -9,6 +9,7 @@ import {
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { StoreSelector } from "../../../components/StoreSelector";
+import { theme } from "@/lib/theme";
 
 export default function AccountScreen() {
   const { user, signOut } = useAuth();
@@ -73,6 +74,7 @@ export default function AccountScreen() {
         onPress={handleLogout}
         activeOpacity={0.7}
         accessibilityRole="button"
+        accessibilityLabel="Sign out"
       >
         <Text style={styles.logoutText}>Sign Out</Text>
       </TouchableOpacity>
@@ -88,21 +90,21 @@ export default function AccountScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
-    padding: 16,
-    gap: 12,
+    backgroundColor: theme.colors.background,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
     padding: 14,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
   sectionHeader: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -111,17 +113,17 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 6,
+    paddingVertical: theme.spacing.sm,
   },
   infoLabel: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     flex: 1,
   },
   infoValue: {
     fontSize: 13,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     fontWeight: "500",
     flex: 2,
     textAlign: "right",
@@ -136,32 +138,32 @@ const styles = StyleSheet.create({
   storeName: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     marginBottom: 2,
   },
   storeSlug: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.4,
   },
   chevron: {
     fontSize: 20,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.3,
-    marginLeft: 8,
+    marginLeft: theme.spacing.sm,
   },
   logoutBtn: {
     backgroundColor: "transparent",
-    borderRadius: 6,
+    borderRadius: theme.radius,
     paddingVertical: 14,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#8B2020",
-    marginTop: 8,
+    borderColor: theme.colors.danger,
+    marginTop: theme.spacing.sm,
   },
   logoutText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#8B2020",
+    color: theme.colors.danger,
   },
 });

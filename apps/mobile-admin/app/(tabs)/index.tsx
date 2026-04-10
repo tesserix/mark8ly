@@ -9,6 +9,7 @@ import {
 import { useRouter } from "expo-router";
 import { useDashboard } from "@/lib/hooks/use-dashboard";
 import { DashboardStats } from "@/components/DashboardStats";
+import { theme } from "@/lib/theme";
 import type { RecentOrder, LowStockItem } from "@repo/mobile-shared/api/types";
 
 function RecentOrderRow({
@@ -23,6 +24,8 @@ function RecentOrderRow({
       style={styles.orderRow}
       onPress={onPress}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`Order ${order.order_number}, ${order.customer_email}, $${order.grand_total.toFixed(2)}`}
     >
       <View style={{ flex: 1 }}>
         <Text style={styles.orderNumber}>#{order.order_number}</Text>
@@ -45,11 +48,13 @@ function LowStockRow({
       style={styles.orderRow}
       onPress={onPress}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, ${item.stock} left in stock`}
     >
       <View style={{ flex: 1 }}>
         <Text style={styles.orderNumber}>{item.name}</Text>
       </View>
-      <Text style={[styles.orderTotal, { color: "#8B2020" }]}>
+      <Text style={[styles.orderTotal, { color: theme.colors.danger }]}>
         {item.stock} left
       </Text>
     </TouchableOpacity>
@@ -72,7 +77,12 @@ export default function DashboardScreen() {
     return (
       <View style={styles.centered}>
         <Text style={styles.loadingText}>Failed to load dashboard</Text>
-        <TouchableOpacity onPress={() => refetch()} style={styles.retryButton}>
+        <TouchableOpacity
+          onPress={() => refetch()}
+          style={styles.retryButton}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading dashboard"
+        >
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -87,7 +97,7 @@ export default function DashboardScreen() {
         <RefreshControl
           refreshing={isRefetching}
           onRefresh={refetch}
-          tintColor="#0E0E0C"
+          tintColor={theme.colors.text}
         />
       }
     >
@@ -97,7 +107,11 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Orders</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/orders")}>
+            <TouchableOpacity
+              onPress={() => router.push("/(tabs)/orders")}
+              accessibilityRole="link"
+              accessibilityLabel="View all orders"
+            >
               <Text style={styles.viewAll}>View all</Text>
             </TouchableOpacity>
           </View>
@@ -133,6 +147,8 @@ export default function DashboardScreen() {
               style={styles.orderRow}
               onPress={() => router.push(`/(tabs)/products/${product.id}`)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${product.name}, ${product.total_sold} sold, $${product.revenue.toFixed(0)} revenue`}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.orderNumber}>{product.name}</Text>
@@ -152,24 +168,24 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7F6F2" },
-  content: { padding: 16, gap: 24, paddingBottom: 32 },
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  content: { padding: theme.spacing.lg, gap: theme.spacing.xxl, paddingBottom: theme.spacing.xxxl },
   centered: {
     flex: 1,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: theme.colors.background,
     justifyContent: "center",
     alignItems: "center",
   },
-  loadingText: { color: "#0E0E0C", opacity: 0.5, fontSize: 16 },
+  loadingText: { color: theme.colors.text, opacity: 0.5, fontSize: 16 },
   retryButton: {
-    marginTop: 12,
-    paddingHorizontal: 20,
+    marginTop: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xl,
     paddingVertical: 10,
-    backgroundColor: "#0E0E0C",
-    borderRadius: 6,
+    backgroundColor: theme.colors.text,
+    borderRadius: theme.radius,
   },
-  retryText: { color: "#F7F6F2", fontSize: 14, fontWeight: "600" },
-  section: { gap: 8 },
+  retryText: { color: theme.colors.background, fontSize: 14, fontWeight: "600" },
+  section: { gap: theme.spacing.sm },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -178,27 +194,27 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  viewAll: { fontSize: 14, color: "#2D4A2B", fontWeight: "500" },
+  viewAll: { fontSize: 14, color: theme.colors.accent, fontWeight: "500" },
   orderRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
-    padding: 12,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius,
+    padding: theme.spacing.md,
     borderWidth: 0.5,
-    borderColor: "#0E0E0C10",
+    borderColor: `${theme.colors.text}10`,
   },
-  orderNumber: { fontSize: 14, fontWeight: "600", color: "#0E0E0C" },
+  orderNumber: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
   orderEmail: {
     fontSize: 12,
-    color: "#0E0E0C",
+    color: theme.colors.text,
     opacity: 0.5,
     marginTop: 2,
   },
-  orderTotal: { fontSize: 16, fontWeight: "700", color: "#0E0E0C" },
+  orderTotal: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
 });

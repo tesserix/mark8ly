@@ -73,9 +73,19 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
           <p className="text-sm text-[color:var(--ink-900)] opacity-60">
             {products.length === 0
               ? search
-                ? `No matches for “${search}”.`
-                : "No products yet — check back soon."
-              : `${products.length} ${products.length === 1 ? "product" : "products"}${search ? ` matching “${search}”` : ""}`}
+                ? (
+                    <span>
+                      No matches for &quot;{search}&quot;.{“ “}
+                      <a
+                        href=”/products”
+                        className=”text-[color:var(--moss-700)] underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]”
+                      >
+                        Clear search
+                      </a>
+                    </span>
+                  )
+                : “No products yet — check back soon.”
+              : `${products.length} ${products.length === 1 ? “product” : “products”}${search ? ` matching “${search}”` : “”}`}
           </p>
           <div className="mt-4">
             <ProductSearchInput />

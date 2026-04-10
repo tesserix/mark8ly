@@ -64,6 +64,7 @@ export interface ProductFormProps {
   canDelete: boolean;
   canArchive: boolean;
   session: SessionHeaders;
+  storeSlug?: string;
 }
 
 export function ProductForm({
@@ -74,6 +75,7 @@ export function ProductForm({
   currencyCode,
   canDelete,
   session,
+  storeSlug,
 }: ProductFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -301,9 +303,25 @@ export function ProductForm({
               {title}
             </h1>
             {mode === "edit" && initialProduct && (
-              <span className="text-xs text-[color:var(--ink-900)] opacity-50">
-                /{initialProduct.handle}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[color:var(--ink-900)] opacity-50">
+                  /{initialProduct.handle}
+                </span>
+                {storeSlug && initialProduct.status === "active" && (
+                  <a
+                    href={`${
+                      typeof window !== "undefined" && window.location.hostname === "localhost"
+                        ? `/products/${initialProduct.handle}?slug=${storeSlug}`
+                        : `https://${storeSlug}.mark8ly.com/products/${initialProduct.handle}`
+                    }`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-[color:var(--moss-700)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  >
+                    View on storefront ↗
+                  </a>
+                )}
+              </div>
             )}
           </div>
         </div>

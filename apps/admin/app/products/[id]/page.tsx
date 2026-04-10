@@ -44,6 +44,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
           canDelete={role === "owner"}
           canArchive={role === "owner" || role === "admin"}
           session={{ userId, tenantId }}
+          storeSlug={currentStore.slug}
         />
       </main>
     </AdminShell>

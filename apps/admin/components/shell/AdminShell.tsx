@@ -92,13 +92,9 @@ const navigation: NavSection[] = [
   },
   {
     key: "catalog",
-    label: "Catalog",
+    label: "Products",
     icon: Package,
-    children: [
-      { label: "Products", href: "/products" },
-      { label: "Categories", href: "/products" },
-      { label: "Inventory", href: "/products" },
-    ],
+    href: "/products",
   },
   {
     key: "orders",
@@ -139,9 +135,9 @@ const navigation: NavSection[] = [
       { label: "Storefront", href: "/settings/storefront" },
       { label: "Stores", href: "/settings/stores" },
       { label: "Team", href: "/settings/team" },
-      { label: "Shipping", href: "/settings" },
-      { label: "Payments", href: "/settings" },
-      { label: "Legal", href: "/settings" },
+      { label: "Payments", href: "/settings/payments" },
+      { label: "Shipping", href: "/settings/shipping" },
+      { label: "Tax", href: "/settings/tax" },
     ],
   },
   {
@@ -489,7 +485,7 @@ function getPageTitle(pathname: string | null): {
     return { eyebrow: "Overview", title: "Dashboard" };
   }
   if (pathname.startsWith("/products")) {
-    return { eyebrow: "Catalog", title: "Products" };
+    return { eyebrow: "Products", title: "Products" };
   }
   if (pathname.startsWith("/orders")) {
     return { eyebrow: "Operations", title: "Orders" };

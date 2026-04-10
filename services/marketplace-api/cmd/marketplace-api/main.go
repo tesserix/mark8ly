@@ -190,6 +190,12 @@ func main() {
 		storesHandler := admin.NewStoresHandler(storesRepo, log)
 		bulkHandler := admin.NewBulkHandler(productSvc, fgaClient, log)
 
+		// CSV import/export wiring (M7e).
+		csvRepo := csvjob.NewRepository(conn)
+		csvSvc := csvjob.NewService(csvRepo, log)
+		exportRepo := product.NewExportRepository(conn)
+		csvImportsHandler := admin.NewCSVImportsHandler(csvSvc, exportRepo, log)
+
 		adminDeps = admin.Deps{
 			ProductHandler:        productHandler,
 			CategoryHandler:       categoryHandler,
@@ -200,6 +206,7 @@ func main() {
 			AbandonedCartsHandler: abandonedCartsHandler,
 			StoresHandler:         storesHandler,
 			BulkHandler:           bulkHandler,
+			CSVImportsHandler:     csvImportsHandler,
 			StoresMiddleware:      storeMW,
 			AuthzMiddleware:       authzMW,
 			InternalSecret:        cfg.InternalAuthSecret,

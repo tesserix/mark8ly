@@ -23,6 +23,7 @@ type Deps struct {
 	AbandonedCartsHandler *AbandonedCartsHandler
 	StoresHandler         *StoresHandler
 	BulkHandler           *BulkHandler
+	CSVImportsHandler     *CSVImportsHandler
 	StoresMiddleware      gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware       *authz.Middleware
 	InternalSecret        string
@@ -63,6 +64,35 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			// Bulk actions — role check is per-id inside the handler.
 			if deps.BulkHandler != nil {
 				products.POST("/bulk", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff), deps.BulkHandler.Bulk)
+			}
+
+			// CSV export — streaming download of all products as CSV.
+			if deps.CSVImportsHandler != nil {
+				products.GET("/export.csv",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CSVExportRole),
+					deps.CSVImportsHandler.Export)
+			}
+		}
+
+		// CSV imports — submit, list, status, cancel, download errors.
+		if deps.CSVImportsHandler != nil {
+			csvImports := storeRoute.Group("/csv-imports")
+			{
+				csvImports.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CSVImportRole),
+					deps.CSVImportsHandler.Submit)
+				csvImports.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CSVImportViewRole),
+					deps.CSVImportsHandler.List)
+				csvImports.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CSVImportViewRole),
+					deps.CSVImportsHandler.Status)
+				csvImports.POST("/:id/cancel",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CSVImportRole),
+					deps.CSVImportsHandler.Cancel)
+				csvImports.GET("/:id/errors",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CSVImportViewRole),
+					deps.CSVImportsHandler.DownloadErrors)
 			}
 		}
 		categories := storeRoute.Group("/categories")

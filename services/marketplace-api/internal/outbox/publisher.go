@@ -76,10 +76,20 @@ func (p *Publisher) Start(ctx context.Context) <-chan struct{} {
 
 // Tick processes a single batch. Exposed for tests that want to drive
 // without sleeping.
+//
+// Watermark routing: rows whose aggregate is one of {order, return,
+// abandoned_cart} bump store_watermarks.orders_updated_at; everything else
+// (product, category, media) bumps products_updated_at. This lets storefront
+// clients poll the orders signal independently of product edits. See spec
+// §14.1 and Orders M2 plan (Option A).
 func (p *Publisher) Tick(ctx context.Context) (int, error) {
 	return p.repo.ProcessBatch(ctx, p.batch, func(tx *gorm.DB, rows []OutboxEvent) error {
-		// Group by store_id, computing max created_at per store.
-		byStore := map[string]time.Time{}
+		// Group by (store_id, axis) where axis ∈ {"products","orders"}.
+		type key struct {
+			storeID string
+			axis    string
+		}
+		byBucket := map[key]time.Time{}
 		ids := make([]string, 0, len(rows))
 		for _, r := range rows {
 			ids = append(ids, r.ID)
@@ -99,18 +109,36 @@ func (p *Publisher) Tick(ctx context.Context) (int, error) {
 				}
 				continue
 			}
-			if prev, ok := byStore[sid]; !ok || r.CreatedAt.After(prev) {
-				byStore[sid] = r.CreatedAt
+			axis := "products"
+			if IsOrderAggregate(r.Aggregate) {
+				axis = "orders"
+			}
+			k := key{storeID: sid, axis: axis}
+			if prev, ok := byBucket[k]; !ok || r.CreatedAt.After(prev) {
+				byBucket[k] = r.CreatedAt
 			}
 		}
-		for sid, ts := range byStore {
-			if err := tx.Exec(`
-				INSERT INTO store_watermarks (store_id, products_updated_at)
-				VALUES (?, ?)
-				ON CONFLICT (store_id) DO UPDATE
-					SET products_updated_at = GREATEST(
-						store_watermarks.products_updated_at,
-						EXCLUDED.products_updated_at)`, sid, ts).Error; err != nil {
+		for k, ts := range byBucket {
+			var stmt string
+			switch k.axis {
+			case "orders":
+				stmt = `
+					INSERT INTO store_watermarks (store_id, orders_updated_at)
+					VALUES (?, ?)
+					ON CONFLICT (store_id) DO UPDATE
+						SET orders_updated_at = GREATEST(
+							store_watermarks.orders_updated_at,
+							EXCLUDED.orders_updated_at)`
+			default:
+				stmt = `
+					INSERT INTO store_watermarks (store_id, products_updated_at)
+					VALUES (?, ?)
+					ON CONFLICT (store_id) DO UPDATE
+						SET products_updated_at = GREATEST(
+							store_watermarks.products_updated_at,
+							EXCLUDED.products_updated_at)`
+			}
+			if err := tx.Exec(stmt, k.storeID, ts).Error; err != nil {
 				return err
 			}
 		}

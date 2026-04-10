@@ -186,6 +186,9 @@ func main() {
 		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log)
 		abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, log)
 
+		storesHandler := admin.NewStoresHandler(storesRepo, log)
+		bulkHandler := admin.NewBulkHandler(productSvc, fgaClient, log)
+
 		adminDeps = admin.Deps{
 			ProductHandler:        productHandler,
 			CategoryHandler:       categoryHandler,
@@ -194,6 +197,8 @@ func main() {
 			OrdersHandler:         ordersHandler,
 			ReturnsHandler:        returnsHandler,
 			AbandonedCartsHandler: abandonedCartsHandler,
+			StoresHandler:         storesHandler,
+			BulkHandler:           bulkHandler,
 			StoresMiddleware:      storeMW,
 			AuthzMiddleware:       authzMW,
 			InternalSecret:        cfg.InternalAuthSecret,

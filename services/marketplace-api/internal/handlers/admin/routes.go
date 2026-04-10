@@ -21,6 +21,8 @@ type Deps struct {
 	OrdersHandler         *OrdersHandler
 	ReturnsHandler        *ReturnsHandler
 	AbandonedCartsHandler *AbandonedCartsHandler
+	StoresHandler         *StoresHandler
+	BulkHandler           *BulkHandler
 	StoresMiddleware      gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware       *authz.Middleware
 	InternalSecret        string
@@ -38,6 +40,15 @@ type Deps struct {
 func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 	authMW := auth.HeaderTrustAuth(deps.InternalSecret)
 
+	// Tenant-wide admin routes — outside of /stores/:storeId because they
+	// enumerate across stores, not within a single one.
+	if deps.StoresHandler != nil {
+		adminRoot := router.Group("/admin", authMW)
+		adminRoot.GET("/stores",
+			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+			deps.StoresHandler.List)
+	}
+
 	storeRoute := router.Group("/admin/stores/:storeId", authMW, deps.StoresMiddleware)
 	{
 		products := storeRoute.Group("/products")
@@ -48,6 +59,11 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			products.PATCH("/:id", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.ProductHandler.Patch)
 			products.DELETE("/:id", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner), deps.ProductHandler.Delete)
 			products.POST("/:id/copy", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.ProductHandler.Copy)
+
+			// Bulk actions — role check is per-id inside the handler.
+			if deps.BulkHandler != nil {
+				products.POST("/bulk", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff), deps.BulkHandler.Bulk)
+			}
 		}
 		categories := storeRoute.Group("/categories")
 		{

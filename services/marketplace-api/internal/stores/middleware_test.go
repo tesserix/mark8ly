@@ -58,6 +58,18 @@ func (r *fakeRepo) GetBySlug(_ context.Context, slug string) (*stores.Store, err
 	return nil, stores.ErrNotFound
 }
 
+func (r *fakeRepo) ListForTenant(_ context.Context, tenantID string) ([]stores.Store, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []stores.Store
+	for _, s := range r.byKey {
+		if s.TenantID == tenantID {
+			out = append(out, *s)
+		}
+	}
+	return out, nil
+}
+
 func (r *fakeRepo) GetProductsWatermark(_ context.Context, _ string) (time.Time, error) {
 	return time.Unix(0, 0), nil
 }

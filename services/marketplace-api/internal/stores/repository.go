@@ -17,6 +17,7 @@ import (
 type Repository interface {
 	GetByIDForTenant(ctx context.Context, storeID, tenantID string) (*Store, error)
 	GetBySlug(ctx context.Context, slug string) (*Store, error)
+	ListForTenant(ctx context.Context, tenantID string) ([]Store, error)
 	Upsert(ctx context.Context, s *Store) error
 	GetProductsWatermark(ctx context.Context, storeID string) (time.Time, error)
 }
@@ -66,6 +67,25 @@ func (r *gormRepository) GetBySlug(ctx context.Context, slug string) (*Store, er
 		return nil, fmt.Errorf("stores: get by slug: %w", err)
 	}
 	return &s, nil
+}
+
+// ListForTenant returns all active stores belonging to a tenant. Used by
+// the admin "list my stores" endpoint so the CopyToStoreDialog can
+// enumerate copy targets. Returns an empty slice (not nil) when no stores
+// exist for the tenant.
+func (r *gormRepository) ListForTenant(ctx context.Context, tenantID string) ([]Store, error) {
+	var out []Store
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND status = ?", tenantID, StatusActive).
+		Order("name ASC").
+		Find(&out).Error
+	if err != nil {
+		return nil, fmt.Errorf("stores: list for tenant: %w", err)
+	}
+	if out == nil {
+		out = []Store{}
+	}
+	return out, nil
 }
 
 // GetProductsWatermark reads the products watermark for a store. When

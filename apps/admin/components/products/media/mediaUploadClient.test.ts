@@ -242,16 +242,15 @@ describe("uploadMediaFile", () => {
     const setRequestHeader = vi.fn();
     const send = vi.fn();
     const open = vi.fn();
-    interface FakeXHR {
+    const xhr: {
       upload: { onprogress: ((e: { loaded: number; total: number; lengthComputable: boolean }) => void) | null };
       open: typeof open;
       setRequestHeader: typeof setRequestHeader;
-      send: typeof send;
+      send: (file: File) => void;
       onload: (() => void) | null;
       onerror: (() => void) | null;
       status: number;
-    }
-    const xhr: FakeXHR = {
+    } = {
       upload: { onprogress: null },
       open,
       setRequestHeader,

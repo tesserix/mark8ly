@@ -22,10 +22,13 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	firebase "firebase.google.com/go/v4"
 	"golang.org/x/sync/singleflight"
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
+	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/customer"
@@ -40,6 +43,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/notification"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
@@ -304,6 +308,18 @@ func main() {
 		})
 		notificationsHandler := admin.NewNotificationsHandler(notificationSvc, log)
 
+		// B1 — Storefront Branding.
+		brandingRepo := branding.NewRepository()
+		brandingSvc := branding.NewService(branding.ServiceConfig{
+			DB:     conn,
+			Repo:   brandingRepo,
+			Logger: log,
+		})
+		brandingHandler := admin.NewBrandingHandler(brandingSvc, log)
+
+		// B2 — Plan gate resolver (shared between admin and storefront).
+		planResolver := plangate.NewPlanResolver(conn, subscriptionRepo)
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -332,9 +348,36 @@ func main() {
 			NotificationsHandler:   notificationsHandler,
 			DashboardHandler:       dashboardHandler,
 			TicketsHandler:         ticketsHandler,
+			BrandingHandler:        brandingHandler,
+			PlanResolver:           planResolver,
 			StoresMiddleware:        storeMW,
 			AuthzMiddleware:         authzMW,
 			InternalSecret:          cfg.InternalAuthSecret,
+		}
+	}
+
+	// Mobile admin deps — Bearer auth for external mobile clients.
+	var mobileDeps admin.MobileDeps
+	if m == mode.Admin || m == mode.Both {
+		var tokenVerifier auth.TokenVerifier
+		if cfg.GIPProjectID != "" {
+			firebaseApp, err := firebase.NewApp(context.Background(), &firebase.Config{
+				ProjectID: cfg.GIPProjectID,
+			})
+			if err != nil {
+				log.Error("failed to init Firebase app for mobile auth", "error", err)
+			} else {
+				authClient, err := firebaseApp.Auth(context.Background())
+				if err != nil {
+					log.Error("failed to init Firebase Auth client", "error", err)
+				} else {
+					tokenVerifier = auth.NewGIPVerifier(authClient)
+				}
+			}
+		}
+		mobileDeps = admin.MobileDeps{
+			Deps:          adminDeps,
+			TokenVerifier: tokenVerifier,
 		}
 	}
 
@@ -394,6 +437,15 @@ func main() {
 		wishlistRepo := wishlist.NewRepository(conn)
 		wishlistHandler := storefront.NewWishlistHandler(wishlistRepo, log)
 
+		// B1 — Storefront Branding (public endpoint).
+		brandingRepoSF := branding.NewRepository()
+		brandingSvcSF := branding.NewService(branding.ServiceConfig{
+			DB:     conn,
+			Repo:   brandingRepoSF,
+			Logger: log,
+		})
+		sfBrandingHandler := storefront.NewBrandingHandler(brandingSvcSF, log)
+
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
 		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, log)
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
@@ -424,6 +476,8 @@ func main() {
 			ReviewsHandler: sfReviewsHandler,
 			// C4 wishlists.
 			WishlistHandler: wishlistHandler,
+			// B1 branding.
+			BrandingHandler: sfBrandingHandler,
 			Logger:          log,
 		}
 	}
@@ -551,6 +605,7 @@ func main() {
 		r.MaxMultipartMemory = 100 << 20 // 100 MB for CSV uploads
 		healthHandler.Register(r)
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
+		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
@@ -566,6 +621,7 @@ func main() {
 		healthHandler.Register(engine)
 		if m == mode.Admin {
 			admin.RegisterAdmin(engine.Group("/api/v1"), adminDeps)
+			admin.RegisterAdminMobile(engine.Group("/api/v1"), mobileDeps)
 			if countryPublicHandler != nil {
 				engine.GET("/api/v1/public/supported-countries", countryPublicHandler.ListSupported)
 			}

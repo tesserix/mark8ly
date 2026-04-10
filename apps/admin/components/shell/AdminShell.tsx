@@ -121,7 +121,7 @@ const navigation: NavSection[] = [
     icon: Megaphone,
     children: [
       { label: "Campaigns", href: "/dashboard" },
-      { label: "Coupons", href: "/dashboard" },
+      { label: "Coupons", href: "/marketing/coupons" },
       { label: "Gift Cards", href: "/dashboard" },
       { label: "Loyalty", href: "/dashboard" },
     ],
@@ -498,6 +498,12 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/settings/storefront")) {
     return { eyebrow: "Storefront", title: "Theme & Layout" };
+  }
+  if (pathname.startsWith("/marketing/coupons")) {
+    return { eyebrow: "Marketing", title: "Coupons" };
+  }
+  if (pathname.startsWith("/marketing")) {
+    return { eyebrow: "Growth", title: "Marketing" };
   }
   if (pathname.startsWith("/settings")) {
     return { eyebrow: "Configuration", title: "Settings" };

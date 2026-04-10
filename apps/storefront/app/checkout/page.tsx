@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
+import { CouponInput } from "@/components/checkout/CouponInput";
 import {
   fetchPaymentMethods,
   fetchShippingRates,
@@ -122,11 +123,16 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Coupon state
+  const [couponCode, setCouponCode] = useState<string | null>(null);
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponFreeShipping, setCouponFreeShipping] = useState(false);
+
   // Computed totals
   const selectedRate = shippingRates.find((r) => r.service === selectedShipping);
   const shippingTotal = selectedRate ? Number.parseFloat(selectedRate.price) : 0;
   // Tax is computed server-side at checkout; show 0 until order is placed.
-  const total = subtotal + shippingTotal;
+  const total = subtotal + (couponFreeShipping ? 0 : shippingTotal) - couponDiscount;
 
   const canSubmit =
     items.length > 0 &&
@@ -208,6 +214,7 @@ export default function CheckoutPage() {
       shipping_service: selectedShipping,
       payment_provider: selectedProvider,
       subtotal: subtotal.toFixed(2),
+      coupon_code: couponCode ?? undefined,
     };
 
     const result = await submitCheckout(storeSlug, body);
@@ -314,6 +321,26 @@ export default function CheckoutPage() {
             })}
           </ul>
         </section>
+
+        {/* Coupon input — below order summary */}
+        <div className="mt-6">
+          <CouponInput
+            storeSlug={storeSlug}
+            customerEmail={email}
+            subtotal={subtotal}
+            currencyCode={currencyCode}
+            onApplied={(result) => {
+              setCouponCode(result.code);
+              setCouponDiscount(Number.parseFloat(result.discount_amount));
+              setCouponFreeShipping(result.free_shipping);
+            }}
+            onRemoved={() => {
+              setCouponCode(null);
+              setCouponDiscount(0);
+              setCouponFreeShipping(false);
+            }}
+          />
+        </div>
 
         {/* Contact */}
         <section aria-labelledby="contact-heading" className="mt-10">
@@ -499,6 +526,22 @@ export default function CheckoutPage() {
                   : "--"}
               </dd>
             </div>
+            {couponDiscount > 0 && (
+              <div className="flex justify-between">
+                <dt className="opacity-60">Discount</dt>
+                <dd className="text-[color:var(--moss-700)]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                  -{formatPrice(couponDiscount, currencyCode)}
+                </dd>
+              </div>
+            )}
+            {couponFreeShipping && (
+              <div className="flex justify-between">
+                <dt className="opacity-60">Shipping</dt>
+                <dd className="text-[color:var(--moss-700)]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                  Free
+                </dd>
+              </div>
+            )}
             <div className="flex justify-between">
               <dt className="opacity-60">Tax</dt>
               <dd className="opacity-40" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>

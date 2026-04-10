@@ -1,0 +1,158 @@
+"use client";
+
+import { useCallback, useState } from "react";
+
+interface CouponInputProps {
+  storeSlug: string;
+  customerEmail: string;
+  subtotal: number;
+  currencyCode: string;
+  onApplied: (result: CouponValidateResult) => void;
+  onRemoved: () => void;
+}
+
+interface CouponValidateResult {
+  coupon_id: string;
+  code: string;
+  type: string;
+  value: string;
+  discount_amount: string;
+  free_shipping: boolean;
+  title: string;
+}
+
+const MARKETPLACE_API_URL =
+  process.env.NEXT_PUBLIC_MARKETPLACE_API_URL ??
+  process.env.MARKETPLACE_API_URL ??
+  "http://localhost:8088";
+
+const STOREFRONT_KEY = process.env.NEXT_PUBLIC_STOREFRONT_KEY ?? "";
+
+export function CouponInput({
+  storeSlug,
+  customerEmail,
+  subtotal,
+  currencyCode,
+  onApplied,
+  onRemoved,
+}: CouponInputProps) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [applied, setApplied] = useState<CouponValidateResult | null>(null);
+
+  const validate = useCallback(async () => {
+    if (!code.trim()) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      };
+      if (STOREFRONT_KEY) headers["X-Storefront-Key"] = STOREFRONT_KEY;
+
+      const res = await fetch(
+        `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/coupons/validate`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            code: code.trim(),
+            customer_email: customerEmail,
+            subtotal: subtotal.toFixed(2),
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setError(body?.message ?? "Invalid coupon code");
+        return;
+      }
+
+      const body = await res.json();
+      const result = body.data as CouponValidateResult;
+      setApplied(result);
+      onApplied(result);
+    } catch {
+      setError("Failed to validate coupon");
+    } finally {
+      setLoading(false);
+    }
+  }, [code, storeSlug, customerEmail, subtotal, onApplied]);
+
+  const remove = useCallback(() => {
+    setApplied(null);
+    setCode("");
+    setError(null);
+    onRemoved();
+  }, [onRemoved]);
+
+  if (!open && !applied) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-sm text-moss-700 underline-offset-2 hover:underline"
+      >
+        Have a promo code?
+      </button>
+    );
+  }
+
+  if (applied) {
+    return (
+      <div className="flex items-center justify-between rounded-md border border-moss-200 bg-moss-50 px-3 py-2">
+        <div className="text-sm">
+          <span className="font-mono font-medium text-moss-700">
+            {applied.code}
+          </span>
+          <span className="ml-2 text-ink-500">
+            {applied.free_shipping
+              ? "Free shipping"
+              : `-${currencyCode} ${applied.discount_amount}`}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={remove}
+          className="text-xs text-ink-400 hover:text-ink-600"
+        >
+          Remove
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              validate();
+            }
+          }}
+          placeholder="Enter promo code"
+          className="flex-1 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm font-mono uppercase text-ink-900 placeholder:text-ink-400 placeholder:normal-case focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+        />
+        <button
+          type="button"
+          onClick={validate}
+          disabled={loading || !code.trim()}
+          className="rounded-md bg-ink-900 px-4 py-2 text-sm font-medium text-paper-200 transition hover:bg-ink-800 disabled:opacity-50"
+        >
+          {loading ? "..." : "Apply"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-signal-700">{error}</p>}
+    </div>
+  );
+}

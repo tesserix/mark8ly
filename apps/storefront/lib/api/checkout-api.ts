@@ -95,6 +95,7 @@ export interface CheckoutBody {
   payment_provider: string;
   subtotal: string;
   discount_total?: string;
+  coupon_code?: string;
 }
 
 export interface CheckoutResult {
@@ -104,6 +105,8 @@ export interface CheckoutResult {
   provider: string;
   tax_total: string;
   shipping_total: string;
+  discount_total?: string;
+  coupon_code?: string;
   total: string;
 }
 

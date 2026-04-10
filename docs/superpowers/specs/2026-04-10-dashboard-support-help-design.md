@@ -298,19 +298,65 @@ Server-side markdown rendering via `next-mdx-remote` or a simple `marked` + `DOM
 
 Client-side search on the help landing page. Load all article frontmatter (title, category, first 200 chars) at build time. Filter on keystroke. No backend search endpoint needed for ~15 articles.
 
-## 7. Security
+## 7. Fixes from Specialist Reviews
 
-- Dashboard: scoped by store_id + tenant_id, standard admin auth
-- Tickets: scoped by store_id + tenant_id. Reply content sanitized (bluemonday). Platform replies only from platform admin (future — for now all replies are merchant-authored)
-- Help content: static markdown, no user input, no injection risk
+### 7.1 Security fixes (from security review)
 
-## 8. Testing
+**Cache key MUST be `${tenantId}:${storeId}`** — in-memory cache scoped to prevent cross-tenant data leakage. Never serve cached data to a caller whose tenantId differs.
 
-- **D1:** Dashboard endpoint returns correct stats (seed orders + products, verify counts). Setup checklist accurately reflects state. Revenue trend has 7 data points. Empty store returns zeroes.
-- **D2:** Ticket CRUD, status transitions (open→resolved→closed, open→closed, resolved→reopen→open), reply append, sequential ticket number generation, search by subject
-- **D3:** Markdown renders correctly, search filters by title, HelpLink component renders correct href, 404 on unknown slug
+**All aggregation queries include `AND tenant_id = ?`** — not just store_id. Prevents cross-tenant data access via enumerated store UUIDs.
 
-## 9. Out of Scope
+**Ticket access control: verify tenant_id + store_id on GET by ID** — prevents IDOR where staff from store A reads store B's tickets by guessing UUID.
+
+**Ticket reply `author_type` validated server-side** — reject `platform` author_type from merchant sessions. Prevents impersonation of Mark8ly support.
+
+**Dashboard response: `Cache-Control: private, no-store`** — prevents CDN/Cloudflare from caching tenant-specific revenue data.
+
+**Help article slug: validate against allowlist** — use `path.basename(slug)` and check against known filenames before filesystem read. Prevents path traversal (`../../.env`).
+
+**Help markdown rendering: use `marked` + `sanitize-html`** (not DOMPurify which needs DOM). Server-safe sanitization pipeline. Or `next-mdx-remote` with `rehype-sanitize` plugin.
+
+**Ticket reply rendering: use `textContent` or DOMPurify on frontend** — never `dangerouslySetInnerHTML` for user-submitted reply content.
+
+### 7.2 Architecture fixes (from architect review)
+
+**Ticket number: use `UPDATE stores SET ticket_seq = ticket_seq + 1 RETURNING ticket_seq`** — not `SELECT MAX + 1`. Same fix as the orders sequence issue. Add `ticket_seq INT NOT NULL DEFAULT 0` column to stores table in migration 000018.
+
+**Dashboard indexes: add composite indexes** in a separate migration or in D1 handler setup:
+- `CREATE INDEX IF NOT EXISTS orders_store_status_created_idx ON orders (store_id, status, created_at)`
+- `CREATE INDEX IF NOT EXISTS order_items_order_product_idx ON order_items (order_id, product_id, line_total, quantity)`
+
+**Cache: consider Redis over in-memory** for multi-pod consistency. For MVP, in-memory with `${tenantId}:${storeId}` key is acceptable but document the trade-off (pods serve different data for up to 60s).
+
+### 7.3 UX fixes (from UX review)
+
+**Revenue sparkline inline with stat card** — don't separate sparkline from revenue card. Embed mini-sparkline (~60px) inside the revenue stat card to avoid two competing "revenue moments."
+
+**Setup checklist: group into 3 phases** — "Store Setup" (store, product, storefront), "Payments & Shipping" (payment, shipping, tax), "Launch" (domain, test order). Show phase progress. Keep a persistent "Setup guide" link in settings after auto-hide.
+
+**Empty dashboard state** — when `setup_checklist.has_test_order === false`, show the checklist prominently and hide stat cards/sparkline/tables. First-session merchants should see onboarding, not empty zeroes.
+
+**Ticket tabs: show counts** — "Open (3)" not just "Open". Lets merchants triage at a glance.
+
+**HelpLink contrast: remove opacity-60** — use `text-[color:var(--moss-700)]` at full opacity. Moss on paper-200 is already secondary without dimming below WCAG AA contrast.
+
+**Sparkline zero-data state** — render dashed baseline with "No sales yet" ghost label instead of a flat active line.
+
+**Help search: index full body truncated at 500 chars + all H2/H3 headings** — covers deeper content matches.
+
+## 8. Security
+
+- Dashboard: scoped by `tenant_id + store_id`, `Cache-Control: private, no-store`, cache keyed `${tenantId}:${storeId}`
+- Tickets: scoped by `tenant_id + store_id`, IDOR check on get-by-id, reply content sanitized (bluemonday server-side + textContent/DOMPurify client-side), author_type validated against session
+- Help content: static markdown, slug validated against allowlist, rendered with `sanitize-html` server-side
+
+## 9. Testing
+
+- **D1:** Dashboard endpoint returns correct stats (seed orders + products, verify counts). Setup checklist accurately reflects state. Revenue trend has 7 data points. Empty store returns zeroes + empty dashboard state. Cache key isolation (store A data never served to store B). All queries include tenant_id.
+- **D2:** Ticket CRUD, status transitions (open→resolved→closed, open→closed, resolved→reopen→open), reply append, sequential ticket number via `UPDATE RETURNING` (concurrent test), search by subject, IDOR rejection (wrong tenant), author_type validation (reject platform from merchant)
+- **D3:** Markdown renders correctly, search filters by title + headings, HelpLink component renders correct href, 404 on unknown slug, path traversal rejected (`../../` in slug returns 404)
+
+## 10. Out of Scope
 
 - Real-time dashboard updates (WebSocket) — 60s cache is sufficient
 - Advanced analytics (cohort analysis, funnel visualization, export) — follow-up
@@ -318,3 +364,4 @@ Client-side search on the help landing page. Load all article frontmatter (title
 - Help article versioning or translation — follow-up
 - Help article feedback persistence (Yes/No stored) — follow-up
 - Platform admin ticket management UI — follow-up (platform-side)
+- Redis cache for dashboard — follow-up when multi-pod is needed

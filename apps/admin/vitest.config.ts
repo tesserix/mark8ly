@@ -10,6 +10,29 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     include: ["**/*.{test,spec}.{ts,tsx}"],
     exclude: ["**/node_modules/**", "**/tests/e2e/**", "**/.next/**"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary"],
+      include: [
+        "lib/products/**/*.{ts,tsx}",
+        "components/products/media/**/*.{ts,tsx}",
+        "components/products/options/**/*.{ts,tsx}",
+        "components/products/variants/**/*.{ts,tsx}",
+        "components/products/form/**/*.{ts,tsx}",
+      ],
+      exclude: [
+        "**/*.test.{ts,tsx}",
+        "**/tests/e2e/**",
+        "**/node_modules/**",
+        "components/products/ProductForm.tsx",
+      ],
+      thresholds: {
+        lines: 80,
+        branches: 70,
+        functions: 80,
+        statements: 80,
+      },
+    },
   },
   resolve: {
     alias: {

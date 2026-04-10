@@ -128,19 +128,38 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		return
 	}
 
+	// ── C2 fix: Recompute subtotal server-side from unit_price * quantity ──
+	computedSubtotal := decimal.Zero
+	for _, it := range req.Items {
+		computedSubtotal = computedSubtotal.Add(it.UnitPrice.Mul(decimal.NewFromInt(int64(it.Quantity))))
+	}
+	if !computedSubtotal.Equal(req.Subtotal) {
+		h.logWarn("checkout_ext: client subtotal mismatch",
+			"client", req.Subtotal.String(), "computed", computedSubtotal.String())
+		req.Subtotal = computedSubtotal
+	}
+
+	// ── H3 fix: Cap discount_total to subtotal ─────────────────────────
+	if req.DiscountTotal.GreaterThan(req.Subtotal) {
+		h.respondErr(c, apperrors.ValidationFailed("discount_total",
+			"discount cannot exceed subtotal"))
+		return
+	}
+
 	// ── Step 2: Calculate shipping ──────────────────────────────────────
 	shippingTotal, err := h.calculateShipping(ctx, store, &sc, req)
 	if err != nil {
-		h.logWarn("checkout_ext: shipping calculation failed", "err", err)
-		// Fall back to zero shipping rather than blocking checkout.
-		shippingTotal = decimal.Zero
+		// M8 fix: return error instead of silently falling back to zero.
+		h.respondErr(c, fmt.Errorf("shipping calculation failed: %w", err))
+		return
 	}
 
 	// ── Step 3: Calculate tax ───────────────────────────────────────────
 	taxBreakdown, err := h.calculateTax(ctx, store, &sc, req, shippingTotal)
 	if err != nil {
-		h.logWarn("checkout_ext: tax calculation failed", "err", err)
-		taxBreakdown = &tax.TaxBreakdown{TaxTotal: decimal.Zero}
+		// M8 fix: return error instead of silently falling back to zero.
+		h.respondErr(c, fmt.Errorf("tax calculation failed: %w", err))
+		return
 	}
 
 	// ── Step 4: Create order ────────────────────────────────────────────
@@ -154,24 +173,13 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 
 	prefix := storePrefixFromSlug(store.Slug)
 
-	var seq int64
-	if err := h.orderSvc.Unit(ctx, func(tx *gorm.DB) error {
-		n, e := order.NextDocumentNumber(ctx, tx, storeID, "order")
-		if e != nil {
-			return e
-		}
-		seq = n
-		return nil
-	}); err != nil {
-		h.respondErr(c, err)
-		return
-	}
-
+	// Sequence allocation happens inside Service.Create's transaction
+	// (C6 fix: atomic with order insert to prevent burned numbers).
 	in := order.CreateInput{
 		TenantID:       tenantID,
 		StoreID:        storeID,
 		StorePrefix:    prefix,
-		OrderNumberSeq: seq,
+		OrderNumberSeq: 0, // allocated inside Create tx
 		IdempotencyKey: req.IdempotencyKey,
 		CustomerEmail:  req.CustomerEmail,
 		CustomerName:   req.CustomerName,
@@ -340,7 +348,8 @@ func (h *CheckoutExtHandler) calculateShipping(
 }
 
 // calculateTax resolves the tax strategy for the store's country and
-// computes the tax breakdown for the order items.
+// computes the tax breakdown for the order items. Routes through
+// tax.Service.CalculateOrderTax so the validateBreakdown check runs (H10 fix).
 func (h *CheckoutExtHandler) calculateTax(
 	ctx context.Context,
 	store *stores.Store,
@@ -359,6 +368,12 @@ func (h *CheckoutExtHandler) calculateTax(
 				taxjarMode = cfg.Mode
 			}
 		}
+		// H9 fix: if TaxJar is the configured strategy but no API key is found,
+		// return an error rather than silently computing zero tax.
+		if taxjarAPIKey == "" {
+			return nil, fmt.Errorf("TaxJar is configured for country %s but no API key found for store %s",
+				store.CountryCode, store.ID)
+		}
 	}
 
 	calc, err := tax.NewCalculator(sc.TaxStrategy, sc.TaxRate, taxjarAPIKey, taxjarMode)
@@ -367,12 +382,16 @@ func (h *CheckoutExtHandler) calculateTax(
 	}
 
 	// Build taxable items from checkout items.
+	// H11 fix: propagate HSN code and GST rate from item data for India GST.
 	taxItems := make([]tax.TaxableItem, 0, len(req.Items))
 	for _, it := range req.Items {
 		ti := tax.TaxableItem{
 			SKU:      it.SKUSnapshot,
-			Amount:   it.LineTotal,
+			Amount:   it.UnitPrice,
 			Quantity: it.Quantity,
+			HSNCode:  derefString(it.HSNCode),
+			GSTRate:  derefDecimal(it.GSTRate),
+			TaxCode:  derefString(it.TaxCode),
 		}
 		if it.ProductID != nil {
 			ti.ProductID = *it.ProductID
@@ -380,24 +399,38 @@ func (h *CheckoutExtHandler) calculateTax(
 		taxItems = append(taxItems, ti)
 	}
 
-	taxReq := tax.TaxRequest{
-		StoreCountryCode: store.CountryCode,
-		SellerAddress: tax.Address{
+	// C5 fix: populate SellerAddress.Region from the store's warehouse config
+	// so India GST can determine intra-state vs inter-state correctly.
+	sellerRegion := ""
+	var cfg carrierConfigRow
+	if err := h.db.WithContext(ctx).
+		Where("store_id = ? AND is_active = true", store.ID).
+		First(&cfg).Error; err == nil && cfg.WarehouseRegion != nil {
+		sellerRegion = *cfg.WarehouseRegion
+	}
+
+	// H10 fix: route through tax.Service.CalculateOrderTax instead of
+	// calling calc.Calculate directly, so validateBreakdown runs.
+	taxSvc := tax.NewService()
+	breakdown, err := taxSvc.CalculateOrderTax(
+		ctx,
+		store.CountryCode,
+		tax.Address{
 			CountryCode: store.CountryCode,
+			Region:      sellerRegion,
 		},
-		BuyerAddress: tax.Address{
+		tax.Address{
 			Line1:       req.ShippingAddress.Line1,
 			City:        req.ShippingAddress.City,
 			Region:      derefString(req.ShippingAddress.Region),
 			PostalCode:  derefString(req.ShippingAddress.PostalCode),
 			CountryCode: req.ShippingAddress.CountryCode,
 		},
-		Items:          taxItems,
-		ShippingAmount: shippingTotal,
-		CurrencyCode:   store.CurrencyCode,
-	}
-
-	breakdown, err := calc.Calculate(ctx, taxReq)
+		taxItems,
+		shippingTotal,
+		store.CurrencyCode,
+		calc,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("tax calculation: %w", err)
 	}
@@ -517,4 +550,12 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// derefDecimal safely dereferences a *decimal.Decimal, returning zero for nil.
+func derefDecimal(d *decimal.Decimal) decimal.Decimal {
+	if d == nil {
+		return decimal.Zero
+	}
+	return *d
 }

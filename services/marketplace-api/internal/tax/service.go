@@ -74,9 +74,15 @@ func (s *Service) validateBreakdown(bd *TaxBreakdown) error {
 		lineSum = lineSum.Add(line.Amount)
 	}
 
-	// Allow a small rounding tolerance (1 cent).
+	// Allow rounding tolerance that scales with the number of tax lines.
+	// Each line can contribute up to 0.005 of rounding, so we allow
+	// 0.01 per line with a minimum of 0.01.
 	diff := bd.TaxTotal.Sub(lineSum).Abs()
-	tolerance := decimal.NewFromFloat(0.01)
+	lineCount := int64(len(bd.Lines))
+	if lineCount < 1 {
+		lineCount = 1
+	}
+	tolerance := decimal.NewFromFloat(0.01).Mul(decimal.NewFromInt(lineCount))
 	if diff.GreaterThan(tolerance) {
 		return fmt.Errorf("tax total %s does not match sum of lines %s (diff %s)", bd.TaxTotal, lineSum, diff)
 	}

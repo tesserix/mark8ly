@@ -8,8 +8,9 @@ import (
 // NewCarrier constructs a Carrier implementation for the named provider.
 // Supported providers: "shipengine", "delhivery", "ninjavan".
 // mode must be "test" or "live". secretKey is only required by providers
-// that use OAuth (NinjaVan); pass "" for others.
-func NewCarrier(provider, apiKey, secretKey, mode string) (Carrier, error) {
+// that use OAuth (NinjaVan); pass "" for others. countryCode is optional
+// and only used by NinjaVan to select the country API endpoint.
+func NewCarrier(provider, apiKey, secretKey, mode string, countryCode ...string) (Carrier, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("shipping: NewCarrier: apiKey is required")
 	}
@@ -26,7 +27,11 @@ func NewCarrier(provider, apiKey, secretKey, mode string) (Carrier, error) {
 		if secretKey == "" {
 			return nil, fmt.Errorf("shipping: NewCarrier: secretKey is required for ninjavan")
 		}
-		return NewNinjaVanCarrier(apiKey, secretKey, mode), nil
+		cc := ""
+		if len(countryCode) > 0 {
+			cc = countryCode[0]
+		}
+		return NewNinjaVanCarrier(apiKey, secretKey, mode, cc), nil
 	default:
 		return nil, fmt.Errorf("shipping: NewCarrier: unknown provider %q", provider)
 	}

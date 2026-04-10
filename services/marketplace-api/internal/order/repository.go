@@ -123,6 +123,35 @@ func loadChildren(ctx context.Context, db *gorm.DB, orderID uuid.UUID) ([]OrderI
 	return items, addrs, nil
 }
 
+// LoadChildrenBatch fetches items and addresses for multiple orders in two
+// queries instead of 2*N (H8 fix: eliminate N+1 on admin list endpoint).
+func LoadChildrenBatch(ctx context.Context, db *gorm.DB, orderIDs []uuid.UUID) (map[uuid.UUID][]OrderItem, map[uuid.UUID][]OrderAddress, error) {
+	if len(orderIDs) == 0 {
+		return nil, nil, nil
+	}
+
+	var allItems []OrderItem
+	if err := db.WithContext(ctx).Where("order_id IN ?", orderIDs).Order("created_at").Find(&allItems).Error; err != nil {
+		return nil, nil, err
+	}
+
+	var allAddrs []OrderAddress
+	if err := db.WithContext(ctx).Where("order_id IN ?", orderIDs).Find(&allAddrs).Error; err != nil {
+		return nil, nil, err
+	}
+
+	itemsByOrder := make(map[uuid.UUID][]OrderItem, len(orderIDs))
+	for _, it := range allItems {
+		itemsByOrder[it.OrderID] = append(itemsByOrder[it.OrderID], it)
+	}
+	addrsByOrder := make(map[uuid.UUID][]OrderAddress, len(orderIDs))
+	for _, a := range allAddrs {
+		addrsByOrder[a.OrderID] = append(addrsByOrder[a.OrderID], a)
+	}
+
+	return itemsByOrder, addrsByOrder, nil
+}
+
 func (gormRepository) UpdateOrderStatus(tx *gorm.DB, id uuid.UUID, target OrderStatus) error {
 	res := tx.Model(&Order{}).
 		Where("id = ? AND deleted_at IS NULL", id).

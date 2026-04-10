@@ -96,8 +96,8 @@ type taxjarBreakdown struct {
 	CityTaxableAmount   float64                    `json:"city_taxable_amount"`
 	CityTaxRate         float64                    `json:"city_tax_rate"`
 	CityTaxCollectable  float64                    `json:"city_amount"`
-	SpecialTaxRate      float64                    `json:"special_district_taxable_amount"`
-	SpecialTaxCollectable float64                  `json:"special_tax_rate"`
+	SpecialTaxRate        float64                  `json:"special_tax_rate"`
+	SpecialTaxCollectable float64                  `json:"special_district_tax_collected"`
 	Shipping            *taxjarShippingBreakdown   `json:"shipping,omitempty"`
 }
 

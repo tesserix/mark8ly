@@ -181,19 +181,37 @@ func (r *gormRepository) UpsertCarrierConfig(ctx context.Context, cfg *CarrierCo
 	if cfg.ID == uuid.Nil {
 		cfg.ID = uuid.New()
 	}
+
+	var existing CarrierConfig
 	err := r.db.WithContext(ctx).
 		Where("store_id = ? AND provider = ?", cfg.StoreID, cfg.Provider).
-		Assign(CarrierConfig{
+		First(&existing).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// No existing row — create.
+		if err := r.db.WithContext(ctx).Create(cfg).Error; err != nil {
+			return fmt.Errorf("shipping: create carrier config: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("shipping: upsert carrier config: lookup: %w", err)
+	}
+
+	// Existing row found — update it.
+	cfg.ID = existing.ID
+	err = r.db.WithContext(ctx).
+		Model(&existing).
+		Updates(CarrierConfig{
 			APIKey:                cfg.APIKey,
 			SecretKey:             cfg.SecretKey,
 			Mode:                  cfg.Mode,
 			HandlingFee:           cfg.HandlingFee,
 			FreeShippingThreshold: cfg.FreeShippingThreshold,
 			Enabled:               cfg.Enabled,
-		}).
-		FirstOrCreate(cfg).Error
+		}).Error
 	if err != nil {
-		return fmt.Errorf("shipping: upsert carrier config: %w", err)
+		return fmt.Errorf("shipping: update carrier config: %w", err)
 	}
 	return nil
 }

@@ -50,6 +50,7 @@ type Capture struct {
 type RefundInput struct {
 	ProviderPaymentID string
 	Amount            decimal.Decimal
+	CurrencyCode      string
 	Reason            string
 }
 

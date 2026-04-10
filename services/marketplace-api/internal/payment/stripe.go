@@ -259,6 +259,15 @@ func verifyStripeSignature(payload []byte, header, secret string) error {
 		return fmt.Errorf("invalid signature header")
 	}
 
+	// Reject stale webhooks older than 5 minutes to prevent replay attacks.
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid timestamp in signature header")
+	}
+	if time.Since(time.Unix(ts, 0)).Abs() > 5*time.Minute {
+		return fmt.Errorf("webhook timestamp too old (replay rejected)")
+	}
+
 	// Construct the signed payload: "<timestamp>.<payload>"
 	signedPayload := []byte(timestamp + "." + string(payload))
 

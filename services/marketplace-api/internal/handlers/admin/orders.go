@@ -74,16 +74,20 @@ func (h *OrdersHandler) List(c *gin.Context) {
 		return
 	}
 
+	// H8 fix: batch-load items + addresses in 2 queries instead of 2*N.
+	orderIDs := make([]uuid.UUID, len(rows))
+	for i := range rows {
+		orderIDs[i] = rows[i].ID
+	}
+	itemsByOrder, addrsByOrder, err := order.LoadChildrenBatch(c.Request.Context(), h.db, orderIDs)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
 	resp := make([]AdminOrderResponse, 0, len(rows))
 	for i := range rows {
-		// Hydrate items + addresses for each. N+1 query but acceptable for
-		// admin lists at this scale; bulk loading is a future optimization.
-		_, items, addrs, err := h.repo.GetByID(c.Request.Context(), h.db, rows[i].ID)
-		if err != nil {
-			RespondErr(c, err, h.logger)
-			return
-		}
-		resp = append(resp, ToAdminOrderResponse(&rows[i], items, addrs))
+		resp = append(resp, ToAdminOrderResponse(&rows[i], itemsByOrder[rows[i].ID], addrsByOrder[rows[i].ID]))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -144,27 +148,13 @@ func (h *OrdersHandler) Create(c *gin.Context) {
 	storeRow, _ := storeVal.(*stores.Store)
 	prefix := storePrefixFromStore(storeRow, storeID)
 
-	// Allocate the per-store order sequence inside its own short tx; the
-	// service.Create then opens its own tx for the order insert. Both share
-	// the same Postgres connection pool.
-	var seq int64
-	if err := h.svc.Unit(c.Request.Context(), func(tx *gorm.DB) error {
-		n, err := order.NextDocumentNumber(c.Request.Context(), tx, storeUUID, "order")
-		if err != nil {
-			return err
-		}
-		seq = n
-		return nil
-	}); err != nil {
-		RespondErr(c, err, h.logger)
-		return
-	}
-
+	// Sequence allocation happens inside Service.Create's transaction
+	// (C6 fix: atomic with order insert to prevent burned numbers).
 	in := order.CreateInput{
 		TenantID:       tenantUUID,
 		StoreID:        storeUUID,
 		StorePrefix:    prefix,
-		OrderNumberSeq: seq,
+		OrderNumberSeq: 0, // allocated inside Create tx
 		IdempotencyKey: req.IdempotencyKey,
 		CustomerEmail:  req.CustomerEmail,
 		CustomerName:   req.CustomerName,
@@ -203,6 +193,11 @@ func (h *OrdersHandler) Confirm(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
 		return
 	}
+	// H7 fix: verify the order belongs to this store + tenant.
+	if err := h.verifyOrderOwnership(c, id); err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
 	var req ConfirmOrderRequest
 	_ = c.ShouldBindJSON(&req) // body is optional
 
@@ -230,6 +225,10 @@ func (h *OrdersHandler) MarkFulfilled(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
 		return
 	}
+	if err := h.verifyOrderOwnership(c, id); err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
 	if err := h.svc.MarkFulfilled(c.Request.Context(), nil, id); err != nil {
 		RespondErr(c, err, h.logger)
 		return
@@ -247,6 +246,10 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	if err := h.verifyOrderOwnership(c, id); err != nil {
+		RespondErr(c, err, h.logger)
 		return
 	}
 	var req CancelOrderRequest
@@ -273,6 +276,10 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	if err := h.verifyOrderOwnership(c, id); err != nil {
+		RespondErr(c, err, h.logger)
 		return
 	}
 	var req RefundOrderRequest
@@ -363,5 +370,22 @@ func toServiceAddress(a AddressRequest) order.OrderAddress {
 		CountryCode: a.CountryCode,
 		Phone:       a.Phone,
 	}
+}
+
+// verifyOrderOwnership checks that the order belongs to the store and tenant
+// from the request path/context, preventing cross-tenant mutations (H7 fix).
+func (h *OrdersHandler) verifyOrderOwnership(c *gin.Context, orderID uuid.UUID) error {
+	o, _, _, err := h.repo.GetByID(c.Request.Context(), h.db, orderID)
+	if err != nil {
+		return err
+	}
+	if o.StoreID.String() != c.Param("storeId") {
+		return apperrors.NotFound("order")
+	}
+	tenantID := c.GetString("tenant_id")
+	if tenantID != "" && o.TenantID.String() != tenantID {
+		return apperrors.NotFound("order")
+	}
+	return nil
 }
 

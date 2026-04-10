@@ -37,16 +37,19 @@ func NewCheckoutHandler(db *gorm.DB, orderSvc *order.Service, orderRepo order.Re
 
 // CheckoutItemRequest is one cart line in a CheckoutRequest.
 type CheckoutItemRequest struct {
-	ProductID     *string         `json:"product_id"`
-	VariantID     *string         `json:"variant_id"`
-	TitleSnapshot string          `json:"title_snapshot" binding:"required"`
-	SKUSnapshot   string          `json:"sku_snapshot"   binding:"required"`
-	OptionSummary *string         `json:"option_summary"`
-	UnitPrice     decimal.Decimal `json:"unit_price"     binding:"required"`
-	Quantity      int             `json:"quantity"       binding:"required,min=1"`
-	LineTotal     decimal.Decimal `json:"line_total"     binding:"required"`
-	CurrencyCode  string          `json:"currency_code"  binding:"required,len=3"`
-	ImageURL      *string         `json:"image_url"`
+	ProductID     *string          `json:"product_id"`
+	VariantID     *string          `json:"variant_id"`
+	TitleSnapshot string           `json:"title_snapshot" binding:"required"`
+	SKUSnapshot   string           `json:"sku_snapshot"   binding:"required"`
+	OptionSummary *string          `json:"option_summary"`
+	UnitPrice     decimal.Decimal  `json:"unit_price"     binding:"required"`
+	Quantity      int              `json:"quantity"       binding:"required,min=1"`
+	LineTotal     decimal.Decimal  `json:"line_total"     binding:"required"`
+	CurrencyCode  string           `json:"currency_code"  binding:"required,len=3"`
+	ImageURL      *string          `json:"image_url"`
+	HSNCode       *string          `json:"hsn_code"`       // India GST — H11 fix
+	GSTRate       *decimal.Decimal `json:"gst_rate"`       // India GST — H11 fix
+	TaxCode       *string          `json:"tax_code"`       // TaxJar product tax code
 }
 
 // CheckoutAddressRequest is a shipping/billing address.
@@ -144,25 +147,13 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 
 	prefix := storePrefixFromSlug(store.Slug)
 
-	// Allocate the per-store sequence in a short tx.
-	var seq int64
-	if err := h.orderSvc.Unit(c.Request.Context(), func(tx *gorm.DB) error {
-		n, e := order.NextDocumentNumber(c.Request.Context(), tx, storeID, "order")
-		if e != nil {
-			return e
-		}
-		seq = n
-		return nil
-	}); err != nil {
-		h.respondErr(c, err)
-		return
-	}
-
+	// Sequence allocation happens inside Service.Create's transaction
+	// (C6 fix: atomic with order insert to prevent burned numbers).
 	in := order.CreateInput{
 		TenantID:       tenantID,
 		StoreID:        storeID,
 		StorePrefix:    prefix,
-		OrderNumberSeq: seq,
+		OrderNumberSeq: 0, // allocated inside Create tx
 		IdempotencyKey: req.IdempotencyKey,
 		CustomerEmail:  req.CustomerEmail,
 		CustomerName:   req.CustomerName,

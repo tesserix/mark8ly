@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -24,20 +25,31 @@ type NinjaVanCarrier struct {
 	secretKey string
 	mode      string
 	baseURL   string
+	country   string // ISO 3166-1 alpha-2, lowercase (e.g. "sg", "my")
 	client    *http.Client
+
+	mu          sync.Mutex
+	accessToken string
+	tokenExpiry time.Time
 }
 
-// NewNinjaVanCarrier constructs a NinjaVan carrier instance.
-func NewNinjaVanCarrier(apiKey, secretKey, mode string) *NinjaVanCarrier {
+// NewNinjaVanCarrier constructs a NinjaVan carrier instance. countryCode is the
+// ISO 3166-1 alpha-2 code for the NinjaVan country endpoint (e.g. "SG", "MY").
+func NewNinjaVanCarrier(apiKey, secretKey, mode, countryCode string) *NinjaVanCarrier {
 	base := ninjaVanLiveURL
 	if mode == "test" {
 		base = ninjaVanSandboxURL
+	}
+	cc := strings.ToLower(countryCode)
+	if cc == "" {
+		cc = "sg"
 	}
 	return &NinjaVanCarrier{
 		apiKey:    apiKey,
 		secretKey: secretKey,
 		mode:      mode,
 		baseURL:   base,
+		country:   cc,
 		client:    &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -257,8 +269,7 @@ func (c *NinjaVanCarrier) GetTracking(ctx context.Context, trackingNumber string
 		return nil, fmt.Errorf("ninjavan: get tracking: auth: %w", err)
 	}
 
-	// NinjaVan tracking endpoint is country-agnostic at the top level.
-	path := fmt.Sprintf("/sg/2.0/orders/tracking/%s", trackingNumber)
+	path := fmt.Sprintf("/%s/2.0/orders/tracking/%s", c.country, trackingNumber)
 	resp, err := c.doJSON(ctx, http.MethodGet, path, nil, token)
 	if err != nil {
 		return nil, fmt.Errorf("ninjavan: get tracking: %w", err)
@@ -298,7 +309,7 @@ func (c *NinjaVanCarrier) CancelShipment(ctx context.Context, shipmentID string)
 		return fmt.Errorf("ninjavan: cancel shipment: auth: %w", err)
 	}
 
-	path := fmt.Sprintf("/sg/2.0/orders/%s", shipmentID)
+	path := fmt.Sprintf("/%s/2.0/orders/%s", c.country, shipmentID)
 	resp, err := c.doJSON(ctx, http.MethodDelete, path, nil, token)
 	if err != nil {
 		return fmt.Errorf("ninjavan: cancel shipment: %w", err)
@@ -314,6 +325,14 @@ func (c *NinjaVanCarrier) CancelShipment(ctx context.Context, shipmentID string)
 // --- helpers ---
 
 func (c *NinjaVanCarrier) authenticate(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Return cached token if still valid.
+	if c.accessToken != "" && time.Now().Before(c.tokenExpiry) {
+		return c.accessToken, nil
+	}
+
 	body := nvAuthRequest{
 		ClientID:     c.apiKey,
 		ClientSecret: c.secretKey,
@@ -325,7 +344,8 @@ func (c *NinjaVanCarrier) authenticate(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/sg/2.0/oauth/access_token", bytes.NewReader(data))
+	path := fmt.Sprintf("/%s/2.0/oauth/access_token", c.country)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(data))
 	if err != nil {
 		return "", err
 	}
@@ -345,7 +365,12 @@ func (c *NinjaVanCarrier) authenticate(ctx context.Context) (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&ar); err != nil {
 		return "", err
 	}
-	return ar.AccessToken, nil
+
+	c.accessToken = ar.AccessToken
+	// NinjaVan tokens typically last 24h; expire 5 minutes early.
+	c.tokenExpiry = time.Now().Add(23*time.Hour + 55*time.Minute)
+
+	return c.accessToken, nil
 }
 
 func (c *NinjaVanCarrier) doJSON(ctx context.Context, method, path string, payload any, token string) (*http.Response, error) {

@@ -109,12 +109,14 @@ func (s *Service) RefundPayment(
 	ctx context.Context,
 	providerPaymentID string,
 	amount decimal.Decimal,
+	currencyCode string,
 	reason string,
 	gateway Gateway,
 ) (*Refund, error) {
 	in := RefundInput{
 		ProviderPaymentID: providerPaymentID,
 		Amount:            amount,
+		CurrencyCode:      currencyCode,
 		Reason:            reason,
 	}
 

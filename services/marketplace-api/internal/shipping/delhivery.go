@@ -49,10 +49,12 @@ func (c *DelhiveryCarrier) SupportedCountries() []string {
 // --- request / response types (private, match Delhivery JSON schema) ---
 
 type dlRateRequest struct {
-	OriginPin string  `json:"md"`
-	DestPin   string  `json:"ss"`
+	OriginPin string  `json:"o_pin"`
+	DestPin   string  `json:"d_pin"`
 	WeightKg  float64 `json:"cgm"`
-	COD       string  `json:"o_pin"` // "Pre-paid" or "COD"
+	Mode      string  `json:"md"`  // "S" for surface, "E" for express
+	Service   string  `json:"ss"`  // e.g. "Delhivery"
+	PayType   string  `json:"pt"`  // "Pre-paid" or "COD"
 }
 
 type dlRateResponse struct {

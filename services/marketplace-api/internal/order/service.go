@@ -108,7 +108,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		return &CreateResult{Order: existing, Items: items, Addrs: addrs, Reused: true}, nil
 	}
 
-	number := FormatOrderNumber(in.StorePrefix, in.PlacedAt, in.OrderNumberSeq)
+	// If no sequence was pre-allocated, allocate inside the Create
+	// transaction below so the number is atomic with the order insert.
+	// This prevents burned numbers on crashes between allocation and create.
+	number := ""
+	if in.OrderNumberSeq > 0 {
+		number = FormatOrderNumber(in.StorePrefix, in.PlacedAt, in.OrderNumberSeq)
+	}
 
 	o := &Order{
 		TenantID:          in.TenantID,
@@ -147,6 +153,21 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 
 	var result *CreateResult
 	err := s.Unit(ctx, func(tx *gorm.DB) error {
+		// Allocate sequence inside the transaction if not pre-allocated,
+		// so the number is atomic with the order insert.
+		if number == "" {
+			seq, err := NextDocumentNumber(ctx, tx, in.StoreID, "order")
+			if err != nil {
+				return err
+			}
+			number = FormatOrderNumber(in.StorePrefix, in.PlacedAt, seq)
+			o.OrderNumber = number
+			initialEvent.Payload = EncodeCreated(CreatedPayload{
+				OrderNumber:  number,
+				CurrencyCode: in.CurrencyCode,
+				GrandTotal:   in.GrandTotal.String(),
+			})
+		}
 		if err := s.repo.CreateInTx(tx, o, in.Items, addrs, initialEvent); err != nil {
 			return err
 		}

@@ -34,6 +34,7 @@ func NewShippingService(repo Repository) *ShippingService {
 func (s *ShippingService) GetShippingRates(
 	ctx context.Context,
 	storeID string,
+	orderSubtotal decimal.Decimal,
 	fromAddress Address,
 	toAddress Address,
 	items []ParcelItem,
@@ -55,12 +56,21 @@ func (s *ShippingService) GetShippingRates(
 		return nil, fmt.Errorf("shipping: get rates: load config: %w", err)
 	}
 
+	// Apply free-shipping threshold: if the order subtotal meets or exceeds
+	// the threshold, zero out shipping prices.
+	freeShipping := !cfg.FreeShippingThreshold.IsZero() &&
+		orderSubtotal.GreaterThanOrEqual(cfg.FreeShippingThreshold)
+
 	adjusted := make([]Rate, 0, len(rates))
 	for _, r := range rates {
+		price := r.Price.Add(cfg.HandlingFee)
+		if freeShipping {
+			price = decimal.Zero
+		}
 		adjusted = append(adjusted, Rate{
 			Service:       r.Service,
 			Carrier:       r.Carrier,
-			Price:         r.Price.Add(cfg.HandlingFee),
+			Price:         price,
 			CurrencyCode:  r.CurrencyCode,
 			EstimatedDays: r.EstimatedDays,
 		})

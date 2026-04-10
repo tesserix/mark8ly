@@ -198,9 +198,13 @@ func (p *PayPalGateway) RefundPayment(ctx context.Context, in RefundInput) (*Ref
 		return nil, fmt.Errorf("paypal: refund payment: auth: %w", err)
 	}
 
+	currency := in.CurrencyCode
+	if currency == "" {
+		currency = "USD"
+	}
 	refundBody := map[string]any{
 		"amount": map[string]string{
-			"currency_code": "USD",
+			"currency_code": strings.ToUpper(currency),
 			"value":         in.Amount.StringFixed(2),
 		},
 		"note_to_payer": in.Reason,

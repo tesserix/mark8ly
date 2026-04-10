@@ -67,34 +67,37 @@ type gormRepository struct{}
 func NewRepository() Repository { return &gormRepository{} }
 
 func (gormRepository) SaveTaxLines(ctx context.Context, db *gorm.DB, orderID uuid.UUID, lines []TaxLine) error {
-	// Delete existing lines for idempotent recalculation.
-	if err := db.WithContext(ctx).
-		Where("order_id = ?", orderID).
-		Delete(&OrderTaxLine{}).Error; err != nil {
-		return fmt.Errorf("tax: delete existing lines: %w", err)
-	}
+	// Wrap delete+insert in a transaction for atomicity. If the caller
+	// already passed a tx, db.Transaction runs as a savepoint.
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Delete existing lines for idempotent recalculation.
+		if err := tx.Where("order_id = ?", orderID).
+			Delete(&OrderTaxLine{}).Error; err != nil {
+			return fmt.Errorf("tax: delete existing lines: %w", err)
+		}
 
-	if len(lines) == 0 {
+		if len(lines) == 0 {
+			return nil
+		}
+
+		rows := make([]OrderTaxLine, 0, len(lines))
+		for _, l := range lines {
+			rows = append(rows, OrderTaxLine{
+				ID:           uuid.New(),
+				OrderID:      orderID,
+				Description:  l.Description,
+				Rate:         l.Rate,
+				Amount:       l.Amount,
+				Jurisdiction: l.Jurisdiction,
+			})
+		}
+
+		if err := tx.Create(&rows).Error; err != nil {
+			return fmt.Errorf("tax: insert tax lines: %w", err)
+		}
+
 		return nil
-	}
-
-	rows := make([]OrderTaxLine, 0, len(lines))
-	for _, l := range lines {
-		rows = append(rows, OrderTaxLine{
-			ID:           uuid.New(),
-			OrderID:      orderID,
-			Description:  l.Description,
-			Rate:         l.Rate,
-			Amount:       l.Amount,
-			Jurisdiction: l.Jurisdiction,
-		})
-	}
-
-	if err := db.WithContext(ctx).Create(&rows).Error; err != nil {
-		return fmt.Errorf("tax: insert tax lines: %w", err)
-	}
-
-	return nil
+	})
 }
 
 func (gormRepository) GetTaxLines(ctx context.Context, db *gorm.DB, orderID uuid.UUID) ([]OrderTaxLine, error) {

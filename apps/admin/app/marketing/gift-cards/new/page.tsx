@@ -55,7 +55,7 @@ export default function IssueGiftCardPage() {
 
         <form onSubmit={handleSubmit} className="flex max-w-xl flex-col gap-5">
           {error && (
-            <div className="rounded-md border border-signal/20 bg-signal/5 px-4 py-3 text-sm text-signal">
+            <div role="alert" aria-live="polite" className="rounded-md border border-signal/20 bg-signal/5 px-4 py-3 text-sm text-signal">
               {error}
             </div>
           )}
@@ -73,7 +73,7 @@ export default function IssueGiftCardPage() {
               min="0.01"
               required
               placeholder="50.00"
-              className="rounded-md border border-ink-900/15 bg-white px-3 py-2 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
 
@@ -89,14 +89,14 @@ export default function IssueGiftCardPage() {
               maxLength={3}
               required
               defaultValue="USD"
-              className="w-24 rounded-md border border-ink-900/15 bg-white px-3 py-2 text-sm uppercase focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="w-24 rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm uppercase focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
 
           <hr className="border-ink-900/10" />
 
           {/* Recipient */}
-          <p className="text-xs font-medium uppercase tracking-wider text-ink-900/50">
+          <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
             Recipient (optional)
           </p>
           <div className="grid grid-cols-2 gap-4">
@@ -108,7 +108,7 @@ export default function IssueGiftCardPage() {
                 id="recipient_name"
                 name="recipient_name"
                 type="text"
-                className="rounded-md border border-ink-900/15 bg-white px-3 py-2 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -119,13 +119,13 @@ export default function IssueGiftCardPage() {
                 id="recipient_email"
                 name="recipient_email"
                 type="email"
-                className="rounded-md border border-ink-900/15 bg-white px-3 py-2 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </div>
           </div>
 
           {/* Sender */}
-          <p className="text-xs font-medium uppercase tracking-wider text-ink-900/50">
+          <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
             Sender (optional)
           </p>
           <div className="grid grid-cols-2 gap-4">
@@ -137,7 +137,7 @@ export default function IssueGiftCardPage() {
                 id="sender_name"
                 name="sender_name"
                 type="text"
-                className="rounded-md border border-ink-900/15 bg-white px-3 py-2 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -148,7 +148,7 @@ export default function IssueGiftCardPage() {
                 id="sender_email"
                 name="sender_email"
                 type="email"
-                className="rounded-md border border-ink-900/15 bg-white px-3 py-2 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </div>
           </div>
@@ -163,7 +163,7 @@ export default function IssueGiftCardPage() {
               name="message"
               rows={3}
               maxLength={500}
-              className="rounded-md border border-ink-900/15 bg-white px-3 py-2 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
 
@@ -176,7 +176,7 @@ export default function IssueGiftCardPage() {
               id="expires_at"
               name="expires_at"
               type="date"
-              className="w-48 rounded-md border border-ink-900/15 bg-white px-3 py-2 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="w-48 rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
 

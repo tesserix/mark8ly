@@ -74,7 +74,7 @@ export function ProgramConfigForm({
             <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-[color:var(--ink-900)]">
               Loyalty program
             </h2>
-            <p className="text-sm text-[color:var(--ink-900)]/60">
+            <p className="text-sm text-ink-600">
               Enable the loyalty program for your store.
             </p>
           </div>
@@ -85,21 +85,22 @@ export function ProgramConfigForm({
               onChange={(e) => setIsActive(e.target.checked)}
               disabled={!editable}
               className="peer sr-only"
+              aria-label="Toggle loyalty program"
             />
-            <div className="h-6 w-11 rounded-full bg-[color:var(--ink-900)]/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-[color:var(--moss-700)] peer-checked:after:translate-x-full" />
+            <div className="h-6 w-11 rounded-md bg-[color:var(--ink-900)]/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-md after:bg-white after:transition-all peer-checked:bg-[color:var(--moss-700)] peer-checked:after:translate-x-full" />
           </label>
         </div>
       </div>
 
       {/* Points configuration */}
       <div className="rounded-[6px] bg-white px-6 py-5 space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
           Points configuration
         </h3>
-        <hr className="border-t border-[color:var(--ink-900)]/6" />
-        <div className="grid grid-cols-2 gap-4">
+        <hr className="border-t border-ink-200" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+            <label className="text-xs font-medium text-ink-600">
               Points per dollar
             </label>
             <input
@@ -111,7 +112,7 @@ export function ProgramConfigForm({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+            <label className="text-xs font-medium text-ink-600">
               Points display name
             </label>
             <input
@@ -123,7 +124,7 @@ export function ProgramConfigForm({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+            <label className="text-xs font-medium text-ink-600">
               Point value (currency)
             </label>
             <input
@@ -135,7 +136,7 @@ export function ProgramConfigForm({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+            <label className="text-xs font-medium text-ink-600">
               Min points to redeem
             </label>
             <input
@@ -149,7 +150,7 @@ export function ProgramConfigForm({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+            <label className="text-xs font-medium text-ink-600">
               Point expiry (days)
             </label>
             <input
@@ -170,13 +171,13 @@ export function ProgramConfigForm({
 
       {/* Bonuses */}
       <div className="rounded-[6px] bg-white px-6 py-5 space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
           Bonuses
         </h3>
-        <hr className="border-t border-[color:var(--ink-900)]/6" />
-        <div className="grid grid-cols-3 gap-4">
+        <hr className="border-t border-ink-200" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+            <label className="text-xs font-medium text-ink-600">
               Signup bonus
             </label>
             <input
@@ -188,7 +189,7 @@ export function ProgramConfigForm({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+            <label className="text-xs font-medium text-ink-600">
               Referral bonus (referrer)
             </label>
             <input
@@ -200,7 +201,7 @@ export function ProgramConfigForm({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+            <label className="text-xs font-medium text-ink-600">
               Referral bonus (referee)
             </label>
             <input

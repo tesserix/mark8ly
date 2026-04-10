@@ -7,7 +7,7 @@ interface CampaignsListEmptyProps {
 export function CampaignsListEmpty({ variant }: CampaignsListEmptyProps) {
   if (variant === "no-store") {
     return (
-      <div className="flex flex-col items-start gap-2 rounded-md border border-ink-200 bg-white px-6 py-12">
+      <div className="flex flex-col items-start gap-2 border-t border-ink-200 px-0 py-10">
         <p className="text-sm text-ink-500">
           Create a store first to start managing campaigns.
         </p>
@@ -16,7 +16,7 @@ export function CampaignsListEmpty({ variant }: CampaignsListEmptyProps) {
   }
 
   return (
-    <div className="flex flex-col items-start gap-4 rounded-md border border-ink-200 bg-white px-6 py-12">
+    <div className="flex flex-col items-start gap-4 border-t border-ink-200 px-0 py-10">
       <h2 className="font-serif text-lg font-semibold text-ink-900">
         No campaigns yet
       </h2>

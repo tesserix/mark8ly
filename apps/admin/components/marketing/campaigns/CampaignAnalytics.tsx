@@ -13,11 +13,12 @@ interface CampaignAnalyticsProps {
 function statusBadge(status: CampaignStatus) {
   const colors: Record<string, string> = {
     draft: "bg-ink-100 text-ink-500",
-    scheduled: "bg-amber-50 text-amber-700",
-    sending: "bg-blue-50 text-blue-700",
-    sent: "bg-moss-50 text-moss-700",
-    paused: "bg-signal-50 text-signal-700",
-    cancelled: "bg-ink-100 text-ink-400",
+    scheduled: "bg-ink-100 text-ink-700",
+    sending: "bg-moss-700/10 text-moss-700",
+    sent: "bg-moss-700/10 text-moss-700",
+    paused: "bg-ink-100 text-ink-500",
+    cancelled: "bg-ink-100 text-ink-500",
+    failed: "bg-[color:var(--signal)]/10 text-[color:var(--signal)]",
   };
   return (
     <span
@@ -54,7 +55,7 @@ interface MetricCardProps {
 function MetricCard({ label, value, total, variant = "default" }: MetricCardProps) {
   const percentage = pct(value, total);
   return (
-    <div className="rounded-md border border-ink-200 bg-white p-4">
+    <div className="rounded-md bg-white p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
         {label}
       </p>
@@ -65,7 +66,7 @@ function MetricCard({ label, value, total, variant = "default" }: MetricCardProp
       >
         {value.toLocaleString()}
       </p>
-      <p className="mt-0.5 text-xs text-ink-400">{percentage} of total</p>
+      <p className="mt-0.5 text-xs text-ink-500">{percentage} of total</p>
     </div>
   );
 }
@@ -145,17 +146,21 @@ export function CampaignAnalytics({
         <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-ink-500">
           Delivery analytics
         </h2>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          <MetricCard
-            label="Recipients"
-            value={c.total_recipients}
-            total={c.total_recipients}
-          />
-          <MetricCard
-            label="Delivered"
-            value={c.delivered}
-            total={c.total_recipients}
-          />
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="lg:col-span-2">
+            <MetricCard
+              label="Recipients"
+              value={c.total_recipients}
+              total={c.total_recipients}
+            />
+          </div>
+          <div className="lg:col-span-2">
+            <MetricCard
+              label="Delivered"
+              value={c.delivered}
+              total={c.total_recipients}
+            />
+          </div>
           <MetricCard
             label="Opened"
             value={c.opened}
@@ -182,7 +187,7 @@ export function CampaignAnalytics({
 
       {/* Revenue */}
       {parseFloat(c.revenue) > 0 && (
-        <div className="rounded-md border border-ink-200 bg-white p-4">
+        <div className="rounded-md bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
             Revenue attributed
           </p>
@@ -194,14 +199,14 @@ export function CampaignAnalytics({
 
       {/* Unsubscribed */}
       {c.unsubscribed > 0 && (
-        <div className="rounded-md border border-ink-200 bg-white p-4">
+        <div className="rounded-md bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
             Unsubscribed
           </p>
           <p className="mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-signal-700">
             {c.unsubscribed.toLocaleString()}
           </p>
-          <p className="mt-0.5 text-xs text-ink-400">
+          <p className="mt-0.5 text-xs text-ink-500">
             {pct(c.unsubscribed, c.total_recipients)} of total
           </p>
         </div>
@@ -218,10 +223,9 @@ export function CampaignAnalytics({
               <span className="font-medium">Subject:</span> {c.subject}
             </p>
           )}
-          <div
-            className="prose prose-sm max-w-none rounded-md border border-ink-200 bg-white p-6"
-            dangerouslySetInnerHTML={{ __html: c.content }}
-          />
+          <pre className="max-w-none whitespace-pre-wrap rounded-md bg-white p-6 font-mono text-sm text-ink-700 shadow-sm">
+            {c.content}
+          </pre>
         </div>
       )}
     </div>

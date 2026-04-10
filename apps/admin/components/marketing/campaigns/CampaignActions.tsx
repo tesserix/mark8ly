@@ -96,7 +96,7 @@ export function CampaignActions({
             handleAction(() => resumeCampaign(storeId, c.id, session))
           }
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-md bg-moss-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-moss-800 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-md bg-moss-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-moss-700/90 disabled:opacity-50"
         >
           {loading ? "Resuming..." : "Resume"}
         </button>

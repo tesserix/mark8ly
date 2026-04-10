@@ -169,31 +169,35 @@ export function CampaignWizard({
     <div className="space-y-8">
       {/* Progress indicator */}
       <div className="flex items-center gap-2 text-sm text-ink-500">
-        {[1, 2, 3].map((s) => (
+        {[1, 2, 3].map((s) => {
+          const stepName = s === 1 ? "Audience" : s === 2 ? "Content" : "Schedule";
+          return (
           <div key={s} className="flex items-center gap-2">
             <span
+              aria-label={`Step ${s} of 3: ${stepName}`}
               className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
                 s === step
                   ? "bg-ink-900 text-paper-200"
                   : s < step
                     ? "bg-moss-700 text-white"
-                    : "bg-ink-100 text-ink-400"
+                    : "bg-ink-100 text-ink-500"
               }`}
             >
               {s}
             </span>
             <span
               className={
-                s === step ? "font-medium text-ink-900" : "text-ink-400"
+                s === step ? "font-medium text-ink-900" : "text-ink-500"
               }
             >
-              {s === 1 ? "Audience" : s === 2 ? "Content" : "Schedule"}
+              {stepName}
             </span>
             {s < 3 && (
               <span className="mx-2 h-px w-8 bg-ink-200" aria-hidden />
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <hr className="border-ink-200" />
@@ -215,7 +219,7 @@ export function CampaignWizard({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Summer Sale Announcement"
-                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </label>
 
@@ -303,7 +307,7 @@ export function CampaignWizard({
                   setSelectedTemplate(null);
                 }}
                 placeholder="e.g. Big savings await"
-                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </label>
 
@@ -319,7 +323,7 @@ export function CampaignWizard({
                 }}
                 rows={10}
                 placeholder="<h2>Your headline</h2><p>Your message...</p>"
-                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 font-mono text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 font-mono text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </label>
           </div>
@@ -394,12 +398,17 @@ export function CampaignWizard({
             </label>
 
             {scheduleMode === "later" && (
-              <input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(e) => setScheduledAt(e.target.value)}
-                className="mt-2 block w-full max-w-xs rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
-              />
+              <label className="mt-2 block max-w-xs">
+                <span className="text-sm font-medium text-ink-700">
+                  Send date and time
+                </span>
+                <input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                />
+              </label>
             )}
           </fieldset>
 

@@ -107,7 +107,7 @@ export function SegmentsList({
                   {seg.name}
                 </span>
                 {seg.description && (
-                  <p className="mt-0.5 text-xs text-ink-400 line-clamp-1">
+                  <p className="mt-0.5 text-xs text-ink-500 line-clamp-1">
                     {seg.description}
                   </p>
                 )}
@@ -125,7 +125,8 @@ export function SegmentsList({
                 <button
                   onClick={() => handleDelete(seg.id)}
                   disabled={deletingId === seg.id}
-                  className="text-xs text-signal-700 opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
+                  aria-label={`Delete segment ${seg.name}`}
+                  className="text-xs text-signal-700 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50"
                 >
                   {deletingId === seg.id ? "Deleting..." : "Delete"}
                 </button>

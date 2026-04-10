@@ -39,7 +39,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
           Tiers ({value.length}/{MAX_TIERS})
         </h3>
         {!disabled && value.length < MAX_TIERS && (
@@ -54,7 +54,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
       </div>
 
       {value.length === 0 && (
-        <p className="text-sm text-[color:var(--ink-900)]/40">
+        <p className="text-sm text-ink-500">
           No tiers configured. All members earn at 1x rate.
         </p>
       )}
@@ -66,7 +66,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
             className="flex items-end gap-3 rounded-[6px] bg-[color:var(--paper-200)] px-4 py-3"
           >
             <div className="flex-1 space-y-1">
-              <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+              <label className="text-xs font-medium text-ink-600">
                 Name
               </label>
               <input
@@ -75,11 +75,11 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
                 onChange={(e) => updateTier(index, "name", e.target.value)}
                 disabled={disabled}
                 placeholder="e.g. Silver"
-                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-1.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
               />
             </div>
             <div className="w-32 space-y-1">
-              <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+              <label className="text-xs font-medium text-ink-600">
                 Min points
               </label>
               <input
@@ -90,11 +90,11 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
                 }
                 disabled={disabled}
                 min={0}
-                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-1.5 text-sm text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-2.5 text-sm text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
               />
             </div>
             <div className="w-28 space-y-1">
-              <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+              <label className="text-xs font-medium text-ink-600">
                 Multiplier
               </label>
               <input
@@ -105,15 +105,15 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
                 }
                 disabled={disabled}
                 placeholder="1.5"
-                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-1.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
               />
             </div>
             {!disabled && (
               <button
                 type="button"
                 onClick={() => removeTier(index)}
-                className="mb-0.5 rounded-[6px] px-2 py-1.5 text-xs text-[color:var(--ink-900)]/40 transition-colors hover:bg-[color:var(--ink-900)]/5 hover:text-[color:var(--ink-900)]/70"
-                aria-label={`Remove tier ${tier.name || index + 1}`}
+                className="mb-0.5 rounded-[6px] px-2 py-1.5 text-xs text-ink-500 transition-colors hover:bg-[color:var(--ink-900)]/5 hover:text-[color:var(--ink-900)]/70"
+                aria-label={`Remove tier ${tier.name || `tier ${index + 1}`}`}
               >
                 Remove
               </button>

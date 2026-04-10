@@ -8,16 +8,16 @@ interface GiftCardsListEmptyProps {
 export function GiftCardsListEmpty({ variant, canIssue }: GiftCardsListEmptyProps) {
   if (variant === "no-store") {
     return (
-      <div className="flex flex-col items-center gap-3 py-16 text-center">
-        <p className="text-ink-900/50">Select a store to manage gift cards.</p>
+      <div className="flex flex-col items-start gap-3 border-t border-ink-200 pt-6 text-left">
+        <p className="text-ink-500">Select a store to manage gift cards.</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center gap-4 py-16 text-center">
+    <div className="flex flex-col items-start gap-4 border-t border-ink-200 pt-6 text-left">
       <p className="text-lg text-ink-900/70">No gift cards issued yet</p>
-      <p className="max-w-md text-sm text-ink-900/50">
+      <p className="max-w-md text-sm text-ink-500">
         Gift cards let your customers give store credit as gifts. Issue your
         first gift card to get started.
       </p>

@@ -27,11 +27,11 @@ const STATUS_TABS: { label: string; value: string }[] = [
 function statusBadge(status: CampaignStatus) {
   const colors: Record<string, string> = {
     draft: "bg-ink-100 text-ink-500",
-    scheduled: "bg-amber-50 text-amber-700",
-    sending: "bg-blue-50 text-blue-700",
-    sent: "bg-moss-50 text-moss-700",
-    paused: "bg-signal-50 text-signal-700",
-    cancelled: "bg-ink-100 text-ink-400",
+    scheduled: "bg-ink-100 text-ink-700",
+    sending: "bg-moss-700/10 text-moss-700",
+    sent: "bg-moss-700/10 text-moss-700",
+    paused: "bg-ink-100 text-ink-500",
+    cancelled: "bg-ink-100 text-ink-500",
   };
   return (
     <span
@@ -85,7 +85,7 @@ export function CampaignsList({
             onClick={() => handleTabClick(tab.value)}
             className={`px-3 py-2 text-sm font-medium transition ${
               activeStatus === tab.value
-                ? "border-b-2 border-ink-900 text-ink-900"
+                ? "border-b-2 border-moss-700 text-ink-900"
                 : "text-ink-500 hover:text-ink-700"
             }`}
           >
@@ -128,13 +128,13 @@ export function CampaignsList({
                 </td>
                 <td className="py-3 pr-4 text-ink-500">
                   {c.delivered.toLocaleString()}
-                  <span className="ml-1 text-xs text-ink-400">
+                  <span className="ml-1 text-xs text-ink-600">
                     ({pct(c.delivered, c.total_recipients)})
                   </span>
                 </td>
                 <td className="py-3 pr-4 text-ink-500">
                   {c.opened.toLocaleString()}
-                  <span className="ml-1 text-xs text-ink-400">
+                  <span className="ml-1 text-xs text-ink-600">
                     ({pct(c.opened, c.total_recipients)})
                   </span>
                 </td>

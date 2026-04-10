@@ -119,7 +119,7 @@ export function CreateSegmentForm({
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Gold tier members"
             required
-            className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
         </label>
 
@@ -132,7 +132,7 @@ export function CreateSegmentForm({
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
             placeholder="Brief description of this audience segment"
-            className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
         </label>
       </div>
@@ -146,13 +146,13 @@ export function CreateSegmentForm({
           <button
             type="button"
             onClick={addRule}
-            className="text-sm font-medium text-moss-700 hover:text-moss-800"
+            className="text-sm font-medium text-moss-700 hover:text-moss-700/90"
           >
             + Add rule
           </button>
         </div>
 
-        <p className="text-xs text-ink-400">
+        <p className="text-xs text-ink-500">
           Multiple rules are combined with AND logic (intersection).
         </p>
 
@@ -181,7 +181,7 @@ export function CreateSegmentForm({
                     updateRule(index, "value", e.target.value)
                   }
                   placeholder={valuePlaceholder(rule.type)}
-                  className="block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                  className="block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
                 />
               )}
             </div>

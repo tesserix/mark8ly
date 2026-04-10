@@ -20,9 +20,9 @@ function formatType(type: AdminCoupon["type"]): string {
 
 function statusBadge(status: AdminCoupon["status"]) {
   const colors: Record<string, string> = {
-    active: "bg-moss-50 text-moss-700",
+    active: "bg-moss-700/10 text-moss-700",
     disabled: "bg-ink-100 text-ink-500",
-    expired: "bg-signal-50 text-signal-700",
+    expired: "bg-[color:var(--signal)]/10 text-[color:var(--signal)]",
   };
   return (
     <span
@@ -38,7 +38,7 @@ export function CouponsList({ coupons }: CouponsListProps) {
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-ink-200 text-xs font-medium uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-200 text-xs font-medium uppercase tracking-wider text-ink-600">
             <th className="pb-3 pr-4">Code</th>
             <th className="pb-3 pr-4">Title</th>
             <th className="pb-3 pr-4">Type</th>
@@ -60,7 +60,7 @@ export function CouponsList({ coupons }: CouponsListProps) {
                 </Link>
               </td>
               <td className="py-3 pr-4 text-ink-700">{c.title}</td>
-              <td className="py-3 pr-4 text-ink-500">{formatType(c.type)}</td>
+              <td className="py-3 pr-4 text-ink-600">{formatType(c.type)}</td>
               <td className="py-3 pr-4 font-mono text-ink-700">
                 {c.type === "percentage"
                   ? `${c.value}%`
@@ -68,12 +68,12 @@ export function CouponsList({ coupons }: CouponsListProps) {
                     ? "--"
                     : `${c.currency_code ?? ""} ${c.value}`}
               </td>
-              <td className="py-3 pr-4 text-ink-500">
+              <td className="py-3 pr-4 text-ink-600">
                 {c.usage_count}
                 {c.usage_limit != null ? ` / ${c.usage_limit}` : ""}
               </td>
               <td className="py-3 pr-4">{statusBadge(c.status)}</td>
-              <td className="py-3 pr-4 text-ink-500">
+              <td className="py-3 pr-4 text-ink-600">
                 {c.ends_at
                   ? new Date(c.ends_at).toLocaleDateString()
                   : "No expiry"}

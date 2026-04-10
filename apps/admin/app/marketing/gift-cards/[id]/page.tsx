@@ -27,7 +27,7 @@ function txnTypeBadge(type: string) {
     case "redeem":
       return <span className={`${base} bg-ink-900/10 text-ink-900`}>Redeem</span>;
     case "refund":
-      return <span className={`${base} bg-warning/10 text-warning`}>Refund</span>;
+      return <span className={`${base} bg-ink-100 text-ink-600`}>Refund</span>;
     case "adjustment":
       return <span className={`${base} bg-ink-900/10 text-ink-900/70`}>Adjustment</span>;
     default:
@@ -58,18 +58,18 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
         <div className="flex items-center gap-3">
           <Link
             href="/marketing/gift-cards"
-            className="text-sm text-ink-900/50 hover:text-ink-900"
+            className="text-sm text-ink-500 hover:text-ink-900"
           >
             Gift Cards
           </Link>
-          <span className="text-ink-900/30">/</span>
+          <span className="text-ink-500">/</span>
           <span className="font-mono text-sm text-ink-900">{gc.code_display}</span>
         </div>
 
         {/* Card summary */}
         <div className="grid grid-cols-3 gap-6">
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wider text-ink-900/50">
+            <span className="text-xs font-medium uppercase tracking-wider text-ink-500">
               Current Balance
             </span>
             <span className="font-serif text-3xl tabular-nums text-ink-900">
@@ -77,7 +77,7 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
             </span>
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wider text-ink-900/50">
+            <span className="text-xs font-medium uppercase tracking-wider text-ink-500">
               Initial Balance
             </span>
             <span className="font-serif text-xl tabular-nums text-ink-900/70">
@@ -85,7 +85,7 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
             </span>
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wider text-ink-900/50">
+            <span className="text-xs font-medium uppercase tracking-wider text-ink-500">
               Status
             </span>
             <span className="text-sm capitalize text-ink-900">{gc.status}</span>
@@ -98,25 +98,25 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
         <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
           {gc.recipient_name && (
             <div>
-              <span className="text-ink-900/50">Recipient:</span>{" "}
+              <span className="text-ink-500">Recipient:</span>{" "}
               <span className="text-ink-900">{gc.recipient_name}</span>
             </div>
           )}
           {gc.recipient_email && (
             <div>
-              <span className="text-ink-900/50">Recipient email:</span>{" "}
+              <span className="text-ink-500">Recipient email:</span>{" "}
               <span className="text-ink-900">{gc.recipient_email}</span>
             </div>
           )}
           {gc.sender_name && (
             <div>
-              <span className="text-ink-900/50">Sender:</span>{" "}
+              <span className="text-ink-500">Sender:</span>{" "}
               <span className="text-ink-900">{gc.sender_name}</span>
             </div>
           )}
           {gc.expires_at && (
             <div>
-              <span className="text-ink-900/50">Expires:</span>{" "}
+              <span className="text-ink-500">Expires:</span>{" "}
               <span className="text-ink-900">
                 {new Date(gc.expires_at).toLocaleDateString()}
               </span>
@@ -124,7 +124,7 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
           )}
           {gc.message && (
             <div className="col-span-2">
-              <span className="text-ink-900/50">Message:</span>{" "}
+              <span className="text-ink-500">Message:</span>{" "}
               <span className="text-ink-900 italic">&ldquo;{gc.message}&rdquo;</span>
             </div>
           )}
@@ -135,11 +135,12 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
         {/* Transaction ledger */}
         <h2 className="font-serif text-lg text-ink-900">Transaction History</h2>
         {gc.transactions.length === 0 ? (
-          <p className="text-sm text-ink-900/50">No transactions yet.</p>
+          <p className="text-sm text-ink-500" aria-live="polite">No transactions yet.</p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-900/10 text-left text-xs font-medium uppercase tracking-wider text-ink-900/50">
+              <tr className="border-b border-ink-900/10 text-left text-xs font-medium uppercase tracking-wider text-ink-500">
                 <th className="pb-3 pr-4">Date</th>
                 <th className="pb-3 pr-4">Type</th>
                 <th className="pb-3 pr-4">Amount</th>
@@ -150,7 +151,7 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
             <tbody>
               {gc.transactions.map((txn) => (
                 <tr key={txn.id} className="border-b border-ink-900/5">
-                  <td className="py-3 pr-4 text-ink-900/50">
+                  <td className="py-3 pr-4 text-ink-500">
                     {new Date(txn.created_at).toLocaleString()}
                   </td>
                   <td className="py-3 pr-4">{txnTypeBadge(txn.type)}</td>
@@ -163,11 +164,12 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
                   <td className="py-3 pr-4 font-serif tabular-nums text-ink-900">
                     {formatCurrency(txn.balance_after, gc.currency_code)}
                   </td>
-                  <td className="py-3 text-ink-900/50">{txn.note ?? "\u2014"}</td>
+                  <td className="py-3 text-ink-500">{txn.note ?? "\u2014"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </main>
     </AdminShell>

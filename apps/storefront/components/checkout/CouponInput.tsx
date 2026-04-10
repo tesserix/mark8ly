@@ -43,7 +43,7 @@ export function CouponInput({
   const [applied, setApplied] = useState<CouponValidateResult | null>(null);
 
   const validate = useCallback(async () => {
-    if (!code.trim()) return;
+    if (!code.trim() || loading) return;
     setLoading(true);
     setError(null);
 
@@ -82,7 +82,7 @@ export function CouponInput({
     } finally {
       setLoading(false);
     }
-  }, [code, storeSlug, customerEmail, subtotal, onApplied]);
+  }, [code, storeSlug, customerEmail, subtotal, onApplied, loading]);
 
   const remove = useCallback(() => {
     setApplied(null);
@@ -119,7 +119,8 @@ export function CouponInput({
         <button
           type="button"
           onClick={remove}
-          className="text-xs text-ink-400 hover:text-ink-600"
+          aria-label="Remove coupon"
+          className="text-xs text-ink-500 hover:text-ink-700"
         >
           Remove
         </button>
@@ -129,8 +130,12 @@ export function CouponInput({
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-2">
+      <label htmlFor="coupon-code" className="sr-only">
+        Promo code
+      </label>
+      <div className="flex flex-wrap gap-2">
         <input
+          id="coupon-code"
           type="text"
           value={code}
           onChange={(e) => setCode(e.target.value)}
@@ -141,13 +146,13 @@ export function CouponInput({
             }
           }}
           placeholder="Enter promo code"
-          className="flex-1 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm font-mono uppercase text-ink-900 placeholder:text-ink-400 placeholder:normal-case focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+          className="flex-1 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm font-mono uppercase text-ink-900 placeholder:text-ink-500 placeholder:normal-case focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
         />
         <button
           type="button"
           onClick={validate}
           disabled={loading || !code.trim()}
-          className="rounded-md bg-ink-900 px-4 py-2 text-sm font-medium text-paper-200 transition hover:bg-ink-800 disabled:opacity-50"
+          className="rounded-md bg-ink-900 px-4 py-2.5 text-sm font-medium text-paper-200 transition hover:bg-ink-800 disabled:opacity-50"
         >
           {loading ? "..." : "Apply"}
         </button>

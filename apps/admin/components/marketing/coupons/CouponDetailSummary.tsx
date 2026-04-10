@@ -73,7 +73,7 @@ export function CouponDetailSummary({ coupon }: CouponDetailSummaryProps) {
       </div>
       {coupon.description && (
         <div>
-          <span className="text-xs font-medium uppercase tracking-wider text-ink-400">
+          <span className="text-xs font-medium uppercase tracking-wider text-ink-500">
             Description
           </span>
           <p className="mt-1 text-sm text-ink-700">{coupon.description}</p>
@@ -94,7 +94,7 @@ function DetailField({
 }) {
   return (
     <div>
-      <span className="text-xs font-medium uppercase tracking-wider text-ink-400">
+      <span className="text-xs font-medium uppercase tracking-wider text-ink-500">
         {label}
       </span>
       <p className={`mt-1 text-sm text-ink-900 ${mono ? "font-mono" : ""}`}>

@@ -82,7 +82,7 @@ export function CouponForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
-        <div className="rounded-md border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <div role="alert" aria-live="polite" className="rounded-md border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
           {error}
         </div>
       )}
@@ -100,7 +100,7 @@ export function CouponForm({
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="e.g. SAVE20"
-            className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm font-mono uppercase text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm font-mono uppercase text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
         </div>
         <div>
@@ -112,7 +112,7 @@ export function CouponForm({
             onChange={(e) =>
               setType(e.target.value as CreateCouponBody["type"])
             }
-            className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           >
             <option value="percentage">Percentage</option>
             <option value="fixed_amount">Fixed amount</option>
@@ -132,7 +132,7 @@ export function CouponForm({
               step="0.01"
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
         )}
@@ -144,9 +144,9 @@ export function CouponForm({
             type="datetime-local"
             value={endsAt}
             onChange={(e) => setEndsAt(e.target.value)}
-            className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
-          <p className="mt-1 text-xs text-ink-400">Leave empty for no expiry</p>
+          <p className="mt-1 text-xs text-ink-500">Leave empty for no expiry</p>
         </div>
       </div>
 
@@ -171,9 +171,9 @@ export function CouponForm({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Spring sale 20% off"
-              className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
-            <p className="mt-1 text-xs text-ink-400">
+            <p className="mt-1 text-xs text-ink-500">
               Defaults to the coupon code if left empty
             </p>
           </div>
@@ -185,7 +185,7 @@ export function CouponForm({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
           <div>
@@ -198,7 +198,7 @@ export function CouponForm({
               step="0.01"
               value={minPurchase}
               onChange={(e) => setMinPurchase(e.target.value)}
-              className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
           {type === "percentage" && (
@@ -212,7 +212,7 @@ export function CouponForm({
                 step="0.01"
                 value={maxDiscount}
                 onChange={(e) => setMaxDiscount(e.target.value)}
-                className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </div>
           )}
@@ -226,7 +226,7 @@ export function CouponForm({
               value={usageLimit}
               onChange={(e) => setUsageLimit(e.target.value)}
               placeholder="Unlimited"
-              className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
           <div>
@@ -238,7 +238,7 @@ export function CouponForm({
               min="1"
               value={perCustomer}
               onChange={(e) => setPerCustomer(e.target.value)}
-              className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
           <div>
@@ -249,7 +249,7 @@ export function CouponForm({
               type="datetime-local"
               value={startsAt}
               onChange={(e) => setStartsAt(e.target.value)}
-              className="w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>
           <div className="flex items-center gap-2 pt-6">
@@ -280,7 +280,8 @@ export function CouponForm({
         <button
           type="button"
           onClick={() => router.push("/marketing/coupons")}
-          className="rounded-md px-4 py-2 text-sm font-medium text-ink-500 transition hover:text-ink-700"
+          aria-label="Cancel and return to coupons list"
+          className="rounded-md px-4 py-2 text-sm font-medium text-ink-600 transition hover:text-ink-700"
         >
           Cancel
         </button>

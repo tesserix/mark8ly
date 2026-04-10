@@ -38,7 +38,7 @@ export function GiftCardInput({
   const [error, setError] = useState<string | null>(null);
 
   const handleCheckBalance = useCallback(async () => {
-    if (!code.trim()) return;
+    if (!code.trim() || checking) return;
     setChecking(true);
     setError(null);
     try {
@@ -55,7 +55,7 @@ export function GiftCardInput({
     } finally {
       setChecking(false);
     }
-  }, [storeSlug, code]);
+  }, [storeSlug, code, checking]);
 
   function handleApply() {
     if (!balance) return;
@@ -73,15 +73,16 @@ export function GiftCardInput({
 
   if (applied && balance) {
     return (
-      <div className="flex items-center justify-between rounded-md border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-3">
-        <span className="text-sm text-[color:var(--moss-700)]">
+      <div className="flex items-center justify-between rounded-md border border-moss-200 bg-moss-50 px-4 py-3">
+        <span className="text-sm text-moss-700">
           Gift card applied: up to{" "}
           {formatPrice(Number(balance.current_balance), balance.currency_code)}
         </span>
         <button
           type="button"
           onClick={handleRemove}
-          className="text-sm text-[color:var(--ink-900)] opacity-50 transition-opacity hover:opacity-100"
+          aria-label="Remove gift card"
+          className="text-sm text-ink-500 transition-colors hover:text-ink-700"
         >
           Remove
         </button>
@@ -90,39 +91,43 @@ export function GiftCardInput({
   }
 
   return (
-    <div className="border-t border-[color:var(--ink-900)]/10 pt-4">
+    <div className="border-t border-ink-200 pt-4">
       <button
         type="button"
         onClick={() => setShowInput((v) => !v)}
-        className="text-sm text-[color:var(--moss-700)] transition-opacity hover:opacity-80"
+        className="text-sm text-moss-700 transition-colors hover:text-moss-800"
       >
         Have a gift card?
       </button>
       {showInput && (
         <div className="mt-3 flex flex-col gap-2">
-          <div className="flex gap-2">
+          <label htmlFor="gift-card-code" className="sr-only">
+            Gift card code
+          </label>
+          <div className="flex flex-wrap gap-2">
             <input
+              id="gift-card-code"
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="Enter gift card code"
-              className="flex-1 rounded-md border border-[color:var(--ink-900)]/15 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="flex-1 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-moss-700"
             />
             <button
               type="button"
               onClick={handleCheckBalance}
               disabled={checking || !code.trim()}
-              className="rounded-md bg-[color:var(--ink-900)] px-3 py-2 text-sm text-[color:var(--paper-200)] transition-opacity disabled:opacity-40"
+              className="rounded-md bg-ink-900 px-4 py-2.5 text-sm text-paper-200 transition-colors disabled:opacity-40"
             >
               {checking ? "Checking..." : "Check"}
             </button>
           </div>
           {error && (
-            <p className="text-sm text-[color:var(--danger,#8B2500)]">{error}</p>
+            <p role="alert" aria-live="polite" className="text-sm text-[color:var(--danger,#8B2500)]">{error}</p>
           )}
           {balance && !applied && (
-            <div className="flex items-center justify-between rounded-md bg-[color:var(--moss-700)]/5 px-3 py-2">
-              <span className="text-sm text-[color:var(--ink-900)]">
+            <div className="flex items-center justify-between rounded-md bg-moss-50 px-3 py-2">
+              <span className="text-sm text-ink-900">
                 Balance:{" "}
                 {formatPrice(
                   Number(balance.current_balance),
@@ -132,7 +137,7 @@ export function GiftCardInput({
               <button
                 type="button"
                 onClick={handleApply}
-                className="text-sm font-medium text-[color:var(--moss-700)] transition-opacity hover:opacity-80"
+                className="text-sm font-medium text-moss-700 transition-colors hover:text-moss-800"
               >
                 Apply
               </button>

@@ -58,21 +58,21 @@ export function MemberDetailPanel({
               {member.customer_name ?? member.customer_email}
             </h2>
             {member.customer_name && (
-              <p className="mt-0.5 text-sm text-[color:var(--ink-900)]/60">
+              <p className="mt-0.5 text-sm text-ink-600">
                 {member.customer_email}
               </p>
             )}
           </div>
-          <span className="inline-block rounded-[4px] bg-[color:var(--moss-700)]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--moss-700)]">
+          <span className="inline-block rounded-md bg-[color:var(--moss-700)]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--moss-700)]">
             {member.tier}
           </span>
         </div>
 
-        <hr className="my-4 border-t border-[color:var(--ink-900)]/6" />
+        <hr className="my-4 border-t border-ink-200" />
 
-        <div className="grid grid-cols-3 gap-6">
-          <div>
-            <p className="text-xs font-medium text-[color:var(--ink-900)]/50">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="sm:col-span-2">
+            <p className="text-xs font-medium text-ink-500">
               Points balance
             </p>
             <p className="mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
@@ -80,15 +80,15 @@ export function MemberDetailPanel({
             </p>
           </div>
           <div>
-            <p className="text-xs font-medium text-[color:var(--ink-900)]/50">
+            <p className="text-xs font-medium text-ink-500">
               Lifetime points
             </p>
-            <p className="mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]/60">
+            <p className="mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-ink-600">
               {member.lifetime_points.toLocaleString()}
             </p>
           </div>
           <div>
-            <p className="text-xs font-medium text-[color:var(--ink-900)]/50">
+            <p className="text-xs font-medium text-ink-500">
               Enrolled
             </p>
             <p className="mt-1 text-sm text-[color:var(--ink-900)]">
@@ -101,14 +101,14 @@ export function MemberDetailPanel({
       {/* Adjust points form */}
       {editable && (
         <div className="rounded-[6px] bg-white px-6 py-5 space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
             Adjust points
           </h3>
-          <hr className="border-t border-[color:var(--ink-900)]/6" />
+          <hr className="border-t border-ink-200" />
           <form onSubmit={handleAdjust} className="space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+                <label className="text-xs font-medium text-ink-600">
                   Points (positive to credit, negative to debit)
                 </label>
                 <input
@@ -120,7 +120,7 @@ export function MemberDetailPanel({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-[color:var(--ink-900)]/60">
+                <label className="text-xs font-medium text-ink-600">
                   Reason
                 </label>
                 <input
@@ -133,12 +133,12 @@ export function MemberDetailPanel({
               </div>
             </div>
             {adjustError && (
-              <p className="text-xs text-[color:var(--danger,#8B2500)]">
+              <p role="alert" aria-live="polite" className="text-xs text-[color:var(--danger,#8B2500)]">
                 {adjustError}
               </p>
             )}
             {adjustSuccess && (
-              <p className="text-xs text-[color:var(--moss-700)]">
+              <p role="alert" aria-live="polite" className="text-xs text-[color:var(--moss-700)]">
                 Points adjusted successfully.
               </p>
             )}
@@ -156,33 +156,33 @@ export function MemberDetailPanel({
       {/* Transaction history */}
       <div className="rounded-[6px] bg-white">
         <div className="px-6 py-4">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
             Transaction history
           </h3>
         </div>
         {transactions.length === 0 ? (
           <div className="px-6 pb-6">
-            <p className="text-sm text-[color:var(--ink-900)]/40">
+            <p className="text-sm text-ink-500">
               No transactions yet.
             </p>
           </div>
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-y border-[color:var(--ink-900)]/6">
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+              <tr className="border-y border-ink-200">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-ink-500">
                   Type
                 </th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-ink-500">
                   Points
                 </th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-ink-500">
                   Balance
                 </th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-ink-500">
                   Description
                 </th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-ink-500">
                   Date
                 </th>
               </tr>
@@ -191,16 +191,16 @@ export function MemberDetailPanel({
               {transactions.map((tx) => (
                 <tr
                   key={tx.id}
-                  className="border-b border-[color:var(--ink-900)]/6 last:border-0"
+                  className="border-b border-ink-200 last:border-0"
                 >
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-block rounded-[4px] px-2 py-0.5 text-xs font-medium capitalize ${
+                      className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium capitalize ${
                         tx.type === "earn" || tx.type === "credit" || tx.type === "signup_bonus" || tx.type === "referral_bonus"
                           ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
                           : tx.type === "redeem" || tx.type === "debit" || tx.type === "expiry"
                             ? "bg-[color:var(--danger,#8B2500)]/10 text-[color:var(--danger,#8B2500)]"
-                            : "bg-[color:var(--ink-900)]/5 text-[color:var(--ink-900)]/50"
+                            : "bg-[color:var(--ink-900)]/5 text-ink-500"
                       }`}
                     >
                       {tx.type.replace(/_/g, " ")}
@@ -216,13 +216,13 @@ export function MemberDetailPanel({
                     {tx.points > 0 ? "+" : ""}
                     {tx.points.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-[color:var(--ink-900)]/60">
+                  <td className="px-4 py-3 text-ink-600">
                     {tx.balance_after.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-[color:var(--ink-900)]/60 text-xs">
+                  <td className="px-4 py-3 text-ink-600 text-xs">
                     {tx.description ?? "--"}
                   </td>
-                  <td className="px-4 py-3 text-xs text-[color:var(--ink-900)]/50">
+                  <td className="px-4 py-3 text-xs text-ink-500">
                     {new Date(tx.created_at).toLocaleDateString()}
                   </td>
                 </tr>

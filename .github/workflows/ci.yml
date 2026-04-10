@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-      - run: npm install
+      - run: npm install --legacy-peer-deps
       - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff'
 
   # ─── Image build + push ────────────────────────────────────────────

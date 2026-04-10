@@ -195,4 +195,32 @@ describe("MediaTab", () => {
       ),
     );
   });
+
+  it("queues multi-file upload and cancel clears pending queue", async () => {
+    const uploaded = makeMedia("u1", 0);
+    const uploadMediaFile = vi.fn(async () => uploaded);
+    render(
+      <Harness
+        uploadMediaFile={uploadMediaFile}
+        recropMedia={vi.fn()}
+        updateMedia={vi.fn()}
+        deleteMedia={vi.fn()}
+        putBlob={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText(/drop images/i) as HTMLInputElement;
+    const f1 = new File(["a"], "a.jpg", { type: "image/jpeg" });
+    const f2 = new File(["b"], "b.jpg", { type: "image/jpeg" });
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [f1, f2] } });
+    });
+    await waitFor(() => expect(screen.getByTestId("auto-apply-crop")).toBeInTheDocument());
+    // Apply first → triggers pendingFreshQueue drain for second
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("auto-apply-crop"));
+    });
+    await waitFor(() => expect(uploadMediaFile).toHaveBeenCalledTimes(1));
+    // Second crop dialog should have re-opened
+    await waitFor(() => expect(screen.getByTestId("auto-apply-crop")).toBeInTheDocument());
+  });
 });

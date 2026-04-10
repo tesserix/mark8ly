@@ -48,6 +48,27 @@ describe("OptionsEditor", () => {
     ]);
   });
 
+  it("changing option name calls onChange with updated name", () => {
+    const onChange = vi.fn();
+    render(<OptionsEditor value={sample()} onChange={onChange} />);
+    fireEvent.change(screen.getByDisplayValue("Size"), { target: { value: "Sizes" } });
+    expect(onChange).toHaveBeenCalledWith([
+      { ...sample()[0], name: "Sizes" },
+      sample()[1],
+    ]);
+  });
+
+  it("pressing Enter with empty/whitespace value is a no-op", () => {
+    const onChange = vi.fn();
+    render(<OptionsEditor value={sample()} onChange={onChange} />);
+    const addInputs = screen.getAllByPlaceholderText(/add a value/i);
+    fireEvent.change(addInputs[0]!, { target: { value: "   " } });
+    fireEvent.keyDown(addInputs[0]!, { key: "Enter" });
+    // Non-Enter keydown also covered — no effect
+    fireEvent.keyDown(addInputs[0]!, { key: "a" });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("clicking a value chip remove button removes that value", () => {
     const onChange = vi.fn();
     render(<OptionsEditor value={sample()} onChange={onChange} />);

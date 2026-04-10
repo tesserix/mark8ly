@@ -212,4 +212,75 @@ describe("uploadMediaFile", () => {
     const urlCallBody = JSON.parse(fetchSpy.mock.calls[0]![1].body as string);
     expect(urlCallBody.content_type).toBe("image/webp");
   });
+
+  it("defaultPutFn uses XMLHttpRequest and reports progress", async () => {
+    fetchSpy
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          upload_url: "https://gcs.example/u",
+          storage_key: "k",
+          expires_at: "2099",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "m1",
+          url: "u",
+          alt: "",
+          position: 0,
+          variant_id: null,
+          storage_key: "k",
+          media_type: "image",
+          width: null,
+          height: null,
+          bytes: null,
+        }),
+      });
+
+    const setRequestHeader = vi.fn();
+    const send = vi.fn();
+    const open = vi.fn();
+    interface FakeXHR {
+      upload: { onprogress: ((e: { loaded: number; total: number; lengthComputable: boolean }) => void) | null };
+      open: typeof open;
+      setRequestHeader: typeof setRequestHeader;
+      send: typeof send;
+      onload: (() => void) | null;
+      onerror: (() => void) | null;
+      status: number;
+    }
+    const xhr: FakeXHR = {
+      upload: { onprogress: null },
+      open,
+      setRequestHeader,
+      send: (file: File) => {
+        send(file);
+        xhr.upload.onprogress?.({ loaded: 50, total: 100, lengthComputable: true });
+        xhr.status = 204;
+        xhr.onload?.();
+      },
+      onload: null,
+      onerror: null,
+      status: 0,
+    };
+    vi.stubGlobal("XMLHttpRequest", function FakeXHRCtor(this: unknown) {
+      return xhr;
+    });
+
+    const onProgress = vi.fn();
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    const result = await uploadMediaFile({
+      storeId: "s1",
+      productId: "p1",
+      file,
+      position: 0,
+      onProgress,
+    });
+    expect(result.id).toBe("m1");
+    expect(open).toHaveBeenCalledWith("PUT", "https://gcs.example/u");
+    expect(setRequestHeader).toHaveBeenCalledWith("Content-Type", "image/jpeg");
+    expect(onProgress).toHaveBeenCalledWith(50);
+  });
 });

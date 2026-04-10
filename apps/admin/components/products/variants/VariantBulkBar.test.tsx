@@ -27,6 +27,28 @@ describe("VariantBulkBar", () => {
     expect(onBulkPatch).toHaveBeenCalledWith({ field: "stock", value: 42 });
   });
 
+  it("applies bulk weight as float; NaN is ignored", () => {
+    const onBulkPatch = vi.fn();
+    render(<VariantBulkBar variantCount={3} currencyCode="USD" onBulkPatch={onBulkPatch} />);
+    fireEvent.click(screen.getByRole("button", { name: /set all weights/i }));
+    const input = screen.getByLabelText(/weight/i);
+    fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.click(screen.getByRole("button", { name: /apply/i }));
+    expect(onBulkPatch).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "1.25" } });
+    fireEvent.click(screen.getByRole("button", { name: /apply/i }));
+    expect(onBulkPatch).toHaveBeenCalledWith({ field: "weight", value: 1.25 });
+  });
+
+  it("NaN stock input is ignored", () => {
+    const onBulkPatch = vi.fn();
+    render(<VariantBulkBar variantCount={3} currencyCode="USD" onBulkPatch={onBulkPatch} />);
+    fireEvent.click(screen.getByRole("button", { name: /set all stock/i }));
+    fireEvent.change(screen.getByLabelText(/stock/i), { target: { value: "not-a-number" } });
+    fireEvent.click(screen.getByRole("button", { name: /apply/i }));
+    expect(onBulkPatch).not.toHaveBeenCalled();
+  });
+
   it("cancel does not emit", () => {
     const onBulkPatch = vi.fn();
     render(

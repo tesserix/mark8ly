@@ -19,16 +19,16 @@
 | 11 | M3: Loyalty Program (points, tiers, referrals, expiry) | Done | `marketing-m3-loyalty.md` |
 | 12 | M4: Campaigns (email, segments, send worker, templates) | Done | `marketing-m4-campaigns.md` |
 | **Customers & Reviews** |
-| 13 | C1: Storefront Auth (GIP, session middleware, /account) | Planned | `customers-c1-storefront-auth.md` |
-| 14 | C2: Customer Profiles (admin list, detail, block/unblock) | Planned | `customers-c2-profiles.md` |
-| 15 | C3: Reviews (stars, photos, helpful, featured, moderation) | Planned | `customers-c3-reviews.md` |
-| 16 | C4: Wishlists (save products, heart icon, account page) | Planned | `customers-c4-wishlists.md` |
+| 13 | C1: Storefront Auth (GIP, session middleware, /account) | Done | `customers-c1-storefront-auth.md` |
+| 14 | C2: Customer Profiles (admin list, detail, block/unblock) | Done | `customers-c2-profiles.md` |
+| 15 | C3: Reviews (stars, photos, helpful, featured, moderation) | Done | `customers-c3-reviews.md` |
+| 16 | C4: Wishlists (save products, heart icon, account page) | Done | `customers-c4-wishlists.md` |
 | **Settings** |
-| 17 | S1: Account & Security (profile, MFA, sessions, delete) | Planned | `settings-s1-account-security.md` |
-| 18 | S2: Custom Domains (Cloudflare DNS, verification worker) | Planned | `settings-s2-custom-domains.md` |
-| 19 | S3: Subscription/Billing (Stripe Billing, portal) | Planned | `settings-s3-subscription.md` |
-| 20 | S4: Audit Logs (viewer, search, CSV export) | Planned | `settings-s4-audit-logs.md` |
-| 21 | S5: Notifications (preferences, bell dropdown, poll) | Planned | `settings-s5-notifications.md` |
+| 17 | S1: Account & Security (profile, MFA, sessions, delete) | Done | `settings-s1-account-security.md` |
+| 18 | S2: Custom Domains (Cloudflare DNS, verification worker) | Done | `settings-s2-custom-domains.md` |
+| 19 | S3: Subscription/Billing (Stripe Billing, portal) | Done | `settings-s3-subscription.md` |
+| 20 | S4: Audit Logs (viewer, search, CSV export) | Done | `settings-s4-audit-logs.md` |
+| 21 | S5: Notifications (preferences, bell dropdown, poll) | Done | `settings-s5-notifications.md` |
 | **Dashboard & Support** |
 | 22 | D1: Dashboard (stats, sparkline, checklist, recent orders) | Planned | `dashboard-d1-dashboard.md` |
 | 23 | D2: Support Tickets (create, list, reply, resolve) | Planned | `dashboard-d2-tickets.md` |
@@ -43,7 +43,7 @@
 | 30 | P2: Performance (Next.js Image, N+1 audit, bundles) | Planned | `prod-p2-performance.md` |
 | 31 | P3: Dependencies & Tooling (updates, Dependabot, docs) | Planned | `prod-p3-dependencies-tooling.md` |
 
-**Progress: 12 of 31 done (39%)**
+**Progress: 21 of 31 done (68%)**
 
 ---
 

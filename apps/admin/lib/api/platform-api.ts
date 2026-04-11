@@ -199,7 +199,6 @@ export type TenantRole = "owner" | "admin" | "staff" | "viewer";
 export interface Membership {
   tenant_id: string;
   name: string;
-  slug: string;
   role: TenantRole;
 }
 

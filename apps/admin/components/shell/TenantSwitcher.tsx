@@ -92,7 +92,7 @@ export function TenantSwitcher({
                       {m.name}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {m.slug}.mark8ly.com · {m.role}
+                      {m.role}
                     </p>
                     {busy && (
                       <p className="text-xs text-muted-foreground">Switching...</p>

@@ -93,6 +93,63 @@ export async function signUp(
 }
 
 /**
+ * Sign in an existing GIP user with email + password.
+ * Used when onboarding detects EMAIL_EXISTS — the user already has a GIP
+ * account from a previous onboarding, so we sign them in to get an
+ * id_token and proceed to create a new tenant for the same user.
+ */
+export async function signIn(
+  email: string,
+  password: string,
+): Promise<SignupResult> {
+  if (!publicConfig.gipApiKey) {
+    throw new GIPSignupError("config_missing", "GIP Web API key is not configured");
+  }
+  if (!publicConfig.gipTenantId) {
+    throw new GIPSignupError("config_missing", "GIP tenant id is not configured");
+  }
+  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${publicConfig.gipApiKey}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email,
+      password,
+      tenantId: publicConfig.gipTenantId,
+      returnSecureToken: true,
+    }),
+  });
+
+  if (!res.ok) {
+    let body: { error?: { message?: string } } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new GIPSignupError(
+      "gip_signin_failed",
+      body.error?.message ?? `HTTP ${res.status}`,
+    );
+  }
+
+  const body = (await res.json()) as {
+    localId: string;
+    idToken: string;
+    refreshToken: string;
+    expiresIn: string;
+  };
+
+  return {
+    uid: body.localId,
+    idToken: body.idToken,
+    refreshToken: body.refreshToken,
+    expiresIn: parseInt(body.expiresIn, 10),
+  };
+}
+
+/**
  * Exchange a Google OAuth credential (id_token from Google Identity Services)
  * for a GIP id_token in the configured tenant pool.
  *

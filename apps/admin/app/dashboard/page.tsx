@@ -1,4 +1,5 @@
 import { AdminShell } from "@/components/shell/AdminShell";
+import { AdminPage } from "@/components/layout";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { fetchDashboard } from "@/lib/api/marketplace-api";
 import type { DashboardResponse } from "@/lib/api/marketplace-api";
@@ -37,19 +38,21 @@ export default async function DashboardPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto w-full max-w-5xl space-y-10">
+      <AdminPage
+        eyebrow={`Welcome back${email ? `, ${email}` : ""}`}
+        title="Dashboard"
+      >
         {!currentStore ? (
           <EmptyStoreState />
         ) : !dashboard ? (
-          <DashboardError />
+          <DashboardLoadError />
         ) : (
           <DashboardContent
             dashboard={dashboard}
-            email={email}
             currencyCode={currentStore.currency_code ?? "USD"}
           />
         )}
-      </div>
+      </AdminPage>
     </AdminShell>
   );
 }
@@ -57,7 +60,7 @@ export default async function DashboardPage() {
 function EmptyStoreState() {
   return (
     <div className="py-16 text-center">
-      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-foreground">
+      <h2 className="font-serif text-3xl font-medium text-foreground">
         Create a store to get started
       </h2>
       <p className="mt-3 text-base text-foreground-secondary">
@@ -73,10 +76,10 @@ function EmptyStoreState() {
   );
 }
 
-function DashboardError() {
+function DashboardLoadError() {
   return (
     <div className="py-16 text-center" role="alert">
-      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-foreground">
+      <h2 className="font-serif text-3xl font-medium text-foreground">
         Unable to load dashboard
       </h2>
       <p className="mt-3 text-base text-foreground-secondary">
@@ -88,11 +91,9 @@ function DashboardError() {
 
 function DashboardContent({
   dashboard,
-  email,
   currencyCode,
 }: {
   dashboard: DashboardResponse;
-  email: string;
   currencyCode: string;
 }) {
   const { stats, setup_checklist, recent_orders, top_products, low_stock } =
@@ -102,20 +103,11 @@ function DashboardContent({
 
   return (
     <>
-      <header className="space-y-1">
-        <p className="eyebrow">
-          Welcome back{email ? `, ${email}` : ""}
-        </p>
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium tracking-tight text-foreground sm:text-5xl">
-          Dashboard
-        </h1>
-      </header>
-
       <SetupChecklist checklist={setup_checklist} />
 
       {isNewStore ? (
         <section className="py-10 text-center">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-foreground">
+          <h2 className="font-serif text-2xl font-medium text-foreground">
             Complete your store setup to see your dashboard
           </h2>
           <p className="mt-3 max-w-md mx-auto text-sm text-foreground-secondary">

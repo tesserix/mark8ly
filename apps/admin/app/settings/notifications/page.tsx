@@ -1,4 +1,5 @@
 import { AdminShell } from "@/components/shell/AdminShell";
+import { AdminPage, ReadOnlyNotice } from "@/components/layout";
 import {
   canEditSettings,
   getServerSessionContext,
@@ -8,20 +9,10 @@ import { NotificationSettingsClient } from "@/components/settings/NotificationSe
 
 /**
  * /settings/notifications — notification preference toggles.
- *
- * Server component fetches current preferences and renders the
- * toggle grid via client component.
  */
 export default async function NotificationSettingsPage() {
-  const {
-    tenantName,
-    email,
-    role,
-    memberships,
-    tenantId,
-    userId,
-    currentStore,
-  } = await getServerSessionContext();
+  const { tenantName, email, role, memberships, tenantId, userId, currentStore } =
+    await getServerSessionContext();
 
   const editable = canEditSettings(role);
 
@@ -33,24 +24,12 @@ export default async function NotificationSettingsPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto w-full max-w-5xl space-y-10">
-        <header className="space-y-3">
-          <p className="eyebrow">Settings</p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
-            Notifications
-          </h1>
-          <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
-            Choose which events you want to be notified about. Toggle each
-            notification type on or off.
-          </p>
-          {!editable && (
-            <p className="text-sm text-warning">
-              Read-only: your role ({role}) can view notification preferences but
-              cannot edit them.
-            </p>
-          )}
-        </header>
-
+      <AdminPage
+        eyebrow="Account"
+        title="Notifications"
+        description="Choose which events you want to be notified about. Toggle each notification type on or off."
+        readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
+      >
         {currentStore ? (
           <NotificationsContent
             storeId={currentStore.id}
@@ -63,7 +42,7 @@ export default async function NotificationSettingsPage() {
             No store found. Please create a store to manage notifications.
           </p>
         )}
-      </div>
+      </AdminPage>
     </AdminShell>
   );
 }
@@ -85,9 +64,6 @@ async function NotificationsContent({
   });
 
   return (
-    <NotificationSettingsClient
-      preferences={preferences}
-      editable={editable}
-    />
+    <NotificationSettingsClient preferences={preferences} editable={editable} />
   );
 }

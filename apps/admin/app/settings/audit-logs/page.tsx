@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { AdminShell } from "@/components/shell/AdminShell";
+import { AdminPage } from "@/components/layout";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { listAuditLogs } from "@/lib/api/settings-tier2-api";
 import type { AuditLogsQuery } from "@/lib/api/settings-tier2-api";
@@ -37,22 +38,17 @@ export default async function AuditLogsPage({
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto w-full max-w-5xl space-y-10">
-        <header className="space-y-3">
-          <p className="eyebrow">Settings</p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
-            Audit logs
-          </h1>
-          <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
-            Review a detailed log of all actions taken in your store. Filter by
-            user, action, severity, or date range.
-          </p>
-        </header>
-
+      <AdminPage
+        eyebrow="Team & access"
+        title="Audit logs"
+        description="Review a detailed log of all actions taken in your store. Filter by user, action, severity, or date range."
+      >
         {currentStore ? (
           <Suspense
             fallback={
-              <p className="text-sm text-foreground-secondary">Loading audit logs...</p>
+              <p className="text-sm text-foreground-secondary">
+                Loading audit logs…
+              </p>
             }
           >
             <AuditLogsContent
@@ -67,7 +63,7 @@ export default async function AuditLogsPage({
             No store found. Please create a store to view audit logs.
           </p>
         )}
-      </div>
+      </AdminPage>
     </AdminShell>
   );
 }

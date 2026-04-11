@@ -1,4 +1,5 @@
 import { AdminShell } from "@/components/shell/AdminShell";
+import { AdminPage, ReadOnlyNotice } from "@/components/layout";
 import {
   canEditSettings,
   getServerSessionContext,
@@ -20,17 +21,11 @@ import { PaymentSettingsClient } from "@/components/settings/PaymentSettingsClie
  *   3. tax config — folded into this page as a section below the providers.
  */
 export default async function PaymentSettingsPage() {
-  const {
-    tenantName,
-    email,
-    role,
-    memberships,
-    tenantId,
-    userId,
-    currentStore,
-  } = await getServerSessionContext();
+  const { tenantName, email, role, memberships, tenantId, userId, currentStore } =
+    await getServerSessionContext();
 
   const editable = canEditSettings(role);
+  const country = currentStore?.country_code;
 
   return (
     <AdminShell
@@ -40,27 +35,19 @@ export default async function PaymentSettingsPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto w-full max-w-5xl space-y-10">
-        <header className="space-y-3">
-          <p className="eyebrow">Store setup</p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
-            Payments &amp; tax
-          </h1>
-          <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
+      <AdminPage
+        eyebrow="Selling"
+        title="Payments & tax"
+        description={
+          <>
             Configure payment gateways for your store
-            {currentStore ? ` (${currentStore.country_code})` : ""}.
-            Providers are determined by your store&apos;s country. Each one
-            needs API credentials and must be activated before customers can
-            check out.
-          </p>
-          {!editable && (
-            <p className="text-sm text-warning">
-              Read-only: your role ({role}) can view settings but cannot edit
-              them.
-            </p>
-          )}
-        </header>
-
+            {country ? ` (${country})` : ""}. Providers are determined by your
+            store&apos;s country. Each one needs API credentials and must be
+            activated before customers can check out.
+          </>
+        }
+        readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
+      >
         {currentStore ? (
           <PaymentSettingsContent
             storeId={currentStore.id}
@@ -73,7 +60,7 @@ export default async function PaymentSettingsPage() {
             No store found. Please create a store before configuring payments.
           </p>
         )}
-      </div>
+      </AdminPage>
     </AdminShell>
   );
 }

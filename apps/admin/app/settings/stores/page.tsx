@@ -1,4 +1,5 @@
 import { AdminShell } from "@/components/shell/AdminShell";
+import { AdminPage, PageSection, ReadOnlyNotice } from "@/components/layout";
 import { StoresList } from "@/components/settings/StoresList";
 import { GeneralSettingsForm } from "@/components/settings/GeneralSettingsForm";
 import {
@@ -36,43 +37,31 @@ export default async function StoresIndexPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto w-full max-w-5xl space-y-12">
-        <header className="space-y-3">
-          <p className="eyebrow">Store setup</p>
-          <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
-            Stores
-          </h1>
-          <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
+      <AdminPage
+        eyebrow="Store"
+        title="Stores"
+        description={
+          <>
             Every storefront under {tenantName}. Switch between stores to edit
             their settings, or add a new one to run a second brand from the
             same account.
-          </p>
-          {!canManage && (
-            <p className="text-sm text-warning">
-              Read-only: your role ({role}) can view settings but cannot edit
-              them.
-            </p>
-          )}
-        </header>
-
+          </>
+        }
+        readOnlyNotice={
+          !canManage && role ? <ReadOnlyNotice role={role} /> : undefined
+        }
+      >
         <StoresList
           stores={stores}
           currentStoreId={currentStore?.id ?? ""}
           canManage={canManage}
         />
 
-        <section className="space-y-6">
-          <div className="space-y-2">
-            <p className="eyebrow">Current store</p>
-            <h2 className="font-serif text-3xl font-medium tracking-tight text-foreground">
-              Store identity
-            </h2>
-            <p className="max-w-2xl text-sm leading-6 text-foreground-secondary">
-              Details for the store you&apos;re currently managing. Some fields
-              are locked after onboarding — contact support to change them.
-            </p>
-          </div>
-
+        <PageSection
+          eyebrow="Current store"
+          title="Store identity"
+          description="Details for the store you're currently managing. Some fields are locked after onboarding — contact support to change them."
+        >
           {tenant && currentStore ? (
             <GeneralSettingsForm
               tenant={tenant}
@@ -85,8 +74,8 @@ export default async function StoresIndexPage() {
               contact support if the problem persists.
             </p>
           )}
-        </section>
-      </div>
+        </PageSection>
+      </AdminPage>
     </AdminShell>
   );
 }

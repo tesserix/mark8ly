@@ -1,4 +1,5 @@
 import { AdminShell } from "@/components/shell/AdminShell";
+import { AdminPage, ReadOnlyNotice } from "@/components/layout";
 import {
   canEditSettings,
   getServerSessionContext,
@@ -8,20 +9,10 @@ import { SubscriptionSettingsClient } from "@/components/settings/SubscriptionSe
 
 /**
  * /settings/subscription — plan management and billing.
- *
- * Server component fetches the current subscription from marketplace-api
- * and renders the plan card + comparison grid via client component.
  */
 export default async function SubscriptionSettingsPage() {
-  const {
-    tenantName,
-    email,
-    role,
-    memberships,
-    tenantId,
-    userId,
-    currentStore,
-  } = await getServerSessionContext();
+  const { tenantName, email, role, memberships, tenantId, userId, currentStore } =
+    await getServerSessionContext();
 
   const editable = canEditSettings(role);
 
@@ -33,23 +24,12 @@ export default async function SubscriptionSettingsPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto w-full max-w-5xl space-y-10">
-        <header className="space-y-3">
-          <p className="eyebrow">Settings</p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
-            Subscription
-          </h1>
-          <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
-            Manage your plan, view billing details, and compare available tiers.
-          </p>
-          {!editable && (
-            <p className="text-sm text-warning">
-              Read-only: your role ({role}) can view subscription details but
-              cannot make changes.
-            </p>
-          )}
-        </header>
-
+      <AdminPage
+        eyebrow="Account"
+        title="Subscription"
+        description="Manage your plan, view billing details, and compare available tiers."
+        readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
+      >
         {currentStore ? (
           <SubscriptionSettingsContent
             storeId={currentStore.id}
@@ -62,7 +42,7 @@ export default async function SubscriptionSettingsPage() {
             No store found. Please create a store before managing subscriptions.
           </p>
         )}
-      </div>
+      </AdminPage>
     </AdminShell>
   );
 }
@@ -79,7 +59,6 @@ async function SubscriptionSettingsContent({
   editable: boolean;
 }) {
   const subscription = await getSubscription(storeId, { userId, tenantId });
-
   return (
     <SubscriptionSettingsClient
       subscription={subscription}

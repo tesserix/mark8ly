@@ -1,8 +1,10 @@
 // apps/admin/components/products/ProductsListHeader.tsx
 //
-// Editorial page header: small-caps eyebrow, serif "Products" title,
-// and a + New product primary CTA on the right. The CTA is hidden for
-// staff (read-only) per §7.8 — enforcement is still on the backend.
+// Editorial list page header: small-caps eyebrow, serif "Products" title,
+// muted description, and a + New product primary CTA on the right. The
+// CTA is hidden for staff (read-only) per §7.8 — enforcement is still on
+// the backend. Matches the same header rhythm as `AdminPage` so list and
+// settings pages read consistently.
 
 import Link from "next/link";
 import { Plus } from "lucide-react";
@@ -13,19 +15,24 @@ export interface ProductsListHeaderProps {
 
 export function ProductsListHeader({ canCreate }: ProductsListHeaderProps) {
   return (
-    <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[color:var(--ink-900)] border-opacity-10 pb-6">
-      <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium uppercase tracking-widest text-[color:var(--ink-900)] opacity-50">
-          Catalogue
-        </span>
-        <h1 className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-4xl leading-tight text-[color:var(--ink-900)]">
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      <div className="min-w-0 flex-1 space-y-3">
+        <p className="eyebrow">Catalogue</p>
+        <h1
+          id="products-heading"
+          className="font-serif text-4xl font-medium tracking-tight text-foreground text-balance sm:text-5xl"
+        >
           Products
         </h1>
+        <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
+          Every item you sell across this store — inventory, pricing,
+          variants, and visibility.
+        </p>
       </div>
       {canCreate && (
         <Link
           href="/products/new"
-          className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="inline-flex items-center gap-2 rounded-[6px] bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
           New product

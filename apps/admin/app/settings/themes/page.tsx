@@ -1,4 +1,5 @@
 import { AdminShell } from "@/components/shell/AdminShell";
+import { AdminPage, ReadOnlyNotice } from "@/components/layout";
 import { StorefrontThemeForm } from "@/components/settings/StorefrontThemeForm";
 import { BrandingSettingsClient } from "@/components/settings/BrandingSettingsClient";
 import {
@@ -7,24 +8,15 @@ import {
 } from "@/lib/auth/serverSession";
 import { getBranding, type SessionHeaders } from "@/lib/api/marketplace-api";
 
-export default async function StorefrontSettingsPage() {
-  const {
-    tenantName,
-    email,
-    role,
-    memberships,
-    tenantId,
-    currentStore,
-  } = await getServerSessionContext();
+export default async function ThemesSettingsPage() {
+  const { tenantName, email, role, memberships, tenantId, currentStore } =
+    await getServerSessionContext();
   const editable = canEditSettings(role);
 
   // Fetch branding from marketplace-api (B1).
   let branding = null;
   if (currentStore) {
-    const session: SessionHeaders = {
-      userId: email,
-      tenantId,
-    };
+    const session: SessionHeaders = { userId: email, tenantId };
     branding = await getBranding(currentStore.id, session);
   }
 
@@ -36,24 +28,13 @@ export default async function StorefrontSettingsPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <div className="mx-auto w-full max-w-6xl space-y-12">
-        <header className="space-y-3">
-          <p className="eyebrow">Themes</p>
-          <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
-            Themes &amp; branding
-          </h1>
-          <p className="max-w-3xl text-base leading-7 text-foreground-secondary">
-            Define your store identity, color palette, typography, layout, and
-            footer. Changes are reflected on your live storefront immediately.
-          </p>
-          {!editable && (
-            <p className="text-sm text-warning">
-              Read-only: your role ({role}) can view storefront settings but
-              cannot publish changes.
-            </p>
-          )}
-        </header>
-
+      <AdminPage
+        eyebrow="Store"
+        title="Themes & branding"
+        description="Define your store identity, color palette, typography, layout, and footer. Changes are reflected on your live storefront immediately."
+        maxWidth="lg"
+        readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
+      >
         {currentStore && branding ? (
           <BrandingSettingsClient branding={branding} editable={editable} />
         ) : currentStore ? (
@@ -64,7 +45,7 @@ export default async function StorefrontSettingsPage() {
             support if the problem persists.
           </p>
         )}
-      </div>
+      </AdminPage>
     </AdminShell>
   );
 }

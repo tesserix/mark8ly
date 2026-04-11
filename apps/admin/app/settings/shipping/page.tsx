@@ -3,7 +3,10 @@ import {
   canEditSettings,
   getServerSessionContext,
 } from "@/lib/auth/serverSession";
-import { listShippingConfigs } from "@/lib/api/settings-api";
+import {
+  getSupportedProviders,
+  listShippingConfigs,
+} from "@/lib/api/settings-api";
 import { ShippingSettingsClient } from "@/components/settings/ShippingSettingsClient";
 
 /**
@@ -82,7 +85,28 @@ async function ShippingSettingsContent({
   tenantId: string;
   editable: boolean;
 }) {
-  const configs = await listShippingConfigs(storeId, { userId, tenantId });
+  const session = { userId, tenantId };
+  const [supported, configs] = await Promise.all([
+    getSupportedProviders(storeId, session),
+    listShippingConfigs(storeId, session),
+  ]);
 
-  return <ShippingSettingsClient configs={configs} editable={editable} />;
+  if (!supported) {
+    return (
+      <div className="rounded-[6px] bg-white px-6 py-10 text-center">
+        <p className="text-sm text-[color:var(--ink-900)]/50">
+          Unable to load supported carriers for this store. Please try again
+          later.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <ShippingSettingsClient
+      supported={supported}
+      configs={configs}
+      editable={editable}
+    />
+  );
 }

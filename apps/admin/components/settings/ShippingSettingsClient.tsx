@@ -1,32 +1,43 @@
 "use client";
 
-// ShippingSettingsClient — renders the list of shipping carrier cards
-// with inline configure forms and remove actions.
+// ShippingSettingsClient — renders one configuration card per shipping
+// carrier the store's country supports (read from supported_countries via
+// the supported-providers API). Unconfigured carriers expose "Add
+// credentials"; configured carriers expose Edit and Remove.
 
 import { useRouter } from "next/navigation";
 
-import type { ShippingConfig } from "@/lib/api/settings-api";
+import type {
+  ShippingConfig,
+  SupportedProviders,
+} from "@/lib/api/settings-api";
 import { ProviderCard } from "./ProviderCard";
 import { ShippingConfigForm } from "./ShippingConfigForm";
 import { removeShippingConfig } from "@/app/settings/shipping/actions";
 
 interface ShippingSettingsClientProps {
+  supported: SupportedProviders;
   configs: ShippingConfig[];
   editable: boolean;
 }
 
 export function ShippingSettingsClient({
+  supported,
   configs,
   editable,
 }: ShippingSettingsClientProps) {
   const router = useRouter();
 
-  if (configs.length === 0) {
+  // Index existing configs by carrier so each supported carrier card can
+  // look up its own state in O(1).
+  const configByCarrier = new Map(configs.map((c) => [c.provider, c]));
+
+  if (supported.shipping_carriers.length === 0) {
     return (
       <div className="rounded-[6px] bg-white px-6 py-10 text-center">
         <p className="text-sm text-[color:var(--ink-900)]/50">
-          No shipping carriers configured yet. Configure a carrier to enable
-          shipping rate calculation.
+          No shipping carriers are currently available for{" "}
+          {supported.country_name} ({supported.country_code}).
         </p>
       </div>
     );
@@ -34,31 +45,38 @@ export function ShippingSettingsClient({
 
   return (
     <div className="space-y-3">
-      {configs.map((cfg) => (
-        <ProviderCard
-          key={cfg.id}
-          providerName={cfg.provider}
-          isActive={cfg.enabled}
-          maskedKey={cfg.api_key}
-          mode={cfg.mode}
-          onConfigure={() => {
-            // Toggle handled internally by ProviderCard
-          }}
-          onRemove={async () => {
-            if (!editable) return;
-            await removeShippingConfig(cfg.provider);
-            router.refresh();
-          }}
-        >
-          {editable ? (
-            <ShippingConfigForm provider={cfg.provider} existing={cfg} />
-          ) : (
-            <p className="text-sm text-[color:var(--ink-900)]/50">
-              You do not have permission to edit this configuration.
-            </p>
-          )}
-        </ProviderCard>
-      ))}
+      {supported.shipping_carriers.map((carrier) => {
+        const cfg = configByCarrier.get(carrier);
+        const configured = Boolean(cfg);
+
+        return (
+          <ProviderCard
+            key={carrier}
+            providerName={carrier}
+            isActive={cfg?.enabled ?? false}
+            maskedKey={cfg?.api_key ?? ""}
+            mode={cfg?.mode ?? "test"}
+            configured={configured}
+            onRemove={
+              configured
+                ? async () => {
+                    if (!editable) return;
+                    await removeShippingConfig(carrier);
+                    router.refresh();
+                  }
+                : undefined
+            }
+          >
+            {editable ? (
+              <ShippingConfigForm provider={carrier} existing={cfg} />
+            ) : (
+              <p className="text-sm text-[color:var(--ink-900)]/50">
+                You do not have permission to edit this configuration.
+              </p>
+            )}
+          </ProviderCard>
+        );
+      })}
     </div>
   );
 }

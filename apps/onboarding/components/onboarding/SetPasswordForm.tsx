@@ -27,6 +27,7 @@ import { Input, Label } from "@tesserix/web";
 import { signUp, signIn, signInWithGoogle, GIPSignupError } from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
 import { completeOnboarding } from "@/app/onboarding/actions";
+import { useOnboardingStore } from "@/lib/store/onboarding-store";
 
 interface Props {
   sessionId: string;
@@ -45,6 +46,8 @@ type FormValues = z.infer<typeof schema>;
 
 export function SetPasswordForm({ sessionId, email }: Props) {
   const router = useRouter();
+  const setSubmitted = useOnboardingStore((s) => s.setSubmitted);
+  const storedSlug = useOnboardingStore((s) => s.slug);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [googlePending, setGooglePending] = useState(false);
@@ -126,6 +129,11 @@ export function SetPasswordForm({ sessionId, email }: Props) {
         setSubmitError(r.message);
         return;
       }
+      // Persist slug from completion response so WelcomeCta builds
+      // the correct per-tenant admin URL.
+      if (r.data.slug) {
+        setSubmitted({ email, sessionId, businessName: "", slug: r.data.slug, countryCode: "", currencyCode: "", timezone: "" });
+      }
       router.push("/welcome");
     });
   }
@@ -154,6 +162,9 @@ export function SetPasswordForm({ sessionId, email }: Props) {
       if (!r.ok) {
         setSubmitError(r.message);
         return;
+      }
+      if (r.data.slug) {
+        setSubmitted({ email, sessionId, businessName: "", slug: r.data.slug, countryCode: "", currencyCode: "", timezone: "" });
       }
       router.push("/welcome");
     } catch (err) {

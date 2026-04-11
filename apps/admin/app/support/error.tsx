@@ -1,6 +1,6 @@
 "use client";
 
-import { ErrorState } from "@/components/layout";
+import { ErrorState } from "@/components/layout/ErrorState";
 
 export default function SupportError({
   error,

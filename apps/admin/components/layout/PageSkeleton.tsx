@@ -1,4 +1,12 @@
+"use client";
+
 // PageSkeleton — suspense placeholders used across the admin app.
+//
+// Marked `"use client"` because the underlying `@tesserix/web` skeleton
+// primitives ship with `"use client"` themselves — Turbopack's resolver
+// returns undefined for those imports when they bubble through a
+// server-component file, which breaks prerender of every route that has
+// a `loading.tsx` importing this module.
 //
 // Composes the skeleton primitives shipped by `@tesserix/web` — we do NOT
 // hand-roll our own pulse/rounded-rect divs here. The design system owns

@@ -94,7 +94,6 @@ jobs:
             dockerfile: apps/storefront/Dockerfile
             context: .
             target: runtime
-            google_client_id_secret: NEXT_PUBLIC_STOREFRONT_GOOGLE_CLIENT_ID
     steps:
       - uses: actions/checkout@v4
 

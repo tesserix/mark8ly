@@ -43,7 +43,11 @@ export default async function DashboardPage() {
         ) : !dashboard ? (
           <DashboardError />
         ) : (
-          <DashboardContent dashboard={dashboard} email={email} />
+          <DashboardContent
+            dashboard={dashboard}
+            email={email}
+            currencyCode={currentStore.currency_code ?? "USD"}
+          />
         )}
       </div>
     </AdminShell>
@@ -85,11 +89,13 @@ function DashboardError() {
 function DashboardContent({
   dashboard,
   email,
+  currencyCode,
 }: {
   dashboard: DashboardResponse;
   email: string;
+  currencyCode: string;
 }) {
-  const { stats, setup_checklist, recent_orders, top_products, low_stock_items } =
+  const { stats, setup_checklist, recent_orders, top_products, low_stock } =
     dashboard;
   const isNewStore =
     !setup_checklist.has_test_order && !setup_checklist.has_product;
@@ -123,11 +129,9 @@ function DashboardContent({
           <div className="grid grid-cols-1 gap-px border border-border-subtle sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               label="Revenue today"
-              value={formatCurrency(stats.revenue_today)}
+              value={formatCurrency(stats.revenue_today, currencyCode)}
               changePercent={stats.revenue_change_pct}
-              sparkline={
-                <RevenueSparkline data={stats.revenue_sparkline} />
-              }
+              sparkline={<RevenueSparkline data={stats.revenue_trend} />}
             />
             <StatCard
               label="Orders today"
@@ -136,10 +140,10 @@ function DashboardContent({
             />
             <StatCard
               label="Total customers"
-              value={String(stats.total_customers)}
+              value={String(stats.customers_total)}
               subtitle={
-                stats.new_customers_this_week > 0
-                  ? `+${stats.new_customers_this_week} this week`
+                stats.customers_new_this_week > 0
+                  ? `+${stats.customers_new_this_week} this week`
                   : undefined
               }
             />
@@ -152,23 +156,27 @@ function DashboardContent({
 
           {/* Two-column: recent orders + top products */}
           <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
-            <RecentOrders orders={recent_orders} />
-            <TopProducts products={top_products} />
+            <RecentOrders orders={recent_orders} currencyCode={currencyCode} />
+            <TopProducts products={top_products} currencyCode={currencyCode} />
           </div>
 
           {/* Low stock alerts */}
-          <LowStockAlerts items={low_stock_items} />
+          <LowStockAlerts items={low_stock} />
         </>
       )}
     </>
   );
 }
 
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
+function formatCurrency(amount: number, currencyCode: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${currencyCode} ${amount.toFixed(0)}`;
+  }
 }

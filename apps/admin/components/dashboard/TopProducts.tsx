@@ -6,9 +6,23 @@ import type { TopProduct } from "@/lib/api/marketplace-api";
 
 interface TopProductsProps {
   products: TopProduct[];
+  currencyCode: string;
 }
 
-export function TopProducts({ products }: TopProductsProps) {
+function formatMoney(amount: number, currencyCode: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${currencyCode} ${amount.toFixed(0)}`;
+  }
+}
+
+export function TopProducts({ products, currencyCode }: TopProductsProps) {
   if (products.length === 0) {
     return (
       <div className="py-8 text-center">
@@ -60,7 +74,7 @@ export function TopProducts({ products }: TopProductsProps) {
                 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm font-medium text-foreground"
                 style={{ fontFeatureSettings: '"tnum" 1' }}
               >
-                {product.revenue}
+                {formatMoney(product.revenue, currencyCode)}
               </p>
             </Link>
           </li>

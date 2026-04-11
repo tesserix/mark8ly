@@ -27,12 +27,12 @@ export function LowStockAlerts({ items }: LowStockAlertsProps) {
       <ul className="mt-4 space-y-0 divide-y divide-border-subtle" role="list">
         {items.map((item) => (
           <li
-            key={`${item.product_id}-${item.variant_id}`}
+            key={item.id}
             className="flex min-h-[44px] items-center justify-between gap-4 border-l-2 border-l-[color:var(--signal)] py-3 pl-4"
           >
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground">
-                {item.product_title}
+                {item.title}
               </p>
               {item.variant_title && (
                 <p className="text-xs text-foreground-secondary">
@@ -46,14 +46,14 @@ export function LowStockAlerts({ items }: LowStockAlertsProps) {
                   className="text-sm font-medium text-[color:var(--signal)]"
                   style={{ fontFeatureSettings: '"tnum" 1' }}
                 >
-                  {item.current_quantity} left
+                  {item.quantity} left
                 </p>
                 <p className="text-xs text-foreground-tertiary">
-                  threshold: {item.threshold}
+                  threshold: {item.low_stock_threshold}
                 </p>
               </div>
               <Link
-                href={`/products/${item.product_id}`}
+                href="/products"
                 className="inline-flex min-h-[44px] items-center text-sm text-[color:var(--moss-700)] hover:underline"
               >
                 View

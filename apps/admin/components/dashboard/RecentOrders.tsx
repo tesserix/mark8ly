@@ -6,6 +6,18 @@ import type { RecentOrder, OrderStatus } from "@/lib/api/marketplace-api";
 
 interface RecentOrdersProps {
   orders: RecentOrder[];
+  currencyCode: string;
+}
+
+function formatMoney(amount: number, currencyCode: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode,
+    }).format(amount);
+  } catch {
+    return `${currencyCode} ${amount.toFixed(2)}`;
+  }
 }
 
 function statusBadge(status: OrderStatus): string {
@@ -34,7 +46,7 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-export function RecentOrders({ orders }: RecentOrdersProps) {
+export function RecentOrders({ orders, currencyCode }: RecentOrdersProps) {
   if (orders.length === 0) {
     return (
       <div className="py-8 text-center">
@@ -81,10 +93,10 @@ export function RecentOrders({ orders }: RecentOrdersProps) {
                   className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm font-medium text-foreground"
                   style={{ fontFeatureSettings: '"tnum" 1' }}
                 >
-                  {order.currency_code} {order.grand_total}
+                  {formatMoney(order.grand_total, currencyCode)}
                 </p>
                 <p className="text-xs text-foreground-tertiary">
-                  {timeAgo(order.placed_at)}
+                  {timeAgo(order.created_at)}
                 </p>
               </div>
             </Link>

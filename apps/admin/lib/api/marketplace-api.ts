@@ -1346,13 +1346,16 @@ export async function issueGiftCard(
 
 export interface DashboardStats {
   revenue_today: number;
+  revenue_week: number;
+  revenue_month: number;
   revenue_change_pct: number;
-  revenue_sparkline: number[];
+  revenue_trend: number[];
   orders_today: number;
   orders_pending: number;
   orders_fulfilled: number;
-  total_customers: number;
-  new_customers_this_week: number;
+  orders_cancelled: number;
+  customers_total: number;
+  customers_new_this_week: number;
   pending_reviews: number;
 }
 
@@ -1360,37 +1363,35 @@ export interface RecentOrder {
   id: string;
   order_number: string;
   customer_email: string;
-  grand_total: string;
-  currency_code: string;
+  grand_total: number;
   status: OrderStatus;
-  placed_at: string;
+  created_at: string;
 }
 
 export interface TopProduct {
   id: string;
   title: string;
   image_url: string | null;
-  revenue: string;
+  revenue: number;
   units_sold: number;
 }
 
 export interface LowStockItem {
-  product_id: string;
-  variant_id: string;
-  product_title: string;
+  id: string;
+  title: string;
   variant_title: string;
-  current_quantity: number;
-  threshold: number;
+  quantity: number;
+  low_stock_threshold: number;
 }
 
 export interface SetupChecklist {
-  has_store_settings: boolean;
+  has_store: boolean;
   has_product: boolean;
-  has_storefront: boolean;
-  has_payment: boolean;
-  has_shipping: boolean;
-  has_tax: boolean;
-  has_domain: boolean;
+  has_payment_provider: boolean;
+  has_shipping_carrier: boolean;
+  has_tax_configured: boolean;
+  has_custom_domain: boolean;
+  has_storefront_theme: boolean;
   has_test_order: boolean;
 }
 
@@ -1398,7 +1399,7 @@ export interface DashboardResponse {
   stats: DashboardStats;
   recent_orders: RecentOrder[];
   top_products: TopProduct[];
-  low_stock_items: LowStockItem[];
+  low_stock: LowStockItem[];
   setup_checklist: SetupChecklist;
 }
 

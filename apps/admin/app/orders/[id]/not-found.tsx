@@ -9,7 +9,7 @@ export default async function OrderNotFound() {
   const { tenantName, email } = await getServerSessionContext();
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
-      <main className="mx-auto max-w-3xl px-8 py-16">
+      <main className="mx-auto w-full max-w-3xl">
         <h1 className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-3xl text-[color:var(--ink-900)]">
           Order not found
         </h1>

@@ -19,7 +19,7 @@ export default async function GiftCardsPage({ searchParams }: GiftCardsPageProps
   if (!currentStore) {
     return (
       <AdminShell tenantName={tenantName} userEmail={email}>
-        <main className="flex flex-col gap-6 px-8 py-6">
+        <main className="flex flex-col gap-8">
           <h1 className="font-serif text-2xl text-ink-900">Gift Cards</h1>
           <GiftCardsListEmpty variant="no-store" />
         </main>
@@ -38,7 +38,7 @@ export default async function GiftCardsPage({ searchParams }: GiftCardsPageProps
 
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
-      <main className="flex flex-col gap-6 px-8 py-6">
+      <main className="flex flex-col gap-8">
         <div className="flex items-center justify-between">
           <h1 className="font-serif text-2xl text-ink-900">Gift Cards</h1>
           {canIssue && (

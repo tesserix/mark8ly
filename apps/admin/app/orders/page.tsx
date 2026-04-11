@@ -25,7 +25,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
     return (
       <AdminShell tenantName={tenantName} userEmail={email}>
         <main
-          className="flex flex-col gap-6 px-8 py-6"
+          className="flex flex-col gap-8"
           aria-labelledby="orders-heading"
         >
           <OrdersListHeader />
@@ -63,7 +63,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
       <main
-        className="flex flex-col gap-8 px-8 py-6"
+        className="flex flex-col gap-8"
         aria-labelledby="orders-heading"
       >
         <OrdersListHeader />

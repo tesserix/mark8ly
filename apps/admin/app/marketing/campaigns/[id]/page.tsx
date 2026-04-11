@@ -32,7 +32,7 @@ export default async function CampaignDetailPage({
         memberships={memberships}
         currentTenantId={tenantId}
       >
-        <main className="mx-auto w-full max-w-5xl space-y-10 px-8 py-8">
+        <main className="mx-auto w-full max-w-5xl space-y-10">
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-ink-900">
             No store selected
           </h1>
@@ -61,7 +61,7 @@ export default async function CampaignDetailPage({
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <main className="mx-auto w-full max-w-5xl space-y-10 px-8 py-8">
+      <main className="mx-auto w-full max-w-5xl space-y-10">
         <CampaignAnalytics
           campaign={campaign}
           storeId={currentStore.id}

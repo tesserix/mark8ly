@@ -26,7 +26,7 @@ export default async function CustomersPage({
     return (
       <AdminShell tenantName={tenantName} userEmail={email}>
         <main
-          className="flex flex-col gap-6 px-8 py-6"
+          className="flex flex-col gap-8"
           aria-labelledby="customers-heading"
         >
           <CustomersListHeader />
@@ -67,7 +67,7 @@ export default async function CustomersPage({
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
       <main
-        className="flex flex-col gap-8 px-8 py-6"
+        className="flex flex-col gap-8"
         aria-labelledby="customers-heading"
       >
         <CustomersListHeader />

@@ -73,7 +73,7 @@ export default function JobStatusPage() {
 
   return (
     <main
-      className="flex flex-col gap-8 px-8 py-6"
+      className="flex flex-col gap-8"
       aria-labelledby="job-status-heading"
     >
       {/* Header */}

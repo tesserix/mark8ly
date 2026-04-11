@@ -466,7 +466,19 @@ function isChildActive(
       pathname === child.href
     );
   }
-  return isActiveLink(pathname, child.href);
+  if (!isActiveLink(pathname, child.href)) return false;
+
+  // Prefer the most specific sibling: if a longer sibling href also
+  // matches the current pathname (e.g. "/customers/reviews" matches
+  // both "/customers" and "/customers/reviews"), only the longer
+  // one should be marked active.
+  const moreSpecificMatch = siblings.some(
+    (sibling) =>
+      sibling.href !== child.href &&
+      sibling.href.length > child.href.length &&
+      isActiveLink(pathname, sibling.href),
+  );
+  return !moreSpecificMatch;
 }
 
 const canonicalChildLabelBySection: Record<string, string> = {

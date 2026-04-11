@@ -2,6 +2,15 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
+
+const STATUS_ALL = "__all__";
 
 export function CouponsListFilters() {
   const router = useRouter();
@@ -13,7 +22,8 @@ export function CouponsListFilters() {
   const applyFilters = useCallback(
     (newStatus?: string, newSearch?: string) => {
       const sp = new URLSearchParams();
-      const s = newStatus ?? status;
+      const rawStatus = newStatus ?? status;
+      const s = rawStatus === STATUS_ALL ? "" : rawStatus;
       const q = newSearch ?? search;
       if (s) sp.set("status", s);
       if (q) sp.set("search", q);
@@ -37,24 +47,27 @@ export function CouponsListFilters() {
           onKeyDown={(e) => {
             if (e.key === "Enter") applyFilters(undefined, search);
           }}
-          className="rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+          className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:opacity-50 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
         />
       </div>
       <div>
-        <label htmlFor="coupon-status" className="sr-only">
-          Filter by status
-        </label>
-        <select
-          id="coupon-status"
-          value={status}
-          onChange={(e) => applyFilters(e.target.value)}
-          className="rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+        <Select
+          value={status || STATUS_ALL}
+          onValueChange={(next) => applyFilters(next)}
         >
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="disabled">Disabled</option>
-          <option value="expired">Expired</option>
-        </select>
+          <SelectTrigger
+            aria-label="Filter by status"
+            className="min-w-[10rem]"
+          >
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={STATUS_ALL}>All statuses</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="disabled">Disabled</SelectItem>
+            <SelectItem value="expired">Expired</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

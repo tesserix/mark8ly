@@ -38,7 +38,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
       <main
-        className="mx-auto flex max-w-4xl flex-col gap-10 px-8 py-8"
+        className="mx-auto flex w-full max-w-5xl flex-col gap-10"
         aria-labelledby="customer-heading"
       >
         <CustomerDetailHeader customer={customer} />

@@ -34,7 +34,7 @@ export default async function CouponsPage({ searchParams }: CouponsPageProps) {
   if (!currentStore) {
     return (
       <AdminShell tenantName={tenantName} userEmail={email}>
-        <main className="flex flex-col gap-6 px-8 py-6">
+        <main className="flex flex-col gap-8">
           <CouponsListHeader canCreate={false} />
           <CouponsListEmpty variant="no-store" />
         </main>
@@ -50,7 +50,7 @@ export default async function CouponsPage({ searchParams }: CouponsPageProps) {
 
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
-      <main className="flex flex-col gap-6 px-8 py-6">
+      <main className="flex flex-col gap-8">
         <CouponsListHeader canCreate={canCreate} />
         <CouponsListFilters />
         <hr className="border-ink-200" />

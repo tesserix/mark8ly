@@ -31,7 +31,7 @@ export default async function ProductsPage({
   if (!currentStore) {
     return (
       <AdminShell tenantName={tenantName} userEmail={email}>
-        <main className="flex flex-col gap-6 px-8 py-6">
+        <main className="flex flex-col gap-8">
           <ProductsListHeader canCreate={false} />
           <ProductsListEmpty variant="no-products" />
         </main>
@@ -77,7 +77,7 @@ export default async function ProductsPage({
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
       <main
-        className="flex flex-col gap-6 px-8 py-6"
+        className="flex flex-col gap-8"
         aria-labelledby="products-heading"
       >
         <ProductsListHeader canCreate={canCreate} />

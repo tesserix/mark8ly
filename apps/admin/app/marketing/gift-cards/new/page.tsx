@@ -50,7 +50,7 @@ export default function IssueGiftCardPage() {
 
   return (
     <AdminShell>
-      <main className="flex flex-col gap-6 px-8 py-6">
+      <main className="flex flex-col gap-8">
         <h1 className="font-serif text-2xl text-ink-900">Issue Gift Card</h1>
 
         <form onSubmit={handleSubmit} className="flex max-w-xl flex-col gap-5">

@@ -16,7 +16,7 @@ export default async function NewProductPage() {
   if (!currentStore) {
     return (
       <AdminShell tenantName={tenantName} userEmail={email}>
-        <main className="mx-auto max-w-3xl px-8 py-16">
+        <main className="mx-auto w-full max-w-3xl">
           <h1 className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-3xl text-[color:var(--ink-900)]">
             No store selected
           </h1>
@@ -35,7 +35,7 @@ export default async function NewProductPage() {
 
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
-      <main className="mx-auto max-w-3xl px-8 py-8">
+      <main className="mx-auto w-full max-w-3xl">
         <ProductForm
           mode="create"
           storeId={currentStore.id}

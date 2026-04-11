@@ -7,7 +7,7 @@ export default async function ReviewNotFound() {
   const { tenantName, email } = await getServerSessionContext();
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
-      <main className="mx-auto max-w-3xl px-8 py-16">
+      <main className="mx-auto w-full max-w-3xl">
         <h1 className="font-serif text-3xl text-foreground">
           Review not found
         </h1>

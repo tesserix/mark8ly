@@ -34,7 +34,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
-      <main className="mx-auto max-w-3xl px-8 py-8">
+      <main className="mx-auto w-full max-w-3xl">
         <ProductForm
           mode="edit"
           storeId={currentStore.id}

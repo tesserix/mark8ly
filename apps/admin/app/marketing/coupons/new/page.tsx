@@ -27,7 +27,7 @@ export default async function NewCouponPage() {
 
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
-      <main className="mx-auto max-w-2xl px-8 py-6">
+      <main className="mx-auto w-full max-w-2xl">
         <h1 className="mb-6 font-serif text-2xl font-semibold text-ink-900">
           Create coupon
         </h1>

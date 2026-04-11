@@ -9,6 +9,15 @@
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Search, SlidersHorizontal, X } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
+
+const STATUS_ALL = "__all__";
 
 export function ProductsListFilters() {
   const router = useRouter();
@@ -40,7 +49,7 @@ export function ProductsListFilters() {
 
   const setStatus = (next: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (next) {
+    if (next && next !== STATUS_ALL) {
       params.set("status", next);
     } else {
       params.delete("status");
@@ -71,7 +80,29 @@ export function ProductsListFilters() {
           className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] py-2 pl-10 pr-3 text-sm text-[color:var(--ink-900)] placeholder:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         />
       </label>
-      <StatusFilterDropdown value={status} onChange={setStatus} />
+      <div className="inline-flex items-center gap-2 text-sm">
+        <SlidersHorizontal
+          className="h-4 w-4 text-foreground-secondary"
+          aria-hidden="true"
+        />
+        <Select
+          value={status || STATUS_ALL}
+          onValueChange={setStatus}
+        >
+          <SelectTrigger
+            aria-label="Filter by status"
+            className="min-w-[10rem]"
+          >
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={STATUS_ALL}>All statuses</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="archived">Archived</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
       {hasFilters && (
         <button
           type="button"
@@ -82,31 +113,5 @@ export function ProductsListFilters() {
         </button>
       )}
     </div>
-  );
-}
-
-function StatusFilterDropdown({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  // Small native select for M7a. M7b+ upgrades to @tesserix/web filter-panel.
-  return (
-    <label className="inline-flex items-center gap-2 text-sm text-[color:var(--ink-900)]">
-      <SlidersHorizontal className="h-4 w-4 opacity-60" aria-hidden="true" />
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label="Filter by status"
-        className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] py-2 pl-3 pr-8 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-      >
-        <option value="">All statuses</option>
-        <option value="draft">Draft</option>
-        <option value="active">Active</option>
-        <option value="archived">Archived</option>
-      </select>
-    </label>
   );
 }

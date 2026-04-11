@@ -76,7 +76,7 @@ export default function ImportPage() {
 
   return (
     <main
-      className="flex flex-col gap-8 px-8 py-6"
+      className="flex flex-col gap-8"
       aria-labelledby="import-heading"
     >
       {/* Header */}

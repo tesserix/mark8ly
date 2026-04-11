@@ -53,7 +53,7 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
 
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
-      <main className="flex flex-col gap-6 px-8 py-6">
+      <main className="flex flex-col gap-8">
         {/* Header */}
         <div className="flex items-center gap-3">
           <Link

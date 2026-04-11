@@ -28,7 +28,7 @@ export default async function CouponDetailPage({
 
   return (
     <AdminShell tenantName={tenantName} userEmail={email}>
-      <main className="mx-auto max-w-3xl px-8 py-6">
+      <main className="mx-auto w-full max-w-3xl">
         <div className="mb-6 flex items-center gap-3">
           <Link
             href="/marketing/coupons"

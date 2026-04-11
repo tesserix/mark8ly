@@ -24,7 +24,7 @@ export default async function NewCampaignPage() {
         memberships={memberships}
         currentTenantId={tenantId}
       >
-        <main className="mx-auto w-full max-w-3xl space-y-10 px-8 py-8">
+        <main className="mx-auto w-full max-w-3xl space-y-10">
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-ink-900">
             No store selected
           </h1>
@@ -50,7 +50,7 @@ export default async function NewCampaignPage() {
       memberships={memberships}
       currentTenantId={tenantId}
     >
-      <main className="mx-auto w-full max-w-3xl space-y-10 px-8 py-8">
+      <main className="mx-auto w-full max-w-3xl space-y-10">
         <header className="space-y-3">
           <p className="eyebrow">Marketing</p>
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">

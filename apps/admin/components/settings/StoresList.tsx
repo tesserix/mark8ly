@@ -123,7 +123,16 @@ export function StoresList({
                       {s.name}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {s.slug}.mark8ly.com · {s.currency_code}
+                      <a
+                        href={`https://${s.slug}.mark8ly.com`}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="underline-offset-2 hover:text-foreground hover:underline"
+                      >
+                        {s.slug}.mark8ly.com
+                      </a>
+                      {" · "}
+                      {s.currency_code}
                     </p>
                   </div>
                   {isCurrent ? (

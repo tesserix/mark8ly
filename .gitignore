@@ -46,6 +46,10 @@ infra/dev/.env.local.generated
 playwright-report/
 test-results/
 playwright/.cache/
+# Remote-audit local artifacts (screenshots + findings JSON). These
+# files may contain customer-facing URLs and live screenshots, and are
+# regenerated on every `ADMIN_AUDIT=1` / `STOREFRONT_AUDIT=1` run.
+apps/*/tests/e2e/.audit/
 
 # IDE
 .idea/

@@ -11,6 +11,7 @@
 // belongs to multiple stores).
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -187,6 +188,15 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
             {...register("password")}
           />
         </Field>
+
+        <div className="-mt-2 flex justify-end">
+          <Link
+            href="/forgot-password"
+            className="text-xs text-foreground-secondary underline underline-offset-4 decoration-border-subtle transition-colors hover:text-foreground hover:decoration-foreground-tertiary"
+          >
+            Forgot password?
+          </Link>
+        </div>
 
         {submitError && (
           <p role="alert" aria-live="polite" className="text-sm text-danger">

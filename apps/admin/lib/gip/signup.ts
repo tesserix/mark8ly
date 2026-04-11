@@ -151,6 +151,47 @@ export async function signInWithGoogle(
  * client-side — platform-api re-validates nothing about passwords,
  * GIP owns the full password policy.
  */
+/**
+ * Send a password reset email via Identity Toolkit accounts:sendOobCode.
+ * GIP hosts the actual reset UI at its configured action URL. Returns
+ * silently on success so we can show a generic "check your inbox" UX
+ * without leaking whether the email is registered.
+ */
+export async function sendPasswordReset(email: string): Promise<void> {
+  if (!publicConfig.gipApiKey) {
+    throw new GIPError("config_missing", "GIP Web API key is not configured");
+  }
+  if (!publicConfig.gipTenantId) {
+    throw new GIPError("config_missing", "GIP tenant id is not configured");
+  }
+
+  const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${publicConfig.gipApiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestType: "PASSWORD_RESET",
+      email,
+      tenantId: publicConfig.gipTenantId,
+    }),
+  });
+
+  if (!res.ok) {
+    let body: { error?: { message?: string } } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    const code = body.error?.message ?? `HTTP ${res.status}`;
+    // Don't leak whether the email exists — treat EMAIL_NOT_FOUND as success.
+    if (code === "EMAIL_NOT_FOUND") {
+      return;
+    }
+    throw new GIPError("reset_failed", code);
+  }
+}
+
 export async function signUp(
   email: string,
   password: string,

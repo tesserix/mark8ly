@@ -39,6 +39,7 @@ const CANONICAL_LOGIN_ORIGIN =
 const PUBLIC_PREFIXES = [
   "/login",
   "/logout",
+  "/forgot-password",
   "/accept-invite", // Phase P: invitees must land here without a session
   "/_next",
   "/favicon",

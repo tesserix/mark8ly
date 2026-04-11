@@ -1,8 +1,17 @@
 /**
  * Storefront client for checkout-related endpoints on marketplace-api.
- * Follows the same patterns as marketplace-api.ts — public-only,
- * STOREFRONT_KEY header, null on 404.
+ *
+ * Dual-mode: these helpers may be called from either server components
+ * (e.g. /orders/[id]/page.tsx) or client components (e.g. /checkout).
+ * On the server we hit marketplace-api directly with the
+ * `X-Storefront-Key` secret. In the browser we cannot attach that
+ * secret (and `MARKETPLACE_API_URL` is not a `NEXT_PUBLIC_*` var, so
+ * the fallback would ship `http://localhost:8088` into the bundle) —
+ * so client calls route through the same-origin `/api/checkout/*`
+ * route handlers which re-issue the upstream request server-side.
  */
+
+const IS_BROWSER = typeof window !== "undefined";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
@@ -14,12 +23,22 @@ function commonHeaders(): HeadersInit {
     Accept: "application/json",
     "Content-Type": "application/json",
   };
-  if (STOREFRONT_KEY) headers["X-Storefront-Key"] = STOREFRONT_KEY;
+  // Only the server has the storefront key. In the browser we rely on
+  // the proxy route to attach it.
+  if (!IS_BROWSER && STOREFRONT_KEY) {
+    headers["X-Storefront-Key"] = STOREFRONT_KEY;
+  }
   return headers;
 }
 
 function storeUrl(storeSlug: string): string {
   return `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}`;
+}
+
+// Same-origin proxy URL builder for browser-side calls.
+function proxyUrl(path: string, storeSlug: string): string {
+  const qs = new URLSearchParams({ store: storeSlug }).toString();
+  return `/api/checkout/${path}?${qs}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,12 +181,16 @@ export interface Order {
 export async function fetchPaymentMethods(
   storeSlug: string,
 ): Promise<PaymentMethod[]> {
-  const url = `${storeUrl(storeSlug)}/payment-methods`;
+  const url = IS_BROWSER
+    ? proxyUrl("payment-methods", storeSlug)
+    : `${storeUrl(storeSlug)}/payment-methods`;
   try {
-    const res = await fetch(url, {
-      headers: commonHeaders(),
-      next: { revalidate: 120 },
-    });
+    const res = await fetch(
+      url,
+      IS_BROWSER
+        ? { headers: commonHeaders(), cache: "no-store" }
+        : { headers: commonHeaders(), next: { revalidate: 120 } },
+    );
     if (!res.ok) return [];
     const body = (await res.json()) as { data: PaymentMethod[] };
     return body.data ?? [];
@@ -183,7 +206,9 @@ export async function fetchShippingRates(
   storeSlug: string,
   body: ShippingRatesBody,
 ): Promise<ShippingRate[]> {
-  const url = `${storeUrl(storeSlug)}/shipping-rates`;
+  const url = IS_BROWSER
+    ? proxyUrl("shipping-rates", storeSlug)
+    : `${storeUrl(storeSlug)}/shipping-rates`;
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -206,7 +231,9 @@ export async function submitCheckout(
   storeSlug: string,
   body: CheckoutBody,
 ): Promise<CheckoutResult | null> {
-  const url = `${storeUrl(storeSlug)}/checkout`;
+  const url = IS_BROWSER
+    ? proxyUrl("submit", storeSlug)
+    : `${storeUrl(storeSlug)}/checkout`;
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -260,7 +287,10 @@ export async function checkGiftCardBalance(
   storeSlug: string,
   code: string,
 ): Promise<GiftCardBalanceResult | null> {
-  const res = await fetch(`${storeUrl(storeSlug)}/gift-cards/check-balance`, {
+  const url = IS_BROWSER
+    ? proxyUrl("gift-cards/check-balance", storeSlug)
+    : `${storeUrl(storeSlug)}/gift-cards/check-balance`;
+  const res = await fetch(url, {
     method: "POST",
     headers: commonHeaders(),
     body: JSON.stringify({ code }),

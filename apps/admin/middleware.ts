@@ -179,20 +179,64 @@ export async function middleware(req: NextRequest) {
   return NextResponse.next({ request: { headers } });
 }
 
+// Behind a reverse proxy (Istio / Cloudflare), `req.nextUrl.origin`
+// resolves to the internal pod bind address (e.g. http://0.0.0.0:4202)
+// rather than the customer-facing origin. Always prefer the
+// x-forwarded-host / x-forwarded-proto headers when present.
+function externalOrigin(req: NextRequest): string {
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  const host = forwardedHost ?? req.headers.get("host") ?? "";
+  if (!host) return req.nextUrl.origin;
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const proto =
+    forwardedProto ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+function externalUrl(req: NextRequest): string {
+  return `${externalOrigin(req)}${req.nextUrl.pathname}${req.nextUrl.search}`;
+}
+
+// React Server Components prefetches cannot follow a cross-origin 3xx —
+// the browser issues a `fetch()` for the RSC payload and CORS blocks the
+// redirect. Previously this manifested as a visible login-form wipe:
+// the hover-triggered RSC prefetch got bounced to the canonical host,
+// the fetch failed, the form component re-mounted, and anything the
+// user had typed disappeared.
+//
+// Next.js tags RSC prefetches with a couple of headers depending on the
+// trigger path. We accept any of them as a positive signal.
+function isRscPrefetch(req: NextRequest): boolean {
+  if (req.headers.get("RSC") === "1") return true;
+  if (req.headers.get("Next-Router-Prefetch") === "1") return true;
+  if (req.nextUrl.searchParams.has("_rsc")) return true;
+  return false;
+}
+
 function redirectToLogin(req: NextRequest): NextResponse {
   // If CANONICAL_LOGIN_ORIGIN is configured AND the current request is
   // NOT already on that host, bounce the user to the canonical host
   // for sign-in. The session cookie is scoped to .mark8ly.com so once
   // auth-bff mints it at admin.mark8ly.com, every {slug}-admin.mark8ly.com
   // subdomain picks it up without extra plumbing.
-  const currentOrigin = req.nextUrl.origin;
+  const externalCurrent = externalOrigin(req);
   const useCanonical =
-    CANONICAL_LOGIN_ORIGIN && currentOrigin !== CANONICAL_LOGIN_ORIGIN;
+    CANONICAL_LOGIN_ORIGIN && externalCurrent !== CANONICAL_LOGIN_ORIGIN;
+
+  // Never cross-origin redirect an RSC prefetch (see isRscPrefetch
+  // above for why). Return a lightweight 401 instead — the RSC client
+  // discards the response without poisoning its cache, and the real
+  // click-driven navigation will still hit this middleware and get a
+  // proper 307 redirect.
+  if (useCanonical && isRscPrefetch(req)) {
+    return new NextResponse(null, { status: 401 });
+  }
+
   const loginUrl = new URL(
     "/login",
-    useCanonical ? CANONICAL_LOGIN_ORIGIN : currentOrigin,
+    useCanonical ? CANONICAL_LOGIN_ORIGIN : externalCurrent,
   );
-  loginUrl.searchParams.set("returnUrl", req.nextUrl.toString());
+  loginUrl.searchParams.set("returnUrl", externalUrl(req));
   return NextResponse.redirect(loginUrl);
 }
 

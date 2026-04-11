@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function NotFound() {
   return (
     <div className="grid min-h-screen grid-rows-[1fr_auto] bg-[color:var(--background)]">
-      <main className="flex items-end px-6 pb-16 pt-24 sm:px-12 lg:px-24">
+      <main className="flex items-center px-6 py-24 sm:px-12 lg:px-24">
         <div className="w-full max-w-2xl space-y-6">
           <div className="space-y-1">
             <p className="font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-foreground-tertiary">

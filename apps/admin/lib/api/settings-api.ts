@@ -93,6 +93,20 @@ export interface TaxJarUpsertInput {
   mode: "test" | "live";
 }
 
+// SupportedProviders is the country-driven catalogue of payment gateways,
+// shipping carriers, and tax strategy allowed for a store. The admin UI
+// renders one configuration card per entry in payment_providers and
+// shipping_carriers, turning the previously empty state into a live picker.
+export interface SupportedProviders {
+  country_code: string;
+  country_name: string;
+  currency_code: string;
+  payment_providers: string[];
+  shipping_carriers: string[];
+  tax_strategy: string;
+  tax_rate?: number;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Helpers — same patterns as marketplace-api.ts
 // ─────────────────────────────────────────────────────────────────────────
@@ -135,6 +149,31 @@ async function parseMutationError(res: Response): Promise<MutationError> {
 
 function settingsUrl(storeId: string, path: string): string {
   return `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/settings/${path}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Settings metadata — country-driven provider catalogue
+// ─────────────────────────────────────────────────────────────────────────
+
+// getSupportedProviders fetches the payment providers, shipping carriers,
+// and tax strategy allowed for the store's country. Returns null when the
+// store or country is not configured — the UI renders an error state.
+export async function getSupportedProviders(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<SupportedProviders | null> {
+  const res = await fetch(settingsUrl(storeId, "supported-providers"), {
+    cache: "no-store",
+    headers: readHeaders(session),
+  });
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: getSupportedProviders ${res.status}`);
+  }
+  const body = (await res.json()) as { data: SupportedProviders };
+  return body.data ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

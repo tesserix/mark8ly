@@ -28,6 +28,7 @@ type Deps struct {
 	PaymentSettingsHandler   *PaymentSettingsHandler
 	ShippingSettingsHandler  *ShippingSettingsHandler
 	TaxSettingsHandler       *TaxSettingsHandler
+	SettingsMetaHandler      *SettingsMetaHandler
 	CouponHandler            *CouponHandler
 	GiftCardHandler          *GiftCardHandler
 	LoyaltyHandler           *LoyaltyHandler
@@ -239,6 +240,14 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		}
 
 		// Settings — payment, shipping, tax configuration.
+		// Metadata endpoint: returns providers allowed for the store's country,
+		// so the admin UI can render one card per supported provider instead of
+		// showing an empty-state dead end.
+		if deps.SettingsMetaHandler != nil {
+			storeRoute.GET("/settings/supported-providers",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+				deps.SettingsMetaHandler.GetSupportedProviders)
+		}
 		if deps.PaymentSettingsHandler != nil {
 			ps := storeRoute.Group("/settings/payments")
 			{

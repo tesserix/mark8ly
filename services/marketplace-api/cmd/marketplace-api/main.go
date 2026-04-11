@@ -229,6 +229,7 @@ func main() {
 		paymentSettingsHandler := admin.NewPaymentSettingsHandler(conn, countryRepoAdmin, log)
 		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, log)
 		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, log)
+		settingsMetaHandler := admin.NewSettingsMetaHandler(countryRepoAdmin, log)
 
 		// Coupon handler (Marketing M1).
 		couponHandler := admin.NewCouponHandler(couponSvc, log)
@@ -336,6 +337,7 @@ func main() {
 			PaymentSettingsHandler:  paymentSettingsHandler,
 			ShippingSettingsHandler: shippingSettingsHandler,
 			TaxSettingsHandler:      taxSettingsHandler,
+			SettingsMetaHandler:     settingsMetaHandler,
 			CouponHandler:          couponHandler,
 			GiftCardHandler:        giftCardHandler,
 			LoyaltyHandler:         loyaltyHandler,

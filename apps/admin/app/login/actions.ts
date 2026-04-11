@@ -34,7 +34,6 @@ interface SignInInput {
 
 interface SignInSuccess {
   tenantId: string;
-  slug: string;
   // true when the user has more than one tenant and the UI should
   // redirect them to /pick-tenant after the initial dashboard land.
   // The initial tenant is the first one returned by platform-api's
@@ -88,7 +87,6 @@ export async function signIn(
       ok: true,
       data: {
         tenantId: primary.tenant_id,
-        slug: primary.slug,
         multipleTenants: tenants.length > 1,
       },
     };

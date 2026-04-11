@@ -59,7 +59,7 @@ export function PickTenantForm({ tenants }: PickTenantFormProps) {
                     {tenant.name}
                   </p>
                   <p className="mt-1 truncate text-sm text-foreground-secondary">
-                    {tenant.slug}.mark8ly.com
+                    {tenant.role}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2 text-right">

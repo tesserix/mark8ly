@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 interface StatCardProps {
@@ -8,6 +9,7 @@ interface StatCardProps {
   changePercent?: number;
   subtitle?: string;
   sparkline?: ReactNode;
+  href?: string;
 }
 
 export function StatCard({
@@ -16,9 +18,10 @@ export function StatCard({
   changePercent,
   subtitle,
   sparkline,
+  href,
 }: StatCardProps) {
-  return (
-    <div className="px-6 py-5 border-b border-border-subtle">
+  const body = (
+    <>
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
         {label}
       </p>
@@ -52,6 +55,21 @@ export function StatCard({
         </div>
         {sparkline && <div className="shrink-0">{sparkline}</div>}
       </div>
-    </div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block px-6 py-5 border-b border-border-subtle transition-colors hover:bg-paper-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+      >
+        {body}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="px-6 py-5 border-b border-border-subtle">{body}</div>
   );
 }

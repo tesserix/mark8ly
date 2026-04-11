@@ -95,11 +95,7 @@ const navigation: NavSection[] = [
     key: "orders",
     label: "Orders",
     icon: ShoppingCart,
-    children: [
-      { label: "All Orders", href: "/orders" },
-      { label: "Returns & Refunds", href: "/orders" },
-      { label: "Abandoned Carts", href: "/orders" },
-    ],
+    href: "/orders",
   },
   {
     key: "customers",
@@ -107,7 +103,7 @@ const navigation: NavSection[] = [
     icon: Users,
     children: [
       { label: "All Customers", href: "/customers" },
-      { label: "Reviews", href: "/customers" },
+      { label: "Reviews", href: "/customers/reviews" },
     ],
   },
   {
@@ -116,7 +112,6 @@ const navigation: NavSection[] = [
     icon: Megaphone,
     children: [
       { label: "Campaigns", href: "/marketing/campaigns" },
-      { label: "Segments", href: "/marketing/segments" },
       { label: "Coupons", href: "/marketing/coupons" },
       { label: "Gift Cards", href: "/marketing/gift-cards" },
       { label: "Loyalty", href: "/marketing/loyalty" },
@@ -476,7 +471,6 @@ function isChildActive(
 
 const canonicalChildLabelBySection: Record<string, string> = {
   catalog: "Products",
-  orders: "All Orders",
   customers: "All Customers",
   marketing: "Campaigns",
   settings: "Store Settings",
@@ -495,6 +489,9 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/orders")) {
     return { eyebrow: "Operations", title: "Orders" };
+  }
+  if (pathname.startsWith("/customers/reviews")) {
+    return { eyebrow: "Customers", title: "Reviews" };
   }
   if (pathname.startsWith("/customers")) {
     return { eyebrow: "Relationships", title: "Customers" };

@@ -146,6 +146,7 @@ function DashboardContent({
             <StatCard
               label="Pending reviews"
               value={String(stats.pending_reviews)}
+              href="/customers/reviews?status=pending"
             />
           </div>
 

@@ -1698,3 +1698,206 @@ export async function updateBranding(
   }
   return { ok: true, data: (await res.json()) as StoreBranding };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Reviews — admin moderation endpoints backed by marketplace-api
+// /api/v1/admin/stores/:storeId/reviews
+// ─────────────────────────────────────────────────────────────────────────
+
+export type ReviewStatus = "pending" | "approved" | "rejected";
+
+export interface AdminReviewMedia {
+  id: string;
+  url: string;
+  alt?: string;
+  position: number;
+  media_type: string;
+  width?: number;
+  height?: number;
+  file_size?: number;
+}
+
+export interface AdminReviewReply {
+  id: string;
+  author_type: string;
+  author_name: string;
+  author_email?: string;
+  content: string;
+  created_at: string;
+}
+
+export interface AdminReview {
+  id: string;
+  product_id: string;
+  customer_profile_id?: string;
+  customer_name: string;
+  customer_email: string;
+  rating: number;
+  title?: string;
+  content: string;
+  status: ReviewStatus;
+  verified_purchase: boolean;
+  featured: boolean;
+  helpful_count: number;
+  not_helpful_count: number;
+  published_at?: string;
+  created_at: string;
+  updated_at: string;
+  media: AdminReviewMedia[];
+  replies: AdminReviewReply[];
+}
+
+export interface ListReviewsQuery {
+  status?: ReviewStatus;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ListReviewsResponse {
+  data: AdminReview[];
+  meta: {
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
+  };
+}
+
+export async function listReviews(
+  storeId: string,
+  query: ListReviewsQuery,
+  session: SessionHeaders,
+): Promise<ListReviewsResponse | null> {
+  const params = new URLSearchParams();
+  if (query.status) params.set("status", query.status);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("page_size", String(query.pageSize));
+  const qs = params.toString();
+
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/reviews${
+    qs ? `?${qs}` : ""
+  }`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: readHeaders(session),
+  });
+
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: listReviews ${res.status}: ${
+        errBody?.message ?? "unknown error"
+      }`,
+    );
+  }
+  return (await res.json()) as ListReviewsResponse;
+}
+
+export async function approveReview(
+  storeId: string,
+  reviewId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminReview>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/reviews/${reviewId}/approve`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminReview };
+}
+
+export async function rejectReview(
+  storeId: string,
+  reviewId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminReview>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/reviews/${reviewId}/reject`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminReview };
+}
+
+export async function getReview(
+  storeId: string,
+  reviewId: string,
+  session: SessionHeaders,
+): Promise<AdminReview | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/reviews/${reviewId}`,
+    {
+      cache: "no-store",
+      headers: readHeaders(session),
+    },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: getReview ${res.status}: ${
+        errBody?.message ?? "unknown error"
+      }`,
+    );
+  }
+  return (await res.json()) as AdminReview;
+}
+
+export async function setReviewFeatured(
+  storeId: string,
+  reviewId: string,
+  featured: boolean,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminReview>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/reviews/${reviewId}/featured`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ featured }),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminReview };
+}
+
+export async function replyToReview(
+  storeId: string,
+  reviewId: string,
+  content: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminReview>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/reviews/${reviewId}/reply`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ content }),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminReview };
+}

@@ -47,20 +47,8 @@ interface AdminPageProps {
    * Pass the merchant's role to surface the warning automatically.
    */
   readOnlyNotice?: ReactNode;
-  /**
-   * Container max-width token. Defaults to "md" (max-w-5xl) which fits
-   * every settings and list page. Use "lg" (max-w-6xl) for wide layouts
-   * like themes/branding, "sm" (max-w-3xl) for narrow detail pages.
-   */
-  maxWidth?: "sm" | "md" | "lg";
   children: ReactNode;
 }
-
-const MAX_WIDTH_CLASS: Record<NonNullable<AdminPageProps["maxWidth"]>, string> = {
-  sm: "max-w-3xl",
-  md: "max-w-5xl",
-  lg: "max-w-6xl",
-};
 
 export function AdminPage({
   eyebrow,
@@ -68,13 +56,13 @@ export function AdminPage({
   description,
   actions,
   readOnlyNotice,
-  maxWidth = "md",
   children,
 }: AdminPageProps) {
+  // Width is owned by the (admin) layout's <main> wrapper (max-w-5xl).
+  // AdminPage only handles the inner header + rhythm — no container
+  // wrapper of its own, so pages don't double-nest max-widths.
   return (
-    <div
-      className={`mx-auto w-full ${MAX_WIDTH_CLASS[maxWidth]} space-y-10`}
-    >
+    <div className="space-y-10">
       <header className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0 flex-1 space-y-3">

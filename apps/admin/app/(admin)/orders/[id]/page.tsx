@@ -34,7 +34,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
 
   return (
           <main
-        className="mx-auto flex w-full max-w-5xl flex-col gap-10"
+        className="flex-col gap-10"
         aria-labelledby="order-heading"
       >
         <OrderDetailHeader order={order} />

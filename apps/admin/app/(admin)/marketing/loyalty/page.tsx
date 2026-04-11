@@ -27,7 +27,7 @@ export default async function LoyaltyPage() {
   const editable = canEditSettings(role);
 
   return (
-          <div className="mx-auto w-full max-w-5xl space-y-10">
+          <div className="space-y-10">
         <header className="space-y-3">
           <p className="eyebrow">Marketing</p>
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">

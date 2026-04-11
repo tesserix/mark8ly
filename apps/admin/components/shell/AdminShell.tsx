@@ -307,8 +307,12 @@ function AdminShellFrame({
           </div>
         </header>
 
+        {/* Single source of truth for admin page width. Every admin surface
+            renders inside this max-w-5xl container; individual pages should
+            NOT wrap themselves in another mx-auto/max-w container. Padding
+            comes from the outer main element so the container can be pure. */}
         <main id="main" className="flex-1 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-          {children}
+          <div className="mx-auto w-full max-w-5xl">{children}</div>
         </main>
       </SidebarInset>
     </>

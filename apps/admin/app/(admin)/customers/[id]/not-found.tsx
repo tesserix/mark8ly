@@ -5,7 +5,7 @@ import { getServerSessionContext } from "@/lib/auth/serverSession";
 export default async function CustomerNotFound() {
   const { tenantName, email } = await getServerSessionContext();
   return (
-          <main className="mx-auto w-full max-w-3xl">
+          <main className="">
         <h1 className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-3xl text-[color:var(--ink-900)]">
           Customer not found
         </h1>

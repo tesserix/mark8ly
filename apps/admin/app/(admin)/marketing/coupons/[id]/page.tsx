@@ -26,7 +26,7 @@ export default async function CouponDetailPage({
   }
 
   return (
-          <main className="mx-auto w-full max-w-3xl">
+          <main className="">
         <div className="mb-6 flex items-center gap-3">
           <Link
             href="/marketing/coupons"

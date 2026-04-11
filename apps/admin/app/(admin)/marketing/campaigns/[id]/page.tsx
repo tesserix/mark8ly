@@ -24,7 +24,7 @@ export default async function CampaignDetailPage({
 
   if (!currentStore) {
     return (
-              <main className="mx-auto w-full max-w-5xl space-y-10">
+              <main className="space-y-10">
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-ink-900">
             No store selected
           </h1>
@@ -45,7 +45,7 @@ export default async function CampaignDetailPage({
   }
 
   return (
-          <main className="mx-auto w-full max-w-5xl space-y-10">
+          <main className="space-y-10">
         <CampaignAnalytics
           campaign={campaign}
           storeId={currentStore.id}

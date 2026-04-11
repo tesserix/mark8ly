@@ -5,7 +5,7 @@ import { getServerSessionContext } from "@/lib/auth/serverSession";
 export default async function ReviewNotFound() {
   const { tenantName, email } = await getServerSessionContext();
   return (
-          <main className="mx-auto w-full max-w-3xl">
+          <main className="">
         <h1 className="font-serif text-3xl text-foreground">
           Review not found
         </h1>

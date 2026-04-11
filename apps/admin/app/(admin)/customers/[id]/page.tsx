@@ -36,7 +36,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
 
   return (
           <main
-        className="mx-auto flex w-full max-w-5xl flex-col gap-10"
+        className="flex-col gap-10"
         aria-labelledby="customer-heading"
       >
         <CustomerDetailHeader customer={customer} />

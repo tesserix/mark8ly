@@ -25,7 +25,7 @@ export default async function NewCouponPage() {
   }
 
   return (
-          <main className="mx-auto w-full max-w-2xl">
+          <main className="">
         <h1 className="mb-6 font-serif text-2xl font-semibold text-ink-900">
           Create coupon
         </h1>

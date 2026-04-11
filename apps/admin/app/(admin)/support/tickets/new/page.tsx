@@ -11,7 +11,7 @@ export default async function NewTicketPage() {
   } = await getServerSessionContext();
 
   return (
-          <div className="mx-auto w-full max-w-2xl space-y-8">
+          <div className="space-y-8">
         <header className="space-y-3">
           <p className="eyebrow">Support</p>
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">

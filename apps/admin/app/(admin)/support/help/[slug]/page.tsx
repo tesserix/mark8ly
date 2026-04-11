@@ -35,7 +35,7 @@ export default async function HelpArticlePage({
     .slice(0, 3);
 
   return (
-          <div className="mx-auto w-full max-w-3xl space-y-8">
+          <div className="space-y-8">
         {/* Breadcrumb */}
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-foreground-secondary">
           <Link

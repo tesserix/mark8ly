@@ -39,7 +39,7 @@ export default async function MemberDetailPage({
 
   if (!result) {
     return (
-              <div className="mx-auto w-full max-w-5xl space-y-6">
+              <div className="space-y-6">
           <Link
             href="/marketing/loyalty"
             className="text-sm text-[color:var(--moss-700)] hover:underline"
@@ -64,7 +64,7 @@ export default async function MemberDetailPage({
   }
 
   return (
-          <div className="mx-auto w-full max-w-5xl space-y-6">
+          <div className="space-y-6">
         <Link
           href="/marketing/loyalty"
           className="text-sm text-[color:var(--moss-700)] hover:underline"

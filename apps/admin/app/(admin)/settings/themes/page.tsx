@@ -24,7 +24,6 @@ export default async function ThemesSettingsPage() {
         eyebrow="Store"
         title="Themes & branding"
         description="Define your store identity, color palette, typography, layout, and footer. Changes are reflected on your live storefront immediately."
-        maxWidth="lg"
         readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
       >
         {currentStore && branding ? (

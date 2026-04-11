@@ -48,7 +48,7 @@ export default async function HelpCenterPage() {
   const featured = articles.slice(0, 5);
 
   return (
-          <div className="mx-auto w-full max-w-5xl space-y-12">
+          <div className="space-y-12">
         <header className="space-y-5">
           <p className="eyebrow">Support</p>
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">

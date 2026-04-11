@@ -38,7 +38,7 @@ export default async function CampaignsPage({
 
   if (!currentStore) {
     return (
-              <main className="mx-auto w-full max-w-5xl space-y-10">
+              <main className="space-y-10">
           <header className="space-y-3">
             <p className="eyebrow">Marketing</p>
             <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
@@ -60,7 +60,7 @@ export default async function CampaignsPage({
   const meta = result?.meta;
 
   return (
-          <main className="mx-auto w-full max-w-5xl space-y-10">
+          <main className="space-y-10">
         <header className="flex items-center justify-between">
           <div className="space-y-3">
             <p className="eyebrow">Marketing</p>

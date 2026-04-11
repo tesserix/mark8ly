@@ -37,7 +37,7 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
     : null;
 
   return (
-          <div className="mx-auto w-full max-w-5xl space-y-8">
+          <div className="space-y-8">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-3">
             <p className="eyebrow">Support</p>

@@ -29,7 +29,7 @@ export default async function TicketDetailPage({
       : null;
 
   return (
-          <div className="mx-auto w-full max-w-3xl space-y-6">
+          <div className="space-y-6">
         <Link
           href="/support/tickets"
           className="inline-flex min-h-[44px] items-center gap-1 text-sm text-foreground-secondary hover:text-foreground"

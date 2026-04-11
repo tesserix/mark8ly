@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import type { StoreBranding, UpdateBrandingInput } from "@/lib/api/marketplace-api";
-import { updateBrandingAction } from "@/app/settings/themes/actions";
+import { updateBrandingAction } from "@/app/(admin)/settings/themes/actions";
 
 // ─── Types ──────────────────────────────────────────────────────────
 

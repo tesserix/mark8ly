@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 import type { NotificationPreferences } from "@/lib/api/settings-tier2-api";
-import { updateNotificationPreferencesAction } from "@/app/settings/actions";
+import { updateNotificationPreferencesAction } from "@/app/(admin)/settings/actions";
 
 interface NotificationSettingsClientProps {
   preferences: NotificationPreferences | null;

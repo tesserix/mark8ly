@@ -10,7 +10,7 @@ import {
   addDomainAction,
   removeDomainAction,
   verifyDomainAction,
-} from "@/app/settings/actions";
+} from "@/app/(admin)/settings/actions";
 
 interface DomainsSettingsClientProps {
   domains: CustomDomain[];

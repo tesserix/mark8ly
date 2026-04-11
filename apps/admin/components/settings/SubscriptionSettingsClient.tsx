@@ -5,7 +5,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { CreditCard, ArrowRight, AlertTriangle } from "lucide-react";
 
 import type { StoreSubscription } from "@/lib/api/settings-tier2-api";
-import { createCheckout, createPortal } from "@/app/settings/actions";
+import { createCheckout, createPortal } from "@/app/(admin)/settings/actions";
 
 interface SubscriptionSettingsClientProps {
   subscription: StoreSubscription | null;

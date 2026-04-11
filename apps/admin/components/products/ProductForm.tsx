@@ -32,7 +32,7 @@ import {
   createProductAction,
   updateProductAction,
   deleteProductAction,
-} from "@/app/products/actions";
+} from "@/app/(admin)/products/actions";
 import {
   generateVariants,
   type OptionDraft as GenOptionDraft,

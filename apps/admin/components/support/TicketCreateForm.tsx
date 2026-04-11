@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@tesserix/web";
-import { createTicketAction } from "@/app/support/actions";
+import { createTicketAction } from "@/app/(admin)/support/actions";
 
 type Priority = "low" | "medium" | "high";
 

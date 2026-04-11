@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ProductForm } from "./ProductForm";
 import type { AdminCategory, AdminProduct } from "@/lib/api/marketplace-api";
 
-vi.mock("@/app/products/actions", () => ({
+vi.mock("@/app/(admin)/products/actions", () => ({
   createProductAction: vi.fn(async () => ({ ok: true, data: { id: "p1" } })),
   updateProductAction: vi.fn(async () => ({ ok: true, data: { id: "p1" } })),
   deleteProductAction: vi.fn(async () => ({ ok: true })),

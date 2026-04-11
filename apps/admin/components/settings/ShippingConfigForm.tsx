@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@tesserix/web";
 
-import { saveShippingConfig } from "@/app/settings/shipping/actions";
+import { saveShippingConfig } from "@/app/(admin)/settings/shipping/actions";
 import type { ShippingConfig } from "@/lib/api/settings-api";
 
 interface ShippingConfigFormProps {

@@ -23,7 +23,7 @@ import type {
   AuditLogsResponse,
   AuditLogsQuery,
 } from "@/lib/api/settings-tier2-api";
-import { exportAuditCSV } from "@/app/settings/actions";
+import { exportAuditCSV } from "@/app/(admin)/settings/actions";
 
 interface AuditLogsClientProps {
   initialData: AuditLogsResponse | null;

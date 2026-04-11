@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { replyToReviewAction } from "@/app/customers/reviews/actions";
+import { replyToReviewAction } from "@/app/(admin)/customers/reviews/actions";
 
 interface ReviewReplyFormProps {
   reviewId: string;

@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@tesserix/web";
 
-import { saveTaxJarConfig } from "@/app/settings/tax/actions";
+import { saveTaxJarConfig } from "@/app/(admin)/settings/tax/actions";
 
 interface TaxJarConfigFormProps {
   existingApiKey?: string;

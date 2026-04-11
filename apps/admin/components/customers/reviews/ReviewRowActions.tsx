@@ -10,7 +10,7 @@ import {
   approveReviewAction,
   rejectReviewAction,
   toggleFeaturedAction,
-} from "@/app/customers/reviews/actions";
+} from "@/app/(admin)/customers/reviews/actions";
 
 interface ReviewRowActionsProps {
   reviewId: string;

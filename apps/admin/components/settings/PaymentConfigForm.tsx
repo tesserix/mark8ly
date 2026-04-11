@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@tesserix/web";
 
-import { savePaymentConfig } from "@/app/settings/payments/actions";
+import { savePaymentConfig } from "@/app/(admin)/settings/payments/actions";
 
 interface PaymentConfigFormProps {
   provider: string;

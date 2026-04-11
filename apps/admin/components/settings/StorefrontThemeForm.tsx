@@ -11,7 +11,7 @@ import {
 import { Field } from "@repo/ui/field";
 import { StorefrontLayoutPreview } from "@repo/ui/storefront-preview";
 
-import { updateStorefrontTheme } from "@/app/settings/themes/actions";
+import { updateStorefrontTheme } from "@/app/(admin)/settings/themes/actions";
 import type { Store } from "@/lib/api/platform-api";
 import {
   defaultStorefrontTheme,

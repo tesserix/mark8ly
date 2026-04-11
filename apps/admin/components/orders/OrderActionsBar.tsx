@@ -32,7 +32,7 @@ import {
   fulfillOrderAction,
   refundOrderAction,
   type OrderActionResult,
-} from "@/app/orders/[id]/actions";
+} from "@/app/(admin)/orders/[id]/actions";
 
 interface OrderActionsBarProps {
   order: AdminOrder;

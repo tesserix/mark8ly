@@ -19,7 +19,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Input, Label } from "@tesserix/web";
 
-import { updateGeneralSettings } from "@/app/settings/general/actions";
+import { updateGeneralSettings } from "@/app/(admin)/settings/general/actions";
 import type { Store, Tenant } from "@/lib/api/platform-api";
 
 interface GeneralSettingsFormProps {

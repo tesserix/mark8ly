@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { updateTicketStatusAction } from "@/app/support/actions";
+import { updateTicketStatusAction } from "@/app/(admin)/support/actions";
 import type { TicketStatus } from "@/lib/api/marketplace-api";
 
 interface TicketStatusActionsProps {

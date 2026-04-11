@@ -34,7 +34,7 @@ import {
   bulkUnpublishAction,
   bulkDeleteAction,
   bulkAssignCategoryAction,
-} from "@/app/products/actions";
+} from "@/app/(admin)/products/actions";
 
 export interface ProductsListProps {
   products: AdminProduct[];

@@ -8,7 +8,7 @@ import type { Store } from "@/lib/api/platform-api";
 import {
   createNewStore,
   switchToStore,
-} from "@/app/settings/stores/actions";
+} from "@/app/(admin)/settings/stores/actions";
 
 interface StoresListProps {
   stores: Store[];

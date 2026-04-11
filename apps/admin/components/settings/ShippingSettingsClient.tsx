@@ -13,7 +13,7 @@ import type {
 } from "@/lib/api/settings-api";
 import { ProviderCard } from "./ProviderCard";
 import { ShippingConfigForm } from "./ShippingConfigForm";
-import { removeShippingConfig } from "@/app/settings/shipping/actions";
+import { removeShippingConfig } from "@/app/(admin)/settings/shipping/actions";
 
 interface ShippingSettingsClientProps {
   supported: SupportedProviders;

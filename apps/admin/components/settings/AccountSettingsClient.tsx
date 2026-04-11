@@ -11,7 +11,7 @@ import {
   toggleMFA,
   revokeSessionAction,
   deleteAccountAction,
-} from "@/app/settings/actions";
+} from "@/app/(admin)/settings/actions";
 
 interface AccountSettingsClientProps {
   profile: AccountProfile | null;

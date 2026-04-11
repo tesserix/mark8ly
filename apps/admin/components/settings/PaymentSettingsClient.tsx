@@ -21,7 +21,7 @@ import { TaxJarConfigForm } from "./TaxJarConfigForm";
 import {
   removePaymentConfig,
   testPayment,
-} from "@/app/settings/payments/actions";
+} from "@/app/(admin)/settings/payments/actions";
 
 interface PaymentSettingsClientProps {
   supported: SupportedProviders;

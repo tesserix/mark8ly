@@ -23,7 +23,7 @@ import {
   changeMemberRole,
   inviteTeammate,
   revokeInvite,
-} from "@/app/settings/team/actions";
+} from "@/app/(admin)/settings/team/actions";
 
 interface TeamSettingsProps {
   members: TeamMember[];

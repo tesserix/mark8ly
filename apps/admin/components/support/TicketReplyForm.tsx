@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { replyToTicketAction } from "@/app/support/actions";
+import { replyToTicketAction } from "@/app/(admin)/support/actions";
 
 interface TicketReplyFormProps {
   ticketId: string;

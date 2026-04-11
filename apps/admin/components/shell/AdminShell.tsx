@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -68,6 +68,13 @@ interface AdminShellProps {
 interface NavLeaf {
   label: string;
   href: string;
+  /**
+   * Optional group label for sections with many items. Consecutive leaves
+   * sharing a group render under a single eyebrow header — used by Settings
+   * to break 10+ items into 4 logical clusters (STORE / SELLING / TEAM & ACCESS
+   * / ACCOUNT). Leaves without a group render ungrouped.
+   */
+  group?: string;
 }
 
 interface NavSection {
@@ -122,18 +129,16 @@ const navigation: NavSection[] = [
     label: "Settings",
     icon: Settings,
     children: [
-      { label: "Store Settings", href: "/settings/general" },
-      { label: "Storefront", href: "/settings/storefront" },
-      { label: "Stores", href: "/settings/stores" },
-      { label: "Team", href: "/settings/team" },
-      { label: "Payments", href: "/settings/payments" },
-      { label: "Shipping", href: "/settings/shipping" },
-      { label: "Tax", href: "/settings/tax" },
-      { label: "Domains", href: "/settings/domains" },
-      { label: "Subscription", href: "/settings/subscription" },
-      { label: "Account", href: "/settings/account" },
-      { label: "Audit Logs", href: "/settings/audit-logs" },
-      { label: "Notifications", href: "/settings/notifications" },
+      { group: "Store", label: "Stores", href: "/settings/stores" },
+      { group: "Store", label: "Themes", href: "/settings/themes" },
+      { group: "Store", label: "Domains", href: "/settings/domains" },
+      { group: "Selling", label: "Payments", href: "/settings/payments" },
+      { group: "Selling", label: "Shipping", href: "/settings/shipping" },
+      { group: "Team & access", label: "Team", href: "/settings/team" },
+      { group: "Team & access", label: "Audit Logs", href: "/settings/audit-logs" },
+      { group: "Account", label: "Account", href: "/settings/account" },
+      { group: "Account", label: "Notifications", href: "/settings/notifications" },
+      { group: "Account", label: "Subscription", href: "/settings/subscription" },
     ],
   },
   {
@@ -364,7 +369,10 @@ function NavSectionItem({
             {section.label}
           </DropdownMenuLabel>
           <DropdownMenuSeparator className="mx-1 mb-1 bg-border-subtle" />
-          {section.children?.map((child) => {
+          {section.children?.map((child, idx) => {
+            const prev = idx > 0 ? section.children?.[idx - 1] : undefined;
+            const showGroupHeader =
+              !!child.group && child.group !== prev?.group;
             const active = isChildActive(
               pathname,
               section.key,
@@ -372,17 +380,26 @@ function NavSectionItem({
               child,
             );
             return (
-              <DropdownMenuItem
-                key={`${section.key}-${child.label}`}
-                asChild
-                className={
-                  active
-                    ? "bg-primary text-primary-foreground focus:bg-primary focus:text-primary-foreground"
-                    : "text-foreground focus:bg-paper-100 focus:text-foreground"
-                }
-              >
-                <Link href={child.href}>{child.label}</Link>
-              </DropdownMenuItem>
+              <Fragment key={`${section.key}-${child.label}`}>
+                {showGroupHeader && idx > 0 && (
+                  <DropdownMenuSeparator className="mx-1 my-1 bg-border-subtle" />
+                )}
+                {showGroupHeader && (
+                  <DropdownMenuLabel className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-[0.14em] text-foreground-tertiary">
+                    {child.group}
+                  </DropdownMenuLabel>
+                )}
+                <DropdownMenuItem
+                  asChild
+                  className={
+                    active
+                      ? "bg-primary text-primary-foreground focus:bg-primary focus:text-primary-foreground"
+                      : "text-foreground focus:bg-paper-100 focus:text-foreground"
+                  }
+                >
+                  <Link href={child.href}>{child.label}</Link>
+                </DropdownMenuItem>
+              </Fragment>
             );
           })}
         </DropdownMenuContent>
@@ -409,21 +426,39 @@ function NavSectionItem({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <SidebarMenuSub className="ml-5 border-l border-border-subtle pl-3">
-            {section.children?.map((child) => (
-              <SidebarMenuSubItem key={`${section.key}-${child.label}`}>
-                <SidebarMenuSubButton
-                  asChild
-                  isActive={isChildActive(
-                    pathname,
-                    section.key,
-                    section.children ?? [],
-                    child,
+            {section.children?.map((child, idx) => {
+              const prev = idx > 0 ? section.children?.[idx - 1] : undefined;
+              const showGroupHeader =
+                !!child.group && child.group !== prev?.group;
+              return (
+                <Fragment key={`${section.key}-${child.label}`}>
+                  {showGroupHeader && (
+                    <li
+                      role="presentation"
+                      aria-hidden="true"
+                      className={`px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground-tertiary ${
+                        idx === 0 ? "pt-1" : "pt-3"
+                      }`}
+                    >
+                      {child.group}
+                    </li>
                   )}
-                >
-                  <Link href={child.href}>{child.label}</Link>
-                </SidebarMenuSubButton>
-              </SidebarMenuSubItem>
-            ))}
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton
+                      asChild
+                      isActive={isChildActive(
+                        pathname,
+                        section.key,
+                        section.children ?? [],
+                        child,
+                      )}
+                    >
+                      <Link href={child.href}>{child.label}</Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                </Fragment>
+              );
+            })}
           </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuItem>
@@ -485,7 +520,7 @@ const canonicalChildLabelBySection: Record<string, string> = {
   catalog: "Products",
   customers: "All Customers",
   marketing: "Campaigns",
-  settings: "Store Settings",
+  settings: "Stores",
   support: "Tickets",
 };
 
@@ -508,11 +543,20 @@ function getPageTitle(pathname: string | null): {
   if (pathname.startsWith("/customers")) {
     return { eyebrow: "Relationships", title: "Customers" };
   }
-  if (pathname.startsWith("/settings/general")) {
-    return { eyebrow: "Store Setup", title: "General Settings" };
+  if (pathname.startsWith("/settings/stores")) {
+    return { eyebrow: "Store Setup", title: "Stores" };
   }
-  if (pathname.startsWith("/settings/storefront")) {
-    return { eyebrow: "Storefront", title: "Theme & Layout" };
+  if (pathname.startsWith("/settings/themes")) {
+    return { eyebrow: "Themes", title: "Themes & Branding" };
+  }
+  if (pathname.startsWith("/settings/payments")) {
+    return { eyebrow: "Selling", title: "Payments & Tax" };
+  }
+  if (pathname.startsWith("/settings/shipping")) {
+    return { eyebrow: "Selling", title: "Shipping" };
+  }
+  if (pathname.startsWith("/settings/team")) {
+    return { eyebrow: "Team & access", title: "Team" };
   }
   if (pathname.startsWith("/settings/account")) {
     return { eyebrow: "Settings", title: "Account" };

@@ -18,13 +18,13 @@ interface ChecklistItem {
 }
 
 const items: ChecklistItem[] = [
-  { key: "has_store_settings", label: "Configure store settings", href: "/settings/general", phase: "Store Setup" },
+  { key: "has_store", label: "Configure store settings", href: "/settings/stores", phase: "Store Setup" },
   { key: "has_product", label: "Add your first product", href: "/products", phase: "Store Setup" },
-  { key: "has_storefront", label: "Customize your storefront", href: "/settings/storefront", phase: "Store Setup" },
-  { key: "has_payment", label: "Set up a payment gateway", href: "/settings/payments", phase: "Payments & Shipping" },
-  { key: "has_shipping", label: "Configure shipping rates", href: "/settings/shipping", phase: "Payments & Shipping" },
-  { key: "has_tax", label: "Set up tax rules", href: "/settings/tax", phase: "Payments & Shipping" },
-  { key: "has_domain", label: "Connect a custom domain", href: "/settings/domains", phase: "Launch" },
+  { key: "has_storefront_theme", label: "Customize your theme", href: "/settings/themes", phase: "Store Setup" },
+  { key: "has_payment_provider", label: "Set up a payment gateway", href: "/settings/payments", phase: "Payments & Shipping" },
+  { key: "has_shipping_carrier", label: "Configure shipping rates", href: "/settings/shipping", phase: "Payments & Shipping" },
+  { key: "has_tax_configured", label: "Set up tax rules", href: "/settings/payments", phase: "Payments & Shipping" },
+  { key: "has_custom_domain", label: "Connect a custom domain", href: "/settings/domains", phase: "Launch" },
   { key: "has_test_order", label: "Place a test order", href: "/orders", phase: "Launch" },
 ];
 

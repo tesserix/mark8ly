@@ -38,6 +38,7 @@ export async function saveTaxJarConfig(
     return { ok: false, code: result.error.code, message: result.error.message };
   }
 
-  revalidatePath("/settings/tax");
+  // Tax now lives as a section inside the payments page.
+  revalidatePath("/settings/payments");
   return { ok: true };
 }

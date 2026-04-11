@@ -38,9 +38,9 @@ export default async function StorefrontSettingsPage() {
     >
       <div className="mx-auto w-full max-w-6xl space-y-12">
         <header className="space-y-3">
-          <p className="eyebrow">Storefront</p>
+          <p className="eyebrow">Themes</p>
           <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
-            Branding &amp; theme
+            Themes &amp; branding
           </h1>
           <p className="max-w-3xl text-base leading-7 text-foreground-secondary">
             Define your store identity, color palette, typography, layout, and

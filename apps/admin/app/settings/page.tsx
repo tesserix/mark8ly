@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 
-// /settings is an index route — redirect to the only real settings
-// page we've shipped so far. When a second settings section lands
-// this becomes a layout with a sidebar of sub-pages.
+// /settings is an index route — land on Stores (the first item in the
+// grouped sidebar and where store identity lives after the general+stores
+// merge).
 export default function SettingsPage() {
-  redirect("/settings/general");
+  redirect("/settings/stores");
 }

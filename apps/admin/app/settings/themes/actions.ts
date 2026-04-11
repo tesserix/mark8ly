@@ -77,7 +77,7 @@ export async function updateStorefrontTheme(
     };
   }
 
-  revalidatePath("/settings/storefront");
+  revalidatePath("/settings/themes");
   revalidatePath("/", "layout");
   return { ok: true };
 }
@@ -140,6 +140,6 @@ export async function updateBrandingAction(
     };
   }
 
-  revalidatePath("/settings/storefront");
+  revalidatePath("/settings/themes");
   return { ok: true };
 }

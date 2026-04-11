@@ -82,7 +82,7 @@ export function StoresList({
         setError(switchRes.message);
         return;
       }
-      window.location.href = "/settings/general";
+      window.location.href = "/settings/stores";
     });
   }
 

@@ -103,10 +103,10 @@ export async function updateGeneralSettings(
   }
   void uid;
 
-  // Server components on /settings/general and anywhere else that
-  // renders tenantName (AdminShell top-bar) need to pick up the new
-  // value on next navigation.
-  revalidatePath("/settings/general");
+  // Server components on /settings/stores (the merged general + stores
+  // page) and anywhere else that renders tenantName (AdminShell top-bar)
+  // need to pick up the new value on next navigation.
+  revalidatePath("/settings/stores");
   revalidatePath("/", "layout");
 
   return { ok: true };

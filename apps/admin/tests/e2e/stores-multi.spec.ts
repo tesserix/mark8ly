@@ -5,6 +5,10 @@ import { ADMIN_URL, completeOnboarding, uniqueEmail } from "./helpers";
 /**
  * Phase Q.2 — multi-store lifecycle.
  *
+ * Post-settings-IA-restructure the general + stores pages were merged
+ * into a single `/settings/stores` page: the list lives at the top and
+ * the current store's identity form is the section below it.
+ *
  * The happy path:
  *
  *   1. Onboard a tenant. Default store is auto-created during
@@ -15,14 +19,14 @@ import { ADMIN_URL, completeOnboarding, uniqueEmail } from "./helpers";
  *   3. Click "Add store", fill a unique slug + name + US/USD, submit.
  *      The action creates the row, writes the FGA parent tuple,
  *      auto-switches the session to the new store, and redirects
- *      to /settings/general.
- *   4. /settings/general now shows the NEW store's name in the
- *      editable field — proving switch-store flowed the cookie
+ *      back to /settings/stores.
+ *   4. /settings/stores now shows the NEW store's name in the
+ *      editable identity form — proving switch-store flowed the cookie
  *      through middleware and server components.
- *   5. Go back to /settings/stores; both stores are listed and the
- *      second one is badged "Current".
- *   6. Click "Switch" on the original store row; page reloads and
- *      /settings/general re-renders showing the original name.
+ *   5. Both stores are listed in the same page; the second one is
+ *      badged "Current".
+ *   6. Click "Switch" on the original store row; page reloads and the
+ *      identity form re-renders showing the original name.
  */
 test("owner creates a second store, switches, and edits each separately", async ({
   browser,
@@ -57,14 +61,13 @@ test("owner creates a second store, switches, and edits each separately", async 
   // Country + currency + timezone default to US/USD/America/New_York
   await page.getByRole("button", { name: /create store/i }).click();
 
-  // Auto-redirects to /settings/general after switch-store.
-  await expect(page).toHaveURL(/\/settings\/general/, { timeout: 15_000 });
+  // Auto-redirects back to /settings/stores after switch-store.
+  await expect(page).toHaveURL(/\/settings\/stores/, { timeout: 15_000 });
   await expect(page.getByLabel("Store name")).toHaveValue(
     `${owner.businessName} Outlet`,
   );
 
   // ── 4. Verify both stores show on the index + switching works ─
-  await page.goto(`${ADMIN_URL}/settings/stores`);
   const rows = page.getByTestId("store-row");
   await expect(rows).toHaveCount(2);
 

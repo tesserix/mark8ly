@@ -90,7 +90,9 @@ test("viewer sees read-only settings page after role change", async ({
   });
 
   // ── 4. Navigate to settings — now read-only ────────────────────
-  await page.goto(`${ADMIN_URL}/settings/general`);
+  // `/settings/general` merged into `/settings/stores` during the
+  // IA restructure; the store identity form lives on the stores page.
+  await page.goto(`${ADMIN_URL}/settings/stores`);
   await expect(page.getByTestId("role-badge")).toHaveText(/viewer/i);
   await expect(page.getByText(/read-only:/i)).toBeVisible();
 

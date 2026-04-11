@@ -115,7 +115,9 @@ test("owner invites viewer → invitee accepts via password → lands in read-on
   });
 
   // ── 8. Settings page shows the read-only banner for the viewer ──
-  await inviteePage.goto(`${ADMIN_URL}/settings/general`);
+  // `/settings/general` was merged into `/settings/stores` during the
+  // IA restructure; the old route redirects.
+  await inviteePage.goto(`${ADMIN_URL}/settings/stores`);
   await expect(inviteePage.getByTestId("role-badge")).toHaveText(/viewer/i);
   await expect(inviteePage.getByText(/read-only:/i)).toBeVisible();
   await expect(inviteePage.getByLabel("Store name")).toBeDisabled();

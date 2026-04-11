@@ -3,27 +3,24 @@ import { expect, test } from "@playwright/test";
 import { ADMIN_URL, completeOnboarding } from "./helpers";
 
 /**
- * Phase N — Tenant settings (general) page.
+ * Phase N — Tenant settings (stores) page.
+ *
+ * Post-settings-IA-restructure this page merged `/settings/general` into
+ * `/settings/stores`: the multi-store list lives at the top and the
+ * current store's identity form is the section below it. Old route
+ * `/settings/general` now redirects to `/settings/stores`.
  *
  * Exercises the full round-trip:
  *
- *   1. Onboard a fresh merchant (helpers.completeOnboarding). This
- *      creates a real tenant row with real name/slug/country/currency/
- *      timezone/owner_email — the same data we expect the settings page
- *      to surface.
- *   2. Sign in to admin via email + password, land on /dashboard.
- *   3. Navigate to /settings/general. Assert every onboarding field is
+ *   1. Onboard a fresh merchant (helpers.completeOnboarding).
+ *   2. Sign in to admin, land on /dashboard.
+ *   3. Navigate to /settings/stores. Assert every onboarding field is
  *      visible on the page — this is the "onboarding details flow
  *      through to admin" contract.
  *   4. Edit the store name, save, assert the success banner.
- *   5. Reload the page and assert the new name persists, proving the
- *      PATCH hit the database and not just component state.
- *
- * If this regresses we've broken either the PATCH endpoint, the
- * server action's session→path-param wiring, or the tenant fetch in
- * getServerSessionContext.
+ *   5. Reload the page and assert the new name persists.
  */
-test("settings/general surfaces onboarding data and saves a name edit", async ({
+test("settings/stores surfaces onboarding data and saves a name edit", async ({
   browser,
   request,
 }) => {
@@ -44,9 +41,9 @@ test("settings/general surfaces onboarding data and saves a name edit", async ({
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 
   // ── 3. Settings page surfaces every onboarding field ───────────────
-  await page.goto(`${ADMIN_URL}/settings/general`);
+  await page.goto(`${ADMIN_URL}/settings/stores`);
   await expect(
-    page.getByRole("heading", { name: /general settings/i }),
+    page.getByRole("heading", { name: /^stores$/i, level: 1 }),
   ).toBeVisible();
 
   const nameInput = page.getByLabel("Store name");
@@ -81,7 +78,7 @@ test("settings/general surfaces onboarding data and saves a name edit", async ({
   await ctx.close();
 });
 
-test("settings/general rejects an empty store name", async ({
+test("settings/stores rejects an empty store name", async ({
   browser,
   request,
 }) => {
@@ -99,7 +96,7 @@ test("settings/general rejects an empty store name", async ({
   await page.getByRole("button", { name: /^sign in$/i }).click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 
-  await page.goto(`${ADMIN_URL}/settings/general`);
+  await page.goto(`${ADMIN_URL}/settings/stores`);
   const nameInput = page.getByLabel("Store name");
   await nameInput.fill("   ");
 

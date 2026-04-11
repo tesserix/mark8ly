@@ -24,51 +24,59 @@ const NAV_LINKS = [
 export function StorefrontNav({ storeName }: StorefrontNavProps) {
   const pathname = usePathname();
 
+  // Self-contained layout: the nav bar now sets its own max-width
+  // and gutters so pages like /cart, /account, and /gift-cards don't
+  // need to wrap it in a matching container to avoid overflow. The
+  // home page already wraps it in a `max-w-6xl` div — nesting a
+  // second max-width here is a no-op when the outer container is
+  // tighter, so this change is backwards compatible.
   return (
     <nav
       aria-label="Store"
-      className="mb-10 flex items-center justify-between gap-4 border-b border-[color:var(--ink-900)] border-opacity-10 pb-4"
+      className="mb-10 w-full border-b border-[color:var(--ink-900)] border-opacity-10"
     >
-      <Link
-        href="/"
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-      >
-        {storeName ?? "Store"}
-      </Link>
-      <ul className="flex items-center gap-6 text-sm">
-        {NAV_LINKS.map((link) => {
-          const isActive = link.exact
-            ? pathname === link.href
-            : pathname.startsWith(link.href);
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4 sm:px-8">
+        <Link
+          href="/"
+          className="truncate font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        >
+          {storeName ?? "Store"}
+        </Link>
+        <ul className="flex items-center gap-6 text-sm">
+          {NAV_LINKS.map((link) => {
+            const isActive = link.exact
+              ? pathname === link.href
+              : pathname.startsWith(link.href);
 
-          return (
-            <li key={link.href}>
-              <Link
-                href={link.href}
-                aria-current={isActive ? "page" : undefined}
-                className="min-h-[44px] flex items-center text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-              >
-                {link.label}
-              </Link>
-            </li>
-          );
-        })}
-        <li>
-          <Link
-            href="/cart"
-            aria-current={pathname === "/cart" ? "page" : undefined}
-            className="min-h-[44px] inline-flex items-center gap-1.5 text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-          >
-            Cart
-            <Suspense fallback={null}>
-              <CartCountBadge />
-            </Suspense>
-          </Link>
-        </li>
-        <li className="min-h-[44px] flex items-center">
-          <CustomerAccountMenu />
-        </li>
-      </ul>
+            return (
+              <li key={link.href}>
+                <Link
+                  href={link.href}
+                  aria-current={isActive ? "page" : undefined}
+                  className="min-h-[44px] flex items-center text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                >
+                  {link.label}
+                </Link>
+              </li>
+            );
+          })}
+          <li>
+            <Link
+              href="/cart"
+              aria-current={pathname === "/cart" ? "page" : undefined}
+              className="min-h-[44px] inline-flex items-center gap-1.5 text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              Cart
+              <Suspense fallback={null}>
+                <CartCountBadge />
+              </Suspense>
+            </Link>
+          </li>
+          <li className="min-h-[44px] flex items-center">
+            <CustomerAccountMenu />
+          </li>
+        </ul>
+      </div>
     </nav>
   );
 }

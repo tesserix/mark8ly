@@ -9,13 +9,15 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
+import { StorefrontNav } from "@/components/StorefrontNav";
 
 export default function CartPage() {
   const { items, updateQty, remove, subtotal, count, clear } = useCart();
 
   return (
-    <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
-      <div className="mx-auto max-w-3xl px-6 py-12 sm:px-8">
+    <div className="min-h-screen bg-[color:var(--paper-200)]">
+      <StorefrontNav />
+      <main id="main" className="mx-auto max-w-3xl px-6 py-12 sm:px-8">
         <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
           Cart
         </h1>
@@ -68,8 +70,8 @@ export default function CartPage() {
             </footer>
           </>
         )}
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
 

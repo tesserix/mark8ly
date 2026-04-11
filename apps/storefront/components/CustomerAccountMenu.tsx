@@ -116,6 +116,13 @@ export function CustomerAccountMenu() {
   }, [open, focusItem]);
 
   if (!isAuthenticated) {
+    // `lib/auth.ts` returns "#" as the loginUrl when `AUTH_BFF_URL` is
+    // misconfigured for production. Rendering a dead anchor would give
+    // customers a Sign in link that silently does nothing — hide it
+    // instead so the nav at least looks intentional.
+    if (!loginUrl || loginUrl === "#") {
+      return null;
+    }
     return (
       <a
         href={loginUrl}

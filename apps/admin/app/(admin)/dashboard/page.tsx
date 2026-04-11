@@ -14,6 +14,19 @@ import { LowStockAlerts } from "@/components/dashboard/LowStockAlerts";
  * Dashboard — data-driven merchant home with stats, orders, products,
  * setup checklist, and low-stock alerts.
  */
+
+// Pull a friendly first name out of an email local part. Best-effort:
+// "mahesh.sangawar@gmail.com" → "Mahesh", "alex+work@foo.com" → "Alex".
+// Returns null when the email looks weird so the greeting can drop the
+// personalization instead of saying "Welcome back, <garbage>".
+function firstNameFromEmail(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const local = email.split("@")[0] ?? "";
+  if (!local) return null;
+  const cleaned = local.split(/[+.\-_]/)[0] ?? "";
+  if (!cleaned || !/^[a-z]+$/i.test(cleaned)) return null;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
+}
 export default async function DashboardPage() {
   const {
     tenantName,
@@ -29,9 +42,11 @@ export default async function DashboardPage() {
     ? await fetchDashboard(currentStore.id, { userId, tenantId })
     : null;
 
+  const firstName = firstNameFromEmail(email);
+
   return (
           <AdminPage
-        eyebrow={`Welcome back${email ? `, ${email}` : ""}`}
+        eyebrow={firstName ? `Welcome back, ${firstName}` : "Welcome back"}
         title="Dashboard"
       >
         {!currentStore ? (

@@ -14,15 +14,28 @@ interface UserMenuProps {
   email?: string;
 }
 
+// Pull a short display name out of the email's local part so the
+// header pill shows "Mahesh" instead of a truncated "mahesh.sang...".
+// Falls back to the raw local part when the local doesn't look like a
+// plain name.
+function displayNameFromEmail(email: string | undefined): string {
+  if (!email) return "Account";
+  const local = email.split("@")[0] ?? "";
+  if (!local) return email;
+  const first = local.split(/[+.\-_]/)[0] ?? "";
+  if (!first || !/^[a-z]+$/i.test(first)) return local;
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
 /**
- * Top-right user menu. Shows the merchant's email (from the session
- * headers forwarded by middleware) and exposes the logout flow and a
- * shortcut into settings. Account / profile editing pages are stubs
- * for now — they link to the /settings placeholder.
+ * Top-right user menu. Shows a short display name derived from the
+ * session email (from the middleware-forwarded headers) and exposes
+ * the logout flow and a shortcut into settings. The full email is
+ * still visible inside the dropdown label.
  */
 export function UserMenu({ email }: UserMenuProps) {
   const initial = email?.trim().charAt(0).toUpperCase() ?? "M";
-  const display = email && email.length > 0 ? email : "Account";
+  const display = displayNameFromEmail(email);
 
   return (
     <DropdownMenu>

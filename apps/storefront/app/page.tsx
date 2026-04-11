@@ -151,6 +151,40 @@ function StoreComingSoon({ store }: { store: PublicStore }) {
   );
 }
 
+// Format an ISO-4217 currency code as a short human-readable label:
+// "INR" → "Indian Rupee (INR)", "USD" → "US Dollar (USD)", with a
+// graceful fall-through to the raw code when Intl doesn't know it.
+function formatCurrencyLabel(code: string): string {
+  if (!code) return "";
+  try {
+    const display = new Intl.DisplayNames(["en"], {
+      type: "currency",
+    }).of(code.toUpperCase());
+    if (display && display.toUpperCase() !== code.toUpperCase()) {
+      return `${display} (${code.toUpperCase()})`;
+    }
+  } catch {
+    // fall through
+  }
+  return code.toUpperCase();
+}
+
+// Format an ISO-3166-alpha-2 country code as a country name: "IN" →
+// "India", "US" → "United States". Falls through to the raw code when
+// Intl doesn't have a mapping.
+function formatCountryLabel(code: string): string {
+  if (!code) return "";
+  try {
+    const display = new Intl.DisplayNames(["en"], {
+      type: "region",
+    }).of(code.toUpperCase());
+    if (display) return display;
+  } catch {
+    // fall through
+  }
+  return code.toUpperCase();
+}
+
 function TopBar({
   store,
   theme,
@@ -168,9 +202,20 @@ function TopBar({
           {store.slug}.mark8ly.com
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <MetaChip label="Currency" value={store.currency_code} theme={theme} />
-          <MetaChip label="Country" value={store.country_code} theme={theme} />
-          <MetaChip label="Timezone" value={store.timezone} theme={theme} />
+          <MetaChip
+            label="Currency"
+            value={formatCurrencyLabel(store.currency_code)}
+            theme={theme}
+          />
+          <MetaChip
+            label="Country"
+            value={formatCountryLabel(store.country_code)}
+            theme={theme}
+          />
+          {/* Timezone chip removed: timezone is a system configuration,
+              not customer-facing information, and a stale default
+              (e.g. "Australia/Sydney" for an India store) misleads
+              customers about the store's locality. */}
         </div>
       </div>
       <div

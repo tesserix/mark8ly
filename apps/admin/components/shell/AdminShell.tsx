@@ -207,12 +207,12 @@ function AdminShellFrame({
               m
             </span>
           </Link>
-          {tenantName && (
-            <p className="mt-2 truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary group-data-[collapsible=icon]:hidden">
-              {storeLabel}
-            </p>
-          )}
-          {memberships && memberships.length > 1 && currentTenantId && (
+          {/* Show the TenantSwitcher when the caller belongs to more
+              than one store; otherwise fall back to a plain uppercase
+              label. Never render both — the switcher already shows the
+              current store name, and stacking the label above it just
+              repeats the same text twice. */}
+          {memberships && memberships.length > 1 && currentTenantId ? (
             <div className="mt-4 group-data-[collapsible=icon]:hidden">
               <TenantSwitcher
                 memberships={memberships}
@@ -220,6 +220,12 @@ function AdminShellFrame({
                 label="Switch store"
               />
             </div>
+          ) : (
+            tenantName && (
+              <p className="mt-2 truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary group-data-[collapsible=icon]:hidden">
+                {storeLabel}
+              </p>
+            )
           )}
         </SidebarHeader>
 

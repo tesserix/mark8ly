@@ -14,6 +14,8 @@ import { revokeSession } from "@/lib/auth/session";
  * session will expire naturally on its original TTL.
  */
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "m8_session";
+const SESSION_COOKIE_DOMAIN =
+  process.env.SESSION_COOKIE_DOMAIN ?? ".mark8ly.com";
 const MARKETING_URL =
   process.env.NEXT_PUBLIC_MARKETING_URL ?? "http://localhost:4201";
 
@@ -21,6 +23,17 @@ export async function GET(req: NextRequest) {
   await revokeSession(req.headers.get("cookie"));
 
   const response = NextResponse.redirect(MARKETING_URL);
-  response.cookies.delete(SESSION_COOKIE_NAME);
+  // Must match the Domain/Path used when setting the cookie or the
+  // browser creates a duplicate cookie instead of deleting.
+  response.cookies.set({
+    name: SESSION_COOKIE_NAME,
+    value: "",
+    domain: SESSION_COOKIE_DOMAIN,
+    path: "/",
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 0,
+  });
   return response;
 }

@@ -14,6 +14,9 @@
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 
+const MARKETPLACE_INTERNAL_AUTH =
+  process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
+
 /** Session headers as they arrive from Next middleware. */
 export interface SessionHeaders {
   userId: string;
@@ -271,12 +274,28 @@ export interface MutationError {
 export type MutationResult<T> = { ok: true; data: T } | { ok: false; error: MutationError };
 
 function commonHeaders(session: SessionHeaders): HeadersInit {
-  return {
+  const headers: Record<string, string> = {
     "X-User-Id": session.userId,
     "X-Tenant-Id": session.tenantId,
     Accept: "application/json",
     "Content-Type": "application/json",
   };
+  if (MARKETPLACE_INTERNAL_AUTH) {
+    headers["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
+  }
+  return headers;
+}
+
+function readHeaders(session: SessionHeaders): HeadersInit {
+  const headers: Record<string, string> = {
+    "X-User-Id": session.userId,
+    "X-Tenant-Id": session.tenantId,
+    Accept: "application/json",
+  };
+  if (MARKETPLACE_INTERNAL_AUTH) {
+    headers["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
+  }
+  return headers;
 }
 
 async function parseMutationError(res: Response): Promise<MutationError> {

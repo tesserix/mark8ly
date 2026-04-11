@@ -3,14 +3,21 @@ import {
   canEditSettings,
   getServerSessionContext,
 } from "@/lib/auth/serverSession";
-import { listPaymentConfigs } from "@/lib/api/settings-api";
+import {
+  getSupportedProviders,
+  getTaxConfig,
+  listPaymentConfigs,
+} from "@/lib/api/settings-api";
 import { PaymentSettingsClient } from "@/components/settings/PaymentSettingsClient";
 
 /**
- * /settings/payments — payment gateway configuration.
+ * /settings/payments — payment gateway + tax configuration.
  *
- * Server component fetches configs from marketplace-api and renders
- * the interactive client component for inline editing.
+ * Fetches three things in parallel:
+ *   1. supported-providers — the country-allowed payment catalogue, so the
+ *      UI can render one card per provider instead of a dead-end empty state.
+ *   2. existing configs — to hydrate the cards that are already saved.
+ *   3. tax config — folded into this page as a section below the providers.
  */
 export default async function PaymentSettingsPage() {
   const {
@@ -37,13 +44,14 @@ export default async function PaymentSettingsPage() {
         <header className="space-y-3">
           <p className="eyebrow">Store setup</p>
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
-            Payment settings
+            Payments &amp; tax
           </h1>
           <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
             Configure payment gateways for your store
             {currentStore ? ` (${currentStore.country_code})` : ""}.
-            Each provider needs API credentials and must be activated before
-            customers can check out.
+            Providers are determined by your store&apos;s country. Each one
+            needs API credentials and must be activated before customers can
+            check out.
           </p>
           {!editable && (
             <p className="text-sm text-warning">
@@ -81,7 +89,30 @@ async function PaymentSettingsContent({
   tenantId: string;
   editable: boolean;
 }) {
-  const configs = await listPaymentConfigs(storeId, { userId, tenantId });
+  const session = { userId, tenantId };
+  const [supported, configs, taxConfig] = await Promise.all([
+    getSupportedProviders(storeId, session),
+    listPaymentConfigs(storeId, session),
+    getTaxConfig(storeId, session),
+  ]);
 
-  return <PaymentSettingsClient configs={configs} editable={editable} />;
+  if (!supported) {
+    return (
+      <div className="rounded-[6px] bg-white px-6 py-10 text-center">
+        <p className="text-sm text-[color:var(--ink-900)]/50">
+          Unable to load supported providers for this store. Please try again
+          later.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <PaymentSettingsClient
+      supported={supported}
+      configs={configs}
+      editable={editable}
+      taxConfig={taxConfig}
+    />
+  );
 }

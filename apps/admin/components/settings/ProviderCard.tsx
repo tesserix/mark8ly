@@ -16,8 +16,15 @@ interface ProviderCardProps {
   isActive: boolean;
   maskedKey: string;
   mode: "test" | "live" | string;
-  onConfigure: () => Promise<void> | void;
-  onRemove: () => Promise<void> | void;
+  /**
+   * Whether this provider currently has a stored configuration. When false,
+   * the card hides the Remove button and switches the Configure action label
+   * to "Add credentials" — the empty-state picker behaviour.
+   */
+  configured?: boolean;
+  onConfigure?: () => Promise<void> | void;
+  /** When absent, the Remove button is hidden (nothing to remove). */
+  onRemove?: () => Promise<void> | void;
   onTest?: () => Promise<{ success: boolean; error?: string }>;
   /** The inline configuration form rendered when expanded. */
   children?: ReactNode;
@@ -32,6 +39,7 @@ export function ProviderCard({
   isActive,
   maskedKey,
   mode,
+  configured = true,
   onConfigure,
   onRemove,
   onTest,
@@ -51,9 +59,11 @@ export function ProviderCard({
     setExpanded((prev) => !prev);
     setConfirmRemove(false);
     setTestResult(null);
+    void onConfigure?.();
   }
 
   function handleRemove() {
+    if (!onRemove) return;
     if (!confirmRemove) {
       setConfirmRemove(true);
       // Focus the button after React re-renders with confirmation state
@@ -75,6 +85,12 @@ export function ProviderCard({
     });
   }
 
+  const configureLabel = expanded
+    ? "Close"
+    : configured
+      ? "Edit"
+      : "Add credentials";
+
   return (
     <article className="rounded-[6px] bg-white">
       {/* Header row */}
@@ -84,10 +100,22 @@ export function ProviderCard({
             <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-[color:var(--ink-900)]">
               {formatProviderName(providerName)}
             </h3>
-            <StatusPill active={isActive} />
-            <ModeBadge mode={mode} />
+            {configured ? (
+              <>
+                <StatusPill active={isActive} />
+                <ModeBadge mode={mode} />
+              </>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--ink-900)]/5 px-2.5 py-0.5 text-xs font-medium text-[color:var(--ink-900)]/50">
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-[color:var(--ink-900)]/30"
+                  aria-hidden="true"
+                />
+                Not configured
+              </span>
+            )}
           </div>
-          {maskedKey && (
+          {configured && maskedKey && (
             <p className="text-sm text-[color:var(--ink-900)]/60 font-mono">
               {maskedKey}
             </p>
@@ -95,7 +123,7 @@ export function ProviderCard({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {onTest && (
+          {onTest && configured && (
             <button
               type="button"
               onClick={handleTest}
@@ -110,21 +138,23 @@ export function ProviderCard({
             onClick={handleConfigure}
             className="rounded-[6px] bg-[color:var(--ink-900)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
-            {expanded ? "Close" : "Configure"}
+            {configureLabel}
           </button>
-          <button
-            ref={confirmBtnRef}
-            type="button"
-            onClick={handleRemove}
-            disabled={removing}
-            className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-          >
-            {removing
-              ? "Removing..."
-              : confirmRemove
-                ? "Confirm remove"
-                : "Remove"}
-          </button>
+          {onRemove && configured && (
+            <button
+              ref={confirmBtnRef}
+              type="button"
+              onClick={handleRemove}
+              disabled={removing}
+              className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              {removing
+                ? "Removing..."
+                : confirmRemove
+                  ? "Confirm remove"
+                  : "Remove"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -227,20 +257,20 @@ function ModeBadge({ mode }: { mode: string }) {
 // ─────────────────────────────────────────────────────────────────────────
 
 function formatProviderName(provider: string): string {
+  // Only the providers that appear in supported_countries seed (migration
+  // 000008) are listed — everything else the admin could theoretically send
+  // falls through to the title-case fallback. Keep in sync with the seed.
   const names: Record<string, string> = {
+    // Payments
     stripe: "Stripe",
     razorpay: "Razorpay",
     paypal: "PayPal",
-    dhl: "DHL",
-    fedex: "FedEx",
-    ups: "UPS",
-    usps: "USPS",
+    // Shipping — 3 carriers cover all 15 supported countries
     delhivery: "Delhivery",
-    shiprocket: "Shiprocket",
-    bluedart: "BlueDart",
+    shipengine: "ShipEngine",
+    ninjavan: "Ninja Van",
+    // Tax
     taxjar: "TaxJar",
-    australia_post: "Australia Post",
-    royal_mail: "Royal Mail",
   };
   return names[provider.toLowerCase()] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
 }

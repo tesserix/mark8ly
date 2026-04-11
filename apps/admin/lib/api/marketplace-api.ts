@@ -1413,11 +1413,7 @@ export async function fetchDashboard(
     `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/dashboard`,
     {
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-        Accept: "application/json",
-      },
+      headers: readHeaders(session),
     },
   );
   if (res.status === 401 || res.status === 403 || res.status === 404) {

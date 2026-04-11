@@ -31,12 +31,12 @@ echo "fga-seed: store id = $STORE_ID"
 # Phase O — Roles + RBAC.
 #
 # This JSON is the hand-encoded form of infra/openfga/model.fga. Keep
-# the two in lockstep. Four directly-assignable roles (owner/admin/
-# staff/viewer); member and can_* are derived unions. The "member"
-# relation being derived rather than directly-assignable means auth-
-# bff's CheckMembership still works (derived relations resolve
-# transitively) while preventing misuse like writing a bare
-# "user:x member tenant:y" tuple that bypasses the role hierarchy.
+# the two in lockstep. Roles are hierarchical: owner ⊇ admin ⊇ staff ⊇
+# viewer. Assigning a user as `owner` automatically satisfies Check()
+# calls for admin/staff/viewer, matching the fake client's behaviour.
+# The "member" relation is just an alias for viewer (the broadest role)
+# and is kept as its own name for backwards compatibility with callers
+# like auth-bff's CheckMembership.
 MODEL_JSON='{
   "schema_version": "1.1",
   "type_definitions": [
@@ -44,53 +44,45 @@ MODEL_JSON='{
     {
       "type": "tenant",
       "relations": {
-        "owner":  { "this": {} },
-        "admin":  { "this": {} },
-        "staff":  { "this": {} },
-        "viewer": { "this": {} },
-        "member": {
+        "owner": { "this": {} },
+        "admin": {
           "union": {
             "child": [
-              { "computedUserset": { "relation": "owner"  } },
-              { "computedUserset": { "relation": "admin"  } },
-              { "computedUserset": { "relation": "staff"  } },
-              { "computedUserset": { "relation": "viewer" } }
+              { "this": {} },
+              { "computedUserset": { "relation": "owner" } }
             ]
           }
+        },
+        "staff": {
+          "union": {
+            "child": [
+              { "this": {} },
+              { "computedUserset": { "relation": "admin" } }
+            ]
+          }
+        },
+        "viewer": {
+          "union": {
+            "child": [
+              { "this": {} },
+              { "computedUserset": { "relation": "staff" } }
+            ]
+          }
+        },
+        "member": {
+          "computedUserset": { "relation": "viewer" }
         },
         "can_view_settings": {
-          "union": {
-            "child": [
-              { "computedUserset": { "relation": "owner"  } },
-              { "computedUserset": { "relation": "admin"  } },
-              { "computedUserset": { "relation": "staff"  } },
-              { "computedUserset": { "relation": "viewer" } }
-            ]
-          }
+          "computedUserset": { "relation": "viewer" }
         },
         "can_edit_settings": {
-          "union": {
-            "child": [
-              { "computedUserset": { "relation": "owner" } },
-              { "computedUserset": { "relation": "admin" } }
-            ]
-          }
+          "computedUserset": { "relation": "admin" }
         },
         "can_invite_members": {
-          "union": {
-            "child": [
-              { "computedUserset": { "relation": "owner" } },
-              { "computedUserset": { "relation": "admin" } }
-            ]
-          }
+          "computedUserset": { "relation": "admin" }
         },
         "can_manage_stores": {
-          "union": {
-            "child": [
-              { "computedUserset": { "relation": "owner" } },
-              { "computedUserset": { "relation": "admin" } }
-            ]
-          }
+          "computedUserset": { "relation": "admin" }
         }
       },
       "metadata": {

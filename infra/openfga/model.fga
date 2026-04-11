@@ -27,17 +27,20 @@ type user
 
 type tenant
   relations
+    # Role hierarchy: owner ⊇ admin ⊇ staff ⊇ viewer.
+    # Assigning owner automatically satisfies admin/staff/viewer Check()
+    # calls, matching the hierarchy encoded in the Go fake client.
     define owner:  [user]
-    define admin:  [user]
-    define staff:  [user]
-    define viewer: [user]
+    define admin:  [user] or owner
+    define staff:  [user] or admin
+    define viewer: [user] or staff
 
-    define member: owner or admin or staff or viewer
+    define member: viewer
 
-    define can_view_settings:   owner or admin or staff or viewer
-    define can_edit_settings:   owner or admin
-    define can_invite_members:  owner or admin
-    define can_manage_stores:   owner or admin
+    define can_view_settings:   viewer
+    define can_edit_settings:   admin
+    define can_invite_members:  admin
+    define can_manage_stores:   admin
 
 # Phase Q — store type.
 #

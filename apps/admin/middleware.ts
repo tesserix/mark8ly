@@ -40,6 +40,7 @@ const PUBLIC_PREFIXES = [
   "/login",
   "/logout",
   "/forgot-password",
+  "/reset-password", // branded reset flow — lands here from the email link
   "/accept-invite", // Phase P: invitees must land here without a session
   "/_next",
   "/favicon",

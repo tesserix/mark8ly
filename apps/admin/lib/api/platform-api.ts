@@ -535,3 +535,126 @@ export async function getTenantByOwner(uid: string): Promise<TenantSummary> {
   const body = (await res.json()) as { data: TenantSummary };
   return body.data;
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Password reset — branded flow owned by platform-api. Replaces the
+// direct GIP sendOobCode call so merchants never see the Firebase
+// default email or the auth action page URL.
+// ─────────────────────────────────────────────────────────────────────
+
+export type RequestPasswordResetResult =
+  | { ok: true }
+  | {
+      ok: false;
+      code: "too_many_attempts" | "upstream_unavailable" | "unknown";
+      message: string;
+    };
+
+export async function requestPasswordReset(
+  email: string,
+): Promise<RequestPasswordResetResult> {
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/auth/password-reset/request`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      },
+    );
+    if (res.status === 204) return { ok: true };
+
+    if (res.status === 429) {
+      return {
+        ok: false,
+        code: "too_many_attempts",
+        message:
+          "Too many requests. Please wait a moment and try again.",
+      };
+    }
+    if (res.status === 502 || res.status === 503) {
+      return {
+        ok: false,
+        code: "upstream_unavailable",
+        message:
+          "We couldn't reach the identity service. Please try again in a moment.",
+      };
+    }
+    return {
+      ok: false,
+      code: "unknown",
+      message:
+        "We couldn't send the reset email. Please try again in a moment.",
+    };
+  } catch {
+    return {
+      ok: false,
+      code: "upstream_unavailable",
+      message:
+        "We couldn't reach the identity service. Please try again in a moment.",
+    };
+  }
+}
+
+export type ConfirmPasswordResetResult =
+  | { ok: true }
+  | {
+      ok: false;
+      code:
+        | "invalid_oob_code"
+        | "weak_password"
+        | "upstream_unavailable"
+        | "invalid_request"
+        | "unknown";
+      message: string;
+    };
+
+export async function confirmPasswordReset(
+  oobCode: string,
+  newPassword: string,
+): Promise<ConfirmPasswordResetResult> {
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/auth/password-reset/confirm`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ oob_code: oobCode, new_password: newPassword }),
+      },
+    );
+    if (res.status === 204) return { ok: true };
+
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore — fall through to status-based mapping
+    }
+    const message =
+      body.message ?? "Something went wrong resetting your password.";
+
+    switch (res.status) {
+      case 410:
+        return { ok: false, code: "invalid_oob_code", message };
+      case 400:
+        if (body.error === "weak_password") {
+          return { ok: false, code: "weak_password", message };
+        }
+        return { ok: false, code: "invalid_request", message };
+      case 502:
+      case 503:
+        return { ok: false, code: "upstream_unavailable", message };
+      default:
+        return { ok: false, code: "unknown", message };
+    }
+  } catch {
+    return {
+      ok: false,
+      code: "upstream_unavailable",
+      message:
+        "We couldn't reach the identity service. Please try again in a moment.",
+    };
+  }
+}

@@ -2,11 +2,13 @@
 
 // Forgot password funnel.
 //
-// Collects the merchant's email and calls GIP's sendPasswordReset which
-// hits Identity Toolkit accounts:sendOobCode. GIP sends a reset link to
-// the user's inbox pointing at its hosted reset UI. On success we show a
-// generic "check your inbox" confirmation regardless of whether the
-// email was registered — this avoids leaking account existence.
+// Collects the merchant's email and POSTs to platform-api's
+// /internal/auth/password-reset/request endpoint. Platform-api asks GIP
+// for an oobCode with returnOobLink=true (so GIP does NOT send its
+// default email) and dispatches our own branded HTML email via SendGrid
+// that links to /reset-password in this very admin app. This replaces
+// the previous direct-to-GIP flow which exposed the Firebase auth
+// action URL and sent a plain-text default email.
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
@@ -16,7 +18,7 @@ import { z } from "zod";
 import { Input } from "@tesserix/web";
 import { Field } from "@repo/ui/field";
 
-import { sendPasswordReset, GIPError } from "@/lib/gip/signup";
+import { requestPasswordResetAction } from "@/app/forgot-password/actions";
 
 const schema = z.object({
   email: z
@@ -45,20 +47,14 @@ export function ForgotPasswordForm() {
   function onValid(values: FormValues) {
     setSubmitError(null);
     startTransition(async () => {
-      try {
-        await sendPasswordReset(values.email.trim().toLowerCase());
+      const result = await requestPasswordResetAction(
+        values.email.trim().toLowerCase(),
+      );
+      if (result.ok) {
         setSent(true);
-      } catch (err) {
-        if (err instanceof GIPError) {
-          setSubmitError(
-            "We couldn't send the reset email. Please try again in a moment.",
-          );
-          return;
-        }
-        setSubmitError(
-          err instanceof Error ? err.message : "Something went wrong.",
-        );
+        return;
       }
+      setSubmitError(result.message);
     });
   }
 

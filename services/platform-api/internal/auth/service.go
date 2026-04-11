@@ -1,0 +1,123 @@
+// Package auth owns the platform-api side of the merchant password
+// flows. Sign-in itself is handled by auth-bff + GIP directly; this
+// package exists to move the password-reset email out of GIP (plain
+// text + exposed Firebase action URL) and into our own branded flow.
+//
+// The flow is:
+//   1. Admin app POSTs to /internal/auth/password-reset/request with
+//      an email.
+//   2. Service asks the GIP admin API for an oob code with
+//      returnOobLink=true (so GIP does not send its own email).
+//   3. Service renders the password_reset HTML/text template with a
+//      link to {admin}/reset-password?oobCode=... and dispatches via
+//      the shared SendGrid sender.
+//   4. User clicks the link, lands in the admin app, types a new
+//      password, and the admin POSTs to /internal/auth/password-reset/
+//      confirm with the oob code and new password.
+//   5. Service calls the public resetPassword Identity Toolkit endpoint
+//      with the oob code and new password. The oob code itself is
+//      proof-of-possession, so no admin token is required for confirm.
+package auth
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/notification"
+)
+
+// Config bundles the dependencies and tunables for Service.
+type Config struct {
+	Admin        *gipadmin.AdminClient
+	Sender       notification.Sender
+	EmailFrom    string
+	SupportEmail string
+	// AdminResetBaseURL is the origin users land on after clicking
+	// the reset email (e.g. https://admin.mark8ly.com). The oob code
+	// is appended as a query string by buildResetURL.
+	AdminResetBaseURL string
+	Logger            *slog.Logger
+}
+
+// Service orchestrates the password-reset flow.
+type Service struct {
+	cfg Config
+}
+
+// NewService constructs a Service.
+func NewService(cfg Config) *Service {
+	return &Service{cfg: cfg}
+}
+
+// RequestPasswordReset asks GIP for an oobCode and emails a branded
+// reset link. Returns nil for both "email sent" and "email not found"
+// so callers do not leak account existence; the caller should always
+// return 204 to the browser regardless of the underlying outcome.
+// Internal upstream failures still return an error so the caller can
+// fail-closed with a 502.
+func (s *Service) RequestPasswordReset(ctx context.Context, email string) error {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return fmt.Errorf("auth: email is required")
+	}
+
+	oobCode, err := s.cfg.Admin.SendPasswordResetOobCode(ctx, email)
+	if err != nil {
+		// Suppress enumeration: if the account doesn't exist, pretend
+		// success. Everything else is a real outage.
+		if errors.Is(err, gipadmin.ErrUserNotFound) {
+			if s.cfg.Logger != nil {
+				s.cfg.Logger.Info("auth: password reset requested for unknown email",
+					"email", email)
+			}
+			return nil
+		}
+		return err
+	}
+
+	resetURL := buildResetURL(s.cfg.AdminResetBaseURL, oobCode)
+	msg, err := notification.RenderPasswordReset(email, s.cfg.EmailFrom, notification.PasswordResetVars{
+		ResetURL:     resetURL,
+		ExpiresIn:    "1 hour",
+		SupportEmail: s.cfg.SupportEmail,
+	})
+	if err != nil {
+		return fmt.Errorf("auth: render reset email: %w", err)
+	}
+
+	if err := s.cfg.Sender.Send(ctx, msg); err != nil {
+		return fmt.Errorf("auth: send reset email: %w", err)
+	}
+	return nil
+}
+
+// ConfirmPasswordReset validates the oob code and sets a new password.
+// The service layer enforces only a minimal length check; GIP itself
+// does the real policy enforcement (length, strength, rate limits).
+func (s *Service) ConfirmPasswordReset(ctx context.Context, oobCode, newPassword string) error {
+	oobCode = strings.TrimSpace(oobCode)
+	newPassword = strings.TrimSpace(newPassword)
+	if oobCode == "" {
+		return fmt.Errorf("auth: oob_code is required")
+	}
+	if len(newPassword) < 8 {
+		return gipadmin.ErrWeakPassword
+	}
+	return s.cfg.Admin.ResetPassword(ctx, oobCode, newPassword)
+}
+
+// buildResetURL assembles the reset URL the user lands on. Uses a
+// simple query string instead of a fragment so the admin middleware
+// can forward search params to the client page component without
+// extra plumbing.
+func buildResetURL(base, oobCode string) string {
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return fmt.Sprintf("%s/reset-password%soobCode=%s", strings.TrimRight(base, "/"), sep, oobCode)
+}

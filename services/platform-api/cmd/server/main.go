@@ -18,7 +18,9 @@ import (
 	"time"
 
 	platformapi "github.com/mark8ly/platform-api"
+	"github.com/mark8ly/platform-api/internal/auth"
 	"github.com/mark8ly/platform-api/internal/authz"
+	"github.com/mark8ly/platform-api/internal/gipadmin"
 	"github.com/mark8ly/platform-api/internal/invitation"
 	"github.com/mark8ly/platform-api/internal/location"
 	"github.com/mark8ly/platform-api/internal/notification"
@@ -181,6 +183,41 @@ func main() {
 	})
 	invitationHandler := invitation.NewHandler(invitationSvc)
 
+	// ─── Password reset (Phase: GIP-aware branded flow) ────────────────
+	// Wires the /internal/auth/password-reset/* endpoints used by the
+	// admin BFF. Requires GIP_PROJECT_ID, GIP_TENANT_ID, and
+	// GIP_WEB_API_KEY. If any are missing the handler is skipped —
+	// dev machines without real GIP credentials fall through to GIP's
+	// default behaviour via auth-bff.
+	var authHandler *auth.Handler
+	if cfg.GIPProjectID != "" && cfg.GIPTenantID != "" && cfg.GIPWebAPIKey != "" {
+		admin, adminErr := gipadmin.New(context.Background(), gipadmin.Config{
+			ProjectID: cfg.GIPProjectID,
+			TenantID:  cfg.GIPTenantID,
+			WebAPIKey: cfg.GIPWebAPIKey,
+		})
+		if adminErr != nil {
+			log.Error("gipadmin: init", "err", adminErr)
+			log.Warn("auth: password reset disabled — gipadmin init failed")
+		} else {
+			authSvc := auth.NewService(auth.Config{
+				Admin:             admin,
+				Sender:            sender,
+				EmailFrom:         cfg.EmailFrom,
+				SupportEmail:      cfg.EmailFrom,
+				AdminResetBaseURL: cfg.AdminResetBaseURL,
+				Logger:            log,
+			})
+			authHandler = auth.NewHandler(authSvc, log)
+			log.Info("auth: password reset enabled",
+				"project_id", cfg.GIPProjectID,
+				"tenant_id", cfg.GIPTenantID,
+				"reset_url", cfg.AdminResetBaseURL)
+		}
+	} else {
+		log.Warn("auth: password reset disabled — missing GIP_PROJECT_ID/GIP_TENANT_ID/GIP_WEB_API_KEY")
+	}
+
 	// ─── Outbox drainer ────────────────────────────────────────────────
 	drainer := outbox.NewDrainer(conn, log, outbox.Config{})
 	if fga != nil {
@@ -198,6 +235,9 @@ func main() {
 	verifHandler.Register(v1)
 	onboardingHandler.Register(v1)
 	invitationHandler.Register(v1, internal)
+	if authHandler != nil {
+		authHandler.Register(internal)
+	}
 
 	// e2e helper routes — only mounted outside production. Gives Playwright
 	// a way to grab the latest magic-link token for an email without

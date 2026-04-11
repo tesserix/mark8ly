@@ -40,6 +40,22 @@ type Config struct {
 	// substitution, since the onboarding funnel is not tenant-scoped.
 	// Dev: http://localhost:4201; prod: https://mark8ly.com.
 	OnboardingBaseURL string `envconfig:"ONBOARDING_BASE_URL" default:"http://localhost:4201"`
+
+	// AdminResetBaseURL is the fully-qualified origin for the admin
+	// password-reset landing page. Flat (not per-slug) because the
+	// link carries the oobCode and lands on the canonical admin host;
+	// merchants can navigate into their own subdomain after resetting.
+	// Dev: http://localhost:4202; prod: https://admin.mark8ly.com.
+	AdminResetBaseURL string `envconfig:"ADMIN_RESET_BASE_URL" default:"http://localhost:4202"`
+
+	// GIP (Google Identity Platform) admin settings used by the
+	// password-reset flow. ProjectID + TenantID are required in prod;
+	// WebAPIKey is the public Firebase Web API key. If any of the
+	// three are blank, platform-api skips wiring the password-reset
+	// handler (dev convenience — local dev without real GIP).
+	GIPProjectID string `envconfig:"GIP_PROJECT_ID"`
+	GIPTenantID  string `envconfig:"GIP_TENANT_ID"`
+	GIPWebAPIKey string `envconfig:"GIP_WEB_API_KEY"`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

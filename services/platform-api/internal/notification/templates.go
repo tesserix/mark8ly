@@ -38,6 +38,13 @@ type InvitationVars struct {
 	SupportEmail string
 }
 
+// PasswordResetVars are the variables for the merchant password reset email.
+type PasswordResetVars struct {
+	ResetURL     string // full URL the user clicks to land on the admin reset page
+	ExpiresIn    string // human-readable, e.g. "1 hour"
+	SupportEmail string
+}
+
 // RenderEmailVerification renders the verification OTP email and returns
 // a fully populated Email ready to hand to a Sender.
 func RenderEmailVerification(to, from string, vars EmailVerificationVars) (Email, error) {
@@ -73,6 +80,26 @@ func RenderInvitation(to, from string, vars InvitationVars) (Email, error) {
 		To:       to,
 		From:     from,
 		Subject:  fmt.Sprintf("You've been invited to join %s on Mark8ly", vars.TenantName),
+		HTMLBody: html,
+		TextBody: text,
+	}, nil
+}
+
+// RenderPasswordReset renders the branded password reset email sent
+// from platform-api (not GIP's default template).
+func RenderPasswordReset(to, from string, vars PasswordResetVars) (Email, error) {
+	html, err := renderHTML("templates/password_reset.html", vars)
+	if err != nil {
+		return Email{}, err
+	}
+	text, err := renderText("templates/password_reset.txt", vars)
+	if err != nil {
+		return Email{}, err
+	}
+	return Email{
+		To:       to,
+		From:     from,
+		Subject:  "Reset your Mark8ly password",
 		HTMLBody: html,
 		TextBody: text,
 	}, nil

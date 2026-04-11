@@ -11,9 +11,10 @@
 import { cookies, headers } from "next/headers";
 
 import { switchTenant, AuthBffError } from "@/lib/auth/auth-bff";
+import { listStoresByTenant } from "@/lib/api/platform-api";
 
 export type SwitchTenantResult =
-  | { ok: true }
+  | { ok: true; slug?: string }
   | { ok: false; code: string; message: string };
 
 export async function switchToTenant(
@@ -48,7 +49,17 @@ export async function switchToTenant(
         });
       }
     }
-    return { ok: true };
+    // Fetch the primary store for the newly selected tenant so the
+    // caller can redirect to the correct {slug}-admin.mark8ly.com
+    // subdomain instead of the canonical admin host.
+    let slug: string | undefined;
+    try {
+      const stores = await listStoresByTenant(tenantId);
+      slug = stores[0]?.slug;
+    } catch {
+      // Non-fatal — caller falls back to same-host /dashboard.
+    }
+    return { ok: true, slug };
   } catch (err) {
     if (err instanceof AuthBffError) {
       return { ok: false, code: err.code, message: err.message };

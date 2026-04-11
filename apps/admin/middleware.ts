@@ -88,6 +88,53 @@ export async function middleware(req: NextRequest) {
     return redirectToLogin(req);
   }
 
+  // Tenant-subdomain resolution — when the user lands on
+  // `{slug}-admin.mark8ly.com`, make sure the session's tenant_id
+  // matches the tenant that owns the store with that slug. If not,
+  // auto-switch the session to the correct tenant (when the user has
+  // membership) instead of silently rendering an empty dashboard.
+  const host = req.headers.get("host") ?? "";
+  const slugMatch = host.match(/^([^.]+)-admin\.mark8ly\.com$/);
+  if (slugMatch && slugMatch[1]) {
+    const requestedSlug = slugMatch[1];
+    try {
+      const storeRes = await fetch(
+        `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(requestedSlug)}`,
+        { cache: "no-store" },
+      );
+      if (storeRes.ok) {
+        const body = (await storeRes.json()) as {
+          data: { tenant_id: string };
+        };
+        const requestedTenantId = body.data.tenant_id;
+        if (requestedTenantId && requestedTenantId !== session.tenant_id) {
+          // Session is on a different tenant. Try to switch.
+          const switchRes = await fetch(`${AUTH_BFF_URL}/auth/switch-tenant`, {
+            method: "POST",
+            headers: {
+              Cookie: cookieHeader,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ tenant_id: requestedTenantId }),
+            cache: "no-store",
+          });
+          if (switchRes.ok) {
+            // Reload the page so the new cookie takes effect.
+            const setCookie = switchRes.headers.get("set-cookie");
+            const response = NextResponse.redirect(req.nextUrl);
+            if (setCookie) response.headers.set("set-cookie", setCookie);
+            return response;
+          }
+          // Switch failed — user has no membership on this tenant.
+          // Redirect to pick-tenant so they can choose a store they own.
+          return NextResponse.redirect(new URL("/pick-tenant", req.nextUrl));
+        }
+      }
+    } catch {
+      // platform-api unreachable — fall through to normal flow.
+    }
+  }
+
   // Phase O — fetch the caller's role on the workspace tenant. One
   // extra round-trip to platform-api per authenticated request. We
   // don't cache in the cookie (yet) because that would require

@@ -54,6 +54,11 @@ func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 	{
 		int.GET("/:id", h.getStore)
 		int.PATCH("/:id", h.updateStore)
+		// Internal by-slug lookup — used by the admin middleware to
+		// resolve {slug}-admin.mark8ly.com to a tenant_id for session
+		// auto-switching. Returns tenant_id which the public endpoint
+		// intentionally hides.
+		int.GET("/by-slug/:slug", h.getInternalStoreBySlug)
 	}
 
 	// Listing + creating stores is addressed under the tenant they
@@ -178,6 +183,18 @@ func (h *Handler) checkSlugAvailable(c *gin.Context) {
 
 func (h *Handler) getStore(c *gin.Context) {
 	s, err := h.svc.GetByID(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": s})
+}
+
+// getInternalStoreBySlug returns the full store row (including tenant_id)
+// for a given slug. Internal-only: used by the admin middleware to resolve
+// {slug}-admin.mark8ly.com to the owning tenant for session auto-switching.
+func (h *Handler) getInternalStoreBySlug(c *gin.Context) {
+	s, err := h.svc.GetBySlug(c.Request.Context(), c.Param("slug"))
 	if err != nil {
 		respondError(c, err)
 		return

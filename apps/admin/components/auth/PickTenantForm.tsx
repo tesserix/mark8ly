@@ -36,6 +36,17 @@ export function PickTenantForm({ tenants }: PickTenantFormProps) {
         setPendingId(null);
         return;
       }
+      // Redirect to the tenant's {slug}-admin.mark8ly.com subdomain.
+      // The session cookie is scoped to .mark8ly.com so it carries over.
+      if (result.slug && typeof window !== "undefined") {
+        const host = window.location.host;
+        const rootDomain = host.replace(/^[^.]+-admin\./, "").replace(/^admin\./, "");
+        const isProdLike = rootDomain.includes("mark8ly.com");
+        if (isProdLike) {
+          window.location.href = `https://${result.slug}-admin.${rootDomain}/dashboard`;
+          return;
+        }
+      }
       router.push("/dashboard");
       router.refresh();
     });

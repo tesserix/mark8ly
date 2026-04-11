@@ -84,14 +84,17 @@ jobs:
             dockerfile: apps/onboarding/Dockerfile
             context: .
             target: runtime
+            google_client_id_secret: NEXT_PUBLIC_GOOGLE_CLIENT_ID
           - name: mark8ly-admin
             dockerfile: apps/admin/Dockerfile
             context: .
             target: runtime
+            google_client_id_secret: NEXT_PUBLIC_GOOGLE_CLIENT_ID
           - name: mark8ly-storefront
             dockerfile: apps/storefront/Dockerfile
             context: .
             target: runtime
+            google_client_id_secret: NEXT_PUBLIC_STOREFRONT_GOOGLE_CLIENT_ID
     steps:
       - uses: actions/checkout@v4
 
@@ -126,7 +129,7 @@ jobs:
             NEXT_PUBLIC_GIP_PROJECT_ID=${{ secrets.NEXT_PUBLIC_GIP_PROJECT_ID }}
             NEXT_PUBLIC_GIP_TENANT_ID=${{ secrets.NEXT_PUBLIC_GIP_TENANT_ID }}
             NEXT_PUBLIC_GIP_API_KEY=${{ secrets.NEXT_PUBLIC_GIP_API_KEY }}
-            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ matrix.image.google_client_id_secret && secrets[matrix.image.google_client_id_secret] || '' }}
             NEXT_PUBLIC_MARKETING_URL=${{ secrets.NEXT_PUBLIC_MARKETING_URL }}
             NEXT_PUBLIC_ADMIN_URL_TEMPLATE=${{ secrets.NEXT_PUBLIC_ADMIN_URL_TEMPLATE }}
             NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=${{ secrets.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN }}

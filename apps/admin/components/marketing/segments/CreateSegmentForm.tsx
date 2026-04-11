@@ -2,6 +2,13 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 import type { SessionHeaders } from "@/lib/api/campaigns-api";
 import { createSegment } from "@/lib/api/campaigns-api";
 
@@ -159,19 +166,23 @@ export function CreateSegmentForm({
         {rules.map((rule, index) => (
           <div key={index} className="flex items-start gap-3">
             <div className="flex-1 space-y-2">
-              <select
+              <Select
                 value={rule.type}
-                onChange={(e) =>
-                  updateRule(index, "type", e.target.value)
+                onValueChange={(value) =>
+                  updateRule(index, "type", value)
                 }
-                className="block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               >
-                {RULE_TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RULE_TYPE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
               {ruleNeedsValue(rule.type) && (
                 <input

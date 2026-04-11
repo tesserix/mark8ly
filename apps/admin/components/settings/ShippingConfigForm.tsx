@@ -5,6 +5,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import { saveShippingConfig } from "@/app/settings/shipping/actions";
 import type { ShippingConfig } from "@/lib/api/settings-api";
@@ -117,16 +124,22 @@ export function ShippingConfigForm({
 
         <div className="flex items-center gap-6">
           <Field label="Mode" htmlFor={`${provider}-mode`}>
-            <select
-              id={`${provider}-mode`}
+            <Select
               value={mode}
-              onChange={(e) => { setMode(e.target.value as "test" | "live"); setSuccess(false); }}
+              onValueChange={(value) => {
+                setMode(value as "test" | "live");
+                setSuccess(false);
+              }}
               disabled={pending}
-              className={inputClass}
             >
-              <option value="test">Test mode</option>
-              <option value="live">Live mode</option>
-            </select>
+              <SelectTrigger id={`${provider}-mode`} className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="test">Test mode</SelectItem>
+                <SelectItem value="live">Live mode</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
 
           <label className="flex items-center gap-2 cursor-pointer select-none pt-5">

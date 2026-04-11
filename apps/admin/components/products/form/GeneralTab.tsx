@@ -2,6 +2,13 @@
 
 import type { ReactNode } from "react";
 import { useFormContext } from "react-hook-form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 import type { AdminCategory } from "@/lib/api/marketplace-api";
 import type { ProductFormValues } from "@/lib/validation/product-form";
 import { ProductCategoriesPicker } from "../ProductCategoriesPicker";
@@ -62,14 +69,23 @@ export function GeneralTab({
       </Field>
 
       <Field label="Status" error={formState.errors.status?.message}>
-        <select
-          {...register("status")}
-          className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        <Select
+          value={watch("status")}
+          onValueChange={(value) =>
+            setValue("status", value as ProductFormValues["status"], {
+              shouldDirty: true,
+            })
+          }
         >
-          <option value="draft">Draft</option>
-          <option value="active">Active</option>
-          <option value="archived">Archived</option>
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="archived">Archived</SelectItem>
+          </SelectContent>
+        </Select>
       </Field>
 
       <Field label="Categories" error={formState.errors.categoryIds?.message}>

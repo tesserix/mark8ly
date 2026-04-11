@@ -10,6 +10,11 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@tesserix/web";
 import type {
   AdminSegment,
@@ -223,29 +228,38 @@ export function CampaignWizard({
               />
             </label>
 
-            <label className="block">
-              <span className="text-sm font-medium text-ink-700">
-                Segment
-              </span>
-              <select
-                value={segmentId}
-                onChange={(e) => setSegmentId(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            <div className="space-y-1">
+              <label
+                htmlFor="campaign-segment"
+                className="text-sm font-medium text-ink-700"
               >
-                <option value="">All customers</option>
-                {segments.map((seg) => (
-                  <option key={seg.id} value={seg.id}>
-                    {seg.name} ({seg.member_count.toLocaleString()} members)
-                  </option>
-                ))}
-              </select>
+                Segment
+              </label>
+              <Select
+                value={segmentId || "__all__"}
+                onValueChange={(value) =>
+                  setSegmentId(value === "__all__" ? "" : value)
+                }
+              >
+                <SelectTrigger id="campaign-segment" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All customers</SelectItem>
+                  {segments.map((seg) => (
+                    <SelectItem key={seg.id} value={seg.id}>
+                      {seg.name} ({seg.member_count.toLocaleString()} members)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {selectedSegment && (
-                <p className="mt-1 text-xs text-ink-500">
+                <p className="text-xs text-ink-500">
                   Estimated {selectedSegment.member_count.toLocaleString()}{" "}
                   recipients
                 </p>
               )}
-            </label>
+            </div>
           </div>
 
           <div className="flex justify-end">

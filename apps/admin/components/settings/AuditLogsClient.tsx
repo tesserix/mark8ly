@@ -10,6 +10,13 @@ import {
   ChevronRight,
   Filter,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import type {
   AuditLogEntry,
@@ -369,26 +376,34 @@ function FilterSelect({
   onChange: (value: string) => void;
 }) {
   const selectId = `filter-${label.toLowerCase().replace(/\s+/g, "-")}`;
+  // shadcn Select requires non-empty item values, so "All" is represented
+  // internally by a sentinel and mapped back to the empty string the rest
+  // of the query-builder expects.
+  const ALL = "__all__";
   return (
     <div className="space-y-1">
-      <label htmlFor={selectId} className="text-[10px] font-medium uppercase tracking-widest text-foreground-tertiary">
+      <label
+        htmlFor={selectId}
+        className="text-[10px] font-medium uppercase tracking-widest text-foreground-tertiary"
+      >
         {label}
       </label>
-      <select
-        id={selectId}
-        defaultValue={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 w-full sm:w-36 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-2 text-xs text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+      <Select
+        value={value || ALL}
+        onValueChange={(next) => onChange(next === ALL ? "" : next)}
       >
-        <option value="">All</option>
-        {options
-          .filter(Boolean)
-          .map((opt) => (
-            <option key={opt} value={opt}>
+        <SelectTrigger id={selectId} className="h-8 w-full text-xs sm:w-36">
+          <SelectValue placeholder="All" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL}>All</SelectItem>
+          {options.filter(Boolean).map((opt) => (
+            <SelectItem key={opt} value={opt}>
               {opt}
-            </option>
+            </SelectItem>
           ))}
-      </select>
+        </SelectContent>
+      </Select>
     </div>
   );
 }

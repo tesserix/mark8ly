@@ -2,6 +2,13 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 import type { CreateCouponBody } from "@/lib/api/coupons-api";
 
 interface CouponFormProps {
@@ -104,20 +111,27 @@ export function CouponForm({
           />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-ink-700">
+          <label
+            htmlFor="coupon-type"
+            className="mb-1 block text-sm font-medium text-ink-700"
+          >
             Discount type
           </label>
-          <select
+          <Select
             value={type}
-            onChange={(e) =>
-              setType(e.target.value as CreateCouponBody["type"])
+            onValueChange={(value) =>
+              setType(value as CreateCouponBody["type"])
             }
-            className="w-full rounded-md border border-ink-200 px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           >
-            <option value="percentage">Percentage</option>
-            <option value="fixed_amount">Fixed amount</option>
-            <option value="free_shipping">Free shipping</option>
-          </select>
+            <SelectTrigger id="coupon-type" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="percentage">Percentage</SelectItem>
+              <SelectItem value="fixed_amount">Fixed amount</SelectItem>
+              <SelectItem value="free_shipping">Free shipping</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         {type !== "free_shipping" && (
           <div>

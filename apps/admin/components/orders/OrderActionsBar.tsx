@@ -16,6 +16,13 @@
 // or surfaces the typed error inline.
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import type { AdminOrder, PaymentStatus } from "@/lib/api/marketplace-api";
 
@@ -290,20 +297,26 @@ function ConfirmForm({ storeId, orderId, onDone }: ConfirmFormProps) {
   return (
     <PanelShell title="Confirm this order">
       <form onSubmit={submit} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           <FieldLabel>Payment status (optional)</FieldLabel>
-          <select
-            value={paymentStatus}
-            onChange={(e) =>
-              setPaymentStatus(e.target.value as PaymentStatus | "")
+          <Select
+            value={paymentStatus || "__noop__"}
+            onValueChange={(value) =>
+              setPaymentStatus(
+                value === "__noop__" ? "" : (value as PaymentStatus),
+              )
             }
-            className={inputCls}
           >
-            <option value="">Don&apos;t change</option>
-            <option value="authorized">Authorized</option>
-            <option value="paid">Paid</option>
-          </select>
-        </label>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__noop__">Don&apos;t change</SelectItem>
+              <SelectItem value="authorized">Authorized</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <label className="flex flex-col gap-2">
           <FieldLabel>Note (optional)</FieldLabel>
           <input
@@ -498,17 +511,25 @@ function RefundForm({
             className={inputCls}
           />
         </label>
-        <label className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           <FieldLabel>Mark order as</FieldLabel>
-          <select
+          <Select
             value={paymentStatus}
-            onChange={(e) => setPaymentStatus(e.target.value as PaymentStatus)}
-            className={inputCls}
+            onValueChange={(value) =>
+              setPaymentStatus(value as PaymentStatus)
+            }
           >
-            <option value="partially_refunded">Partially refunded</option>
-            <option value="refunded">Fully refunded</option>
-          </select>
-        </label>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="partially_refunded">
+                Partially refunded
+              </SelectItem>
+              <SelectItem value="refunded">Fully refunded</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <label className="flex flex-col gap-2">
           <FieldLabel>Note (optional)</FieldLabel>
           <input

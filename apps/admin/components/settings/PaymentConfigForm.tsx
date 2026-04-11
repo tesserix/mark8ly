@@ -5,6 +5,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import { savePaymentConfig } from "@/app/settings/payments/actions";
 
@@ -88,16 +95,22 @@ export function PaymentConfigForm({
 
       <div className="flex items-center gap-6">
         <FieldGroup label="Mode" htmlFor={`${provider}-mode`}>
-          <select
-            id={`${provider}-mode`}
+          <Select
             value={mode}
-            onChange={(e) => { setMode(e.target.value as "test" | "live"); setSuccess(false); }}
+            onValueChange={(value) => {
+              setMode(value as "test" | "live");
+              setSuccess(false);
+            }}
             disabled={pending}
-            className="rounded-[6px] border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
           >
-            <option value="test">Test mode</option>
-            <option value="live">Live mode</option>
-          </select>
+            <SelectTrigger id={`${provider}-mode`} className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="test">Test mode</SelectItem>
+              <SelectItem value="live">Live mode</SelectItem>
+            </SelectContent>
+          </Select>
         </FieldGroup>
 
         <label className="flex items-center gap-2 cursor-pointer select-none pt-5">

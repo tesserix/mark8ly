@@ -5,6 +5,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import { saveTaxJarConfig } from "@/app/settings/tax/actions";
 
@@ -87,19 +94,22 @@ export function TaxJarConfigForm({
           >
             Mode
           </label>
-          <select
-            id="taxjar-mode"
+          <Select
             value={mode}
-            onChange={(e) => {
-              setMode(e.target.value as "test" | "live");
+            onValueChange={(value) => {
+              setMode(value as "test" | "live");
               setSuccess(false);
             }}
             disabled={pending}
-            className={inputClass}
           >
-            <option value="test">Test mode (sandbox)</option>
-            <option value="live">Live mode</option>
-          </select>
+            <SelectTrigger id="taxjar-mode">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="test">Test mode (sandbox)</SelectItem>
+              <SelectItem value="live">Live mode</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

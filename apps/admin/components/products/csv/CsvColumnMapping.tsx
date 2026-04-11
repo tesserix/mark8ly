@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
+
 export const PRODUCT_FIELDS = [
   "title",
   "handle",
@@ -53,24 +61,27 @@ export function CsvColumnMapping({
             >
               →
             </span>
-            <select
-              role="combobox"
-              value={mapping[csvHeader] ?? ""}
-              onChange={(e) => handleChange(csvHeader, e.target.value)}
-              className={[
-                "flex-1 rounded-[6px] border border-[var(--ink-900)]/10 bg-[var(--paper-200)] px-2 py-1.5",
-                "font-[var(--font-body)] text-sm text-[var(--ink-900)]",
-                "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--moss-700)]",
-              ].join(" ")}
-              aria-label={`Map ${csvHeader} to product field`}
+            <Select
+              value={mapping[csvHeader] || "__skip__"}
+              onValueChange={(value) =>
+                handleChange(csvHeader, value === "__skip__" ? "" : value)
+              }
             >
-              <option value="">— skip —</option>
-              {PRODUCT_FIELDS.map((field) => (
-                <option key={field} value={field}>
-                  {field}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                className="flex-1"
+                aria-label={`Map ${csvHeader} to product field`}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__skip__">— skip —</SelectItem>
+                {PRODUCT_FIELDS.map((field) => (
+                  <SelectItem key={field} value={field}>
+                    {field}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         ))}
       </div>

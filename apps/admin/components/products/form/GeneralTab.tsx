@@ -43,8 +43,8 @@ export function GeneralTab({
         label="Handle"
         helper={
           mode === "create"
-            ? "Leave empty to auto-generate from the title. mark8ly.com/<handle>"
-            : "Changing the handle breaks existing links. mark8ly.com/<handle>"
+            ? "Leave empty to auto-generate from the title. Lives at your-store.mark8ly.com/products/<handle>."
+            : "Changing the handle breaks existing links. Lives at your-store.mark8ly.com/products/<handle>."
         }
         error={formState.errors.handle?.message}
       >
@@ -58,7 +58,7 @@ export function GeneralTab({
 
       <Field
         label="Description"
-        helper="Plain text only for now; rich text lands in a follow-up."
+        helper="Shown on the product page below the title."
         error={formState.errors.description?.message}
       >
         <textarea

@@ -22,6 +22,36 @@ import { Input, Label } from "@tesserix/web";
 import { updateGeneralSettings } from "@/app/(admin)/settings/general/actions";
 import type { Store, Tenant } from "@/lib/api/platform-api";
 
+// Humanise ISO codes. Falls through to the raw code when Intl doesn't
+// know the region or currency — better to show "XX" than the empty
+// string.
+function formatCountryLabel(code: string): string {
+  if (!code) return "";
+  try {
+    const display = new Intl.DisplayNames(["en"], { type: "region" }).of(
+      code.toUpperCase(),
+    );
+    return display ?? code.toUpperCase();
+  } catch {
+    return code.toUpperCase();
+  }
+}
+
+function formatCurrencyLabel(code: string): string {
+  if (!code) return "";
+  try {
+    const display = new Intl.DisplayNames(["en"], { type: "currency" }).of(
+      code.toUpperCase(),
+    );
+    if (display && display.toUpperCase() !== code.toUpperCase()) {
+      return `${display} (${code.toUpperCase()})`;
+    }
+  } catch {
+    // fall through
+  }
+  return code.toUpperCase();
+}
+
 interface GeneralSettingsFormProps {
   tenant: Tenant;
   // Phase Q: the general settings form now edits the CURRENT store,
@@ -100,13 +130,19 @@ export function GeneralSettingsForm({
 
       <Section title="Region &amp; currency">
         <div className="grid gap-6 sm:grid-cols-2">
-          <ReadOnlyField label="Country" value={store.country_code} />
-          <ReadOnlyField label="Currency" value={store.currency_code} />
+          <ReadOnlyField
+            label="Country"
+            value={formatCountryLabel(store.country_code)}
+          />
+          <ReadOnlyField
+            label="Currency"
+            value={formatCurrencyLabel(store.currency_code)}
+          />
         </div>
         <ReadOnlyField
           label="Timezone"
           value={store.timezone}
-          hint="Timezone editing is coming in a follow-up. Contact support if you need it changed now."
+          hint="Set during onboarding. Reach out to us if you need this changed."
         />
       </Section>
 

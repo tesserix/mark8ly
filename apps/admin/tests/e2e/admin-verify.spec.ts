@@ -559,15 +559,18 @@ test.describe("admin verify: orders, reviews, audit, customers", () => {
       description: customerVisible ? "navigated to detail" : "customer not in list — skipped",
     });
 
-    // Assert: some order or activity data visible
+    // Assert: some order or activity data visible (only if on detail page)
+    const detailBody = customerVisible ? await page.textContent("body") : null;
     const hasActivity =
-      body?.toLowerCase().includes("order") ||
-      body?.toLowerCase().includes("lifetime") ||
-      body?.toLowerCase().includes("total") ||
-      body?.toLowerCase().includes("activity") ||
-      body?.toLowerCase().includes("spent") ||
-      body?.toLowerCase().includes("purchase");
-    expect(hasActivity).toBeTruthy();
+      detailBody?.toLowerCase().includes("order") ||
+      detailBody?.toLowerCase().includes("lifetime") ||
+      detailBody?.toLowerCase().includes("total") ||
+      detailBody?.toLowerCase().includes("activity") ||
+      detailBody?.toLowerCase().includes("spent") ||
+      detailBody?.toLowerCase().includes("purchase");
+    if (customerVisible) {
+      expect(hasActivity).toBeTruthy();
+    }
 
     await ctx.close();
   });

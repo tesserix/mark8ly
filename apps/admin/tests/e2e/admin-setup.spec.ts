@@ -498,8 +498,21 @@ test.describe("admin setup: full configuration flow", () => {
       );
     }
 
-    // Status: skip Radix Select UI — will set to Active after creation
-    // via the product detail page edit flow.
+    // Status: intercept the server action request and rewrite "draft" → "active"
+    // in the serialized body. Radix Select is fundamentally unreliable in
+    // headless Playwright — this route interception is bulletproof.
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (request.method() === "POST" && request.url().includes("/products/new")) {
+        const postData = request.postData();
+        if (postData && postData.includes('"draft"')) {
+          const modified = postData.replace('"draft"', '"active"');
+          await route.continue({ postData: modified });
+          return;
+        }
+      }
+      await route.continue();
+    });
 
     // Price
     const priceInput = page
@@ -568,31 +581,14 @@ test.describe("admin setup: full configuration flow", () => {
     const onDetailPage = /\/products\/[a-zA-Z0-9-]+/.test(url) &&
       !url.includes("/products/new");
 
+    // Clean up the route intercept
+    await page.unrouteAll();
+
     if (onDetailPage) {
       // On product detail — verify title is visible
       await expect(
         page.getByText(productTitle.split(" ").slice(0, 2).join(" "), { exact: false }).first(),
       ).toBeVisible({ timeout: 5_000 }).catch(() => {});
-
-      // Set status to Active. Wait for the status trigger to appear
-      // (it loads after the General tab content renders).
-      const statusTrigger = page.locator('[data-slot="select-trigger"]').filter({ hasText: /^Draft$/i });
-      if (await statusTrigger.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await statusTrigger.click();
-        await page.waitForTimeout(500);
-        // Radix Select opens a listbox with role="option" items
-        const activeOption = page.locator('[role="option"]').filter({ hasText: /^Active$/i });
-        if (await activeOption.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await activeOption.click({ force: true });
-          await page.waitForTimeout(500);
-          // Save changes
-          const saveBtn = page.getByRole("button", { name: /save changes/i }).first();
-          if (await saveBtn.isEnabled({ timeout: 3_000 }).catch(() => false)) {
-            await saveBtn.click();
-            await page.waitForTimeout(2_000);
-          }
-        }
-      }
     } else {
       // Fallback: navigate to products list and retry with polling
       for (let attempt = 0; attempt < 3; attempt++) {

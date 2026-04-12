@@ -3,19 +3,21 @@
 // apps/admin/components/products/ProductCategoriesPicker.tsx
 //
 // Client component: chip row + searchable dropdown for category selection.
-// M7b ships the "existing categories only" flavor — inline "+ Create" is a
-// follow-up that lands with M7d's category drawer.
+// Supports inline category creation: when the search query doesn't match
+// any existing category, a "+ Create [name]" button is shown.
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { X, Plus } from "lucide-react";
 
 import type { AdminCategory } from "@/lib/api/marketplace-api";
+import { createCategoryInline } from "@/app/(admin)/products/category-actions";
 
 export interface ProductCategoriesPickerProps {
   allCategories: AdminCategory[];
   selectedIds: string[];
   onChange: (ids: string[]) => void;
   disabled?: boolean;
+  storeId?: string;
 }
 
 export function ProductCategoriesPicker({
@@ -23,26 +25,67 @@ export function ProductCategoriesPicker({
   selectedIds,
   onChange,
   disabled,
+  storeId,
 }: ProductCategoriesPickerProps) {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [creating, startCreating] = useTransition();
+  const [localCategories, setLocalCategories] = useState<AdminCategory[]>([]);
+
+  const allCats = useMemo(
+    () => [...allCategories, ...localCategories],
+    [allCategories, localCategories],
+  );
 
   const selected = useMemo(
     () =>
       selectedIds
-        .map((id) => allCategories.find((c) => c.id === id))
+        .map((id) => allCats.find((c) => c.id === id))
         .filter((c): c is AdminCategory => !!c),
-    [selectedIds, allCategories],
+    [selectedIds, allCats],
   );
 
   const available = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return allCategories
+    return allCats
       .filter((c) => c.is_active || selectedIds.includes(c.id))
       .filter((c) => !selectedIds.includes(c.id))
       .filter((c) => (q ? c.name.toLowerCase().includes(q) : true))
       .slice(0, 50);
-  }, [allCategories, selectedIds, query]);
+  }, [allCats, selectedIds, query]);
+
+  const canCreate =
+    !disabled &&
+    storeId &&
+    query.trim().length > 0 &&
+    !allCats.some(
+      (c) => c.name.toLowerCase() === query.trim().toLowerCase(),
+    );
+
+  function handleCreate() {
+    if (!storeId || !query.trim()) return;
+    const name = query.trim();
+    startCreating(async () => {
+      const result = await createCategoryInline(storeId, name);
+      if (result.ok && result.category) {
+        const newCat: AdminCategory = {
+          id: result.category.id,
+          store_id: storeId,
+          parent_id: null,
+          name: result.category.name,
+          slug: result.category.slug,
+          description: null,
+          image_url: null,
+          position: 0,
+          is_active: true,
+        };
+        setLocalCategories((prev) => [...prev, newCat]);
+        onChange([...selectedIds, newCat.id]);
+        setQuery("");
+        setIsOpen(false);
+      }
+    });
+  }
 
   const add = (id: string) => {
     onChange([...selectedIds, id]);
@@ -122,8 +165,27 @@ export function ProductCategoriesPicker({
             </ul>
           )}
           {isOpen && available.length === 0 && query.trim() && (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] opacity-60">
-              No matching categories.
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--background-elevated,white)] shadow-sm">
+              {canCreate ? (
+                <button
+                  type="button"
+                  disabled={creating}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleCreate();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[color:var(--moss-700)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5 focus-visible:bg-[color:var(--ink-900)] focus-visible:bg-opacity-5 focus-visible:outline-none"
+                >
+                  <Plus className="h-3 w-3" aria-hidden="true" />
+                  {creating
+                    ? "Creating..."
+                    : `Create "${query.trim()}"`}
+                </button>
+              ) : (
+                <p className="px-3 py-2 text-sm text-[color:var(--ink-900)] opacity-60">
+                  No matching categories.
+                </p>
+              )}
             </div>
           )}
         </div>

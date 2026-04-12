@@ -424,6 +424,34 @@ export async function listCategories(
   return body.data ?? [];
 }
 
+export interface CreateCategoryInput {
+  name: string;
+  slug?: string;
+  description?: string;
+  position?: number;
+}
+
+export async function createCategory(
+  storeId: string,
+  input: CreateCategoryInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminCategory>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/categories`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const body = (await res.json()) as { data: AdminCategory };
+  return { ok: true, data: body.data };
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // M7c: media CRUD + signed URL flow
 // ─────────────────────────────────────────────────────────────────────────

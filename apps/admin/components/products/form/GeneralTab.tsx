@@ -18,6 +18,7 @@ export interface GeneralTabProps {
   categories: AdminCategory[];
   currencyCode: string;
   hasMultipleVariants: boolean;
+  storeId?: string;
 }
 
 export function GeneralTab({
@@ -25,6 +26,7 @@ export function GeneralTab({
   categories,
   currencyCode,
   hasMultipleVariants,
+  storeId,
 }: GeneralTabProps) {
   const form = useFormContext<ProductFormValues>();
   const { register, formState, watch, setValue } = form;
@@ -95,6 +97,7 @@ export function GeneralTab({
           onChange={(ids) =>
             setValue("categoryIds", ids, { shouldDirty: true })
           }
+          storeId={storeId}
         />
       </Field>
 

@@ -329,7 +329,12 @@ export function ProductForm({
         {rootError && (
           <div
             role="alert"
-            className="rounded-md border border-[color:var(--signal)] border-opacity-40 bg-[color:var(--signal)] bg-opacity-5 px-4 py-3 text-sm text-[color:var(--signal)]"
+            className="rounded-md border px-4 py-3 text-sm"
+            style={{
+              borderColor: "rgba(180, 50, 20, 0.3)",
+              backgroundColor: "rgba(180, 50, 20, 0.06)",
+              color: "rgb(140, 30, 10)",
+            }}
           >
             {rootError}
           </div>
@@ -349,6 +354,7 @@ export function ProductForm({
               categories={categories}
               currencyCode={currencyCode}
               hasMultipleVariants={hasMultipleVariants}
+              storeId={storeId}
             />
           )}
           {currentTab === "media" && mode === "edit" && initialProduct && (

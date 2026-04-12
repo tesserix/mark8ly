@@ -39,6 +39,10 @@ const PRODUCT_TITLE = state.productTitle ?? "E2E Linen";
 const COUPON_CODE = state.couponCode ?? "E2E10OFF";
 const GIFT_CARD_CODE = state.giftCardCode ?? "";
 
+// Mutable: step 2 may update this if the state handle is Draft (404).
+// All subsequent steps use this instead of PRODUCT_HANDLE.
+let activeProductHandle = PRODUCT_HANDLE;
+
 function saveState(patch: Record<string, string>): void {
   mkdirSync(STATE_DIR, { recursive: true });
   const merged = { ...state, ...patch };
@@ -102,8 +106,14 @@ test.describe("storefront journey", () => {
       await page.waitForLoadState("networkidle").catch(() => {});
       const firstProductLink = page.locator('a[href^="/products/"]').first();
       if (await firstProductLink.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        const href = await firstProductLink.getAttribute("href");
         await firstProductLink.click();
         await page.waitForLoadState("networkidle").catch(() => {});
+        // Save the working handle for subsequent steps
+        const handleMatch = (href ?? "").match(/\/products\/(.+)/);
+        if (handleMatch) {
+          activeProductHandle = handleMatch[1] ?? activeProductHandle;
+        }
       }
     }
 
@@ -227,7 +237,7 @@ test.describe("storefront journey", () => {
     });
     const page = await ctx.newPage();
 
-    await page.goto(`/products/${PRODUCT_HANDLE}`);
+    await page.goto(`/products/${activeProductHandle}`);
     await page.waitForLoadState("networkidle").catch(() => {});
 
     const addToCartBtn = page
@@ -408,7 +418,7 @@ test.describe("storefront journey", () => {
     const page = await ctx.newPage();
 
     // Ensure cart has items — add product if needed
-    await page.goto(`/products/${PRODUCT_HANDLE}`);
+    await page.goto(`/products/${activeProductHandle}`);
     await page.waitForLoadState("networkidle").catch(() => {});
     const addBtn = page
       .getByRole("button", { name: /add to cart/i })

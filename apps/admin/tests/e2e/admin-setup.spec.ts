@@ -173,7 +173,7 @@ test.describe("admin setup: full configuration flow", () => {
       .catch(() => false);
     expect(hasEditableFields).toBe(true);
 
-    // If a save button is visible, the page is fully functional
+    // Verify a save button exists (may be disabled until form is dirty)
     const saveBtn = page
       .getByRole("button", { name: /save/i })
       .or(page.getByRole("button", { name: /update/i }))
@@ -181,11 +181,7 @@ test.describe("admin setup: full configuration flow", () => {
     const hasSave = await saveBtn
       .isVisible({ timeout: 3_000 })
       .catch(() => false);
-
-    if (hasSave) {
-      await saveBtn.click();
-      await page.waitForTimeout(2_000);
-    }
+    expect(hasSave).toBe(true);
 
     await page.screenshot({ path: screenshotPath("02-store-details") });
     await ctx.close();

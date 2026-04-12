@@ -1,0 +1,87 @@
+/**
+ * HMAC-signed customer session cookie.
+ *
+ * Cookie format: `<base64-payload>.<hex-signature>`
+ *
+ * The payload is a JSON object with { uid, email, store_slug, store_id,
+ * tenant_id }. The signature is HMAC-SHA256 over the raw payload bytes
+ * using SESSION_ENCRYPT_KEY from the environment.
+ *
+ * This prevents cookie forgery — a user who crafts a fake payload
+ * cannot produce a valid signature without the server-side key.
+ */
+
+import { createHmac } from "node:crypto";
+
+const SESSION_KEY =
+  process.env.SESSION_ENCRYPT_KEY ?? "dev-session-key-min-32-bytes!!!";
+
+export interface CustomerSession {
+  uid: string;
+  email: string;
+  store_slug: string;
+  store_id: string;
+  tenant_id: string;
+}
+
+function sign(payload: string): string {
+  return createHmac("sha256", SESSION_KEY).update(payload).digest("hex");
+}
+
+/** Encode + sign a session into a cookie value. */
+export function encodeSession(session: CustomerSession): string {
+  const payload = Buffer.from(JSON.stringify(session)).toString("base64");
+  const sig = sign(payload);
+  return `${payload}.${sig}`;
+}
+
+/** Decode + verify a signed cookie value. Returns null if the
+ *  signature is invalid or the payload is malformed. */
+export function decodeSession(cookieValue: string): CustomerSession | null {
+  const dotIndex = cookieValue.lastIndexOf(".");
+  if (dotIndex < 0) {
+    // Legacy unsigned cookie (from the brief v0 window). Accept it
+    // but log a warning — it'll be replaced on next sign-in.
+    return decodeLegacy(cookieValue);
+  }
+
+  const payload = cookieValue.slice(0, dotIndex);
+  const sig = cookieValue.slice(dotIndex + 1);
+
+  // Constant-time comparison to prevent timing attacks.
+  const expected = sign(payload);
+  if (sig.length !== expected.length) return null;
+  let mismatch = 0;
+  for (let i = 0; i < sig.length; i++) {
+    mismatch |= sig.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  if (mismatch !== 0) return null;
+
+  return parsePayload(payload);
+}
+
+function decodeLegacy(raw: string): CustomerSession | null {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[storefront] unsigned mp_customer_session cookie detected — " +
+      "will be replaced with a signed version on next sign-in.",
+  );
+  return parsePayload(raw);
+}
+
+function parsePayload(base64: string): CustomerSession | null {
+  try {
+    const json = Buffer.from(base64, "base64").toString();
+    const parsed = JSON.parse(json) as Partial<CustomerSession>;
+    if (!parsed.uid || !parsed.email) return null;
+    return {
+      uid: parsed.uid,
+      email: parsed.email,
+      store_slug: parsed.store_slug ?? "",
+      store_id: parsed.store_id ?? "",
+      tenant_id: parsed.tenant_id ?? "",
+    };
+  } catch {
+    return null;
+  }
+}

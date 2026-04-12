@@ -15,6 +15,7 @@
 // include the customer's identity.
 
 import { cookies } from "next/headers";
+import { encodeSession } from "@/lib/session";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
@@ -116,10 +117,10 @@ export async function customerSignIn(
     const email =
       input.email || decodeIdTokenEmail(input.idToken) || "";
 
-    // Set the customer session cookie. The storefront layout reads
-    // this to render authenticated UI and to fetch the customer
-    // profile from marketplace-api.
-    const sessionPayload = JSON.stringify({
+    // Set the HMAC-signed customer session cookie. The storefront
+    // layout decodes and verifies this on every request to hydrate
+    // the authenticated state.
+    const cookieValue = encodeSession({
       uid: input.uid,
       email,
       store_slug: input.storeSlug,
@@ -130,7 +131,7 @@ export async function customerSignIn(
     const c = await cookies();
     c.set({
       name: "mp_customer_session",
-      value: Buffer.from(sessionPayload).toString("base64"),
+      value: cookieValue,
       path: "/",
       domain: ".mark8ly.com",
       httpOnly: true,

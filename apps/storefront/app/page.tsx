@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 
 import { fetchStoreBySlug, type PublicStore } from "@/lib/api/platform-api";
-import { listProducts } from "@/lib/api/marketplace-api";
 import {
   fontStacks,
   normalizeStorefrontTheme,
@@ -55,16 +54,6 @@ export default async function StoreHomePage({ searchParams }: PageProps) {
     return <StoreNotFound slug={slug} />;
   }
 
-  // Probe the catalog so an empty store doesn't render editorial
-  // layouts advertising "three pieces we love" when there are zero
-  // products. We ask for 1 page of 1 product as a cheap signal.
-  const productsResponse = await listProducts(store.slug, { pageSize: 1 });
-  const hasProducts = (productsResponse?.data ?? []).length > 0;
-
-  if (!hasProducts) {
-    return <StoreComingSoon store={store} />;
-  }
-
   return <StoreLanding store={store} />;
 }
 
@@ -91,61 +80,6 @@ function StoreLanding({ store }: { store: PublicStore }) {
         <TopBar store={store} theme={theme} />
         <StorefrontLayoutRenderer store={store} theme={theme} />
         <FeaturedProducts storeSlug={store.slug} />
-      </div>
-    </main>
-  );
-}
-
-/**
- * Empty-store landing. Rendered when the catalog has zero products.
- * Deliberately skips the editorial layouts — otherwise the page ships
- * live to customers claiming "three pieces we love right now" alongside
- * empty "Reserved for product photography" tiles, which reads as
- * broken rather than pre-launch. Here we say "coming soon" plainly and
- * keep the brand voice without lying about the catalog.
- */
-function StoreComingSoon({ store }: { store: PublicStore }) {
-  const theme = normalizeStorefrontTheme(store.storefront_theme);
-  const style = themeStyle(theme);
-
-  return (
-    <main
-      id="main"
-      className="min-h-screen"
-      style={{
-        background: theme.colors.background,
-        color: theme.colors.text,
-        fontFamily: "var(--store-body-font)",
-        ...style,
-      }}
-    >
-      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
-        <StorefrontNav storeName={store.name} />
-        <section className="mt-24 max-w-2xl">
-          <p
-            className="text-[11px] font-semibold uppercase tracking-[0.24em]"
-            style={{ color: `${theme.colors.primary}99` }}
-          >
-            {store.name}
-          </p>
-          <h1
-            className="mt-6 text-5xl font-medium tracking-tight sm:text-6xl"
-            style={{
-              fontFamily: "var(--store-heading-font)",
-              color: theme.colors.text,
-            }}
-          >
-            Coming soon.
-          </h1>
-          <p
-            className="mt-6 text-lg leading-8 opacity-75"
-            style={{ color: theme.colors.text }}
-          >
-            {store.name} is getting ready. There&apos;s nothing to buy yet —
-            the catalog is still being put together. Check back in a little
-            while.
-          </p>
-        </section>
       </div>
     </main>
   );

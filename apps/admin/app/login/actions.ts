@@ -7,7 +7,7 @@
 // We look up the workspace tenant by uid, call auth-bff /auth/auto-login,
 // and forward the resulting Set-Cookie back to the browser response.
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import { autoLogin, AuthBffError } from "@/lib/auth/auth-bff";
 import {
@@ -15,6 +15,35 @@ import {
   PlatformApiError,
 } from "@/lib/api/platform-api";
 import { publicConfig } from "@/lib/config";
+
+const PLATFORM_API_URL =
+  process.env.PLATFORM_API_URL ?? "http://localhost:8086";
+
+// If the sign-in request is arriving at `{slug}-admin.mark8ly.com`,
+// resolve that slug to a tenant id. Returns null when the host is not
+// a per-tenant subdomain, when platform-api is unreachable, or when
+// the slug isn't a known store. Best-effort — never throws.
+async function tenantIdForHostSlug(
+  hostHeader: string | null | undefined,
+): Promise<string | null> {
+  if (!hostHeader) return null;
+  // Strip the port if one was appended (e.g. during local dev or tests).
+  const host = hostHeader.split(":")[0] ?? "";
+  const match = host.match(/^([^.]+)-admin\.mark8ly\.com$/);
+  if (!match || !match[1]) return null;
+  const slug = match[1];
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: { tenant_id?: string } };
+    return body.data?.tenant_id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 type Result<T> =
   | { ok: true; data: T }
@@ -51,7 +80,26 @@ export async function signIn(
     // on, pick the first, and flag the caller if there's more than
     // one so the UI can offer a picker.
     const tenants = await listMemberTenants(input.uid);
-    const primary = tenants[0];
+    if (tenants.length === 0) {
+      return {
+        ok: false,
+        code: "tenant_not_found",
+        message: "no store found for this account",
+      };
+    }
+
+    // Subdomain-aware primary selection. When the user signs in on
+    // `{slug}-admin.mark8ly.com` AND the slug resolves to a tenant
+    // the user belongs to, use that tenant instead of `tenants[0]`.
+    // Without this, a founder who owns `india-store` but also has a
+    // staff role on `demo-store` lands on the demo-store picker even
+    // though the india-store subdomain is unambiguous.
+    const h = await headers();
+    const hostTenantId = await tenantIdForHostSlug(h.get("host"));
+    const hostMatched = hostTenantId
+      ? tenants.find((t) => t.tenant_id === hostTenantId) ?? null
+      : null;
+    const primary = hostMatched ?? tenants[0];
     if (!primary) {
       return {
         ok: false,
@@ -83,11 +131,16 @@ export async function signIn(
       }
     }
 
+    // When the host uniquely selects a tenant, skip the picker even if
+    // the user belongs to multiple stores — we've already committed to
+    // the one their subdomain points at.
+    const multipleTenants = tenants.length > 1 && !hostMatched;
+
     return {
       ok: true,
       data: {
         tenantId: primary.tenant_id,
-        multipleTenants: tenants.length > 1,
+        multipleTenants,
       },
     };
   } catch (err) {

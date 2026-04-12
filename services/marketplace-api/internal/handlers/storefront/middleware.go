@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -201,15 +202,26 @@ func validateSessionCookie(cookie, secret string) (*sessionClaims, error) {
 	mac.Write([]byte(payloadB64))
 	expectedSig := mac.Sum(nil)
 
-	actualSig, err := base64.RawURLEncoding.DecodeString(sigB64)
+	// The storefront encodes the signature as hex (not base64url).
+	// Try hex first, fall back to base64url for forward compatibility.
+	actualSig, err := hex.DecodeString(sigB64)
 	if err != nil {
-		return nil, errors.New("malformed cookie: invalid signature encoding")
+		// Fallback: try base64url encoding
+		actualSig, err = base64.RawURLEncoding.DecodeString(sigB64)
+		if err != nil {
+			return nil, errors.New("malformed cookie: invalid signature encoding")
+		}
 	}
 	if !hmac.Equal(expectedSig, actualSig) {
 		return nil, errors.New("invalid cookie signature")
 	}
 
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(payloadB64)
+	// Payload is standard base64 (not base64url) from the storefront.
+	payloadBytes, err := base64.StdEncoding.DecodeString(payloadB64)
+	if err != nil {
+		// Fallback: try base64url
+		payloadBytes, err = base64.RawURLEncoding.DecodeString(payloadB64)
+	}
 	if err != nil {
 		return nil, errors.New("malformed cookie: invalid payload encoding")
 	}

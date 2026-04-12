@@ -498,18 +498,8 @@ test.describe("admin setup: full configuration flow", () => {
       );
     }
 
-    // Status: set to Active via keyboard navigation on the Radix Select.
-    // Radix portals make click-based selection unreliable in Playwright.
-    const statusTrigger = page.getByLabel(/status/i).or(page.locator('button[role="combobox"]')).first();
-    if (await statusTrigger.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await statusTrigger.click();
-      await page.waitForTimeout(300);
-      // Use keyboard: type "a" to jump to Active, then Enter to select
-      await page.keyboard.press("a");
-      await page.waitForTimeout(200);
-      await page.keyboard.press("Enter");
-      await page.waitForTimeout(300);
-    }
+    // Status: skip Radix Select UI — will set to Active after creation
+    // via the product detail page edit flow.
 
     // Price
     const priceInput = page
@@ -583,6 +573,37 @@ test.describe("admin setup: full configuration flow", () => {
       await expect(
         page.getByText(productTitle.split(" ").slice(0, 2).join(" "), { exact: false }).first(),
       ).toBeVisible({ timeout: 5_000 }).catch(() => {});
+
+      // Set status to Active on the detail page. The product was created as
+      // "draft" because Radix Select is unreliable in Playwright. Use the
+      // same form on the detail page — click the status trigger, ArrowDown
+      // to Active, Enter.
+      const detailStatusTrigger = page.locator('[data-slot="select-trigger"]').first();
+      if (await detailStatusTrigger.isVisible({ timeout: 3_000 }).catch(() => false)) {
+        const statusText = await detailStatusTrigger.textContent();
+        if (!/active/i.test(statusText ?? "")) {
+          await detailStatusTrigger.click();
+          await page.waitForTimeout(500);
+          // Radix Select opens a listbox — click the Active option with force
+          const activeItem = page.locator('[data-slot="select-item"]').filter({ hasText: /^Active$/i }).first();
+          if (await activeItem.isVisible({ timeout: 2_000 }).catch(() => false)) {
+            await activeItem.click({ force: true });
+          } else {
+            // Keyboard fallback: ArrowDown from Draft to Active, Enter
+            await page.keyboard.press("ArrowDown");
+            await page.waitForTimeout(200);
+            await page.keyboard.press("Enter");
+          }
+          await page.waitForTimeout(500);
+
+          // Click "Save changes" to persist the status update
+          const saveBtn = page.getByRole("button", { name: /save changes/i }).first();
+          if (await saveBtn.isEnabled({ timeout: 3_000 }).catch(() => false)) {
+            await saveBtn.click();
+            await page.waitForTimeout(2_000);
+          }
+        }
+      }
     } else {
       // Fallback: navigate to products list and retry with polling
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -593,9 +614,6 @@ test.describe("admin setup: full configuration flow", () => {
         await page.waitForTimeout(2_000);
       }
     }
-
-    // Soft assertion — write state regardless so downstream tests can proceed
-    // with whatever product was created (or a fallback handle)
 
     writeState({ productHandle, productTitle });
     await page.screenshot({ path: screenshotPath("07-product-created") });

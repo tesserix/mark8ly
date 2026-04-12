@@ -501,7 +501,7 @@ test.describe("admin setup: full configuration flow", () => {
     ) {
       await radixTrigger.click();
       await page.waitForTimeout(500);
-      await page.locator('[role="option"]:has-text("Active")').click();
+      await page.locator('[role="option"]:has-text("Active")').click({ force: true });
       await page.waitForTimeout(500);
     }
 
@@ -697,12 +697,12 @@ test.describe("admin setup: full configuration flow", () => {
         await page.waitForTimeout(500);
         const percentOption = page
           .getByRole("option", { name: /percentage/i })
-          .or(page.getByText(/percentage/i))
+          .or(page.locator('[role="option"]:has-text("Percentage")'))
           .first();
         if (
           await percentOption.isVisible({ timeout: 2_000 }).catch(() => false)
         ) {
-          await percentOption.click();
+          await percentOption.click({ force: true });
         }
       }
     }

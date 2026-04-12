@@ -420,21 +420,33 @@ export async function listAuditLogs(
   const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/audit-logs${
     qs ? `?${qs}` : ""
   }`;
-  const res = await fetch(url, {
-    cache: "no-store",
-    headers: readHeaders(session),
-  });
 
-  if (res.status === 401 || res.status === 403 || res.status === 404) {
+  // Never throw from a server-component reader: the audit logs page
+  // is a leaf route and any unhandled throw trips the production
+  // error boundary with a digest and an opaque "We couldn't load
+  // these settings" screen. Return null on all failure modes and let
+  // the page render a graceful empty/error state.
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: readHeaders(session),
+    });
+    if (!res.ok) {
+      const errBody = (await res.json().catch(() => null)) as ApiError | null;
+      // eslint-disable-next-line no-console
+      console.error(
+        `listAuditLogs failed: ${res.status} ${errBody?.message ?? ""}`,
+      );
+      return null;
+    }
+    return (await res.json()) as AuditLogsResponse;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `listAuditLogs threw: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return null;
   }
-  if (!res.ok) {
-    const errBody = (await res.json().catch(() => null)) as ApiError | null;
-    throw new Error(
-      `marketplace-api: listAuditLogs ${res.status}: ${errBody?.message ?? "unknown error"}`,
-    );
-  }
-  return (await res.json()) as AuditLogsResponse;
 }
 
 export async function exportAuditLogsCSV(

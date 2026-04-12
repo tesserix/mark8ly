@@ -284,12 +284,19 @@ function AdminShellFrame({
           <div className="flex h-[4.5rem] items-center justify-between px-5 sm:px-7">
             <div className="flex items-center gap-3">
               <SidebarTrigger className="-ml-1 md:hidden" />
-              <div className="hidden sm:block">
-                <p className="eyebrow">{pageTitle.eyebrow}</p>
-                <h1 className="mt-1 font-serif text-2xl font-medium leading-none tracking-tight text-foreground">
-                  {pageTitle.title}
-                </h1>
-              </div>
+              {/* Compact section indicator only — the page body owns
+                  the real H1 via AdminPage, so rendering the same title
+                  here as a second H1 was double-billing every route. */}
+              <p
+                className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground-tertiary sm:block"
+                aria-label={`${pageTitle.eyebrow} / ${pageTitle.title}`}
+              >
+                {pageTitle.eyebrow}
+                <span className="mx-2 text-foreground-tertiary/50" aria-hidden="true">
+                  /
+                </span>
+                <span className="text-foreground-secondary">{pageTitle.title}</span>
+              </p>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">

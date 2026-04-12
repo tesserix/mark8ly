@@ -48,11 +48,11 @@ export function BulkActionsBar({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--paper-200)] pb-[env(safe-area-inset-bottom)] shadow-[var(--shadow-1,0_-1px_3px_rgba(0,0,0,0.06))]"
+      className="sticky bottom-0 z-30 border-t border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] pb-[env(safe-area-inset-bottom)] shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
       role="toolbar"
       aria-label="Bulk actions"
     >
-      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
+      <div className="flex items-center gap-3 px-6 py-3">
         <span className="text-sm font-medium text-[color:var(--ink-900)]">
           {count} selected
         </span>
@@ -119,7 +119,7 @@ function ActionButton({
 }) {
   const colorClass =
     variant === "danger"
-      ? "text-[color:var(--danger)] hover:bg-[color:var(--danger)] hover:bg-opacity-[0.08]"
+      ? "text-[color:var(--danger)] hover:bg-[color:var(--danger)]/[0.08]"
       : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5";
 
   return (

@@ -71,7 +71,7 @@ test.describe("storefront journey", () => {
     await expect(productLinks.first()).toBeVisible({ timeout: 10_000 });
 
     // Product from state should appear (partial match)
-    const firstWord = PRODUCT_TITLE.split(" ")[0];
+    const firstWord = PRODUCT_TITLE.split(" ")[0] ?? "";
     const productText = page.getByText(firstWord, { exact: false }).first();
     await expect(productText).toBeVisible({ timeout: 5_000 });
 
@@ -93,7 +93,7 @@ test.describe("storefront journey", () => {
     await page.waitForLoadState("networkidle").catch(() => {});
 
     // Product title visible
-    const firstWord = PRODUCT_TITLE.split(" ")[0];
+    const firstWord = PRODUCT_TITLE.split(" ")[0] ?? "";
     await expect(
       page.getByText(firstWord, { exact: false }).first(),
     ).toBeVisible({ timeout: 10_000 });
@@ -163,7 +163,7 @@ test.describe("storefront journey", () => {
     await searchInput.fill(PRODUCT_TITLE);
     await page.waitForTimeout(1_500); // debounce
 
-    const firstWord = PRODUCT_TITLE.split(" ")[0];
+    const firstWord = PRODUCT_TITLE.split(" ")[0] ?? "";
     await expect(
       page.getByText(firstWord, { exact: false }).first(),
     ).toBeVisible({ timeout: 5_000 });
@@ -195,7 +195,7 @@ test.describe("storefront journey", () => {
     await page.waitForLoadState("networkidle").catch(() => {});
 
     // Product should be visible on the filtered page
-    const firstWord = PRODUCT_TITLE.split(" ")[0];
+    const firstWord = PRODUCT_TITLE.split(" ")[0] ?? "";
     await expect(
       page.getByText(firstWord, { exact: false }).first(),
     ).toBeVisible({ timeout: 10_000 });
@@ -277,7 +277,7 @@ test.describe("storefront journey", () => {
     await page.waitForLoadState("networkidle").catch(() => {});
 
     // Product title visible in cart
-    const firstWord = PRODUCT_TITLE.split(" ")[0];
+    const firstWord = PRODUCT_TITLE.split(" ")[0] ?? "";
     await expect(
       page.getByText(firstWord, { exact: false }).first(),
     ).toBeVisible({ timeout: 10_000 });
@@ -725,7 +725,7 @@ test.describe("storefront journey", () => {
       /order\s*(?:#|id|number)?\s*[:\s]?\s*([A-Z0-9-]+)/i,
     );
     if (orderIdMatch) {
-      orderId = orderIdMatch[1];
+      orderId = orderIdMatch[1] ?? "";
     }
 
     // Write updated state

@@ -72,32 +72,33 @@ function decodeIdTokenEmail(idToken: string): string | null {
 
 // Best-effort: register the customer profile in marketplace-api so
 // they show up in the merchant's customer list and can place orders.
+// We call the web storefront /account endpoint (GET) with the session
+// cookie — the OptionalCustomerAuth middleware automatically calls
+// EnsureProfile when it sees a valid session cookie.
 async function ensureCustomerProfile(
   storeSlug: string,
-  idToken: string,
+  cookieValue: string,
 ): Promise<void> {
   try {
     const headers: Record<string, string> = {
       Accept: "application/json",
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${idToken}`,
+      Cookie: `mp_customer_session=${cookieValue}`,
     };
     if (STOREFRONT_KEY) headers["X-Storefront-Key"] = STOREFRONT_KEY;
 
     await fetch(
-      `${MARKETPLACE_API_URL}/api/v1/mobile/storefront/stores/${encodeURIComponent(storeSlug)}/account/register`,
+      `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/account`,
       {
-        method: "POST",
+        method: "GET",
         headers,
-        body: JSON.stringify({}),
         cache: "no-store",
       },
     );
-    // Ignore errors — profile may already exist (409) or the mobile
-    // endpoint may not be wired. The customer can still browse; profile
-    // creation is a nice-to-have for the merchant dashboard.
+    // The GET /account call triggers OptionalCustomerAuth middleware
+    // which calls EnsureProfile. We don't care about the response —
+    // the side effect (profile creation) is what matters.
   } catch {
-    // silent
+    // silent — customer can still browse
   }
 }
 
@@ -140,8 +141,10 @@ export async function customerSignIn(
       maxAge: 60 * 60 * 24 * 30, // 30 days
     });
 
-    // Best-effort profile registration
-    await ensureCustomerProfile(input.storeSlug, input.idToken);
+    // Best-effort profile registration — pass the freshly minted cookie
+    // so marketplace-api's OptionalCustomerAuth can validate it and call
+    // EnsureProfile.
+    await ensureCustomerProfile(input.storeSlug, cookieValue);
 
     return { ok: true };
   } catch (err) {

@@ -14,8 +14,7 @@ import { SkipLink } from "@repo/ui/skip-link";
 import { CartProvider } from "@/components/CartProvider";
 import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
 import { slugFromHost } from "@/lib/slug";
-import { buildLoginUrl, buildLogoutUrl, hasSessionCookie } from "@/lib/auth";
-import { fetchProfile } from "@/lib/api/customer-api";
+import { buildLoginUrl, buildLogoutUrl, hasSessionCookie, decodeSession } from "@/lib/auth";
 
 import "./globals.css";
 
@@ -132,12 +131,21 @@ export default async function RootLayout({ children }: RootLayoutProps) {
   let email: string | null = null;
 
   if (authenticated) {
-    const profile = await fetchProfile(storeSlug, cookieHeader);
-    if (profile) {
+    const sessionCookie = cookieStore.get("mp_customer_session");
+    const session = sessionCookie
+      ? decodeSession(sessionCookie.value)
+      : null;
+    if (session) {
+      email = session.email;
+      // Derive a display name from the email for now. Once the
+      // customer profile has first_name/last_name populated, we can
+      // fetch those from marketplace-api.
+      const local = session.email.split("@")[0] ?? "";
+      const first = local.split(/[+.\-_]/)[0] ?? "";
       displayName =
-        [profile.first_name, profile.last_name].filter(Boolean).join(" ") ||
-        null;
-      email = profile.email;
+        first && /^[a-z]+$/i.test(first)
+          ? first.charAt(0).toUpperCase() + first.slice(1).toLowerCase()
+          : null;
     }
   }
 

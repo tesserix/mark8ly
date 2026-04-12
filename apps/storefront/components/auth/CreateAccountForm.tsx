@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { customerSignIn } from "@/app/sign-in/actions";
+import { customerSignUp } from "@/app/create-account/actions";
 
 interface GipConfig {
   apiKey: string;
@@ -11,7 +11,7 @@ interface GipConfig {
   projectId: string;
 }
 
-interface CustomerSignInFormProps {
+interface CreateAccountFormProps {
   gipConfig: GipConfig;
   storeSlug: string;
   returnUrl: string;
@@ -26,7 +26,7 @@ class GIPError extends Error {
   }
 }
 
-async function signInWithPassword(
+async function signUpWithPassword(
   email: string,
   password: string,
   config: GipConfig,
@@ -34,11 +34,11 @@ async function signInWithPassword(
   if (!config.apiKey || !config.tenantId) {
     throw new GIPError(
       "config_missing",
-      "Sign-in is not configured for this store yet.",
+      "Account creation is not configured for this store yet.",
     );
   }
 
-  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${config.apiKey}`;
+  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${config.apiKey}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -56,14 +56,18 @@ async function signInWithPassword(
     } | null;
     const code = body?.error?.message ?? "UNKNOWN";
     const friendly: Record<string, string> = {
-      EMAIL_NOT_FOUND: "No account found with this email.",
-      INVALID_PASSWORD: "Incorrect password.",
-      INVALID_LOGIN_CREDENTIALS: "Email or password is incorrect.",
-      USER_DISABLED: "This account has been disabled.",
+      EMAIL_EXISTS: "An account with this email already exists. Try signing in instead.",
+      WEAK_PASSWORD: "Password must be at least 6 characters.",
+      INVALID_EMAIL: "Please enter a valid email address.",
       TOO_MANY_ATTEMPTS_TRY_LATER:
         "Too many attempts. Please wait a moment and try again.",
+      OPERATION_NOT_ALLOWED:
+        "Account creation is not enabled for this store yet.",
     };
-    throw new GIPError(code, friendly[code] ?? "Sign-in failed. Please try again.");
+    throw new GIPError(
+      code,
+      friendly[code] ?? "Account creation failed. Please try again.",
+    );
   }
 
   const data = (await res.json()) as {
@@ -73,11 +77,11 @@ async function signInWithPassword(
   return { uid: data.localId, idToken: data.idToken };
 }
 
-export function CustomerSignInForm({
+export function CreateAccountForm({
   gipConfig,
   storeSlug,
   returnUrl,
-}: CustomerSignInFormProps) {
+}: CreateAccountFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,20 +96,20 @@ export function CustomerSignInForm({
       setError("Email is required.");
       return;
     }
-    if (!password) {
-      setError("Password is required.");
+    if (!password || password.length < 6) {
+      setError("Password must be at least 6 characters.");
       return;
     }
 
     startTransition(async () => {
       try {
-        const gipResult = await signInWithPassword(
+        const gipResult = await signUpWithPassword(
           email.trim(),
           password,
           gipConfig,
         );
 
-        const result = await customerSignIn({
+        const result = await customerSignUp({
           idToken: gipResult.idToken,
           uid: gipResult.uid,
           storeSlug,
@@ -132,13 +136,13 @@ export function CustomerSignInForm({
     <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
       <div className="space-y-1.5">
         <label
-          htmlFor="customer-email"
+          htmlFor="signup-email"
           className="block text-sm font-medium text-[color:var(--ink-900)]"
         >
           Email address
         </label>
         <input
-          id="customer-email"
+          id="signup-email"
           type="email"
           autoComplete="email"
           spellCheck={false}
@@ -150,19 +154,22 @@ export function CustomerSignInForm({
 
       <div className="space-y-1.5">
         <label
-          htmlFor="customer-password"
+          htmlFor="signup-password"
           className="block text-sm font-medium text-[color:var(--ink-900)]"
         >
           Password
         </label>
         <input
-          id="customer-password"
+          id="signup-password"
           type="password"
-          autoComplete="current-password"
+          autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="w-full rounded-md border border-[color:var(--ink-900)]/20 bg-white px-3 py-2.5 text-base text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         />
+        <p className="text-xs text-[color:var(--ink-900)] opacity-50">
+          At least 6 characters.
+        </p>
       </div>
 
       {error && (
@@ -176,16 +183,16 @@ export function CustomerSignInForm({
         disabled={pending}
         className="w-full rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
       >
-        {pending ? "Signing in..." : "Sign in"}
+        {pending ? "Creating account..." : "Create account"}
       </button>
 
       <p className="text-center text-xs text-[color:var(--ink-900)] opacity-60">
-        Don&apos;t have an account?{" "}
+        Already have an account?{" "}
         <Link
-          href="/create-account"
+          href="/sign-in"
           className="text-[color:var(--moss-700)] underline underline-offset-4"
         >
-          Create one
+          Sign in
         </Link>
       </p>
     </form>

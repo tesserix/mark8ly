@@ -637,8 +637,26 @@ test.describe("storefront journey", () => {
     });
     const page = await ctx.newPage();
 
+    // Add product to cart (fresh context — cart may be empty)
+    await page.goto(`/products/${activeProductHandle}`);
+    await page.waitForLoadState("networkidle").catch(() => {});
+    const addBtn = page.getByRole("button", { name: /add to cart/i }).first();
+    if (await addBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await addBtn.click();
+      await page.waitForTimeout(1_000);
+    }
+
     await page.goto("/checkout");
     await page.waitForLoadState("networkidle").catch(() => {});
+
+    // Fill shipping address (required for Place order to be enabled)
+    await page.locator("#ship-name").fill("E2E Test Customer").catch(() => {});
+    await page.locator("#ship-line1").fill("123 Test Lane").catch(() => {});
+    await page.locator("#ship-city").fill("Mumbai").catch(() => {});
+    await page.locator("#ship-region").fill("Maharashtra").catch(() => {});
+    await page.locator("#ship-postal").fill("400001").catch(() => {});
+    await page.locator("#ship-country").selectOption("IN").catch(() => {});
+    await page.waitForTimeout(2_000);
 
     // Select payment method — Razorpay or first available option
     const razorpayOption = page

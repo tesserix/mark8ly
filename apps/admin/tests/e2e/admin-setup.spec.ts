@@ -573,43 +573,33 @@ test.describe("admin setup: full configuration flow", () => {
         page.getByText(productTitle.split(" ").slice(0, 2).join(" "), { exact: false }).first(),
       ).toBeVisible({ timeout: 5_000 }).catch(() => {});
 
-      // Set status to Active via direct marketplace-api PATCH.
-      // Extract storeId + productId from page data, then call the API.
-      const productIdMatch = url.match(/\/products\/([a-f0-9-]+)/i);
-      const productId = productIdMatch?.[1] ?? "";
-      if (productId) {
-        // Get storeId and auth headers from the page's embedded data
-        const apiInfo = await page.evaluate(() => {
-          // The AdminShell SSR props contain store/tenant info in the RSC payload
-          const body = document.body.innerHTML;
-          const storeMatch = body.match(/"currentTenantId":"([^"]+)"/);
-          const tenantId = storeMatch?.[1] ?? "";
-          // Find store ID from the URL or page content
-          const storeIdMatch = body.match(/"id":"([a-f0-9-]{36})"/);
-          const storeId = storeIdMatch?.[1] ?? "";
-          return { tenantId, storeId };
+      // Change status from Draft → Active on the product detail page.
+      // Wait explicitly for the Radix Select trigger to appear — it renders
+      // after the General tab hydrates, which can take a moment.
+      const draftTrigger = page.locator('[data-slot="select-trigger"]')
+        .filter({ hasText: /^Draft$/i });
+      try {
+        await draftTrigger.waitFor({ state: "visible", timeout: 5_000 });
+        await draftTrigger.click();
+        await page.waitForTimeout(500);
+        const activeOption = page.locator('[role="option"]')
+          .filter({ hasText: /^Active$/i });
+        await activeOption.waitFor({ state: "visible", timeout: 3_000 });
+        await activeOption.click({ force: true });
+        await page.waitForTimeout(500);
+        // Save changes — button enables when form is dirty
+        const saveBtn = page.getByRole("button", { name: /save changes/i }).first();
+        await saveBtn.waitFor({ state: "visible", timeout: 3_000 });
+        // Wait for enabled (form becomes dirty after status change)
+        await expect(saveBtn).toBeEnabled({ timeout: 3_000 });
+        await saveBtn.click();
+        await page.waitForTimeout(2_000);
+      } catch {
+        // Status change failed — product stays as draft, storefront won't show it
+        test.info().annotations.push({
+          type: "warning",
+          description: "Failed to set product status to Active — Radix Select interaction failed",
         });
-
-        // Use the admin session to call marketplace-api via the admin app
-        // Navigate to products list and use bulk actions
-        await page.goto("/products");
-        await page.waitForLoadState("networkidle").catch(() => {});
-
-        // Select the product checkbox and use bulk "Set active" action
-        const checkbox = page.locator(`tr:has-text("${productHandle}")`)
-          .locator('input[type="checkbox"], [role="checkbox"]').first();
-        if (await checkbox.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await checkbox.click();
-          await page.waitForTimeout(500);
-          // Look for bulk action bar with "Set active" or status change option
-          const bulkActive = page.getByRole("button", { name: /active|publish/i })
-            .or(page.getByText(/set active|mark active/i))
-            .first();
-          if (await bulkActive.isVisible({ timeout: 3_000 }).catch(() => false)) {
-            await bulkActive.click();
-            await page.waitForTimeout(2_000);
-          }
-        }
       }
     } else {
       // Fallback: navigate to products list and retry with polling

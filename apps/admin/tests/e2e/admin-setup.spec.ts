@@ -707,12 +707,11 @@ test.describe("admin setup: full configuration flow", () => {
       }
     }
 
-    // Set value to 10
+    // Set value to 10 — the label is "Discount (%)" for percentage type
     const valueInput = page
-      .getByLabel(/value|amount|discount/i)
-      .or(page.locator('input[name="value"]'))
-      .or(page.locator('input[name="amount"]'))
-      .or(page.locator('input[name="discount_value"]'))
+      .getByLabel(/discount \(%\)/i)
+      .or(page.getByLabel(/amount \(/i))
+      .or(page.locator('input[type="number"][min="0"]'))
       .first();
     const hasValue = await valueInput
       .isVisible({ timeout: 3_000 })

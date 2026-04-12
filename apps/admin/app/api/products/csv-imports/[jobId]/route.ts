@@ -18,7 +18,15 @@ export async function GET(
   const userId = h.get("x-session-user-id") ?? "";
   const tenantId = h.get("x-session-tenant-id") ?? "";
   // storeId from query param or session — for now, use the session store
-  const storeId = h.get("x-session-store-id") ?? "";
+  let storeId = h.get("x-session-store-id") ?? "";
+  if (!storeId) {
+    const tenantId = h.get("x-session-tenant-id") ?? "";
+    if (tenantId) {
+      const { listStoresByTenant } = await import("@/lib/api/platform-api");
+      const stores = await listStoresByTenant(tenantId).catch(() => []);
+      storeId = stores[0]?.id ?? "";
+    }
+  }
 
   if (!userId || !tenantId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

@@ -10,7 +10,7 @@ import {
   deleteShippingConfig,
 } from "@/lib/api/settings-api";
 import type { ShippingConfigUpsertInput } from "@/lib/api/settings-api";
-import { canEditSettings } from "@/lib/auth/serverSession";
+import { canEditSettings, resolveStoreId } from "@/lib/auth/serverSession";
 import type { TenantRole } from "@/lib/api/platform-api";
 
 export type ActionResult =
@@ -22,7 +22,7 @@ async function getSession() {
   const userId = h.get("x-session-user-id") ?? "";
   const tenantId = h.get("x-session-tenant-id") ?? "";
   const role = (h.get("x-session-role") ?? "viewer") as TenantRole;
-  const storeId = h.get("x-session-store-id") ?? "";
+  const storeId = await resolveStoreId();
   return { userId, tenantId, role, storeId };
 }
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
+import { resolveStoreId } from "@/lib/auth/serverSession";
 import {
   blockCustomer,
   unblockCustomer,
@@ -25,7 +26,7 @@ async function readContext(): Promise<ActionContext | null> {
   const h = await headers();
   const userId = h.get("x-session-user-id") ?? "";
   const tenantId = h.get("x-session-tenant-id") ?? "";
-  const storeId = h.get("x-session-store-id") ?? "";
+  const storeId = await resolveStoreId();
   if (!userId || !tenantId || !storeId) return null;
   return { userId, tenantId, storeId };
 }

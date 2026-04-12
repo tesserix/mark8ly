@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function IssueGiftCardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Currency from query param (set by server layout) or fallback to INR
+  const storeCurrency = searchParams.get("currency") ?? "INR";
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,7 +89,7 @@ export default function IssueGiftCardPage() {
               type="text"
               maxLength={3}
               required
-              defaultValue="USD"
+              defaultValue={storeCurrency}
               className="w-24 rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm uppercase focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
             />
           </div>

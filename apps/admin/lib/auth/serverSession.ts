@@ -102,6 +102,25 @@ export async function getServerSessionContext(): Promise<ServerSessionContext> {
   };
 }
 
+// ─── Store ID resolution ──────────────────────────────────────────
+//
+// Server actions receive x-session-store-id from middleware, but the
+// header is often empty (session cookie doesn't include store_id).
+// This helper resolves the store ID by falling back to the tenant's
+// first store — same logic as getServerSessionContext.
+
+export async function resolveStoreId(): Promise<string> {
+  const h = await headers();
+  const storeId = h.get("x-session-store-id") ?? "";
+  if (storeId) return storeId;
+
+  const tenantId = h.get("x-session-tenant-id") ?? "";
+  if (!tenantId) return "";
+
+  const stores = await listStoresByTenant(tenantId).catch(() => []);
+  return stores[0]?.id ?? "";
+}
+
 // ─── Permission helpers ────────────────────────────────────────────
 //
 // Single source of truth for client-visible "can this role do X?"

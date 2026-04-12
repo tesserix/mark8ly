@@ -27,7 +27,8 @@ try {
   // No shared state file — tests degrade gracefully
 }
 
-const ADMIN_STATE = state.adminStorageState ?? join(__dirname, ".state", "admin-state.json");
+// Always use the absolute path — the relative path in flow-state.json doesn't resolve reliably
+const ADMIN_STATE = join(__dirname, ".state", "admin-state.json");
 const ORDER_ID = state.orderId ?? "";
 const CUSTOMER_EMAIL = "admtesserix@gmail.com";
 

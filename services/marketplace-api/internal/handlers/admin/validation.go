@@ -3,11 +3,17 @@ package admin
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/product"
 )
+
+func isValidUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
+}
 
 // CreateCategoryRequest is the wire body for POST admin create category.
 type CreateCategoryRequest struct {
@@ -322,7 +328,10 @@ func toServiceCreateRequest(req CreateProductRequest, tenantID, storeID, created
 		PrimaryCategoryID: req.PrimaryCategoryID,
 		CategoryIDs:       req.CategoryIDs,
 	}
-	if createdBy != "" {
+	// Only set CreatedBy when the value is a valid UUID. Post-GIP migration,
+	// user_id may be a Firebase UID (non-UUID), which would violate the
+	// `created_by uuid` column constraint.
+	if createdBy != "" && isValidUUID(createdBy) {
 		out.CreatedBy = &createdBy
 	}
 	for _, o := range req.Options {
@@ -378,7 +387,7 @@ func toServiceUpdateBasicsRequest(req UpdateProductRequest, id, tenantID, storeI
 		SEODescription:    req.SEODescription,
 		PrimaryCategoryID: req.PrimaryCategoryID,
 	}
-	if updatedBy != "" {
+	if updatedBy != "" && isValidUUID(updatedBy) {
 		out.UpdatedBy = &updatedBy
 	}
 	return out
@@ -404,7 +413,7 @@ func toServiceUpdateAggregateRequest(req UpdateProductRequest, id, tenantID, sto
 		CategoryIDs:       req.CategoryIDs,
 		RemovedVariantIDs: req.RemovedVariantIDs,
 	}
-	if updatedBy != "" {
+	if updatedBy != "" && isValidUUID(updatedBy) {
 		out.UpdatedBy = &updatedBy
 	}
 	if req.Options != nil {

@@ -464,6 +464,13 @@ test.describe("admin setup: full configuration flow", () => {
     });
     const page = await ctx.newPage();
 
+    // Capture console errors for debugging form submission
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") consoleErrors.push(msg.text());
+    });
+    page.on("pageerror", (err) => consoleErrors.push(`PAGE: ${err.message}`));
+
     await page.goto("/products/new");
     await page.waitForLoadState("networkidle").catch(() => {});
 
@@ -491,18 +498,17 @@ test.describe("admin setup: full configuration flow", () => {
       );
     }
 
-    // Status: Active — could be native <select> or Radix combobox
-    const nativeSelect = page.locator("select").first();
-    const radixTrigger = page.locator('button[role="combobox"]').first();
-    if (await nativeSelect.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await nativeSelect.selectOption("active");
-    } else if (
-      await radixTrigger.isVisible({ timeout: 2_000 }).catch(() => false)
-    ) {
-      await radixTrigger.click();
-      await page.waitForTimeout(500);
-      await page.locator('[role="option"]:has-text("Active")').click({ force: true });
-      await page.waitForTimeout(500);
+    // Status: set to Active via keyboard navigation on the Radix Select.
+    // Radix portals make click-based selection unreliable in Playwright.
+    const statusTrigger = page.getByLabel(/status/i).or(page.locator('button[role="combobox"]')).first();
+    if (await statusTrigger.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await statusTrigger.click();
+      await page.waitForTimeout(300);
+      // Use keyboard: type "a" to jump to Active, then Enter to select
+      await page.keyboard.press("a");
+      await page.waitForTimeout(200);
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(300);
     }
 
     // Price
@@ -527,6 +533,16 @@ test.describe("admin setup: full configuration flow", () => {
 
     await page.screenshot({ path: screenshotPath("07-product-form") });
 
+    // Listen for the API response to diagnose failures
+    const apiResponses: Array<{ url: string; status: number; body: string }> = [];
+    page.on("response", async (response) => {
+      const url = response.url();
+      if (url.includes("/products") && response.request().method() === "POST") {
+        const body = await response.text().catch(() => "");
+        apiResponses.push({ url, status: response.status(), body: body.slice(0, 500) });
+      }
+    });
+
     // Submit
     const createBtn = page
       .getByRole("button", { name: /create product/i })
@@ -537,6 +553,21 @@ test.describe("admin setup: full configuration flow", () => {
     await page
       .waitForURL(/\/products\/(?!new)/, { timeout: 15_000 })
       .catch(async () => {
+        // Capture any validation errors visible on the page
+        const errorTexts = await page.locator('[role="alert"], .text-red, .text-destructive, [class*="error"], [class*="danger"]').allTextContents().catch(() => []);
+        // Scroll down to reveal any error messages below fold
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await page.waitForTimeout(500);
+        const errorTextsAfterScroll = await page.locator('[role="alert"], [class*="error"], [class*="danger"], [class*="destructive"]').allTextContents().catch(() => []);
+        test.info().annotations.push({
+          type: "product-debug",
+          description: JSON.stringify({ errorTexts, errorTextsAfterScroll, apiResponses, consoleErrors: consoleErrors.slice(0, 10) }),
+        });
+        // Write debug to a file so we can read it
+        writeFileSync(
+          join(STATE_DIR, "product-debug.json"),
+          JSON.stringify({ errorTexts, errorTextsAfterScroll, apiResponses, consoleErrors }, null, 2),
+        );
         await page.screenshot({ path: screenshotPath("07-product-error") });
       });
 

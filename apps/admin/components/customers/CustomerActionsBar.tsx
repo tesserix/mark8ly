@@ -98,7 +98,7 @@ export function CustomerActionsBar({
                 setBlockReason("");
               }}
               disabled={isPending}
-              className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-4 py-1.5 text-sm text-[color:var(--ink-900)] transition-colors hover:bg-[color:var(--ink-900)] hover:bg-opacity-[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
+              className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-4 py-1.5 text-sm text-[color:var(--ink-900)] transition-colors hover:bg-[color:var(--ink-900)]/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
             >
               Cancel
             </button>

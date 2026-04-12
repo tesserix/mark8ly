@@ -26,7 +26,7 @@ export function CustomersListPagination({
         {currentPage > 1 && (
           <Link
             href={buildHref(currentPage - 1)}
-            className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-3 py-2.5 text-sm text-[color:var(--ink-900)] transition-colors hover:bg-[color:var(--ink-900)] hover:bg-opacity-[0.04] focus-visible:outline-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-3 py-2.5 text-sm text-[color:var(--ink-900)] transition-colors hover:bg-[color:var(--ink-900)]/[0.04] focus-visible:outline-2 focus-visible:outline-[color:var(--moss-700)]"
           >
             Previous
           </Link>
@@ -34,7 +34,7 @@ export function CustomersListPagination({
         {currentPage < totalPages && (
           <Link
             href={buildHref(currentPage + 1)}
-            className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-3 py-2.5 text-sm text-[color:var(--ink-900)] transition-colors hover:bg-[color:var(--ink-900)] hover:bg-opacity-[0.04] focus-visible:outline-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-3 py-2.5 text-sm text-[color:var(--ink-900)] transition-colors hover:bg-[color:var(--ink-900)]/[0.04] focus-visible:outline-2 focus-visible:outline-[color:var(--moss-700)]"
           >
             Next
           </Link>

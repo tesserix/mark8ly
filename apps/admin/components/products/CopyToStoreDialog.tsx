@@ -100,7 +100,7 @@ export function CopyToStoreDialog({
               className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors ${
                 selectedStoreId === store.id
                   ? "bg-[color:var(--moss-700)] bg-opacity-[0.08] text-[color:var(--ink-900)]"
-                  : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-[0.03]"
+                  : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/[0.03]"
               }`}
             >
               <input
@@ -135,7 +135,7 @@ export function CopyToStoreDialog({
           <DialogClose asChild>
             <button
               type="button"
-              className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-4 py-2 text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-4 py-2 text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
             >
               Cancel
             </button>

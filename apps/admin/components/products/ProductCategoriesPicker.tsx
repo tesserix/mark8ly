@@ -155,7 +155,7 @@ export function ProductCategoriesPicker({
                       e.preventDefault();
                       add(cat.id);
                     }}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5 focus-visible:bg-[color:var(--ink-900)] focus-visible:bg-opacity-5 focus-visible:outline-none"
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5 focus-visible:bg-[color:var(--ink-900)] focus-visible:bg-opacity-5 focus-visible:outline-none"
                   >
                     <span>{cat.name}</span>
                     <span className="text-xs opacity-50">/{cat.slug}</span>
@@ -174,7 +174,7 @@ export function ProductCategoriesPicker({
                     e.preventDefault();
                     handleCreate();
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[color:var(--moss-700)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5 focus-visible:bg-[color:var(--ink-900)] focus-visible:bg-opacity-5 focus-visible:outline-none"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[color:var(--moss-700)] hover:bg-[color:var(--ink-900)]/5 focus-visible:bg-[color:var(--ink-900)] focus-visible:bg-opacity-5 focus-visible:outline-none"
                 >
                   <Plus className="h-3 w-3" aria-hidden="true" />
                   {creating

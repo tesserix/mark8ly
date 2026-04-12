@@ -31,7 +31,7 @@ export function CustomersList({ customers }: CustomersListProps) {
           >
             <Link
               href={`/customers/${c.id}`}
-              className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-6 py-4 transition-colors hover:bg-[color:var(--ink-900)] hover:bg-opacity-[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-6 py-4 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
               aria-label={`Customer ${formatName(c)} — ${c.email}`}
             >
               <span className="flex flex-col gap-1">

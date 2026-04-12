@@ -87,7 +87,7 @@ function PageButton({
     ? "bg-[color:var(--ink-900)] text-[color:var(--paper-200)]"
     : disabled
       ? "text-[color:var(--ink-900)] opacity-30"
-      : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5";
+      : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5";
   if (href) {
     return (
       <Link

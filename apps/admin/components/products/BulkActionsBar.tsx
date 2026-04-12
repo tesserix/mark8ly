@@ -120,7 +120,7 @@ function ActionButton({
   const colorClass =
     variant === "danger"
       ? "text-[color:var(--danger)] hover:bg-[color:var(--danger)] hover:bg-opacity-[0.08]"
-      : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5";
+      : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5";
 
   return (
     <button

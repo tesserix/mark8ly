@@ -279,7 +279,7 @@ const ProductRow = memo(function ProductRow({
   const isOutOfStock = stock === 0;
 
   return (
-    <tr className="h-14 border-b border-[color:var(--ink-900)] border-opacity-5 transition-colors hover:bg-[color:var(--ink-900)] hover:bg-opacity-[0.02]">
+    <tr className="h-14 border-b border-[color:var(--ink-900)]/5 transition-colors hover:bg-[color:var(--ink-900)]/[0.02]">
       <td className="py-3">
         <input
           type="checkbox"
@@ -331,7 +331,7 @@ const ProductRow = memo(function ProductRow({
           aria-haspopup="menu"
           aria-expanded={isMenuOpen}
           onClick={onMenuToggle}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--ink-900)] opacity-60 hover:bg-[color:var(--ink-900)] hover:bg-opacity-5 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--ink-900)] opacity-60 hover:bg-[color:var(--ink-900)]/5 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -344,7 +344,7 @@ const ProductRow = memo(function ProductRow({
               type="button"
               role="menuitem"
               onClick={onCopyToStore}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)] hover:bg-opacity-5"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5"
             >
               <Copy className="h-3.5 w-3.5" aria-hidden="true" />
               Copy to store

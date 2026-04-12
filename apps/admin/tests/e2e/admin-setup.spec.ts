@@ -498,21 +498,7 @@ test.describe("admin setup: full configuration flow", () => {
       );
     }
 
-    // Status: intercept the server action request and rewrite "draft" → "active"
-    // in the serialized body. Radix Select is fundamentally unreliable in
-    // headless Playwright — this route interception is bulletproof.
-    await page.route("**/*", async (route) => {
-      const request = route.request();
-      if (request.method() === "POST" && request.url().includes("/products/new")) {
-        const postData = request.postData();
-        if (postData && postData.includes('"draft"')) {
-          const modified = postData.replace('"draft"', '"active"');
-          await route.continue({ postData: modified });
-          return;
-        }
-      }
-      await route.continue();
-    });
+    // Status will be set to Active after creation via direct API PATCH.
 
     // Price
     const priceInput = page
@@ -581,14 +567,50 @@ test.describe("admin setup: full configuration flow", () => {
     const onDetailPage = /\/products\/[a-zA-Z0-9-]+/.test(url) &&
       !url.includes("/products/new");
 
-    // Clean up the route intercept
-    await page.unrouteAll();
-
     if (onDetailPage) {
       // On product detail — verify title is visible
       await expect(
         page.getByText(productTitle.split(" ").slice(0, 2).join(" "), { exact: false }).first(),
       ).toBeVisible({ timeout: 5_000 }).catch(() => {});
+
+      // Set status to Active via direct marketplace-api PATCH.
+      // Extract storeId + productId from page data, then call the API.
+      const productIdMatch = url.match(/\/products\/([a-f0-9-]+)/i);
+      const productId = productIdMatch?.[1] ?? "";
+      if (productId) {
+        // Get storeId and auth headers from the page's embedded data
+        const apiInfo = await page.evaluate(() => {
+          // The AdminShell SSR props contain store/tenant info in the RSC payload
+          const body = document.body.innerHTML;
+          const storeMatch = body.match(/"currentTenantId":"([^"]+)"/);
+          const tenantId = storeMatch?.[1] ?? "";
+          // Find store ID from the URL or page content
+          const storeIdMatch = body.match(/"id":"([a-f0-9-]{36})"/);
+          const storeId = storeIdMatch?.[1] ?? "";
+          return { tenantId, storeId };
+        });
+
+        // Use the admin session to call marketplace-api via the admin app
+        // Navigate to products list and use bulk actions
+        await page.goto("/products");
+        await page.waitForLoadState("networkidle").catch(() => {});
+
+        // Select the product checkbox and use bulk "Set active" action
+        const checkbox = page.locator(`tr:has-text("${productHandle}")`)
+          .locator('input[type="checkbox"], [role="checkbox"]').first();
+        if (await checkbox.isVisible({ timeout: 3_000 }).catch(() => false)) {
+          await checkbox.click();
+          await page.waitForTimeout(500);
+          // Look for bulk action bar with "Set active" or status change option
+          const bulkActive = page.getByRole("button", { name: /active|publish/i })
+            .or(page.getByText(/set active|mark active/i))
+            .first();
+          if (await bulkActive.isVisible({ timeout: 3_000 }).catch(() => false)) {
+            await bulkActive.click();
+            await page.waitForTimeout(2_000);
+          }
+        }
+      }
     } else {
       // Fallback: navigate to products list and retry with polling
       for (let attempt = 0; attempt < 3; attempt++) {

@@ -69,7 +69,8 @@ func TestToServiceCreateRequest_PreservesAllFields(t *testing.T) {
 			{StorageKey: "k", URL: "u", Position: 0, MediaType: "image"},
 		},
 	}
-	out := toServiceCreateRequest(req, "t1", "s1", "u1")
+	testUserUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	out := toServiceCreateRequest(req, "t1", "s1", testUserUUID)
 	if out.TenantID != "t1" || out.StoreID != "s1" {
 		t.Fatalf("tenant/store wrong: %+v", out)
 	}
@@ -79,7 +80,7 @@ func TestToServiceCreateRequest_PreservesAllFields(t *testing.T) {
 	if out.Description != "body" {
 		t.Fatalf("description not dereffed: %q", out.Description)
 	}
-	if out.CreatedBy == nil || *out.CreatedBy != "u1" {
+	if out.CreatedBy == nil || *out.CreatedBy != testUserUUID {
 		t.Fatalf("createdBy wrong")
 	}
 	if len(out.Options) != 1 || len(out.Options[0].Values) != 2 || out.Options[0].Values[0].Value != "S" {

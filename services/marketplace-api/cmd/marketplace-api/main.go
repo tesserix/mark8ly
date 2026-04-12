@@ -51,6 +51,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/review"
+	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
@@ -228,6 +229,9 @@ func main() {
 		countryRepoAdmin := country.NewRepository(conn)
 		paymentSettingsHandler := admin.NewPaymentSettingsHandler(conn, countryRepoAdmin, log)
 		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, log)
+		shippingRepo := shipping.NewRepository(conn)
+		shippingService := shipping.NewShippingService(shippingRepo)
+		shipmentsHandler := admin.NewShipmentsHandler(conn, shippingService, shippingRepo, log)
 		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, log)
 		settingsMetaHandler := admin.NewSettingsMetaHandler(countryRepoAdmin, log)
 
@@ -336,6 +340,7 @@ func main() {
 			CSVImportsHandler:       csvImportsHandler,
 			PaymentSettingsHandler:  paymentSettingsHandler,
 			ShippingSettingsHandler: shippingSettingsHandler,
+			ShipmentsHandler:       shipmentsHandler,
 			TaxSettingsHandler:      taxSettingsHandler,
 			SettingsMetaHandler:     settingsMetaHandler,
 			CouponHandler:          couponHandler,

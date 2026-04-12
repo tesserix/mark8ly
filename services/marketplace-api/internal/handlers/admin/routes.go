@@ -43,6 +43,7 @@ type Deps struct {
 	NotificationsHandler     *NotificationsHandler
 	DashboardHandler         *DashboardHandler
 	TicketsHandler           *TicketsHandler
+	ShipmentsHandler         *ShipmentsHandler
 	BrandingHandler          *BrandingHandler
 	PlanResolver             *plangate.PlanResolver
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
@@ -205,6 +206,16 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				orders.POST("/:id/refund",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersRefundRole),
 					deps.OrdersHandler.Refund)
+
+				// Shipments — shipping label creation + retrieval.
+				if deps.ShipmentsHandler != nil {
+					orders.POST("/:id/shipments",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.Create)
+					orders.GET("/:id/shipments",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+						deps.ShipmentsHandler.GetByOrder)
+				}
 			}
 		}
 

@@ -47,6 +47,14 @@ type CarrierConfig struct {
 	HandlingFee           decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
 	FreeShippingThreshold decimal.Decimal `gorm:"column:free_shipping_threshold;type:numeric(12,2);not null;default:0"`
 	Enabled               bool            `gorm:"column:enabled;not null;default:true"`
+	WarehouseName         string          `gorm:"column:warehouse_name;type:varchar(200)"`
+	WarehouseLine1        string          `gorm:"column:warehouse_line1;type:varchar(200)"`
+	WarehouseLine2        string          `gorm:"column:warehouse_line2;type:varchar(200)"`
+	WarehouseCity         string          `gorm:"column:warehouse_city;type:varchar(100)"`
+	WarehouseRegion       string          `gorm:"column:warehouse_region;type:varchar(100)"`
+	WarehousePostal       string          `gorm:"column:warehouse_postal;type:varchar(20)"`
+	WarehouseCountry      string          `gorm:"column:warehouse_country;type:char(2)"`
+	WarehousePhone        string          `gorm:"column:warehouse_phone;type:varchar(30)"`
 	CreatedAt             time.Time       `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt             time.Time       `gorm:"column:updated_at;not null;default:now()"`
 }
@@ -209,6 +217,14 @@ func (r *gormRepository) UpsertCarrierConfig(ctx context.Context, cfg *CarrierCo
 			HandlingFee:           cfg.HandlingFee,
 			FreeShippingThreshold: cfg.FreeShippingThreshold,
 			Enabled:               cfg.Enabled,
+			WarehouseName:         cfg.WarehouseName,
+			WarehouseLine1:        cfg.WarehouseLine1,
+			WarehouseLine2:        cfg.WarehouseLine2,
+			WarehouseCity:         cfg.WarehouseCity,
+			WarehouseRegion:       cfg.WarehouseRegion,
+			WarehousePostal:       cfg.WarehousePostal,
+			WarehouseCountry:      cfg.WarehouseCountry,
+			WarehousePhone:        cfg.WarehousePhone,
 		}).Error
 	if err != nil {
 		return fmt.Errorf("shipping: update carrier config: %w", err)

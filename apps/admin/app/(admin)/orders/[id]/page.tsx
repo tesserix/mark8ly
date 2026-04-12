@@ -7,6 +7,7 @@
 import { notFound } from "next/navigation";
 
 import { OrderActionsBar } from "@/components/orders/OrderActionsBar";
+import { ShippingLabelPanel } from "@/components/orders/ShippingLabelPanel";
 import { OrderAddressCard } from "@/components/orders/OrderAddressCard";
 import { OrderDetailHeader } from "@/components/orders/OrderDetailHeader";
 import { OrderItemsTable } from "@/components/orders/OrderItemsTable";
@@ -50,6 +51,11 @@ export default async function OrderDetailPage({ params }: PageProps) {
           <div className="flex flex-col gap-10 lg:sticky lg:top-8 lg:self-start">
             <OrderTotalsCard order={order} />
             <OrderActionsBar order={order} />
+            <ShippingLabelPanel
+              storeId={currentStore.id}
+              orderId={order.id}
+              orderStatus={order.status}
+            />
           </div>
         </div>
       </main>

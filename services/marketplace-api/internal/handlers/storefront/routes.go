@@ -143,6 +143,11 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 			account.PATCH("/addresses/:id", deps.CustomerAccountHandler.UpdateAddress)
 			account.DELETE("/addresses/:id", deps.CustomerAccountHandler.DeleteAddress)
 
+			// Order history — list orders for authenticated customer.
+			if deps.OrderDetailHandler != nil {
+				account.GET("/orders", deps.OrderDetailHandler.ListOrders)
+			}
+
 			// C3 — Reviews (authenticated: submit + react).
 			if deps.ReviewsHandler != nil {
 				account.POST("/products/:handle/reviews",

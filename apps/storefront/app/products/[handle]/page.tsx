@@ -6,15 +6,17 @@
 
 import Link from "next/link";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { getProductByHandle } from "@/lib/api/marketplace-api";
 import { slugFromHost } from "@/lib/slug";
+import { hasSessionCookie } from "@/lib/auth";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { MediaGallery } from "@/components/MediaGallery";
 import { ProductDetails } from "@/components/ProductDetails";
+import { ProductReviews } from "@/components/reviews/ProductReviews";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +81,11 @@ export default async function StorefrontProductPage({
           <MediaGallery media={product.media} productTitle={product.title} />
           <ProductDetails product={product} />
         </div>
+
+        <ProductReviews
+          productHandle={handle}
+          isAuthenticated={hasSessionCookie((await cookies()).toString())}
+        />
       </div>
     </main>
   );

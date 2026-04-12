@@ -574,35 +574,18 @@ test.describe("admin setup: full configuration flow", () => {
         page.getByText(productTitle.split(" ").slice(0, 2).join(" "), { exact: false }).first(),
       ).toBeVisible({ timeout: 5_000 }).catch(() => {});
 
-      // Set status to Active. Radix Select portals are unreliable in
-      // Playwright, so we use dispatchEvent on the hidden native <select>
-      // that Radix renders, then trigger the form's onValueChange via
-      // a React-compatible event simulation.
-      const statusChanged = await page.evaluate(() => {
-        // Find ALL select triggers on the page
-        const triggers = document.querySelectorAll('button[role="combobox"]');
-        for (const trigger of triggers) {
-          const text = trigger.textContent?.trim().toLowerCase();
-          if (text === "draft" || text === "active" || text === "archived") {
-            // This is the status trigger. Simulate a click + programmatic value change.
-            // Radix Select stores state in React fiber — we can't easily access it.
-            // Instead, find the form and submit it via FormData manipulation.
-            // Actually, the simplest: click the trigger and then click in the listbox.
-            trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
-            return "triggered";
-          }
-        }
-        return "not-found";
-      });
-
-      if (statusChanged === "triggered") {
+      // Set status to Active. Wait for the status trigger to appear
+      // (it loads after the General tab content renders).
+      const statusTrigger = page.locator('[data-slot="select-trigger"]').filter({ hasText: /^Draft$/i });
+      if (await statusTrigger.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        await statusTrigger.click();
         await page.waitForTimeout(500);
-        // Now the Radix popover should be open — try clicking Active
-        const activeOpt = page.getByText("Active", { exact: true }).last();
-        if (await activeOpt.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await activeOpt.click({ force: true });
+        // Radix Select opens a listbox with role="option" items
+        const activeOption = page.locator('[role="option"]').filter({ hasText: /^Active$/i });
+        if (await activeOption.isVisible({ timeout: 2_000 }).catch(() => false)) {
+          await activeOption.click({ force: true });
           await page.waitForTimeout(500);
-          // Save
+          // Save changes
           const saveBtn = page.getByRole("button", { name: /save changes/i }).first();
           if (await saveBtn.isEnabled({ timeout: 3_000 }).catch(() => false)) {
             await saveBtn.click();

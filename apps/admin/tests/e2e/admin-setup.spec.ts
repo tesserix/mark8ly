@@ -491,14 +491,20 @@ test.describe("admin setup: full configuration flow", () => {
       );
     }
 
-    // Status: Active (via combobox)
+    // Status: Active (Radix Select — trigger has role="combobox")
     const statusTrigger = page.locator('button[role="combobox"]').first();
     if (
       await statusTrigger.isVisible({ timeout: 3_000 }).catch(() => false)
     ) {
       await statusTrigger.click();
       await page.waitForTimeout(500);
-      await page.getByRole("option", { name: /active/i }).click();
+      // Radix Select renders options in a portal — use text match
+      const activeOption = page
+        .getByRole("option", { name: /active/i })
+        .or(page.locator('[role="option"]:has-text("Active")'))
+        .or(page.getByText("Active", { exact: true }))
+        .first();
+      await activeOption.click({ timeout: 5_000 });
       await page.waitForTimeout(500);
     }
 

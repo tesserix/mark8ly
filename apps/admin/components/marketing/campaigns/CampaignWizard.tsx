@@ -18,14 +18,9 @@ import {
 } from "@tesserix/web";
 import type {
   AdminSegment,
-  SessionHeaders,
   CreateCampaignBody,
 } from "@/lib/api/campaigns-api";
-import {
-  createCampaign,
-  sendCampaign,
-  scheduleCampaign,
-} from "@/lib/api/campaigns-api";
+import { CampaignEditor } from "./CampaignEditor";
 
 // ---------- Templates ----------
 
@@ -68,7 +63,6 @@ const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
 interface CampaignWizardProps {
   storeId: string;
   segments: AdminSegment[];
-  session: SessionHeaders;
 }
 
 type ScheduleMode = "now" | "later";
@@ -78,7 +72,6 @@ type ScheduleMode = "now" | "later";
 export function CampaignWizard({
   storeId,
   segments,
-  session,
 }: CampaignWizardProps) {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -126,18 +119,28 @@ export function CampaignWizard({
       };
 
       try {
-        const created = await createCampaign(storeId, body, session);
-        if (!created) {
-          setError("Failed to create campaign. Please try again.");
+        // Create via same-origin proxy (server attaches auth headers).
+        const createRes = await fetch("/api/marketing/campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!createRes.ok) {
+          const err = await createRes.json().catch(() => null);
+          setError(err?.message ?? "Failed to create campaign. Please try again.");
           setSubmitting(false);
           return;
         }
 
+        const created = await createRes.json();
         const campaignId = created.data.id;
 
         if (mode === "send") {
-          const sent = await sendCampaign(storeId, campaignId, session);
-          if (!sent) {
+          const sendRes = await fetch(
+            `/api/marketing/campaigns/${campaignId}/send`,
+            { method: "POST" },
+          );
+          if (!sendRes.ok) {
             setError(
               "Campaign created but failed to send. You can send it from the detail page.",
             );
@@ -145,13 +148,15 @@ export function CampaignWizard({
             return;
           }
         } else if (mode === "schedule") {
-          const scheduled = await scheduleCampaign(
-            storeId,
-            campaignId,
-            scheduledAt,
-            session,
+          const schedRes = await fetch(
+            `/api/marketing/campaigns/${campaignId}/schedule`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ scheduled_at: scheduledAt }),
+            },
           );
-          if (!scheduled) {
+          if (!schedRes.ok) {
             setError(
               "Campaign created but failed to schedule. You can schedule it from the detail page.",
             );
@@ -167,7 +172,7 @@ export function CampaignWizard({
         setSubmitting(false);
       }
     },
-    [name, subject, content, segmentId, storeId, session, scheduledAt, router],
+    [name, subject, content, segmentId, scheduledAt, router],
   );
 
   return (
@@ -325,21 +330,16 @@ export function CampaignWizard({
               />
             </label>
 
-            <label className="block">
-              <span className="text-sm font-medium text-ink-700">
-                Content (HTML)
-              </span>
-              <textarea
-                value={content}
-                onChange={(e) => {
-                  setContent(e.target.value);
+            <div className="space-y-1">
+              <span className="text-sm font-medium text-ink-700">Content</span>
+              <CampaignEditor
+                content={content}
+                onChange={(html) => {
+                  setContent(html);
                   setSelectedTemplate(null);
                 }}
-                rows={10}
-                placeholder="<h2>Your headline</h2><p>Your message...</p>"
-                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 font-mono text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
-            </label>
+            </div>
           </div>
 
           <div className="flex justify-between">

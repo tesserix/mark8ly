@@ -45,7 +45,6 @@ export default async function NewCampaignPage() {
         <CampaignWizard
           storeId={currentStore.id}
           segments={segments}
-          session={{ userId, tenantId }}
         />
       </main>
   );

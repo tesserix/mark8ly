@@ -29,7 +29,7 @@ func NewCouponValidateHandler(svc *coupon.Service, logger *slog.Logger) *CouponV
 // ValidateCouponRequest is the JSON body for the validate endpoint.
 type ValidateCouponRequest struct {
 	Code          string          `json:"code"           binding:"required"`
-	CustomerEmail string          `json:"customer_email" binding:"required,email"`
+	CustomerEmail string          `json:"customer_email" binding:"omitempty,email"`
 	Subtotal      decimal.Decimal `json:"subtotal"       binding:"required"`
 }
 

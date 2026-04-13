@@ -70,7 +70,7 @@ async function requestSignedUrl(
     content_type: inferContentType(file),
   };
   const res = await fetch(
-    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/media/upload-url`,
+    `${MARKETPLACE_API_URL}/api/admin/stores/${storeId}/products/${productId}/media/upload-url`,
     {
       method: "POST",
       credentials: "include",
@@ -110,7 +110,7 @@ async function finalize(
   if (args.variantId) body.variant_id = args.variantId;
 
   const res = await fetch(
-    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/media`,
+    `${MARKETPLACE_API_URL}/api/admin/stores/${storeId}/products/${productId}/media`,
     {
       method: "POST",
       credentials: "include",

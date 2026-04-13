@@ -11,45 +11,35 @@ import {
   DialogFooter,
   DialogClose,
 } from "@tesserix/web";
-import type { AdminCampaign, SessionHeaders } from "@/lib/api/campaigns-api";
-import {
-  sendCampaign,
-  pauseCampaign,
-  resumeCampaign,
-  deleteCampaign,
-} from "@/lib/api/campaigns-api";
+import type { AdminCampaign } from "@/lib/api/campaigns-api";
 
 interface CampaignActionsProps {
   campaign: AdminCampaign;
-  storeId: string;
-  session: SessionHeaders;
 }
 
-export function CampaignActions({
-  campaign,
-  storeId,
-  session,
-}: CampaignActionsProps) {
+export function CampaignActions({ campaign }: CampaignActionsProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
-  const handleAction = useCallback(
-    async (action: () => Promise<unknown>, successMessage?: string) => {
+  const proxyAction = useCallback(
+    async (url: string, method: string = "POST") => {
       setLoading(true);
       setError(null);
       try {
-        const result = await action();
-        if (!result) {
-          setError("Action failed. Please try again.");
-          setLoading(false);
-          return;
+        const res = await fetch(url, { method });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          setError(body?.message ?? "Action failed. Please try again.");
+          return false;
         }
         router.refresh();
+        return true;
       } catch {
         setError("An unexpected error occurred.");
+        return false;
       } finally {
         setLoading(false);
       }
@@ -62,7 +52,7 @@ export function CampaignActions({
   return (
     <div className="flex items-center gap-3">
       {error && (
-        <p className="text-xs text-signal-700">{error}</p>
+        <p className="text-xs text-[color:var(--signal)]">{error}</p>
       )}
 
       {/* Send — available for draft campaigns */}
@@ -79,9 +69,7 @@ export function CampaignActions({
       {/* Pause — available for sending campaigns */}
       {c.status === "sending" && (
         <button
-          onClick={() =>
-            handleAction(() => pauseCampaign(storeId, c.id, session))
-          }
+          onClick={() => proxyAction(`/api/marketing/campaigns/${c.id}/pause`)}
           disabled={loading}
           className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
         >
@@ -93,7 +81,7 @@ export function CampaignActions({
       {c.status === "paused" && (
         <button
           onClick={() =>
-            handleAction(() => resumeCampaign(storeId, c.id, session))
+            proxyAction(`/api/marketing/campaigns/${c.id}/resume`)
           }
           disabled={loading}
           className="inline-flex items-center gap-2 rounded-md bg-moss-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-moss-700/90 disabled:opacity-50"
@@ -107,7 +95,7 @@ export function CampaignActions({
         <button
           onClick={() => setShowDeleteDialog(true)}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-md border border-signal-200 bg-white px-4 py-2 text-sm font-medium text-signal-700 transition hover:bg-signal-50 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-[color:var(--signal)] transition hover:bg-ink-50 disabled:opacity-50"
         >
           Delete
         </button>
@@ -135,7 +123,7 @@ export function CampaignActions({
             <button
               onClick={() => {
                 setShowSendDialog(false);
-                handleAction(() => sendCampaign(storeId, c.id, session));
+                proxyAction(`/api/marketing/campaigns/${c.id}/send`);
               }}
               disabled={loading}
               className="inline-flex items-center gap-2 rounded-md bg-ink-900 px-4 py-2 text-sm font-medium text-paper-200 transition hover:bg-ink-800 disabled:opacity-50"
@@ -165,18 +153,16 @@ export function CampaignActions({
             <button
               onClick={async () => {
                 setShowDeleteDialog(false);
-                setLoading(true);
-                const ok = await deleteCampaign(storeId, c.id, session);
+                const ok = await proxyAction(
+                  `/api/marketing/campaigns/${c.id}/delete`,
+                  "DELETE",
+                );
                 if (ok) {
                   router.push("/marketing/campaigns");
-                  router.refresh();
-                } else {
-                  setError("Failed to delete campaign.");
                 }
-                setLoading(false);
               }}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-md bg-signal-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-signal-800 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--signal)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
             >
               {loading ? "Deleting..." : "Delete"}
             </button>

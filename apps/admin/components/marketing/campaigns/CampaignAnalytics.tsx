@@ -2,12 +2,9 @@
 
 import type { AdminCampaign, CampaignStatus } from "@/lib/api/campaigns-api";
 import { CampaignActions } from "./CampaignActions";
-import type { SessionHeaders } from "@/lib/api/campaigns-api";
 
 interface CampaignAnalyticsProps {
   campaign: AdminCampaign;
-  storeId: string;
-  session: SessionHeaders;
 }
 
 function statusBadge(status: CampaignStatus) {
@@ -73,8 +70,6 @@ function MetricCard({ label, value, total, variant = "default" }: MetricCardProp
 
 export function CampaignAnalytics({
   campaign,
-  storeId,
-  session,
 }: CampaignAnalyticsProps) {
   const c = campaign;
 
@@ -92,11 +87,7 @@ export function CampaignAnalytics({
             <span className="text-sm text-ink-500 capitalize">{c.type}</span>
           </div>
         </div>
-        <CampaignActions
-          campaign={c}
-          storeId={storeId}
-          session={session}
-        />
+        <CampaignActions campaign={c} />
       </div>
 
       <hr className="border-ink-200" />
@@ -223,9 +214,10 @@ export function CampaignAnalytics({
               <span className="font-medium">Subject:</span> {c.subject}
             </p>
           )}
-          <pre className="max-w-none whitespace-pre-wrap rounded-md bg-white p-6 font-mono text-sm text-ink-700 shadow-sm">
-            {c.content}
-          </pre>
+          <div
+            className="prose prose-sm max-w-none rounded-md bg-white p-6 text-ink-700 shadow-sm"
+            dangerouslySetInnerHTML={{ __html: c.content }}
+          />
         </div>
       )}
     </div>

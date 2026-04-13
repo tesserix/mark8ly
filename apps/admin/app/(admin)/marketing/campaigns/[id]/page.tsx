@@ -46,11 +46,7 @@ export default async function CampaignDetailPage({
 
   return (
           <main className="space-y-10">
-        <CampaignAnalytics
-          campaign={campaign}
-          storeId={currentStore.id}
-          session={{ userId, tenantId }}
-        />
+        <CampaignAnalytics campaign={campaign} />
       </main>
   );
 }

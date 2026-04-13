@@ -433,8 +433,23 @@ export async function createCategory(
   if (!res.ok) {
     return { ok: false, error: await parseMutationError(res) };
   }
-  const body = (await res.json()) as { data: AdminCategory };
-  return { ok: true, data: body.data };
+  const raw = (await res.json()) as
+    | { data: AdminCategory }
+    | AdminCategory;
+  const data =
+    raw && typeof raw === "object" && "data" in raw && raw.data
+      ? (raw as { data: AdminCategory }).data
+      : (raw as AdminCategory);
+  if (!data || !data.id) {
+    return {
+      ok: false,
+      error: {
+        code: "malformed_response",
+        message: "Category created but response was malformed.",
+      },
+    };
+  }
+  return { ok: true, data };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

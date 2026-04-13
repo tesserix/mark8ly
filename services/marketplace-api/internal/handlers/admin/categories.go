@@ -61,7 +61,7 @@ func (h *CategoryHandler) Create(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
-	c.JSON(http.StatusCreated, ToAdminCategoryResponse(cat))
+	c.JSON(http.StatusCreated, gin.H{"data": ToAdminCategoryResponse(cat)})
 }
 
 // Patch handles PATCH /admin/stores/:storeId/categories/:id.
@@ -81,7 +81,7 @@ func (h *CategoryHandler) Patch(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
-	c.JSON(http.StatusOK, ToAdminCategoryResponse(cat))
+	c.JSON(http.StatusOK, gin.H{"data": ToAdminCategoryResponse(cat)})
 }
 
 // Delete handles DELETE /admin/stores/:storeId/categories/:id.

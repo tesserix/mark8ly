@@ -3,12 +3,14 @@ package media
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
+	"google.golang.org/api/iamcredentials/v1"
 )
 
 // BuildStorageKey returns the canonical content-addressed object key for
@@ -42,6 +44,11 @@ func BuildStorageKey(tenantID, contentHash, filename string) string {
 type GCSUploader struct {
 	bucket     *storage.BucketHandle
 	bucketName string
+	// signerEmail, when non-empty, switches V4 signing to the IAM
+	// Credentials SignBlob path so workloads on GKE Workload Identity
+	// (which have no embedded private key) can still mint signed URLs.
+	signerEmail string
+	iamSigner   *iamcredentials.Service
 }
 
 // NewGCSUploader constructs a GCSUploader. The caller is responsible
@@ -51,6 +58,43 @@ func NewGCSUploader(client *storage.Client, bucketName string) *GCSUploader {
 		bucket:     client.Bucket(bucketName),
 		bucketName: bucketName,
 	}
+}
+
+// NewGCSUploaderWithIAMSigner returns an uploader that signs V4 URLs
+// via the IAM Credentials API. Required on GKE Workload Identity where
+// Application Default Credentials carry no private key. The running
+// service account must have roles/iam.serviceAccountTokenCreator on
+// signerEmail (typically itself).
+func NewGCSUploaderWithIAMSigner(ctx context.Context, client *storage.Client, bucketName, signerEmail string) (*GCSUploader, error) {
+	if signerEmail == "" {
+		return nil, errors.New("media: signer email is required for IAM-based signing")
+	}
+	svc, err := iamcredentials.NewService(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("media: iamcredentials client: %w", err)
+	}
+	return &GCSUploader{
+		bucket:      client.Bucket(bucketName),
+		bucketName:  bucketName,
+		signerEmail: signerEmail,
+		iamSigner:   svc,
+	}, nil
+}
+
+// signBytes invokes IAM Credentials SignBlob using the configured
+// service account. Returned blob is the raw signature bytes.
+func (u *GCSUploader) signBytes(b []byte) ([]byte, error) {
+	if u.iamSigner == nil || u.signerEmail == "" {
+		return nil, errors.New("media: iam signer not configured")
+	}
+	name := "projects/-/serviceAccounts/" + u.signerEmail
+	resp, err := u.iamSigner.Projects.ServiceAccounts.SignBlob(name, &iamcredentials.SignBlobRequest{
+		Payload: base64.StdEncoding.EncodeToString(b),
+	}).Do()
+	if err != nil {
+		return nil, fmt.Errorf("media: iam signBlob: %w", err)
+	}
+	return base64.StdEncoding.DecodeString(resp.SignedBlob)
 }
 
 // Verify implements Uploader. Returns ErrNotFound when the object does
@@ -81,12 +125,17 @@ type SignedURLGenerator interface {
 // upload the object directly to GCS. Returns (url, expiresAt, error).
 func (u *GCSUploader) SignedUploadURL(ctx context.Context, key, contentType string, expires time.Duration) (string, time.Time, error) {
 	expiresAt := time.Now().Add(expires)
-	url, err := u.bucket.SignedURL(key, &storage.SignedURLOptions{
+	opts := &storage.SignedURLOptions{
 		Method:      "PUT",
 		ContentType: contentType,
 		Expires:     expiresAt,
 		Scheme:      storage.SigningSchemeV4,
-	})
+	}
+	if u.iamSigner != nil && u.signerEmail != "" {
+		opts.GoogleAccessID = u.signerEmail
+		opts.SignBytes = u.signBytes
+	}
+	url, err := u.bucket.SignedURL(key, opts)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("media: signed url: %w", err)
 	}
@@ -106,11 +155,16 @@ type SignedReadURLGenerator interface {
 // original so it can re-crop against it in the browser.
 func (u *GCSUploader) SignedReadURL(ctx context.Context, key string, expires time.Duration) (string, time.Time, error) {
 	expiresAt := time.Now().Add(expires)
-	url, err := u.bucket.SignedURL(key, &storage.SignedURLOptions{
+	opts := &storage.SignedURLOptions{
 		Method:  "GET",
 		Expires: expiresAt,
 		Scheme:  storage.SigningSchemeV4,
-	})
+	}
+	if u.iamSigner != nil && u.signerEmail != "" {
+		opts.GoogleAccessID = u.signerEmail
+		opts.SignBytes = u.signBytes
+	}
+	url, err := u.bucket.SignedURL(key, opts)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("media: signed read url: %w", err)
 	}

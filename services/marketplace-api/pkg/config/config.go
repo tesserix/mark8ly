@@ -25,6 +25,13 @@ type Config struct {
 	// dev FakeUploader to a real GCS-backed implementation. Empty keeps
 	// `make dev` working without GCS credentials.
 	GCSBucket string `envconfig:"MARKETPLACE_GCS_BUCKET" default:""`
+	// GCSSignerSAEmail is the service-account email used to sign V4 GCS
+	// upload URLs via the IAM Credentials API. Required on GKE Workload
+	// Identity, where Application Default Credentials do not include a
+	// private key. When empty, the storage client falls back to ADC and
+	// signing will fail with "signedURL: cannot sign…" if no key is
+	// embedded in credentials. Set to the SA the workload runs as.
+	GCSSignerSAEmail string `envconfig:"MARKETPLACE_GCS_SIGNER_SA_EMAIL" default:""`
 	// PlatformAPIURL, when non-empty, switches StoreMiddleware from the
 	// dev stub client to a real HTTP client against platform-api's
 	// /internal/stores endpoint. Empty keeps the stub wired.

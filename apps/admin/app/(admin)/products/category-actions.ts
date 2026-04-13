@@ -1,7 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
-import { createCategory } from "@/lib/api/marketplace-api";
+import { createCategory, listCategories } from "@/lib/api/marketplace-api";
 
 export interface CreateCategoryResult {
   ok: boolean;
@@ -20,22 +20,63 @@ export async function createCategoryInline(
     return { ok: false, error: "Session expired." };
   }
 
-  const slug = name
+  const trimmed = name.trim();
+  const slug = trimmed
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
 
+  // Idempotency: if a category with this slug or name already exists in
+  // the store, reuse it instead of attempting to create. This lets the
+  // product-creation flow continue without forcing the user to pick the
+  // existing category manually.
+  const existing = await listCategories(storeId, { userId, tenantId });
+  const lowerName = trimmed.toLowerCase();
+  const dup = existing.find(
+    (c) => c.slug === slug || c.name.toLowerCase() === lowerName,
+  );
+  if (dup) {
+    return {
+      ok: true,
+      category: { id: dup.id, name: dup.name, slug: dup.slug },
+    };
+  }
+
   const result = await createCategory(
     storeId,
-    { name: name.trim(), slug },
+    { name: trimmed, slug },
     { userId, tenantId },
   );
 
   if (!result.ok) {
+    // Race: another request created the same slug between our list and
+    // create. Re-fetch and return the winner instead of surfacing 409.
+    if (result.error?.code === "slug_taken") {
+      const after = await listCategories(storeId, { userId, tenantId });
+      const winner = after.find(
+        (c) => c.slug === slug || c.name.toLowerCase() === lowerName,
+      );
+      if (winner) {
+        return {
+          ok: true,
+          category: {
+            id: winner.id,
+            name: winner.name,
+            slug: winner.slug,
+          },
+        };
+      }
+    }
     return {
       ok: false,
       error: result.error?.message ?? "Failed to create category.",
+    };
+  }
+  if (!result.data || !result.data.id) {
+    return {
+      ok: false,
+      error: "Category created but response was malformed.",
     };
   }
 

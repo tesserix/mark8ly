@@ -161,8 +161,21 @@ func main() {
 				log.Error("media: gcs client", "err", err)
 				os.Exit(1)
 			}
-			uploader = media.NewGCSUploader(sc, cfg.GCSBucket)
-			log.Info("media: using real GCS uploader", "bucket", cfg.GCSBucket)
+			if cfg.GCSSignerSAEmail != "" {
+				signCtx, signCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				gcsUploader, err := media.NewGCSUploaderWithIAMSigner(signCtx, sc, cfg.GCSBucket, cfg.GCSSignerSAEmail)
+				signCancel()
+				if err != nil {
+					log.Error("media: gcs iam signer", "err", err)
+					os.Exit(1)
+				}
+				uploader = gcsUploader
+				log.Info("media: using real GCS uploader with IAM signer",
+					"bucket", cfg.GCSBucket, "signer", cfg.GCSSignerSAEmail)
+			} else {
+				uploader = media.NewGCSUploader(sc, cfg.GCSBucket)
+				log.Info("media: using real GCS uploader", "bucket", cfg.GCSBucket)
+			}
 		} else {
 			uploader = media.NewFakeUploader()
 			log.Info("media: using fake uploader (MARKETPLACE_GCS_BUCKET is empty)")

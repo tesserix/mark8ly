@@ -47,14 +47,18 @@ func TestAPI_AdminCategories_Create_HappyPath(t *testing.T) {
 	}
 	var resp map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["id"] == nil || resp["id"] == "" {
+	data, ok := resp["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing data envelope: %s", w.Body.String())
+	}
+	if data["id"] == nil || data["id"] == "" {
 		t.Fatalf("missing id: %s", w.Body.String())
 	}
-	if resp["name"] != "Shoes" {
-		t.Fatalf("name = %v", resp["name"])
+	if data["name"] != "Shoes" {
+		t.Fatalf("name = %v", data["name"])
 	}
-	if resp["slug"] != "shoes" {
-		t.Fatalf("slug = %v", resp["slug"])
+	if data["slug"] != "shoes" {
+		t.Fatalf("slug = %v", data["slug"])
 	}
 }
 
@@ -135,8 +139,12 @@ func TestAPI_AdminCategories_Patch_UpdatesName(t *testing.T) {
 	}
 	var resp map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["name"] != "New" {
-		t.Fatalf("name = %v", resp["name"])
+	data, ok := resp["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing data envelope: %s", w.Body.String())
+	}
+	if data["name"] != "New" {
+		t.Fatalf("name = %v", data["name"])
 	}
 }
 

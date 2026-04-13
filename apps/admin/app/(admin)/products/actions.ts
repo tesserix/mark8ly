@@ -21,6 +21,7 @@ import {
   deleteProduct,
   copyProduct,
   bulkProductAction,
+  getProduct,
   type CreateProductRequest,
   type UpdateProductRequest,
 } from "@/lib/api/marketplace-api";
@@ -135,6 +136,51 @@ export async function updateProductAction(
   // removed_variant_ids are forwarded as-is when the caller supplies
   // them. M7b callers that don't populate the new arrays still work
   // because Zod `.default([])` fills them in.
+  //
+  // Simple-product quirk: the RHF form only tracks variants when the
+  // user opens the Variants tab, so for title/price/status-only edits on
+  // a simple product, `parsed.data.variants` is empty. The Go aggregate
+  // service requires exactly one variant when there are no options, so
+  // an empty array is rejected with VariantMatrixMismatch. Synthesize a
+  // single variant from the scalar price/sku/stock fields, preserving
+  // the existing variant's id so the server replaces in-place rather
+  // than creating a duplicate.
+  let variants = (parsed.data.variants ?? []).map((v) => ({
+    id: v.id,
+    sku: v.sku,
+    price: v.price,
+    inventory_quantity: v.stock,
+    weight_grams: Math.round(v.weight * 1000),
+    currency_code: ctx.currencyCode,
+    option_values: v.optionValues.map((ov) => ({
+      option_name: ov.optionName,
+      value: ov.value,
+    })),
+  }));
+
+  const hasOptions = (parsed.data.options ?? []).length > 0;
+  if (!hasOptions && variants.length === 0) {
+    const existing = await getProduct(ctx.storeId, productId, {
+      userId: ctx.userId,
+      tenantId: ctx.tenantId,
+    });
+    const firstVariant = existing?.variants[0];
+    const qty = Number.parseInt(parsed.data.inventoryQuantity, 10);
+    variants = [
+      {
+        id: firstVariant?.id,
+        sku: parsed.data.sku && parsed.data.sku.length > 0
+          ? parsed.data.sku
+          : firstVariant?.sku ?? `${slugFromTitle(parsed.data.title)}-default`,
+        price: parsed.data.price,
+        inventory_quantity: Number.isFinite(qty) ? qty : 0,
+        weight_grams: firstVariant?.weight_grams ?? 0,
+        currency_code: ctx.currencyCode,
+        option_values: [],
+      },
+    ];
+  }
+
   const body: UpdateProductRequest = {
     handle: parsed.data.handle && parsed.data.handle.length > 0 ? parsed.data.handle : undefined,
     title: parsed.data.title,
@@ -146,18 +192,7 @@ export async function updateProductAction(
       name: o.name,
       values: o.values.map((v) => ({ id: v.id, value: v.value })),
     })),
-    variants: (parsed.data.variants ?? []).map((v) => ({
-      id: v.id,
-      sku: v.sku,
-      price: v.price,
-      inventory_quantity: v.stock,
-      weight_grams: Math.round(v.weight * 1000),
-      currency_code: ctx.currencyCode,
-      option_values: v.optionValues.map((ov) => ({
-        option_name: ov.optionName,
-        value: ov.value,
-      })),
-    })),
+    variants,
     media: (parsed.data.media ?? []).map((m) => ({
       id: m.id,
       storage_key: m.storage_key,

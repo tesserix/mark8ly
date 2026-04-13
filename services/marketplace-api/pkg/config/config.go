@@ -83,6 +83,12 @@ type Config struct {
 	SentryDSN string `envconfig:"SENTRY_DSN" default:""`
 	// P1 — Prometheus metrics port. 0 disables the metrics server.
 	MetricsPort int `envconfig:"METRICS_PORT" default:"9090"`
+
+	// Marketing M4 — Email dispatch for campaigns. When SendGridAPIKey is
+	// empty, the campaign worker falls back to LogDispatcher (no emails
+	// sent) so local/dev doesn't need a SendGrid account.
+	SendGridAPIKey string `envconfig:"SENDGRID_API_KEY" default:""`
+	EmailFrom      string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.com"`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

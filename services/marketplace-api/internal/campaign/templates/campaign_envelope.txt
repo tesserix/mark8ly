@@ -1,0 +1,11 @@
+{{.Theme.StoreName}}
+{{if .Theme.Tagline}}{{.Theme.Tagline}}
+{{end}}
+{{.TextBody}}
+{{if .Theme.FooterTagline}}
+— {{.Theme.FooterTagline}}
+{{end}}
+---
+You're receiving this because you're a customer of {{.Theme.StoreName}}.
+{{if .Theme.FooterCopyright}}{{.Theme.FooterCopyright}}
+{{end}}

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <title>{{.Subject}}</title>
+  <style>
+    .m8-content h1,.m8-content h2,.m8-content h3 {
+      font-family: {{.Theme.HeadingFont}};
+      font-weight: 500;
+      letter-spacing: -0.015em;
+      color: {{.Theme.ColorText}};
+      margin: 0 0 16px 0;
+    }
+    .m8-content h1 { font-size: 32px; line-height: 1.1; }
+    .m8-content h2 { font-size: 24px; line-height: 1.2; margin-top: 8px; }
+    .m8-content h3 { font-size: 18px; line-height: 1.3; margin-top: 20px; }
+    .m8-content p {
+      margin: 0 0 16px 0;
+      line-height: 1.7;
+      font-size: 16px;
+      color: {{.SupportingCopy}};
+    }
+    .m8-content a {
+      color: {{.Theme.ColorAccent}};
+      text-decoration: underline;
+      text-decoration-color: {{.Theme.ColorAccent}};
+      text-underline-offset: 3px;
+    }
+    .m8-content strong { color: {{.Theme.ColorText}}; font-weight: 600; }
+    .m8-content ul,.m8-content ol {
+      margin: 0 0 16px 0;
+      padding-left: 22px;
+      line-height: 1.7;
+      color: {{.SupportingCopy}};
+    }
+    .m8-content li { margin: 0 0 6px 0; }
+    .m8-content blockquote {
+      margin: 16px 0;
+      padding-left: 16px;
+      border-left: 2px solid {{.Theme.ColorAccent}};
+      color: {{.SupportingCopy}};
+      font-style: italic;
+    }
+    .m8-content hr { border: 0; border-top: 1px solid {{.HairlineColor}}; margin: 28px 0; }
+    .m8-content img { max-width: 100%; height: auto; display: block; }
+    @media only screen and (max-width: 600px) {
+      .m8-card { width: 100% !important; }
+      .m8-pad  { padding: 32px 24px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:{{.Theme.ColorBackground}};font-family:{{.Theme.BodyFont}};color:{{.Theme.ColorText}};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    {{.Subject}}
+  </div>
+  <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:{{.Theme.ColorBackground}};padding:48px 16px;">
+    <tr>
+      <td align="center">
+        <table class="m8-card" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#FFFFFF;border:1px solid {{.HairlineColor}};">
+          <tr>
+            <td class="m8-pad" style="padding:32px 40px 20px 40px;border-bottom:1px solid {{.HairlineColor}};">
+              {{if .Theme.LogoURL}}
+                <img src="{{.Theme.LogoURL}}" alt="{{.Theme.StoreName}}" style="max-height:40px;width:auto;display:block;margin:0 0 8px 0;">
+              {{else}}
+                <span style="font-family:{{.Theme.HeadingFont}};font-size:22px;font-weight:500;letter-spacing:-0.025em;color:{{.Theme.ColorText}};display:inline-block;">{{.Theme.StoreName}}</span>
+              {{end}}
+              {{if .Theme.Tagline}}
+                <p style="margin:6px 0 0 0;font-size:12px;color:{{.MutedCopy}};line-height:1.5;">{{.Theme.Tagline}}</p>
+              {{end}}
+            </td>
+          </tr>
+          <tr>
+            <td class="m8-pad m8-content" style="padding:40px 40px 28px 40px;">
+              {{.Body}}
+            </td>
+          </tr>
+          <tr>
+            <td class="m8-pad" style="padding:24px 40px 36px 40px;border-top:1px solid {{.HairlineColor}};">
+              {{if .Theme.FooterTagline}}
+                <p style="margin:0 0 12px 0;font-family:{{.Theme.HeadingFont}};font-size:14px;color:{{.Theme.ColorText}};line-height:1.5;font-style:italic;">
+                  {{.Theme.FooterTagline}}
+                </p>
+              {{end}}
+              <p style="margin:0;font-size:12px;line-height:1.7;color:{{.MutedCopy}};">
+                You're receiving this because you're a customer of {{.Theme.StoreName}}.
+              </p>
+              {{if .Theme.FooterCopyright}}
+                <p style="margin:8px 0 0 0;font-size:11px;line-height:1.6;color:{{.FaintCopy}};">
+                  {{.Theme.FooterCopyright}}
+                </p>
+              {{end}}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

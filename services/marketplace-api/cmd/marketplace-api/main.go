@@ -584,11 +584,31 @@ func main() {
 		// Polling goroutine.
 		campaignDone := make(chan struct{})
 		campaignWorkerDone = campaignDone
+		// Prefer SendGrid when an API key is configured; fall back to
+		// LogDispatcher in dev / local so the worker still runs.
+		var dispatcher campaign.Dispatcher
+		if cfg.SendGridAPIKey != "" {
+			dispatcher = campaign.NewSendGridDispatcher(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+			log.Info("campaign: SendGrid dispatcher enabled", "from", cfg.EmailFrom)
+		} else {
+			dispatcher = &campaign.LogDispatcher{Logger: log}
+			log.Warn("campaign: SENDGRID_API_KEY not set — using LogDispatcher (no emails will be sent)")
+		}
+		// Load per-store branding into the campaign envelope so customer
+		// emails match the merchant's storefront theme, not the platform's.
+		brandingSvcForCampaign := branding.NewService(branding.ServiceConfig{
+			DB:     conn,
+			Repo:   branding.NewRepository(),
+			Logger: log,
+		})
+		themeLoader := campaign.NewStoreThemeLoader(conn, brandingSvcForCampaign)
+
 		sendWorker := campaign.NewSendWorker(campaign.SendWorkerConfig{
-			DB:         conn,
-			Repo:       campaignRepo,
-			Dispatcher: &campaign.LogDispatcher{Logger: log},
-			Logger:     log,
+			DB:          conn,
+			Repo:        campaignRepo,
+			Dispatcher:  dispatcher,
+			ThemeLoader: themeLoader,
+			Logger:      log,
 		})
 		go func() {
 			defer close(campaignDone)

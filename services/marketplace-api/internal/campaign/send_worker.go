@@ -23,30 +23,42 @@ const (
 	PollInterval = 5 * time.Second
 )
 
+// ThemeLoader resolves a CampaignTheme for a given store at send time.
+// Kept as a narrow interface so we don't couple the campaign package to
+// branding or stores internals. The send worker calls it ONCE per
+// campaign dispatch so the merchant's branding is fetched in a single
+// query, not once per recipient.
+type ThemeLoader interface {
+	LoadTheme(ctx context.Context, storeID uuid.UUID) (CampaignTheme, error)
+}
+
 // SendWorkerConfig bundles send worker dependencies.
 type SendWorkerConfig struct {
-	DB         *gorm.DB
-	Repo       Repository
-	Dispatcher Dispatcher
-	Logger     *slog.Logger
+	DB          *gorm.DB
+	Repo        Repository
+	Dispatcher  Dispatcher
+	ThemeLoader ThemeLoader // optional — nil falls back to default theme
+	Logger      *slog.Logger
 }
 
 // SendWorker polls for campaigns in "sending" status and dispatches
 // recipients in batches.
 type SendWorker struct {
-	db         *gorm.DB
-	repo       Repository
-	dispatcher Dispatcher
-	logger     *slog.Logger
+	db          *gorm.DB
+	repo        Repository
+	dispatcher  Dispatcher
+	themeLoader ThemeLoader
+	logger      *slog.Logger
 }
 
 // NewSendWorker constructs a send worker.
 func NewSendWorker(cfg SendWorkerConfig) *SendWorker {
 	return &SendWorker{
-		db:         cfg.DB,
-		repo:       cfg.Repo,
-		dispatcher: cfg.Dispatcher,
-		logger:     cfg.Logger,
+		db:          cfg.DB,
+		repo:        cfg.Repo,
+		dispatcher:  cfg.Dispatcher,
+		themeLoader: cfg.ThemeLoader,
+		logger:      cfg.Logger,
 	}
 }
 
@@ -115,6 +127,39 @@ func (w *SendWorker) dispatchCampaign(ctx context.Context, c Campaign) error {
 	defer heartbeatCancel()
 	go w.heartbeatLoop(heartbeatCtx, c.ID)
 
+	// Pull campaign-level fields once — they don't change per recipient.
+	subject := ""
+	if c.Subject != nil {
+		subject = *c.Subject
+	}
+	body := ""
+	if c.Content != nil {
+		body = *c.Content
+	}
+
+	// Load the merchant's storefront theme once per campaign dispatch.
+	// Render the HTML + text envelope once — emails to all recipients of
+	// this campaign share the same body, so rendering per-recipient would
+	// be pure waste.
+	theme := CampaignTheme{}
+	if w.themeLoader != nil {
+		loaded, err := w.themeLoader.LoadTheme(ctx, c.StoreID)
+		if err != nil {
+			w.logger.Warn("campaign: theme load failed — using defaults",
+				"campaign_id", c.ID, "store_id", c.StoreID, "err", err)
+		} else {
+			theme = loaded
+		}
+	}
+	htmlBody, err := RenderCampaignHTML(subject, body, theme)
+	if err != nil {
+		return fmt.Errorf("render html: %w", err)
+	}
+	textBody, err := RenderCampaignText(subject, body, theme)
+	if err != nil {
+		return fmt.Errorf("render text: %w", err)
+	}
+
 	for {
 		// Fetch next batch of pending recipients.
 		recipients, err := w.repo.GetPendingRecipients(ctx, w.db, c.ID, SendBatchSize)
@@ -125,18 +170,14 @@ func (w *SendWorker) dispatchCampaign(ctx context.Context, c Campaign) error {
 			break // All dispatched.
 		}
 
-		// Dispatch batch via Dispatcher interface.
-		subject := ""
-		if c.Subject != nil {
-			subject = *c.Subject
-		}
-		body := ""
-		if c.Content != nil {
-			body = *c.Content
-		}
-
 		for _, r := range recipients {
-			if err := w.dispatcher.Send(ctx, r.CustomerEmail, subject, body); err != nil {
+			outbound := OutboundEmail{
+				Recipient: r.CustomerEmail,
+				Subject:   subject,
+				HTMLBody:  htmlBody,
+				TextBody:  textBody,
+			}
+			if err := w.dispatcher.Send(ctx, outbound); err != nil {
 				w.logger.Error("campaign: dispatch failed",
 					"campaign_id", c.ID,
 					"email", r.CustomerEmail,

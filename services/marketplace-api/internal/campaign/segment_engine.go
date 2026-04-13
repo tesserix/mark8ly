@@ -77,10 +77,26 @@ func (e *SegmentEngine) ResolveEmails(ctx context.Context, tenantID, storeID uui
 }
 
 func (e *SegmentEngine) allEnrolled(ctx context.Context, tenantID, storeID uuid.UUID) ([]string, error) {
+	// "All customers" = every active customer profile for the store that
+	// has opted in to marketing, UNION any loyalty-only rows that predate
+	// profiles (historical import tolerance). customer_profiles is the
+	// source of truth post-C1; loyalty rows are kept for back-compat.
+	//
+	// Respects marketing_opt_in: customers who never explicitly consented
+	// should not receive marketing campaigns.
 	var emails []string
 	err := e.db.WithContext(ctx).
-		Raw("SELECT customer_email FROM customer_loyalties WHERE tenant_id = ? AND store_id = ? LIMIT ?",
-			tenantID, storeID, SegmentQueryLimit).
+		Raw(`SELECT DISTINCT email FROM (
+			SELECT email FROM customer_profiles
+				WHERE tenant_id = ? AND store_id = ?
+				  AND email IS NOT NULL AND email != ''
+				  AND status = 'active'
+				  AND marketing_opt_in = true
+			UNION
+			SELECT customer_email AS email FROM customer_loyalties
+				WHERE tenant_id = ? AND store_id = ?
+		) AS c WHERE email IS NOT NULL LIMIT ?`,
+			tenantID, storeID, tenantID, storeID, SegmentQueryLimit).
 		Scan(&emails).Error
 	return emails, err
 }

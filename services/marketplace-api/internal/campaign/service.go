@@ -247,16 +247,22 @@ func (s *Service) PreviewSegment(ctx context.Context, tenantID, storeID uuid.UUI
 // --- helpers ---
 
 func (s *Service) resolveAndCreateRecipients(ctx context.Context, c *Campaign) (int, error) {
+	// SegmentID == nil means "all customers" in the admin wizard — the
+	// merchant left the segment picker on the default "All customers"
+	// option. We synthesize an implicit [{"type":"all"}] rule set rather
+	// than requiring the merchant to pre-create an "All" segment row.
+	var rulesJSON []byte
 	if c.SegmentID == nil {
-		return 0, apperrors.New(apperrors.CodeCampaignNoRecipients, "campaign has no segment assigned")
+		rulesJSON = []byte(`[{"type":"all"}]`)
+	} else {
+		seg, err := s.repo.GetSegmentByID(ctx, s.db, *c.SegmentID)
+		if err != nil {
+			return 0, err
+		}
+		rulesJSON = seg.Rules
 	}
 
-	seg, err := s.repo.GetSegmentByID(ctx, s.db, *c.SegmentID)
-	if err != nil {
-		return 0, err
-	}
-
-	emails, err := s.segmentEngine.ResolveEmails(ctx, c.TenantID, c.StoreID, seg.Rules)
+	emails, err := s.segmentEngine.ResolveEmails(ctx, c.TenantID, c.StoreID, rulesJSON)
 	if err != nil {
 		return 0, fmt.Errorf("campaign: resolve segment: %w", err)
 	}

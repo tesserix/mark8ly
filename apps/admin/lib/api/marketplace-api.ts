@@ -150,11 +150,7 @@ export async function listProducts(
   }`;
   const res = await fetch(url, {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-      Accept: "application/json",
-    },
+    headers: readHeaders(session),
   });
 
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -659,11 +655,7 @@ export async function listMyStores(
     `${MARKETPLACE_API_URL}/api/v1/admin/stores`,
     {
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-        Accept: "application/json",
-      },
+      headers: readHeaders(session),
     },
   );
   if (res.status === 401 || res.status === 403) {
@@ -832,11 +824,7 @@ export async function listOrders(
   }`;
   const res = await fetch(url, {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-      Accept: "application/json",
-    },
+    headers: readHeaders(session),
   });
 
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -865,11 +853,7 @@ export async function getOrder(
   const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}`;
   const res = await fetch(url, {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-      Accept: "application/json",
-    },
+    headers: readHeaders(session),
   });
   if (res.status === 401 || res.status === 403 || res.status === 404) {
     return null;
@@ -1065,11 +1049,7 @@ export async function listGiftCards(
   }`;
   const res = await fetch(url, {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-      Accept: "application/json",
-    },
+    headers: readHeaders(session),
   });
 
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -1092,11 +1072,7 @@ export async function getGiftCard(
   const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/gift-cards/${giftCardId}`;
   const res = await fetch(url, {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-      Accept: "application/json",
-    },
+    headers: readHeaders(session),
   });
 
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -1196,11 +1172,7 @@ export async function listCustomers(
   }`;
   const res = await fetch(url, {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-      Accept: "application/json",
-    },
+    headers: readHeaders(session),
   });
 
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -1225,11 +1197,7 @@ export async function getCustomer(
   const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/customers/${customerId}`;
   const res = await fetch(url, {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-      Accept: "application/json",
-    },
+    headers: readHeaders(session),
   });
   if (res.status === 401 || res.status === 403 || res.status === 404) {
     return null;
@@ -1336,12 +1304,7 @@ export async function issueGiftCard(
   const res = await fetch(url, {
     method: "POST",
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
+    headers: commonHeaders(session),
     body: JSON.stringify(input),
   });
 
@@ -1516,11 +1479,7 @@ export async function listTickets(
   }`;
   const res = await fetch(url, {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-      Accept: "application/json",
-    },
+    headers: readHeaders(session),
   });
   if (res.status === 401 || res.status === 403 || res.status === 404) {
     return null;
@@ -1546,11 +1505,7 @@ export async function getTicket(
     `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets/${ticketId}`,
     {
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-        Accept: "application/json",
-      },
+      headers: readHeaders(session),
     },
   );
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -1679,11 +1634,7 @@ export async function getBranding(
     `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/branding`,
     {
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-        Accept: "application/json",
-      },
+      headers: readHeaders(session),
     },
   );
   if (!res.ok) return null;

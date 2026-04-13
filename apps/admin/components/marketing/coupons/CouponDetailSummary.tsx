@@ -1,3 +1,7 @@
+"use client";
+
+import { useCallback, useState } from "react";
+import { Check, Copy } from "lucide-react";
 import type { AdminCoupon } from "@/lib/api/coupons-api";
 
 interface CouponDetailSummaryProps {
@@ -27,7 +31,7 @@ export function CouponDetailSummary({ coupon }: CouponDetailSummaryProps) {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <DetailField label="Code" value={coupon.code} mono />
+        <CodeField code={coupon.code} />
         <DetailField label="Type" value={formatType(coupon.type)} />
         <DetailField label="Value" value={formatValue(coupon)} mono />
         <DetailField label="Status" value={coupon.status} />
@@ -79,6 +83,39 @@ export function CouponDetailSummary({ coupon }: CouponDetailSummaryProps) {
           <p className="mt-1 text-sm text-ink-700">{coupon.description}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function CodeField({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [code]);
+  return (
+    <div>
+      <span className="text-xs font-medium uppercase tracking-wider text-ink-500">
+        Code
+      </span>
+      <p className="mt-1 inline-flex items-center gap-1.5 font-mono text-sm text-ink-900">
+        {code}
+        <button
+          type="button"
+          onClick={copy}
+          aria-label={`Copy ${code}`}
+          title="Copy code"
+          className="inline-flex items-center rounded p-0.5 text-ink-400 transition hover:text-ink-700"
+        >
+          {copied ? (
+            <Check className="size-3.5 text-moss-700" aria-hidden="true" />
+          ) : (
+            <Copy className="size-3.5" aria-hidden="true" />
+          )}
+        </button>
+      </p>
     </div>
   );
 }

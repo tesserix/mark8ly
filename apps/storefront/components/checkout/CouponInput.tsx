@@ -21,12 +21,12 @@ interface CouponValidateResult {
   title: string;
 }
 
-const MARKETPLACE_API_URL =
-  process.env.NEXT_PUBLIC_MARKETPLACE_API_URL ??
-  process.env.MARKETPLACE_API_URL ??
-  "http://localhost:8088";
-
-const STOREFRONT_KEY = process.env.NEXT_PUBLIC_STOREFRONT_KEY ?? "";
+// Use the same-origin proxy so the browser never needs
+// MARKETPLACE_API_URL or X-Storefront-Key (both server-only).
+function validateUrl(storeSlug: string): string {
+  const qs = new URLSearchParams({ store: storeSlug }).toString();
+  return `/api/checkout/coupons/validate?${qs}`;
+}
 
 export function CouponInput({
   storeSlug,
@@ -48,24 +48,18 @@ export function CouponInput({
     setError(null);
 
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      };
-      if (STOREFRONT_KEY) headers["X-Storefront-Key"] = STOREFRONT_KEY;
-
-      const res = await fetch(
-        `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/coupons/validate`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            code: code.trim(),
-            customer_email: customerEmail,
-            subtotal: subtotal.toFixed(2),
-          }),
+      const res = await fetch(validateUrl(storeSlug), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
-      );
+        body: JSON.stringify({
+          code: code.trim(),
+          customer_email: customerEmail,
+          subtotal: subtotal.toFixed(2),
+        }),
+      });
 
       if (!res.ok) {
         const body = await res.json().catch(() => null);

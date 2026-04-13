@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { useCallback, useState } from "react";
+import { Check, Copy } from "lucide-react";
 import type { AdminCoupon } from "@/lib/api/coupons-api";
 
 interface CouponsListProps {
@@ -33,6 +37,34 @@ function statusBadge(status: AdminCoupon["status"]) {
   );
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [text]);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        copy();
+      }}
+      aria-label={`Copy ${text}`}
+      title="Copy code"
+      className="ml-1.5 inline-flex items-center rounded p-0.5 text-ink-400 transition hover:text-ink-700"
+    >
+      {copied ? (
+        <Check className="size-3.5 text-moss-700" aria-hidden="true" />
+      ) : (
+        <Copy className="size-3.5" aria-hidden="true" />
+      )}
+    </button>
+  );
+}
+
 export function CouponsList({ coupons }: CouponsListProps) {
   return (
     <div className="overflow-x-auto">
@@ -52,12 +84,15 @@ export function CouponsList({ coupons }: CouponsListProps) {
           {coupons.map((c) => (
             <tr key={c.id} className="group">
               <td className="py-3 pr-4">
-                <Link
-                  href={`/marketing/coupons/${c.id}`}
-                  className="font-mono text-sm font-medium text-moss-700 underline-offset-2 group-hover:underline"
-                >
-                  {c.code}
-                </Link>
+                <span className="inline-flex items-center">
+                  <Link
+                    href={`/marketing/coupons/${c.id}`}
+                    className="font-mono text-sm font-medium text-moss-700 underline-offset-2 group-hover:underline"
+                  >
+                    {c.code}
+                  </Link>
+                  <CopyButton text={c.code} />
+                </span>
               </td>
               <td className="py-3 pr-4 text-ink-700">{c.title}</td>
               <td className="py-3 pr-4 text-ink-600">{formatType(c.type)}</td>

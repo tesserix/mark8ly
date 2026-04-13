@@ -1,7 +1,6 @@
 "use server";
 
 import { headers } from "next/headers";
-import { revalidatePath } from "next/cache";
 import { createCategory } from "@/lib/api/marketplace-api";
 
 export interface CreateCategoryResult {
@@ -40,7 +39,11 @@ export async function createCategoryInline(
     };
   }
 
-  revalidatePath("/products");
+  // Intentionally NOT calling revalidatePath here: the ProductCategoriesPicker
+  // merges the new category into client state on success. Revalidating the
+  // /products path while the user is mid-edit on /products/new forces a
+  // server re-render that races with the open form and surfaces an
+  // "Unexpected error" boundary to the user.
   return {
     ok: true,
     category: {

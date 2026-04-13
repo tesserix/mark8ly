@@ -26,6 +26,14 @@ type Uploader interface {
 	Verify(ctx context.Context, storageKey string) (*Attrs, error)
 }
 
+// MetadataSetter is an optional capability — implementations that can
+// stamp object-level Cache-Control (and other metadata) post-upload
+// implement it. The service layer type-asserts; the FakeUploader does
+// not implement it so tests don't need to mock GCS metadata calls.
+type MetadataSetter interface {
+	SetCacheControl(ctx context.Context, storageKey, value string) error
+}
+
 // FakeUploader is an in-memory Uploader used by tests. Callers register
 // expected storage keys via Register() before invoking service code.
 type FakeUploader struct {

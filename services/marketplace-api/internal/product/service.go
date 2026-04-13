@@ -46,22 +46,26 @@ const DefaultLocationID = "00000000-0000-0000-0000-000000000001"
 
 // Service orchestrates product mutations and their outbox events.
 type Service struct {
-	db         *gorm.DB
-	repo       Repository
-	storesRepo stores.Repository
-	outboxRepo outbox.Repository
-	uploader   media.Uploader
-	logger     *slog.Logger
+	db                 *gorm.DB
+	repo               Repository
+	storesRepo         stores.Repository
+	outboxRepo         outbox.Repository
+	uploader           media.Uploader
+	logger             *slog.Logger
+	mediaPublicBaseURL string
+	mediaCacheControl  string
 }
 
 // Config bundles Service dependencies.
 type Config struct {
-	DB         *gorm.DB
-	Repo       Repository
-	StoresRepo stores.Repository
-	OutboxRepo outbox.Repository
-	Uploader   media.Uploader
-	Logger     *slog.Logger
+	DB                 *gorm.DB
+	Repo               Repository
+	StoresRepo         stores.Repository
+	OutboxRepo         outbox.Repository
+	Uploader           media.Uploader
+	Logger             *slog.Logger
+	MediaPublicBaseURL string
+	MediaCacheControl  string
 }
 
 // NewService constructs a Service from cfg.
@@ -71,12 +75,14 @@ func NewService(cfg Config) *Service {
 		logger = slog.Default()
 	}
 	return &Service{
-		db:         cfg.DB,
-		repo:       cfg.Repo,
-		storesRepo: cfg.StoresRepo,
-		outboxRepo: cfg.OutboxRepo,
-		uploader:   cfg.Uploader,
-		logger:     logger,
+		db:                 cfg.DB,
+		repo:               cfg.Repo,
+		storesRepo:         cfg.StoresRepo,
+		outboxRepo:         cfg.OutboxRepo,
+		uploader:           cfg.Uploader,
+		logger:             logger,
+		mediaPublicBaseURL: strings.TrimRight(cfg.MediaPublicBaseURL, "/"),
+		mediaCacheControl:  cfg.MediaCacheControl,
 	}
 }
 

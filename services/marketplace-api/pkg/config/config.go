@@ -32,6 +32,19 @@ type Config struct {
 	// signing will fail with "signedURL: cannot sign…" if no key is
 	// embedded in credentials. Set to the SA the workload runs as.
 	GCSSignerSAEmail string `envconfig:"MARKETPLACE_GCS_SIGNER_SA_EMAIL" default:""`
+	// MediaPublicBaseURL is the externally-reachable URL prefix that the
+	// service prepends to a storage_key when persisting product_media.url.
+	// Examples:
+	//   - https://cdn.mark8ly.com                                        (Cloudflare-fronted)
+	//   - https://storage.googleapis.com/tesseracthub-480811-mark8ly-media (direct GCS)
+	// When empty, the URL persisted on product_media is left as the raw
+	// storage_key (legacy behavior).
+	MediaPublicBaseURL string `envconfig:"MARKETPLACE_MEDIA_PUBLIC_BASE_URL" default:""`
+	// MediaCacheControl is the Cache-Control header stamped on uploaded
+	// product-media objects after finalize. The default is safe because
+	// keys are content-addressed (hash + filename) and therefore
+	// effectively immutable.
+	MediaCacheControl string `envconfig:"MARKETPLACE_MEDIA_CACHE_CONTROL" default:"public, max-age=31536000, immutable"`
 	// PlatformAPIURL, when non-empty, switches StoreMiddleware from the
 	// dev stub client to a real HTTP client against platform-api's
 	// /internal/stores endpoint. Empty keeps the stub wired.

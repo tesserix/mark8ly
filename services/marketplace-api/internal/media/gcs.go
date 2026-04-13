@@ -171,9 +171,29 @@ func (u *GCSUploader) SignedReadURL(ctx context.Context, key string, expires tim
 	return url, expiresAt, nil
 }
 
+// SetCacheControl stamps Cache-Control on an existing GCS object. Used
+// after a successful upload so the CDN/browser caches the immutable,
+// content-addressed blob aggressively. Errors are returned but the
+// caller is expected to log-and-continue — a missing cache header is
+// non-fatal for correctness.
+func (u *GCSUploader) SetCacheControl(ctx context.Context, key, value string) error {
+	_, err := u.bucket.Object(key).Update(ctx, storage.ObjectAttrsToUpdate{
+		CacheControl: value,
+	})
+	if err != nil {
+		return fmt.Errorf("media: set cache-control on %s: %w", key, err)
+	}
+	return nil
+}
+
+// BucketName exposes the configured bucket so the service layer can
+// build the public/CDN URL that gets persisted on product_media.url.
+func (u *GCSUploader) BucketName() string { return u.bucketName }
+
 // Compile-time checks.
 var (
 	_ Uploader               = (*GCSUploader)(nil)
 	_ SignedURLGenerator     = (*GCSUploader)(nil)
 	_ SignedReadURLGenerator = (*GCSUploader)(nil)
+	_ MetadataSetter         = (*GCSUploader)(nil)
 )

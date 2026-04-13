@@ -52,12 +52,32 @@ func (s *Service) AddMedia(ctx context.Context, req AddMediaRequest) (*Media, er
 		}
 	}
 
+	// Stamp the immutable Cache-Control on the freshly-uploaded object
+	// so any CDN/browser caches it aggressively. Best-effort: log and
+	// continue on failure so a misconfigured GCS IAM doesn't break the
+	// finalize path entirely.
+	if setter, ok := s.uploader.(media.MetadataSetter); ok && s.mediaCacheControl != "" {
+		if err := setter.SetCacheControl(ctx, req.StorageKey, s.mediaCacheControl); err != nil {
+			s.logger.Warn("media: set cache-control failed",
+				"storage_key", req.StorageKey, "err", err)
+		}
+	}
+
+	// Persist a publicly-resolvable URL on product_media.url so storefront
+	// renders it directly. Falls back to whatever the caller passed (the
+	// upload client today passes the raw storage key) when no base URL is
+	// configured — matches legacy behavior.
+	persistedURL := req.URL
+	if s.mediaPublicBaseURL != "" {
+		persistedURL = s.mediaPublicBaseURL + "/" + req.StorageKey
+	}
+
 	row := &Media{
 		ID:              uuid.NewString(),
 		ProductID:       req.ProductID,
 		StorageKey:      req.StorageKey,
 		GcsPathOriginal: req.StorageKey,
-		URL:        req.URL,
+		URL:        persistedURL,
 		Alt:        req.Alt,
 		Position:   req.Position,
 		MediaType:  defaultMediaType(req.MediaType),

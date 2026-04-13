@@ -193,12 +193,14 @@ func main() {
 		}
 
 		productSvc := product.NewService(product.Config{
-			DB:         conn,
-			Repo:       productRepo,
-			StoresRepo: storesRepo,
-			OutboxRepo: outboxRepo,
-			Uploader:   uploader,
-			Logger:     log,
+			DB:                 conn,
+			Repo:               productRepo,
+			StoresRepo:         storesRepo,
+			OutboxRepo:         outboxRepo,
+			Uploader:           uploader,
+			Logger:             log,
+			MediaPublicBaseURL: cfg.MediaPublicBaseURL,
+			MediaCacheControl:  cfg.MediaCacheControl,
 		})
 		categorySvc := category.NewService(category.Config{
 			DB:         conn,

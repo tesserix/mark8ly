@@ -320,11 +320,7 @@ export async function getProduct(
     `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}`,
     {
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-        Accept: "application/json",
-      },
+      headers: readHeaders(session),
     },
   );
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -387,10 +383,7 @@ export async function deleteProduct(
     {
       method: "DELETE",
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-      },
+      headers: readHeaders(session),
     },
   );
   if (res.status === 204 || res.ok) {
@@ -407,11 +400,7 @@ export async function listCategories(
     `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/categories`,
     {
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-        Accept: "application/json",
-      },
+      headers: readHeaders(session),
     },
   );
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -573,10 +562,7 @@ export async function deleteMedia(
     {
       method: "DELETE",
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-      },
+      headers: readHeaders(session),
     },
   );
   if (res.status === 204 || res.ok) {

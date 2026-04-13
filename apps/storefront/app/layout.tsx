@@ -13,8 +13,10 @@ import { SkipLink } from "@repo/ui/skip-link";
 
 import { CartProvider } from "@/components/CartProvider";
 import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
+import { PromotionBar } from "@/components/PromotionBar";
 import { slugFromHost } from "@/lib/slug";
 import { buildLoginUrl, buildLogoutUrl, hasSessionCookie, decodeSession } from "@/lib/auth";
+import { fetchBranding } from "@/lib/api/marketplace-api";
 
 import "./globals.css";
 
@@ -157,10 +159,25 @@ export default async function RootLayout({ children }: RootLayoutProps) {
     logoutUrl,
   };
 
+  const brandingData = await fetchBranding(storeSlug);
+
   return (
     <html lang="en" className={fontVars}>
       <body>
         <SkipLink />
+        <PromotionBar
+          promotion={brandingData?.active_promotion}
+          announcement={
+            brandingData?.branding
+              ? {
+                  text: brandingData.branding.announcement_text,
+                  link: brandingData.branding.announcement_link,
+                  bg: brandingData.branding.announcement_bg,
+                  active: brandingData.branding.announcement_active,
+                }
+              : undefined
+          }
+        />
         <CustomerAuthProvider value={authState}>
           <CartProvider storeSlug={storeSlug}>{children}</CartProvider>
         </CustomerAuthProvider>

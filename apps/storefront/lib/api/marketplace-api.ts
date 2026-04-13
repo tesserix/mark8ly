@@ -184,3 +184,41 @@ export async function listCategories(
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// Branding + active promotion
+// ---------------------------------------------------------------------------
+
+export interface ActivePromotion {
+  label: string;
+  coupon_code?: string;
+  link?: string;
+}
+
+export interface StorefrontBranding {
+  announcement_text?: string;
+  announcement_link?: string;
+  announcement_bg?: string;
+  announcement_active: boolean;
+}
+
+export interface BrandingResponse {
+  branding: StorefrontBranding;
+  active_promotion?: ActivePromotion;
+}
+
+export async function fetchBranding(
+  storeSlug: string,
+): Promise<BrandingResponse | null> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/branding`;
+  try {
+    const res = await fetch(url, {
+      headers: commonHeaders(),
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as BrandingResponse;
+  } catch {
+    return null;
+  }
+}

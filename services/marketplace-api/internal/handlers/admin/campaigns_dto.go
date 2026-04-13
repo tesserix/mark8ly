@@ -10,21 +10,27 @@ import (
 
 // CreateCampaignRequest is the JSON body for POST /campaigns.
 type CreateCampaignRequest struct {
-	Name      string  `json:"name" binding:"required"`
-	Type      string  `json:"type"`      // defaults to "email"
-	Subject   string  `json:"subject"`
-	Content   string  `json:"content"`
-	SegmentID *string `json:"segment_id"`
-	CouponID  *string `json:"coupon_id"`
+	Name               string  `json:"name" binding:"required"`
+	Type               string  `json:"type"`      // defaults to "email"
+	Subject            string  `json:"subject"`
+	Content            string  `json:"content"`
+	SegmentID          *string `json:"segment_id"`
+	CouponID           *string `json:"coupon_id"`
+	ShowOnStorefront   bool    `json:"show_on_storefront"`
+	StorefrontLabel    *string `json:"storefront_label"`
+	StorefrontPriority int     `json:"storefront_priority"`
 }
 
 // UpdateCampaignRequest is the JSON body for PATCH /campaigns/:id.
 type UpdateCampaignRequest struct {
-	Name      *string `json:"name"`
-	Subject   *string `json:"subject"`
-	Content   *string `json:"content"`
-	SegmentID *string `json:"segment_id"`
-	CouponID  *string `json:"coupon_id"`
+	Name               *string `json:"name"`
+	Subject            *string `json:"subject"`
+	Content            *string `json:"content"`
+	SegmentID          *string `json:"segment_id"`
+	CouponID           *string `json:"coupon_id"`
+	ShowOnStorefront   *bool   `json:"show_on_storefront"`
+	StorefrontLabel    *string `json:"storefront_label"`
+	StorefrontPriority *int    `json:"storefront_priority"`
 }
 
 // ScheduleCampaignRequest is the JSON body for POST /campaigns/:id/schedule.
@@ -53,9 +59,12 @@ type CampaignResponse struct {
 	Converted       int     `json:"converted"`
 	Unsubscribed    int     `json:"unsubscribed"`
 	Failed          int     `json:"failed"`
-	Revenue         string  `json:"revenue"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	Revenue            string  `json:"revenue"`
+	ShowOnStorefront   bool    `json:"show_on_storefront"`
+	StorefrontLabel    *string `json:"storefront_label,omitempty"`
+	StorefrontPriority int     `json:"storefront_priority"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
 }
 
 // ToCampaignResponse maps a domain Campaign to its response DTO.
@@ -74,9 +83,12 @@ func ToCampaignResponse(c *campaign.Campaign) CampaignResponse {
 		Converted:       c.Converted,
 		Unsubscribed:    c.Unsubscribed,
 		Failed:          c.Failed,
-		Revenue:         c.Revenue.StringFixed(2),
-		CreatedAt:       c.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:       c.UpdatedAt.Format(time.RFC3339),
+		Revenue:            c.Revenue.StringFixed(2),
+		ShowOnStorefront:   c.ShowOnStorefront,
+		StorefrontLabel:    c.StorefrontLabel,
+		StorefrontPriority: c.StorefrontPriority,
+		CreatedAt:          c.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:          c.UpdatedAt.Format(time.RFC3339),
 	}
 	if c.SegmentID != nil {
 		s := c.SegmentID.String()

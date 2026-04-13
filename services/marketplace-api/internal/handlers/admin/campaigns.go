@@ -80,10 +80,13 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 	}
 
 	model := &campaign.Campaign{
-		TenantID: tenantID,
-		StoreID:  storeID,
-		Name:     req.Name,
-		Type:     req.Type,
+		TenantID:           tenantID,
+		StoreID:            storeID,
+		Name:               req.Name,
+		Type:               req.Type,
+		ShowOnStorefront:   req.ShowOnStorefront,
+		StorefrontLabel:    req.StorefrontLabel,
+		StorefrontPriority: req.StorefrontPriority,
 	}
 	if req.Subject != "" {
 		model.Subject = &req.Subject
@@ -178,6 +181,15 @@ func (h *CampaignHandler) Patch(c *gin.Context) {
 			return
 		}
 		existing.CouponID = &cid
+	}
+	if req.ShowOnStorefront != nil {
+		existing.ShowOnStorefront = *req.ShowOnStorefront
+	}
+	if req.StorefrontLabel != nil {
+		existing.StorefrontLabel = req.StorefrontLabel
+	}
+	if req.StorefrontPriority != nil {
+		existing.StorefrontPriority = *req.StorefrontPriority
 	}
 
 	if err := h.svc.UpdateCampaign(c.Request.Context(), existing); err != nil {

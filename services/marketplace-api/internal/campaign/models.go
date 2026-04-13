@@ -82,9 +82,12 @@ type Campaign struct {
 	Converted       int             `gorm:"column:converted;not null;default:0"`
 	Unsubscribed    int             `gorm:"column:unsubscribed;not null;default:0"`
 	Failed          int             `gorm:"column:failed;not null;default:0"`
-	Revenue         decimal.Decimal `gorm:"column:revenue;type:numeric(12,2);not null;default:0"`
-	CreatedAt       time.Time       `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt       time.Time       `gorm:"column:updated_at;not null;default:now()"`
+	Revenue            decimal.Decimal `gorm:"column:revenue;type:numeric(12,2);not null;default:0"`
+	ShowOnStorefront   bool            `gorm:"column:show_on_storefront;not null;default:false"`
+	StorefrontLabel    *string         `gorm:"column:storefront_label;type:varchar(120)"`
+	StorefrontPriority int             `gorm:"column:storefront_priority;not null;default:0"`
+	CreatedAt          time.Time       `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt          time.Time       `gorm:"column:updated_at;not null;default:now()"`
 }
 
 func (Campaign) TableName() string { return "campaigns" }

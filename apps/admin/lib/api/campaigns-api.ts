@@ -87,6 +87,9 @@ export interface CreateCampaignBody {
   content?: string;
   segment_id?: string;
   coupon_id?: string;
+  show_on_storefront?: boolean;
+  storefront_label?: string;
+  storefront_priority?: number;
 }
 
 export interface UpdateCampaignBody {

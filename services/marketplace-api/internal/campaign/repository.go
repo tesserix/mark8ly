@@ -53,6 +53,10 @@ type Repository interface {
 	// scheduled_at is in the past.
 	FindScheduledReady(ctx context.Context, db *gorm.DB) ([]Campaign, error)
 
+	// FindActiveStorefrontPromotion returns the highest-priority campaign
+	// with show_on_storefront=true and a non-terminal status for a store.
+	FindActiveStorefrontPromotion(ctx context.Context, db *gorm.DB, storeID uuid.UUID) (*Campaign, error)
+
 	// --- Recipients ---
 	CreateRecipientsInBatches(tx *gorm.DB, recipients []CampaignRecipient, batchSize int) error
 	ListRecipientsByCampaign(ctx context.Context, db *gorm.DB, campaignID uuid.UUID, status string, page, pageSize int) ([]CampaignRecipient, int64, error)
@@ -226,6 +230,22 @@ func (r *gormRepository) FindScheduledReady(ctx context.Context, db *gorm.DB) ([
 		Where("status = ? AND scheduled_at <= ?", StatusScheduled, time.Now()).
 		Find(&campaigns).Error
 	return campaigns, err
+}
+
+func (r *gormRepository) FindActiveStorefrontPromotion(ctx context.Context, db *gorm.DB, storeID uuid.UUID) (*Campaign, error) {
+	var c Campaign
+	err := db.WithContext(ctx).
+		Where("store_id = ? AND show_on_storefront = true AND status NOT IN ?",
+			storeID, []string{StatusCancelled}).
+		Order("storefront_priority DESC, created_at DESC").
+		First(&c).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &c, nil
 }
 
 // --- Recipients ---

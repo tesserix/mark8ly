@@ -475,7 +475,8 @@ func main() {
 			Repo:   brandingRepoSF,
 			Logger: log,
 		})
-		sfBrandingHandler := storefront.NewBrandingHandler(brandingSvcSF, log)
+		campaignRepoSF := campaign.NewRepository(conn)
+		sfBrandingHandler := storefront.NewBrandingHandler(brandingSvcSF, conn, campaignRepoSF, couponRepo, log)
 
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
 		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, log)

@@ -8,19 +8,32 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/branding"
+	"github.com/mark8ly/marketplace-api/internal/campaign"
+	"github.com/mark8ly/marketplace-api/internal/coupon"
 )
 
 // BrandingHandler handles /storefront/stores/:storeSlug/branding.
 type BrandingHandler struct {
-	svc    *branding.Service
-	logger *slog.Logger
+	svc          *branding.Service
+	campaignRepo campaign.Repository
+	couponRepo   coupon.Repository
+	db           *gorm.DB
+	logger       *slog.Logger
 }
 
 // NewBrandingHandler constructs a storefront BrandingHandler.
-func NewBrandingHandler(svc *branding.Service, logger *slog.Logger) *BrandingHandler {
-	return &BrandingHandler{svc: svc, logger: logger}
+func NewBrandingHandler(svc *branding.Service, db *gorm.DB, campaignRepo campaign.Repository, couponRepo coupon.Repository, logger *slog.Logger) *BrandingHandler {
+	return &BrandingHandler{svc: svc, db: db, campaignRepo: campaignRepo, couponRepo: couponRepo, logger: logger}
+}
+
+// ActivePromotionResponse is the storefront promotion derived from a campaign.
+type ActivePromotionResponse struct {
+	Label      string  `json:"label"`
+	CouponCode *string `json:"coupon_code,omitempty"`
+	Link       *string `json:"link,omitempty"`
 }
 
 // PublicBrandingResponse is the public wire DTO — excludes custom_css
@@ -104,6 +117,31 @@ func (h *BrandingHandler) Get(c *gin.Context) {
 		return
 	}
 
+	resp := gin.H{
+		"branding": toPublicBrandingResponse(*b),
+	}
+
+	// Look up active storefront promotion from campaigns.
+	if h.campaignRepo != nil {
+		promo, err := h.campaignRepo.FindActiveStorefrontPromotion(c.Request.Context(), h.db, storeID)
+		if err != nil {
+			h.logger.Error("storefront branding: active promotion lookup", "err", err)
+		}
+		if promo != nil && promo.StorefrontLabel != nil {
+			ap := ActivePromotionResponse{
+				Label: *promo.StorefrontLabel,
+			}
+			// Resolve coupon code if campaign has a linked coupon.
+			if promo.CouponID != nil && h.couponRepo != nil {
+				cp, err := h.couponRepo.GetByID(c.Request.Context(), h.db, promo.StoreID, *promo.CouponID)
+				if err == nil && cp != nil {
+					ap.CouponCode = &cp.Code
+				}
+			}
+			resp["active_promotion"] = ap
+		}
+	}
+
 	c.Header("Cache-Control", "public, max-age=300")
-	c.JSON(http.StatusOK, toPublicBrandingResponse(*b))
+	c.JSON(http.StatusOK, resp)
 }

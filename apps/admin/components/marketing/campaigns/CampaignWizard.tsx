@@ -88,9 +88,11 @@ export function CampaignWizard({
   const [content, setContent] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
-  // Step 3 — Schedule
+  // Step 3 — Schedule & Storefront
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("now");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [showOnStorefront, setShowOnStorefront] = useState(false);
+  const [storefrontLabel, setStorefrontLabel] = useState("");
 
   const selectedSegment = segments.find((s) => s.id === segmentId);
 
@@ -116,6 +118,10 @@ export function CampaignWizard({
         subject: subject.trim(),
         content: content.trim(),
         ...(segmentId ? { segment_id: segmentId } : {}),
+        show_on_storefront: showOnStorefront,
+        ...(showOnStorefront && storefrontLabel.trim()
+          ? { storefront_label: storefrontLabel.trim() }
+          : {}),
       };
 
       try {
@@ -382,6 +388,44 @@ export function CampaignWizard({
               {subject}
             </p>
           </div>
+
+          {/* Storefront display */}
+          <div className="space-y-3">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={showOnStorefront}
+                onChange={(e) => setShowOnStorefront(e.target.checked)}
+                className="size-4 rounded border-ink-300 accent-moss-700"
+              />
+              <span className="text-sm text-ink-900">
+                Display a promotion bar on your storefront while this campaign
+                is active
+              </span>
+            </label>
+
+            {showOnStorefront && (
+              <label className="block max-w-md">
+                <span className="text-sm font-medium text-ink-700">
+                  Promotion bar text
+                </span>
+                <input
+                  type="text"
+                  value={storefrontLabel}
+                  onChange={(e) => setStorefrontLabel(e.target.value)}
+                  placeholder="e.g. Summer sale — 20% off everything"
+                  maxLength={120}
+                  className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                />
+                <p className="mt-1 text-xs text-ink-500">
+                  If the campaign has a linked coupon, the code will appear
+                  automatically with a copy button.
+                </p>
+              </label>
+            )}
+          </div>
+
+          <hr className="border-ink-200" />
 
           {/* Schedule options */}
           <fieldset className="space-y-3">

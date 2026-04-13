@@ -39,16 +39,36 @@ type BalanceResult struct {
 	ExpiresAt      *time.Time      `json:"expires_at,omitempty"`
 }
 
+// ThemeLoader resolves the gift-card email theme for a given store
+// (store name + branding). Narrow interface so the giftcard package
+// doesn't depend on the branding package internals. Nil is allowed —
+// the mailer falls back to editorial defaults when it is.
+type ThemeLoader interface {
+	LoadTheme(ctx context.Context, storeID uuid.UUID) (GiftCardEmailTheme, string, error)
+}
+
 // Service contains the business logic for gift cards.
 type Service struct {
-	db     *gorm.DB
-	repo   Repository
-	logger *slog.Logger
+	db          *gorm.DB
+	repo        Repository
+	mailer      Mailer      // optional — nil disables delivery emails
+	themeLoader ThemeLoader // optional — nil falls back to default theme
+	logger      *slog.Logger
 }
 
 // NewService constructs a gift card Service.
+//
+// Deprecated shape kept for back-compat with tests; production wiring
+// should call NewServiceWithMailer so delivery emails fire.
 func NewService(db *gorm.DB, repo Repository, logger *slog.Logger) *Service {
 	return &Service{db: db, repo: repo, logger: logger}
+}
+
+// NewServiceWithMailer constructs a Service with delivery email wired.
+// Mailer / themeLoader may be nil independently — missing mailer
+// disables sending; missing themeLoader uses editorial defaults.
+func NewServiceWithMailer(db *gorm.DB, repo Repository, mailer Mailer, themeLoader ThemeLoader, logger *slog.Logger) *Service {
+	return &Service{db: db, repo: repo, mailer: mailer, themeLoader: themeLoader, logger: logger}
 }
 
 // Unit runs fn inside a database transaction.
@@ -102,7 +122,44 @@ func (s *Service) Issue(ctx context.Context, in IssueInput) (*GiftCard, error) {
 		return nil, err
 	}
 
+	// Fire-and-log the delivery email. A send failure must NOT roll back
+	// the gift card itself — the merchant can always resend from the
+	// detail page. Errors land in the log with campaign-style context.
+	s.sendDeliveryIfPossible(ctx, &gc)
+
 	return &gc, nil
+}
+
+// sendDeliveryIfPossible dispatches the delivery email when a mailer is
+// wired and the card has a recipient email. No-op otherwise. Errors are
+// logged but never returned.
+func (s *Service) sendDeliveryIfPossible(ctx context.Context, gc *GiftCard) {
+	if s.mailer == nil || gc == nil || gc.RecipientEmail == nil || *gc.RecipientEmail == "" {
+		return
+	}
+
+	theme := GiftCardEmailTheme{}
+	var storefrontURL string
+	if s.themeLoader != nil {
+		loaded, url, err := s.themeLoader.LoadTheme(ctx, gc.StoreID)
+		if err != nil {
+			s.logger.Warn("giftcard: theme load failed — using defaults",
+				"card_id", gc.ID, "store_id", gc.StoreID, "err", err)
+		} else {
+			theme = loaded
+			storefrontURL = url
+		}
+	}
+
+	if err := s.mailer.SendDelivery(ctx, DeliveryInput{
+		Recipient:     *gc.RecipientEmail,
+		Card:          gc,
+		Theme:         theme,
+		StorefrontURL: storefrontURL,
+	}); err != nil {
+		s.logger.Error("giftcard: delivery email failed",
+			"card_id", gc.ID, "recipient", *gc.RecipientEmail, "err", err)
+	}
 }
 
 // GetByID returns a single gift card with transactions.

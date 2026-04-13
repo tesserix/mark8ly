@@ -89,6 +89,11 @@ type Config struct {
 	// sent) so local/dev doesn't need a SendGrid account.
 	SendGridAPIKey string `envconfig:"SENDGRID_API_KEY" default:""`
 	EmailFrom      string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.com"`
+
+	// Marketing M2 — Storefront URL template for gift card delivery
+	// emails. {slug} is substituted with the store slug. Empty disables
+	// the "Shop storefront" CTA in gift card emails.
+	StorefrontBaseURLTemplate string `envconfig:"STOREFRONT_BASE_URL_TEMPLATE" default:"https://{slug}.mark8ly.com"`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

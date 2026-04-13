@@ -255,7 +255,23 @@ func main() {
 
 		// Gift cards — Marketing M2.
 		giftCardRepo := giftcard.NewRepository()
-		giftCardSvc := giftcard.NewService(conn, giftCardRepo, log)
+		// Delivery email: SendGrid when an API key is configured, Log
+		// fallback for local/dev. Theme loader pulls the merchant's
+		// branding + storefront URL so the email matches the store, not
+		// the platform.
+		var giftCardMailer giftcard.Mailer
+		if cfg.SendGridAPIKey != "" {
+			giftCardMailer = giftcard.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+		} else {
+			giftCardMailer = &giftcard.LogMailer{Logger: log}
+		}
+		giftCardBrandingSvc := branding.NewService(branding.ServiceConfig{
+			DB:     conn,
+			Repo:   branding.NewRepository(),
+			Logger: log,
+		})
+		giftCardThemeLoader := giftcard.NewStoreThemeLoader(conn, giftCardBrandingSvc, cfg.StorefrontBaseURLTemplate)
+		giftCardSvc := giftcard.NewServiceWithMailer(conn, giftCardRepo, giftCardMailer, giftCardThemeLoader, log)
 		giftCardHandler := admin.NewGiftCardHandler(giftCardSvc, log)
 
 		// Loyalty M3 wiring.

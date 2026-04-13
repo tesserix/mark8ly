@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <title>{{.Subject}}</title>
+  <style>
+    @media only screen and (max-width: 600px) {
+      .m8-card { width: 100% !important; }
+      .m8-pad  { padding: 32px 24px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:{{.Theme.ColorBackground}};font-family:{{.Theme.BodyFont}};color:{{.Theme.ColorText}};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    Your gift card from {{.Theme.StoreName}}: {{.Balance}} {{.CurrencyCode}}.
+  </div>
+  <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:{{.Theme.ColorBackground}};padding:48px 16px;">
+    <tr>
+      <td align="center">
+        <table class="m8-card" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#FFFFFF;border:1px solid {{.HairlineColor}};">
+
+          <!-- Masthead -->
+          <tr>
+            <td class="m8-pad" style="padding:32px 40px 20px 40px;border-bottom:1px solid {{.HairlineColor}};">
+              {{if .Theme.LogoURL}}
+                <img src="{{.Theme.LogoURL}}" alt="{{.Theme.StoreName}}" style="max-height:40px;width:auto;display:block;margin:0 0 8px 0;">
+              {{else}}
+                <span style="font-family:{{.Theme.HeadingFont}};font-size:22px;font-weight:500;letter-spacing:-0.025em;color:{{.Theme.ColorText}};display:inline-block;">{{.Theme.StoreName}}</span>
+              {{end}}
+              {{if .Theme.Tagline}}
+                <p style="margin:6px 0 0 0;font-size:12px;color:{{.MutedCopy}};line-height:1.5;">{{.Theme.Tagline}}</p>
+              {{end}}
+            </td>
+          </tr>
+
+          <!-- Hero -->
+          <tr>
+            <td class="m8-pad" style="padding:40px 40px 8px 40px;">
+              <p style="margin:0 0 14px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:{{.MutedCopy}};font-weight:600;">
+                A gift for you
+              </p>
+              <h1 style="margin:0 0 18px 0;font-family:{{.Theme.HeadingFont}};font-size:32px;font-weight:500;letter-spacing:-0.02em;line-height:1.1;color:{{.Theme.ColorText}};">
+                {{if .RecipientName}}{{.RecipientName}}, y{{else}}Y{{end}}ou've received a gift card{{if .SenderName}} from {{.SenderName}}{{end}}.
+              </h1>
+              <p style="margin:0 0 28px 0;font-size:16px;line-height:1.7;color:{{.SupportingCopy}};">
+                Treat yourself to something from {{.Theme.StoreName}} — the balance is yours to spend however you like.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Balance callout -->
+          <tr>
+            <td class="m8-pad" style="padding:0 40px 8px 40px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid {{.HairlineColor}};background:{{.Theme.ColorBackground}};">
+                <tr>
+                  <td style="padding:22px 28px;">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:{{.MutedCopy}};font-weight:600;">
+                      Balance
+                    </p>
+                    <p style="margin:0;font-family:{{.Theme.HeadingFont}};font-size:28px;font-weight:500;letter-spacing:-0.01em;color:{{.Theme.ColorText}};">
+                      {{.Balance}} <span style="font-size:14px;font-family:{{.Theme.BodyFont}};font-weight:500;color:{{.MutedCopy}};">{{.CurrencyCode}}</span>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Code -->
+          <tr>
+            <td class="m8-pad" style="padding:20px 40px 8px 40px;">
+              <p style="margin:0 0 6px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:{{.MutedCopy}};font-weight:600;">
+                Your code
+              </p>
+              <p style="margin:0 0 6px 0;font-family:'SFMono-Regular','Menlo','Monaco',monospace;font-size:18px;font-weight:600;letter-spacing:0.04em;color:{{.Theme.ColorText}};word-break:break-all;">
+                {{.DisplayCode}}
+              </p>
+              <p style="margin:0;font-size:13px;color:{{.MutedCopy}};line-height:1.6;">
+                Apply this code at checkout.{{if .ExpiresAt}} Valid through {{.ExpiresAt}}.{{end}}
+              </p>
+            </td>
+          </tr>
+
+          {{if .Message}}
+          <!-- Personal message -->
+          <tr>
+            <td class="m8-pad" style="padding:20px 40px 8px 40px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="border-left:2px solid {{.Theme.ColorAccent}};background:#FFFFFF;">
+                <tr>
+                  <td style="padding:12px 18px;">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:{{.MutedCopy}};font-weight:600;">
+                      Message{{if .SenderName}} from {{.SenderName}}{{end}}
+                    </p>
+                    <p style="margin:0;font-family:{{.Theme.HeadingFont}};font-size:15px;line-height:1.7;color:{{.SupportingCopy}};font-style:italic;">
+                      {{.Message}}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {{end}}
+
+          <!-- CTA -->
+          {{if .StorefrontURL}}
+          <tr>
+            <td class="m8-pad" style="padding:28px 40px 36px 40px;">
+              <table cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td>
+                    <a href="{{.StorefrontURL}}" style="display:inline-block;background-color:{{.Theme.ColorButtonBg}};color:{{.Theme.ColorButtonText}};text-decoration:none;font-weight:600;padding:14px 28px;font-size:15px;letter-spacing:0.02em;border-radius:6px;">
+                      Shop {{.Theme.StoreName}}
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {{else}}
+          <tr><td style="padding:0 0 28px 0;"></td></tr>
+          {{end}}
+
+          <!-- Footer -->
+          <tr>
+            <td class="m8-pad" style="padding:24px 40px 36px 40px;border-top:1px solid {{.HairlineColor}};">
+              {{if .Theme.FooterTagline}}
+                <p style="margin:0 0 12px 0;font-family:{{.Theme.HeadingFont}};font-size:14px;color:{{.Theme.ColorText}};line-height:1.5;font-style:italic;">
+                  {{.Theme.FooterTagline}}
+                </p>
+              {{end}}
+              <p style="margin:0;font-size:12px;line-height:1.7;color:{{.MutedCopy}};">
+                Need help? Reply to this email and someone from {{.Theme.StoreName}} will get back to you.
+              </p>
+              {{if .Theme.FooterCopyright}}
+                <p style="margin:8px 0 0 0;font-size:11px;line-height:1.6;color:{{.FaintCopy}};">
+                  {{.Theme.FooterCopyright}}
+                </p>
+              {{end}}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

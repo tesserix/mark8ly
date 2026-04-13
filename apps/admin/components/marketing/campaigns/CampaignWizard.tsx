@@ -178,7 +178,7 @@ export function CampaignWizard({
         setSubmitting(false);
       }
     },
-    [name, subject, content, segmentId, scheduledAt, router],
+    [name, subject, content, segmentId, scheduledAt, showOnStorefront, storefrontLabel, router],
   );
 
   return (

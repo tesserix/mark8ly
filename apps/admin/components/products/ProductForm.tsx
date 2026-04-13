@@ -39,6 +39,7 @@ import {
 } from "@/lib/products/generateVariants";
 import type { VariantDraft as MatrixVariantDraft } from "@/components/products/variants/VariantMatrixTable";
 
+import { useToast } from "@/components/feedback/Toaster";
 import {
   ProductFormTabs,
   type ProductFormTabId,
@@ -78,6 +79,7 @@ export function ProductForm({
   storeSlug,
 }: ProductFormProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [rootError, setRootError] = useState<string | null>(null);
   const [currentTab, setCurrentTab] = useState<ProductFormTabId>("general");
@@ -97,7 +99,17 @@ export function ProductForm({
     categoryIds: initialProduct?.categories.map((c) => c.id) ?? [],
     options: [],
     variants: [],
-    media: [],
+    // Hydrate media from the server payload so a title/price-only edit
+    // doesn't submit `media: []` and wipe the product's existing images.
+    media: (initialProduct?.media ?? []).map((m) => ({
+      id: m.id,
+      url: m.url,
+      alt: m.alt ?? "",
+      position: m.position,
+      variant_id: m.variant_id ?? null,
+      storage_key: m.storage_key,
+      gcs_path_original: "",
+    })),
     removed_variant_ids: [],
   };
 
@@ -220,6 +232,10 @@ export function ProductForm({
     } else {
       setRootError(err.message);
     }
+    toast.error(
+      mode === "create" ? "Couldn't create product" : "Couldn't save changes",
+      err.message,
+    );
   };
 
   const onSubmit = (values: ProductFormValues) => {
@@ -231,6 +247,9 @@ export function ProductForm({
           applyError(result.error);
         } else {
           accumulatedRemovedIdsRef.current = [];
+          // createProductAction redirects on success, so this rarely
+          // shows — included for parity if redirect is removed.
+          toast.success("Product created");
         }
       } else if (initialProduct) {
         const result = await updateProductAction(
@@ -243,6 +262,7 @@ export function ProductForm({
           applyError(result.error);
         } else {
           accumulatedRemovedIdsRef.current = [];
+          toast.success("Changes saved");
           router.refresh();
         }
       }
@@ -261,8 +281,23 @@ export function ProductForm({
       const result = await deleteProductAction(storeId, initialProduct.id);
       if (!result.ok && result.error) {
         setRootError(result.error.message);
+        toast.error("Couldn't delete product", result.error.message);
+      } else {
+        toast.success("Product deleted");
       }
     });
+  };
+
+  const onInvalid = (errors: Record<string, unknown>) => {
+    // RHF blocked submit due to validation. Surface a clear toast so the
+    // user isn't left wondering why nothing happened — without this,
+    // hidden-tab fields (e.g. Media) can fail silently.
+    const firstField = Object.keys(errors)[0] ?? "form";
+    const firstMsg = (() => {
+      const e = errors[firstField] as { message?: string } | undefined;
+      return e?.message ?? "Please review the highlighted fields.";
+    })();
+    toast.error("Couldn't save — check the form", firstMsg);
   };
 
   const title =
@@ -283,7 +318,7 @@ export function ProductForm({
   return (
     <FormProvider {...methods}>
       <form
-        onSubmit={methods.handleSubmit(onSubmit)}
+        onSubmit={methods.handleSubmit(onSubmit, onInvalid)}
         className="flex flex-col gap-8"
         aria-labelledby="product-form-heading"
       >

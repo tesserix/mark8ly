@@ -11,6 +11,7 @@ import { X, Plus } from "lucide-react";
 
 import type { AdminCategory } from "@/lib/api/marketplace-api";
 import { createCategoryInline } from "@/app/(admin)/products/category-actions";
+import { useToast } from "@/components/feedback/Toaster";
 
 export interface ProductCategoriesPickerProps {
   allCategories: AdminCategory[];
@@ -31,6 +32,7 @@ export function ProductCategoriesPicker({
   const [isOpen, setIsOpen] = useState(false);
   const [creating, startCreating] = useTransition();
   const [localCategories, setLocalCategories] = useState<AdminCategory[]>([]);
+  const { toast } = useToast();
 
   const allCats = useMemo(
     () => [...allCategories, ...localCategories],
@@ -83,6 +85,12 @@ export function ProductCategoriesPicker({
         onChange([...selectedIds, newCat.id]);
         setQuery("");
         setIsOpen(false);
+        toast.success(`Category "${newCat.name}" added`);
+      } else {
+        toast.error(
+          "Couldn't add category",
+          result.error ?? "Please try again.",
+        );
       }
     });
   }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AdminShell } from "@/components/shell/AdminShell";
+import { Toaster } from "@/components/feedback/Toaster";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 
 /**
@@ -30,14 +31,16 @@ export default async function AdminLayout({
     await getServerSessionContext();
 
   return (
-    <AdminShell
-      tenantName={tenantName}
-      userEmail={email}
-      role={role}
-      memberships={memberships}
-      currentTenantId={tenantId}
-    >
-      {children}
-    </AdminShell>
+    <Toaster>
+      <AdminShell
+        tenantName={tenantName}
+        userEmail={email}
+        role={role}
+        memberships={memberships}
+        currentTenantId={tenantId}
+      >
+        {children}
+      </AdminShell>
+    </Toaster>
   );
 }

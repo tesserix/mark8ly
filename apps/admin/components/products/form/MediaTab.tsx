@@ -76,12 +76,16 @@ async function defaultPutBlob(
 }
 
 function mediaToField(m: AdminMediaResponse): ProductFormValues["media"] extends (infer U)[] | undefined ? U : never {
+  // The finalize-media response omits `variant_id` for product-scope
+  // uploads, leaving it as `undefined`. The form's Zod schema requires
+  // `z.string().nullable()` (rejects undefined) — coerce here so the
+  // form validates and `handleSubmit` actually fires on Save.
   return {
     id: m.id,
     url: m.url,
     alt: m.alt ?? "",
     position: m.position,
-    variant_id: m.variant_id,
+    variant_id: m.variant_id ?? null,
     storage_key: m.storage_key,
     gcs_path_original: "",
   };

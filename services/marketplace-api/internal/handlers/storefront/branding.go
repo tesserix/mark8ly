@@ -13,6 +13,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
+	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
 // BrandingHandler handles /storefront/stores/:storeSlug/branding.
@@ -99,12 +100,17 @@ func toPublicBrandingResponse(b branding.StoreBranding) PublicBrandingResponse {
 // Get handles GET /storefront/stores/:storeSlug/branding.
 // Returns branding with a 5-minute cache header.
 func (h *BrandingHandler) Get(c *gin.Context) {
-	storeIDStr, exists := c.Get("store_id")
+	storeVal, exists := c.Get("store")
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found", "message": "store not found"})
 		return
 	}
-	storeID, err := uuid.Parse(storeIDStr.(string))
+	store, ok := storeVal.(*stores.Store)
+	if !ok || store == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found", "message": "store not found"})
+		return
+	}
+	storeID, err := uuid.Parse(store.ID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found", "message": "store not found"})
 		return

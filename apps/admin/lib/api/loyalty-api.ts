@@ -100,11 +100,17 @@ export async function getLoyaltyProgram(
   }
 }
 
+export interface UpdateLoyaltyProgramResult {
+  ok: boolean;
+  program?: LoyaltyProgram;
+  error?: string;
+}
+
 export async function updateLoyaltyProgram(
   storeId: string,
   body: Record<string, unknown>,
   session: SessionHeaders,
-): Promise<LoyaltyProgram | null> {
+): Promise<UpdateLoyaltyProgramResult> {
   const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/loyalty/program`;
   try {
     const res = await fetch(url, {
@@ -112,11 +118,18 @@ export async function updateLoyaltyProgram(
       headers: authHeaders(session),
       body: JSON.stringify(body),
     });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json.data ?? null;
-  } catch {
-    return null;
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      const msg =
+        json?.message ?? json?.error ?? `Save failed (${res.status})`;
+      return { ok: false, error: msg };
+    }
+    return { ok: true, program: json?.data ?? undefined };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Network error",
+    };
   }
 }
 

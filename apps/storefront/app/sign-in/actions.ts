@@ -102,6 +102,41 @@ async function ensureCustomerProfile(
   }
 }
 
+// Best-effort: auto-enroll the customer in the store's loyalty program.
+// Backend is idempotent — returns the existing record on repeat calls.
+// If a referral code was captured in the mp_referral cookie, pass it
+// through so the referrer and referee bonuses are awarded atomically.
+// Silent on failure — loyalty is a growth feature, not a blocker.
+async function ensureLoyaltyEnrollment(
+  storeSlug: string,
+  email: string,
+  referralCode: string | undefined,
+): Promise<void> {
+  if (!email) return;
+  try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    };
+    if (STOREFRONT_KEY) headers["X-Storefront-Key"] = STOREFRONT_KEY;
+
+    const body: Record<string, unknown> = { email };
+    if (referralCode) body.referral_code = referralCode;
+
+    await fetch(
+      `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/loyalty/enroll`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        cache: "no-store",
+      },
+    );
+  } catch {
+    // silent — program may be inactive or network blip
+  }
+}
+
 export async function customerSignIn(
   input: CustomerSignInInput,
 ): Promise<Result> {
@@ -145,6 +180,17 @@ export async function customerSignIn(
     // so marketplace-api's OptionalCustomerAuth can validate it and call
     // EnsureProfile.
     await ensureCustomerProfile(input.storeSlug, cookieValue);
+
+    // Auto-enroll in loyalty (idempotent — signup bonus awarded once).
+    // Reads the mp_referral cookie captured by middleware on a prior
+    // page hit, so referral attribution survives the GIP signup dance.
+    const referralCode = c.get("mp_referral")?.value;
+    await ensureLoyaltyEnrollment(input.storeSlug, email, referralCode);
+    if (referralCode) {
+      // Burn the cookie so the same invite link can't be replayed by
+      // the same browser for another account.
+      c.delete("mp_referral");
+    }
 
     return { ok: true };
   } catch (err) {

@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@tesserix/web";
+import { useToast } from "@/components/feedback/Toaster";
 import type { CreateCouponBody } from "@/lib/api/coupons-api";
 
 interface CouponFormProps {
@@ -23,6 +24,7 @@ export function CouponForm({
   onSubmit,
 }: CouponFormProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,12 +71,17 @@ export function CouponForm({
       try {
         const ok = await onSubmit(body);
         if (ok) {
+          toast.success("Coupon created");
           router.push("/marketing/coupons");
         } else {
-          setError("Failed to create coupon. Please check your input.");
+          const msg = "Failed to create coupon. Please check your input.";
+          setError(msg);
+          toast.error("Couldn't create coupon", msg);
         }
       } catch {
-        setError("An unexpected error occurred.");
+        const msg = "An unexpected error occurred.";
+        setError(msg);
+        toast.error("Couldn't create coupon", msg);
       } finally {
         setSubmitting(false);
       }
@@ -82,7 +89,7 @@ export function CouponForm({
     [
       code, type, value, endsAt, title, description, minPurchase,
       maxDiscount, usageLimit, perCustomer, stackable, startsAt,
-      storeCurrency, onSubmit, router,
+      storeCurrency, onSubmit, router, toast,
     ],
   );
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useToast } from "@/components/feedback/Toaster";
 import type { LoyaltyMember, LoyaltyTransaction } from "@/lib/api/loyalty-api";
 
 interface MemberDetailPanelProps {
@@ -16,11 +17,11 @@ export function MemberDetailPanel({
   editable,
   onAdjust,
 }: MemberDetailPanelProps) {
+  const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [adjustPoints, setAdjustPoints] = useState<string>("");
   const [adjustDescription, setAdjustDescription] = useState("");
   const [adjustError, setAdjustError] = useState<string | null>(null);
-  const [adjustSuccess, setAdjustSuccess] = useState(false);
 
   const handleAdjust = (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,16 +35,19 @@ export function MemberDetailPanel({
       return;
     }
     setAdjustError(null);
-    setAdjustSuccess(false);
 
     startTransition(async () => {
       const ok = await onAdjust(points, adjustDescription.trim());
       if (ok) {
         setAdjustPoints("");
         setAdjustDescription("");
-        setAdjustSuccess(true);
+        toast.success(
+          `${points > 0 ? "+" : ""}${points} points ${points > 0 ? "credited" : "debited"}`,
+        );
       } else {
-        setAdjustError("Failed to adjust points. Please try again.");
+        const msg = "Failed to adjust points. Please try again.";
+        setAdjustError(msg);
+        toast.error("Couldn't adjust points", msg);
       }
     });
   };
@@ -135,11 +139,6 @@ export function MemberDetailPanel({
             {adjustError && (
               <p role="alert" aria-live="polite" className="text-xs text-[color:var(--danger,#8B2500)]">
                 {adjustError}
-              </p>
-            )}
-            {adjustSuccess && (
-              <p role="alert" aria-live="polite" className="text-xs text-[color:var(--moss-700)]">
-                Points adjusted successfully.
               </p>
             )}
             <button

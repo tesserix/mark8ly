@@ -56,6 +56,9 @@ export async function enrollCustomer(
   referralCode?: string,
 ): Promise<CustomerLoyalty | null> {
   try {
+    const body: Record<string, unknown> = { email };
+    if (name) body.name = name;
+    if (referralCode) body.referral_code = referralCode;
     const res = await fetch(
       `${API_BASE}/api/v1/storefront/stores/${storeSlug}/loyalty/enroll`,
       {
@@ -64,11 +67,7 @@ export async function enrollCustomer(
           "Content-Type": "application/json",
           "X-Storefront-Key": storefrontKey,
         },
-        body: JSON.stringify({
-          email,
-          name,
-          referral_code: referralCode,
-        }),
+        body: JSON.stringify(body),
       },
     );
     if (!res.ok) return null;

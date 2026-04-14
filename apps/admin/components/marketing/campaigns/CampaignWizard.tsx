@@ -20,6 +20,7 @@ import type {
   AdminSegment,
   CreateCampaignBody,
 } from "@/lib/api/campaigns-api";
+import { useToast } from "@/components/feedback/Toaster";
 import { CampaignEditor } from "./CampaignEditor";
 
 // ---------- Templates ----------
@@ -74,6 +75,7 @@ export function CampaignWizard({
   segments,
 }: CampaignWizardProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +135,10 @@ export function CampaignWizard({
         });
         if (!createRes.ok) {
           const err = await createRes.json().catch(() => null);
-          setError(err?.message ?? "Failed to create campaign. Please try again.");
+          const msg =
+            err?.message ?? "Failed to create campaign. Please try again.";
+          setError(msg);
+          toast.error("Couldn't create campaign", msg);
           setSubmitting(false);
           return;
         }
@@ -147,9 +152,10 @@ export function CampaignWizard({
             { method: "POST" },
           );
           if (!sendRes.ok) {
-            setError(
-              "Campaign created but failed to send. You can send it from the detail page.",
-            );
+            const msg =
+              "Campaign created but failed to send. You can send it from the detail page.";
+            setError(msg);
+            toast.error("Send failed", msg);
             setSubmitting(false);
             return;
           }
@@ -163,22 +169,32 @@ export function CampaignWizard({
             },
           );
           if (!schedRes.ok) {
-            setError(
-              "Campaign created but failed to schedule. You can schedule it from the detail page.",
-            );
+            const msg =
+              "Campaign created but failed to schedule. You can schedule it from the detail page.";
+            setError(msg);
+            toast.error("Schedule failed", msg);
             setSubmitting(false);
             return;
           }
         }
 
+        toast.success(
+          mode === "send"
+            ? "Campaign sent"
+            : mode === "schedule"
+              ? "Campaign scheduled"
+              : "Campaign saved as draft",
+        );
         router.push("/marketing/campaigns");
         router.refresh();
       } catch {
-        setError("An unexpected error occurred. Please try again.");
+        const msg = "An unexpected error occurred. Please try again.";
+        setError(msg);
+        toast.error("Couldn't save campaign", msg);
         setSubmitting(false);
       }
     },
-    [name, subject, content, segmentId, scheduledAt, showOnStorefront, storefrontLabel, router],
+    [name, subject, content, segmentId, scheduledAt, showOnStorefront, storefrontLabel, router, toast],
   );
 
   return (

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type {
   LoyaltyProgramPublic,
   CustomerLoyalty,
@@ -8,40 +9,25 @@ import type {
 interface LoyaltyDashboardProps {
   program: LoyaltyProgramPublic;
   customer: CustomerLoyalty | null;
-  onEnroll?: () => void;
+  storeHost?: string;
 }
 
 export function LoyaltyDashboard({
   program,
   customer,
-  onEnroll,
+  storeHost,
 }: LoyaltyDashboardProps) {
   if (!customer) {
+    // Auto-enrollment runs on sign-in and on lazy page visit, so reaching
+    // this branch means the program is active but enrollment itself failed
+    // (network blip, transient backend error). Surface that instead of a
+    // broken "Join" button — the next page load will likely recover.
     return (
-      <div className="space-y-6">
-        <div className="rounded-[6px] bg-white px-6 py-8 text-left">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
-            Join our loyalty program
-          </h2>
-          <p className="mt-2 text-sm text-ink-600">
-            Earn {program.points_currency} on every purchase and unlock
-            exclusive rewards.
-          </p>
-          {program.signup_bonus > 0 && (
-            <p className="mt-1 text-sm font-medium text-[color:var(--moss-700)]">
-              Get {program.signup_bonus} {program.points_currency} just for
-              joining!
-            </p>
-          )}
-          {onEnroll && (
-            <button
-              onClick={onEnroll}
-              className="mt-4 rounded-[6px] bg-[color:var(--ink-900)] px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90"
-            >
-              Join now
-            </button>
-          )}
-        </div>
+      <div className="rounded-[6px] bg-white px-6 py-6">
+        <p className="text-sm text-ink-600">
+          We couldn&apos;t fetch your loyalty balance right now. Refresh in
+          a moment and it should appear.
+        </p>
       </div>
     );
   }
@@ -69,28 +55,12 @@ export function LoyaltyDashboard({
       </div>
 
       {/* Referral card */}
-      <div className="rounded-[6px] bg-white px-6 py-5">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
-          Your referral code
-        </h3>
-        <div className="mt-2 flex items-center gap-3">
-          <code className="rounded-md bg-[color:var(--paper-200)] px-3 py-1.5 font-mono text-sm font-medium text-[color:var(--ink-900)]">
-            {customer.referral_code}
-          </code>
-          <button
-            onClick={() => navigator.clipboard.writeText(customer.referral_code)}
-            className="rounded-[6px] px-3 py-1.5 text-xs font-medium text-[color:var(--moss-700)] transition-colors hover:bg-[color:var(--moss-700)]/5"
-          >
-            Copy
-          </button>
-        </div>
-        {program.referral_bonus > 0 && (
-          <p className="mt-2 text-xs text-ink-500">
-            Share this code and earn {program.referral_bonus}{" "}
-            {program.points_currency} for each friend who joins.
-          </p>
-        )}
-      </div>
+      <ReferralCard
+        code={customer.referral_code}
+        storeHost={storeHost}
+        referralBonus={program.referral_bonus}
+        pointsCurrency={program.points_currency}
+      />
 
       {/* Tiers */}
       {program.tiers.length > 0 && (
@@ -119,6 +89,84 @@ export function LoyaltyDashboard({
             ))}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ReferralCard({
+  code,
+  storeHost,
+  referralBonus,
+  pointsCurrency,
+}: {
+  code: string;
+  storeHost?: string;
+  referralBonus: number;
+  pointsCurrency: string;
+}) {
+  const [copied, setCopied] = useState<"code" | "link" | null>(null);
+
+  // Server passes the live host so the share link is always correct for
+  // the tenant the customer is viewing. Fallback to window.location at
+  // copy time if the prop is missing.
+  const shareLink = storeHost
+    ? `https://${storeHost}/?ref=${encodeURIComponent(code)}`
+    : "";
+
+  const copy = async (value: string, kind: "code" | "link") => {
+    const fallback =
+      !value && typeof window !== "undefined"
+        ? `${window.location.origin}/?ref=${encodeURIComponent(code)}`
+        : value;
+    try {
+      await navigator.clipboard.writeText(fallback);
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {
+      // Ignore — surface area for toast wiring later.
+    }
+  };
+
+  return (
+    <div className="rounded-[6px] bg-white px-6 py-5 space-y-3">
+      <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
+        Invite friends
+      </h3>
+
+      <div className="flex items-center gap-3">
+        <code className="rounded-md bg-[color:var(--paper-200)] px-3 py-1.5 font-mono text-sm font-medium text-[color:var(--ink-900)]">
+          {code}
+        </code>
+        <button
+          type="button"
+          onClick={() => copy(code, "code")}
+          className="rounded-[6px] px-3 py-1.5 text-xs font-medium text-[color:var(--moss-700)] transition-colors hover:bg-[color:var(--moss-700)]/5"
+        >
+          {copied === "code" ? "Copied" : "Copy code"}
+        </button>
+      </div>
+
+      {shareLink && (
+        <div className="flex items-center gap-3">
+          <span className="flex-1 min-w-0 truncate rounded-md bg-[color:var(--paper-200)] px-3 py-1.5 font-mono text-xs text-ink-600">
+            {shareLink}
+          </span>
+          <button
+            type="button"
+            onClick={() => copy(shareLink, "link")}
+            className="rounded-[6px] px-3 py-1.5 text-xs font-medium text-[color:var(--moss-700)] transition-colors hover:bg-[color:var(--moss-700)]/5"
+          >
+            {copied === "link" ? "Copied" : "Copy link"}
+          </button>
+        </div>
+      )}
+
+      {referralBonus > 0 && (
+        <p className="text-xs text-ink-500">
+          Share your link and earn {referralBonus} {pointsCurrency} for each
+          friend who joins.
+        </p>
       )}
     </div>
   );

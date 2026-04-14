@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import {
   canEditSettings,
   getServerSessionContext,
@@ -76,9 +77,15 @@ async function LoyaltyContent({
     getLoyaltyReferrals(storeId, session),
   ]);
 
-  async function handleSaveProgram(data: Record<string, unknown>) {
+  async function handleSaveProgram(
+    data: Record<string, unknown>,
+  ): Promise<{ ok: boolean; error?: string }> {
     "use server";
-    await updateLoyaltyProgram(storeId, data, session);
+    const result = await updateLoyaltyProgram(storeId, data, session);
+    if (result.ok) {
+      revalidatePath("/marketing/loyalty");
+    }
+    return { ok: result.ok, error: result.error };
   }
 
   return (

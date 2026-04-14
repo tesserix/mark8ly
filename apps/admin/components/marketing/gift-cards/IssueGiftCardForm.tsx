@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/feedback/Toaster";
 
 interface IssueGiftCardFormProps {
   currency: string;
@@ -9,6 +10,7 @@ interface IssueGiftCardFormProps {
 
 export function IssueGiftCardForm({ currency }: IssueGiftCardFormProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,15 +42,20 @@ export function IssueGiftCardForm({ currency }: IssueGiftCardFormProps) {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: "Unknown error" }));
-        setError(err.message ?? "Failed to issue gift card");
+        const msg = err.message ?? "Failed to issue gift card";
+        setError(msg);
+        toast.error("Couldn't issue gift card", msg);
         setSubmitting(false);
         return;
       }
 
       const { data } = await res.json();
+      toast.success("Gift card issued");
       router.push(`/marketing/gift-cards/${data.id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setError(msg);
+      toast.error("Couldn't issue gift card", msg);
       setSubmitting(false);
     }
   }

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { TierBuilder } from "./TierBuilder";
+import { useToast } from "@/components/feedback/Toaster";
 import type { LoyaltyProgram, LoyaltyTier } from "@/lib/api/loyalty-api";
 
 interface ProgramConfigFormProps {
@@ -9,7 +10,9 @@ interface ProgramConfigFormProps {
   storeId: string;
   storeCurrency: string;
   editable: boolean;
-  onSave: (data: Record<string, unknown>) => Promise<void>;
+  onSave: (
+    data: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export function ProgramConfigForm({
@@ -20,6 +23,7 @@ export function ProgramConfigForm({
   onSave,
 }: ProgramConfigFormProps) {
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
 
   const [isActive, setIsActive] = useState(program?.is_active ?? false);
   const [pointsPerUnit, setPointsPerUnit] = useState(
@@ -49,7 +53,7 @@ export function ProgramConfigForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     startTransition(async () => {
-      await onSave({
+      const result = await onSave({
         is_active: isActive,
         points_per_unit: pointsPerUnit,
         points_currency: pointsCurrency,
@@ -61,6 +65,11 @@ export function ProgramConfigForm({
         points_value: pointsValue,
         tiers,
       });
+      if (result.ok) {
+        toast.success("Loyalty program saved");
+      } else {
+        toast.error("Couldn't save program", result.error);
+      }
     });
   };
 

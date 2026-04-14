@@ -1763,6 +1763,26 @@ export interface FooterSection {
   items: FooterLinkItem[];
 }
 
+export interface HomepageHero {
+  enabled: boolean;
+  image_url?: string | null;
+  heading?: string | null;
+  subheading?: string | null;
+  cta_label?: string | null;
+  cta_url?: string | null;
+}
+
+export type HomepageSection =
+  | { type: "text"; heading?: string | null; markdown: string }
+  | { type: "image"; url: string; alt?: string | null; caption?: string | null; heading?: string | null }
+  | { type: "featured_products"; collection_slug: string; limit?: number; heading?: string | null }
+  | { type: "quote"; text: string; attribution?: string | null; heading?: string | null };
+
+export interface HomepageContent {
+  hero?: HomepageHero;
+  sections?: HomepageSection[];
+}
+
 export interface StoreBranding {
   id: string;
   store_id: string;
@@ -1785,6 +1805,7 @@ export interface StoreBranding {
   footer_tagline: string | null;
   footer_copyright: string | null;
   footer_sections: FooterSection[];
+  homepage_content?: HomepageContent;
   social_instagram: string | null;
   social_twitter: string | null;
   social_facebook: string | null;

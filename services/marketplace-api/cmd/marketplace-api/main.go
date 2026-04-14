@@ -145,6 +145,10 @@ func main() {
 	// process never mounts the admin group so these dependencies would go
 	// unused there.
 	var adminDeps admin.Deps
+	// vendorSvc stays nil in Storefront mode by design — the storefront
+	// process does not call product.Create and does not expose the
+	// /internal vendor endpoints, so no self-vendor lookup is needed.
+	// product.Service.resolveVendorID is nil-safe for exactly this case.
 	var vendorSvc *vendor.Service
 	if m == mode.Admin || m == mode.Both {
 		productRepo := product.NewRepository(conn)

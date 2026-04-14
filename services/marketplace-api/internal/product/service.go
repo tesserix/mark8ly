@@ -204,8 +204,13 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Aggregate, er
 	// didn't set one. The vendors table + 000028 NOT NULL guard the
 	// DB, but we resolve at the application layer so the error maps
 	// to a helpful validation_failed code instead of a raw FK error.
+	vendorWasUnset := req.VendorID == nil || *req.VendorID == ""
 	if err := resolveVendorID(ctx, s.vendorLookup, &req); err != nil {
 		return nil, err
+	}
+	if vendorWasUnset && req.VendorID != nil {
+		s.logger.Debug("product.Create: defaulted vendor_id",
+			"vendor_id", *req.VendorID, "tenant_id", req.TenantID)
 	}
 
 	// Validate matrix shape before any DB writes.

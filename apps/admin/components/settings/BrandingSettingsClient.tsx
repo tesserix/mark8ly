@@ -197,7 +197,7 @@ interface TabProps {
   pages?: AdminPageSummary[];
 }
 
-function SectionHeader({ title, description }: { title: string; description: string }) {
+export function SectionHeader({ title, description }: { title: string; description: string }) {
   return (
     <div className="space-y-1">
       <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
@@ -208,7 +208,7 @@ function SectionHeader({ title, description }: { title: string; description: str
   );
 }
 
-function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
+export function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
   return (
     <label htmlFor={htmlFor} className="block text-sm font-medium text-foreground">
       {children}
@@ -216,7 +216,7 @@ function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: React.R
   );
 }
 
-function TextInput({
+export function TextInput({
   id,
   value,
   onChange,
@@ -747,7 +747,7 @@ function AdvancedTab({ form, patch, editable }: TabProps) {
 
 // ─── Toggle Switch ──────────────────────────────────────────────────
 
-function ToggleSwitch({
+export function ToggleSwitch({
   checked,
   onChange,
   disabled,

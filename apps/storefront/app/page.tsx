@@ -15,6 +15,7 @@ import { makeTenantMetadata } from "@/lib/seo";
 import { StorefrontLayoutRenderer } from "@/components/layouts";
 import { FeaturedProducts } from "@/components/FeaturedProducts";
 import { StorefrontNav } from "@/components/StorefrontNav";
+import { fetchBranding, type HomepageContent } from "@/lib/api/marketplace-api";
 
 export const dynamic = "force-dynamic";
 
@@ -54,10 +55,19 @@ export default async function StoreHomePage({ searchParams }: PageProps) {
     return <StoreNotFound slug={slug} />;
   }
 
-  return <StoreLanding store={store} />;
+  const branding = await fetchBranding(store.slug).catch(() => null);
+  const content = branding?.branding?.homepage_content ?? null;
+
+  return <StoreLanding store={store} content={content} />;
 }
 
-function StoreLanding({ store }: { store: PublicStore }) {
+function StoreLanding({
+  store,
+  content,
+}: {
+  store: PublicStore;
+  content: HomepageContent | null;
+}) {
   const theme = normalizeStorefrontTheme(store.storefront_theme);
   const style = themeStyle(theme);
 
@@ -77,7 +87,7 @@ function StoreLanding({ store }: { store: PublicStore }) {
     >
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store.name} />
-        <StorefrontLayoutRenderer store={store} theme={theme} />
+        <StorefrontLayoutRenderer store={store} theme={theme} content={content} />
         <FeaturedProducts storeSlug={store.slug} />
       </div>
     </main>

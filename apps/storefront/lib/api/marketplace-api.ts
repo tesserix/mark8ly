@@ -251,6 +251,10 @@ export interface StorefrontBranding {
 
   // footer menu
   footer_sections?: FooterSection[];
+
+  // homepage content (hero + sections). Wire format is the raw JSONB
+  // object; empty stores see `{}`.
+  homepage_content?: HomepageContent;
 }
 
 export interface StorefrontStoreSummary {

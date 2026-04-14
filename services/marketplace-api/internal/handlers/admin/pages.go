@@ -105,8 +105,6 @@ func (h *PagesHandler) Get(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
 		return
 	}
-	_ = storeID // ownership enforced by StoreMiddleware + tenant scoping in repo
-
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "invalid uuid"), h.logger)
@@ -118,7 +116,11 @@ func (h *PagesHandler) Get(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
-	if p == nil {
+	// Cross-store scope check: a page fetched by id MUST belong to the
+	// store on the URL. StoreMiddleware already confirmed the caller
+	// owns :storeId (via tenant membership); without this check an
+	// admin could fetch another store's pages by guessing UUIDs.
+	if p == nil || p.StoreID != storeID {
 		RespondErr(c, apperrors.NotFound("page"), h.logger)
 		return
 	}
@@ -166,7 +168,7 @@ func (h *PagesHandler) Create(c *gin.Context) {
 
 // Update handles PATCH /admin/stores/:storeId/pages/:id.
 func (h *PagesHandler) Update(c *gin.Context) {
-	_, err := uuid.Parse(c.Param("storeId"))
+	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
 		return
@@ -175,6 +177,17 @@ func (h *PagesHandler) Update(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "invalid uuid"), h.logger)
+		return
+	}
+
+	// Pre-check ownership before mutating — same reasoning as Get.
+	existing, err := h.svc.GetByID(c.Request.Context(), id)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	if existing == nil || existing.StoreID != storeID {
+		RespondErr(c, apperrors.NotFound("page"), h.logger)
 		return
 	}
 
@@ -207,7 +220,7 @@ func (h *PagesHandler) Update(c *gin.Context) {
 
 // Delete handles DELETE /admin/stores/:storeId/pages/:id.
 func (h *PagesHandler) Delete(c *gin.Context) {
-	_, err := uuid.Parse(c.Param("storeId"))
+	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
 		return
@@ -216,6 +229,19 @@ func (h *PagesHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "invalid uuid"), h.logger)
+		return
+	}
+
+	// Ownership check: pages are scoped to a single store, and the URL
+	// :storeId is the trusted source. Refuse to delete a page from
+	// another store even within the same tenant.
+	existing, err := h.svc.GetByID(c.Request.Context(), id)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	if existing == nil || existing.StoreID != storeID {
+		RespondErr(c, apperrors.NotFound("page"), h.logger)
 		return
 	}
 

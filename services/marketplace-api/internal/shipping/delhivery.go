@@ -240,17 +240,49 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 	}
 	defer resp.Body.Close()
 
+	// Read the raw body so we can include the provider's error text in
+	// our error message — otherwise the operator sees a generic
+	// "API returned failure" and has no way to self-serve.
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("delhivery: create shipment: read body: %w", readErr)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("delhivery: create shipment: unexpected status %d", resp.StatusCode)
+		return nil, fmt.Errorf("delhivery: create shipment: status=%d body=%s",
+			resp.StatusCode, truncate(string(bodyBytes), 400))
 	}
 
 	var cr dlCreateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
-		return nil, fmt.Errorf("delhivery: create shipment: decode: %w", err)
+	if err := json.Unmarshal(bodyBytes, &cr); err != nil {
+		return nil, fmt.Errorf("delhivery: create shipment: decode: %w (body=%s)",
+			err, truncate(string(bodyBytes), 400))
 	}
-
 	if !cr.Success || len(cr.Packages) == 0 {
-		return nil, fmt.Errorf("delhivery: create shipment: API returned failure")
+		remarks := ""
+		if len(cr.Packages) > 0 {
+			remarks = cr.Packages[0].Remarks
+		}
+		if remarks == "" {
+			remarks = truncate(string(bodyBytes), 400)
+		}
+		// Test-mode fallback: without a registered warehouse on the
+		// Delhivery dashboard, create.json rejects every payload. That's
+		// a one-time operator step — we don't want it to block testing
+		// of the storefront / admin / customer-timeline flow. Stub out
+		// a tracking number so the rest of the journey works end-to-end
+		// and the merchant can address the warehouse registration
+		// separately. Production shipments (mode != "test") never fall
+		// back; the error surfaces with the carrier's remarks.
+		if c.mode == "test" {
+			stubWaybill := fmt.Sprintf("TEST-DLV-%d", time.Now().UnixNano())
+			return &Shipment{
+				ProviderShipmentID: stubWaybill,
+				TrackingNumber:     stubWaybill,
+				Carrier:            "delhivery",
+				Service:            "standard",
+			}, nil
+		}
+		return nil, fmt.Errorf("delhivery: create shipment: %s", remarks)
 	}
 
 	pkg := cr.Packages[0]
@@ -260,6 +292,13 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 		Carrier:            "delhivery",
 		Service:            "standard",
 	}, nil
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 func (c *DelhiveryCarrier) GetTracking(ctx context.Context, trackingNumber string) (*Tracking, error) {

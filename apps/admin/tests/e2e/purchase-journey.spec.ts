@@ -40,6 +40,43 @@ async function signInAdmin(page: Page): Promise<void> {
 // Shared state across the serial tests
 const state: { productEditUrl?: string; productHandle?: string; orderId?: string } = {};
 
+test("0. admin: ensure Delhivery warehouse origin is configured (Bengaluru 560100)", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const ctx = await browser.newContext({ baseURL: ADMIN_URL, viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await signInAdmin(page);
+
+  await page.goto("/settings/shipping");
+  await page.waitForLoadState("networkidle").catch(() => {});
+
+  const card = page.locator("article").filter({ hasText: /^Delhivery/ }).first();
+  await expect(card).toBeVisible({ timeout: 10_000 });
+  await card.getByRole("button", { name: /^(Add credentials|Edit)$/ }).click();
+
+  // Re-enter API key — the form disables save if the key is blank and
+  // sometimes the value isn't rehydrated into the react-hook-form state.
+  await page.locator("#delhivery-api-key").fill("b8e0aedff3aa94e217cb7484ffd70747bf9833b9");
+
+  // Fill warehouse origin — Delhivery uses postal codes to price every rate.
+  await page.locator("#delhivery-wh-name").fill("Playwrite Test Warehouse");
+  await page.locator("#delhivery-wh-line1").fill("Plot 12, Industrial Area");
+  await page.locator("#delhivery-wh-city").fill("Bengaluru");
+  await page.locator("#delhivery-wh-region").fill("KA");
+  await page.locator("#delhivery-wh-postal").fill("560100");
+  await page.locator("#delhivery-wh-country").fill("IN");
+  await page.locator("#delhivery-wh-phone").fill("9999999999");
+
+  const activeCheckbox = card.getByRole("checkbox", { name: /active/i });
+  if (!(await activeCheckbox.isChecked().catch(() => false))) {
+    await activeCheckbox.check();
+  }
+
+  await page.getByRole("button", { name: /save configuration/i }).click();
+  await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 15_000 });
+  await page.screenshot({ path: "tests/e2e/.audit/journey-00-warehouse.png" });
+  await ctx.close();
+});
+
 test("1. admin: bump stock to 50 on first Active product", async ({ browser }) => {
   test.setTimeout(120_000);
   const ctx = await browser.newContext({ baseURL: ADMIN_URL, viewport: { width: 1440, height: 900 } });
@@ -139,6 +176,36 @@ test("3. customer: fill checkout and place order", async ({ browser }) => {
   });
   const page = await ctx.newPage();
 
+  // Delhivery's test API returns 401 on the token we have, so the real
+  // /api/checkout/shipping-rates upstream 500s and the radios never load.
+  // Stub the proxy with one Standard rate so the rest of the journey
+  // (checkout submit → order create → admin /orders) can be exercised.
+  // Log the checkout submit response so we can see the backend error if any.
+  page.on("response", async (res) => {
+    if (res.url().includes("/api/checkout/submit")) {
+      const text = await res.text().catch(() => "<unreadable>");
+      console.log(`[submit resp] status=${res.status()} body=${text}`);
+    }
+  });
+
+  await page.route("**/api/checkout/shipping-rates*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: [
+          {
+            service: "standard",
+            carrier: "delhivery",
+            price: "50.00",
+            currency_code: "INR",
+            estimated_days: 3,
+          },
+        ],
+      }),
+    });
+  });
+
   await page.goto("/checkout");
   await page.waitForLoadState("networkidle").catch(() => {});
 
@@ -153,7 +220,7 @@ test("3. customer: fill checkout and place order", async ({ browser }) => {
   await page.locator("#ship-city").fill("Bengaluru");
   await page.locator("#ship-region").fill("KA");
   await page.locator("#ship-postal").fill("560100");
-  await page.locator("#ship-country").fill("IN");
+  await page.locator("#ship-country").selectOption("IN");
 
   // Shipping rates load after address is filled — wait for a radio to appear.
   const shippingRadio = page.locator('input[name="shipping-method"]').first();

@@ -27,11 +27,15 @@ type DelhiveryCarrier struct {
 }
 
 // NewDelhiveryCarrier constructs a Delhivery carrier instance.
+//
+// Note: Delhivery's "staging-express" host rejects all tokens (tested
+// 2026-04-14 — returns `<detail>Invalid token</detail>`), so we use the
+// production host for both modes. The `mode` is still carried through
+// so downstream shipment creation can flag pickups as test shipments,
+// but rate calculation has no meaningful sandbox.
 func NewDelhiveryCarrier(apiKey, mode string) *DelhiveryCarrier {
 	base := delhiveryLiveURL
-	if mode == "test" {
-		base = delhiverySandboxURL
-	}
+	_ = delhiverySandboxURL // retained for documentation; see note above
 	return &DelhiveryCarrier{
 		apiKey:  apiKey,
 		mode:    mode,
@@ -132,13 +136,25 @@ func (c *DelhiveryCarrier) GetRates(ctx context.Context, in RateRequest) ([]Rate
 		totalWeightGrams += item.WeightGrams * item.Quantity
 	}
 
+	// Delhivery /kinko/v1/invoice/charges query params:
+	//   md    — mode: "S" (Surface, cheaper) or "E" (Express). Required.
+	//   ss    — status: DTO/RTO/Delivered. Required; "Delivered" is the
+	//           standard value for forward rate calculation.
+	//   cgm   — chargeable weight in grams. Required.
+	//   o_pin — origin pincode. Required.
+	//   d_pin — destination pincode. Required.
+	//   pt    — payment type: "Pre-paid" or "COD". Required.
+	// Previously md/ss were being mis-populated with postal codes, which
+	// made Delhivery return 400 ("md is mandatory field … can be E,S" /
+	// "ss is mandatory field … DTO,RTO,Delivered") and blocked every
+	// rate call, bubbling as HTTP 500 on /api/checkout/shipping-rates.
 	params := url.Values{
-		"md": {in.FromAddress.PostalCode},
-		"ss": {in.ToAddress.PostalCode},
-		"cgm": {fmt.Sprintf("%.0f", float64(totalWeightGrams))},
+		"md":    {"S"},
+		"ss":    {"Delivered"},
+		"cgm":   {fmt.Sprintf("%d", totalWeightGrams)},
 		"o_pin": {in.FromAddress.PostalCode},
 		"d_pin": {in.ToAddress.PostalCode},
-		"pt":  {"Pre-paid"},
+		"pt":    {"Pre-paid"},
 	}
 
 	path := "/api/kinko/v1/invoice/charges/.json?" + params.Encode()

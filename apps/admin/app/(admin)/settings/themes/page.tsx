@@ -5,7 +5,7 @@ import {
   canEditSettings,
   getServerSessionContext,
 } from "@/lib/auth/serverSession";
-import { getBranding, type SessionHeaders } from "@/lib/api/marketplace-api";
+import { getBranding, listPages, type SessionHeaders } from "@/lib/api/marketplace-api";
 
 export default async function ThemesSettingsPage() {
   const { tenantName, email, role, memberships, tenantId, currentStore } =
@@ -14,9 +14,13 @@ export default async function ThemesSettingsPage() {
 
   // Fetch branding from marketplace-api (B1).
   let branding = null;
+  let pages: Awaited<ReturnType<typeof listPages>> = [];
   if (currentStore) {
     const session: SessionHeaders = { userId: email, tenantId };
-    branding = await getBranding(currentStore.id, session);
+    [branding, pages] = await Promise.all([
+      getBranding(currentStore.id, session),
+      listPages(currentStore.id, session).catch(() => []),
+    ]);
   }
 
   return (
@@ -27,7 +31,7 @@ export default async function ThemesSettingsPage() {
         readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
       >
         {currentStore && branding ? (
-          <BrandingSettingsClient branding={branding} editable={editable} />
+          <BrandingSettingsClient branding={branding} editable={editable} pages={pages} />
         ) : currentStore ? (
           <StorefrontThemeForm store={currentStore} editable={editable} />
         ) : (

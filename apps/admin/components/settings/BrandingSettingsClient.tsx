@@ -12,15 +12,19 @@ import {
   Check,
 } from "lucide-react";
 
-import type { StoreBranding, UpdateBrandingInput } from "@/lib/api/marketplace-api";
+import type { StoreBranding, UpdateBrandingInput, AdminPage } from "@/lib/api/marketplace-api";
+import { FooterSectionsEditor } from "./FooterSectionsEditor";
 import { updateBrandingAction } from "@/app/(admin)/settings/themes/actions";
 import { useToast } from "@/components/feedback/Toaster";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
+type AdminPageSummary = Pick<AdminPage, "id" | "slug" | "title">;
+
 interface BrandingSettingsClientProps {
   branding: StoreBranding;
   editable: boolean;
+  pages?: AdminPageSummary[];
 }
 
 type Tab =
@@ -70,6 +74,7 @@ const COLOR_PRESETS: { name: string; colors: Pick<StoreBranding, "color_backgrou
 export function BrandingSettingsClient({
   branding: initial,
   editable,
+  pages = [],
 }: BrandingSettingsClientProps) {
   const { toast } = useToast();
   const [form, setForm] = useState<StoreBranding>(initial);
@@ -142,7 +147,7 @@ export function BrandingSettingsClient({
         {tab === "colors" && <ColorsTab form={form} patch={patch} editable={editable} />}
         {tab === "typography" && <TypographyTab form={form} patch={patch} editable={editable} />}
         {tab === "layout" && <LayoutTab form={form} patch={patch} editable={editable} />}
-        {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} />}
+        {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} pages={pages} />}
         {tab === "advanced" && <AdvancedTab form={form} patch={patch} editable={editable} />}
 
         {/* Save bar */}
@@ -189,6 +194,7 @@ interface TabProps {
   form: StoreBranding;
   patch: (u: Partial<StoreBranding>) => void;
   editable: boolean;
+  pages?: AdminPageSummary[];
 }
 
 function SectionHeader({ title, description }: { title: string; description: string }) {
@@ -618,7 +624,7 @@ function LayoutTab({ form, patch, editable }: TabProps) {
 
 // ─── Footer Tab ─────────────────────────────────────────────────────
 
-function FooterTab({ form, patch, editable }: TabProps) {
+function FooterTab({ form, patch, editable, pages = [] }: TabProps) {
   return (
     <div className="space-y-8">
       <SectionHeader
@@ -649,6 +655,20 @@ function FooterTab({ form, patch, editable }: TabProps) {
             maxLength={200}
           />
         </div>
+      </div>
+
+      {/* Footer menu */}
+      <div className="space-y-4 border-t border-border-subtle pt-6">
+        <SectionHeader
+          title="Footer menu"
+          description="Group links into columns for the storefront footer. Each item can point to a page you've authored or an external URL."
+        />
+        <FooterSectionsEditor
+          sections={form.footer_sections ?? []}
+          onChange={(next) => patch({ footer_sections: next })}
+          pages={pages}
+          editable={editable}
+        />
       </div>
 
       {/* Social links */}

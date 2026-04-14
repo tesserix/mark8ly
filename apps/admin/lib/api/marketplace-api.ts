@@ -1751,6 +1751,18 @@ export async function updateTicketStatus(
 
 // ─── B1: Storefront Branding ────────────────────────────────────────
 
+export interface FooterLinkItem {
+  label: string;
+  kind: "page" | "url";
+  page_slug?: string;
+  url?: string;
+}
+
+export interface FooterSection {
+  label: string;
+  items: FooterLinkItem[];
+}
+
 export interface StoreBranding {
   id: string;
   store_id: string;
@@ -1772,6 +1784,7 @@ export interface StoreBranding {
   announcement_active: boolean;
   footer_tagline: string | null;
   footer_copyright: string | null;
+  footer_sections: FooterSection[];
   social_instagram: string | null;
   social_twitter: string | null;
   social_facebook: string | null;

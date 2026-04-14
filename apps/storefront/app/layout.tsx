@@ -18,6 +18,7 @@ import {
 
 import { CartProvider } from "@/components/CartProvider";
 import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
+import { Footer } from "@/components/Footer";
 import { PromotionBar } from "@/components/PromotionBar";
 import { Toaster } from "@/components/Toaster";
 import { slugFromHost } from "@/lib/slug";
@@ -198,6 +199,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
         />
         <CustomerAuthProvider value={authState}>
           <CartProvider storeSlug={storeSlug}>{children}</CartProvider>
+          <Footer branding={brandingData?.branding ?? null} />
         </CustomerAuthProvider>
         <Toaster />
       </body>

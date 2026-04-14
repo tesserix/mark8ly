@@ -748,6 +748,18 @@ export interface AdminPage {
   updated_at: string;
 }
 
+// AdminPageSummary is the list-view DTO returned by GET .../pages.
+// Body and SEO fields are omitted to keep list payloads small.
+export interface AdminPageSummary {
+  id: string;
+  slug: string;
+  title: string;
+  published: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CreatePageInput {
   slug: string;
   title: string;
@@ -771,7 +783,7 @@ export interface UpdatePageInput {
 export async function listPages(
   storeId: string,
   session: SessionHeaders,
-): Promise<AdminPage[]> {
+): Promise<AdminPageSummary[]> {
   const res = await fetch(
     `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/pages`,
     {
@@ -785,8 +797,8 @@ export async function listPages(
   if (!res.ok) {
     throw new Error(`marketplace-api: listPages ${res.status}`);
   }
-  // Backend returns a bare array (c.JSON(http.StatusOK, resp) where resp is []PageResponse).
-  return (await res.json()) as AdminPage[];
+  // Backend returns a bare array (c.JSON(http.StatusOK, resp) where resp is []PageSummaryResponse).
+  return (await res.json()) as AdminPageSummary[];
 }
 
 export async function getPage(

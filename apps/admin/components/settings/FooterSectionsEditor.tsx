@@ -3,7 +3,7 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 
 import type {
-  AdminPage,
+  AdminPageSummary,
   FooterSection,
   FooterLinkItem,
 } from "@/lib/api/marketplace-api";
@@ -14,7 +14,7 @@ const MAX_ITEMS_PER_SECTION = 10;
 interface FooterSectionsEditorProps {
   sections: FooterSection[];
   onChange: (next: FooterSection[]) => void;
-  pages: Pick<AdminPage, "id" | "slug" | "title">[];
+  pages: Pick<AdminPageSummary, "id" | "slug" | "title">[];
   editable: boolean;
 }
 
@@ -106,7 +106,9 @@ export function FooterSectionsEditor({
   return (
     <div className="space-y-0">
       {sections.map((section, secIdx) => (
-        <div key={secIdx}>
+        // Stable key: section label is user-defined and unique enough for list
+        // stability. Falls back to index for empty/duplicate labels.
+        <div key={section.label || secIdx}>
           {secIdx > 0 && (
             <div className="border-t border-border-subtle my-4" />
           )}
@@ -157,7 +159,8 @@ export function FooterSectionsEditor({
           {/* Items list */}
           <div className="space-y-2 pl-3 border-l-2 border-border-subtle ml-1">
             {section.items.map((item, itemIdx) => (
-              <div key={itemIdx} className="flex items-center gap-2">
+              // Stable key: label + kind discriminator. Falls back to index.
+              <div key={`${item.kind}-${item.label || itemIdx}`} className="flex items-center gap-2">
                 {/* Label */}
                 <input
                   type="text"

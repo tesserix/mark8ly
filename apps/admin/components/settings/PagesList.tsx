@@ -4,12 +4,12 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ExternalLink, Plus } from "lucide-react";
 
-import type { AdminPage } from "@/lib/api/marketplace-api";
+import type { AdminPageSummary } from "@/lib/api/marketplace-api";
 import { createDraftPageAndRedirect } from "@/app/(admin)/settings/pages/actions";
 import { useToast } from "@/components/feedback/Toaster";
 
 interface PagesListProps {
-  pages: AdminPage[];
+  pages: AdminPageSummary[];
   canManage: boolean;
 }
 

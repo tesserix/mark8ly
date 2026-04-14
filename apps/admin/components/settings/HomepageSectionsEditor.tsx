@@ -68,7 +68,7 @@ export function HomepageSectionsEditor({
       <div className="space-y-4">
         {sections.map((s, i) => (
           <article
-            key={i}
+            key={sectionKey(s, i)}
             className="space-y-4 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] p-5"
           >
             <header className="flex items-center justify-between">
@@ -138,6 +138,21 @@ export function HomepageSectionsEditor({
       ) : null}
     </div>
   );
+}
+
+// sectionKey returns a stable React key for a homepage section.
+// Per-type content hash falls back to index for content-light types
+// (text/quote have mutable bodies so we lean on index there).
+// Good enough to prevent cursor jumps on non-reorder changes; reorders
+// will still re-mount controlled inputs, but form state is lifted so
+// values aren't lost. Duplicate content produces duplicate keys —
+// acceptable trade-off vs. the complexity of a keyed-state layer.
+function sectionKey(s: HomepageSection, i: number): string {
+  switch (s.type) {
+    case "image":             return `image-${s.url || i}`;
+    case "featured_products": return `featured-${s.collection_slug || i}`;
+    default:                  return `${s.type}-${i}`;
+  }
 }
 
 function labelFor(t: SectionType): string {

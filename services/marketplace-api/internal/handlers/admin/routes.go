@@ -608,7 +608,12 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			}
 		}
 
-		// Pages — content pages (About, Terms, Privacy, etc.).
+		// Pages — FGA is gated on the tenant relation (PageViewRole/PageEditRole).
+		// Per-store ownership is enforced by the handlers themselves via an
+		// explicit `page.StoreID == storeID` check after fetch (see commit 3f34647).
+		// This two-layer approach (FGA for tenant membership + handler scope check
+		// for store) mirrors branding and other store-scoped resources in this
+		// service.
 		if deps.PagesHandler != nil {
 			pagesGroup := storeRoute.Group("/pages")
 			{

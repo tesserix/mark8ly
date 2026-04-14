@@ -1,3 +1,8 @@
+// Note: multiple FeaturedProductsSection instances with the same
+// collection_slug will make identical fetch() calls — Next.js automatically
+// dedupes these within a single render tree, so the backend only sees one
+// request per unique (storeSlug, collection_slug, pageSize) tuple.
+// Revalidation window is 60s (set in lib/api/marketplace-api.ts listProducts).
 import Link from "next/link";
 
 import type { HomepageSection } from "@/lib/api/marketplace-api";

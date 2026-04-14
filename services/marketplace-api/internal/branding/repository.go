@@ -51,8 +51,15 @@ func (gormRepository) Upsert(ctx context.Context, db *gorm.DB, b *StoreBranding)
 		return fmt.Errorf("branding upsert check: %w", result.Error)
 	}
 
+	// Select all mutable columns explicitly so zero-valued JSONB and
+	// bool fields (cleared footer_sections, homepage_content = {},
+	// announcement_active = false, show_powered_by = false) aren't
+	// silently skipped by GORM's default Updates(struct) behavior.
 	if err := db.WithContext(ctx).
+		Model(&StoreBranding{}).
 		Where("store_id = ?", b.StoreID).
+		Select("*").
+		Omit("id", "store_id", "created_at").
 		Updates(b).Error; err != nil {
 		return fmt.Errorf("branding update: %w", err)
 	}

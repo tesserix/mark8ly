@@ -54,6 +54,30 @@ func toPageResponse(p page.Page) PageResponse {
 	}
 }
 
+// PageSummaryResponse is the list-view DTO — omits the body to keep
+// list payloads small.
+type PageSummaryResponse struct {
+	ID        string `json:"id"`
+	Slug      string `json:"slug"`
+	Title     string `json:"title"`
+	Published bool   `json:"published"`
+	SortOrder int    `json:"sort_order"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+func toPageSummaryResponse(p page.Page) PageSummaryResponse {
+	return PageSummaryResponse{
+		ID:        p.ID.String(),
+		Slug:      p.Slug,
+		Title:     p.Title,
+		Published: p.Published,
+		SortOrder: p.SortOrder,
+		CreatedAt: p.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt: p.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
 // CreatePageRequest is the request body for POST .../pages.
 type CreatePageRequest struct {
 	Slug           string  `json:"slug"`
@@ -91,9 +115,9 @@ func (h *PagesHandler) List(c *gin.Context) {
 		return
 	}
 
-	resp := make([]PageResponse, 0, len(pages))
+	resp := make([]PageSummaryResponse, 0, len(pages))
 	for _, p := range pages {
-		resp = append(resp, toPageResponse(p))
+		resp = append(resp, toPageSummaryResponse(p))
 	}
 	c.JSON(http.StatusOK, resp)
 }

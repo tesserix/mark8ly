@@ -47,6 +47,33 @@ async function adminSignIn(page: Page): Promise<void> {
   }
 }
 
+test("0a. admin: ensure Delhivery carrier is configured + active", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const ctx = await browser.newContext({ baseURL: ADMIN_URL, viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await adminSignIn(page);
+  await page.goto("/settings/shipping");
+  await page.waitForLoadState("networkidle").catch(() => {});
+  const card = page.locator("article").filter({ hasText: /^Delhivery/ }).first();
+  await expect(card).toBeVisible({ timeout: 10_000 });
+  await card.getByRole("button", { name: /^(Add credentials|Edit)$/ }).click();
+  await page.locator("#delhivery-api-key").fill("b8e0aedff3aa94e217cb7484ffd70747bf9833b9");
+  await page.locator("#delhivery-wh-name").fill("Playwrite Test Warehouse");
+  await page.locator("#delhivery-wh-line1").fill("Plot 12, Industrial Area");
+  await page.locator("#delhivery-wh-city").fill("Bengaluru");
+  await page.locator("#delhivery-wh-region").fill("KA");
+  await page.locator("#delhivery-wh-postal").fill("560100");
+  await page.locator("#delhivery-wh-country").fill("IN");
+  await page.locator("#delhivery-wh-phone").fill("9999999999");
+  const activeCheckbox = card.getByRole("checkbox", { name: /active/i });
+  if (!(await activeCheckbox.isChecked().catch(() => false))) {
+    await activeCheckbox.check();
+  }
+  await page.getByRole("button", { name: /save configuration/i }).click();
+  await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 15_000 });
+  await ctx.close();
+});
+
 test("0. admin: bump stock on first Active product", async ({ browser }) => {
   test.setTimeout(60_000);
   const ctx = await browser.newContext({ baseURL: ADMIN_URL, viewport: { width: 1440, height: 900 } });
@@ -171,12 +198,20 @@ test("2. admin: create Delhivery shipping label", async ({ browser }) => {
   await page.goto(`/orders/${state.orderId}`);
   await page.waitForLoadState("networkidle").catch(() => {});
 
-  // Click "Create shipping label" — reveals the carrier + service form.
-  await page.getByRole("button", { name: /create shipping label/i }).click();
+  // Surface server-side errors from the action so we don't silently
+  // skip past a failed label creation.
+  page.on("console", (msg) => {
+    if (msg.type() === "error") console.log("[admin page console]", msg.text());
+  });
+  page.on("response", async (res) => {
+    if (/\/shipments(\b|\/|\?|$)/.test(res.url())) {
+      const ct = res.headers()["content-type"] ?? "";
+      const body = ct.includes("json") ? await res.text().catch(() => "") : "";
+      console.log(`[shipments resp] ${res.request().method()} ${res.url()} -> ${res.status()} ${body.slice(0, 200)}`);
+    }
+  });
 
-  // The selects are Radix-based, not native <select>. Open each via
-  // its trigger (placeholder text doubles as the accessible name),
-  // then pick the option by visible label.
+  await page.getByRole("button", { name: /create shipping label/i }).click();
   await page.getByRole("combobox").first().click();
   await page.getByRole("option", { name: /delhivery/i }).click();
   await page.getByRole("combobox").nth(1).click();
@@ -185,8 +220,19 @@ test("2. admin: create Delhivery shipping label", async ({ browser }) => {
   const submit = page.getByRole("button", { name: /^create label$/i });
   await expect(submit).toBeEnabled({ timeout: 5_000 });
   await submit.click();
-  // The backend call to Delhivery + persist takes ~2-4s.
-  await page.waitForTimeout(5_000);
+
+  // Wait until the panel flips to ShipmentDetails (tracking shown) OR
+  // a visible error appears. If it just sits there the tracking DB
+  // write failed silently.
+  const trackingSeen = await page
+    .getByText(/Tracking/i)
+    .first()
+    .waitFor({ timeout: 25_000 })
+    .then(() => true)
+    .catch(() => false);
+  const errorSeen = await page.locator('[role="alert"]').first().textContent().catch(() => "");
+  console.log(`[label] tracking visible=${trackingSeen} alert="${errorSeen}"`);
+  expect(trackingSeen, `shipment created (alert: ${errorSeen})`).toBeTruthy();
   await page.screenshot({ path: "tests/e2e/.audit/delivery-01-label.png", fullPage: true });
 
   // Retrieve the shipmentId via GET /api/v1/admin/.../shipments.

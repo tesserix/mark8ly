@@ -36,25 +36,30 @@ type ShipmentRecord struct {
 func (ShipmentRecord) TableName() string { return "shipments" }
 
 // CarrierConfig is the GORM model for the shipping_carrier_configs table.
+// Column names here intentionally match the migration 000008 schema —
+// earlier drafts of this model drifted (api_key → api_key_encrypted,
+// enabled → is_active, free_shipping_threshold → free_shipping_min),
+// which made admin settings writes invisible to the shipments handler
+// reader and surfaced as "no carrier config found for provider".
 type CarrierConfig struct {
 	ID                    uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
 	TenantID              uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null;index"`
 	StoreID               uuid.UUID       `gorm:"column:store_id;type:uuid;not null;index"`
 	Provider              string          `gorm:"column:provider;type:varchar(40);not null"`
-	APIKey                string          `gorm:"column:api_key;type:text;not null"`
-	SecretKey             string          `gorm:"column:secret_key;type:text"`
+	APIKey                string          `gorm:"column:api_key_encrypted;type:text;not null"`
+	SecretKey             string          `gorm:"column:secret_key_encrypted;type:text"`
 	Mode                  string          `gorm:"column:mode;type:varchar(10);not null;default:test"`
 	HandlingFee           decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
-	FreeShippingThreshold decimal.Decimal `gorm:"column:free_shipping_threshold;type:numeric(12,2);not null;default:0"`
-	Enabled               bool            `gorm:"column:enabled;not null;default:true"`
+	FreeShippingThreshold decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
+	Enabled               bool            `gorm:"column:is_active;not null;default:false"`
 	WarehouseName         string          `gorm:"column:warehouse_name;type:varchar(200)"`
-	WarehouseLine1        string          `gorm:"column:warehouse_line1;type:varchar(200)"`
-	WarehouseLine2        string          `gorm:"column:warehouse_line2;type:varchar(200)"`
-	WarehouseCity         string          `gorm:"column:warehouse_city;type:varchar(100)"`
-	WarehouseRegion       string          `gorm:"column:warehouse_region;type:varchar(100)"`
-	WarehousePostal       string          `gorm:"column:warehouse_postal;type:varchar(20)"`
+	WarehouseLine1        string          `gorm:"column:warehouse_line1;type:varchar(300)"`
+	WarehouseLine2        string          `gorm:"column:warehouse_line2;type:varchar(300)"`
+	WarehouseCity         string          `gorm:"column:warehouse_city;type:varchar(200)"`
+	WarehouseRegion       string          `gorm:"column:warehouse_region;type:varchar(200)"`
+	WarehousePostal       string          `gorm:"column:warehouse_postal;type:varchar(40)"`
 	WarehouseCountry      string          `gorm:"column:warehouse_country;type:char(2)"`
-	WarehousePhone        string          `gorm:"column:warehouse_phone;type:varchar(30)"`
+	WarehousePhone        string          `gorm:"column:warehouse_phone;type:varchar(40)"`
 	CreatedAt             time.Time       `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt             time.Time       `gorm:"column:updated_at;not null;default:now()"`
 }
@@ -162,7 +167,7 @@ func (r *gormRepository) UpdateShipmentStatus(ctx context.Context, id uuid.UUID,
 func (r *gormRepository) GetCarrierConfig(ctx context.Context, storeID, provider string) (*CarrierConfig, error) {
 	var cfg CarrierConfig
 	err := r.db.WithContext(ctx).
-		Where("store_id = ? AND provider = ? AND enabled = true", storeID, provider).
+		Where("store_id = ? AND provider = ? AND is_active = true", storeID, provider).
 		First(&cfg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("shipping: carrier config not found")

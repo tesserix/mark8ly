@@ -73,6 +73,11 @@ func main() {
 			failed++
 			continue
 		}
+		if _, err := vc.UpdateSelfVendor(ctx, t.ID, t.Name, s.Slug); err != nil {
+			log.Printf("tenant %s (%s): update failed: %v", t.ID, t.Name, err)
+			failed++
+			continue
+		}
 		ok++
 	}
 	fmt.Printf("backfill complete: %d ok, %d skipped (no store), %d failed\n", ok, skipped, failed)

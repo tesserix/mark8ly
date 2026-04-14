@@ -62,3 +62,38 @@ func TestService_EnsureSelfVendor_RejectsEmptyInput(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, apperrors.ErrValidationFailed))
 }
+
+func TestService_UpdateSelfVendor_OverwritesNameAndSlug(t *testing.T) {
+	svc := newTestService(t)
+	tenantID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+	_, err := svc.EnsureSelfVendor(context.Background(), tenantID, "Merchant", "placeholder-"+tenantID)
+	require.NoError(t, err)
+
+	updated, err := svc.UpdateSelfVendor(context.Background(), tenantID, "Acme", "acme-"+tenantID)
+	require.NoError(t, err)
+	require.Equal(t, "Acme", updated.Name)
+	require.Equal(t, "acme-"+tenantID, updated.Slug)
+}
+
+func TestService_UpdateSelfVendor_NotFound(t *testing.T) {
+	svc := newTestService(t)
+	_, err := svc.UpdateSelfVendor(context.Background(), "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "Acme", "acme")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, apperrors.ErrNotFound))
+}
+
+func TestService_UpdateSelfVendor_RejectsEmptyInput(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	_, err := svc.UpdateSelfVendor(ctx, "", "Acme", "acme")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, apperrors.ErrValidationFailed))
+
+	_, err = svc.UpdateSelfVendor(ctx, "tenant", "", "acme")
+	require.Error(t, err)
+
+	_, err = svc.UpdateSelfVendor(ctx, "tenant", "Acme", "")
+	require.Error(t, err)
+}

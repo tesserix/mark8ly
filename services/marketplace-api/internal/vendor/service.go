@@ -62,3 +62,36 @@ func (s *Service) EnsureSelfVendor(ctx context.Context, tenantID, name, slug str
 	}
 	return v, nil
 }
+
+// UpdateSelfVendor overwrites the name and slug of the tenant's existing
+// self-vendor. Used by the platform-api backfill CLI to replace the
+// placeholder values written by migration 000027 with real tenant
+// identity. Returns NotFound if the tenant has no self-vendor yet.
+func (s *Service) UpdateSelfVendor(ctx context.Context, tenantID, name, slug string) (*Vendor, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	name = strings.TrimSpace(name)
+	slug = strings.TrimSpace(slug)
+	if tenantID == "" {
+		return nil, apperrors.ValidationFailed("tenant_id", "tenant id is required")
+	}
+	if name == "" {
+		return nil, apperrors.ValidationFailed("name", "vendor name is required")
+	}
+	if slug == "" {
+		return nil, apperrors.ValidationFailed("slug", "vendor slug is required")
+	}
+
+	v, err := s.repo.GetSelfByTenantID(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if v == nil {
+		return nil, apperrors.NotFound("self-vendor")
+	}
+	if err := s.repo.UpdateNameAndSlug(ctx, v.ID, name, slug); err != nil {
+		return nil, err
+	}
+	v.Name = name
+	v.Slug = slug
+	return v, nil
+}

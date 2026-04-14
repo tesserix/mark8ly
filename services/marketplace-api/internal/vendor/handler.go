@@ -26,6 +26,7 @@ func (h *Handler) RegisterRoutes(g *gin.RouterGroup) {
 	g.POST("/tenants/:tenantID/ensure-self-vendor", h.ensureSelfVendor)
 	g.GET("/tenants/:tenantID/self-vendor", h.getSelfVendor)
 	g.GET("/vendors/:id", h.getByID)
+	g.PATCH("/tenants/:tenantID/self-vendor", h.updateSelfVendor)
 }
 
 type ensureSelfVendorRequest struct {
@@ -77,6 +78,28 @@ func (h *Handler) getByID(c *gin.Context) {
 			"error":   "not_found",
 			"message": "vendor not found",
 		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": v})
+}
+
+type updateSelfVendorRequest struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+func (h *Handler) updateSelfVendor(c *gin.Context) {
+	var req updateSelfVendorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_body",
+			"message": "request body is not valid JSON",
+		})
+		return
+	}
+	v, err := h.svc.UpdateSelfVendor(c.Request.Context(), c.Param("tenantID"), req.Name, req.Slug)
+	if err != nil {
+		respondError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": v})

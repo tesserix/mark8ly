@@ -77,3 +77,38 @@ func (c *VendorClient) EnsureSelfVendor(ctx context.Context, tenantID, name, slu
 	}
 	return &resp.Data, nil
 }
+
+// UpdateSelfVendor overwrites the name and slug of the tenant's
+// self-vendor. Returns an error if the tenant has no self-vendor
+// (404 from marketplace-api).
+func (c *VendorClient) UpdateSelfVendor(ctx context.Context, tenantID, name, slug string) (*Vendor, error) {
+	body, err := json.Marshal(map[string]string{"name": name, "slug": slug})
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/internal/tenants/%s/self-vendor", c.baseURL, tenantID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace-api update-self-vendor: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode >= 300 {
+		raw, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("marketplace-api update-self-vendor %d: %s", res.StatusCode, string(raw))
+	}
+
+	var resp struct {
+		Data Vendor `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+		return nil, fmt.Errorf("marketplace-api update-self-vendor: decode: %w", err)
+	}
+	return &resp.Data, nil
+}

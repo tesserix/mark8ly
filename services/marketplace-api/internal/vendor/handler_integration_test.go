@@ -4,6 +4,7 @@ package vendor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -123,6 +124,56 @@ func TestHandler_GetByID_NotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/internal/vendors/99999999-9999-9999-9999-999999999999", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestHandler_UpdateSelfVendor_OverwritesNameAndSlug(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newTestService(t)
+	h := NewHandler(svc)
+
+	r := gin.New()
+	h.RegisterRoutes(r.Group("/internal"))
+
+	tenantID := "cccccccc-cccc-cccc-cccc-cccccccccccc"
+
+	// Ensure first (creates placeholder), then PATCH.
+	_, err := svc.EnsureSelfVendor(context.Background(), tenantID, "Merchant", "placeholder-"+tenantID)
+	require.NoError(t, err)
+
+	body, _ := json.Marshal(map[string]string{"name": "Acme", "slug": "acme-" + tenantID})
+	req := httptest.NewRequest(http.MethodPatch,
+		"/internal/tenants/"+tenantID+"/self-vendor",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp struct {
+		Data Vendor `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "Acme", resp.Data.Name)
+	require.Equal(t, "acme-"+tenantID, resp.Data.Slug)
+}
+
+func TestHandler_UpdateSelfVendor_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newTestService(t)
+	h := NewHandler(svc)
+
+	r := gin.New()
+	h.RegisterRoutes(r.Group("/internal"))
+
+	body, _ := json.Marshal(map[string]string{"name": "Acme", "slug": "acme"})
+	req := httptest.NewRequest(http.MethodPatch,
+		"/internal/tenants/dddddddd-dddd-dddd-dddd-dddddddddddd/self-vendor",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 

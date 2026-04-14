@@ -230,3 +230,65 @@ export async function fetchBranding(
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Pages
+// ---------------------------------------------------------------------------
+
+export interface StorefrontPage {
+  slug: string;
+  title: string;
+  body: string;
+  seo_title: string | null;
+  seo_description: string | null;
+}
+
+export interface StorefrontPageSummary {
+  slug: string;
+  title: string;
+}
+
+/**
+ * Lists published pages for a store. Returns an empty array on 4xx or
+ * network failure so consumers (e.g. the footer) can render an empty
+ * state without try/catch.
+ *
+ * Note: the backend returns a bare array (not wrapped in {data: [...]}).
+ */
+export async function listPages(
+  storeSlug: string,
+): Promise<StorefrontPageSummary[]> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/pages`;
+  try {
+    const res = await fetch(url, {
+      headers: commonHeaders(),
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return [];
+    return (await res.json()) as StorefrontPageSummary[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetches a single published page by slug. Returns null on 404 or any
+ * other non-OK status so the route can render `notFound()`.
+ */
+export async function fetchPage(
+  storeSlug: string,
+  pageSlug: string,
+): Promise<StorefrontPage | null> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/pages/${encodeURIComponent(pageSlug)}`;
+  try {
+    const res = await fetch(url, {
+      headers: commonHeaders(),
+      next: { revalidate: 60 },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) return null;
+    return (await res.json()) as StorefrontPage;
+  } catch {
+    return null;
+  }
+}

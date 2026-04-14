@@ -55,6 +55,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
+	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/internal/wishlist"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
@@ -679,6 +680,15 @@ func main() {
 		countryPublicHandler = country.NewHandler(countryRepo)
 	}
 
+	// Vendor — Phase 1 of the tenant/vendor/store refactor. See
+	// docs/superpowers/specs/2026-04-14-tenant-vendor-store-architecture-design.md
+	// Handler only mounted in admin/both modes; storefront has no reason to
+	// expose the /internal vendor endpoints.
+	var vendorHandler *vendor.Handler
+	if m == mode.Admin || m == mode.Both {
+		vendorHandler = vendor.NewHandler(vendor.NewService(vendor.NewRepository(conn)))
+	}
+
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)
 
@@ -696,6 +706,9 @@ func main() {
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		if pushWebhookHandler != nil {
 			r.POST("/internal/push-webhook", pushWebhookHandler)
+		}
+		if vendorHandler != nil {
+			vendorHandler.RegisterRoutes(r.Group("/internal"))
 		}
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
@@ -717,6 +730,9 @@ func main() {
 			}
 			if pushWebhookHandler != nil {
 				engine.POST("/internal/push-webhook", pushWebhookHandler)
+			}
+			if vendorHandler != nil {
+				vendorHandler.RegisterRoutes(engine.Group("/internal"))
 			}
 		}
 		if m == mode.Storefront {

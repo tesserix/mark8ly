@@ -232,15 +232,6 @@ function AdminShellFrame({
               </p>
             )
           )}
-          {stores && stores.length > 1 && currentStoreId && (
-            <div className="mt-4 group-data-[collapsible=icon]:hidden">
-              <StoreSwitcher
-                stores={stores}
-                currentStoreId={currentStoreId}
-                label="Switch store"
-              />
-            </div>
-          )}
         </SidebarHeader>
 
         <SidebarContent className="sidebar-scrollbar">
@@ -314,6 +305,16 @@ function AdminShellFrame({
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
+              {stores && stores.length > 1 && currentStoreId && (
+                <div className="hidden sm:inline-flex">
+                  <StoreSwitcher
+                    stores={stores}
+                    currentStoreId={currentStoreId}
+                    label="Switch store"
+                    compact
+                  />
+                </div>
+              )}
               {role && (
                 <div
                   data-testid="role-badge"

@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check } from "lucide-react";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@tesserix/web";
 
 import type { Store } from "@/lib/api/platform-api";
@@ -18,6 +16,11 @@ interface StoreSwitcherProps {
   currentStoreId: string;
   label?: string;
   className?: string;
+  /**
+   * Compact header variant — drops the eyebrow label above the trigger
+   * and uses a tighter trigger. Used in the admin topbar.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -34,10 +37,15 @@ export function StoreSwitcher({
   currentStoreId,
   label = "Switch store",
   className,
+  compact = false,
 }: StoreSwitcherProps) {
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Resolve the current store so the trigger renders only the clean
+  // name (no slug / currency chrome leaking up from the SelectItem).
+  const current = stores.find((s) => s.id === currentStoreId);
 
   function handleSwitch(storeId: string) {
     if (storeId === currentStoreId) return;
@@ -69,9 +77,11 @@ export function StoreSwitcher({
 
   return (
     <div className={className}>
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
-        {label}
-      </p>
+      {!compact && (
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
+          {label}
+        </p>
+      )}
       <Select
         value={currentStoreId}
         onValueChange={handleSwitch}
@@ -80,37 +90,37 @@ export function StoreSwitcher({
         <SelectTrigger
           id="store-switcher"
           data-testid="store-switcher"
-          aria-label="Switch store"
-          className="w-full"
+          aria-label={label}
+          className={
+            compact
+              ? "h-9 min-w-[9rem] max-w-[14rem] text-sm"
+              : "h-10 w-full justify-between font-medium"
+          }
         >
-          <SelectValue placeholder="Switch store" />
+          <span className="truncate text-left text-sm text-foreground">
+            {current?.name ?? label}
+          </span>
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent
+          align="start"
+          className="min-w-[var(--radix-select-trigger-width)]"
+        >
           {stores.map((s) => {
-            const active = s.id === currentStoreId;
             const busy = isPending && pendingId === s.id;
             return (
-              <SelectItem key={s.id} value={s.id} className="py-2">
-                <div className="flex w-full items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {s.name}
-                    </p>
-                    <p className="truncate text-[11px] uppercase tracking-[0.12em] text-foreground-tertiary">
-                      {s.slug}.mark8ly.com · {s.currency_code}
-                    </p>
+              <SelectItem key={s.id} value={s.id} className="py-2 pr-8">
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm font-medium text-foreground">
+                    {s.name}
+                  </span>
+                  <span className="truncate text-[10px] uppercase tracking-[0.14em] text-foreground-tertiary">
+                    {s.slug}.mark8ly.com · {s.currency_code}
                     {busy && (
-                      <p className="mt-0.5 text-[11px] text-[color:var(--moss-700)]">
+                      <span className="ml-2 normal-case tracking-normal text-[color:var(--moss-700)]">
                         Switching…
-                      </p>
+                      </span>
                     )}
-                  </div>
-                  {active && (
-                    <Check
-                      className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--moss-700)]"
-                      aria-hidden="true"
-                    />
-                  )}
+                  </span>
                 </div>
               </SelectItem>
             );

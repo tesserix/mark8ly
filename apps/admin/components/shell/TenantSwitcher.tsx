@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check } from "lucide-react";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@tesserix/web";
 
 import type { Membership } from "@/lib/api/platform-api";
@@ -18,6 +16,11 @@ interface TenantSwitcherProps {
   currentTenantId: string;
   label?: string;
   className?: string;
+  /**
+   * Compact header variant — drops the eyebrow label above the trigger
+   * and uses a tighter trigger. Used in the admin topbar.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -33,12 +36,18 @@ interface TenantSwitcherProps {
 export function TenantSwitcher({
   memberships,
   currentTenantId,
-  label = "Switch store",
+  label = "Switch company",
   className,
+  compact = false,
 }: TenantSwitcherProps) {
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Resolve the current membership so the trigger can render a clean
+  // single-line name instead of whatever happens to live inside the
+  // active SelectItem (which includes role + checkmark chrome).
+  const current = memberships.find((m) => m.tenant_id === currentTenantId);
 
   function handleSwitch(tenantId: string) {
     if (tenantId === currentTenantId) return;
@@ -70,9 +79,11 @@ export function TenantSwitcher({
 
   return (
     <div className={className}>
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
-        {label}
-      </p>
+      {!compact && (
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
+          {label}
+        </p>
+      )}
       <Select
         value={currentTenantId}
         onValueChange={handleSwitch}
@@ -81,41 +92,41 @@ export function TenantSwitcher({
         <SelectTrigger
           id="tenant-switcher"
           data-testid="tenant-switcher"
-          aria-label="Switch store"
-          className="w-full"
+          aria-label={label}
+          className={
+            compact
+              ? "h-9 min-w-[10rem] text-xs"
+              : "h-10 w-full justify-between font-medium"
+          }
         >
-          <SelectValue placeholder="Switch store" />
+          <span className="truncate text-left text-sm text-foreground">
+            {current?.name ?? label}
+          </span>
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent
+          align="start"
+          className="min-w-[var(--radix-select-trigger-width)]"
+        >
           {memberships.map((m) => {
-            const active = m.tenant_id === currentTenantId;
             const busy = isPending && pendingId === m.tenant_id;
             return (
               <SelectItem
                 key={m.tenant_id}
                 value={m.tenant_id}
-                className="py-2"
+                className="py-2 pr-8"
               >
-                <div className="flex w-full items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {m.name}
-                    </p>
-                    <p className="truncate text-[11px] uppercase tracking-[0.12em] text-foreground-tertiary">
-                      {m.role}
-                    </p>
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm font-medium text-foreground">
+                    {m.name}
+                  </span>
+                  <span className="truncate text-[10px] uppercase tracking-[0.14em] text-foreground-tertiary">
+                    {m.role}
                     {busy && (
-                      <p className="mt-0.5 text-[11px] text-[color:var(--moss-700)]">
+                      <span className="ml-2 normal-case tracking-normal text-[color:var(--moss-700)]">
                         Switching…
-                      </p>
+                      </span>
                     )}
-                  </div>
-                  {active && (
-                    <Check
-                      className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--moss-700)]"
-                      aria-hidden="true"
-                    />
-                  )}
+                  </span>
                 </div>
               </SelectItem>
             );

@@ -305,6 +305,32 @@ test("3b. customer: complete Razorpay payment via verify endpoint", async ({ bro
   await ctx.close();
 });
 
+test("3c. customer: order appears in /account/orders", async ({ browser }) => {
+  test.setTimeout(60_000);
+  test.skip(!state.orderId, "no order id");
+  const ctx = await browser.newContext({
+    baseURL: STOREFRONT_URL,
+    storageState: "tests/e2e/.audit/customer-state.json",
+    viewport: { width: 1440, height: 900 },
+  });
+  const page = await ctx.newPage();
+  // Probe both the API proxy and the rendered page so we can see
+  // whether the issue is in the Go filter (no orders returned) or
+  // the Next.js rendering.
+  const api = await page.request.get(`${STOREFRONT_URL}/api/account/orders?store=playwrite-test`);
+  const apiText = await api.text().catch(() => "");
+  console.log(`[account api] status=${api.status()} body=${apiText.slice(0, 400)}`);
+
+  await page.goto("/account/orders");
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await page.screenshot({ path: "tests/e2e/.audit/journey-04c-customer-orders.png", fullPage: true });
+  const body = (await page.textContent("main")) ?? "";
+  console.log(`[account] page has order_number?`, /M-[A-Z]{3}-\d{6}-\d{5}/.test(body));
+  expect(body).toMatch(/M-[A-Z]{3}-\d{6}-\d{5}/);
+  expect(body.toLowerCase()).not.toContain("not placed any orders");
+  await ctx.close();
+});
+
 test("4. admin: new order appears in /orders", async ({ browser }) => {
   test.setTimeout(90_000);
   test.skip(!state.orderId, "no order id to verify");

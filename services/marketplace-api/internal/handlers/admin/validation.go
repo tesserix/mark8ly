@@ -233,6 +233,10 @@ type CreateProductOptionInput struct {
 }
 
 type CreateProductVariantInput struct {
+	// ID preserves identity on updates so the aggregate service can match
+	// an incoming variant to an existing row without relying on option
+	// tuples or SKU heuristics. Empty on create.
+	ID                string                        `json:"id,omitempty"`
 	SKU               string                        `json:"sku" binding:"required,max=100"`
 	Barcode           *string                       `json:"barcode,omitempty"`
 	Price             decimal.Decimal               `json:"price" binding:"required"`
@@ -435,6 +439,7 @@ func toServiceUpdateAggregateRequest(req UpdateProductRequest, id, tenantID, sto
 				ovs = append(ovs, product.OptionValueRef{OptionName: ref.OptionName, Value: ref.Value})
 			}
 			vars = append(vars, product.VariantInput{
+				ID:  v.ID,
 				SKU: v.SKU, Barcode: v.Barcode,
 				Price: v.Price, CompareAtPrice: v.CompareAtPrice, CostPrice: v.CostPrice,
 				CurrencyCode: v.CurrencyCode, WeightGrams: v.WeightGrams,

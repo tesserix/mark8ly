@@ -200,6 +200,55 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 			}
 		}
 
+		// 4b. Sync stock for updated variants. Variant.InventoryQuantity
+		// is trigger-maintained from variant_stock, so step 3's scalar
+		// UPDATE on product_variants doesn't move it. For every input
+		// that matches an existing row (by ID or SKU), push the intended
+		// InitialStock through UpdateVariantStockInTx so the trigger
+		// brings inventory_quantity into line with the form. Newly added
+		// variants are handled in step 4 above; skip them here.
+		if req.Variants != nil {
+			existingByID := make(map[string]Variant, len(existing.Variants))
+			existingBySKU := make(map[string]Variant, len(existing.Variants))
+			for _, v := range existing.Variants {
+				if v.DeletedAt != nil {
+					continue
+				}
+				existingByID[v.ID] = v
+				existingBySKU[v.SKU] = v
+			}
+			newByID := make(map[string]struct{}, len(newVariants))
+			for _, nv := range newVariants {
+				newByID[nv.ID] = struct{}{}
+			}
+			for _, in := range *req.Variants {
+				var matched *Variant
+				if in.ID != "" {
+					if v, ok := existingByID[in.ID]; ok {
+						matched = &v
+					}
+				}
+				if matched == nil {
+					if v, ok := existingBySKU[in.SKU]; ok {
+						matched = &v
+					}
+				}
+				if matched == nil {
+					continue // new variant — already seeded in step 4
+				}
+				if _, isNew := newByID[matched.ID]; isNew {
+					continue
+				}
+				if matched.InventoryQuantity == in.InitialStock {
+					continue
+				}
+				if err := s.repo.UpdateVariantStockInTx(ctx, tx,
+					matched.ID, DefaultLocationID, in.InitialStock); err != nil {
+					return err
+				}
+			}
+		}
+
 		// 5. Category links replace.
 		if req.CategoryIDs != nil {
 			if err := s.repo.ReplaceCategoryLinksInTx(ctx, tx, req.ID, *req.CategoryIDs); err != nil {

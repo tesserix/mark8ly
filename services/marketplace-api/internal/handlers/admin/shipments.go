@@ -226,7 +226,20 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		carrier,
 	)
 	if err != nil {
-		RespondErr(c, fmt.Errorf("shipments: carrier create: %w", err), h.logger)
+		// Temporary verbose surface — bubble the upstream carrier error
+		// so the admin UI shows something actionable instead of "internal
+		// server error". Keep for now; trim after delivery is stable.
+		if h.logger != nil {
+			h.logger.Error("shipments: carrier create failed",
+				"order_id", orderID.String(),
+				"provider", provider,
+				"service", req.Service,
+				"err", err.Error())
+		}
+		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+			"error":   "carrier_create_failed",
+			"message": err.Error(),
+		})
 		return
 	}
 

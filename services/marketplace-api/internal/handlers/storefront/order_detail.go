@@ -3,6 +3,8 @@
 package storefront
 
 import (
+	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -40,7 +42,32 @@ type storefrontOrderResponse struct {
 	CurrencyCode    string                       `json:"currency_code"`
 	Items           []storefrontOrderItemResponse `json:"items"`
 	ShippingAddress *storefrontAddressResponse    `json:"shipping_address"`
+	Shipment        *storefrontShipmentResponse   `json:"shipment,omitempty"`
+	Timeline        []storefrontTimelineEntry     `json:"timeline"`
 	PlacedAt        string                       `json:"placed_at"`
+}
+
+// storefrontShipmentResponse is the public view of a shipment. The
+// label_url and carrier-internal ids are kept admin-only; customers
+// get the tracking number + status only.
+type storefrontShipmentResponse struct {
+	Carrier           string `json:"carrier"`
+	Service           string `json:"service,omitempty"`
+	TrackingNumber    string `json:"tracking_number,omitempty"`
+	Status            string `json:"status"`
+	EstimatedDelivery string `json:"estimated_delivery,omitempty"`
+}
+
+// storefrontTimelineEntry is one row in the customer-facing order
+// timeline. Kind maps 1:1 to order_events.kind; description is a
+// human-readable one-liner pulled from the payload when present.
+type storefrontTimelineEntry struct {
+	Kind           string `json:"kind"`
+	Description    string `json:"description"`
+	Status         string `json:"status,omitempty"`
+	Carrier        string `json:"carrier,omitempty"`
+	TrackingNumber string `json:"tracking_number,omitempty"`
+	OccurredAt     string `json:"occurred_at"`
 }
 
 type storefrontOrderItemResponse struct {
@@ -101,8 +128,130 @@ func (h *OrderDetailHandler) GetOrder(c *gin.Context) {
 		return
 	}
 
+	shipment := h.loadShipment(c.Request.Context(), orderID)
+	timeline := h.loadTimeline(c.Request.Context(), orderID)
+
 	resp := mapOrderToStorefrontResponse(o, items, addrs)
+	resp.Shipment = shipment
+	resp.Timeline = timeline
 	c.JSON(http.StatusOK, gin.H{"data": resp})
+}
+
+type shipmentRow struct {
+	Carrier           string  `gorm:"column:provider"`
+	Service           string  `gorm:"column:service"`
+	TrackingNumber    string  `gorm:"column:tracking_number"`
+	Status            string  `gorm:"column:status"`
+	EstimatedDelivery *string `gorm:"column:estimated_delivery"`
+}
+
+func (r shipmentRow) TableName() string { return "shipments" }
+
+func (h *OrderDetailHandler) loadShipment(ctx context.Context, orderID uuid.UUID) *storefrontShipmentResponse {
+	var row shipmentRow
+	err := h.db.WithContext(ctx).
+		Table("shipments").
+		Select("provider", "service", "tracking_number", "status", "estimated_delivery").
+		Where("order_id = ?", orderID).
+		Order("created_at DESC").
+		Limit(1).
+		Scan(&row).Error
+	if err != nil || row.Carrier == "" {
+		return nil
+	}
+	resp := &storefrontShipmentResponse{
+		Carrier:        row.Carrier,
+		Service:        row.Service,
+		TrackingNumber: row.TrackingNumber,
+		Status:         row.Status,
+	}
+	if row.EstimatedDelivery != nil {
+		resp.EstimatedDelivery = *row.EstimatedDelivery
+	}
+	return resp
+}
+
+type timelineRow struct {
+	Kind      string `gorm:"column:kind"`
+	Payload   []byte `gorm:"column:payload"`
+	CreatedAt string `gorm:"column:created_at"`
+}
+
+func (timelineRow) TableName() string { return "order_events" }
+
+func (h *OrderDetailHandler) loadTimeline(ctx context.Context, orderID uuid.UUID) []storefrontTimelineEntry {
+	var rows []timelineRow
+	if err := h.db.WithContext(ctx).
+		Table("order_events").
+		Select("kind", "payload", "to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created_at").
+		Where("order_id = ?", orderID).
+		Order("created_at ASC").
+		Find(&rows).Error; err != nil {
+		return []storefrontTimelineEntry{}
+	}
+
+	out := make([]storefrontTimelineEntry, 0, len(rows))
+	for _, r := range rows {
+		entry := storefrontTimelineEntry{
+			Kind:       r.Kind,
+			OccurredAt: r.CreatedAt,
+		}
+		// Best-effort enrichment — shipment events carry extra fields,
+		// others have simpler payloads. We only surface what the UI
+		// actually renders; unknown payloads are left as bare entries.
+		var raw map[string]any
+		_ = json.Unmarshal(r.Payload, &raw)
+		if raw != nil {
+			if s, ok := raw["description"].(string); ok {
+				entry.Description = s
+			}
+			if s, ok := raw["status"].(string); ok {
+				entry.Status = s
+			}
+			if s, ok := raw["carrier"].(string); ok {
+				entry.Carrier = s
+			}
+			if s, ok := raw["tracking_number"].(string); ok {
+				entry.TrackingNumber = s
+			}
+		}
+		if entry.Description == "" {
+			entry.Description = defaultTimelineDescription(r.Kind)
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// defaultTimelineDescription is a fallback label for events whose payload
+// doesn't carry a pre-formatted description (older rows, returns, etc.).
+func defaultTimelineDescription(kind string) string {
+	switch kind {
+	case "created":
+		return "Order placed."
+	case "status_changed":
+		return "Order status updated."
+	case "payment_recorded":
+		return "Payment received."
+	case "fulfilled":
+		return "Order fulfilled."
+	case "cancelled":
+		return "Order cancelled."
+	case "refunded":
+		return "Order refunded."
+	case "shipment_created":
+		return "Shipping label created."
+	case "shipment_in_transit":
+		return "Package is on its way."
+	case "shipment_out_for_delivery":
+		return "Out for delivery."
+	case "shipment_delivered":
+		return "Package delivered."
+	case "shipment_exception":
+		return "Delivery exception."
+	default:
+		return kind
+	}
 }
 
 func mapOrderToStorefrontResponse(o *order.Order, items []order.OrderItem, addrs []order.OrderAddress) storefrontOrderResponse {

@@ -215,6 +215,13 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					orders.GET("/:id/shipments",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
 						deps.ShipmentsHandler.GetByOrder)
+					// Advance the shipment status through its tracking
+					// lifecycle (in_transit → out_for_delivery → delivered).
+					// Customer-facing timeline reads the resulting
+					// order_events rows.
+					orders.PATCH("/:id/shipments/:shipmentId/status",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.UpdateStatus)
 				}
 			}
 		}

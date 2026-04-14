@@ -11,6 +11,7 @@ import { cookies, headers } from "next/headers";
 import { slugFromHost } from "@/lib/slug";
 import { decodeSession } from "@/lib/session";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
+import { OrderTimeline } from "@/components/OrderTimeline";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -103,6 +104,12 @@ export default async function AccountOrderPage({ params }: PageProps) {
           </address>
         </section>
       )}
+
+      <OrderTimeline
+        orderId={order.id}
+        initialShipment={order.shipment ?? null}
+        initialTimeline={order.timeline ?? []}
+      />
 
       <section>
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60">

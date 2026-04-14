@@ -24,7 +24,31 @@ const (
 	EventKindReturnReceived  EventKind = "return_received"
 	EventKindReturnRefunded  EventKind = "return_refunded"
 	EventKindReturnRejected  EventKind = "return_rejected"
+
+	// Fulfillment / shipment timeline. These feed the customer-facing
+	// order tracking view. `shipment_created` fires when a label is
+	// purchased; the *_status kinds fire as the shipment moves through
+	// Delhivery/ShipEngine's tracking lifecycle.
+	EventKindShipmentCreated        EventKind = "shipment_created"
+	EventKindShipmentInTransit      EventKind = "shipment_in_transit"
+	EventKindShipmentOutForDelivery EventKind = "shipment_out_for_delivery"
+	EventKindShipmentDelivered      EventKind = "shipment_delivered"
+	EventKindShipmentException      EventKind = "shipment_exception"
 )
+
+// ShipmentEventPayload is written for every shipment lifecycle event.
+// Customer UIs can render the tracking timeline off this list alone —
+// the Shipment row is joined separately for label/ETA.
+type ShipmentEventPayload struct {
+	ShipmentID     string `json:"shipment_id"`
+	Carrier        string `json:"carrier"`
+	TrackingNumber string `json:"tracking_number,omitempty"`
+	Status         string `json:"status"` // e.g. "created", "in_transit", "delivered"
+	Description    string `json:"description,omitempty"`
+}
+
+// EncodeShipment produces a datatypes.JSON payload for shipment kinds.
+func EncodeShipment(p ShipmentEventPayload) datatypes.JSON { return mustJSON(p) }
 
 // -----------------------------------------------------------------------------
 // Payload shapes. All timestamps are RFC3339 strings when serialized.

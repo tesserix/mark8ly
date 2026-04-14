@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -230,7 +231,134 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Timeline event — customer order-detail page reads order_events to
+	// render the tracking feed. Failures here only log; the shipment
+	// still persisted successfully.
+	h.appendShipmentEvent(ctx, orderID, rec, order.EventKindShipmentCreated,
+		"Shipping label created — package will be picked up shortly.")
+
 	c.JSON(http.StatusCreated, toShipmentResponse(rec))
+}
+
+// appendShipmentEvent writes a row into order_events describing a
+// shipment lifecycle transition. Separate from the main response path
+// so failures don't block the user-visible action.
+func (h *ShipmentsHandler) appendShipmentEvent(
+	ctx context.Context,
+	orderID uuid.UUID,
+	rec *shipping.ShipmentRecord,
+	kind order.EventKind,
+	description string,
+) {
+	evt := &order.OrderEvent{
+		OrderID: orderID,
+		Kind:    string(kind),
+		Payload: order.EncodeShipment(order.ShipmentEventPayload{
+			ShipmentID:     rec.ID.String(),
+			Carrier:        rec.Provider,
+			TrackingNumber: rec.TrackingNumber,
+			Status:         rec.Status,
+			Description:    description,
+		}),
+	}
+	if err := h.db.WithContext(ctx).Create(evt).Error; err != nil && h.logger != nil {
+		h.logger.Error("shipments: append event failed",
+			"order_id", orderID, "kind", kind, "err", err)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Status advance — PATCH .../shipments/:shipmentId/status
+// ─────────────────────────────────────────────────────────────────────────
+
+// UpdateStatusRequest is the wire body for advancing a shipment through
+// its tracking lifecycle. Accepted values: in_transit,
+// out_for_delivery, delivered, exception.
+type UpdateStatusRequest struct {
+	Status      string `json:"status" binding:"required"`
+	Description string `json:"description,omitempty"`
+}
+
+var shipmentStatusKinds = map[string]order.EventKind{
+	"in_transit":       order.EventKindShipmentInTransit,
+	"out_for_delivery": order.EventKindShipmentOutForDelivery,
+	"delivered":        order.EventKindShipmentDelivered,
+	"exception":        order.EventKindShipmentException,
+}
+
+var shipmentStatusDefaultCopy = map[string]string{
+	"in_transit":       "Package is on its way.",
+	"out_for_delivery": "Out for delivery — it will arrive today.",
+	"delivered":        "Package delivered.",
+	"exception":        "Delivery exception — we're looking into it.",
+}
+
+// UpdateStatus handles PATCH /admin/stores/:storeId/orders/:id/shipments/:shipmentId/status.
+func (h *ShipmentsHandler) UpdateStatus(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	orderID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	shipmentID, err := uuid.Parse(c.Param("shipmentId"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("shipmentId", "must be a uuid"), h.logger)
+		return
+	}
+
+	var req UpdateStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	kind, ok := shipmentStatusKinds[status]
+	if !ok {
+		RespondErr(c, apperrors.ValidationFailed("status",
+			"must be one of in_transit, out_for_delivery, delivered, exception"), h.logger)
+		return
+	}
+
+	rec, err := h.repo.GetShipmentByOrderID(ctx, orderID)
+	if err != nil {
+		RespondErr(c, apperrors.NotFound("shipment"), h.logger)
+		return
+	}
+	if rec.ID != shipmentID || rec.StoreID.String() != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("shipment"), h.logger)
+		return
+	}
+
+	// Update the shipment row + stamp the relevant timestamp. The
+	// shipped_at/delivered_at columns exist in the schema but aren't on
+	// the GORM model; write them with a raw field update.
+	now := time.Now().UTC()
+	fields := map[string]any{"status": status, "updated_at": now}
+	if status == "in_transit" {
+		fields["shipped_at"] = now
+	}
+	if status == "delivered" {
+		fields["delivered_at"] = now
+	}
+	if err := h.db.WithContext(ctx).
+		Table("shipments").
+		Where("id = ?", shipmentID).
+		Updates(fields).Error; err != nil {
+		RespondErr(c, fmt.Errorf("shipments: update status: %w", err), h.logger)
+		return
+	}
+
+	rec.Status = status
+
+	desc := req.Description
+	if desc == "" {
+		desc = shipmentStatusDefaultCopy[status]
+	}
+	h.appendShipmentEvent(ctx, orderID, rec, kind, desc)
+
+	c.JSON(http.StatusOK, toShipmentResponse(rec))
 }
 
 // GetByOrder handles GET /admin/stores/:storeId/orders/:id/shipments.

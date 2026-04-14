@@ -15,6 +15,7 @@ import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { PaymentPrompt } from "@/components/PaymentPrompt";
+import { OrderTimeline } from "@/components/OrderTimeline";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,12 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
           orderId={order.id}
           paymentStatus={order.payment_status}
           storeName={store?.name ?? ""}
+        />
+
+        <OrderTimeline
+          orderId={order.id}
+          initialShipment={order.shipment ?? null}
+          initialTimeline={order.timeline ?? []}
         />
 
         {/* Items */}

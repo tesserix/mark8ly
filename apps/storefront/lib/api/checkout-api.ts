@@ -158,6 +158,23 @@ export interface OrderAddress {
   phone?: string;
 }
 
+export interface OrderShipment {
+  carrier: string;
+  service?: string;
+  tracking_number?: string;
+  status: string;
+  estimated_delivery?: string;
+}
+
+export interface OrderTimelineEntry {
+  kind: string;
+  description: string;
+  status?: string;
+  carrier?: string;
+  tracking_number?: string;
+  occurred_at: string;
+}
+
 export interface Order {
   id: string;
   order_number: string;
@@ -170,6 +187,8 @@ export interface Order {
   currency_code: string;
   items: OrderItem[];
   shipping_address: OrderAddress;
+  shipment?: OrderShipment;
+  timeline?: OrderTimelineEntry[];
   placed_at: string;
 }
 

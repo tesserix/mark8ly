@@ -297,6 +297,38 @@ export default function CheckoutPage() {
       return;
     }
 
+    // Stash everything the order page needs to open the payment widget
+    // before clearing the cart. Keyed by order id so a customer juggling
+    // two checkouts in different tabs doesn't cross streams.
+    const grandTotal = (
+      subtotal +
+      Number.parseFloat(result.shipping_total ?? "0") +
+      Number.parseFloat(result.tax_total ?? "0") -
+      Number.parseFloat(result.discount_total ?? "0") -
+      Number.parseFloat(result.gift_card_applied ?? "0")
+    ).toFixed(2);
+    const pm = paymentMethods.find((p) => p.provider === result.provider);
+    const pending = {
+      orderId: result.order_id,
+      provider: result.provider,
+      paymentToken: result.payment_token,
+      publicKey: pm?.public_key ?? "",
+      amount: grandTotal,
+      currencyCode: items[0]?.currencyCode ?? "INR",
+      customerName: customerName.trim() || undefined,
+      customerEmail: email.trim() || undefined,
+    };
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem(
+          `mark8ly.pendingPayment.${result.order_id}`,
+          JSON.stringify(pending),
+        );
+      } catch {
+        // sessionStorage may be unavailable in incognito; fall through.
+      }
+    }
+
     clear();
     router.push(`/orders/${result.order_id}`);
   };

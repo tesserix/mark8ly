@@ -80,6 +80,15 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 			group.GET("/orders/:id", deps.OrderDetailHandler.GetOrder)
 		}
 
+		// Razorpay client-side checkout callback. The widget on the order
+		// page hands back {razorpay_order_id, razorpay_payment_id,
+		// razorpay_signature}; this endpoint verifies the HMAC and reuses
+		// the same handler the webhook flow uses to mark the order paid.
+		if deps.WebhookHandler != nil {
+			group.POST("/orders/:id/verify-payment",
+				deps.WebhookHandler.HandleVerifyPayment)
+		}
+
 		// Coupon validation — Marketing M1.
 		// Rate-limited: 10 req/min per IP.
 		if deps.CouponValidateHandler != nil {

@@ -14,6 +14,7 @@ import { slugFromHost } from "@/lib/slug";
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { StorefrontNav } from "@/components/StorefrontNav";
+import { PaymentPrompt } from "@/components/PaymentPrompt";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,12 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
           <StatusBadge label="Order" value={order.status} />
           <StatusBadge label="Payment" value={order.payment_status} />
         </div>
+
+        <PaymentPrompt
+          orderId={order.id}
+          paymentStatus={order.payment_status}
+          storeName={store?.name ?? ""}
+        />
 
         {/* Items */}
         <section aria-labelledby="items-heading" className="mt-10">

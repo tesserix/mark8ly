@@ -48,6 +48,8 @@ function proxyUrl(path: string, storeSlug: string): string {
 export interface PaymentMethod {
   provider: string;
   methods: string[];
+  public_key?: string;
+  mode?: "test" | "live" | string;
 }
 
 export interface ShippingRateItem {

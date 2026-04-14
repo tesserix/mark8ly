@@ -19,6 +19,10 @@ import (
 type paymentGatewayConfig struct {
 	Provider string `gorm:"column:provider"`
 	IsActive bool   `gorm:"column:is_active"`
+	// APIKey is the public-facing key (e.g. rzp_test_*** for Razorpay).
+	// Required by client-side checkout widgets and safe to expose.
+	APIKey string `gorm:"column:api_key_encrypted"`
+	Mode   string `gorm:"column:mode"`
 }
 
 func (paymentGatewayConfig) TableName() string { return "payment_gateway_configs" }
@@ -38,6 +42,11 @@ func NewPaymentMethodsHandler(db *gorm.DB, logger *slog.Logger) *PaymentMethodsH
 type paymentMethodResponse struct {
 	Provider string   `json:"provider"`
 	Methods  []string `json:"methods"`
+	// PublicKey is the provider's publishable key (Razorpay key_id /
+	// Stripe publishable key) — needed by client-side checkout widgets.
+	// Razorpay treats key_id as fully public; safe to expose.
+	PublicKey string `json:"public_key,omitempty"`
+	Mode      string `json:"mode,omitempty"`
 }
 
 // ListPaymentMethods handles GET /storefront/stores/:storeSlug/payment-methods.
@@ -93,8 +102,10 @@ func (h *PaymentMethodsHandler) ListPaymentMethods(c *gin.Context) {
 	result := make([]paymentMethodResponse, 0, len(configs))
 	for _, cfg := range configs {
 		result = append(result, paymentMethodResponse{
-			Provider: cfg.Provider,
-			Methods:  methodsForProvider(cfg.Provider),
+			Provider:  cfg.Provider,
+			Methods:   methodsForProvider(cfg.Provider),
+			PublicKey: cfg.APIKey,
+			Mode:      cfg.Mode,
 		})
 	}
 

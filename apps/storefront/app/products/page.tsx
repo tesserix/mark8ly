@@ -145,6 +145,13 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
   const min = formatPrice(product.price_range.min, product.price_range.currency_code);
   const max = formatPrice(product.price_range.max, product.price_range.currency_code);
   const isRange = product.price_range.min !== product.price_range.max;
+  const anyInStock = product.variants.some((v) => v.in_stock);
+  const anyLowStock = product.variants.some((v) => v.in_stock && v.low_stock);
+  const stockLabel = !anyInStock
+    ? { text: "Out of stock", tone: "danger" as const }
+    : anyLowStock
+      ? { text: "Low stock", tone: "warn" as const }
+      : { text: "In stock", tone: "ok" as const };
   return (
     <li>
       <Link
@@ -163,8 +170,30 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
             {isRange ? `from ${min}` : min}
           </span>
         </div>
+        <StockBadge tone={stockLabel.tone} text={stockLabel.text} />
       </Link>
     </li>
+  );
+}
+
+function StockBadge({ tone, text }: { tone: "ok" | "warn" | "danger"; text: string }) {
+  const toneClass =
+    tone === "ok"
+      ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
+      : tone === "warn"
+        ? "bg-amber-50 text-amber-700"
+        : "bg-red-50 text-red-700";
+  const dotClass =
+    tone === "ok"
+      ? "bg-[color:var(--moss-700)]"
+      : tone === "warn"
+        ? "bg-amber-500"
+        : "bg-red-500";
+  return (
+    <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${toneClass}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} aria-hidden />
+      {text}
+    </span>
   );
 }
 

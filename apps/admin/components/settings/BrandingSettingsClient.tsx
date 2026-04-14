@@ -10,9 +10,11 @@ import {
   Code,
   Image,
   Check,
+  Home,
 } from "lucide-react";
 
-import type { StoreBranding, UpdateBrandingInput, AdminPage } from "@/lib/api/marketplace-api";
+import type { StoreBranding, UpdateBrandingInput, AdminPage, AdminCategory } from "@/lib/api/marketplace-api";
+import { HomepageTab } from "./HomepageTab";
 import { FooterSectionsEditor } from "./FooterSectionsEditor";
 import { updateBrandingAction } from "@/app/(admin)/settings/themes/actions";
 import { useToast } from "@/components/feedback/Toaster";
@@ -25,6 +27,7 @@ interface BrandingSettingsClientProps {
   branding: StoreBranding;
   editable: boolean;
   pages?: AdminPageSummary[];
+  categories?: Pick<AdminCategory, "id" | "slug" | "name">[];
 }
 
 type Tab =
@@ -32,6 +35,7 @@ type Tab =
   | "colors"
   | "typography"
   | "layout"
+  | "homepage"
   | "footer"
   | "advanced";
 
@@ -40,6 +44,7 @@ const TABS: { key: Tab; label: string; icon: typeof Palette }[] = [
   { key: "colors", label: "Colors", icon: Palette },
   { key: "typography", label: "Typography", icon: Type },
   { key: "layout", label: "Layout", icon: LayoutGrid },
+  { key: "homepage", label: "Homepage", icon: Home },
   { key: "footer", label: "Footer", icon: Link2 },
   { key: "advanced", label: "Advanced", icon: Code },
 ];
@@ -75,6 +80,7 @@ export function BrandingSettingsClient({
   branding: initial,
   editable,
   pages = [],
+  categories = [],
 }: BrandingSettingsClientProps) {
   const { toast } = useToast();
   const [form, setForm] = useState<StoreBranding>(initial);
@@ -147,6 +153,7 @@ export function BrandingSettingsClient({
         {tab === "colors" && <ColorsTab form={form} patch={patch} editable={editable} />}
         {tab === "typography" && <TypographyTab form={form} patch={patch} editable={editable} />}
         {tab === "layout" && <LayoutTab form={form} patch={patch} editable={editable} />}
+        {tab === "homepage" && <HomepageTab form={form} patch={patch} editable={editable} pages={pages} categories={categories} />}
         {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} pages={pages} />}
         {tab === "advanced" && <AdvancedTab form={form} patch={patch} editable={editable} />}
 
@@ -195,6 +202,7 @@ interface TabProps {
   patch: (u: Partial<StoreBranding>) => void;
   editable: boolean;
   pages?: AdminPageSummary[];
+  categories?: Pick<AdminCategory, "id" | "slug" | "name">[];
 }
 
 export function SectionHeader({ title, description }: { title: string; description: string }) {

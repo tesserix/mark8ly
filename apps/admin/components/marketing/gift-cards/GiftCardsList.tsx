@@ -13,17 +13,33 @@ interface GiftCardsListProps {
 }
 
 function statusBadge(status: string) {
-  const base = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium";
+  const base = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize";
   switch (status) {
     case "active":
       return <span className={`${base} bg-moss-700/10 text-moss-700`}>Active</span>;
+    case "pending":
+      return <span className={`${base} bg-amber-100 text-amber-800`}>Pending</span>;
     case "depleted":
       return <span className={`${base} bg-ink-100 text-ink-600`}>Depleted</span>;
     case "disabled":
       return <span className={`${base} bg-ink-100 text-ink-500`}>Disabled</span>;
+    case "refunded":
+      return <span className={`${base} bg-[color:var(--signal)]/10 text-[color:var(--signal)]`}>Refunded</span>;
     default:
       return <span className={`${base} bg-ink-100 text-ink-600`}>{status}</span>;
   }
+}
+
+function sourceBadge(gc: AdminGiftCard) {
+  const base = "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium";
+  if (gc.purchased_via_storefront) {
+    return (
+      <span className={`${base} bg-moss-700/10 text-moss-700`} title={gc.purchased_by_email ?? undefined}>
+        Storefront
+      </span>
+    );
+  }
+  return <span className={`${base} bg-ink-100 text-ink-600`}>Admin</span>;
 }
 
 function formatCurrency(amount: string, currency: string): string {
@@ -87,8 +103,10 @@ export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListP
         {[
           { label: "All", value: undefined },
           { label: "Active", value: "active" },
+          { label: "Pending payment", value: "pending" },
           { label: "Depleted", value: "depleted" },
           { label: "Disabled", value: "disabled" },
+          { label: "Refunded", value: "refunded" },
         ].map((tab) => (
           <button
             key={tab.label}
@@ -115,6 +133,7 @@ export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListP
               <th className="pb-3 pr-4">Balance</th>
               <th className="pb-3 pr-4">Initial</th>
               <th className="pb-3 pr-4">Status</th>
+              <th className="pb-3 pr-4">Source</th>
               <th className="pb-3 pr-4">Recipient</th>
               <th className="pb-3">Created</th>
             </tr>
@@ -140,6 +159,7 @@ export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListP
                   {formatCurrency(gc.initial_balance, gc.currency_code)}
                 </td>
                 <td className="py-3 pr-4">{statusBadge(gc.status)}</td>
+                <td className="py-3 pr-4">{sourceBadge(gc)}</td>
                 <td className="py-3 pr-4 text-ink-900/70">
                   {gc.recipient_name ?? gc.recipient_email ?? "\u2014"}
                 </td>

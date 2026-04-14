@@ -37,6 +37,14 @@ type AdminGiftCardResponse struct {
 	PurchasedAt    *time.Time      `json:"purchased_at,omitempty"`
 	ExpiresAt      *time.Time      `json:"expires_at,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
+	// Storefront purchase metadata. Non-null / true only for cards that
+	// originated from a customer-facing purchase flow. Admin-issued
+	// cards leave these empty.
+	PurchasedViaStorefront bool    `json:"purchased_via_storefront"`
+	PaymentStatus          *string `json:"payment_status,omitempty"`
+	PaymentProvider        *string `json:"payment_provider,omitempty"`
+	PurchasedByName        *string `json:"purchased_by_name,omitempty"`
+	PurchasedByEmail       *string `json:"purchased_by_email,omitempty"`
 }
 
 // AdminGiftCardTxnResponse is the wire DTO for a transaction ledger row.
@@ -57,23 +65,32 @@ type AdminGiftCardDetailResponse struct {
 }
 
 func toAdminGiftCardResponse(gc *giftcard.GiftCard) AdminGiftCardResponse {
-	return AdminGiftCardResponse{
-		ID:             gc.ID.String(),
-		Code:           gc.Code,
-		CodeDisplay:    giftcard.FormatCodeDisplay(gc.Code),
-		InitialBalance: gc.InitialBalance,
-		CurrentBalance: gc.CurrentBalance,
-		CurrencyCode:   gc.CurrencyCode,
-		Status:         string(gc.Status),
-		SenderName:     gc.SenderName,
-		SenderEmail:    gc.SenderEmail,
-		RecipientName:  gc.RecipientName,
-		RecipientEmail: gc.RecipientEmail,
-		Message:        gc.Message,
-		PurchasedAt:    gc.PurchasedAt,
-		ExpiresAt:      gc.ExpiresAt,
-		CreatedAt:      gc.CreatedAt,
+	resp := AdminGiftCardResponse{
+		ID:                     gc.ID.String(),
+		Code:                   gc.Code,
+		CodeDisplay:            giftcard.FormatCodeDisplay(gc.Code),
+		InitialBalance:         gc.InitialBalance,
+		CurrentBalance:         gc.CurrentBalance,
+		CurrencyCode:           gc.CurrencyCode,
+		Status:                 string(gc.Status),
+		SenderName:             gc.SenderName,
+		SenderEmail:            gc.SenderEmail,
+		RecipientName:          gc.RecipientName,
+		RecipientEmail:         gc.RecipientEmail,
+		Message:                gc.Message,
+		PurchasedAt:            gc.PurchasedAt,
+		ExpiresAt:              gc.ExpiresAt,
+		CreatedAt:              gc.CreatedAt,
+		PurchasedViaStorefront: gc.PurchasedViaStorefront,
+		PaymentProvider:        gc.PaymentProvider,
+		PurchasedByName:        gc.PurchasedByName,
+		PurchasedByEmail:       gc.PurchasedByEmail,
 	}
+	if gc.PaymentStatus != nil {
+		s := string(*gc.PaymentStatus)
+		resp.PaymentStatus = &s
+	}
+	return resp
 }
 
 func toAdminGiftCardTxnResponse(txn *giftcard.Transaction) AdminGiftCardTxnResponse {

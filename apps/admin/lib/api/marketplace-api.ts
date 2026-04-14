@@ -1001,7 +1001,7 @@ export interface AdminGiftCard {
   initial_balance: string;
   current_balance: string;
   currency_code: string;
-  status: "active" | "disabled" | "depleted";
+  status: "active" | "disabled" | "depleted" | "pending" | "refunded";
   sender_name?: string;
   sender_email?: string;
   recipient_name?: string;
@@ -1010,6 +1010,12 @@ export interface AdminGiftCard {
   purchased_at?: string;
   expires_at?: string;
   created_at: string;
+  // Storefront purchase metadata. Falsy/absent for admin-issued cards.
+  purchased_via_storefront?: boolean;
+  payment_status?: "pending" | "paid" | "failed" | "refunded";
+  payment_provider?: string;
+  purchased_by_name?: string;
+  purchased_by_email?: string;
 }
 
 export interface AdminGiftCardTransaction {

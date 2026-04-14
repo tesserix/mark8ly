@@ -460,6 +460,15 @@ func (s *Service) CheckBalance(ctx context.Context, storeID uuid.UUID, code stri
 	}, nil
 }
 
+// ListByCustomerEmail returns up to 100 gift cards where the customer
+// is purchaser OR recipient, for their My Account view.
+func (s *Service) ListByCustomerEmail(ctx context.Context, storeID uuid.UUID, email string) ([]GiftCard, error) {
+	if email == "" {
+		return nil, nil
+	}
+	return s.repo.ListByCustomerEmail(ctx, s.db, storeID, strings.ToLower(strings.TrimSpace(email)))
+}
+
 // ListByStore returns paginated gift cards.
 func (s *Service) ListByStore(ctx context.Context, storeID, tenantID uuid.UUID, status *GiftCardStatus, page, pageSize int) ([]GiftCard, int64, error) {
 	if page < 1 {

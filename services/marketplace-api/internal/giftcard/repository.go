@@ -43,6 +43,11 @@ type Repository interface {
 	// by created_at desc.
 	ListTransactions(ctx context.Context, db *gorm.DB, giftCardID uuid.UUID) ([]Transaction, error)
 
+	// ListByCustomerEmail returns cards where the given email is either
+	// the purchaser or recipient, scoped to a store. Used by the
+	// storefront account-area gift cards list.
+	ListByCustomerEmail(ctx context.Context, db *gorm.DB, storeID uuid.UUID, email string) ([]GiftCard, error)
+
 	// GetByCheckoutSessionID looks up a card by the provider hosted
 	// checkout session id. Used by the webhook to correlate incoming
 	// checkout.session.completed events to our pending gift card row.
@@ -203,6 +208,20 @@ func (gormRepository) ListTransactions(ctx context.Context, db *gorm.DB, giftCar
 		Order("created_at DESC").
 		Find(&txns).Error
 	return txns, err
+}
+
+// ListByCustomerEmail returns gift cards where the customer is either
+// the purchaser OR the recipient, for a given store. Used by the
+// storefront My Account → Gift cards page.
+func (gormRepository) ListByCustomerEmail(ctx context.Context, db *gorm.DB, storeID uuid.UUID, email string) ([]GiftCard, error) {
+	var cards []GiftCard
+	err := db.WithContext(ctx).
+		Where("store_id = ? AND (purchased_by_email = ? OR recipient_email = ?)",
+			storeID, email, email).
+		Order("created_at DESC").
+		Limit(100).
+		Find(&cards).Error
+	return cards, err
 }
 
 func (gormRepository) GetByCheckoutSessionID(ctx context.Context, db *gorm.DB, sessionID string) (*GiftCard, error) {

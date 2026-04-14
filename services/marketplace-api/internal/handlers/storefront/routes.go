@@ -148,6 +148,11 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 			account.PATCH("/addresses/:id", deps.CustomerAccountHandler.UpdateAddress)
 			account.DELETE("/addresses/:id", deps.CustomerAccountHandler.DeleteAddress)
 
+			// Authenticated customer's gift cards (purchaser or recipient).
+			if deps.GiftCardHandler != nil {
+				account.GET("/gift-cards", deps.GiftCardHandler.MyGiftCards)
+			}
+
 			// Order history — list orders for authenticated customer.
 			if deps.OrderDetailHandler != nil {
 				account.GET("/orders", deps.OrderDetailHandler.ListOrders)

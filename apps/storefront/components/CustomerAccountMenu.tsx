@@ -14,8 +14,9 @@ const linkClass =
   "block w-full px-4 py-2 text-left text-sm text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 hover:bg-[color:var(--paper-200)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]";
 
 const MENU_ITEMS = [
-  { href: "/account", label: "Dashboard" },
+  { href: "/account", label: "My account" },
   { href: "/account/orders", label: "Orders" },
+  { href: "/account/gift-cards", label: "Gift cards" },
   { href: "/account/addresses", label: "Addresses" },
 ] as const;
 

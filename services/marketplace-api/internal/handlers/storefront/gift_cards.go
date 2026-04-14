@@ -89,6 +89,58 @@ func (h *GiftCardStorefrontHandler) CheckBalance(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
+// MyGiftCards handles GET /storefront/stores/:storeSlug/gift-cards/mine.
+// Returns cards where the authenticated customer is the purchaser or
+// the recipient. Requires RequireCustomerAuth middleware on the route.
+func (h *GiftCardStorefrontHandler) MyGiftCards(c *gin.Context) {
+	storeVal, _ := c.Get("store")
+	store, ok := storeVal.(*stores.Store)
+	if !ok || store == nil {
+		respondNotFound(c)
+		return
+	}
+	storeID, err := uuid.Parse(store.ID)
+	if err != nil {
+		respondNotFound(c)
+		return
+	}
+	emailVal, _ := c.Get(CustomerEmailKey)
+	email, _ := emailVal.(string)
+	if email == "" {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"error": "unauthorized", "message": "sign-in required",
+		})
+		return
+	}
+	cards, err := h.svc.ListByCustomerEmail(c.Request.Context(), storeID, email)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("gift cards mine error", "err", err.Error())
+		}
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error": "internal", "message": "internal server error",
+		})
+		return
+	}
+	out := make([]gin.H, 0, len(cards))
+	for _, gc := range cards {
+		out = append(out, gin.H{
+			"id":                       gc.ID.String(),
+			"code_display":             giftcard.FormatCodeDisplay(gc.Code),
+			"initial_balance":          gc.InitialBalance.String(),
+			"current_balance":          gc.CurrentBalance.String(),
+			"currency_code":            gc.CurrencyCode,
+			"status":                   string(gc.Status),
+			"recipient_email":          gc.RecipientEmail,
+			"purchased_by_email":       gc.PurchasedByEmail,
+			"purchased_via_storefront": gc.PurchasedViaStorefront,
+			"expires_at":               gc.ExpiresAt,
+			"created_at":               gc.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
 // PurchaseGiftCardRequest is the wire body for POST /gift-cards/purchase.
 // The storefront page collects these fields; currency is derived server-
 // side from the store (never trust the client).

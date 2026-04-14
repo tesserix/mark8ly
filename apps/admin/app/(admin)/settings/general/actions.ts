@@ -20,6 +20,7 @@ import type { TenantRole } from "@/lib/api/platform-api";
 
 export interface UpdateGeneralSettingsInput {
   name: string;
+  timezone?: string;
 }
 
 export type UpdateGeneralSettingsResult =
@@ -69,6 +70,15 @@ export async function updateGeneralSettings(
     };
   }
 
+  const timezone = input.timezone?.trim();
+  if (input.timezone !== undefined && !timezone) {
+    return {
+      ok: false,
+      code: "invalid_timezone",
+      message: "Timezone cannot be empty.",
+    };
+  }
+
   // Phase Q / Q.2: general settings edit the CURRENT STORE. The
   // current store id comes from the session cookie
   // (x-session-store-id header, populated by middleware from
@@ -90,7 +100,7 @@ export async function updateGeneralSettings(
       }
       storeId = current.id;
     }
-    await updateStore(storeId, { name, uid });
+    await updateStore(storeId, { name, timezone, uid });
   } catch (err) {
     if (err instanceof PlatformApiError) {
       return { ok: false, code: err.code, message: err.message };

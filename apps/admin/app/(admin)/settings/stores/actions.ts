@@ -15,6 +15,7 @@ import { revalidatePath } from "next/cache";
 
 import {
   createStore,
+  isStoreSlugAvailable,
   PlatformApiError,
   type Store,
 } from "@/lib/api/platform-api";
@@ -27,6 +28,22 @@ type CreateResult =
 type SwitchResult =
   | { ok: true }
   | { ok: false; code: string; message: string };
+
+type SlugCheckResult =
+  | { ok: true; available: boolean }
+  | { ok: false; code: string; message: string };
+
+// Live slug availability check — called by the Add Store form as the
+// merchant types. Mirrors onboarding's checkSlug so the two flows
+// agree on "what counts as available" without duplicating the rule.
+export async function checkStoreSlug(slug: string): Promise<SlugCheckResult> {
+  try {
+    const r = await isStoreSlugAvailable(slug);
+    return { ok: true, available: r.available };
+  } catch (err) {
+    return failPlatform(err);
+  }
+}
 
 function failPlatform(err: unknown): {
   ok: false;

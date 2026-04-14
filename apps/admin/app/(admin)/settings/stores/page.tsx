@@ -5,6 +5,11 @@ import {
   canEditSettings,
   getServerSessionContext,
 } from "@/lib/auth/serverSession";
+import {
+  listCountries,
+  listCurrencies,
+  listTimezones,
+} from "@/lib/api/platform-api";
 
 /**
  * /settings/stores — multi-store index + current-store identity editor.
@@ -28,6 +33,12 @@ export default async function StoresIndexPage() {
   } = await getServerSessionContext();
   const canManage = canEditSettings(role);
 
+  const [countries, currencies, timezones] = await Promise.all([
+    listCountries(),
+    listCurrencies(),
+    listTimezones(),
+  ]);
+
   return (
           <AdminPage
         eyebrow="Store"
@@ -47,6 +58,8 @@ export default async function StoresIndexPage() {
           stores={stores}
           currentStoreId={currentStore?.id ?? ""}
           canManage={canManage}
+          countries={countries}
+          currencies={currencies}
         />
 
         <PageSection
@@ -59,6 +72,7 @@ export default async function StoresIndexPage() {
               tenant={tenant}
               store={currentStore}
               editable={canManage}
+              timezones={timezones}
             />
           ) : (
             <p className="text-sm text-danger">

@@ -17,10 +17,19 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Input, Label } from "@tesserix/web";
+import {
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import { updateGeneralSettings } from "@/app/(admin)/settings/general/actions";
-import type { Store, Tenant } from "@/lib/api/platform-api";
+import type { Store, Tenant, Timezone } from "@/lib/api/platform-api";
+import { useToast } from "@/components/feedback/Toaster";
 
 // Humanise ISO codes. Falls through to the raw code when Intl doesn't
 // know the region or currency — better to show "XX" than the empty
@@ -60,36 +69,44 @@ interface GeneralSettingsFormProps {
   // timezone all come from store.
   store: Store;
   editable?: boolean;
+  timezones: Timezone[];
 }
 
 export function GeneralSettingsForm({
   tenant,
   store,
   editable = true,
+  timezones,
 }: GeneralSettingsFormProps) {
   const router = useRouter();
+  const { toast } = useToast();
 
   const [name, setName] = useState(store.name);
+  const [timezone, setTimezone] = useState(store.timezone);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  const dirty = name.trim() !== store.name && name.trim().length > 0;
+  const nameDirty = name.trim() !== store.name && name.trim().length > 0;
+  const tzDirty = timezone !== store.timezone && timezone.length > 0;
+  const dirty = nameDirty || tzDirty;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setSuccess(false);
 
     if (!dirty) return;
 
     startTransition(async () => {
-      const result = await updateGeneralSettings({ name });
+      const result = await updateGeneralSettings({
+        name: name.trim(),
+        timezone: tzDirty ? timezone : undefined,
+      });
       if (!result.ok) {
         setError(result.message);
+        toast.error("Couldn't save changes", result.message);
         return;
       }
-      setSuccess(true);
+      toast.success("Saved", "Store settings updated.");
       // Refresh so the server component (AdminShell) re-reads the
       // updated tenant name on the next render.
       router.refresh();
@@ -103,10 +120,7 @@ export function GeneralSettingsForm({
           <Input
             id="name"
             value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setSuccess(false);
-            }}
+            onChange={(e) => setName(e.target.value)}
             maxLength={200}
             disabled={pending || !editable}
             required
@@ -139,11 +153,29 @@ export function GeneralSettingsForm({
             value={formatCurrencyLabel(store.currency_code)}
           />
         </div>
-        <ReadOnlyField
-          label="Timezone"
-          value={store.timezone}
-          hint="Set during onboarding. Reach out to us if you need this changed."
-        />
+        <div className="space-y-2">
+          <Label htmlFor="timezone">Timezone</Label>
+          <Select
+            value={timezone}
+            onValueChange={setTimezone}
+            disabled={pending || !editable}
+          >
+            <SelectTrigger id="timezone">
+              <SelectValue placeholder="Select timezone…" />
+            </SelectTrigger>
+            <SelectContent>
+              {timezones.map((tz) => (
+                <SelectItem key={tz.id} value={tz.id}>
+                  {tz.id}
+                  {tz.utc_offset ? ` (UTC${tz.utc_offset})` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Used for daily rollups, scheduled campaigns, and order timestamps.
+          </p>
+        </div>
       </Section>
 
       {error && (
@@ -154,14 +186,6 @@ export function GeneralSettingsForm({
           {error}
         </div>
       )}
-      {success && (
-        <div
-          role="status"
-          className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
-        >
-          Saved.
-        </div>
-      )}
 
       {editable && (
         <div className="flex items-center justify-end gap-3 border-t admin-soft-rule pt-6">
@@ -169,8 +193,8 @@ export function GeneralSettingsForm({
             type="button"
             onClick={() => {
               setName(store.name);
+              setTimezone(store.timezone);
               setError(null);
-              setSuccess(false);
             }}
             disabled={!dirty || pending}
             className="rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"

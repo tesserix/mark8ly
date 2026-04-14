@@ -157,7 +157,12 @@ export async function createStore(
  */
 export async function updateStore(
   id: string,
-  patch: { name?: string; storefront_theme?: StorefrontTheme; uid: string },
+  patch: {
+    name?: string;
+    timezone?: string;
+    storefront_theme?: StorefrontTheme;
+    uid: string;
+  },
 ): Promise<Store> {
   const res = await fetch(`${PLATFORM_API_URL}/internal/stores/${id}`, {
     method: "PATCH",
@@ -657,4 +662,93 @@ export async function confirmPasswordReset(
         "We couldn't reach the identity service. Please try again in a moment.",
     };
   }
+}
+
+/* ============================================================
+   Locations + slug availability
+   ------------------------------------------------------------
+   Shared shape with onboarding's platform-api client so the Add
+   Store form and the editable timezone picker in General settings
+   can reuse the IANA-seeded /api/v1/locations/* endpoints.
+   ============================================================ */
+
+export interface Country {
+  code: string;
+  name: string;
+  native_name: string;
+  calling_code: string;
+  currency_code: string;
+  flag_emoji: string;
+  region: string;
+}
+
+export interface Currency {
+  code: string;
+  name: string;
+  symbol: string;
+  decimal_places: number;
+}
+
+export interface Timezone {
+  id: string;
+  name: string;
+  utc_offset: string;
+}
+
+export async function listCountries(): Promise<Country[]> {
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/api/v1/locations/countries`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data: Country[] };
+    return body.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function listCurrencies(): Promise<Currency[]> {
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/api/v1/locations/currencies`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data: Currency[] };
+    return body.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function listTimezones(): Promise<Timezone[]> {
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/api/v1/locations/timezones`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data: Timezone[] };
+    return body.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function isStoreSlugAvailable(
+  slug: string,
+): Promise<{ slug: string; available: boolean }> {
+  const res = await fetch(
+    `${PLATFORM_API_URL}/api/v1/stores/slug-available?slug=${encodeURIComponent(slug)}`,
+    { cache: "no-store" },
+  );
+  if (!res.ok) {
+    throw await platformError(res);
+  }
+  const body = (await res.json()) as {
+    data: { slug: string; available: boolean };
+  };
+  return body.data;
 }

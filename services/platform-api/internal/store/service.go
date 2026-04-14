@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/mark8ly/platform-api/internal/authz"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
@@ -147,6 +148,7 @@ func (s *Service) ListByTenant(ctx context.Context, tenantID string) ([]Store, e
 // picker UX / tax).
 type UpdateInput struct {
 	Name            *string
+	Timezone        *string
 	StorefrontTheme json.RawMessage
 }
 
@@ -169,6 +171,20 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*Store
 			return nil, apperrors.BadRequest("invalid_name", "store name must be 200 characters or fewer")
 		}
 		patch["name"] = name
+	}
+	if in.Timezone != nil {
+		tz := strings.TrimSpace(*in.Timezone)
+		if tz == "" {
+			return nil, apperrors.BadRequest("invalid_timezone", "timezone cannot be empty")
+		}
+		if len(tz) > 64 {
+			return nil, apperrors.BadRequest("invalid_timezone", "timezone must be 64 characters or fewer")
+		}
+		// IANA source of truth: reject anything Go's tzdata can't load.
+		if _, err := time.LoadLocation(tz); err != nil {
+			return nil, apperrors.BadRequest("invalid_timezone", "timezone is not a valid IANA identifier")
+		}
+		patch["timezone"] = tz
 	}
 	if len(in.StorefrontTheme) > 0 {
 		if !json.Valid(in.StorefrontTheme) {

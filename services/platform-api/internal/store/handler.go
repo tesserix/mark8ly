@@ -213,6 +213,7 @@ func (h *Handler) listByTenant(c *gin.Context) {
 
 type updateStoreRequest struct {
 	Name            *string         `json:"name"`
+	Timezone        *string         `json:"timezone"`
 	StorefrontTheme json.RawMessage `json:"storefront_theme"`
 	// UID carries the calling user's GIP uid so we can run the FGA
 	// can_edit_store_settings check. Same pattern the tenant handler
@@ -255,6 +256,7 @@ func (h *Handler) updateStore(c *gin.Context) {
 
 	s, err := h.svc.Update(c.Request.Context(), storeID, UpdateInput{
 		Name:            req.Name,
+		Timezone:        req.Timezone,
 		StorefrontTheme: req.StorefrontTheme,
 	})
 	if err != nil {

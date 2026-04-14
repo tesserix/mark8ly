@@ -59,7 +59,7 @@ test("audit images: admin vs storefront", async ({ browser }) => {
   for (const r of rows.slice(0, 15)) {
     const a = r.locator("a").first();
     const href = (await a.getAttribute("href")) ?? "";
-    const title = ((await a.textContent()) ?? "").trim().split("/")[0];
+    const title = ((await a.textContent()) ?? "").trim().split("/")[0] ?? "";
     const rowText = (await r.textContent()) ?? "";
     const status = /Active/.test(rowText) ? "active" : /Draft/.test(rowText) ? "draft" : "?";
     adminReport.push({ title, status, editHref: href });

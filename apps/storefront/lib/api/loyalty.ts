@@ -1,8 +1,13 @@
 // apps/storefront/lib/api/loyalty.ts
 //
-// Client-side API helpers for storefront loyalty endpoints.
+// Server-side helpers for the storefront loyalty endpoints. All callers
+// are Server Components (/account/* pages, layout, sign-in actions), so
+// we hit marketplace-api directly with the server-only MARKETPLACE_API_URL
+// and attach the X-Storefront-Key. Never import this from a client bundle
+// — the storefront key must not ship to the browser.
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API_BASE =
+  process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 
 interface LoyaltyProgramPublic {
   is_active: boolean;

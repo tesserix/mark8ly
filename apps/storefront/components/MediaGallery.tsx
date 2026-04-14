@@ -6,7 +6,7 @@
 // thumbnail strip. Click a thumbnail to switch the main view.
 // Falls back to a placeholder when the product has no media.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import type { StorefrontMedia } from "@/lib/api/marketplace-api";
 
@@ -15,8 +15,20 @@ interface MediaGalleryProps {
   productTitle: string;
 }
 
+const AUTO_CYCLE_MS = 4000;
+
 export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const pausedRef = useRef(false);
+
+  useEffect(() => {
+    if (media.length <= 1) return;
+    const id = window.setInterval(() => {
+      if (pausedRef.current) return;
+      setActiveIndex((i) => (i + 1) % media.length);
+    }, AUTO_CYCLE_MS);
+    return () => window.clearInterval(id);
+  }, [media.length]);
 
   if (media.length === 0) {
     return (
@@ -28,20 +40,28 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
     );
   }
 
-  const active = media[activeIndex] ?? media[0]!;
-
   return (
     <div className="flex flex-col gap-3">
-      {/* Main image */}
-      <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]">
-        <Image
-          src={active.url}
-          alt={active.alt ?? productTitle}
-          fill
-          sizes="(min-width: 1024px) 50vw, 100vw"
-          priority
-          className="object-cover"
-        />
+      {/* Main image — cross-fades between all images on an auto cycle */}
+      <div
+        className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]"
+        onMouseEnter={() => (pausedRef.current = true)}
+        onMouseLeave={() => (pausedRef.current = false)}
+      >
+        {media.map((m, i) => (
+          <Image
+            key={`${m.url}-${i}`}
+            src={m.url}
+            alt={m.alt ?? productTitle}
+            fill
+            sizes="(min-width: 1024px) 50vw, 100vw"
+            priority={i === 0}
+            className={[
+              "object-cover transition-opacity duration-700 ease-in-out",
+              i === activeIndex ? "opacity-100" : "opacity-0",
+            ].join(" ")}
+          />
+        ))}
         {media.length > 1 && (
           <p
             className="absolute bottom-3 right-3 rounded-full bg-[color:var(--ink-900)]/60 px-2.5 py-1 text-xs text-[color:var(--paper-200)]"

@@ -5,7 +5,6 @@
 // and categories, renders a grid with search, category filter, and
 // pagination.
 
-import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
@@ -22,6 +21,7 @@ import { StorefrontNav } from "@/components/StorefrontNav";
 import { ProductSearchInput } from "@/components/ProductSearchInput";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { Pagination } from "@/components/Pagination";
+import { ProductCardMedia } from "@/components/ProductCardMedia";
 
 export const dynamic = "force-dynamic";
 
@@ -142,7 +142,6 @@ function ProductGrid({ products }: { products: StorefrontProduct[] }) {
 }
 
 function ProductCard({ product }: { product: StorefrontProduct }) {
-  const cover = product.media[0];
   const min = formatPrice(product.price_range.min, product.price_range.currency_code);
   const max = formatPrice(product.price_range.max, product.price_range.currency_code);
   const isRange = product.price_range.min !== product.price_range.max;
@@ -152,21 +151,7 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
         href={`/products/${encodeURIComponent(product.handle)}`}
         className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
       >
-        <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]">
-          {cover ? (
-            <Image
-              src={cover.url}
-              alt={cover.alt ?? product.title}
-              fill
-              sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-widest text-[color:var(--ink-900)] opacity-30">
-              No image
-            </div>
-          )}
-        </div>
+        <ProductCardMedia media={product.media} alt={product.title} />
         <div className="mt-4 flex items-start justify-between gap-3">
           <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--ink-900)] group-hover:underline">
             {product.title}

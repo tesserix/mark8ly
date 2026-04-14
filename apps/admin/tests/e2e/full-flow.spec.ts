@@ -33,6 +33,7 @@ const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET ?? "";
 const DELHIVERY_API_KEY = process.env.DELHIVERY_API_KEY ?? "";
 const CUSTOMER_EMAIL = process.env.CUSTOMER_EMAIL ?? "";
 const CUSTOMER_PASSWORD = process.env.CUSTOMER_PASSWORD ?? "";
+const TENANT_NAME = process.env.TENANT_NAME ?? "india store";
 
 const PRODUCT_TITLE = `E2E Linen Shirt ${Date.now().toString(36)}`;
 const PRODUCT_HANDLE = `e2e-linen-${Date.now().toString(36)}`;
@@ -57,7 +58,7 @@ test.describe("full flow: admin + storefront", () => {
     ]);
 
     if (page.url().includes("/pick-tenant")) {
-      await page.getByText(/india store/i).first().click();
+      await page.getByText(new RegExp(TENANT_NAME, "i")).first().click();
       await page.waitForURL(/\/dashboard/, { timeout: 20_000 }).catch(() => {});
     }
 
@@ -83,31 +84,35 @@ test.describe("full flow: admin + storefront", () => {
     await page.goto("/settings/payments");
     await page.waitForLoadState("networkidle").catch(() => {});
 
-    // Find Razorpay card and click "Add credentials"
-    const razorpayCard = page.locator("text=Razorpay").first();
+    // Razorpay card → "Add credentials" (first time) or "Edit"
+    const razorpayCard = page.locator("article").filter({ hasText: /^Razorpay/ }).first();
     await expect(razorpayCard).toBeVisible({ timeout: 10_000 });
 
-    const addBtn = page.getByRole("button", { name: /add credentials/i }).first();
-    if (await addBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await addBtn.click();
+    const toggleBtn = razorpayCard.getByRole("button", { name: /^(Add credentials|Edit)$/ });
+    await toggleBtn.click();
+
+    // Inline form expands with IDs razorpay-api-key / razorpay-secret-key
+    const apiKey = page.locator("#razorpay-api-key");
+    const secretKey = page.locator("#razorpay-secret-key");
+    await expect(apiKey).toBeVisible({ timeout: 5_000 });
+    await apiKey.fill(RAZORPAY_KEY_ID);
+    await secretKey.fill(RAZORPAY_KEY_SECRET);
+
+    // Activate
+    const activeCheckbox = razorpayCard.getByRole("checkbox", { name: /active/i });
+    if (!(await activeCheckbox.isChecked().catch(() => false))) {
+      await activeCheckbox.check();
     }
 
-    // Fill in the Razorpay credentials
-    const keyIdInput = page.getByLabel(/key id/i).or(page.locator('input[name*="key_id"]')).or(page.locator('input[placeholder*="rzp_"]')).first();
-    const keySecretInput = page.getByLabel(/key secret/i).or(page.locator('input[name*="key_secret"]')).or(page.locator('input[type="password"]')).first();
-
-    if (await keyIdInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await keyIdInput.fill(RAZORPAY_KEY_ID);
-      await keySecretInput.fill(RAZORPAY_KEY_SECRET);
-
-      const saveBtn = page.getByRole("button", { name: /save|activate|connect/i }).first();
-      if (await saveBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await saveBtn.click();
-        await page.waitForTimeout(2_000);
-      }
-    }
-
+    await page.getByRole("button", { name: /save configuration/i }).click();
+    await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 15_000 });
     await page.screenshot({ path: "tests/e2e/.audit/flow-02-razorpay.png" });
+
+    // Verify status flipped to "Active" after router.refresh()
+    await page.reload();
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await expect(razorpayCard.getByText(/^Active$/).first()).toBeVisible({ timeout: 10_000 });
+    await page.screenshot({ path: "tests/e2e/.audit/flow-02-razorpay-verified.png" });
     await ctx.close();
   });
 
@@ -125,20 +130,36 @@ test.describe("full flow: admin + storefront", () => {
     await page.goto("/settings/shipping");
     await page.waitForLoadState("networkidle").catch(() => {});
 
-    // Look for Delhivery / shipping config form
-    const apiKeyInput = page.getByLabel(/api key/i).or(page.locator('input[name*="api_key"]')).or(page.locator('input[placeholder*="key"]')).first();
+    const delhiveryCard = page.locator("article").filter({ hasText: /^Delhivery/ }).first();
+    await expect(delhiveryCard).toBeVisible({ timeout: 10_000 });
 
-    if (await apiKeyInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await apiKeyInput.fill(DELHIVERY_API_KEY);
+    const toggleBtn = delhiveryCard.getByRole("button", { name: /^(Add credentials|Edit)$/ });
+    await toggleBtn.click();
 
-      const saveBtn = page.getByRole("button", { name: /save|activate|connect/i }).first();
-      if (await saveBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await saveBtn.click();
-        await page.waitForTimeout(2_000);
-      }
+    await page.locator("#delhivery-api-key").fill(DELHIVERY_API_KEY);
+
+    // Minimal warehouse address so label generation works later.
+    await page.getByLabel(/warehouse name/i).fill("Playwrite Test Warehouse").catch(() => {});
+    await page.getByLabel(/address line 1/i).fill("Plot 12, Industrial Area").catch(() => {});
+    await page.getByLabel(/^city$/i).fill("Bengaluru").catch(() => {});
+    await page.getByLabel(/state|region/i).fill("KA").catch(() => {});
+    await page.getByLabel(/postal|pin/i).fill("560100").catch(() => {});
+    await page.getByLabel(/country/i).fill("IN").catch(() => {});
+    await page.getByLabel(/phone/i).fill("9999999999").catch(() => {});
+
+    const activeCheckbox = delhiveryCard.getByRole("checkbox", { name: /active/i });
+    if (!(await activeCheckbox.isChecked().catch(() => false))) {
+      await activeCheckbox.check();
     }
 
+    await page.getByRole("button", { name: /save configuration/i }).click();
+    await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 15_000 });
     await page.screenshot({ path: "tests/e2e/.audit/flow-03-delhivery.png" });
+
+    await page.reload();
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await expect(delhiveryCard.getByText(/^Active$/).first()).toBeVisible({ timeout: 10_000 });
+    await page.screenshot({ path: "tests/e2e/.audit/flow-03-delhivery-verified.png" });
     await ctx.close();
   });
 

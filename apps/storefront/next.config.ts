@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "storage.googleapis.com" },
       { protocol: "https", hostname: "*.storage.googleapis.com" },
+      { protocol: "https", hostname: "cdn.mark8ly.com" },
+      { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "http", hostname: "localhost" },
       { protocol: "http", hostname: "fake-gcs-server" },
     ],

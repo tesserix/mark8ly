@@ -195,11 +195,38 @@ export interface ActivePromotion {
   link?: string;
 }
 
+export interface FooterLinkItem {
+  label: string;
+  kind: "page" | "url";
+  page_slug?: string;
+  url?: string;
+}
+
+export interface FooterSection {
+  label: string;
+  items: FooterLinkItem[];
+}
+
 export interface StorefrontBranding {
+  // announcement (existing)
   announcement_text?: string;
   announcement_link?: string;
   announcement_bg?: string;
   announcement_active: boolean;
+
+  // footer identity
+  footer_tagline?: string | null;
+  footer_copyright?: string | null;
+
+  // social links
+  social_instagram?: string | null;
+  social_twitter?: string | null;
+  social_facebook?: string | null;
+  social_tiktok?: string | null;
+  social_youtube?: string | null;
+
+  // footer menu
+  footer_sections?: FooterSection[];
 }
 
 export interface StorefrontStoreSummary {

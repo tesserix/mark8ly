@@ -64,6 +64,14 @@ interface AddressFields {
   country_code: string;
 }
 
+interface SavedAddress {
+  id: string;
+  label?: string;
+  line1: string;
+  postal_code?: string;
+  country_code: string;
+}
+
 const EMPTY_ADDRESS: AddressFields = {
   name: "",
   line1: "",
@@ -130,6 +138,13 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // "Save this address to my profile" prompt. Shown only when the
+  // current form address doesn't match any of the customer's saved
+  // addresses (exact-compare on line1 + postal_code + country).
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [saveAddress, setSaveAddress] = useState(false);
+  const [saveAddressLabel, setSaveAddressLabel] = useState<"Home" | "Office" | "Other">("Home");
+
   // Coupon state
   const [couponCode, setCouponCode] = useState<string | null>(null);
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -178,8 +193,28 @@ export default function CheckoutPage() {
     fetchShippingOptions(storeSlug).then((opts) => {
       if (!cancelled) setShippingOptions(opts);
     });
+    // And the customer's saved address book — if the typed address is
+    // new, we prompt the customer to save it after submit.
+    fetch("/api/account/addresses", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { data: SavedAddress[] } | null) => {
+        if (!cancelled && body?.data) setSavedAddresses(body.data);
+      })
+      .catch(() => { /* not signed in — ignore */ });
     return () => { cancelled = true; };
   }, [storeSlug]);
+
+  // Derive whether the current address is already in the book.
+  const addressKey = (line1: string, postal: string, country: string): string =>
+    `${line1.trim().toLowerCase()}|${postal.trim()}|${country.trim().toUpperCase()}`;
+  const currentKey = addressKey(address.line1, address.postal_code, address.country_code);
+  const addressAlreadySaved = savedAddresses.some(
+    (a) => addressKey(a.line1, a.postal_code ?? "", a.country_code) === currentKey,
+  );
+  const canOfferSave =
+    !addressAlreadySaved &&
+    isAddressFilled(address) &&
+    savedAddresses.length < 5;
 
   // Fetch shipping rates when address is filled
   const fetchRates = useCallback(async () => {
@@ -345,6 +380,29 @@ export default function CheckoutPage() {
         );
       } catch {
         // sessionStorage may be unavailable in incognito; fall through.
+      }
+    }
+
+    // If the customer asked to save this shipping address, do that
+    // best-effort — failures shouldn't block the order from completing.
+    if (saveAddress) {
+      try {
+        await fetch("/api/account/addresses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            label: saveAddressLabel,
+            name: address.name,
+            line1: address.line1,
+            line2: address.line2 || undefined,
+            city: address.city,
+            region: address.region || undefined,
+            postal_code: address.postal_code || undefined,
+            country_code: address.country_code,
+          }),
+        });
+      } catch {
+        // ignore — user can still save the address from /account/addresses
       }
     }
 
@@ -535,6 +593,37 @@ export default function CheckoutPage() {
             Shipping address
           </h2>
           <AddressForm address={address} onChange={setAddress} />
+
+          {canOfferSave && (
+            <div className="mt-4 rounded-md border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-3">
+              <label className="flex flex-wrap items-center gap-3 text-sm text-[color:var(--ink-900)]">
+                <input
+                  type="checkbox"
+                  checked={saveAddress}
+                  onChange={(e) => setSaveAddress(e.target.checked)}
+                  className="h-4 w-4 accent-[color:var(--moss-700)]"
+                />
+                <span>Save this address to my profile as</span>
+                <select
+                  value={saveAddressLabel}
+                  onChange={(e) =>
+                    setSaveAddressLabel(e.target.value as "Home" | "Office" | "Other")
+                  }
+                  disabled={!saveAddress}
+                  className="rounded-md border border-[color:var(--ink-900)]/15 bg-white px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
+                >
+                  <option value="Home">Home</option>
+                  <option value="Office">Office</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+            </div>
+          )}
+          {addressAlreadySaved && (
+            <p className="mt-3 text-xs text-[color:var(--ink-900)] opacity-60">
+              This address is already in your address book.
+            </p>
+          )}
         </section>
 
         {/* Shipping method */}

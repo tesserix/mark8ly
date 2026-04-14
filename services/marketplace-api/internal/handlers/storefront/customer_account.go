@@ -151,6 +151,23 @@ func (h *CustomerAccountHandler) CreateAddress(c *gin.Context) {
 		return
 	}
 
+	// Enforce the product-level cap on saved addresses. Five is the
+	// current UI assumption (app/account/addresses); if we ever raise
+	// or tenant-tune this, update both ends together.
+	const maxAddressesPerCustomer = 5
+	var existingCount int64
+	if err := h.db.WithContext(c.Request.Context()).
+		Model(&customer.CustomerAddress{}).
+		Where("customer_id = ?", profile.ID).
+		Count(&existingCount).Error; err == nil &&
+		existingCount >= maxAddressesPerCustomer {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "address_limit_reached",
+			"message": "You've reached the maximum of 5 saved addresses. Remove one to add a new address.",
+		})
+		return
+	}
+
 	addr := &customer.CustomerAddress{
 		TenantID:    profile.TenantID,
 		CustomerID:  profile.ID,

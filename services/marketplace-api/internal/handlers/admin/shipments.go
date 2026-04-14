@@ -131,6 +131,25 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	provider := strings.ToLower(req.Provider)
 	carrierCfg, err := h.repo.GetCarrierConfig(ctx, storeID, provider)
 	if err != nil {
+		if h.logger != nil {
+			// Peek at the raw rows so we can see whether the config exists
+			// but is being filtered out by is_active or provider casing.
+			var found []struct {
+				StoreID  string `gorm:"column:store_id"`
+				Provider string `gorm:"column:provider"`
+				IsActive bool   `gorm:"column:is_active"`
+				Mode     string `gorm:"column:mode"`
+			}
+			_ = h.db.WithContext(ctx).
+				Table("shipping_carrier_configs").
+				Where("store_id = ?", storeID).
+				Find(&found).Error
+			h.logger.Error("shipments: carrier config not found",
+				"store_id", storeID,
+				"provider", provider,
+				"err", err,
+				"rows_for_store", found)
+		}
 		RespondErr(c, apperrors.ValidationFailed("provider",
 			fmt.Sprintf("no carrier config found for provider %q", provider)), h.logger)
 		return

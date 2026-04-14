@@ -175,16 +175,28 @@ func (s *Service) GetByID(ctx context.Context, storeID, id uuid.UUID) (*GiftCard
 	return gc, txns, nil
 }
 
+// normalizeCode accepts any reasonable user-entered format and returns
+// the canonical 26-char uppercase code we stored. Customers copy codes
+// from email (formatted with dashes, e.g. XXXX-XXXX-XXXX-...), from
+// chat (might include spaces or dashes), or paste straight from the
+// database (no dashes). Strip both, uppercase, and move on.
+func normalizeCode(code string) string {
+	s := strings.ToUpper(strings.TrimSpace(code))
+	s = strings.ReplaceAll(s, "-", "")
+	s = strings.ReplaceAll(s, " ", "")
+	return s
+}
+
 // GetByCode returns a gift card by its code within a store.
 // Amendment LOW FIX 8: expose GetByCode as a public method.
 func (s *Service) GetByCode(ctx context.Context, storeID uuid.UUID, code string) (*GiftCard, error) {
-	return s.repo.GetByCode(ctx, s.db, storeID, strings.ToUpper(strings.TrimSpace(code)))
+	return s.repo.GetByCode(ctx, s.db, storeID, normalizeCode(code))
 }
 
 // CheckBalance looks up a gift card by code and returns the balance.
 // Returns domain errors for not-found, expired, or disabled cards.
 func (s *Service) CheckBalance(ctx context.Context, storeID uuid.UUID, code string) (*BalanceResult, error) {
-	gc, err := s.repo.GetByCode(ctx, s.db, storeID, strings.ToUpper(strings.TrimSpace(code)))
+	gc, err := s.repo.GetByCode(ctx, s.db, storeID, normalizeCode(code))
 	if err != nil {
 		return nil, err
 	}

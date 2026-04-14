@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useState } from "react";
+import { Check, Copy } from "lucide-react";
 import type { AdminGiftCard, ListProductsMeta } from "@/lib/api/marketplace-api";
 
 interface GiftCardsListProps {
@@ -33,6 +35,34 @@ function formatCurrency(amount: string, currency: string): string {
   } catch {
     return `${currency} ${amount}`;
   }
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [text]);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        copy();
+      }}
+      aria-label={`Copy ${text}`}
+      title="Copy code"
+      className="ml-1.5 inline-flex items-center rounded p-0.5 text-ink-400 transition hover:text-ink-700"
+    >
+      {copied ? (
+        <Check className="size-3.5 text-moss-700" aria-hidden="true" />
+      ) : (
+        <Copy className="size-3.5" aria-hidden="true" />
+      )}
+    </button>
+  );
 }
 
 export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListProps) {
@@ -93,12 +123,15 @@ export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListP
             {giftCards.map((gc) => (
               <tr key={gc.id} className="border-b border-ink-900/5 hover:bg-paper-200/50">
                 <td className="py-3 pr-4">
-                  <Link
-                    href={`/marketing/gift-cards/${gc.id}`}
-                    className="font-mono text-sm text-moss-700 hover:underline"
-                  >
-                    {gc.code_display}
-                  </Link>
+                  <span className="inline-flex items-center">
+                    <Link
+                      href={`/marketing/gift-cards/${gc.id}`}
+                      className="font-mono text-sm text-moss-700 hover:underline"
+                    >
+                      {gc.code_display}
+                    </Link>
+                    <CopyButton text={gc.code_display} />
+                  </span>
                 </td>
                 <td className="py-3 pr-4 font-serif tabular-nums">
                   {formatCurrency(gc.current_balance, gc.currency_code)}

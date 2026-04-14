@@ -45,6 +45,7 @@ type Deps struct {
 	TicketsHandler           *TicketsHandler
 	ShipmentsHandler         *ShipmentsHandler
 	BrandingHandler          *BrandingHandler
+	PagesHandler             *PagesHandler
 	PlanResolver             *plangate.PlanResolver
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	AuthzMiddleware          *authz.Middleware
@@ -604,6 +605,28 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				brandingGroup.PUT("",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.BrandingEditRole),
 					deps.BrandingHandler.Update)
+			}
+		}
+
+		// Pages — content pages (About, Terms, Privacy, etc.).
+		if deps.PagesHandler != nil {
+			pagesGroup := storeRoute.Group("/pages")
+			{
+				pagesGroup.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.PageViewRole),
+					deps.PagesHandler.List)
+				pagesGroup.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.PageEditRole),
+					deps.PagesHandler.Create)
+				pagesGroup.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.PageViewRole),
+					deps.PagesHandler.Get)
+				pagesGroup.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.PageEditRole),
+					deps.PagesHandler.Update)
+				pagesGroup.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.PageEditRole),
+					deps.PagesHandler.Delete)
 			}
 		}
 	}

@@ -39,7 +39,9 @@ type Deps struct {
 	WishlistHandler *WishlistHandler
 	// B1 branding.
 	BrandingHandler *BrandingHandler
-	Logger          *slog.Logger
+	// Content pages.
+	PagesHandler *PagesHandler
+	Logger       *slog.Logger
 }
 
 // CountryLister is satisfied by country.Handler.ListSupported.
@@ -130,6 +132,12 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		// Branding — B1. Public, cached, no auth.
 		if deps.BrandingHandler != nil {
 			group.GET("/branding", deps.BrandingHandler.Get)
+		}
+
+		// Content pages — public, no auth.
+		if deps.PagesHandler != nil {
+			group.GET("/pages", deps.PagesHandler.List)
+			group.GET("/pages/:pageSlug", deps.PagesHandler.Get)
 		}
 
 		// Loyalty — Marketing M3. Public endpoints, no auth.

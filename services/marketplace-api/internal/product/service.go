@@ -54,6 +54,7 @@ type Service struct {
 	logger             *slog.Logger
 	mediaPublicBaseURL string
 	mediaCacheControl  string
+	vendorLookup       SelfVendorLookup
 }
 
 // Config bundles Service dependencies.
@@ -66,6 +67,11 @@ type Config struct {
 	Logger             *slog.Logger
 	MediaPublicBaseURL string
 	MediaCacheControl  string
+	// VendorLookup resolves the tenant's self-vendor id for Create calls
+	// that don't supply an explicit VendorID. Nil is allowed for tests
+	// that pre-set VendorID on every CreateRequest — production wiring
+	// always supplies a real implementation.
+	VendorLookup SelfVendorLookup
 }
 
 // NewService constructs a Service from cfg.
@@ -83,7 +89,15 @@ func NewService(cfg Config) *Service {
 		logger:             logger,
 		mediaPublicBaseURL: strings.TrimRight(cfg.MediaPublicBaseURL, "/"),
 		mediaCacheControl:  cfg.MediaCacheControl,
+		vendorLookup:       cfg.VendorLookup,
 	}
+}
+
+// SelfVendorLookup resolves a tenant's self-vendor id. Implemented by
+// vendor.Service.GetSelfVendorID. Product.Service uses this to default
+// VendorID on Create since the DB column is NOT NULL post-Phase 1.
+type SelfVendorLookup interface {
+	GetSelfVendorID(ctx context.Context, tenantID string) (string, error)
 }
 
 // ---------- DTOs ----------
@@ -184,6 +198,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Aggregate, er
 	store, err := s.storesRepo.GetByIDForTenant(ctx, req.StoreID, req.TenantID)
 	if err != nil {
 		return nil, apperrors.NotFound("store")
+	}
+
+	// Default VendorID to the tenant's self-vendor when the caller
+	// didn't set one. The vendors table + 000028 NOT NULL guard the
+	// DB, but we resolve at the application layer so the error maps
+	// to a helpful validation_failed code instead of a raw FK error.
+	if err := resolveVendorID(ctx, s.vendorLookup, &req); err != nil {
+		return nil, err
 	}
 
 	// Validate matrix shape before any DB writes.
@@ -504,6 +526,30 @@ func defaultMediaType(t string) string {
 		return MediaTypeImage
 	}
 	return t
+}
+
+// resolveVendorID defaults in.VendorID to the tenant's self-vendor id
+// when the caller left it nil or empty. It is a no-op when lookup is
+// nil (test paths that always supply an explicit VendorID) or when
+// VendorID is already set. Extracted so unit tests can call it directly
+// without a DB.
+func resolveVendorID(ctx context.Context, lookup SelfVendorLookup, in *CreateRequest) error {
+	if in.VendorID != nil && *in.VendorID != "" {
+		return nil
+	}
+	if lookup == nil {
+		return nil
+	}
+	vid, err := lookup.GetSelfVendorID(ctx, in.TenantID)
+	if err != nil {
+		return err
+	}
+	if vid == "" {
+		return apperrors.ValidationFailed("vendor_id",
+			"tenant has no self-vendor; run platform-api's backfill-vendors CLI")
+	}
+	in.VendorID = &vid
+	return nil
 }
 
 func variantSpecsFromInputs(inputs []VariantInput) []VariantSpec {

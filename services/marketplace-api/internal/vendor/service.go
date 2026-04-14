@@ -95,3 +95,18 @@ func (s *Service) UpdateSelfVendor(ctx context.Context, tenantID, name, slug str
 	v.Slug = slug
 	return v, nil
 }
+
+// GetSelfVendorID returns the tenant's self-vendor id, or empty string
+// if none exists. Designed to satisfy product.SelfVendorLookup so the
+// product service can default its VendorID without importing the
+// vendor package's concrete types.
+func (s *Service) GetSelfVendorID(ctx context.Context, tenantID string) (string, error) {
+	v, err := s.repo.GetSelfByTenantID(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	if v == nil {
+		return "", nil
+	}
+	return v.ID, nil
+}

@@ -145,6 +145,7 @@ func main() {
 	// process never mounts the admin group so these dependencies would go
 	// unused there.
 	var adminDeps admin.Deps
+	var vendorSvc *vendor.Service
 	if m == mode.Admin || m == mode.Both {
 		productRepo := product.NewRepository(conn)
 		categoryRepo := category.NewRepository(conn)
@@ -193,6 +194,11 @@ func main() {
 			log.Info("stores: using stub platform client (MARKETPLACE_PLATFORM_API_URL is empty)")
 		}
 
+		// Vendor service — constructed here so productSvc can reference it
+		// as a SelfVendorLookup. The handler is wired later once vendorSvc
+		// is set on the outer var.
+		vendorSvc = vendor.NewService(vendor.NewRepository(conn))
+
 		productSvc := product.NewService(product.Config{
 			DB:                 conn,
 			Repo:               productRepo,
@@ -202,6 +208,7 @@ func main() {
 			Logger:             log,
 			MediaPublicBaseURL: cfg.MediaPublicBaseURL,
 			MediaCacheControl:  cfg.MediaCacheControl,
+			VendorLookup:       vendorSvc,
 		})
 		categorySvc := category.NewService(category.Config{
 			DB:         conn,
@@ -686,7 +693,7 @@ func main() {
 	// expose the /internal vendor endpoints.
 	var vendorHandler *vendor.Handler
 	if m == mode.Admin || m == mode.Both {
-		vendorHandler = vendor.NewHandler(vendor.NewService(vendor.NewRepository(conn)))
+		vendorHandler = vendor.NewHandler(vendorSvc)
 	}
 
 	// Construct Gin engine(s) per MODE.

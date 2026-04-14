@@ -79,6 +79,7 @@ type UpdateInput struct {
 	AnnouncementActive *bool
 	FooterTagline    *string
 	FooterCopyright  *string
+	FooterSections   *[]FooterSection
 	SocialInstagram  *string
 	SocialTwitter    *string
 	SocialFacebook   *string
@@ -182,6 +183,16 @@ func (s *Service) Update(ctx context.Context, in UpdateInput) (*StoreBranding, e
 	}
 	if in.FooterCopyright != nil {
 		b.FooterCopyright = in.FooterCopyright
+	}
+	if in.FooterSections != nil {
+		if err := ValidateFooterSections(*in.FooterSections); err != nil {
+			return nil, err
+		}
+		encoded, err := EncodeFooterSections(*in.FooterSections)
+		if err != nil {
+			return nil, err
+		}
+		b.FooterSections = encoded
 	}
 	if in.SocialInstagram != nil {
 		b.SocialInstagram = in.SocialInstagram

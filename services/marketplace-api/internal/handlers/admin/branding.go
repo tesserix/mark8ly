@@ -26,35 +26,36 @@ func NewBrandingHandler(svc *branding.Service, logger *slog.Logger) *BrandingHan
 
 // BrandingResponse is the wire DTO for store branding.
 type BrandingResponse struct {
-	ID               string  `json:"id"`
-	StoreID          string  `json:"store_id"`
-	LogoURL          *string `json:"logo_url,omitempty"`
-	FaviconURL       *string `json:"favicon_url,omitempty"`
-	Tagline          *string `json:"tagline,omitempty"`
-	ColorBackground  string  `json:"color_background"`
-	ColorText        string  `json:"color_text"`
-	ColorAccent      string  `json:"color_accent"`
-	ColorButtonBg    string  `json:"color_button_bg"`
-	ColorButtonText  string  `json:"color_button_text"`
-	HeadingFont      string  `json:"heading_font"`
-	BodyFont         string  `json:"body_font"`
-	LayoutVariant    string  `json:"layout_variant"`
-	HeroImageURL     *string `json:"hero_image_url,omitempty"`
-	AnnouncementText *string `json:"announcement_text,omitempty"`
-	AnnouncementLink *string `json:"announcement_link,omitempty"`
-	AnnouncementBg   *string `json:"announcement_bg,omitempty"`
-	AnnouncementActive bool  `json:"announcement_active"`
-	FooterTagline    *string `json:"footer_tagline,omitempty"`
-	FooterCopyright  *string `json:"footer_copyright,omitempty"`
-	SocialInstagram  *string `json:"social_instagram,omitempty"`
-	SocialTwitter    *string `json:"social_twitter,omitempty"`
-	SocialFacebook   *string `json:"social_facebook,omitempty"`
-	SocialTiktok     *string `json:"social_tiktok,omitempty"`
-	SocialYoutube    *string `json:"social_youtube,omitempty"`
-	CustomCSS        *string `json:"custom_css,omitempty"`
-	ShowPoweredBy    bool    `json:"show_powered_by"`
-	CreatedAt        string  `json:"created_at"`
-	UpdatedAt        string  `json:"updated_at"`
+	ID                 string                   `json:"id"`
+	StoreID            string                   `json:"store_id"`
+	LogoURL            *string                  `json:"logo_url,omitempty"`
+	FaviconURL         *string                  `json:"favicon_url,omitempty"`
+	Tagline            *string                  `json:"tagline,omitempty"`
+	ColorBackground    string                   `json:"color_background"`
+	ColorText          string                   `json:"color_text"`
+	ColorAccent        string                   `json:"color_accent"`
+	ColorButtonBg      string                   `json:"color_button_bg"`
+	ColorButtonText    string                   `json:"color_button_text"`
+	HeadingFont        string                   `json:"heading_font"`
+	BodyFont           string                   `json:"body_font"`
+	LayoutVariant      string                   `json:"layout_variant"`
+	HeroImageURL       *string                  `json:"hero_image_url,omitempty"`
+	AnnouncementText   *string                  `json:"announcement_text,omitempty"`
+	AnnouncementLink   *string                  `json:"announcement_link,omitempty"`
+	AnnouncementBg     *string                  `json:"announcement_bg,omitempty"`
+	AnnouncementActive bool                     `json:"announcement_active"`
+	FooterTagline      *string                  `json:"footer_tagline,omitempty"`
+	FooterCopyright    *string                  `json:"footer_copyright,omitempty"`
+	FooterSections     []branding.FooterSection `json:"footer_sections,omitempty"`
+	SocialInstagram    *string                  `json:"social_instagram,omitempty"`
+	SocialTwitter      *string                  `json:"social_twitter,omitempty"`
+	SocialFacebook     *string                  `json:"social_facebook,omitempty"`
+	SocialTiktok       *string                  `json:"social_tiktok,omitempty"`
+	SocialYoutube      *string                  `json:"social_youtube,omitempty"`
+	CustomCSS          *string                  `json:"custom_css,omitempty"`
+	ShowPoweredBy      bool                     `json:"show_powered_by"`
+	CreatedAt          string                   `json:"created_at"`
+	UpdatedAt          string                   `json:"updated_at"`
 }
 
 func toBrandingResponse(b branding.StoreBranding) BrandingResponse {
@@ -89,6 +90,9 @@ func toBrandingResponse(b branding.StoreBranding) BrandingResponse {
 		CreatedAt:          b.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:          b.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
+	if sections, err := branding.ParseFooterSections(b.FooterSections); err == nil {
+		resp.FooterSections = sections
+	}
 	return resp
 }
 
@@ -111,31 +115,32 @@ func (h *BrandingHandler) Get(c *gin.Context) {
 
 // UpdateBrandingRequest is the request body for PUT .../branding.
 type UpdateBrandingRequest struct {
-	LogoURL          *string `json:"logo_url"`
-	FaviconURL       *string `json:"favicon_url"`
-	Tagline          *string `json:"tagline"`
-	ColorBackground  *string `json:"color_background"`
-	ColorText        *string `json:"color_text"`
-	ColorAccent      *string `json:"color_accent"`
-	ColorButtonBg    *string `json:"color_button_bg"`
-	ColorButtonText  *string `json:"color_button_text"`
-	HeadingFont      *string `json:"heading_font"`
-	BodyFont         *string `json:"body_font"`
-	LayoutVariant    *string `json:"layout_variant"`
-	HeroImageURL     *string `json:"hero_image_url"`
-	AnnouncementText *string `json:"announcement_text"`
-	AnnouncementLink *string `json:"announcement_link"`
-	AnnouncementBg   *string `json:"announcement_bg"`
-	AnnouncementActive *bool `json:"announcement_active"`
-	FooterTagline    *string `json:"footer_tagline"`
-	FooterCopyright  *string `json:"footer_copyright"`
-	SocialInstagram  *string `json:"social_instagram"`
-	SocialTwitter    *string `json:"social_twitter"`
-	SocialFacebook   *string `json:"social_facebook"`
-	SocialTiktok     *string `json:"social_tiktok"`
-	SocialYoutube    *string `json:"social_youtube"`
-	CustomCSS        *string `json:"custom_css"`
-	ShowPoweredBy    *bool   `json:"show_powered_by"`
+	LogoURL            *string                   `json:"logo_url"`
+	FaviconURL         *string                   `json:"favicon_url"`
+	Tagline            *string                   `json:"tagline"`
+	ColorBackground    *string                   `json:"color_background"`
+	ColorText          *string                   `json:"color_text"`
+	ColorAccent        *string                   `json:"color_accent"`
+	ColorButtonBg      *string                   `json:"color_button_bg"`
+	ColorButtonText    *string                   `json:"color_button_text"`
+	HeadingFont        *string                   `json:"heading_font"`
+	BodyFont           *string                   `json:"body_font"`
+	LayoutVariant      *string                   `json:"layout_variant"`
+	HeroImageURL       *string                   `json:"hero_image_url"`
+	AnnouncementText   *string                   `json:"announcement_text"`
+	AnnouncementLink   *string                   `json:"announcement_link"`
+	AnnouncementBg     *string                   `json:"announcement_bg"`
+	AnnouncementActive *bool                     `json:"announcement_active"`
+	FooterTagline      *string                   `json:"footer_tagline"`
+	FooterCopyright    *string                   `json:"footer_copyright"`
+	FooterSections     *[]branding.FooterSection `json:"footer_sections"`
+	SocialInstagram    *string                   `json:"social_instagram"`
+	SocialTwitter      *string                   `json:"social_twitter"`
+	SocialFacebook     *string                   `json:"social_facebook"`
+	SocialTiktok       *string                   `json:"social_tiktok"`
+	SocialYoutube      *string                   `json:"social_youtube"`
+	CustomCSS          *string                   `json:"custom_css"`
+	ShowPoweredBy      *bool                     `json:"show_powered_by"`
 }
 
 // Update handles PUT /admin/stores/:storeId/branding.
@@ -178,6 +183,7 @@ func (h *BrandingHandler) Update(c *gin.Context) {
 		AnnouncementActive: req.AnnouncementActive,
 		FooterTagline:      req.FooterTagline,
 		FooterCopyright:    req.FooterCopyright,
+		FooterSections:     req.FooterSections,
 		SocialInstagram:    req.SocialInstagram,
 		SocialTwitter:      req.SocialTwitter,
 		SocialFacebook:     req.SocialFacebook,

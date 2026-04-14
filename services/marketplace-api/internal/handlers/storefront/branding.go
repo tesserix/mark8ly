@@ -56,9 +56,10 @@ type PublicBrandingResponse struct {
 	AnnouncementLink   *string `json:"announcement_link,omitempty"`
 	AnnouncementBg     *string `json:"announcement_bg,omitempty"`
 	AnnouncementActive bool    `json:"announcement_active"`
-	FooterTagline      *string `json:"footer_tagline,omitempty"`
-	FooterCopyright    *string `json:"footer_copyright,omitempty"`
-	SocialInstagram    *string `json:"social_instagram,omitempty"`
+	FooterTagline      *string                  `json:"footer_tagline,omitempty"`
+	FooterCopyright    *string                  `json:"footer_copyright,omitempty"`
+	FooterSections     []branding.FooterSection `json:"footer_sections,omitempty"`
+	SocialInstagram    *string                  `json:"social_instagram,omitempty"`
 	SocialTwitter      *string `json:"social_twitter,omitempty"`
 	SocialFacebook     *string `json:"social_facebook,omitempty"`
 	SocialTiktok       *string `json:"social_tiktok,omitempty"`
@@ -68,7 +69,7 @@ type PublicBrandingResponse struct {
 }
 
 func toPublicBrandingResponse(b branding.StoreBranding) PublicBrandingResponse {
-	return PublicBrandingResponse{
+	resp := PublicBrandingResponse{
 		LogoURL:            b.LogoURL,
 		FaviconURL:         b.FaviconURL,
 		Tagline:            b.Tagline,
@@ -95,6 +96,10 @@ func toPublicBrandingResponse(b branding.StoreBranding) PublicBrandingResponse {
 		CustomCSS:          b.CustomCSS,
 		ShowPoweredBy:      b.ShowPoweredBy,
 	}
+	if sections, err := branding.ParseFooterSections(b.FooterSections); err == nil {
+		resp.FooterSections = sections
+	}
+	return resp
 }
 
 // Get handles GET /storefront/stores/:storeSlug/branding.

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 )
 
 // StoreBranding is the GORM model for the store_branding table.
@@ -28,9 +29,10 @@ type StoreBranding struct {
 	AnnouncementLink *string   `gorm:"column:announcement_link"`
 	AnnouncementBg   *string   `gorm:"column:announcement_bg;type:varchar(7)"`
 	AnnouncementActive bool    `gorm:"column:announcement_active;not null;default:false"`
-	FooterTagline    *string   `gorm:"column:footer_tagline;type:varchar(300)"`
-	FooterCopyright  *string   `gorm:"column:footer_copyright;type:varchar(200)"`
-	SocialInstagram  *string   `gorm:"column:social_instagram;type:varchar(300)"`
+	FooterTagline    *string        `gorm:"column:footer_tagline;type:varchar(300)"`
+	FooterCopyright  *string        `gorm:"column:footer_copyright;type:varchar(200)"`
+	FooterSections   datatypes.JSON `gorm:"column:footer_sections;type:jsonb;not null;default:'[]'::jsonb"`
+	SocialInstagram  *string        `gorm:"column:social_instagram;type:varchar(300)"`
 	SocialTwitter    *string   `gorm:"column:social_twitter;type:varchar(300)"`
 	SocialFacebook   *string   `gorm:"column:social_facebook;type:varchar(300)"`
 	SocialTiktok     *string   `gorm:"column:social_tiktok;type:varchar(300)"`
@@ -59,4 +61,19 @@ var AllowedLayouts = map[string]bool{
 	"editorial":       true,
 	"minimal":         true,
 	"hero-focus":      true,
+}
+
+// FooterSection is the parsed shape of an element of the
+// footer_sections JSONB column. Use branding.ParseFooterSections to
+// decode the raw datatypes.JSON into []FooterSection.
+type FooterSection struct {
+	Label string          `json:"label"`
+	Items []FooterLinkItem `json:"items"`
+}
+
+type FooterLinkItem struct {
+	Label    string `json:"label"`
+	Kind     string `json:"kind"`               // "page" or "url"
+	PageSlug string `json:"page_slug,omitempty"`
+	URL      string `json:"url,omitempty"`
 }

@@ -47,6 +47,28 @@ async function adminSignIn(page: Page): Promise<void> {
   }
 }
 
+test("0. admin: bump stock on first Active product", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const ctx = await browser.newContext({ baseURL: ADMIN_URL, viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await adminSignIn(page);
+  await page.goto("/products?status=active&page_size=100");
+  await page.waitForLoadState("networkidle").catch(() => {});
+  const rows = await page.locator("table tbody tr").all();
+  expect(rows.length).toBeGreaterThan(0);
+  const editHref = await rows[0]!.locator("a").first().getAttribute("href");
+  await page.goto(editHref!);
+  await page.waitForLoadState("networkidle").catch(() => {});
+  const stock = page.getByLabel(/^stock$/i);
+  await expect(stock).toBeVisible({ timeout: 10_000 });
+  await stock.fill("25");
+  const saveBtn = page.getByRole("button", { name: /save changes/i });
+  await saveBtn.click();
+  await expect(saveBtn).toBeEnabled({ timeout: 20_000 });
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await ctx.close();
+});
+
 test("1. customer: place + pay for a new order", async ({ browser }) => {
   test.setTimeout(180_000);
   const sfCtx = await browser.newContext({ baseURL: STOREFRONT_URL, viewport: { width: 1440, height: 900 } });
@@ -60,12 +82,28 @@ test("1. customer: place + pay for a new order", async ({ browser }) => {
   await page.waitForURL(/\/(account|products|)$/, { timeout: 15_000 }).catch(() => {});
   await sfCtx.storageState({ path: "tests/e2e/.audit/customer-state.json" });
 
-  // Use whatever first product the shop exposes (stock-checking happens later).
+  // Walk the shop grid until we land on a product whose add-to-cart is
+  // enabled. Storefront stock badges make this picking visible to a
+  // human watching the run.
   await page.goto("/products");
   await page.waitForLoadState("networkidle").catch(() => {});
-  const firstProduct = await page.locator("ul li a").first().getAttribute("href");
-  expect(firstProduct).toBeTruthy();
-  await page.goto(firstProduct!);
+  const handles = await page.$$eval("ul li a", (as) =>
+    as
+      .map((a) => (a as HTMLAnchorElement).getAttribute("href") || "")
+      .filter((h) => h.startsWith("/products/"))
+      .map((h) => h.replace("/products/", "")),
+  );
+  let addBtnReady = false;
+  for (const h of handles) {
+    await page.goto(`/products/${h}?t=${Date.now()}`);
+    await page.waitForLoadState("networkidle").catch(() => {});
+    const outOfStock = await page
+      .getByRole("button", { name: /out of stock/i })
+      .isVisible({ timeout: 1_000 })
+      .catch(() => false);
+    if (!outOfStock) { addBtnReady = true; break; }
+  }
+  expect(addBtnReady, "at least one product must be in stock").toBeTruthy();
   const addBtn = page.getByRole("button", { name: /^add to cart$/i });
   await expect(addBtn).toBeEnabled({ timeout: 15_000 });
   await addBtn.click();
@@ -133,25 +171,22 @@ test("2. admin: create Delhivery shipping label", async ({ browser }) => {
   await page.goto(`/orders/${state.orderId}`);
   await page.waitForLoadState("networkidle").catch(() => {});
 
-  // Click "Create shipping label" if present (form reveals provider +
-  // service selects, then a submit button).
-  const createBtn = page.getByRole("button", { name: /create shipping label/i });
-  if (await createBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await createBtn.click();
-  }
-  // The form is in ShippingLabelPanel — has provider + service selects
-  // and a Create button that posts to the admin shipments endpoint.
-  const providerSelect = page.locator("select").filter({ hasText: /provider|delhivery/i }).first();
-  if (await providerSelect.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await providerSelect.selectOption("delhivery").catch(() => {});
-  }
-  const submit = page.getByRole("button", { name: /^create$/i }).or(
-    page.getByRole("button", { name: /create label/i }),
-  );
-  if (await submit.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await submit.first().click();
-  }
-  await page.waitForTimeout(4_000);
+  // Click "Create shipping label" — reveals the carrier + service form.
+  await page.getByRole("button", { name: /create shipping label/i }).click();
+
+  // The selects are Radix-based, not native <select>. Open each via
+  // its trigger (placeholder text doubles as the accessible name),
+  // then pick the option by visible label.
+  await page.getByRole("combobox").first().click();
+  await page.getByRole("option", { name: /delhivery/i }).click();
+  await page.getByRole("combobox").nth(1).click();
+  await page.getByRole("option", { name: /standard/i }).first().click();
+
+  const submit = page.getByRole("button", { name: /^create label$/i });
+  await expect(submit).toBeEnabled({ timeout: 5_000 });
+  await submit.click();
+  // The backend call to Delhivery + persist takes ~2-4s.
+  await page.waitForTimeout(5_000);
   await page.screenshot({ path: "tests/e2e/.audit/delivery-01-label.png", fullPage: true });
 
   // Retrieve the shipmentId via GET /api/v1/admin/.../shipments.
@@ -179,58 +214,30 @@ test("2. admin: create Delhivery shipping label", async ({ browser }) => {
 });
 
 test("3. advance shipment status with pauses (admin)", async ({ browser }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   test.skip(!state.orderId, "need an order id");
   const ctx = await browser.newContext({ baseURL: ADMIN_URL, viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   await adminSignIn(page);
 
-  // Find storeId + shipmentId via the admin proxy.
-  // Admin's Next.js proxy reads store from subdomain; orders/:id/shipments.
-  const storeId = page.url().split("/orders")[0]?.split("/").pop() ?? "";
-  void storeId; // not needed if admin proxy uses subdomain
-
-  // Easier path: scrape shipment info from admin order page after a reload.
   await page.goto(`/orders/${state.orderId}`);
   await page.waitForLoadState("networkidle").catch(() => {});
-  const html = await page.content();
-  // The shipmentId is embedded in data-* or href. Best effort: look
-  // for a uuid-shaped string inside a shipment-related section.
-  const uuidMatches = html.match(/\"id\":\"([0-9a-f-]{36})\"/g) ?? [];
-  const uuids = uuidMatches.map((s) => s.replace(/\"id\":\"/, "").replace(/\"/g, ""));
-  console.log("[advance] candidate uuids on page:", uuids.length);
-  // Filter out the orderId itself.
-  const candidates = uuids.filter((u) => u !== state.orderId);
-  state.shipmentId = candidates[0];
-  console.log("[advance] shipmentId:", state.shipmentId);
 
-  if (!state.shipmentId) {
-    test.skip(true, "could not locate shipmentId on admin page");
-    return;
-  }
-
-  // Walk the status ladder with pauses so a human watching the
-  // customer page can see each transition.
-  const steps: Array<{ status: string; label: string }> = [
-    { status: "in_transit", label: "In transit" },
-    { status: "out_for_delivery", label: "Out for delivery" },
-    { status: "delivered", label: "Delivered" },
-  ];
-  const tenantSub = new URL(ADMIN_URL).hostname.split("-admin.")[0] ?? "";
-  // The admin proxy uses the subdomain to scope the store; we call the
-  // marketplace-api directly via the admin's server proxy would require
-  // BFF auth. Simpler: use page.request which carries the same cookies.
-  for (const s of steps) {
-    const patchUrl =
-      `${ADMIN_URL}/api/admin/stores/${tenantSub}/orders/${state.orderId}/shipments/${state.shipmentId}/status`;
-    const res = await page.request.patch(patchUrl, {
-      headers: { "Content-Type": "application/json" },
-      data: { status: s.status },
-    });
-    console.log(`[advance] ${s.status}: ${res.status()}`);
+  // Click each advance button in turn, with a pause between so a
+  // watcher on the customer page can see the timeline evolve.
+  const labels = ["Mark in transit", "Out for delivery", "Mark delivered"];
+  for (const label of labels) {
+    const btn = page.getByRole("button", { name: new RegExp(`^${label}$`, "i") });
+    await expect(btn).toBeEnabled({ timeout: 15_000 });
+    await btn.click();
+    console.log(`[advance] clicked: ${label}`);
+    // Wait for the server action + revalidation to settle.
+    await page.waitForTimeout(2_000);
+    // And then hold before the next step to let the customer see it.
     await page.waitForTimeout(PAUSE_MS);
   }
 
+  await page.screenshot({ path: "tests/e2e/.audit/delivery-03-admin-advanced.png", fullPage: true });
   await ctx.close();
 });
 

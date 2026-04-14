@@ -21,6 +21,7 @@ import type { ShipmentResponse } from "@/lib/api/shipping-api";
 import {
   createShipmentAction,
   getShipmentAction,
+  updateShipmentStatusAction,
   type ShippingActionResult,
 } from "@/app/(admin)/orders/[id]/shipping-actions";
 
@@ -94,6 +95,12 @@ export function ShippingLabelPanel({
           Shipping
         </h2>
         <ShipmentDetails shipment={shipment} />
+        <AdvanceStatusBar
+          storeId={storeId}
+          orderId={orderId}
+          shipment={shipment}
+          onUpdated={setShipment}
+        />
       </section>
     );
   }
@@ -161,6 +168,63 @@ function ShipmentDetails({ shipment }: { shipment: ShipmentResponse }) {
           Print label
         </a>
       )}
+    </div>
+  );
+}
+
+// AdvanceStatusBar — three inline buttons the merchant clicks as the
+// package moves. Each writes an order_event row so the customer's
+// delivery timeline reflects the new state on its next poll.
+function AdvanceStatusBar({
+  storeId,
+  orderId,
+  shipment,
+  onUpdated,
+}: {
+  storeId: string;
+  orderId: string;
+  shipment: ShipmentResponse;
+  onUpdated: (s: ShipmentResponse) => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [target, setTarget] = useState<string | null>(null);
+
+  const disabledFor = (status: string): boolean => {
+    if (pending) return true;
+    const order = ["created", "in_transit", "out_for_delivery", "delivered"];
+    const cur = order.indexOf(shipment.status);
+    const next = order.indexOf(status);
+    return cur >= 0 && next >= 0 && next <= cur;
+  };
+
+  function advance(status: string) {
+    setTarget(status);
+    startTransition(async () => {
+      const r = await updateShipmentStatusAction(storeId, orderId, shipment.id, { status });
+      setTarget(null);
+      if (r.ok && r.data) onUpdated(r.data);
+    });
+  }
+
+  const steps: Array<{ status: string; label: string }> = [
+    { status: "in_transit", label: "Mark in transit" },
+    { status: "out_for_delivery", label: "Out for delivery" },
+    { status: "delivered", label: "Mark delivered" },
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      {steps.map((s) => (
+        <button
+          key={s.status}
+          type="button"
+          onClick={() => advance(s.status)}
+          disabled={disabledFor(s.status)}
+          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/20 px-3 py-1.5 text-xs text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {target === s.status ? "Updating…" : s.label}
+        </button>
+      ))}
     </div>
   );
 }

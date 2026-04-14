@@ -148,3 +148,30 @@ export async function createShipment(
   }
   return { ok: true, data: (await res.json()) as ShipmentResponse };
 }
+
+/**
+ * Advance a shipment through its tracking lifecycle:
+ *   in_transit → out_for_delivery → delivered
+ * (exception is also accepted and does not progress the chain).
+ * Writes an order_events row on the backend so the customer-facing
+ * timeline reflects the change on its next poll.
+ */
+export async function updateShipmentStatus(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  input: { status: string; description?: string },
+  session: SessionHeaders,
+): Promise<MutationResult<ShipmentResponse>> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/shipments/${shipmentId}/status`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    cache: "no-store",
+    headers: commonHeaders(session),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as ShipmentResponse };
+}

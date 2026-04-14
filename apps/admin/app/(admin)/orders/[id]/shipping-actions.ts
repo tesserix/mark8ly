@@ -10,6 +10,7 @@ import { headers } from "next/headers";
 
 import {
   createShipment,
+  updateShipmentStatus,
   getOrderShipment,
   type CreateShipmentInput,
   type ShipmentResponse,
@@ -103,6 +104,36 @@ export async function createShipmentAction(
     ctx.storeId,
     orderId,
     { provider: input.provider.trim(), service: input.service.trim() },
+    { userId: ctx.userId, tenantId: ctx.tenantId },
+  );
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: { code: result.error.code, message: result.error.message },
+    };
+  }
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true, data: result.data };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Advance shipment status — drives the customer-facing delivery timeline.
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function updateShipmentStatusAction(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  input: { status: string; description?: string },
+): Promise<ShippingActionResult> {
+  const ctx = await readContext(storeId);
+  if (!ctx) return noSession();
+
+  const result = await updateShipmentStatus(
+    ctx.storeId,
+    orderId,
+    shipmentId,
+    input,
     { userId: ctx.userId, tenantId: ctx.tenantId },
   );
   if (!result.ok) {

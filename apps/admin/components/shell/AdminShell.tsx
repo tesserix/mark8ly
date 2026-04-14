@@ -47,9 +47,10 @@ import {
 
 import { RoleBadge } from "@repo/ui/role-badge";
 
-import type { Membership, TenantRole } from "@/lib/api/platform-api";
+import type { Membership, Store, TenantRole } from "@/lib/api/platform-api";
 import { UserMenu } from "./UserMenu";
 import { TenantSwitcher } from "./TenantSwitcher";
+import { StoreSwitcher } from "./StoreSwitcher";
 
 /**
  * AdminShell wraps every authenticated admin page with the sidebar +
@@ -63,6 +64,8 @@ interface AdminShellProps {
   role?: TenantRole;
   memberships?: Membership[];
   currentTenantId?: string;
+  stores?: Store[];
+  currentStoreId?: string;
 }
 
 interface NavLeaf {
@@ -167,6 +170,8 @@ function AdminShellFrame({
   role,
   memberships,
   currentTenantId,
+  stores,
+  currentStoreId,
 }: AdminShellProps) {
   const pathname = usePathname();
   const { state, toggleSidebar } = useSidebar();
@@ -217,7 +222,7 @@ function AdminShellFrame({
               <TenantSwitcher
                 memberships={memberships}
                 currentTenantId={currentTenantId}
-                label="Switch store"
+                label="Switch company"
               />
             </div>
           ) : (
@@ -226,6 +231,15 @@ function AdminShellFrame({
                 {storeLabel}
               </p>
             )
+          )}
+          {stores && stores.length > 1 && currentStoreId && (
+            <div className="mt-4 group-data-[collapsible=icon]:hidden">
+              <StoreSwitcher
+                stores={stores}
+                currentStoreId={currentStoreId}
+                label="Switch store"
+              />
+            </div>
           )}
         </SidebarHeader>
 

@@ -77,8 +77,22 @@ export function StoresList({
         toast.error("Couldn't switch store", res.message);
         return;
       }
-      // Full reload so middleware re-reads x-session-store-id from
-      // the new cookie and every server component re-fetches.
+      // Admin is hosted at {store-slug}-admin.mark8ly.com, so switching
+      // stores needs to redirect to the target store's subdomain — a
+      // plain reload would keep you on the old store's host and the
+      // middleware would switch you back.
+      if (typeof window !== "undefined") {
+        const host = window.location.host;
+        const rootDomain = host
+          .replace(/^[^.]+-admin\./, "")
+          .replace(/^admin\./, "");
+        const isProdLike = rootDomain.includes("mark8ly.com");
+        const target = stores.find((s) => s.id === storeId);
+        if (target?.slug && isProdLike) {
+          window.location.href = `https://${target.slug}-admin.${rootDomain}/dashboard`;
+          return;
+        }
+      }
       window.location.reload();
     });
   }

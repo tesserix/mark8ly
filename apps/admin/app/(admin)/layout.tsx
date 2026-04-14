@@ -27,7 +27,7 @@ export default async function AdminLayout({
 }: {
   children: ReactNode;
 }) {
-  const { tenantName, email, role, memberships, tenantId } =
+  const { tenantName, email, role, memberships, tenantId, stores, currentStore } =
     await getServerSessionContext();
 
   return (
@@ -38,6 +38,8 @@ export default async function AdminLayout({
         role={role}
         memberships={memberships}
         currentTenantId={tenantId}
+        stores={stores}
+        currentStoreId={currentStore?.id}
       >
         {children}
       </AdminShell>

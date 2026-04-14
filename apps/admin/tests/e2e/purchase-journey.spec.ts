@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 
 /**
@@ -19,6 +20,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
 const TENANT_NAME = process.env.TENANT_NAME ?? "";
 const CUSTOMER_EMAIL = process.env.CUSTOMER_EMAIL ?? "";
 const CUSTOMER_PASSWORD = process.env.CUSTOMER_PASSWORD ?? "";
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET ?? "";
 
 test.describe.configure({ mode: "serial" });
 
@@ -38,7 +40,12 @@ async function signInAdmin(page: Page): Promise<void> {
 }
 
 // Shared state across the serial tests
-const state: { productEditUrl?: string; productHandle?: string; orderId?: string } = {};
+const state: {
+  productEditUrl?: string;
+  productHandle?: string;
+  orderId?: string;
+  paymentToken?: string;
+} = {};
 
 test("0. admin: ensure Delhivery warehouse origin is configured (Bengaluru 560100)", async ({ browser }) => {
   test.setTimeout(60_000);
@@ -231,6 +238,19 @@ test("3. customer: fill checkout and place order", async ({ browser }) => {
   if (redirected) {
     state.orderId = page.url().split("/orders/")[1]?.split(/[?#]/)[0];
     console.log(`[order] redirected. orderId=${state.orderId}`);
+
+    // Pull payment_token out of the sessionStorage the checkout page
+    // stashed for us; the verify-payment step needs it.
+    const stash = await page
+      .evaluate((id) => sessionStorage.getItem(`mark8ly.pendingPayment.${id}`), state.orderId)
+      .catch(() => null);
+    if (stash) {
+      try {
+        const parsed = JSON.parse(stash) as { paymentToken?: string };
+        if (parsed.paymentToken) state.paymentToken = parsed.paymentToken;
+      } catch { /* ignore */ }
+    }
+    console.log(`[order] payment_token=${state.paymentToken ?? "<missing>"}`);
   } else {
     // Maybe the widget opened first. Dump state for debugging.
     console.log(`[order] no redirect. current url=${page.url()}`);
@@ -240,6 +260,48 @@ test("3. customer: fill checkout and place order", async ({ browser }) => {
 
   await page.screenshot({ path: "tests/e2e/.audit/journey-04-after-submit.png", fullPage: true });
   expect(state.orderId, "order id captured from URL").toBeTruthy();
+  await ctx.close();
+});
+
+test("3b. customer: complete Razorpay payment via verify endpoint", async ({ browser }) => {
+  test.setTimeout(60_000);
+  test.skip(!state.orderId || !state.paymentToken, "no order / payment_token to verify");
+  test.skip(!RAZORPAY_KEY_SECRET, "RAZORPAY_KEY_SECRET env not provided");
+
+  const ctx = await browser.newContext({ baseURL: STOREFRONT_URL, viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+
+  // Synthesize a Razorpay-shaped client callback and POST to verify-payment.
+  // Real users hit this same endpoint via the PaymentPrompt widget; we just
+  // skip the iframe by signing the body server-side with the test secret.
+  const razorpayPaymentID = `pay_e2e_${Date.now().toString(36)}`;
+  const sig = crypto
+    .createHmac("sha256", RAZORPAY_KEY_SECRET)
+    .update(`${state.paymentToken}|${razorpayPaymentID}`)
+    .digest("hex");
+
+  const verifyRes = await page.request.post(
+    `${STOREFRONT_URL}/api/orders/${state.orderId}/verify-payment`,
+    {
+      headers: { "Content-Type": "application/json" },
+      data: {
+        razorpay_order_id: state.paymentToken,
+        razorpay_payment_id: razorpayPaymentID,
+        razorpay_signature: sig,
+      },
+    },
+  );
+  const text = await verifyRes.text();
+  console.log(`[verify] status=${verifyRes.status()} body=${text}`);
+  expect(verifyRes.ok(), `verify-payment ok (got ${verifyRes.status()}: ${text})`).toBeTruthy();
+
+  // Re-fetch the order page and confirm payment_status flipped to paid.
+  await page.goto(`/orders/${state.orderId}`);
+  await page.waitForLoadState("networkidle").catch(() => {});
+  const body = (await page.textContent("main")) ?? "";
+  console.log(`[verify] order page contains "paid"?`, /paid/i.test(body));
+  expect(body.toLowerCase()).toContain("paid");
+  await page.screenshot({ path: "tests/e2e/.audit/journey-04b-paid.png", fullPage: true });
   await ctx.close();
 });
 

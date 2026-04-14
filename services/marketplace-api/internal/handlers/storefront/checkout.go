@@ -16,6 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -147,6 +148,18 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 
 	prefix := storePrefixFromSlug(store.Slug)
 
+	// Stamp the order with the signed-in customer's profile id so
+	// /account/orders surfaces it. Mirrors the same logic in the
+	// CheckoutExtHandler path; both endpoints are routed through
+	// OptionalCustomerAuth.
+	var customerID *uuid.UUID
+	if profileVal, exists := c.Get(CustomerProfileKey); exists {
+		if profile, ok := profileVal.(*customer.CustomerProfile); ok && profile != nil {
+			id := profile.ID
+			customerID = &id
+		}
+	}
+
 	// Sequence allocation happens inside Service.Create's transaction
 	// (C6 fix: atomic with order insert to prevent burned numbers).
 	in := order.CreateInput{
@@ -155,6 +168,7 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 		StorePrefix:    prefix,
 		OrderNumberSeq: 0, // allocated inside Create tx
 		IdempotencyKey: req.IdempotencyKey,
+		CustomerID:     customerID,
 		CustomerEmail:  req.CustomerEmail,
 		CustomerName:   req.CustomerName,
 		Items:          checkoutToServiceItems(req.Items),

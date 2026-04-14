@@ -54,7 +54,19 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 	keyMW := RequireStorefrontKey(deps.StorefrontKey)
 	storeMW := StoreContext(deps.SlugCache)
 
-	group := router.Group("/storefront/stores/:storeSlug", keyMW, storeMW)
+	// OptionalCustomerAuth is hoisted to the top of the chain so it runs
+	// for EVERY storefront handler — including /checkout, which needs the
+	// customer profile to stamp orders.customer_id when the shopper is
+	// signed in. Previously this middleware was applied via group.Use()
+	// AFTER checkout was registered (gin's Use is not retroactive), which
+	// silently dropped the customer id on every order and left /account/
+	// orders empty even for completed purchases.
+	middlewares := []gin.HandlerFunc{keyMW, storeMW}
+	if deps.CustomerService != nil {
+		middlewares = append(middlewares,
+			OptionalCustomerAuth(deps.CustomerSessionSecret, deps.CustomerService, deps.Logger))
+	}
+	group := router.Group("/storefront/stores/:storeSlug", middlewares...)
 	{
 		group.GET("/products", deps.Handler.List)
 		group.GET("/products/:handle", deps.Handler.GetByHandle)
@@ -141,13 +153,10 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 
 	// C1 — Customer account routes (auth required).
 	if deps.CustomerAccountHandler != nil {
-		optionalAuth := OptionalCustomerAuth(deps.CustomerSessionSecret, deps.CustomerService, deps.Logger)
 		requireAuth := RequireCustomerAuth()
-
-		// Apply optional auth to ALL storefront routes so customer context
-		// is available even on product pages (for future review submission).
-		group.Use(optionalAuth)
-
+		// OptionalCustomerAuth is already mounted at the top of the group
+		// (see RegisterStorefront prologue), so /account/* only needs the
+		// strict-require wrapper on top.
 		account := group.Group("/account", requireAuth)
 		{
 			account.GET("", deps.CustomerAccountHandler.GetProfile)

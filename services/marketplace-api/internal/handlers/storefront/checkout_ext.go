@@ -21,6 +21,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
+	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/discount"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
@@ -297,6 +298,19 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 
 	prefix := storePrefixFromSlug(store.Slug)
 
+	// If the shopper is signed in, OptionalCustomerAuth has attached the
+	// customer profile to the gin context. Threading its ID onto the order
+	// is what makes /account/orders list the purchase on the customer's
+	// side; without it the order is created "anonymous" and only shows up
+	// in the admin view.
+	var customerID *uuid.UUID
+	if profileVal, exists := c.Get(CustomerProfileKey); exists {
+		if profile, ok := profileVal.(*customer.CustomerProfile); ok && profile != nil {
+			id := profile.ID
+			customerID = &id
+		}
+	}
+
 	// Sequence allocation happens inside Service.Create's transaction
 	// (C6 fix: atomic with order insert to prevent burned numbers).
 	in := order.CreateInput{
@@ -305,6 +319,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		StorePrefix:    prefix,
 		OrderNumberSeq: 0, // allocated inside Create tx
 		IdempotencyKey: req.IdempotencyKey,
+		CustomerID:     customerID,
 		CustomerEmail:  req.CustomerEmail,
 		CustomerName:   req.CustomerName,
 		Items:          checkoutToServiceItems(req.Items),

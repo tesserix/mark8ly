@@ -38,6 +38,10 @@ bin/
 *.test
 *.out
 vendor/
+# Allow the Vendor entity package (Phase 1 vendor foundation) despite the
+# broad `vendor/` Go-modules rule above.
+!services/*/internal/vendor/
+!services/*/internal/vendor/**
 
 # Generated dev env
 infra/dev/.env.local.generated

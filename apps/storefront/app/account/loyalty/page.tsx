@@ -2,7 +2,7 @@ import { cookies, headers } from "next/headers";
 import { slugFromHost } from "@/lib/slug";
 import { decodeSession } from "@/lib/auth";
 import { LoyaltyDashboard } from "@/components/loyalty/LoyaltyDashboard";
-import { getProgram, getMe, enrollCustomer } from "@/lib/api/loyalty";
+import { getProgram, getMe } from "@/lib/api/loyalty";
 
 export const metadata = {
   title: "Loyalty",
@@ -47,24 +47,11 @@ export default async function LoyaltyAccountPage() {
     );
   }
 
-  // Lazy-enroll: customers who signed up before the loyalty program was
-  // active miss the sign-in-time auto-enroll. Catch them here so visiting
-  // the page is enough to receive the signup bonus + get a referral code.
-  let customer = await getMe(storeSlug, storefrontKey, session.email);
-  if (!customer) {
-    const referralCode = cookieStore.get("mp_referral")?.value;
-    customer = await enrollCustomer(
-      storeSlug,
-      storefrontKey,
-      session.email,
-      undefined,
-      referralCode,
-    );
-    // Note: cookie deletion from a server component isn't reliable; the
-    // signup action handles the burn-after-use path. If this lazy-enroll
-    // ran for a legitimate referral, it was honored before the dashboard
-    // renders.
-  }
+  // Enrollment is handled by the /account layout, so by the time we reach
+  // this page the customer is either enrolled or we had a transient backend
+  // error. getMe returns null in the latter case — LoyaltyDashboard shows
+  // a recoverable message then.
+  const customer = await getMe(storeSlug, storefrontKey, session.email);
 
   return (
     <div className="space-y-6">

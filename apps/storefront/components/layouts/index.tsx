@@ -1,3 +1,4 @@
+import type { HomepageContent } from "@/lib/api/marketplace-api";
 import type { PublicStore } from "@/lib/api/platform-api";
 import type { StorefrontTheme } from "@repo/ui/storefront-theme";
 
@@ -20,28 +21,30 @@ import { StoryLedLayout } from "./StoryLedLayout";
 export function StorefrontLayoutRenderer({
   store,
   theme,
+  content,
 }: {
   store: PublicStore;
   theme: StorefrontTheme;
+  content?: HomepageContent | null;
 }) {
   switch (theme.layout) {
     case "classic-shop":
-      return <ClassicShopLayout store={store} theme={theme} />;
+      return <ClassicShopLayout store={store} theme={theme} content={content} />;
     case "split-hero":
-      return <SplitHeroLayout store={store} theme={theme} />;
+      return <SplitHeroLayout store={store} theme={theme} content={content} />;
     case "catalog-first":
-      return <CatalogFirstLayout store={store} theme={theme} />;
+      return <CatalogFirstLayout store={store} theme={theme} content={content} />;
     case "story-led":
-      return <StoryLedLayout store={store} theme={theme} />;
+      return <StoryLedLayout store={store} theme={theme} content={content} />;
     case "minimal":
-      return <MinimalLayout store={store} theme={theme} />;
+      return <MinimalLayout store={store} theme={theme} content={content} />;
     case "bold-promo":
-      return <BoldPromoLayout store={store} theme={theme} />;
+      return <BoldPromoLayout store={store} theme={theme} content={content} />;
     case "compact":
-      return <CompactLayout store={store} theme={theme} />;
+      return <CompactLayout store={store} theme={theme} content={content} />;
     case "editorial":
     default:
-      return <EditorialLayout store={store} theme={theme} />;
+      return <EditorialLayout store={store} theme={theme} content={content} />;
   }
 }
 

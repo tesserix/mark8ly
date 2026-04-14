@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 
+import type { HomepageContent } from "@/lib/api/marketplace-api";
 import type { PublicStore } from "@/lib/api/platform-api";
 import type { StorefrontTheme } from "@repo/ui/storefront-theme";
 
@@ -15,6 +16,7 @@ import type { StorefrontTheme } from "@repo/ui/storefront-theme";
 export interface LayoutProps {
   store: PublicStore;
   theme: StorefrontTheme;
+  content?: HomepageContent | null;
 }
 
 /* ------------------------------------------------------------

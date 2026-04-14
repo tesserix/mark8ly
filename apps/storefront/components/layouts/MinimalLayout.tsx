@@ -1,3 +1,5 @@
+import { HeroSection } from "@/components/homepage/HeroSection";
+import { SectionsRenderer } from "@/components/homepage/SectionsRenderer";
 import {
   Eyebrow,
   HeroTitle,
@@ -13,13 +15,17 @@ import {
  * For merchants with extreme confidence in their imagery. A centered
  * mark, a massive product frame, a single action. Nothing else.
  */
-export function MinimalLayout({ store, theme }: LayoutProps) {
+export function MinimalLayout({ store, theme, content }: LayoutProps) {
   return (
     <article className="mx-auto max-w-4xl space-y-20 py-12 text-center">
-      <div className="space-y-6">
-        <Eyebrow theme={theme}>Now open</Eyebrow>
-        <HeroTitle store={store} theme={theme} align="center" size="lg" />
-      </div>
+      {content?.hero !== undefined ? (
+        <HeroSection hero={content.hero} theme={theme} fallbackHeading={store.name} />
+      ) : (
+        <div className="space-y-6">
+          <Eyebrow theme={theme}>Now open</Eyebrow>
+          <HeroTitle store={store} theme={theme} align="center" size="lg" />
+        </div>
+      )}
 
       <ProductSlot
         theme={theme}
@@ -41,6 +47,10 @@ export function MinimalLayout({ store, theme }: LayoutProps) {
           <LinkCta theme={theme}>About us</LinkCta>
         </div>
       </div>
+
+      {content?.sections && content.sections.length > 0 ? (
+        <SectionsRenderer sections={content.sections} theme={theme} storeSlug={store.slug} />
+      ) : null}
     </article>
   );
 }

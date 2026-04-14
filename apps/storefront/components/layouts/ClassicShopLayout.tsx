@@ -1,3 +1,5 @@
+import { HeroSection } from "@/components/homepage/HeroSection";
+import { SectionsRenderer } from "@/components/homepage/SectionsRenderer";
 import {
   HeroTitle,
   LinkCta,
@@ -16,7 +18,7 @@ import {
  * The surface system + theme tokens carry the brand so the
  * conventional structure never reads as generic.
  */
-export function ClassicShopLayout({ store, theme }: LayoutProps) {
+export function ClassicShopLayout({ store, theme, content }: LayoutProps) {
   return (
     <article className="space-y-16">
       <nav
@@ -33,24 +35,28 @@ export function ClassicShopLayout({ store, theme }: LayoutProps) {
         ))}
       </nav>
 
-      <section className="mx-auto max-w-3xl space-y-6 py-6 text-center">
-        <p
-          className="text-[11px] font-semibold uppercase tracking-[0.24em]"
-          style={{ color: `${theme.colors.accent}D9` }}
-        >
-          Spring collection · Live now
-        </p>
-        <HeroTitle store={store} theme={theme} align="center" size="lg" />
-        <p className="mx-auto max-w-xl text-lg leading-8 opacity-75">
-          A clean storefront for merchants who want familiar footing without
-          sacrificing craft.
-        </p>
-        <div className="flex justify-center pt-2">
-          <PrimaryButton theme={theme} size="lg">
-            Shop everything
-          </PrimaryButton>
-        </div>
-      </section>
+      {content?.hero !== undefined ? (
+        <HeroSection hero={content.hero} theme={theme} fallbackHeading={store.name} />
+      ) : (
+        <section className="mx-auto max-w-3xl space-y-6 py-6 text-center">
+          <p
+            className="text-[11px] font-semibold uppercase tracking-[0.24em]"
+            style={{ color: `${theme.colors.accent}D9` }}
+          >
+            Spring collection · Live now
+          </p>
+          <HeroTitle store={store} theme={theme} align="center" size="lg" />
+          <p className="mx-auto max-w-xl text-lg leading-8 opacity-75">
+            A clean storefront for merchants who want familiar footing without
+            sacrificing craft.
+          </p>
+          <div className="flex justify-center pt-2">
+            <PrimaryButton theme={theme} size="lg">
+              Shop everything
+            </PrimaryButton>
+          </div>
+        </section>
+      )}
 
       <section>
         <SectionLabel
@@ -93,6 +99,10 @@ export function ClassicShopLayout({ store, theme }: LayoutProps) {
           </div>
         ))}
       </section>
+
+      {content?.sections && content.sections.length > 0 ? (
+        <SectionsRenderer sections={content.sections} theme={theme} storeSlug={store.slug} />
+      ) : null}
     </article>
   );
 }

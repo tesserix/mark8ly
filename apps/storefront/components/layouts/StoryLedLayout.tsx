@@ -1,3 +1,5 @@
+import { HeroSection } from "@/components/homepage/HeroSection";
+import { SectionsRenderer } from "@/components/homepage/SectionsRenderer";
 import {
   Eyebrow,
   HeroTitle,
@@ -15,17 +17,21 @@ import {
  * image, pull quote, then a gentle product lead-in at the bottom.
  * For founder-led brands where the why matters more than the what.
  */
-export function StoryLedLayout({ store, theme }: LayoutProps) {
+export function StoryLedLayout({ store, theme, content }: LayoutProps) {
   return (
     <article className="mx-auto max-w-4xl space-y-16">
-      <header className="space-y-6">
-        <Eyebrow theme={theme}>A story · Founded 2026</Eyebrow>
-        <HeroTitle store={store} theme={theme} size="lg" />
-        <p className="max-w-2xl text-xl leading-9 opacity-80">
-          {store.name} began as a single question: what if a store felt like a
-          letter from the people who made it?
-        </p>
-      </header>
+      {content?.hero !== undefined ? (
+        <HeroSection hero={content.hero} theme={theme} fallbackHeading={store.name} />
+      ) : (
+        <header className="space-y-6">
+          <Eyebrow theme={theme}>A story · Founded 2026</Eyebrow>
+          <HeroTitle store={store} theme={theme} size="lg" />
+          <p className="max-w-2xl text-xl leading-9 opacity-80">
+            {store.name} began as a single question: what if a store felt like a
+            letter from the people who made it?
+          </p>
+        </header>
+      )}
 
       <section className="grid gap-8 sm:grid-cols-[0.4fr_0.6fr] sm:items-start">
         <ProductSlot theme={theme} label="Workshop" ratio="aspect-[4/5]" />
@@ -70,6 +76,10 @@ export function StoryLedLayout({ store, theme }: LayoutProps) {
           <LinkCta theme={theme}>Browse the catalog</LinkCta>
         </div>
       </footer>
+
+      {content?.sections && content.sections.length > 0 ? (
+        <SectionsRenderer sections={content.sections} theme={theme} storeSlug={store.slug} />
+      ) : null}
     </article>
   );
 }

@@ -1,3 +1,5 @@
+import { HeroSection } from "@/components/homepage/HeroSection";
+import { SectionsRenderer } from "@/components/homepage/SectionsRenderer";
 import {
   Eyebrow,
   HeroTitle,
@@ -22,33 +24,37 @@ import {
  * The whole page reads left-to-right like a spread — left rail of
  * text, right rail of imagery — never centered hero + card grid.
  */
-export function EditorialLayout({ store, theme }: LayoutProps) {
+export function EditorialLayout({ store, theme, content }: LayoutProps) {
   return (
     <article className="space-y-20">
-      <section className="grid gap-10 lg:grid-cols-12 lg:items-end">
-        <div className="space-y-6 lg:col-span-7">
-          <Eyebrow theme={theme}>Issue 01 · Now open</Eyebrow>
-          <HeroTitle store={store} theme={theme} size="xl" />
-          <p className="max-w-xl text-lg leading-8 opacity-75">
-            A considered storefront for {store.name.toLowerCase()} — a place
-            where the catalog feels written, not assembled.
-          </p>
-          <div className="flex flex-wrap items-center gap-4 pt-2">
-            <PrimaryButton theme={theme} size="lg">
-              Shop the edit
-            </PrimaryButton>
-            <LinkCta theme={theme}>Read the story</LinkCta>
+      {content?.hero !== undefined ? (
+        <HeroSection hero={content.hero} theme={theme} fallbackHeading={store.name} />
+      ) : (
+        <section className="grid gap-10 lg:grid-cols-12 lg:items-end">
+          <div className="space-y-6 lg:col-span-7">
+            <Eyebrow theme={theme}>Issue 01 · Now open</Eyebrow>
+            <HeroTitle store={store} theme={theme} size="xl" />
+            <p className="max-w-xl text-lg leading-8 opacity-75">
+              A considered storefront for {store.name.toLowerCase()} — a place
+              where the catalog feels written, not assembled.
+            </p>
+            <div className="flex flex-wrap items-center gap-4 pt-2">
+              <PrimaryButton theme={theme} size="lg">
+                Shop the edit
+              </PrimaryButton>
+              <LinkCta theme={theme}>Read the story</LinkCta>
+            </div>
           </div>
-        </div>
-        <aside className="lg:col-span-5">
-          <ProductSlot
-            theme={theme}
-            label="Cover story"
-            ratio="aspect-[4/5]"
-            size="lg"
-          />
-        </aside>
-      </section>
+          <aside className="lg:col-span-5">
+            <ProductSlot
+              theme={theme}
+              label="Cover story"
+              ratio="aspect-[4/5]"
+              size="lg"
+            />
+          </aside>
+        </section>
+      )}
 
       <Marquee
         theme={theme}
@@ -104,6 +110,10 @@ export function EditorialLayout({ store, theme }: LayoutProps) {
         </div>
         <ProductSlot theme={theme} label="Workshop" ratio="aspect-[5/4]" />
       </section>
+
+      {content?.sections && content.sections.length > 0 ? (
+        <SectionsRenderer sections={content.sections} theme={theme} storeSlug={store.slug} />
+      ) : null}
     </article>
   );
 }

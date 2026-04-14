@@ -1,3 +1,5 @@
+import { HeroSection } from "@/components/homepage/HeroSection";
+import { SectionsRenderer } from "@/components/homepage/SectionsRenderer";
 import {
   LinkCta,
   ProductSlot,
@@ -13,7 +15,7 @@ import {
  * catalogs with less editorial overhead — the storefront version of
  * a properly-organized workbench.
  */
-export function CompactLayout({ store, theme }: LayoutProps) {
+export function CompactLayout({ store, theme, content }: LayoutProps) {
   return (
     <article className="grid gap-10 lg:grid-cols-[14rem_minmax(0,1fr)]">
       <aside className="space-y-6 lg:sticky lg:top-6 lg:self-start">
@@ -76,6 +78,10 @@ export function CompactLayout({ store, theme }: LayoutProps) {
             </div>
           ))}
         </div>
+
+        {content?.sections && content.sections.length > 0 ? (
+          <SectionsRenderer sections={content.sections} theme={theme} storeSlug={store.slug} />
+        ) : null}
       </div>
     </article>
   );

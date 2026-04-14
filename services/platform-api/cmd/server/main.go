@@ -16,6 +16,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	// Embed the IANA tzdata so time.LoadLocation works in scratch / slim
+	// Alpine images that don't ship /usr/share/zoneinfo. Used by the store
+	// timezone validator in PATCH /internal/stores/:id.
+	_ "time/tzdata"
 
 	platformapi "github.com/mark8ly/platform-api"
 	"github.com/mark8ly/platform-api/internal/auth"

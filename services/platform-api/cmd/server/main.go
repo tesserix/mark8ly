@@ -27,6 +27,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/gipadmin"
 	"github.com/mark8ly/platform-api/internal/invitation"
 	"github.com/mark8ly/platform-api/internal/location"
+	"github.com/mark8ly/platform-api/internal/marketplaceapi"
 	"github.com/mark8ly/platform-api/internal/notification"
 	"github.com/mark8ly/platform-api/internal/onboarding"
 	"github.com/mark8ly/platform-api/internal/outbox"
@@ -144,6 +145,8 @@ func main() {
 	)
 	verifHandler := verification.NewHandler(verifSvc)
 
+	vendorClient := marketplaceapi.NewVendorClient(cfg.MarketplaceAPIURL)
+
 	onboardingSvc := onboarding.NewService(onboarding.Config{
 		DB:                    conn,
 		Repo:                  onboarding.NewRepository(conn),
@@ -154,6 +157,7 @@ func main() {
 		AdminURLTemplate:      cfg.AdminBaseURLTemplate,
 		StorefrontURLTemplate: cfg.StorefrontBaseURLTemplate,
 		SupportEmail:          cfg.EmailFrom,
+		VendorClient:          vendorClient,
 	})
 	onboardingHandler := onboarding.NewHandler(onboardingSvc, verifSvc)
 

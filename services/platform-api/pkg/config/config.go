@@ -48,6 +48,13 @@ type Config struct {
 	// Dev: http://localhost:4202; prod: https://admin.mark8ly.com.
 	AdminResetBaseURL string `envconfig:"ADMIN_RESET_BASE_URL" default:"http://localhost:4202"`
 
+	// MarketplaceAPIURL is the base URL of the marketplace-api admin
+	// service (internal endpoints). Platform-api calls it after
+	// onboarding to create a tenant's self-vendor. Phase 1 of the
+	// tenant/vendor/store refactor. Default targets the in-cluster
+	// Knative admin revision; override with an env var for local dev.
+	MarketplaceAPIURL string `envconfig:"MARKETPLACE_API_URL" default:"http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8086"`
+
 	// GIP (Google Identity Platform) admin settings used by the
 	// password-reset flow. ProjectID + TenantID are required in prod;
 	// WebAPIKey is the public Firebase Web API key. If any of the

@@ -131,27 +131,30 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	provider := strings.ToLower(req.Provider)
 	carrierCfg, err := h.repo.GetCarrierConfig(ctx, storeID, provider)
 	if err != nil {
-		if h.logger != nil {
-			// Peek at the raw rows so we can see whether the config exists
-			// but is being filtered out by is_active or provider casing.
-			var found []struct {
-				StoreID  string `gorm:"column:store_id"`
-				Provider string `gorm:"column:provider"`
-				IsActive bool   `gorm:"column:is_active"`
-				Mode     string `gorm:"column:mode"`
-			}
-			_ = h.db.WithContext(ctx).
-				Table("shipping_carrier_configs").
-				Where("store_id = ?", storeID).
-				Find(&found).Error
-			h.logger.Error("shipments: carrier config not found",
-				"store_id", storeID,
-				"provider", provider,
-				"err", err,
-				"rows_for_store", found)
+		// Debug echo — return the diagnostic rows directly so we can see
+		// whether (a) no row exists, (b) provider casing is off, or
+		// (c) is_active is false. Temporary; remove once deploy is stable.
+		var found []struct {
+			StoreID  string `gorm:"column:store_id" json:"store_id"`
+			Provider string `gorm:"column:provider" json:"provider"`
+			IsActive bool   `gorm:"column:is_active" json:"is_active"`
+			Mode     string `gorm:"column:mode" json:"mode"`
 		}
-		RespondErr(c, apperrors.ValidationFailed("provider",
-			fmt.Sprintf("no carrier config found for provider %q", provider)), h.logger)
+		_ = h.db.WithContext(ctx).
+			Table("shipping_carrier_configs").
+			Where("store_id = ?", storeID).
+			Find(&found).Error
+		if h.logger != nil {
+			h.logger.Error("shipments: carrier config not found",
+				"store_id", storeID, "provider", provider,
+				"rows_for_store_count", len(found))
+		}
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error":          "validation_failed",
+			"message":        fmt.Sprintf("no carrier config found for provider %q", provider),
+			"debug_store_id": storeID,
+			"debug_rows":     found,
+		})
 		return
 	}
 

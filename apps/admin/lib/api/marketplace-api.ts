@@ -731,6 +731,146 @@ export async function bulkProductAction(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Pages CMS — admin store content pages
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AdminPage {
+  id: string;
+  store_id: string;
+  slug: string;
+  title: string;
+  body: string;
+  seo_title: string | null;
+  seo_description: string | null;
+  published: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePageInput {
+  slug: string;
+  title: string;
+  body?: string;
+  seo_title?: string | null;
+  seo_description?: string | null;
+  published?: boolean;
+  sort_order?: number;
+}
+
+export interface UpdatePageInput {
+  slug?: string;
+  title?: string;
+  body?: string;
+  seo_title?: string | null;
+  seo_description?: string | null;
+  published?: boolean;
+  sort_order?: number;
+}
+
+export async function listPages(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<AdminPage[]> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/pages`,
+    {
+      cache: "no-store",
+      headers: readHeaders(session),
+    },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return [];
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: listPages ${res.status}`);
+  }
+  // Backend returns a bare array (c.JSON(http.StatusOK, resp) where resp is []PageResponse).
+  return (await res.json()) as AdminPage[];
+}
+
+export async function getPage(
+  storeId: string,
+  pageId: string,
+  session: SessionHeaders,
+): Promise<AdminPage | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/pages/${pageId}`,
+    {
+      cache: "no-store",
+      headers: readHeaders(session),
+    },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: getPage ${res.status}`);
+  }
+  return (await res.json()) as AdminPage;
+}
+
+export async function createPage(
+  storeId: string,
+  input: CreatePageInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminPage>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/pages`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminPage };
+}
+
+export async function updatePage(
+  storeId: string,
+  pageId: string,
+  input: UpdatePageInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminPage>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/pages/${pageId}`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminPage };
+}
+
+export async function deletePage(
+  storeId: string,
+  pageId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/pages/${pageId}`,
+    {
+      method: "DELETE",
+      cache: "no-store",
+      headers: readHeaders(session),
+    },
+  );
+  if (res.status === 204 || res.ok) {
+    return { ok: true, data: true };
+  }
+  return { ok: false, error: await parseMutationError(res) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Orders slice 1 — admin orders, returns, abandoned-carts (M4 backend).
 // Phase 1: list types + listOrders + getOrder. Detail/mutation methods land
 // in Phase 2.

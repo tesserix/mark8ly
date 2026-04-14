@@ -3,9 +3,13 @@ package page
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+
+	apperrors "github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
 // Repository is the GORM-backed data access for pages.
@@ -21,7 +25,10 @@ func NewRepository(db *gorm.DB) *Repository {
 // DB defaults. Violates the pages_store_slug_idx unique index if the
 // (store_id, slug) pair already exists.
 func (r *Repository) Create(ctx context.Context, p *Page) error {
-	return r.db.WithContext(ctx).Create(p).Error
+	if err := r.db.WithContext(ctx).Create(p).Error; err != nil {
+		return translatePageUniqueViolation(err, p.Slug)
+	}
+	return nil
 }
 
 // GetByID returns the page with that id or nil if not found.
@@ -73,11 +80,35 @@ func (r *Repository) ListByStore(ctx context.Context, storeID uuid.UUID, publish
 // Update applies a patch map to the page. Uses GORM's map-based Updates
 // so only supplied keys are written — unset fields are preserved.
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, patch map[string]any) error {
-	return r.db.WithContext(ctx).Model(&Page{}).Where("id = ?", id).Updates(patch).Error
+	attempted := ""
+	if v, ok := patch["slug"].(string); ok {
+		attempted = v
+	}
+	if err := r.db.WithContext(ctx).Model(&Page{}).Where("id = ?", id).Updates(patch).Error; err != nil {
+		return translatePageUniqueViolation(err, attempted)
+	}
+	return nil
 }
 
 // Delete removes the page row. Safe to call with a non-existent id;
 // GORM returns nil with zero rows affected.
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&Page{}).Error
+}
+
+// translatePageUniqueViolation maps PG unique violations on the
+// pages_store_slug_idx index to apperrors.SlugTaken. Any other
+// violation or non-23505 error is returned wrapped for debuggability.
+func translatePageUniqueViolation(err error, attemptedSlug string) error {
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return err
+	}
+	if pgErr.ConstraintName == "pages_store_slug_idx" {
+		return apperrors.SlugTaken(attemptedSlug, attemptedSlug+"-2")
+	}
+	return fmt.Errorf("page: unique violation on %s: %w", pgErr.ConstraintName, err)
 }

@@ -4,11 +4,13 @@ package page
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	apperrors "github.com/mark8ly/marketplace-api/pkg/apperrors"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
@@ -165,6 +167,8 @@ func TestRepository_Create_DuplicateSlug_Errors(t *testing.T) {
 		Title:    "Second",
 	})
 	require.Error(t, err, "inserting duplicate (store_id, slug) should violate the unique index")
+	require.True(t, errors.Is(err, apperrors.ErrSlugTaken),
+		"expected SlugTaken, got %v", err)
 
 	// Different store_id with same slug → must succeed
 	otherStoreID := uuid.New()

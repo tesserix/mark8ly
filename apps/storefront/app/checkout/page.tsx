@@ -636,9 +636,31 @@ export default function CheckoutPage() {
           </h2>
           <div aria-live="polite" aria-atomic="true">
           {!isAddressFilled(address) ? (
-            <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-40">
-              Enter your shipping address to see available methods.
-            </p>
+            <div className="mt-4 space-y-2">
+              <p className="text-sm text-[color:var(--ink-900)] opacity-60">
+                Enter your shipping address above to see live rates.
+              </p>
+              {shippingOptions.length > 0 && (
+                <div className="rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-4 py-3 text-xs text-[color:var(--ink-900)] opacity-80">
+                  <p className="mb-1 font-semibold uppercase tracking-wider opacity-70">
+                    This store ships via
+                  </p>
+                  <ul className="space-y-1">
+                    {shippingOptions.map((o) => (
+                      <li key={o.carrier} className="flex flex-wrap items-baseline gap-1.5">
+                        <span className="font-medium capitalize">{o.carrier}</span>
+                        <span className="opacity-60">
+                          ({o.services.map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(" / ")})
+                        </span>
+                        <span className="opacity-60">
+                          — ships to {o.supported_countries.join(", ")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           ) : loadingRates ? (
             <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-40">
               Loading shipping rates...

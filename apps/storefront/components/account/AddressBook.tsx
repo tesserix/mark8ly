@@ -24,6 +24,49 @@ interface Address {
 const MAX_ADDRESSES = 5;
 const LABELS = ["Home", "Office", "Other"] as const;
 
+// Tiny inline-SVG icons so we don't pull in a whole icon pack for
+// three labels. Stroke-only, 1em, inherits text color.
+function LabelIcon({ label, className = "h-4 w-4" }: { label: string; className?: string }) {
+  const common = {
+    className,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+  const normalized = (label || "Home").toLowerCase();
+  if (normalized === "home") {
+    // House with door
+    return (
+      <svg {...common}>
+        <path d="M3 11 12 4l9 7" />
+        <path d="M5 10v10h14V10" />
+        <path d="M10 20v-5h4v5" />
+      </svg>
+    );
+  }
+  if (normalized === "office") {
+    // Briefcase
+    return (
+      <svg {...common}>
+        <rect x="3" y="7" width="18" height="13" rx="2" />
+        <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+        <path d="M3 13h18" />
+      </svg>
+    );
+  }
+  // Other — pin / location marker
+  return (
+    <svg {...common}>
+      <path d="M12 22s7-7.13 7-12a7 7 0 1 0-14 0c0 4.87 7 12 7 12z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
+  );
+}
+
 type Form = {
   id?: string;
   label: string;
@@ -197,11 +240,14 @@ export function AddressBook() {
             key={a.id}
             className="rounded-md border border-[color:var(--ink-900)]/10 bg-white p-4"
           >
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="text-sm font-semibold text-[color:var(--ink-900)]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[color:var(--ink-900)]">
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]">
+                  <LabelIcon label={a.label || "Home"} />
+                </span>
                 {a.label || "Home"}
                 {a.is_default && (
-                  <span className="ml-2 rounded-full bg-[color:var(--moss-700)]/10 px-2 py-0.5 text-[11px] font-medium text-[color:var(--moss-700)]">
+                  <span className="ml-1 rounded-full bg-[color:var(--moss-700)]/10 px-2 py-0.5 text-[11px] font-medium text-[color:var(--moss-700)]">
                     Default
                   </span>
                 )}
@@ -267,12 +313,13 @@ export function AddressBook() {
                   key={l}
                   type="button"
                   onClick={() => setForm({ ...form, label: l })}
-                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
                     form.label === l
                       ? "border-[color:var(--moss-700)] bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
                       : "border-[color:var(--ink-900)]/15 text-[color:var(--ink-900)] opacity-70 hover:opacity-100"
                   }`}
                 >
+                  <LabelIcon label={l} className="h-3.5 w-3.5" />
                   {l}
                 </button>
               ))}

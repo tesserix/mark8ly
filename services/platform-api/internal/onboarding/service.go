@@ -4,16 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/platform-api/internal/marketplaceapi"
 	"github.com/mark8ly/platform-api/internal/notification"
 	"github.com/mark8ly/platform-api/internal/outbox"
 	"github.com/mark8ly/platform-api/internal/store"
 	"github.com/mark8ly/platform-api/internal/tenant"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
+
+// VendorEnsurer lets the Service call marketplace-api without a hard
+// dependency on the concrete HTTP client. The marketplaceapi.VendorClient
+// satisfies this interface directly.
+type VendorEnsurer interface {
+	EnsureSelfVendor(ctx context.Context, tenantID, name, slug string) (*marketplaceapi.Vendor, error)
+}
 
 // Service is the business logic for the onboarding flow.
 //
@@ -40,6 +49,7 @@ type Service struct {
 	supportSite           string
 	adminURLTemplate      string
 	storefrontURLTemplate string
+	vendorClient          VendorEnsurer
 }
 
 // Config holds Service dependencies.
@@ -57,6 +67,11 @@ type Config struct {
 	AdminURLTemplate      string
 	StorefrontURLTemplate string
 	SupportEmail          string
+	// VendorClient is called best-effort after onboarding commits to
+	// ensure marketplace-api has a self-vendor for the new tenant.
+	// A nil VendorClient disables the call (useful for tests that don't
+	// need the vendor path).
+	VendorClient VendorEnsurer
 }
 
 // NewService constructs a Service.
@@ -71,6 +86,7 @@ func NewService(cfg Config) *Service {
 		supportSite:           cfg.SupportEmail,
 		adminURLTemplate:      cfg.AdminURLTemplate,
 		storefrontURLTemplate: cfg.StorefrontURLTemplate,
+		vendorClient:          cfg.VendorClient,
 	}
 }
 
@@ -241,6 +257,16 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Phase 1 of the tenant/vendor/store refactor: create the tenant's
+	// self-vendor in marketplace-api. Best-effort — a failure is logged
+	// but does NOT fail onboarding. The platform-api backfill CLI
+	// (cmd/backfill-vendors) covers any misses.
+	if s.vendorClient != nil {
+		if _, vErr := s.vendorClient.EnsureSelfVendor(ctx, t.ID, t.Name, st.Slug); vErr != nil {
+			log.Printf("onboarding.Complete: ensure self-vendor for tenant %s: %v", t.ID, vErr)
+		}
 	}
 
 	if s.sender != nil {

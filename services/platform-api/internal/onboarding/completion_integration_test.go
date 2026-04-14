@@ -5,14 +5,17 @@ package onboarding
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/mark8ly/platform-api/internal/authz"
+	"github.com/mark8ly/platform-api/internal/marketplaceapi"
 	"github.com/mark8ly/platform-api/internal/notification"
 	"github.com/mark8ly/platform-api/internal/outbox"
+	"github.com/mark8ly/platform-api/internal/store"
 	"github.com/mark8ly/platform-api/internal/tenant"
 	"github.com/mark8ly/platform-api/pkg/testdb"
 )
@@ -38,6 +41,7 @@ func TestIntegration_Complete_TenantAndOutboxCommitAtomically(t *testing.T) {
 		"outbox_events",
 		"verification_tokens",
 		"onboarding_sessions",
+		"stores",
 		"tenants",
 	)
 
@@ -86,12 +90,13 @@ func TestIntegration_Complete_TenantAndOutboxCommitAtomically(t *testing.T) {
 	}
 
 	// ─── Step 1: tenant row exists ─────────────────────────────────────
-	got, err := tenantRepo.GetByID(ctx, res.TenantID)
+	_, err = tenantRepo.GetByID(ctx, res.TenantID)
 	if err != nil {
 		t.Fatalf("tenant lookup: %v", err)
 	}
-	if got.Slug != "atomicity-test" {
-		t.Errorf("Slug = %q, want atomicity-test", got.Slug)
+	// Slug lives on the store (Phase Q). Complete returns it directly.
+	if res.Slug != "atomicity-test" {
+		t.Errorf("Slug = %q, want atomicity-test", res.Slug)
 	}
 
 	// ─── Step 2: session is completed ──────────────────────────────────
@@ -157,6 +162,7 @@ func TestIntegration_Complete_RejectsUnverifiedSession(t *testing.T) {
 		"outbox_events",
 		"verification_tokens",
 		"onboarding_sessions",
+		"stores",
 		"tenants",
 	)
 
@@ -218,6 +224,7 @@ func TestIntegration_Complete_DuplicateSlugRollsBackEverything(t *testing.T) {
 		"outbox_events",
 		"verification_tokens",
 		"onboarding_sessions",
+		"stores",
 		"tenants",
 	)
 
@@ -233,11 +240,19 @@ func TestIntegration_Complete_DuplicateSlugRollsBackEverything(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Seed a tenant whose slug we will collide with.
-	if err := db.Create(&tenant.Tenant{
-		Slug: "taken-slug", Name: "Existing", OwnerUserID: "u1",
-		OwnerEmail: "a@test.local", CountryCode: "US", CurrencyCode: "USD",
-		Timezone: "America/New_York", Status: tenant.StatusActive,
+	// Seed a tenant + store whose slug we will collide with.
+	// Phase Q: slug uniqueness is enforced on stores, not tenants.
+	existingTenant := &tenant.Tenant{
+		Name: "Existing", OwnerUserID: "u1",
+		OwnerEmail: "a@test.local", Status: tenant.StatusActive,
+	}
+	if err := db.Create(existingTenant).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&store.Store{
+		TenantID: existingTenant.ID, Slug: "taken-slug", Name: "Existing",
+		CountryCode: "US", CurrencyCode: "USD",
+		Timezone: "America/New_York", Status: store.StatusActive,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -284,5 +299,150 @@ func TestIntegration_Complete_DuplicateSlugRollsBackEverything(t *testing.T) {
 	db.Model(&outbox.Event{}).Count(&outboxCount)
 	if outboxCount != 0 {
 		t.Errorf("outbox has %d row(s) despite rollback", outboxCount)
+	}
+}
+
+// ─── fakeVendorClient ────────────────────────────────────────────────────────
+
+type fakeVendorClient struct {
+	calls []struct{ tenantID, name, slug string }
+	err   error
+}
+
+func (f *fakeVendorClient) EnsureSelfVendor(_ context.Context, tenantID, name, slug string) (*marketplaceapi.Vendor, error) {
+	f.calls = append(f.calls, struct{ tenantID, name, slug string }{tenantID, name, slug})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &marketplaceapi.Vendor{
+		ID:       "vendor-" + tenantID,
+		TenantID: tenantID,
+		Name:     name,
+		Slug:     slug,
+		IsSelf:   true,
+		Status:   "active",
+	}, nil
+}
+
+// TestIntegration_Complete_CallsEnsureSelfVendor verifies that after a
+// successful Complete the vendor client is called exactly once with the
+// correct tenant ID, business name, and store slug.
+func TestIntegration_Complete_CallsEnsureSelfVendor(t *testing.T) {
+	db := testdb.NewDB(t,
+		"outbox_events",
+		"verification_tokens",
+		"onboarding_sessions",
+		"tenants",
+	)
+
+	tenantRepo := tenant.NewRepository(db)
+	onboardingRepo := NewRepository(db)
+	fake := &fakeVendorClient{}
+	svc := NewService(Config{
+		DB:           db,
+		Repo:         onboardingRepo,
+		TenantRepo:   tenantRepo,
+		Sender:       notification.NoopSender{},
+		EmailFrom:    "noreply@test.local",
+		SupportEmail: "help@test.local",
+		VendorClient: fake,
+	})
+
+	ctx := context.Background()
+	now := time.Now()
+	sess := &Session{
+		Email:           "vendor-call@test.local",
+		Draft:           json.RawMessage(`{}`),
+		Status:          StatusInProgress,
+		EmailVerifiedAt: &now,
+	}
+	if err := onboardingRepo.Create(ctx, sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	res, err := svc.Complete(ctx, CompleteRequest{
+		SessionID:    sess.ID,
+		BusinessName: "Vendor Call Co",
+		Slug:         "vendor-call-co",
+		OwnerUserID:  "gip-uid-vendor-call",
+		OwnerEmail:   "vendor-call@test.local",
+		CountryCode:  "US",
+		CurrencyCode: "USD",
+		Timezone:     "America/New_York",
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	if len(fake.calls) != 1 {
+		t.Fatalf("EnsureSelfVendor called %d times, want 1", len(fake.calls))
+	}
+	if fake.calls[0].tenantID != res.TenantID {
+		t.Errorf("call tenantID = %q, want %q", fake.calls[0].tenantID, res.TenantID)
+	}
+	if fake.calls[0].name != "Vendor Call Co" {
+		t.Errorf("call name = %q, want %q", fake.calls[0].name, "Vendor Call Co")
+	}
+	if fake.calls[0].slug != res.Slug {
+		t.Errorf("call slug = %q, want %q", fake.calls[0].slug, res.Slug)
+	}
+}
+
+// TestIntegration_Complete_SwallowsVendorError verifies that a vendor-client
+// failure does NOT cause Complete to return an error and that the tenant row
+// is still created.
+func TestIntegration_Complete_SwallowsVendorError(t *testing.T) {
+	db := testdb.NewDB(t,
+		"outbox_events",
+		"verification_tokens",
+		"onboarding_sessions",
+		"tenants",
+	)
+
+	tenantRepo := tenant.NewRepository(db)
+	onboardingRepo := NewRepository(db)
+	fake := &fakeVendorClient{err: errors.New("boom")}
+	svc := NewService(Config{
+		DB:           db,
+		Repo:         onboardingRepo,
+		TenantRepo:   tenantRepo,
+		Sender:       notification.NoopSender{},
+		EmailFrom:    "noreply@test.local",
+		SupportEmail: "help@test.local",
+		VendorClient: fake,
+	})
+
+	ctx := context.Background()
+	now := time.Now()
+	sess := &Session{
+		Email:           "vendor-err@test.local",
+		Draft:           json.RawMessage(`{}`),
+		Status:          StatusInProgress,
+		EmailVerifiedAt: &now,
+	}
+	if err := onboardingRepo.Create(ctx, sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	res, err := svc.Complete(ctx, CompleteRequest{
+		SessionID:    sess.ID,
+		BusinessName: "Vendor Err Co",
+		Slug:         "vendor-err-co",
+		OwnerUserID:  "gip-uid-vendor-err",
+		OwnerEmail:   "vendor-err@test.local",
+		CountryCode:  "US",
+		CurrencyCode: "USD",
+		Timezone:     "America/New_York",
+	})
+	if err != nil {
+		t.Fatalf("Complete should succeed even when vendor call fails, got: %v", err)
+	}
+	if res == nil || res.TenantID == "" {
+		t.Fatal("Complete returned nil or empty TenantID")
+	}
+
+	// Tenant row must exist despite vendor error.
+	if _, err := tenantRepo.GetByID(ctx, res.TenantID); err != nil {
+		t.Errorf("tenant row missing after swallowed vendor error: %v", err)
 	}
 }

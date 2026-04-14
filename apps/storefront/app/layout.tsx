@@ -14,6 +14,7 @@ import { SkipLink } from "@repo/ui/skip-link";
 import { CartProvider } from "@/components/CartProvider";
 import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
 import { PromotionBar } from "@/components/PromotionBar";
+import { Toaster } from "@/components/Toaster";
 import { slugFromHost } from "@/lib/slug";
 import { buildLoginUrl, buildLogoutUrl, hasSessionCookie, decodeSession } from "@/lib/auth";
 import { fetchBranding } from "@/lib/api/marketplace-api";
@@ -181,6 +182,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
         <CustomerAuthProvider value={authState}>
           <CartProvider storeSlug={storeSlug}>{children}</CartProvider>
         </CustomerAuthProvider>
+        <Toaster />
       </body>
     </html>
   );

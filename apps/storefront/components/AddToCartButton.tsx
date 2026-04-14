@@ -50,6 +50,10 @@ export function AddToCartButton({
     });
     setJustAdded(true);
     setTimeout(() => setJustAdded(false), 1500);
+    // Lazy-import to keep the button dep-light on SSR.
+    import("@/lib/toast").then(({ toast }) =>
+      toast({ title: `${title} added to cart`, tone: "success" }),
+    );
   }
 
   if (!inStock) {

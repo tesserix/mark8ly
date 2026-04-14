@@ -13,6 +13,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
+import { toast } from "@/lib/toast";
 import { CouponInput } from "@/components/checkout/CouponInput";
 import { GiftCardInput } from "@/components/checkout/GiftCardInput";
 import { LoyaltyRedemption } from "@/components/checkout/LoyaltyRedemption";
@@ -293,9 +294,19 @@ export default function CheckoutPage() {
     const result = await submitCheckout(storeSlug, body);
     if (!result) {
       setError("Something went wrong placing your order. Please try again.");
+      toast({
+        title: "Could not place order",
+        description: "Please review your details and try again.",
+        tone: "error",
+      });
       setSubmitting(false);
       return;
     }
+    toast({
+      title: `Order ${result.order_number} placed`,
+      description: "Complete payment to confirm.",
+      tone: "success",
+    });
 
     // Stash everything the order page needs to open the payment widget
     // before clearing the cart. Keyed by order id so a customer juggling

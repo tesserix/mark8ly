@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "@/lib/toast";
 
 interface PendingPayment {
   orderId: string;
@@ -122,11 +123,21 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
           if (!verifyRes.ok) {
             const body = await verifyRes.text().catch(() => "");
             setError(`Payment verification failed (${verifyRes.status}). ${body}`);
+            toast({
+              title: "Payment verification failed",
+              description: body || `HTTP ${verifyRes.status}`,
+              tone: "error",
+            });
             setBusy(false);
             return;
           }
           sessionStorage.removeItem(`mark8ly.pendingPayment.${orderId}`);
           setPending(null);
+          toast({
+            title: "Payment received",
+            description: "Your order is confirmed.",
+            tone: "success",
+          });
           router.refresh();
         } catch (e) {
           setError(e instanceof Error ? e.message : "Unknown error verifying payment.");

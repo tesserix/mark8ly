@@ -1,8 +1,5 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { AccountSidebar } from "@/components/AccountSidebar";
-import { AccountMobileNav } from "@/components/AccountMobileNav";
-import { StorefrontNav } from "@/components/StorefrontNav";
 import { slugFromHost } from "@/lib/slug";
 import { cookies } from "next/headers";
 
@@ -60,78 +57,65 @@ export default async function MyGiftCardsPage() {
   const cards = await fetchMyGiftCards(storeSlug);
 
   return (
-    <div className="min-h-screen bg-[color:var(--paper-200)]">
-      <StorefrontNav />
-      <main id="main" className="mx-auto max-w-5xl px-6 py-10 sm:px-8">
-        <AccountMobileNav />
-        <div className="mt-8 grid gap-10 md:grid-cols-[200px_1fr]">
-          <aside className="hidden md:block">
-            <AccountSidebar />
-          </aside>
-          <section>
-            <header className="space-y-2">
-              <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-ink-900">
-                Gift cards
-              </h1>
-              <p className="text-sm text-ink-700">
-                Cards you've purchased, and cards others have sent you.
-              </p>
-            </header>
+    <div className="space-y-6">
+      <header className="space-y-2">
+        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-ink-900">
+          Gift cards
+        </h1>
+        <p className="text-sm text-ink-700">
+          Cards you&apos;ve purchased, and cards others have sent you.
+        </p>
+      </header>
 
-            <div className="mt-8">
-              {cards.length === 0 ? (
-                <div className="rounded-md border border-ink-200 bg-white p-8 text-sm text-ink-700">
-                  You don't have any gift cards yet.{" "}
-                  <Link
-                    href="/gift-cards/purchase"
-                    className="text-moss-700 underline-offset-2 hover:underline"
-                  >
-                    Buy a gift card
-                  </Link>
-                  .
-                </div>
-              ) : (
-                <ul className="space-y-3">
-                  {cards.map((c) => (
-                    <li
-                      key={c.id}
-                      className="rounded-md border border-ink-200 bg-white p-5"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="font-mono text-sm text-ink-900">
-                            {c.code_display}
-                          </p>
-                          <p className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-ink-900">
-                            {formatMoney(c.current_balance, c.currency_code)}
-                          </p>
-                          <p className="text-xs text-ink-500">
-                            of {formatMoney(c.initial_balance, c.currency_code)}{" "}
-                            initial
-                          </p>
-                        </div>
-                        <span className="inline-flex items-center rounded-full bg-ink-100 px-2.5 py-0.5 text-xs capitalize text-ink-700">
-                          {c.status}
-                        </span>
-                      </div>
-                      {c.expires_at && (
-                        <p className="mt-3 text-xs text-ink-500">
-                          Expires{" "}
-                          {new Date(c.expires_at).toLocaleDateString(undefined, {
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                          })}
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
+      {cards.length === 0 ? (
+        <div className="rounded-md border border-ink-200 bg-white p-8 text-sm text-ink-700">
+          You don&apos;t have any gift cards yet.{" "}
+          <Link
+            href="/gift-cards/purchase"
+            className="text-moss-700 underline-offset-2 hover:underline"
+          >
+            Buy a gift card
+          </Link>
+          .
         </div>
-      </main>
+      ) : (
+        <ul className="space-y-3">
+          {cards.map((c) => (
+            <li
+              key={c.id}
+              className="rounded-md border border-ink-200 bg-white p-5"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-mono text-sm text-ink-900">
+                    {c.code_display}
+                  </p>
+                  <p className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-ink-900">
+                    {formatMoney(c.current_balance, c.currency_code)}
+                  </p>
+                  <p className="text-xs text-ink-500">
+                    of {formatMoney(c.initial_balance, c.currency_code)}{" "}
+                    initial
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full bg-ink-100 px-2.5 py-0.5 text-xs capitalize text-ink-700">
+                  {c.status}
+                </span>
+              </div>
+              {c.expires_at && (
+                <p className="mt-3 text-xs text-ink-500">
+                  Expires{" "}
+                  {new Date(c.expires_at).toLocaleDateString(undefined, {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

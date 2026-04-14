@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 )
@@ -35,14 +36,22 @@ func (webhookGatewayConfigRow) TableName() string { return "payment_gateway_conf
 
 // WebhookHandler processes provider webhook callbacks.
 type WebhookHandler struct {
-	db       *gorm.DB
-	orderSvc *order.Service
-	logger   *slog.Logger
+	db          *gorm.DB
+	orderSvc    *order.Service
+	giftCardSvc *giftcard.Service // optional — when set, gift card checkout events activate cards
+	logger      *slog.Logger
 }
 
 // NewWebhookHandler constructs a WebhookHandler.
 func NewWebhookHandler(db *gorm.DB, orderSvc *order.Service, logger *slog.Logger) *WebhookHandler {
 	return &WebhookHandler{db: db, orderSvc: orderSvc, logger: logger}
+}
+
+// WithGiftCardService attaches the gift card service so webhook events
+// carrying `gift_card_id` metadata can activate pending cards.
+func (h *WebhookHandler) WithGiftCardService(svc *giftcard.Service) *WebhookHandler {
+	h.giftCardSvc = svc
+	return h
 }
 
 // HandleWebhook handles POST /api/v1/webhooks/:provider.
@@ -140,11 +149,31 @@ func (h *WebhookHandler) HandleWebhook(c *gin.Context) {
 
 // processEvent handles the business logic for each webhook event type.
 // Errors are logged but never surfaced to the provider.
+//
+// Gift card events are routed based on the `gift_card_id` metadata key —
+// both checkout.session.* and payment_intent.* can be the trigger,
+// depending on whether the buyer used Stripe Checkout (hosted) or
+// Elements (embedded).
 func (h *WebhookHandler) processEvent(ctx context.Context, provider string, evt *payment.WebhookEvent) {
+	// Gift card dispatch takes priority when the metadata is present —
+	// we don't want to fall through to order.Confirm for a card that has
+	// no matching order row.
+	if gcID := evt.Metadata["gift_card_id"]; gcID != "" {
+		h.handleGiftCardEvent(ctx, evt, gcID)
+		return
+	}
+
 	switch evt.EventType {
+	case "checkout.completed":
+		// For product checkouts, if the session carried an order_id, treat
+		// it the same as payment.succeeded. (Gift cards were already
+		// short-circuited above.)
+		if evt.OrderID != "" {
+			h.handlePaymentSucceeded(ctx, provider, evt)
+		}
 	case "payment.succeeded":
 		h.handlePaymentSucceeded(ctx, provider, evt)
-	case "payment.failed":
+	case "payment.failed", "checkout.failed", "checkout.expired":
 		h.handlePaymentFailed(ctx, provider, evt)
 	case "refund.succeeded":
 		h.handleRefundSucceeded(ctx, provider, evt)
@@ -153,6 +182,58 @@ func (h *WebhookHandler) processEvent(ctx context.Context, provider string, evt 
 			"provider", provider,
 			"event_type", evt.EventType,
 			"event_id", evt.ProviderEventID)
+	}
+}
+
+// handleGiftCardEvent routes a gift-card-tagged webhook event to the
+// giftcard service. We dispatch by checkout_session_id when available
+// (checkout.* events) and fall back to the payment_intent id otherwise.
+func (h *WebhookHandler) handleGiftCardEvent(ctx context.Context, evt *payment.WebhookEvent, gcID string) {
+	if h.giftCardSvc == nil {
+		h.logError("webhook: gift card service not wired",
+			"event_type", evt.EventType, "gift_card_id", gcID)
+		return
+	}
+
+	switch evt.EventType {
+	case "checkout.completed", "payment.succeeded":
+		var (
+			card       *giftcard.GiftCard
+			flipped    bool
+			err        error
+		)
+		if evt.SessionID != "" {
+			card, flipped, err = h.giftCardSvc.ActivateByCheckoutSession(ctx, evt.SessionID, evt.ProviderPaymentID)
+		} else if evt.ProviderPaymentID != "" {
+			card, flipped, err = h.giftCardSvc.ActivateByPaymentIntent(ctx, evt.ProviderPaymentID)
+		} else {
+			h.logError("webhook: gift card event missing correlation id",
+				"gift_card_id", gcID)
+			return
+		}
+		if err != nil {
+			h.logError("webhook: gift card activation failed",
+				"gift_card_id", gcID, "session_id", evt.SessionID, "err", err)
+			return
+		}
+		if h.logger != nil && card != nil {
+			h.logger.Info("webhook: gift card activated",
+				"gift_card_id", card.ID, "flipped", flipped)
+		}
+
+	case "payment.failed", "checkout.failed", "checkout.expired":
+		ref := evt.SessionID
+		if ref == "" {
+			ref = evt.ProviderPaymentID
+		}
+		if err := h.giftCardSvc.MarkPurchaseFailed(ctx, ref); err != nil {
+			h.logError("webhook: gift card mark failed error",
+				"gift_card_id", gcID, "err", err)
+		}
+
+	default:
+		h.logError("webhook: unhandled gift card event type",
+			"event_type", evt.EventType, "gift_card_id", gcID)
 	}
 }
 

@@ -13,9 +13,26 @@ import (
 type GiftCardStatus string
 
 const (
+	// StatusPending — card created, payment not yet captured. Cannot
+	// be redeemed. Flipped to Active by the webhook on payment success.
+	StatusPending  GiftCardStatus = "pending"
 	StatusActive   GiftCardStatus = "active"
 	StatusDisabled GiftCardStatus = "disabled"
 	StatusDepleted GiftCardStatus = "depleted"
+	// StatusRefunded — the purchase was refunded via the payment
+	// provider; balance is zeroed and redemption is blocked.
+	StatusRefunded GiftCardStatus = "refunded"
+)
+
+// PaymentStatus enumerates the payment lifecycle for storefront purchases.
+// Admin-issued cards leave this NULL.
+type PaymentStatus string
+
+const (
+	PaymentStatusPending  PaymentStatus = "pending"
+	PaymentStatusPaid     PaymentStatus = "paid"
+	PaymentStatusFailed   PaymentStatus = "failed"
+	PaymentStatusRefunded PaymentStatus = "refunded"
 )
 
 // TransactionType enumerates the types of balance mutations.
@@ -45,8 +62,16 @@ type GiftCard struct {
 	Message        *string         `gorm:"column:message;type:text"`
 	PurchasedAt    *time.Time      `gorm:"column:purchased_at"`
 	ExpiresAt      *time.Time      `gorm:"column:expires_at"`
-	CreatedAt      time.Time       `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt      time.Time       `gorm:"column:updated_at;not null;default:now()"`
+	// Storefront purchase (nullable — admin-issued cards leave these empty).
+	PaymentStatus          *PaymentStatus `gorm:"column:payment_status;type:varchar(20)"`
+	PaymentProvider        *string        `gorm:"column:payment_provider;type:varchar(20)"`
+	PaymentIntentID        *string        `gorm:"column:payment_intent_id;type:varchar(255)"`
+	CheckoutSessionID      *string        `gorm:"column:checkout_session_id;type:varchar(255)"`
+	PurchasedViaStorefront bool           `gorm:"column:purchased_via_storefront;not null;default:false"`
+	PurchasedByName        *string        `gorm:"column:purchased_by_name;type:varchar(200)"`
+	PurchasedByEmail       *string        `gorm:"column:purchased_by_email;type:varchar(300)"`
+	CreatedAt              time.Time      `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt              time.Time      `gorm:"column:updated_at;not null;default:now()"`
 }
 
 func (GiftCard) TableName() string { return "gift_cards" }

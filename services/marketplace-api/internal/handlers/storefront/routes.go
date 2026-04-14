@@ -89,11 +89,16 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		}
 
 		// Gift cards — Marketing M2.
-		// Rate-limited: 10 req/min per IP.
+		// Rate-limited: 10 req/min per IP for lookups, 5 req/min for
+		// purchases (each creates a Stripe Checkout Session — don't let
+		// abusers spin up unlimited pending cards).
 		if deps.GiftCardHandler != nil {
 			group.POST("/gift-cards/check-balance",
-				ratelimit.PerIP(0.167, 10), // ~10 req/min
+				ratelimit.PerIP(0.167, 10),
 				deps.GiftCardHandler.CheckBalance)
+			group.POST("/gift-cards/purchase",
+				ratelimit.PerIP(0.083, 5), // ~5 req/min
+				deps.GiftCardHandler.Purchase)
 		}
 
 		// Reviews — C3. Public read endpoint (no auth).

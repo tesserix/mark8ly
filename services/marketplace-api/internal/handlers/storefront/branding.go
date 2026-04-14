@@ -125,6 +125,14 @@ func (h *BrandingHandler) Get(c *gin.Context) {
 
 	resp := gin.H{
 		"branding": toPublicBrandingResponse(*b),
+		// Surface the store's currency + name so clients (gift card
+		// purchase form, etc.) don't need a separate lookup.
+		"store": gin.H{
+			"name":          store.Name,
+			"slug":          store.Slug,
+			"currency_code": store.CurrencyCode,
+			"country_code":  store.CountryCode,
+		},
 	}
 
 	// Look up active storefront promotion from campaigns.

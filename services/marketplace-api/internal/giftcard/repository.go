@@ -42,6 +42,25 @@ type Repository interface {
 	// ListTransactions returns all transactions for a gift card, ordered
 	// by created_at desc.
 	ListTransactions(ctx context.Context, db *gorm.DB, giftCardID uuid.UUID) ([]Transaction, error)
+
+	// GetByCheckoutSessionID looks up a card by the provider hosted
+	// checkout session id. Used by the webhook to correlate incoming
+	// checkout.session.completed events to our pending gift card row.
+	GetByCheckoutSessionID(ctx context.Context, db *gorm.DB, sessionID string) (*GiftCard, error)
+
+	// GetByPaymentIntentID looks up a card by the provider payment intent
+	// id. Used when webhook arrives with a pi_… reference (e.g. from
+	// payment_intent.succeeded events instead of checkout.session.*).
+	GetByPaymentIntentID(ctx context.Context, db *gorm.DB, intentID string) (*GiftCard, error)
+
+	// ActivateAfterPayment flips a card from `pending` → `active`, sets
+	// payment_status=paid, and records the settled payment_intent_id.
+	// Idempotent: running it on an already-active card returns nil.
+	ActivateAfterPayment(tx *gorm.DB, id uuid.UUID, paymentIntentID string) error
+
+	// MarkPaymentFailed marks the card's payment as failed without
+	// disabling the card itself (merchant can retry).
+	MarkPaymentFailed(tx *gorm.DB, id uuid.UUID) error
 }
 
 type gormRepository struct{}
@@ -184,4 +203,54 @@ func (gormRepository) ListTransactions(ctx context.Context, db *gorm.DB, giftCar
 		Order("created_at DESC").
 		Find(&txns).Error
 	return txns, err
+}
+
+func (gormRepository) GetByCheckoutSessionID(ctx context.Context, db *gorm.DB, sessionID string) (*GiftCard, error) {
+	var gc GiftCard
+	err := db.WithContext(ctx).
+		Where("checkout_session_id = ?", sessionID).
+		First(&gc).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.New(apperrors.CodeNotFound, "gift card not found for session")
+		}
+		return nil, err
+	}
+	return &gc, nil
+}
+
+func (gormRepository) GetByPaymentIntentID(ctx context.Context, db *gorm.DB, intentID string) (*GiftCard, error) {
+	var gc GiftCard
+	err := db.WithContext(ctx).
+		Where("payment_intent_id = ?", intentID).
+		First(&gc).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.New(apperrors.CodeNotFound, "gift card not found for payment intent")
+		}
+		return nil, err
+	}
+	return &gc, nil
+}
+
+func (gormRepository) ActivateAfterPayment(tx *gorm.DB, id uuid.UUID, paymentIntentID string) error {
+	// Idempotent: only flip `pending → active`; if the card is already
+	// active, the UPDATE affects zero rows and we return nil. This lets
+	// Stripe webhook retries be safe.
+	updates := map[string]any{
+		"status":         StatusActive,
+		"payment_status": PaymentStatusPaid,
+	}
+	if paymentIntentID != "" {
+		updates["payment_intent_id"] = paymentIntentID
+	}
+	return tx.Model(&GiftCard{}).
+		Where("id = ? AND status = ?", id, StatusPending).
+		Updates(updates).Error
+}
+
+func (gormRepository) MarkPaymentFailed(tx *gorm.DB, id uuid.UUID) error {
+	return tx.Model(&GiftCard{}).
+		Where("id = ?", id).
+		Update("payment_status", PaymentStatusFailed).Error
 }

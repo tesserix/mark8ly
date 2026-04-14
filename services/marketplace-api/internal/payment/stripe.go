@@ -104,6 +104,75 @@ func (s *StripeGateway) CreateIntent(ctx context.Context, in CreateIntentInput) 
 	}, nil
 }
 
+// CreateCheckoutSession creates a Stripe Checkout Session. The customer
+// is redirected to the returned URL to complete payment; Stripe then
+// redirects to SuccessURL (or CancelURL). The gift-card id travels as
+// `metadata[gift_card_id]` so the webhook can correlate.
+//
+// We use `mode=payment` (one-time, no subscription) and a single
+// line_item built via `price_data` so we don't need pre-registered
+// Stripe Products.
+func (s *StripeGateway) CreateCheckoutSession(ctx context.Context, in CreateCheckoutSessionInput) (*CheckoutSession, error) {
+	amountMinor := toMinorUnits(in.Amount, in.CurrencyCode)
+
+	form := url.Values{}
+	form.Set("mode", "payment")
+	form.Set("success_url", in.SuccessURL)
+	form.Set("cancel_url", in.CancelURL)
+	if in.CustomerEmail != "" {
+		form.Set("customer_email", in.CustomerEmail)
+	}
+	// Single line item built inline via price_data (no Stripe Product needed).
+	form.Set("line_items[0][quantity]", "1")
+	form.Set("line_items[0][price_data][currency]", strings.ToLower(in.CurrencyCode))
+	form.Set("line_items[0][price_data][unit_amount]", strconv.FormatInt(amountMinor, 10))
+	name := in.Name
+	if name == "" {
+		name = "Purchase"
+	}
+	form.Set("line_items[0][price_data][product_data][name]", name)
+	if in.Description != "" {
+		form.Set("line_items[0][price_data][product_data][description]", in.Description)
+	}
+
+	// Metadata on both the Session and the PaymentIntent so either
+	// webhook type can correlate back.
+	for k, v := range in.Metadata {
+		form.Set(fmt.Sprintf("metadata[%s]", k), v)
+		form.Set(fmt.Sprintf("payment_intent_data[metadata][%s]", k), v)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/v1/checkout/sessions", strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("stripe: create checkout session: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(s.apiKey, "")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("stripe: create checkout session: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("stripe: create checkout session: read body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("stripe: create checkout session: status %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		ID  string `json:"id"`
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("stripe: create checkout session: decode: %w", err)
+	}
+	return &CheckoutSession{ID: result.ID, URL: result.URL}, nil
+}
+
 // CapturePayment captures a PaymentIntent via POST /v1/payment_intents/:id/capture.
 func (s *StripeGateway) CapturePayment(ctx context.Context, captureID string) (*Capture, error) {
 	endpoint := fmt.Sprintf("%s/v1/payment_intents/%s/capture", s.baseURL, captureID)
@@ -218,18 +287,41 @@ func (s *StripeGateway) VerifyWebhook(_ context.Context, payload []byte, signatu
 		RawPayload:      payload,
 	}
 
-	// Extract order-level details from the nested object when available.
+	// Extract order-level details from the nested object. Stripe surfaces
+	// different fields depending on the event type:
+	//   - payment_intent.*          → id=<pi_…>, amount, currency, metadata
+	//   - checkout.session.*        → id=<cs_…>, amount_total, currency,
+	//                                  payment_intent=<pi_…>, metadata
 	var obj struct {
+		ID            string            `json:"id"`
 		Metadata      map[string]string `json:"metadata"`
 		Amount        int64             `json:"amount"`
+		AmountTotal   int64             `json:"amount_total"`
 		Currency      string            `json:"currency"`
 		PaymentMethod string            `json:"payment_method"`
+		PaymentIntent string            `json:"payment_intent"`
 	}
 	if err := json.Unmarshal(raw.Data.Object, &obj); err == nil {
+		evt.Metadata = obj.Metadata
 		evt.OrderID = obj.Metadata["order_id"]
-		evt.Amount = decimal.NewFromInt(obj.Amount)
+		// For PaymentIntent events, Amount is set; for Checkout Session
+		// events, AmountTotal is set. Pick whichever is non-zero.
+		if obj.Amount > 0 {
+			evt.Amount = decimal.NewFromInt(obj.Amount)
+		} else {
+			evt.Amount = decimal.NewFromInt(obj.AmountTotal)
+		}
 		evt.CurrencyCode = strings.ToUpper(obj.Currency)
 		evt.PaymentMethod = obj.PaymentMethod
+
+		// Checkout Session events: the object id is cs_…; the settled
+		// PaymentIntent id lives in the `payment_intent` field.
+		if strings.HasPrefix(obj.ID, "cs_") {
+			evt.SessionID = obj.ID
+			evt.ProviderPaymentID = obj.PaymentIntent
+		} else if strings.HasPrefix(obj.ID, "pi_") {
+			evt.ProviderPaymentID = obj.ID
+		}
 	}
 
 	return evt, nil
@@ -293,6 +385,14 @@ func normalizeStripeEvent(stripeType string) string {
 		return "payment.failed"
 	case "charge.refunded":
 		return "refund.succeeded"
+	case "checkout.session.completed":
+		return "checkout.completed"
+	case "checkout.session.async_payment_succeeded":
+		return "checkout.completed"
+	case "checkout.session.async_payment_failed":
+		return "checkout.failed"
+	case "checkout.session.expired":
+		return "checkout.expired"
 	default:
 		return stripeType
 	}

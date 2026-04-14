@@ -16,6 +16,36 @@ import (
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
+// PurchaseInput is what the storefront purchase endpoint collects from
+// the buyer: amount, currency (forced to store currency by the handler),
+// recipient + sender display info + personal message, and the buyer's
+// own name/email (who is paying).
+type PurchaseInput struct {
+	TenantID         uuid.UUID
+	StoreID          uuid.UUID
+	InitialBalance   decimal.Decimal
+	CurrencyCode     string
+	SenderName       *string
+	SenderEmail      *string
+	RecipientName    *string
+	RecipientEmail   *string
+	Message          *string
+	ExpiresAt        *time.Time
+	PurchaserName    string
+	PurchaserEmail   string
+	PaymentProvider  string // "stripe" (only supported provider for hosted checkout right now)
+	SuccessURL       string // where the provider redirects after payment success
+	CancelURL        string // where the provider redirects on cancel/decline
+}
+
+// PurchaseResult is what the storefront purchase endpoint returns.
+type PurchaseResult struct {
+	GiftCardID        uuid.UUID
+	CheckoutSessionID string
+	CheckoutURL       string
+	Provider          string
+}
+
 // IssueInput holds the fields needed to issue a new gift card.
 type IssueInput struct {
 	TenantID       uuid.UUID
@@ -47,13 +77,50 @@ type ThemeLoader interface {
 	LoadTheme(ctx context.Context, storeID uuid.UUID) (GiftCardEmailTheme, string, error)
 }
 
+// GatewayResolver resolves a payment gateway by provider name for the
+// calling store. The storefront purchase flow uses it to obtain the
+// store-scoped Stripe gateway without coupling this package to the
+// full payment.Service or its repository.
+type GatewayResolver interface {
+	ResolveCheckoutGateway(ctx context.Context, storeID uuid.UUID, provider string) (CheckoutCapableGateway, error)
+}
+
+// CheckoutCapableGateway is the minimum surface giftcard needs from a
+// payment provider to create a hosted checkout session. Concrete
+// implementations (e.g. payment.StripeGateway) satisfy this.
+type CheckoutCapableGateway interface {
+	ProviderName() string
+	CreateCheckoutSession(ctx context.Context, in CheckoutSessionInput) (*CheckoutSessionOutput, error)
+}
+
+// CheckoutSessionInput mirrors payment.CreateCheckoutSessionInput. We
+// redeclare it here so the giftcard package doesn't import `payment`.
+type CheckoutSessionInput struct {
+	ReferenceID   string
+	Amount        decimal.Decimal
+	CurrencyCode  string
+	CustomerEmail string
+	Description   string
+	Name          string
+	SuccessURL    string
+	CancelURL     string
+	Metadata      map[string]string
+}
+
+// CheckoutSessionOutput mirrors payment.CheckoutSession.
+type CheckoutSessionOutput struct {
+	ID  string
+	URL string
+}
+
 // Service contains the business logic for gift cards.
 type Service struct {
-	db          *gorm.DB
-	repo        Repository
-	mailer      Mailer      // optional — nil disables delivery emails
-	themeLoader ThemeLoader // optional — nil falls back to default theme
-	logger      *slog.Logger
+	db              *gorm.DB
+	repo            Repository
+	mailer          Mailer          // optional — nil disables delivery emails
+	themeLoader     ThemeLoader     // optional — nil falls back to default theme
+	gatewayResolver GatewayResolver // optional — nil disables storefront purchase
+	logger          *slog.Logger
 }
 
 // NewService constructs a gift card Service.
@@ -71,9 +138,185 @@ func NewServiceWithMailer(db *gorm.DB, repo Repository, mailer Mailer, themeLoad
 	return &Service{db: db, repo: repo, mailer: mailer, themeLoader: themeLoader, logger: logger}
 }
 
+// WithGatewayResolver attaches a GatewayResolver used by the storefront
+// Purchase flow. Fluent setter so we don't break existing callers.
+func (s *Service) WithGatewayResolver(gr GatewayResolver) *Service {
+	s.gatewayResolver = gr
+	return s
+}
+
 // Unit runs fn inside a database transaction.
 func (s *Service) Unit(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return s.db.WithContext(ctx).Transaction(fn)
+}
+
+// Purchase creates a pending gift card + a hosted checkout session for
+// the storefront purchase flow. The card is NOT spendable until the
+// provider webhook calls ActivateByCheckoutSession on payment success.
+//
+// Returns the checkout URL the storefront should redirect the buyer to.
+func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*PurchaseResult, error) {
+	if in.InitialBalance.LessThanOrEqual(decimal.Zero) {
+		return nil, apperrors.ValidationFailed("initial_balance", "must be greater than zero")
+	}
+	if in.CurrencyCode == "" {
+		return nil, apperrors.ValidationFailed("currency_code", "required")
+	}
+	if in.PurchaserEmail == "" {
+		return nil, apperrors.ValidationFailed("purchaser_email", "required")
+	}
+	if s.gatewayResolver == nil {
+		return nil, fmt.Errorf("giftcard: purchase disabled — gateway resolver not wired")
+	}
+	if in.SuccessURL == "" || in.CancelURL == "" {
+		return nil, apperrors.ValidationFailed("success_url/cancel_url", "required")
+	}
+
+	provider := in.PaymentProvider
+	if provider == "" {
+		provider = "stripe"
+	}
+
+	gateway, err := s.gatewayResolver.ResolveCheckoutGateway(ctx, in.StoreID, provider)
+	if err != nil {
+		return nil, fmt.Errorf("giftcard purchase: resolve gateway: %w", err)
+	}
+
+	code, err := GenerateCode()
+	if err != nil {
+		return nil, fmt.Errorf("giftcard purchase: generate code: %w", err)
+	}
+
+	pendingStatus := PaymentStatusPending
+	now := time.Now()
+	gc := GiftCard{
+		TenantID:               in.TenantID,
+		StoreID:                in.StoreID,
+		Code:                   code,
+		InitialBalance:         in.InitialBalance,
+		CurrentBalance:         in.InitialBalance,
+		CurrencyCode:           strings.ToUpper(in.CurrencyCode),
+		Status:                 StatusPending,
+		SenderName:             in.SenderName,
+		SenderEmail:            in.SenderEmail,
+		RecipientName:          in.RecipientName,
+		RecipientEmail:         in.RecipientEmail,
+		Message:                in.Message,
+		PurchasedAt:            &now,
+		ExpiresAt:              in.ExpiresAt,
+		PaymentStatus:          &pendingStatus,
+		PaymentProvider:        &provider,
+		PurchasedViaStorefront: true,
+		PurchasedByEmail:       &in.PurchaserEmail,
+	}
+	if in.PurchaserName != "" {
+		gc.PurchasedByName = &in.PurchaserName
+	}
+	// Initial txn row reflects the intended purchase; balance is reserved
+	// but the card is non-redeemable because status=pending.
+	initialTxn := Transaction{
+		TenantID:     in.TenantID,
+		Type:         TxnPurchase,
+		Amount:       in.InitialBalance,
+		BalanceAfter: in.InitialBalance,
+	}
+	err = s.Unit(ctx, func(tx *gorm.DB) error {
+		return s.repo.CreateInTx(tx, &gc, &initialTxn)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("giftcard purchase: persist: %w", err)
+	}
+
+	session, err := gateway.CreateCheckoutSession(ctx, CheckoutSessionInput{
+		ReferenceID:   gc.ID.String(),
+		Amount:        in.InitialBalance,
+		CurrencyCode:  in.CurrencyCode,
+		CustomerEmail: in.PurchaserEmail,
+		Name:          fmt.Sprintf("Gift card — %s", in.CurrencyCode),
+		Description:   "Gift card purchase",
+		SuccessURL:    in.SuccessURL,
+		CancelURL:     in.CancelURL,
+		Metadata: map[string]string{
+			"gift_card_id": gc.ID.String(),
+			"store_id":     in.StoreID.String(),
+		},
+	})
+	if err != nil {
+		// Card already persisted with status=pending. Log and let the
+		// caller try again later; admin can clean up orphaned pending
+		// cards.
+		s.logger.Error("giftcard purchase: create checkout session failed",
+			"card_id", gc.ID, "err", err)
+		return nil, fmt.Errorf("giftcard purchase: create checkout session: %w", err)
+	}
+
+	// Persist the provider-side session id so the webhook can correlate.
+	if err := s.db.WithContext(ctx).Model(&GiftCard{}).
+		Where("id = ?", gc.ID).
+		Update("checkout_session_id", session.ID).Error; err != nil {
+		s.logger.Error("giftcard purchase: persist checkout session id", "card_id", gc.ID, "err", err)
+	}
+
+	return &PurchaseResult{
+		GiftCardID:        gc.ID,
+		CheckoutSessionID: session.ID,
+		CheckoutURL:       session.URL,
+		Provider:          gateway.ProviderName(),
+	}, nil
+}
+
+// ActivateByCheckoutSession transitions a pending gift card to active
+// when the provider reports a successful payment. Called from the
+// payment webhook with the hosted-checkout session id. Idempotent:
+// returns (card, true, nil) on a first-time flip, (card, false, nil) if
+// the card is already active. Also triggers the delivery email on
+// first-time flip.
+func (s *Service) ActivateByCheckoutSession(ctx context.Context, sessionID, paymentIntentID string) (*GiftCard, bool, error) {
+	gc, err := s.repo.GetByCheckoutSessionID(ctx, s.db, sessionID)
+	if err != nil {
+		return nil, false, err
+	}
+	return s.activatePending(ctx, gc, paymentIntentID)
+}
+
+// ActivateByPaymentIntent handles the case where the webhook arrives
+// with a payment_intent event instead of a checkout session event.
+func (s *Service) ActivateByPaymentIntent(ctx context.Context, paymentIntentID string) (*GiftCard, bool, error) {
+	gc, err := s.repo.GetByPaymentIntentID(ctx, s.db, paymentIntentID)
+	if err != nil {
+		return nil, false, err
+	}
+	return s.activatePending(ctx, gc, paymentIntentID)
+}
+
+// MarkPurchaseFailed flags the card's payment as failed. Status stays
+// pending so admin can see the attempt in the "pending payment" filter.
+func (s *Service) MarkPurchaseFailed(ctx context.Context, sessionOrIntentID string) error {
+	gc, err := s.repo.GetByCheckoutSessionID(ctx, s.db, sessionOrIntentID)
+	if err != nil {
+		gc, err = s.repo.GetByPaymentIntentID(ctx, s.db, sessionOrIntentID)
+		if err != nil {
+			return err
+		}
+	}
+	return s.repo.MarkPaymentFailed(s.db.WithContext(ctx), gc.ID)
+}
+
+func (s *Service) activatePending(ctx context.Context, gc *GiftCard, paymentIntentID string) (*GiftCard, bool, error) {
+	if gc.Status != StatusPending {
+		return gc, false, nil // already activated (or in a non-activatable state)
+	}
+	if err := s.repo.ActivateAfterPayment(s.db.WithContext(ctx), gc.ID, paymentIntentID); err != nil {
+		return nil, false, fmt.Errorf("giftcard: activate: %w", err)
+	}
+	// Reload so downstream sees the flipped status.
+	activated, err := s.repo.GetByID(ctx, s.db, gc.ID, gc.StoreID)
+	if err != nil {
+		return nil, false, fmt.Errorf("giftcard: reload after activate: %w", err)
+	}
+	// Fire the delivery email now that the purchase has cleared.
+	s.sendDeliveryIfPossible(ctx, activated)
+	return activated, true, nil
 }
 
 // Issue creates a new gift card with a cryptographically random code.

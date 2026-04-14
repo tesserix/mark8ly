@@ -4,9 +4,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -85,4 +87,122 @@ func (h *GiftCardStorefrontHandler) CheckBalance(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+// PurchaseGiftCardRequest is the wire body for POST /gift-cards/purchase.
+// The storefront page collects these fields; currency is derived server-
+// side from the store (never trust the client).
+type PurchaseGiftCardRequest struct {
+	Amount         decimal.Decimal `json:"amount" binding:"required"`
+	SenderName     *string         `json:"sender_name"`
+	SenderEmail    *string         `json:"sender_email"`
+	RecipientName  *string         `json:"recipient_name"`
+	RecipientEmail *string         `json:"recipient_email" binding:"required,email"`
+	Message        *string         `json:"message"`
+	ExpiresAt      *string         `json:"expires_at"`
+	// The buyer paying for the card — required for Stripe receipt email
+	// and fraud / reconciliation.
+	PurchaserName  string `json:"purchaser_name"`
+	PurchaserEmail string `json:"purchaser_email" binding:"required,email"`
+	// Where Stripe should redirect after payment. Client supplies these
+	// (relative to the storefront origin) so the flow stays per-store.
+	SuccessURL string `json:"success_url" binding:"required"`
+	CancelURL  string `json:"cancel_url"  binding:"required"`
+}
+
+// Purchase handles POST /storefront/stores/:storeSlug/gift-cards/purchase.
+// Creates a pending gift card + Stripe Checkout Session; customer is
+// redirected to the returned URL to pay. Webhook activates the card.
+func (h *GiftCardStorefrontHandler) Purchase(c *gin.Context) {
+	storeVal, ok := c.Get("store")
+	if !ok {
+		respondNotFound(c)
+		return
+	}
+	store, ok := storeVal.(*stores.Store)
+	if !ok || store == nil {
+		respondNotFound(c)
+		return
+	}
+	storeID, err := uuid.Parse(store.ID)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "validation_failed", "message": "invalid store",
+		})
+		return
+	}
+	tenantID, err := uuid.Parse(store.TenantID)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "validation_failed", "message": "invalid tenant",
+		})
+		return
+	}
+
+	var req PurchaseGiftCardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "validation_failed", "message": err.Error(),
+		})
+		return
+	}
+
+	var expiresAt *time.Time
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
+		t, err := time.Parse("2006-01-02", *req.ExpiresAt)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error":   "validation_failed",
+				"message": "expires_at must be YYYY-MM-DD",
+			})
+			return
+		}
+		// End-of-day so merchant-side expiry reads as "valid through X".
+		eod := t.Add(24*time.Hour - time.Second)
+		expiresAt = &eod
+	}
+
+	result, err := h.svc.Purchase(c.Request.Context(), giftcard.PurchaseInput{
+		TenantID:        tenantID,
+		StoreID:         storeID,
+		InitialBalance:  req.Amount,
+		CurrencyCode:    store.CurrencyCode,
+		SenderName:      req.SenderName,
+		SenderEmail:     req.SenderEmail,
+		RecipientName:   req.RecipientName,
+		RecipientEmail:  req.RecipientEmail,
+		Message:         req.Message,
+		ExpiresAt:       expiresAt,
+		PurchaserName:   req.PurchaserName,
+		PurchaserEmail:  req.PurchaserEmail,
+		PaymentProvider: "stripe",
+		SuccessURL:      req.SuccessURL,
+		CancelURL:       req.CancelURL,
+	})
+	if err != nil {
+		var ae *apperrors.Error
+		if errors.As(err, &ae) && ae.Code == apperrors.CodeValidationFailed {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": "validation_failed", "message": ae.Message,
+			})
+			return
+		}
+		if h.logger != nil {
+			h.logger.Error("gift card purchase error", "err", err.Error())
+		}
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal",
+			"message": "could not start gift card purchase",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"gift_card_id": result.GiftCardID.String(),
+			"checkout_url": result.CheckoutURL,
+			"session_id":   result.CheckoutSessionID,
+			"provider":     result.Provider,
+		},
+	})
 }

@@ -202,8 +202,16 @@ export interface StorefrontBranding {
   announcement_active: boolean;
 }
 
+export interface StorefrontStoreSummary {
+  name: string;
+  slug: string;
+  currency_code: string;
+  country_code: string;
+}
+
 export interface BrandingResponse {
   branding: StorefrontBranding;
+  store?: StorefrontStoreSummary;
   active_promotion?: ActivePromotion;
 }
 

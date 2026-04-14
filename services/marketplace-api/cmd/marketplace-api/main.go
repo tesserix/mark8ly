@@ -462,7 +462,24 @@ func main() {
 
 		// Gift cards — Marketing M2.
 		giftCardRepoSF := giftcard.NewRepository()
-		giftCardSvcSF := giftcard.NewService(conn, giftCardRepoSF, log)
+		// Storefront purchase flow: use the same SendGrid mailer config
+		// as admin-issued cards, the store's own branding for the email,
+		// and the store's configured Stripe gateway (payment_gateway_configs).
+		var giftCardMailerSF giftcard.Mailer
+		if cfg.SendGridAPIKey != "" {
+			giftCardMailerSF = giftcard.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+		} else {
+			giftCardMailerSF = &giftcard.LogMailer{Logger: log}
+		}
+		giftCardBrandingSvcSF := branding.NewService(branding.ServiceConfig{
+			DB:     conn,
+			Repo:   branding.NewRepository(),
+			Logger: log,
+		})
+		giftCardThemeLoaderSF := giftcard.NewStoreThemeLoader(conn, giftCardBrandingSvcSF, cfg.StorefrontBaseURLTemplate)
+		giftCardGatewayResolver := giftcard.NewDBGatewayResolver(conn)
+		giftCardSvcSF := giftcard.NewServiceWithMailer(conn, giftCardRepoSF, giftCardMailerSF, giftCardThemeLoaderSF, log).
+			WithGatewayResolver(giftCardGatewayResolver)
 		giftCardSFHandler := storefront.NewGiftCardStorefrontHandler(giftCardSvcSF, log)
 
 		// Loyalty M3 storefront wiring.
@@ -499,7 +516,8 @@ func main() {
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)
-		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log)
+		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
+			WithGiftCardService(giftCardSvcSF)
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, log)
 
 		storefrontDeps = storefront.Deps{

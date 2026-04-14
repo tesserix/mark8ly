@@ -14,6 +14,7 @@ import {
 
 import type { StoreBranding, UpdateBrandingInput } from "@/lib/api/marketplace-api";
 import { updateBrandingAction } from "@/app/(admin)/settings/themes/actions";
+import { useToast } from "@/components/feedback/Toaster";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export function BrandingSettingsClient({
   branding: initial,
   editable,
 }: BrandingSettingsClientProps) {
+  const { toast } = useToast();
   const [form, setForm] = useState<StoreBranding>(initial);
   const [tab, setTab] = useState<Tab>("identity");
   const [isPending, startTransition] = useTransition();
@@ -104,9 +106,11 @@ export function BrandingSettingsClient({
       const result = await updateBrandingAction(input);
       if (result.ok) {
         setStatus({ type: "saved" });
+        toast.success("Branding saved", "Changes are live on your storefront.");
         setTimeout(() => setStatus({ type: "idle" }), 3000);
       } else {
         setStatus({ type: "error", message: result.message });
+        toast.error("Couldn't save branding", result.message);
       }
     });
   }

@@ -27,8 +27,8 @@
   --storefront-background: var(--paper-200);
   --storefront-surface: #ffffff;
   --storefront-text: var(--ink-900);
-  --storefront-heading-font: var(--font-serif);
-  --storefront-body-font: var(--font-sans);
+  --storefront-heading-font: var(--font-source-serif), Georgia, serif;
+  --storefront-body-font: var(--font-source-sans), system-ui, sans-serif;
   --storefront-radius: 1.5rem;
   --storefront-density-scale: 1;
 }

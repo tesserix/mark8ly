@@ -11,6 +11,11 @@ import {
 import { cookies, headers } from "next/headers";
 import { SkipLink } from "@repo/ui/skip-link";
 
+import {
+  normalizeStorefrontTheme,
+  themeCssVariables,
+} from "@repo/ui/storefront-theme";
+
 import { CartProvider } from "@/components/CartProvider";
 import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
 import { PromotionBar } from "@/components/PromotionBar";
@@ -18,6 +23,7 @@ import { Toaster } from "@/components/Toaster";
 import { slugFromHost } from "@/lib/slug";
 import { buildLoginUrl, buildLogoutUrl, hasSessionCookie, decodeSession } from "@/lib/auth";
 import { fetchBranding } from "@/lib/api/marketplace-api";
+import { fetchStoreBySlug } from "@/lib/api/platform-api";
 
 import "./globals.css";
 
@@ -160,11 +166,22 @@ export default async function RootLayout({ children }: RootLayoutProps) {
     logoutUrl,
   };
 
-  const brandingData = await fetchBranding(storeSlug);
+  const [brandingData, store] = await Promise.all([
+    fetchBranding(storeSlug),
+    fetchStoreBySlug(storeSlug).catch(() => null),
+  ]);
+
+  // Compute the merchant's theme CSS vars at the layout root so every
+  // page inherits the merchant's font + radius + color choices.
+  // Without this the storefront rendered with the browser's default
+  // body font regardless of what they picked in /settings/themes.
+  const themeStyle = store?.storefront_theme
+    ? (themeCssVariables(normalizeStorefrontTheme(store.storefront_theme)) as Record<string, string>)
+    : undefined;
 
   return (
     <html lang="en" className={fontVars}>
-      <body>
+      <body style={themeStyle}>
         <SkipLink />
         <PromotionBar
           promotion={brandingData?.active_promotion}

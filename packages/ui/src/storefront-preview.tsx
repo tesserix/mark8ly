@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import type { StorefrontTheme } from "./storefront-theme";
+import { themeCssVariables, type StorefrontTheme } from "./storefront-theme";
 
 /**
  * StorefrontLayoutPreview — shared mini schematic.
@@ -33,14 +33,23 @@ export function StorefrontLayoutPreview({
         ? "16px"
         : "10px";
 
+  // Spread the shared theme CSS vars (heading/body font, radius, density,
+  // colors) onto the preview root so every descendant that reads
+  // var(--storefront-heading-font) etc. picks up the merchant's choices.
+  // Without this the preview used the browser's default font regardless
+  // of the typography selectors above.
+  const themeVars = themeCssVariables(theme) as CSSProperties;
+
   return (
     <div
       className="overflow-hidden border"
       style={{
+        ...themeVars,
         background: theme.colors.background,
         color: theme.colors.text,
         borderColor: `${theme.colors.primary}22`,
         borderRadius: radius,
+        fontFamily: "var(--storefront-body-font)",
       }}
     >
       <BrowserChrome theme={theme} slug={slug} />
@@ -203,7 +212,7 @@ function SplitHeroSchematic({
       <div
         className="grid grid-cols-2 gap-0 overflow-hidden"
         style={{
-          borderRadius: "var(--store-radius)",
+          borderRadius: "var(--storefront-radius)",
           background: `${theme.colors.surface}66`,
         }}
       >
@@ -246,7 +255,7 @@ function CatalogFirstSchematic({
               className="h-3 w-8 border"
               style={{
                 borderColor: `${theme.colors.primary}33`,
-                borderRadius: "var(--store-radius)",
+                borderRadius: "var(--storefront-radius)",
               }}
             />
           ))}
@@ -334,7 +343,7 @@ function BoldPromoSchematic({
         style={{
           background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.accent})`,
           color: "#fff",
-          borderRadius: "var(--store-radius)",
+          borderRadius: "var(--storefront-radius)",
         }}
       >
         <div className="grid grid-cols-12 gap-3">
@@ -344,14 +353,14 @@ function BoldPromoSchematic({
             </p>
             <p
               className="text-xl font-medium leading-none tracking-tight"
-              style={{ fontFamily: "var(--store-heading-font)" }}
+              style={{ fontFamily: "var(--storefront-heading-font)" }}
             >
               {name}
             </p>
             <div className="pt-1">
               <span
                 className="inline-flex h-5 items-center bg-white px-3 text-[8px] font-semibold uppercase tracking-[0.14em] text-neutral-900"
-                style={{ borderRadius: "var(--store-radius)" }}
+                style={{ borderRadius: "var(--storefront-radius)" }}
               >
                 Shop drop
               </span>
@@ -362,7 +371,7 @@ function BoldPromoSchematic({
               <p
                 key={n}
                 className="text-2xl font-medium leading-none"
-                style={{ fontFamily: "var(--store-heading-font)" }}
+                style={{ fontFamily: "var(--storefront-heading-font)" }}
               >
                 {n}
               </p>
@@ -457,7 +466,7 @@ function HeroHeadline({
         centered ? "text-center" : ""
       }`}
       style={{
-        fontFamily: "var(--store-heading-font)",
+        fontFamily: "var(--storefront-heading-font)",
         color: theme.colors.text,
       }}
     >
@@ -511,7 +520,7 @@ function ButtonBlock({
       className="inline-flex h-6 items-center px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-white"
       style={{
         background: theme.colors.primary,
-        borderRadius: "var(--store-radius)",
+        borderRadius: "var(--storefront-radius)",
       }}
     >
       {label}
@@ -533,14 +542,14 @@ function Tile({
     ? {
         background: `${theme.colors.primary}10`,
         border: `1px solid ${theme.colors.primary}22`,
-        borderRadius: "var(--store-radius)",
+        borderRadius: "var(--storefront-radius)",
         height: "100%",
         minHeight: "100%",
       }
     : {
         background: `${theme.colors.primary}10`,
         border: `1px solid ${theme.colors.primary}22`,
-        borderRadius: "var(--store-radius)",
+        borderRadius: "var(--storefront-radius)",
         paddingTop: ratio,
       };
   return <div style={style} />;

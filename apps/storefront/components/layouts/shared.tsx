@@ -44,7 +44,7 @@ export function ProductSlot({
       style={{
         background: `${theme.colors.primary}08`,
         border: `1px solid ${theme.colors.primary}18`,
-        borderRadius: "var(--store-radius)",
+        borderRadius: "var(--storefront-radius)",
       }}
     >
       <div
@@ -239,7 +239,7 @@ export function PrimaryButton({
       className={`inline-flex ${h} items-center justify-center font-semibold uppercase tracking-[0.14em] text-white transition-opacity hover:opacity-90`}
       style={{
         background: theme.colors.primary,
-        borderRadius: "var(--store-radius)",
+        borderRadius: "var(--storefront-radius)",
       }}
     >
       {children}
@@ -262,7 +262,7 @@ export function SecondaryButton({
         borderColor: `${theme.colors.primary}44`,
         background: "transparent",
         color: theme.colors.text,
-        borderRadius: "var(--store-radius)",
+        borderRadius: "var(--storefront-radius)",
       }}
     >
       {children}
@@ -296,13 +296,13 @@ export function LinkCta({
    ------------------------------------------------------------ */
 
 export function headingStyle(): CSSProperties {
-  return { fontFamily: "var(--store-heading-font)" };
+  return { fontFamily: "var(--storefront-heading-font)" };
 }
 
 export function surfaceStyle(theme: StorefrontTheme): CSSProperties {
   return {
     background: theme.colors.surface,
     border: `1px solid ${theme.colors.primary}22`,
-    borderRadius: "var(--store-radius)",
+    borderRadius: "var(--storefront-radius)",
   };
 }

@@ -71,123 +71,16 @@ function StoreLanding({ store }: { store: PublicStore }) {
             ? theme.colors.background
             : `radial-gradient(circle at top left, ${theme.colors.accent}18, transparent 24%), radial-gradient(circle at top right, ${theme.colors.primary}12, transparent 28%), ${theme.colors.background}`,
         color: theme.colors.text,
-        fontFamily: "var(--store-body-font)",
+        fontFamily: "var(--storefront-body-font)",
         ...style,
       }}
     >
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store.name} />
-        <TopBar store={store} theme={theme} />
         <StorefrontLayoutRenderer store={store} theme={theme} />
         <FeaturedProducts storeSlug={store.slug} />
       </div>
     </main>
-  );
-}
-
-// Format an ISO-4217 currency code as a short human-readable label:
-// "INR" → "Indian Rupee (INR)", "USD" → "US Dollar (USD)", with a
-// graceful fall-through to the raw code when Intl doesn't know it.
-function formatCurrencyLabel(code: string): string {
-  if (!code) return "";
-  try {
-    const display = new Intl.DisplayNames(["en"], {
-      type: "currency",
-    }).of(code.toUpperCase());
-    if (display && display.toUpperCase() !== code.toUpperCase()) {
-      return `${display} (${code.toUpperCase()})`;
-    }
-  } catch {
-    // fall through
-  }
-  return code.toUpperCase();
-}
-
-// Format an ISO-3166-alpha-2 country code as a country name: "IN" →
-// "India", "US" → "United States". Falls through to the raw code when
-// Intl doesn't have a mapping.
-function formatCountryLabel(code: string): string {
-  if (!code) return "";
-  try {
-    const display = new Intl.DisplayNames(["en"], {
-      type: "region",
-    }).of(code.toUpperCase());
-    if (display) return display;
-  } catch {
-    // fall through
-  }
-  return code.toUpperCase();
-}
-
-function TopBar({
-  store,
-  theme,
-}: {
-  store: PublicStore;
-  theme: StorefrontTheme;
-}) {
-  return (
-    <header className="mb-10 flex flex-wrap items-center justify-between gap-4">
-      <div>
-        <p
-          className="text-[11px] font-semibold uppercase tracking-[0.24em]"
-          style={{ color: `${theme.colors.primary}CC` }}
-        >
-          {store.slug}.mark8ly.com
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <MetaChip
-            label="Currency"
-            value={formatCurrencyLabel(store.currency_code)}
-            theme={theme}
-          />
-          <MetaChip
-            label="Country"
-            value={formatCountryLabel(store.country_code)}
-            theme={theme}
-          />
-          {/* Timezone chip removed: timezone is a system configuration,
-              not customer-facing information, and a stale default
-              (e.g. "Australia/Sydney" for an India store) misleads
-              customers about the store's locality. */}
-        </div>
-      </div>
-      <div
-        className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em]"
-        style={{
-          borderColor: `${theme.colors.primary}33`,
-          background: `${theme.colors.surface}CC`,
-          color: theme.colors.primary,
-        }}
-      >
-        Powered by mark8ly
-      </div>
-    </header>
-  );
-}
-
-function MetaChip({
-  label,
-  value,
-  theme,
-}: {
-  label: string;
-  value: string;
-  theme: StorefrontTheme;
-}) {
-  return (
-    <span
-      className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm shadow-sm"
-      style={{
-        background: `${theme.colors.surface}E6`,
-        borderColor: `${theme.colors.primary}22`,
-      }}
-    >
-      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] opacity-55">
-        {label}
-      </span>
-      <span className="font-medium">{value}</span>
-    </span>
   );
 }
 
@@ -214,9 +107,9 @@ function StoreNotFound({ slug }: { slug: string }) {
 
 function themeStyle(theme: StorefrontTheme): CSSProperties {
   return {
-    ["--store-heading-font" as string]: fontStacks[theme.typography.headingFont],
-    ["--store-body-font" as string]: fontStacks[theme.typography.bodyFont],
-    ["--store-radius" as string]: themeRadius(theme),
-    ["--store-spacing" as string]: themeSpacing(theme),
+    ["--storefront-heading-font" as string]: fontStacks[theme.typography.headingFont],
+    ["--storefront-body-font" as string]: fontStacks[theme.typography.bodyFont],
+    ["--storefront-radius" as string]: themeRadius(theme),
+    ["--storefront-spacing" as string]: themeSpacing(theme),
   };
 }

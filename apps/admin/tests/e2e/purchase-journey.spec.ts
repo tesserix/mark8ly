@@ -180,30 +180,13 @@ test("3. customer: fill checkout and place order", async ({ browser }) => {
   // /api/checkout/shipping-rates upstream 500s and the radios never load.
   // Stub the proxy with one Standard rate so the rest of the journey
   // (checkout submit → order create → admin /orders) can be exercised.
-  // Log the checkout submit response so we can see the backend error if any.
+  // Log the checkout submit response so the backend error (if any) is
+  // visible in the test output.
   page.on("response", async (res) => {
     if (res.url().includes("/api/checkout/submit")) {
       const text = await res.text().catch(() => "<unreadable>");
       console.log(`[submit resp] status=${res.status()} body=${text}`);
     }
-  });
-
-  await page.route("**/api/checkout/shipping-rates*", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        data: [
-          {
-            service: "standard",
-            carrier: "delhivery",
-            price: "50.00",
-            currency_code: "INR",
-            estimated_days: 3,
-          },
-        ],
-      }),
-    });
   });
 
   await page.goto("/checkout");
@@ -274,14 +257,18 @@ test("4. admin: new order appears in /orders", async ({ browser }) => {
 
   const bodyText = (await page.textContent("body")) ?? "";
   const idShort = state.orderId!.slice(0, 8);
-  console.log(`[admin] looking for order id fragment: ${idShort}`);
-  console.log(`[admin] page contains fragment?:`, bodyText.includes(idShort));
+  console.log(`[admin] page contains order uuid fragment?`, bodyText.includes(idShort));
 
-  // The order list usually shows order_number (not raw UUID). Just assert
-  // a row of table data was rendered.
-  const rowCount = await page.locator("table tbody tr").count();
-  console.log(`[admin] order row count: ${rowCount}`);
-  expect(rowCount).toBeGreaterThan(0);
+  // The orders page is rendered as a CSS grid, not an HTML <table>, so
+  // assert against the human-readable order number (M-<store>-<YYMMDD>-<seq>).
+  const orderLink = page.locator("text=/M-[A-Z]{3}-\\d{6}-\\d{5}/").first();
+  await expect(orderLink).toBeVisible({ timeout: 10_000 });
+  const orderNumber = (await orderLink.textContent())?.trim() ?? "";
+  console.log(`[admin] top order number: ${orderNumber}`);
+  expect(orderNumber).toMatch(/^M-[A-Z]{3}-\d{6}-\d{5}$/);
+  // Customer email and total should also be on the same page.
+  await expect(page.getByText(CUSTOMER_EMAIL).first()).toBeVisible();
+  await expect(page.getByText(/₹63\.85|63\.85/).first()).toBeVisible();
 
   await ctx.close();
 });

@@ -49,6 +49,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
+	"github.com/mark8ly/marketplace-api/internal/page"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/review"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
@@ -367,6 +368,10 @@ func main() {
 		})
 		brandingHandler := admin.NewBrandingHandler(brandingSvc, log)
 
+		// Pages (CMS).
+		pageSvc := page.NewService(page.NewRepository(conn))
+		pagesHandler := admin.NewPagesHandler(pageSvc, log)
+
 		// B2 — Plan gate resolver (shared between admin and storefront).
 		planResolver := plangate.NewPlanResolver(conn, subscriptionRepo)
 
@@ -401,6 +406,7 @@ func main() {
 			DashboardHandler:       dashboardHandler,
 			TicketsHandler:         ticketsHandler,
 			BrandingHandler:        brandingHandler,
+			PagesHandler:           pagesHandler,
 			PlanResolver:           planResolver,
 			StoresMiddleware:        storeMW,
 			AuthzMiddleware:         authzMW,
@@ -523,6 +529,10 @@ func main() {
 		campaignRepoSF := campaign.NewRepository(conn)
 		sfBrandingHandler := storefront.NewBrandingHandler(brandingSvcSF, conn, campaignRepoSF, couponRepo, log)
 
+		// Pages (CMS) — storefront public read.
+		pageSvcSF := page.NewService(page.NewRepository(conn))
+		sfPagesHandler := storefront.NewPagesHandler(pageSvcSF, log)
+
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
 		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, log)
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
@@ -557,6 +567,7 @@ func main() {
 			WishlistHandler: wishlistHandler,
 			// B1 branding.
 			BrandingHandler: sfBrandingHandler,
+			PagesHandler:    sfPagesHandler,
 			Logger:          log,
 		}
 	}

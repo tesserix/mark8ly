@@ -7,6 +7,12 @@ export const metadata = {
   title: "My Orders",
 };
 
+// The account orders list must re-query marketplace-api on every
+// request — Next.js otherwise caches the first render per-tenant and
+// new purchases never show up until a redeploy.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 interface OrderSummary {
   id: string;
   order_number: string;

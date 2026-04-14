@@ -32,6 +32,7 @@ type StoreBranding struct {
 	FooterTagline    *string        `gorm:"column:footer_tagline;type:varchar(300)"`
 	FooterCopyright  *string        `gorm:"column:footer_copyright;type:varchar(200)"`
 	FooterSections   datatypes.JSON `gorm:"column:footer_sections;type:jsonb;not null;default:'[]'::jsonb"`
+	HomepageContent  datatypes.JSON `gorm:"column:homepage_content;type:jsonb;not null;default:'{}'::jsonb"`
 	SocialInstagram  *string        `gorm:"column:social_instagram;type:varchar(300)"`
 	SocialTwitter    *string   `gorm:"column:social_twitter;type:varchar(300)"`
 	SocialFacebook   *string   `gorm:"column:social_facebook;type:varchar(300)"`

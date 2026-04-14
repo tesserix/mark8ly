@@ -3,6 +3,7 @@
 package storefront
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -64,8 +65,9 @@ type PublicBrandingResponse struct {
 	SocialFacebook     *string `json:"social_facebook,omitempty"`
 	SocialTiktok       *string `json:"social_tiktok,omitempty"`
 	SocialYoutube      *string `json:"social_youtube,omitempty"`
-	CustomCSS          *string `json:"custom_css,omitempty"`
-	ShowPoweredBy      bool    `json:"show_powered_by"`
+	CustomCSS          *string         `json:"custom_css,omitempty"`
+	ShowPoweredBy      bool            `json:"show_powered_by"`
+	HomepageContent    json.RawMessage `json:"homepage_content"`
 }
 
 func toPublicBrandingResponse(b branding.StoreBranding) PublicBrandingResponse {
@@ -98,6 +100,11 @@ func toPublicBrandingResponse(b branding.StoreBranding) PublicBrandingResponse {
 	}
 	if sections, err := branding.ParseFooterSections(b.FooterSections); err == nil {
 		resp.FooterSections = sections
+	}
+	if len(b.HomepageContent) > 0 {
+		resp.HomepageContent = json.RawMessage(b.HomepageContent)
+	} else {
+		resp.HomepageContent = json.RawMessage(`{}`)
 	}
 	return resp
 }

@@ -2,6 +2,7 @@ package branding
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -80,6 +82,7 @@ type UpdateInput struct {
 	FooterTagline    *string
 	FooterCopyright  *string
 	FooterSections   *[]FooterSection
+	HomepageContent  *json.RawMessage // nil = leave unchanged; non-nil (even empty) = write this blob
 	SocialInstagram  *string
 	SocialTwitter    *string
 	SocialFacebook   *string
@@ -193,6 +196,18 @@ func (s *Service) Update(ctx context.Context, in UpdateInput) (*StoreBranding, e
 			return nil, err
 		}
 		b.FooterSections = encoded
+	}
+	if in.HomepageContent != nil {
+		if err := ValidateHomepageContent(*in.HomepageContent); err != nil {
+			return nil, apperrors.ValidationFailed("homepage_content", err.Error())
+		}
+		// Persist the raw JSON bytes verbatim. Default to "{}" if caller
+		// passed an empty slice.
+		raw := *in.HomepageContent
+		if len(raw) == 0 {
+			raw = json.RawMessage(`{}`)
+		}
+		b.HomepageContent = datatypes.JSON(raw)
 	}
 	if in.SocialInstagram != nil {
 		b.SocialInstagram = in.SocialInstagram

@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -54,6 +55,7 @@ type BrandingResponse struct {
 	SocialYoutube      *string                  `json:"social_youtube,omitempty"`
 	CustomCSS          *string                  `json:"custom_css,omitempty"`
 	ShowPoweredBy      bool                     `json:"show_powered_by"`
+	HomepageContent    json.RawMessage          `json:"homepage_content"`
 	CreatedAt          string                   `json:"created_at"`
 	UpdatedAt          string                   `json:"updated_at"`
 }
@@ -92,6 +94,11 @@ func toBrandingResponse(b branding.StoreBranding) BrandingResponse {
 	}
 	if sections, err := branding.ParseFooterSections(b.FooterSections); err == nil {
 		resp.FooterSections = sections
+	}
+	if len(b.HomepageContent) > 0 {
+		resp.HomepageContent = json.RawMessage(b.HomepageContent)
+	} else {
+		resp.HomepageContent = json.RawMessage(`{}`)
 	}
 	return resp
 }
@@ -141,6 +148,7 @@ type UpdateBrandingRequest struct {
 	SocialYoutube      *string                   `json:"social_youtube"`
 	CustomCSS          *string                   `json:"custom_css"`
 	ShowPoweredBy      *bool                     `json:"show_powered_by"`
+	HomepageContent    *json.RawMessage          `json:"homepage_content"`
 }
 
 // Update handles PUT /admin/stores/:storeId/branding.
@@ -184,6 +192,7 @@ func (h *BrandingHandler) Update(c *gin.Context) {
 		FooterTagline:      req.FooterTagline,
 		FooterCopyright:    req.FooterCopyright,
 		FooterSections:     req.FooterSections,
+		HomepageContent:    req.HomepageContent,
 		SocialInstagram:    req.SocialInstagram,
 		SocialTwitter:      req.SocialTwitter,
 		SocialFacebook:     req.SocialFacebook,

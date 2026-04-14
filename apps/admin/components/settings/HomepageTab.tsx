@@ -20,11 +20,13 @@ interface HomepageTabProps {
   categories: Pick<AdminCategory, "id" | "slug" | "name">[];
 }
 
-const DEFAULT_HERO: HomepageHero = { enabled: true };
+function defaultHero(): HomepageHero {
+  return { enabled: true };
+}
 
 export function HomepageTab({ form, patch, editable, pages, categories }: HomepageTabProps) {
   const content: HomepageContent = form.homepage_content ?? {};
-  const hero: HomepageHero = content.hero ?? DEFAULT_HERO;
+  const hero: HomepageHero = content.hero ?? defaultHero();
   const sections: HomepageSection[] = content.sections ?? [];
 
   const setContent = (next: HomepageContent) => {

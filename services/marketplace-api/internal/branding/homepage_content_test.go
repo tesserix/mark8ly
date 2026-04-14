@@ -104,3 +104,31 @@ func TestValidateHomepageContent_TooManySections_Errors(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "at most 12 sections")
 }
+
+func TestValidateHomepageContent_HeroRejectsJavascriptCtaURL(t *testing.T) {
+	body := `{"hero":{"enabled":true,"cta_url":"javascript:alert(1)","cta_label":"Go"}}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cta_url")
+}
+
+func TestValidateHomepageContent_HeroRejectsDataImageURL(t *testing.T) {
+	body := `{"hero":{"enabled":true,"image_url":"data:text/html;base64,PHNjcmlwdD4="}}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "image_url")
+}
+
+func TestValidateHomepageContent_ImageSectionRejectsJavascriptURL(t *testing.T) {
+	body := `{"sections":[{"type":"image","url":"javascript:alert(1)"}]}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "image.url")
+}
+
+func TestValidateHomepageContent_HeroAcceptsSiteRelativeAndHttps(t *testing.T) {
+	for _, url := range []string{"/collections/new", "https://cdn.example/y.jpg"} {
+		body := `{"hero":{"enabled":true,"image_url":"` + url + `"}}`
+		require.NoError(t, ValidateHomepageContent(json.RawMessage(body)))
+	}
+}

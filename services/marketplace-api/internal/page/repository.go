@@ -2,6 +2,8 @@ package page
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -96,6 +98,16 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&Page{}).Error
 }
 
+// suggestSlug appends a 6-char random hex suffix to base so that the
+// suggested alternative slug is vanishingly unlikely to collide.
+func suggestSlug(base string) string {
+	var buf [3]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return base + "-2"
+	}
+	return base + "-" + hex.EncodeToString(buf[:])
+}
+
 // translatePageUniqueViolation maps PG unique violations on the
 // pages_store_slug_idx index to apperrors.SlugTaken. Any other
 // violation or non-23505 error is returned wrapped for debuggability.
@@ -108,7 +120,7 @@ func translatePageUniqueViolation(err error, attemptedSlug string) error {
 		return err
 	}
 	if pgErr.ConstraintName == "pages_store_slug_idx" {
-		return apperrors.SlugTaken(attemptedSlug, attemptedSlug+"-2")
+		return apperrors.SlugTaken(attemptedSlug, suggestSlug(attemptedSlug))
 	}
 	return fmt.Errorf("page: unique violation on %s: %w", pgErr.ConstraintName, err)
 }

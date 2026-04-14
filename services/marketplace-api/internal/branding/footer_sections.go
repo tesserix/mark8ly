@@ -22,6 +22,21 @@ const (
 
 var footerSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 
+// IsSafeURL returns true if the URL uses an allowed scheme. Merchant
+// authored URLs are restricted to http://, https://, and site-
+// relative paths beginning with /. This blocks javascript: and
+// data: URIs that would enable stored XSS if rendered verbatim in
+// <a href> or <img src>.
+func IsSafeURL(u string) bool {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return false
+	}
+	return strings.HasPrefix(u, "http://") ||
+		strings.HasPrefix(u, "https://") ||
+		strings.HasPrefix(u, "/")
+}
+
 // ValidateFooterSections enforces the shape constraints for a
 // merchant-authored footer. Returns an apperrors.ValidationFailed with
 // field="footer_sections" on any violation.
@@ -78,7 +93,7 @@ func ValidateFooterSections(sections []FooterSection) error {
 					return apperrors.ValidationFailed("footer_sections",
 						fmt.Sprintf("section[%d].items[%d].url exceeds %d chars", i, j, maxFooterURLLen))
 				}
-				if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "/") {
+				if !IsSafeURL(u) {
 					return apperrors.ValidationFailed("footer_sections",
 						fmt.Sprintf("section[%d].items[%d].url must start with http://, https:// or /", i, j))
 				}

@@ -92,6 +92,28 @@ func TestService_Update_PartialPatch(t *testing.T) {
 	require.Equal(t, "original body", updated.Body, "body untouched by partial patch")
 }
 
+func TestService_Create_RejectsOversizeBody(t *testing.T) {
+	svc := newTestService(t)
+	_, err := svc.Create(context.Background(), CreateInput{
+		TenantID: uuid.New(), StoreID: uuid.New(),
+		Slug: "about", Title: "About", Body: strings.Repeat("a", 200_001),
+	})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, apperrors.ErrValidationFailed))
+}
+
+func TestService_Update_RejectsOversizeBody(t *testing.T) {
+	svc := newTestService(t)
+	p, err := svc.Create(context.Background(), CreateInput{
+		TenantID: uuid.New(), StoreID: uuid.New(),
+		Slug: "about", Title: "About",
+	})
+	require.NoError(t, err)
+	big := strings.Repeat("a", 200_001)
+	_, err = svc.Update(context.Background(), p.ID, UpdateInput{Body: &big})
+	require.Error(t, err)
+}
+
 func TestService_GetBySlug_FiltersUnpublishedOnStorefrontRead(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()

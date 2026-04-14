@@ -12,7 +12,11 @@ interface Props {
 
 async function resolveStoreSlug(): Promise<string> {
   const h = await headers();
-  return slugFromHost(h.get("host")) ?? process.env.DEFAULT_STORE_SLUG ?? "";
+  const storeSlug = slugFromHost(h.get("host")) ?? process.env.DEFAULT_STORE_SLUG ?? "";
+  if (!storeSlug) {
+    console.warn("[storefront] /pages/[slug]: no store context (host + DEFAULT_STORE_SLUG both empty)");
+  }
+  return storeSlug;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

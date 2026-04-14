@@ -5,6 +5,7 @@ import type {
   FooterSection,
   StorefrontBranding,
 } from "@/lib/api/marketplace-api";
+import { safeUrl } from "@/lib/safeUrl";
 
 interface FooterProps {
   branding?: StorefrontBranding | null;
@@ -22,7 +23,10 @@ function itemHref(item: FooterLinkItem): string | null {
   if (item.kind === "page") {
     return item.page_slug ? `/pages/${item.page_slug}` : null;
   }
-  return item.url ?? null;
+  const u = item.url ?? null;
+  if (u === null) return null;
+  const safe = safeUrl(u);
+  return safe === "#" ? null : safe;
 }
 
 function FooterLink({ item }: { item: FooterLinkItem }) {
@@ -71,7 +75,7 @@ function SocialRow({ branding }: { branding: StorefrontBranding }) {
       {links.map((l) => (
         <li key={l.key}>
           <a
-            href={l.url!}
+            href={safeUrl(l.url)}
             target="_blank"
             rel="noreferrer"
             className="text-foreground-secondary transition-colors hover:text-moss-700"

@@ -87,6 +87,12 @@ func validateHero(h *heroInput) error {
 	if h.CtaLabel != nil && len(*h.CtaLabel) > maxHeroCtaLabel {
 		return fmt.Errorf("hero.cta_label: max %d chars", maxHeroCtaLabel)
 	}
+	if h.ImageURL != nil && *h.ImageURL != "" && !IsSafeURL(*h.ImageURL) {
+		return fmt.Errorf("hero.image_url: unsafe URL scheme")
+	}
+	if h.CtaURL != nil && *h.CtaURL != "" && !IsSafeURL(*h.CtaURL) {
+		return fmt.Errorf("hero.cta_url: unsafe URL scheme")
+	}
 	return nil
 }
 
@@ -105,6 +111,9 @@ func validateSection(s sectionInput) error {
 	case "image":
 		if s.URL == nil || *s.URL == "" {
 			return fmt.Errorf("image: url required")
+		}
+		if !IsSafeURL(*s.URL) {
+			return fmt.Errorf("image.url: unsafe URL scheme")
 		}
 		if s.Alt != nil && len(*s.Alt) > maxSectionImageAlt {
 			return fmt.Errorf("image.alt: max %d chars", maxSectionImageAlt)

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { HomepageHero } from "@/lib/api/marketplace-api";
 import type { StorefrontTheme } from "@repo/ui/storefront-theme";
+import { safeUrl } from "@/lib/safeUrl";
 
 type HeroSectionProps = {
   hero: HomepageHero | undefined | null;
@@ -36,10 +37,10 @@ export function HeroSection({
 
   return (
     <section className="relative isolate overflow-hidden">
-      {imageURL ? (
+      {imageURL && safeUrl(imageURL) !== "#" ? (
         /* eslint-disable-next-line @next/next/no-img-element */
         <img
-          src={imageURL}
+          src={safeUrl(imageURL)}
           alt=""
           className="absolute inset-0 -z-10 h-full w-full object-cover opacity-70"
           loading="eager"
@@ -56,7 +57,7 @@ export function HeroSection({
         ) : null}
         {cta ? (
           <Link
-            href={cta.url}
+            href={safeUrl(cta.url)}
             className="mt-8 inline-flex h-12 items-center rounded-md bg-ink-900 px-6 text-base font-medium text-paper-200 transition-colors hover:bg-moss-700"
           >
             {cta.label}

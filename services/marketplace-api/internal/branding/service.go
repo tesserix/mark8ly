@@ -209,6 +209,21 @@ func (s *Service) Update(ctx context.Context, in UpdateInput) (*StoreBranding, e
 		}
 		b.HomepageContent = datatypes.JSON(raw)
 	}
+	if err := validateSocialURL("social_instagram", in.SocialInstagram); err != nil {
+		return nil, err
+	}
+	if err := validateSocialURL("social_twitter", in.SocialTwitter); err != nil {
+		return nil, err
+	}
+	if err := validateSocialURL("social_facebook", in.SocialFacebook); err != nil {
+		return nil, err
+	}
+	if err := validateSocialURL("social_tiktok", in.SocialTiktok); err != nil {
+		return nil, err
+	}
+	if err := validateSocialURL("social_youtube", in.SocialYoutube); err != nil {
+		return nil, err
+	}
 	if in.SocialInstagram != nil {
 		b.SocialInstagram = in.SocialInstagram
 	}
@@ -315,6 +330,20 @@ var hexColorRE = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 func isValidHex(s string) bool {
 	return hexColorRE.MatchString(s)
+}
+
+func validateSocialURL(field string, v *string) error {
+	if v == nil {
+		return nil
+	}
+	s := strings.TrimSpace(*v)
+	if s == "" {
+		return nil // empty is allowed — user clearing the field
+	}
+	if !IsSafeURL(s) {
+		return apperrors.ValidationFailed(field, "unsafe URL scheme")
+	}
+	return nil
 }
 
 // --- Custom CSS sanitization (Enterprise) ---

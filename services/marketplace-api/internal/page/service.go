@@ -19,6 +19,7 @@ const (
 	maxTitleLen          = 200
 	maxSEOTitleLen       = 200
 	maxSEODescriptionLen = 300
+	maxBodyLen           = 200_000
 )
 
 // Service is the business-logic layer for pages. It enforces slug +
@@ -70,6 +71,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Page, error) {
 	if err := validateSEO(in.SEOTitle, in.SEODescription); err != nil {
 		return nil, err
 	}
+	if len(in.Body) > maxBodyLen {
+		return nil, apperrors.ValidationFailed("body", "body exceeds 200 KB")
+	}
 	if in.TenantID == uuid.Nil {
 		return nil, apperrors.ValidationFailed("tenant_id", "tenant id is required")
 	}
@@ -114,6 +118,9 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in UpdateInput) (*Pa
 		patch["title"] = title
 	}
 	if in.Body != nil {
+		if len(*in.Body) > maxBodyLen {
+			return nil, apperrors.ValidationFailed("body", "body exceeds 200 KB")
+		}
 		patch["body"] = *in.Body
 	}
 	if in.SEOTitle != nil {

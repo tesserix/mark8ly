@@ -88,7 +88,15 @@ function StoreLanding({
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store.name} />
         <StorefrontLayoutRenderer store={store} theme={theme} content={content} />
-        <FeaturedProducts storeSlug={store.slug} />
+        {/*
+          Default FeaturedProducts strip only when the merchant hasn't authored
+          any homepage sections. Once they start authoring (including their
+          own featured_products block), they own what shows below the hero —
+          avoids a double-render + double API fetch.
+        */}
+        {(content?.sections?.length ?? 0) === 0 ? (
+          <FeaturedProducts storeSlug={store.slug} />
+        ) : null}
       </div>
     </main>
   );

@@ -29,8 +29,8 @@ jobs:
       matrix:
         service: [platform-api, auth-bff, marketplace-api]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
           cache-dependency-path: services/${{ matrix.service }}/go.sum
@@ -48,8 +48,8 @@ jobs:
     name: Node + Turbo
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "npm"
@@ -95,7 +95,7 @@ jobs:
             context: .
             target: runtime
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Compute short SHA
         id: sha
@@ -143,14 +143,14 @@ jobs:
           vuln-type: "os,library"
 
   # ─── Bump tesserix-k8s values ──────────────────────────────────────
-  # After all images push successfully, open a PR on tesserix-k8s
-  # bumping the mark8ly-* image tags. ArgoCD picks up the merged PR
-  # and rolls the deployments.
+  # After all images push successfully, commit the mark8ly-* image tag
+  # bumps directly to tesserix-k8s main. ArgoCD picks up the commit
+  # and rolls the deployments — no PR review step.
   bump-k8s:
     name: Bump tesserix-k8s image tags
     # Requires the TESSERIX_K8S_BOT repo secret — a classic PAT with `repo`
-    # scope on tesserix/tesserix-k8s (needed to push a branch and open a PR
-    # across repos; GITHUB_TOKEN cannot reach another private repo).
+    # scope on tesserix/tesserix-k8s (GITHUB_TOKEN cannot reach another
+    # private repo).
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [images]
     runs-on: ubuntu-latest
@@ -160,7 +160,7 @@ jobs:
         run: echo "short=$(echo ${{ github.sha }} | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout tesserix-k8s
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: tesserix/tesserix-k8s
           token: ${{ secrets.TESSERIX_K8S_BOT }}
@@ -191,18 +191,25 @@ jobs:
             fi
           done
 
-      - name: Open PR on tesserix-k8s
-        uses: peter-evans/create-pull-request@v6
-        with:
-          path: tesserix-k8s
-          token: ${{ secrets.TESSERIX_K8S_BOT }}
-          commit-message: "chore(mark8ly): bump images to sha-${{ steps.sha.outputs.short }}"
-          title: "chore(mark8ly): bump images to sha-${{ steps.sha.outputs.short }}"
-          body: |
-            Auto-generated from `tesserix/mark8ly@${{ github.sha }}`.
-
-            Bumps `mark8ly-*` image tags to `sha-${{ steps.sha.outputs.short }}`.
-
-            Merge to roll out via ArgoCD.
-          branch: bump-mark8ly-${{ steps.sha.outputs.short }}
-          delete-branch: true
+      - name: Commit & push directly to tesserix-k8s main
+        working-directory: tesserix-k8s
+        run: |
+          set -euo pipefail
+          git config user.name "tesserix-bot"
+          git config user.email "tesserix-bot@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No image tag changes to commit."
+            exit 0
+          fi
+          git add charts/apps/mark8ly-*/values.yaml
+          git commit -m "chore(mark8ly): bump images to sha-${{ steps.sha.outputs.short }}"
+          # Retry once on push race (another CI run landing first).
+          for attempt in 1 2 3; do
+            if git push origin main; then
+              exit 0
+            fi
+            echo "Push attempt $attempt failed — rebasing and retrying."
+            git pull --rebase origin main
+          done
+          echo "Push failed after retries." >&2
+          exit 1

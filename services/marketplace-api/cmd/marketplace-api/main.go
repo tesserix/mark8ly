@@ -538,6 +538,7 @@ func main() {
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)
+		shippingOptionsHandler := storefront.NewShippingOptionsHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
 			WithGiftCardService(giftCardSvcSF).
 			WithLoyaltyService(loyaltySvcSF)
@@ -548,7 +549,8 @@ func main() {
 			CheckoutHandler:       checkoutHandler,
 			CheckoutExtHandler:    checkoutExtHandler,
 			PaymentMethodsHandler: paymentMethodsHandler,
-			ShippingRatesHandler:  shippingRatesHandler,
+			ShippingRatesHandler:   shippingRatesHandler,
+			ShippingOptionsHandler: shippingOptionsHandler,
 			WebhookHandler:        webhookHandler,
 			OrderDetailHandler:    orderDetailHandler,
 			CouponValidateHandler: couponValidateHandler,

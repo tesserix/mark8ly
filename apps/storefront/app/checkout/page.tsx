@@ -19,9 +19,11 @@ import { GiftCardInput } from "@/components/checkout/GiftCardInput";
 import { LoyaltyRedemption } from "@/components/checkout/LoyaltyRedemption";
 import {
   fetchPaymentMethods,
+  fetchShippingOptions,
   fetchShippingRates,
   submitCheckout,
   type PaymentMethod,
+  type ShippingOption,
   type ShippingRate,
   type CheckoutBody,
   type CheckoutItemBody,
@@ -121,6 +123,7 @@ export default function CheckoutPage() {
   // Async state
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
+  const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [selectedShipping, setSelectedShipping] = useState<string>("");
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [loadingRates, setLoadingRates] = useState(false);
@@ -169,6 +172,11 @@ export default function CheckoutPage() {
         setPaymentMethods(methods);
         if (methods.length === 1) setSelectedProvider(methods[0]!.provider);
       }
+    });
+    // Also pull the merchant's configured carrier list so we can render
+    // a helpful fallback when the address is outside any shipping zone.
+    fetchShippingOptions(storeSlug).then((opts) => {
+      if (!cancelled) setShippingOptions(opts);
     });
     return () => { cancelled = true; };
   }, [storeSlug]);
@@ -547,9 +555,10 @@ export default function CheckoutPage() {
               Loading shipping rates...
             </p>
           ) : shippingRates.length === 0 ? (
-            <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-40">
-              We couldn&apos;t find shipping options for this address. Please double-check your details or try a different address.
-            </p>
+            <NoShippingFallback
+              options={shippingOptions}
+              country={address.country_code}
+            />
           ) : (
             <fieldset className="mt-4">
               <legend className="sr-only">Select a shipping method</legend>
@@ -628,8 +637,13 @@ export default function CheckoutPage() {
                       onChange={() => setSelectedProvider(pm.provider)}
                       className="accent-[color:var(--moss-700)]"
                     />
-                    <span className="text-sm font-medium text-[color:var(--ink-900)]">
-                      {providerLabel(pm.provider)}
+                    <span className="flex flex-col">
+                      <span className="text-sm font-medium text-[color:var(--ink-900)]">
+                        {providerBrand(pm.provider)}
+                      </span>
+                      <span className="text-xs text-[color:var(--ink-900)] opacity-60">
+                        {providerLabel(pm.provider)}
+                      </span>
                     </span>
                   </label>
                 ))}
@@ -898,6 +912,80 @@ function providerLabel(provider: string): string {
   switch (provider) {
     case "stripe": return "Credit / Debit card";
     case "razorpay": return "Card, UPI, or Netbanking";
+    case "paypal": return "PayPal";
+    default: return provider.charAt(0).toUpperCase() + provider.slice(1);
+  }
+}
+
+// NoShippingFallback — renders when /shipping-rates comes back empty.
+// If the merchant has any carriers configured, surface them (and the
+// countries they cover) so the customer understands why their address
+// didn't get a rate instead of seeing a generic dead-end message.
+function NoShippingFallback({
+  options,
+  country,
+}: {
+  options: ShippingOption[];
+  country: string;
+}) {
+  const pretty = (code: string): string =>
+    SUPPORTED_COUNTRIES.find((c: { code: string; name: string }) => c.code === code)?.name ?? code;
+  const serviceLabel = (s: string): string =>
+    s.charAt(0).toUpperCase() + s.slice(1);
+
+  if (options.length === 0) {
+    return (
+      <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-60">
+        We couldn&apos;t find shipping options for this address. Please double-check your details or try a different address.
+      </p>
+    );
+  }
+
+  const shipsHere = options.some((o) =>
+    country ? o.supported_countries.includes(country) : false,
+  );
+  const allCountries = Array.from(
+    new Set(options.flatMap((o) => o.supported_countries)),
+  );
+
+  return (
+    <div className="mt-4 space-y-3 rounded-md border border-[color:var(--ink-900)]/15 bg-[color:var(--paper-200)] px-4 py-3 text-sm">
+      <p className="text-[color:var(--ink-900)]">
+        {shipsHere
+          ? "We couldn\u2019t get a live rate for this address right now. Please try again in a moment or double-check your postal code."
+          : `Sorry \u2014 we don\u2019t currently ship to ${pretty(country) || "this country"}.`}
+      </p>
+      <div className="space-y-1.5 text-xs text-[color:var(--ink-900)] opacity-80">
+        <p className="font-semibold uppercase tracking-wider opacity-70">
+          This store ships via
+        </p>
+        <ul className="space-y-1">
+          {options.map((o) => (
+            <li key={o.carrier} className="flex flex-wrap items-baseline gap-1.5">
+              <span className="font-medium capitalize">{o.carrier}</span>
+              <span className="opacity-60">
+                ({o.services.map(serviceLabel).join(" / ")})
+              </span>
+              <span className="opacity-60">
+                — {o.supported_countries.map(pretty).join(", ")}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {!shipsHere && allCountries.length > 0 && (
+          <p className="mt-1 opacity-60">
+            Try one of: {allCountries.map(pretty).join(", ")}.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function providerBrand(provider: string): string {
+  switch (provider) {
+    case "stripe": return "Stripe";
+    case "razorpay": return "Razorpay";
     case "paypal": return "PayPal";
     default: return provider.charAt(0).toUpperCase() + provider.slice(1);
   }

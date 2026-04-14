@@ -20,7 +20,8 @@ type Deps struct {
 	CheckoutHandler      *CheckoutHandler
 	CheckoutExtHandler   *CheckoutExtHandler
 	PaymentMethodsHandler *PaymentMethodsHandler
-	ShippingRatesHandler *ShippingRatesHandler
+	ShippingRatesHandler   *ShippingRatesHandler
+	ShippingOptionsHandler *ShippingOptionsHandler
 	WebhookHandler        *WebhookHandler
 	OrderDetailHandler    *OrderDetailHandler
 	CouponValidateHandler *CouponValidateHandler
@@ -89,6 +90,12 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		}
 		if deps.ShippingRatesHandler != nil {
 			group.POST("/shipping-rates", deps.ShippingRatesHandler.GetRates)
+		}
+		if deps.ShippingOptionsHandler != nil {
+			// Public metadata about which carriers ship where — lets the
+			// checkout UI render a helpful fallback ("we ship to India")
+			// when a customer's address falls outside any carrier's zone.
+			group.GET("/shipping-options", deps.ShippingOptionsHandler.GetOptions)
 		}
 		if deps.OrderDetailHandler != nil {
 			group.GET("/orders/:id", deps.OrderDetailHandler.GetOrder)

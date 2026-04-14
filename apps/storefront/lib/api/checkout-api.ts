@@ -220,6 +220,34 @@ export async function fetchPaymentMethods(
   }
 }
 
+export interface ShippingOption {
+  carrier: string;
+  mode?: string;
+  services: string[];
+  supported_countries: string[];
+}
+
+/**
+ * Fetches the merchant's configured carriers + the countries each one
+ * ships to. Used as a helpful fallback on the checkout page when
+ * /shipping-rates comes back empty for the entered address.
+ */
+export async function fetchShippingOptions(
+  storeSlug: string,
+): Promise<ShippingOption[]> {
+  const url = IS_BROWSER
+    ? proxyUrl("shipping-options", storeSlug)
+    : `${storeUrl(storeSlug)}/shipping-options`;
+  try {
+    const res = await fetch(url, { headers: commonHeaders() });
+    if (!res.ok) return [];
+    const json = (await res.json()) as { data: ShippingOption[] };
+    return json.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Fetches shipping rate quotes for a cart + destination address.
  */

@@ -212,12 +212,10 @@ test("2. admin: create Delhivery shipping label", async ({ browser }) => {
   });
 
   await page.getByRole("button", { name: /create shipping label/i }).click();
-  await page.getByRole("combobox").first().click();
-  await page.getByRole("option", { name: /delhivery/i }).click();
-  await page.getByRole("combobox").nth(1).click();
-  await page.getByRole("option", { name: /standard/i }).first().click();
 
-  const submit = page.getByRole("button", { name: /^create label$/i });
+  // Defaults (Delhivery + Standard) are pre-populated; admin just
+  // approves. No select-opening gymnastics required.
+  const submit = page.getByRole("button", { name: /approve.*generate label/i });
   await expect(submit).toBeEnabled({ timeout: 5_000 });
   await submit.click();
 

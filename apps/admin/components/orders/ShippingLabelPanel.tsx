@@ -270,8 +270,14 @@ function CreateShipmentForm({
 }: CreateShipmentFormProps) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<ShippingActionResult["error"] | undefined>();
-  const [provider, setProvider] = useState("");
-  const [service, setService] = useState("");
+  // The customer already picked a carrier + service level at checkout;
+  // the admin step is just "approve and generate the label". Defaults
+  // reflect the most common case (Delhivery + Standard) so staff can
+  // click through in one action. An "Override" disclosure lets ops pick
+  // a different carrier when needed.
+  const [provider, setProvider] = useState("delhivery");
+  const [service, setService] = useState("standard");
+  const [showOverride, setShowOverride] = useState(false);
 
   const submit = useCallback(
     (e: React.FormEvent) => {
@@ -295,59 +301,58 @@ function CreateShipmentForm({
   );
 
   return (
-    <div className="flex flex-col gap-4 border-l-2 border-[color:var(--moss-700)] bg-[color:var(--ink-900)] bg-opacity-[0.02] px-5 py-4">
-      <h3 className="text-base text-[color:var(--ink-900)]">
-        Create shipping label
-      </h3>
+    <div className="flex flex-col gap-4 rounded-md border border-[color:var(--ink-900)]/10 bg-white px-5 py-4 shadow-sm">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-base text-[color:var(--ink-900)]">
+          Approve &amp; generate label
+        </h3>
+        <p className="text-xs text-[color:var(--ink-900)] opacity-60">
+          Picked by customer: {CARRIERS.find((c) => c.value === provider)?.label ?? provider}
+          {" · "}
+          {SERVICE_LEVELS.find((s) => s.value === service)?.label ?? service}
+        </p>
+      </div>
       <form onSubmit={submit} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
-            Carrier
-          </span>
-          <Select
-            value={provider || "__noop__"}
-            onValueChange={(v) => setProvider(v === "__noop__" ? "" : v)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select carrier" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__noop__" disabled>
-                Select carrier
-              </SelectItem>
-              {CARRIERS.map((c) => (
-                <SelectItem key={c.value} value={c.value}>
-                  {c.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-col gap-2">
-          <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
-            Service level
-          </span>
-          <Select
-            value={service || "__noop__"}
-            onValueChange={(v) => setService(v === "__noop__" ? "" : v)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select service" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__noop__" disabled>
-                Select service
-              </SelectItem>
-              {SERVICE_LEVELS.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {showOverride && (
+          <>
+            <div className="flex flex-col gap-2">
+              <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+                Carrier
+              </span>
+              <Select value={provider} onValueChange={(v) => setProvider(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select carrier" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CARRIERS.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+                Service level
+              </span>
+              <Select value={service} onValueChange={(v) => setService(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select service" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SERVICE_LEVELS.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
         {error && (
-          <p role="alert" className="text-sm text-[color:var(--danger,#5a1010)]">
+          <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             {error.message}
           </p>
         )}
@@ -355,9 +360,16 @@ function CreateShipmentForm({
           <button
             type="submit"
             disabled={pending || !provider || !service}
-            className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? "Creating..." : "Create label"}
+            {pending ? "Generating…" : "Approve & generate label"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowOverride((v) => !v)}
+            className="text-xs text-[color:var(--ink-900)] underline-offset-4 opacity-70 hover:opacity-100 hover:underline"
+          >
+            {showOverride ? "Hide override" : "Override carrier/service"}
           </button>
           <button
             type="button"

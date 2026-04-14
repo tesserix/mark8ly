@@ -150,7 +150,15 @@ export async function getLoyaltyMembers(
       cache: "no-store",
     });
     if (!res.ok) return { data: [], total: 0, page: 1 };
-    return await res.json();
+    const json = (await res.json()) as {
+      data?: LoyaltyMember[];
+      meta?: { total?: number; page?: number };
+    };
+    return {
+      data: json.data ?? [],
+      total: json.meta?.total ?? 0,
+      page: json.meta?.page ?? 1,
+    };
   } catch {
     return { data: [], total: 0, page: 1 };
   }
@@ -171,7 +179,19 @@ export async function getLoyaltyMember(
       cache: "no-store",
     });
     if (!res.ok) return null;
-    return await res.json();
+    // Backend wraps transactions in a paginated envelope
+    // `{ data: LoyaltyTransaction[], meta: {...} }` — flatten it so the
+    // component receives an array it can `.map()` directly.
+    const json = (await res.json()) as {
+      data?: LoyaltyMember;
+      transactions?: { data?: LoyaltyTransaction[] } | LoyaltyTransaction[];
+    };
+    if (!json.data) return null;
+    const rawTx = json.transactions;
+    const transactions: LoyaltyTransaction[] = Array.isArray(rawTx)
+      ? rawTx
+      : (rawTx?.data ?? []);
+    return { data: json.data, transactions };
   } catch {
     return null;
   }
@@ -212,7 +232,15 @@ export async function getLoyaltyReferrals(
       cache: "no-store",
     });
     if (!res.ok) return { data: [], total: 0, page: 1 };
-    return await res.json();
+    const json = (await res.json()) as {
+      data?: LoyaltyReferral[];
+      meta?: { total?: number; page?: number };
+    };
+    return {
+      data: json.data ?? [],
+      total: json.meta?.total ?? 0,
+      page: json.meta?.page ?? 1,
+    };
   } catch {
     return { data: [], total: 0, page: 1 };
   }

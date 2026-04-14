@@ -133,6 +133,7 @@ const navigation: NavSection[] = [
     icon: Settings,
     children: [
       { group: "Store", label: "Stores", href: "/settings/stores" },
+      { group: "Store", label: "Pages", href: "/settings/pages" },
       { group: "Store", label: "Themes", href: "/settings/themes" },
       { group: "Store", label: "Domains", href: "/settings/domains" },
       { group: "Selling", label: "Payments", href: "/settings/payments" },

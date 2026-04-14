@@ -17,7 +17,7 @@ export interface SessionHeaders {
 export interface LoyaltyProgram {
   id: string;
   is_active: boolean;
-  points_per_dollar: string;
+  points_per_unit: string;
   points_currency: string;
   signup_bonus: number;
   referral_bonus: number;

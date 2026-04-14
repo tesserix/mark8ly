@@ -6,7 +6,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 interface LoyaltyProgramPublic {
   is_active: boolean;
-  points_per_dollar: string;
+  points_per_unit: string;
   points_currency: string;
   signup_bonus: number;
   referral_bonus: number;

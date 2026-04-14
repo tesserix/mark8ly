@@ -6,8 +6,20 @@ interface LoyaltyRedemptionProps {
   pointsBalance: number;
   pointsValue: string;
   pointsCurrency: string;
+  currencyCode: string;
   minRedeemPoints: number;
   onToggle: (redeemPoints: number | null) => void;
+}
+
+function formatMoney(amount: number, currencyCode: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode,
+    }).format(amount);
+  } catch {
+    return `${currencyCode} ${amount.toFixed(2)}`;
+  }
 }
 
 /**
@@ -19,13 +31,14 @@ export function LoyaltyRedemption({
   pointsBalance,
   pointsValue,
   pointsCurrency,
+  currencyCode,
   minRedeemPoints,
   onToggle,
 }: LoyaltyRedemptionProps) {
   const [isRedeeming, setIsRedeeming] = useState(false);
   const canRedeem = pointsBalance >= minRedeemPoints;
 
-  const monetaryValue = (pointsBalance * parseFloat(pointsValue)).toFixed(2);
+  const monetaryValue = pointsBalance * parseFloat(pointsValue);
 
   if (!canRedeem) {
     return (
@@ -43,7 +56,7 @@ export function LoyaltyRedemption({
           Use {pointsBalance.toLocaleString()} {pointsCurrency}
         </p>
         <p className="text-xs text-ink-500">
-          Worth ${monetaryValue}
+          Worth {formatMoney(monetaryValue, currencyCode)}
         </p>
       </div>
       <label className="relative inline-flex cursor-pointer items-center">

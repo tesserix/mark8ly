@@ -82,7 +82,7 @@ func (h *LoyaltyHandler) UpdateProgram(c *gin.Context) {
 		TenantID:        tenantUUID,
 		StoreID:         storeID,
 		IsActive:        req.IsActive,
-		PointsPerDollar: req.PointsPerDollar,
+		PointsPerUnit:   req.PointsPerUnit,
 		PointsCurrency:  req.PointsCurrency,
 		SignupBonus:     req.SignupBonus,
 		ReferralBonus:   req.ReferralBonus,

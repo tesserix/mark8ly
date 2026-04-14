@@ -15,9 +15,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
+	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 )
@@ -39,6 +41,7 @@ type WebhookHandler struct {
 	db          *gorm.DB
 	orderSvc    *order.Service
 	giftCardSvc *giftcard.Service // optional — when set, gift card checkout events activate cards
+	loyaltySvc  *loyalty.Service  // optional — when set, awards points after payment success
 	logger      *slog.Logger
 }
 
@@ -51,6 +54,13 @@ func NewWebhookHandler(db *gorm.DB, orderSvc *order.Service, logger *slog.Logger
 // carrying `gift_card_id` metadata can activate pending cards.
 func (h *WebhookHandler) WithGiftCardService(svc *giftcard.Service) *WebhookHandler {
 	h.giftCardSvc = svc
+	return h
+}
+
+// WithLoyaltyService attaches the loyalty service so payment-succeeded
+// events award points to enrolled customers. Idempotent — retries are safe.
+func (h *WebhookHandler) WithLoyaltyService(svc *loyalty.Service) *WebhookHandler {
+	h.loyaltySvc = svc
 	return h
 }
 
@@ -265,7 +275,48 @@ func (h *WebhookHandler) handlePaymentSucceeded(ctx context.Context, provider st
 			h.logError("webhook: order confirm failed",
 				"order_id", evt.OrderID,
 				"err", err)
+			return
 		}
+
+		// Award loyalty points (idempotent — no-op if already credited or
+		// customer not enrolled). Non-fatal: an earn failure must not block
+		// the webhook ack.
+		if h.loyaltySvc != nil {
+			h.awardLoyaltyPoints(ctx, orderID)
+		}
+	}
+}
+
+// awardLoyaltyPoints looks up the order and credits points on the
+// post-discount product value (subtotal − discount_total). Shipping and
+// tax are excluded, matching industry convention.
+func (h *WebhookHandler) awardLoyaltyPoints(ctx context.Context, orderID uuid.UUID) {
+	var row struct {
+		TenantID      uuid.UUID       `gorm:"column:tenant_id"`
+		StoreID       uuid.UUID       `gorm:"column:store_id"`
+		CustomerEmail string          `gorm:"column:customer_email"`
+		Subtotal      decimal.Decimal `gorm:"column:subtotal"`
+		DiscountTotal decimal.Decimal `gorm:"column:discount_total"`
+	}
+	err := h.db.WithContext(ctx).
+		Table("orders").
+		Select("tenant_id, store_id, customer_email, subtotal, discount_total").
+		Where("id = ?", orderID).
+		Take(&row).Error
+	if err != nil {
+		h.logError("webhook: order lookup for loyalty failed",
+			"order_id", orderID.String(), "err", err)
+		return
+	}
+
+	earnBase := row.Subtotal.Sub(row.DiscountTotal)
+	if earnBase.LessThanOrEqual(decimal.Zero) {
+		return
+	}
+
+	if err := h.loyaltySvc.AwardPoints(ctx, row.TenantID, row.StoreID, row.CustomerEmail, earnBase, orderID); err != nil {
+		h.logError("webhook: loyalty award failed",
+			"order_id", orderID.String(), "err", err)
 	}
 }
 

@@ -517,7 +517,8 @@ func main() {
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
-			WithGiftCardService(giftCardSvcSF)
+			WithGiftCardService(giftCardSvcSF).
+			WithLoyaltyService(loyaltySvcSF)
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, log)
 
 		storefrontDeps = storefront.Deps{

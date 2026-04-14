@@ -41,6 +41,7 @@ export default async function LoyaltyPage() {
         {currentStore ? (
           <LoyaltyContent
             storeId={currentStore.id}
+            storeCurrency={currentStore.currency_code}
             userId={userId}
             tenantId={tenantId}
             editable={editable}
@@ -56,11 +57,13 @@ export default async function LoyaltyPage() {
 
 async function LoyaltyContent({
   storeId,
+  storeCurrency,
   userId,
   tenantId,
   editable,
 }: {
   storeId: string;
+  storeCurrency: string;
   userId: string;
   tenantId: string;
   editable: boolean;
@@ -84,6 +87,7 @@ async function LoyaltyContent({
         <ProgramConfigForm
           program={program}
           storeId={storeId}
+          storeCurrency={storeCurrency}
           editable={editable}
           onSave={handleSaveProgram}
         />

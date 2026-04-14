@@ -14,4 +14,4 @@ var MigrationsFS embed.FS
 // migration state doesn't match. M1 scaffold: version 1 is the no-op init
 // migration that seeds the migrations tracking table. Bump this with every
 // real migration added.
-const ExpectedSchemaVersion uint = 25
+const ExpectedSchemaVersion uint = 26

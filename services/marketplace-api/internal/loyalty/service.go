@@ -39,7 +39,7 @@ type UpdateProgramRequest struct {
 	TenantID        uuid.UUID
 	StoreID         uuid.UUID
 	IsActive        bool
-	PointsPerDollar decimal.Decimal
+	PointsPerUnit   decimal.Decimal
 	PointsCurrency  string
 	SignupBonus     int
 	ReferralBonus   int
@@ -71,7 +71,7 @@ func (s *Service) UpdateProgram(ctx context.Context, req UpdateProgramRequest) (
 		TenantID:        req.TenantID,
 		StoreID:         req.StoreID,
 		IsActive:        req.IsActive,
-		PointsPerDollar: req.PointsPerDollar,
+		PointsPerUnit:   req.PointsPerUnit,
 		PointsCurrency:  req.PointsCurrency,
 		SignupBonus:     req.SignupBonus,
 		ReferralBonus:   req.ReferralBonus,
@@ -296,7 +296,7 @@ func (s *Service) Enroll(ctx context.Context, req EnrollRequest) (*CustomerLoyal
 // --- Award Points (post-checkout) ---
 
 // AwardPoints grants points based on an order total. Called after
-// successful checkout. The formula: floor(orderTotal * pointsPerDollar * tierMultiplier).
+// successful checkout. The formula: floor(orderTotal * pointsPerUnit * tierMultiplier).
 func (s *Service) AwardPoints(ctx context.Context, tenantID, storeID uuid.UUID, customerEmail string, orderTotal decimal.Decimal, orderID uuid.UUID) error {
 	program, err := s.repo.GetProgram(ctx, s.db, storeID)
 	if err != nil || program == nil || !program.IsActive {
@@ -311,9 +311,20 @@ func (s *Service) AwardPoints(ctx context.Context, tenantID, storeID uuid.UUID, 
 		return nil // not enrolled — skip
 	}
 
-	// Calculate points: floor(orderTotal * pointsPerDollar * tierMultiplier)
+	// Idempotency guard: webhook retries must not double-award.
+	alreadyAwarded, err := s.repo.HasEarnForOrder(ctx, s.db, orderID)
+	if err != nil {
+		return err
+	}
+	if alreadyAwarded {
+		return nil
+	}
+
+	// Calculate points: floor(orderTotal * pointsPerUnit * tierMultiplier).
+	// orderTotal is in the store's currency — pointsPerUnit is the rate per unit
+	// of that currency, so the math is currency-neutral.
 	multiplier := s.getTierMultiplier(program, customer.LifetimePoints)
-	rawPoints := orderTotal.Mul(program.PointsPerDollar).Mul(multiplier)
+	rawPoints := orderTotal.Mul(program.PointsPerUnit).Mul(multiplier)
 	points := int(rawPoints.IntPart())
 	if points <= 0 {
 		return nil

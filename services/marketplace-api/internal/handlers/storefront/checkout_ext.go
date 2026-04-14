@@ -68,21 +68,24 @@ type CheckoutExtRequest struct {
 	DiscountTotal   decimal.Decimal        `json:"discount_total"`
 	CouponCode      *string                `json:"coupon_code"`
 	GiftCardCode    *string                `json:"gift_card_code"`
+	RedeemPoints    *int                   `json:"redeem_points"`
 }
 
 // CheckoutExtResponse is the extended checkout response including payment
 // token and computed totals.
 type CheckoutExtResponse struct {
-	OrderID       string          `json:"order_id"`
-	OrderNumber   string          `json:"order_number"`
-	PaymentToken  string          `json:"payment_token"`
-	Provider      string          `json:"provider"`
-	TaxTotal      decimal.Decimal `json:"tax_total"`
-	ShippingTotal decimal.Decimal `json:"shipping_total"`
+	OrderID         string          `json:"order_id"`
+	OrderNumber     string          `json:"order_number"`
+	PaymentToken    string          `json:"payment_token"`
+	Provider        string          `json:"provider"`
+	TaxTotal        decimal.Decimal `json:"tax_total"`
+	ShippingTotal   decimal.Decimal `json:"shipping_total"`
 	DiscountTotal   decimal.Decimal `json:"discount_total"`
 	Total           decimal.Decimal `json:"total"`
 	GiftCardApplied decimal.Decimal `json:"gift_card_applied"`
 	CouponCode      *string         `json:"coupon_code,omitempty"`
+	LoyaltyDiscount decimal.Decimal `json:"loyalty_discount,omitempty"`
+	PointsRedeemed  int             `json:"points_redeemed,omitempty"`
 }
 
 // Checkout handles POST /storefront/stores/:storeSlug/checkout (extended).
@@ -188,6 +191,44 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		freeShippingCoupon = validateResult.FreeShipping
 	}
 
+	// ── Step 1.6: Loyalty redemption preview ───────────────────────────
+	// Validate the customer can redeem the requested points and compute
+	// the currency value (points × points_value, in store currency). The
+	// authoritative debit runs inside the order transaction below.
+	var loyaltyDiscount decimal.Decimal
+	var loyaltyPoints int
+	if req.RedeemPoints != nil && *req.RedeemPoints > 0 && h.loyaltySvc != nil {
+		program, err := h.loyaltySvc.GetProgram(ctx, storeID)
+		if err != nil {
+			h.respondErr(c, err)
+			return
+		}
+		if program == nil || !program.IsActive {
+			h.respondErr(c, apperrors.ValidationFailed("redeem_points", "loyalty program is not active"))
+			return
+		}
+		if *req.RedeemPoints < program.MinRedeemPoints {
+			h.respondErr(c, apperrors.ValidationFailed("redeem_points",
+				fmt.Sprintf("minimum redemption is %d points", program.MinRedeemPoints)))
+			return
+		}
+		customer, err := h.loyaltySvc.GetCustomer(ctx, storeID, req.CustomerEmail)
+		if err != nil {
+			h.respondErr(c, err)
+			return
+		}
+		if customer == nil {
+			h.respondErr(c, apperrors.ValidationFailed("redeem_points", "not enrolled in loyalty program"))
+			return
+		}
+		if customer.PointsBalance < *req.RedeemPoints {
+			h.respondErr(c, apperrors.ValidationFailed("redeem_points", "insufficient points balance"))
+			return
+		}
+		loyaltyPoints = *req.RedeemPoints
+		loyaltyDiscount = decimal.NewFromInt(int64(loyaltyPoints)).Mul(program.PointsValue).Round(2)
+	}
+
 	// ── Step 2: Calculate shipping ──────────────────────────────────────
 	shippingTotal, err := h.calculateShipping(ctx, store, &sc, req)
 	if err != nil {
@@ -211,9 +252,14 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 
 	// ── Step 4: Create order ────────────────────────────────────────────
 	// Use coupon discount if a coupon was applied, otherwise use client-supplied discount.
+	// Loyalty redemption stacks on top as an additional discount so post-purchase
+	// earn (subtotal − discount_total) excludes the points-paid portion.
 	effectiveDiscount := req.DiscountTotal
 	if couponDiscount.GreaterThan(decimal.Zero) {
 		effectiveDiscount = couponDiscount
+	}
+	if loyaltyDiscount.GreaterThan(decimal.Zero) {
+		effectiveDiscount = effectiveDiscount.Add(loyaltyDiscount)
 	}
 	grandTotal := req.Subtotal.Add(shippingTotal).Add(taxBreakdown.TaxTotal).Sub(effectiveDiscount)
 
@@ -292,6 +338,8 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 			Total:           result.Order.GrandTotal,
 			GiftCardApplied: giftCardApplied,
 			CouponCode:      appliedCouponCode,
+			LoyaltyDiscount: loyaltyDiscount,
+			PointsRedeemed:  loyaltyPoints,
 		})
 		return
 	}
@@ -333,6 +381,24 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		}
 	}
 
+	// ── Step 4.7: Debit loyalty points (in tx) ─────────────────────────
+	// Mirrors the gift card pattern: the debit + ledger entry run inside
+	// a transaction. If a concurrent redemption drained the balance since
+	// the preview, DebitPoints returns InsufficientLoyaltyPoints and the
+	// whole call is rolled back.
+	if loyaltyPoints > 0 && h.loyaltySvc != nil {
+		if err := h.orderSvc.Unit(ctx, func(tx *gorm.DB) error {
+			orderID := result.Order.ID
+			_, err := h.loyaltySvc.RedeemPointsTx(ctx, tx, tenantID, storeID, req.CustomerEmail, loyaltyPoints, &orderID)
+			return err
+		}); err != nil {
+			h.logWarn("checkout_ext: loyalty redeem failed",
+				"order_id", result.Order.ID.String(), "err", err)
+			h.respondErr(c, err)
+			return
+		}
+	}
+
 	// ── Step 5: Save tax lines ──────────────────────────────────────────
 	if len(taxBreakdown.Lines) > 0 {
 		taxRepo := tax.NewRepository()
@@ -361,6 +427,8 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 			Total:           grandTotal,
 			GiftCardApplied: giftCardApplied,
 			CouponCode:      appliedCouponCode,
+			LoyaltyDiscount: loyaltyDiscount,
+			PointsRedeemed:  loyaltyPoints,
 		})
 		return
 	}

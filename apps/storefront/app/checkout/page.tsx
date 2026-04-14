@@ -135,12 +135,13 @@ export default function CheckoutPage() {
   const [giftCardCode, setGiftCardCode] = useState<string | null>(null);
   const [giftCardAmount, setGiftCardAmount] = useState(0);
 
-  // Loyalty points state
+  // Loyalty points state — populated via /api/checkout/loyalty/init once
+  // an email is entered. `loyaltyBalance > 0` gates the redemption toggle.
   const [redeemPoints, setRedeemPoints] = useState<number | null>(null);
-  const [loyaltyBalance] = useState(0); // TODO: fetch from getMe when email is set
-  const [loyaltyPointsValue] = useState("0.01");
-  const [loyaltyPointsCurrency] = useState("points");
-  const [loyaltyMinRedeem] = useState(100);
+  const [loyaltyBalance, setLoyaltyBalance] = useState(0);
+  const [loyaltyPointsValue, setLoyaltyPointsValue] = useState("0.00");
+  const [loyaltyPointsCurrency, setLoyaltyPointsCurrency] = useState("points");
+  const [loyaltyMinRedeem, setLoyaltyMinRedeem] = useState(100);
 
   // Computed totals
   const selectedRate = shippingRates.find((r) => r.service === selectedShipping);
@@ -203,6 +204,59 @@ export default function CheckoutPage() {
       return () => clearTimeout(timer);
     }
   }, [address, fetchRates]);
+
+  // Fetch loyalty program + balance when email is entered. Debounced so we
+  // don't hammer the API while the user is still typing. Clears redemption
+  // state when the email becomes invalid or the customer isn't enrolled.
+  useEffect(() => {
+    const trimmed = email.trim();
+    if (!trimmed || !trimmed.includes("@")) {
+      setLoyaltyBalance(0);
+      setRedeemPoints(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({
+          store: storeSlug,
+          email: trimmed,
+        }).toString();
+        const res = await fetch(`/api/checkout/loyalty/init?${qs}`, {
+          cache: "no-store",
+        });
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as {
+          program: {
+            is_active: boolean;
+            points_value: string;
+            points_currency: string;
+            min_redeem_points: number;
+          } | null;
+          customer: { points_balance: number } | null;
+        };
+        if (cancelled) return;
+        if (!body.program || !body.program.is_active || !body.customer) {
+          setLoyaltyBalance(0);
+          setRedeemPoints(null);
+          return;
+        }
+        setLoyaltyPointsValue(body.program.points_value);
+        setLoyaltyPointsCurrency(body.program.points_currency);
+        setLoyaltyMinRedeem(body.program.min_redeem_points);
+        setLoyaltyBalance(body.customer.points_balance);
+      } catch {
+        if (!cancelled) {
+          setLoyaltyBalance(0);
+          setRedeemPoints(null);
+        }
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [email, storeSlug]);
 
   // Submit checkout
   const handleSubmit = async () => {
@@ -561,6 +615,7 @@ export default function CheckoutPage() {
                 pointsBalance={loyaltyBalance}
                 pointsValue={loyaltyPointsValue}
                 pointsCurrency={loyaltyPointsCurrency}
+                currencyCode={currencyCode}
                 minRedeemPoints={loyaltyMinRedeem}
                 onToggle={setRedeemPoints}
               />

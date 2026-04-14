@@ -41,7 +41,7 @@ type sfRedeemRequest struct {
 
 type sfProgramResponse struct {
 	IsActive        bool             `json:"is_active"`
-	PointsPerDollar decimal.Decimal  `json:"points_per_dollar"`
+	PointsPerUnit   decimal.Decimal  `json:"points_per_unit"`
 	PointsCurrency  string           `json:"points_currency"`
 	SignupBonus     int              `json:"signup_bonus"`
 	ReferralBonus   int              `json:"referral_bonus"`
@@ -103,7 +103,7 @@ func (h *LoyaltyHandler) GetProgram(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"data": sfProgramResponse{
 		IsActive:        program.IsActive,
-		PointsPerDollar: program.PointsPerDollar,
+		PointsPerUnit:   program.PointsPerUnit,
 		PointsCurrency:  program.PointsCurrency,
 		SignupBonus:     program.SignupBonus,
 		ReferralBonus:   program.ReferralBonus,

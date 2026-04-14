@@ -12,7 +12,7 @@ import (
 
 type UpdateLoyaltyProgramRequest struct {
 	IsActive        bool            `json:"is_active"`
-	PointsPerDollar decimal.Decimal `json:"points_per_dollar" binding:"required"`
+	PointsPerUnit   decimal.Decimal `json:"points_per_unit"   binding:"required"`
 	PointsCurrency  string          `json:"points_currency"   binding:"required"`
 	SignupBonus     int             `json:"signup_bonus"`
 	ReferralBonus   int             `json:"referral_bonus"`
@@ -39,7 +39,7 @@ type AdjustPointsRequest struct {
 type LoyaltyProgramResponse struct {
 	ID              string          `json:"id"`
 	IsActive        bool            `json:"is_active"`
-	PointsPerDollar decimal.Decimal `json:"points_per_dollar"`
+	PointsPerUnit   decimal.Decimal `json:"points_per_unit"`
 	PointsCurrency  string          `json:"points_currency"`
 	SignupBonus     int             `json:"signup_bonus"`
 	ReferralBonus   int             `json:"referral_bonus"`
@@ -105,7 +105,7 @@ func toLoyaltyProgramResponse(p *loyalty.LoyaltyProgram, tiers []loyalty.Tier) L
 	return LoyaltyProgramResponse{
 		ID:              p.ID.String(),
 		IsActive:        p.IsActive,
-		PointsPerDollar: p.PointsPerDollar,
+		PointsPerUnit:   p.PointsPerUnit,
 		PointsCurrency:  p.PointsCurrency,
 		SignupBonus:     p.SignupBonus,
 		ReferralBonus:   p.ReferralBonus,

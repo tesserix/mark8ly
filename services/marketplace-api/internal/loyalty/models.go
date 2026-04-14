@@ -49,7 +49,7 @@ type LoyaltyProgram struct {
 	TenantID        uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null"`
 	StoreID         uuid.UUID       `gorm:"column:store_id;type:uuid;not null"`
 	IsActive        bool            `gorm:"column:is_active;not null;default:false"`
-	PointsPerDollar decimal.Decimal `gorm:"column:points_per_dollar;type:numeric(5,2);not null;default:1.00"`
+	PointsPerUnit   decimal.Decimal `gorm:"column:points_per_unit;type:numeric(5,2);not null;default:1.00"`
 	PointsCurrency  string          `gorm:"column:points_currency;type:varchar(20);not null;default:'points'"`
 	SignupBonus     int             `gorm:"column:signup_bonus;not null;default:0"`
 	ReferralBonus   int             `gorm:"column:referral_bonus;not null;default:0"`

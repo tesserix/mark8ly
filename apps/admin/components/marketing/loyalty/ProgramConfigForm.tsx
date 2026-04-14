@@ -7,6 +7,7 @@ import type { LoyaltyProgram, LoyaltyTier } from "@/lib/api/loyalty-api";
 interface ProgramConfigFormProps {
   program: LoyaltyProgram | null;
   storeId: string;
+  storeCurrency: string;
   editable: boolean;
   onSave: (data: Record<string, unknown>) => Promise<void>;
 }
@@ -14,14 +15,15 @@ interface ProgramConfigFormProps {
 export function ProgramConfigForm({
   program,
   storeId,
+  storeCurrency,
   editable,
   onSave,
 }: ProgramConfigFormProps) {
   const [isPending, startTransition] = useTransition();
 
   const [isActive, setIsActive] = useState(program?.is_active ?? false);
-  const [pointsPerDollar, setPointsPerDollar] = useState(
-    program?.points_per_dollar ?? "1.00",
+  const [pointsPerUnit, setPointsPerUnit] = useState(
+    program?.points_per_unit ?? "1.00",
   );
   const [pointsCurrency, setPointsCurrency] = useState(
     program?.points_currency ?? "points",
@@ -49,7 +51,7 @@ export function ProgramConfigForm({
     startTransition(async () => {
       await onSave({
         is_active: isActive,
-        points_per_dollar: pointsPerDollar,
+        points_per_unit: pointsPerUnit,
         points_currency: pointsCurrency,
         signup_bonus: signupBonus,
         referral_bonus: referralBonus,
@@ -101,12 +103,12 @@ export function ProgramConfigForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1">
             <label className="text-xs font-medium text-ink-600">
-              Points per dollar
+              Points per 1 {storeCurrency} spent
             </label>
             <input
               type="text"
-              value={pointsPerDollar}
-              onChange={(e) => setPointsPerDollar(e.target.value)}
+              value={pointsPerUnit}
+              onChange={(e) => setPointsPerUnit(e.target.value)}
               disabled={!editable}
               className={inputClass}
             />
@@ -125,7 +127,7 @@ export function ProgramConfigForm({
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-ink-600">
-              Point value (currency)
+              Value per point (in {storeCurrency})
             </label>
             <input
               type="text"

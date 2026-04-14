@@ -36,6 +36,7 @@ type Repository interface {
 	// Transactions (append-only ledger)
 	CreateTransaction(tx *gorm.DB, t *LoyaltyTransaction) error
 	ListTransactions(ctx context.Context, db *gorm.DB, loyaltyID uuid.UUID, page, limit int) ([]LoyaltyTransaction, int64, error)
+	HasEarnForOrder(ctx context.Context, db *gorm.DB, orderID uuid.UUID) (bool, error)
 
 	// Referrals
 	CreateReferral(tx *gorm.DB, r *Referral) error
@@ -177,6 +178,20 @@ func (gormRepository) UpdateTier(tx *gorm.DB, loyaltyID uuid.UUID, tier string) 
 
 func (gormRepository) CreateTransaction(tx *gorm.DB, t *LoyaltyTransaction) error {
 	return tx.Create(t).Error
+}
+
+// HasEarnForOrder reports whether an earn transaction already exists for the
+// given order. Used by AwardPoints to stay idempotent under webhook retries.
+func (gormRepository) HasEarnForOrder(ctx context.Context, db *gorm.DB, orderID uuid.UUID) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).
+		Model(&LoyaltyTransaction{}).
+		Where("order_id = ? AND type = ?", orderID, TxTypeEarn).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (gormRepository) ListTransactions(ctx context.Context, db *gorm.DB, loyaltyID uuid.UUID, page, limit int) ([]LoyaltyTransaction, int64, error) {

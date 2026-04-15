@@ -150,7 +150,7 @@ function ShipmentDetails({ shipment }: { shipment: ShipmentResponse }) {
     : null;
 
   return (
-    <div className="flex flex-col gap-3 border-l-2 border-[color:var(--moss-700)] bg-[color:var(--ink-900)] bg-opacity-[0.02] px-5 py-4">
+    <div className="flex flex-col gap-3 rounded-md border border-[color:var(--ink-900)]/10 bg-white px-5 py-4 shadow-sm">
       <div className="flex flex-col gap-2">
         <DetailRow label="Carrier" value={shipment.provider} />
         <DetailRow label="Service" value={shipment.service} />

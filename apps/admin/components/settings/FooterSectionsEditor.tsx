@@ -106,9 +106,9 @@ export function FooterSectionsEditor({
   return (
     <div className="space-y-0">
       {sections.map((section, secIdx) => (
-        // Stable key: section label is user-defined and unique enough for list
-        // stability. Falls back to index for empty/duplicate labels.
-        <div key={section.label || secIdx}>
+        // Key is the index — NOT the label. Keying on content would
+        // remount the input on every keystroke and steal focus.
+        <div key={`section-${secIdx}`}>
           {secIdx > 0 && (
             <div className="border-t border-border-subtle my-4" />
           )}

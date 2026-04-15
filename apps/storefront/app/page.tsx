@@ -77,7 +77,7 @@ function StoreLanding({
       className="min-h-screen"
       style={{
         background:
-          theme.preset === "midnight"
+          theme.mode === "dark"
             ? theme.colors.background
             : `radial-gradient(circle at top left, ${theme.colors.accent}18, transparent 24%), radial-gradient(circle at top right, ${theme.colors.primary}12, transparent 28%), ${theme.colors.background}`,
         color: theme.colors.text,

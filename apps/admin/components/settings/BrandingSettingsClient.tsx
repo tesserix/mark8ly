@@ -97,24 +97,38 @@ export function BrandingSettingsClient({
   }
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[220px_1fr]">
-      {/* Left rail nav */}
-      <nav className="flex flex-row gap-1 overflow-x-auto lg:flex-col lg:gap-0.5" aria-label="Branding sections">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            className={`flex items-center gap-2.5 rounded-[var(--radius)] px-3 py-2 text-left text-sm transition-colors ${
-              tab === key
-                ? "bg-[color:var(--ink-900)]/[0.04] font-medium text-foreground"
-                : "text-foreground-secondary hover:text-foreground hover:bg-[color:var(--ink-900)]/[0.02]"
-            }`}
-          >
-            <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="whitespace-nowrap">{label}</span>
-          </button>
-        ))}
+    <div className="space-y-8">
+      {/* Horizontal tab bar — reclaims the full content width for the
+          main editing surface. Underline style, Shopify/Linear-like. */}
+      <nav
+        className="flex gap-1 overflow-x-auto border-b border-border-subtle"
+        aria-label="Branding sections"
+      >
+        {TABS.map(({ key, label, icon: Icon }) => {
+          const active = tab === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              aria-pressed={active}
+              className={`relative flex items-center gap-2 whitespace-nowrap px-4 py-3 text-sm transition-colors ${
+                active
+                  ? "font-medium text-foreground"
+                  : "text-foreground-secondary hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {label}
+              {active ? (
+                <span
+                  aria-hidden
+                  className="absolute inset-x-2 -bottom-px h-[2px] rounded-t-sm bg-[color:var(--moss-700)]"
+                />
+              ) : null}
+            </button>
+          );
+        })}
       </nav>
 
       {/* Main content */}

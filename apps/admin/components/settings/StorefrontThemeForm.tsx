@@ -17,18 +17,21 @@ import type { Store } from "@/lib/api/platform-api";
 import {
   defaultStorefrontTheme,
   normalizeStorefrontTheme,
-  presetSupportsSurfaceToggle,
+  storefrontBackgroundOptions,
   storefrontFontOptions,
   storefrontLayoutOptions,
-  storefrontPresetOptions,
-  withPresetColors,
-  withSurface,
+  storefrontPaletteOptions,
+  withBackground,
+  withColorOverride,
+  withMode,
+  withPalette,
+  type StorefrontBackground,
   type StorefrontDensity,
   type StorefrontFont,
+  type StorefrontMode,
   type StorefrontMotion,
-  type StorefrontPreset,
+  type StorefrontPalette,
   type StorefrontRadius,
-  type StorefrontSurface,
   type StorefrontTheme,
 } from "@repo/ui/storefront-theme";
 
@@ -38,15 +41,13 @@ interface StorefrontThemeFormProps {
 }
 
 /**
- * StorefrontThemeForm — the merchant-facing editor for the storefront
- * theme system. Layout selection, preset, color overrides, typography,
- * motion, density, radius. Editorial Paper · Ink · Moss surface — no
- * glassmorphism, no card chrome around individual controls, hairline
- * rules between sections.
+ * StorefrontThemeForm — merchant-facing theme editor built on three
+ * orthogonal controls: mode (light/dark), palette (brand identity),
+ * background (neutral or tinted surface). Preset bundles are gone.
  *
- * State stays simple useState — this is a single-screen editor with no
- * cross-field validation. The shape is enforced by the typed
- * StorefrontTheme interface from @repo/ui/storefront-theme.
+ * Layout: colour and typography controls at the top, full-width
+ * structural preview at the bottom. Advanced colour overrides are
+ * collapsed by default.
  */
 export function StorefrontThemeForm({
   store,
@@ -59,20 +60,16 @@ export function StorefrontThemeForm({
   const [theme, setTheme] = useState<StorefrontTheme>(initialTheme);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const { toast } = useToast();
 
   const dirty = JSON.stringify(theme) !== JSON.stringify(initialTheme);
 
-  function applyPreset(preset: StorefrontPreset) {
-    setTheme((current) => withPresetColors({ ...current }, preset));
-    setSuccess(false);
-  }
-
-  function updateTheme(next: StorefrontTheme) {
+  const updateTheme = (next: StorefrontTheme) => {
     setTheme(next);
     setSuccess(false);
-  }
+  };
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -94,265 +91,245 @@ export function StorefrontThemeForm({
   }
 
   const disabled = !editable || pending;
+  const backgroundOptions = storefrontBackgroundOptions[theme.mode];
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-12">
-      {/* Layout */}
-      <section className="space-y-5 border-t border-border-subtle pt-10">
+    <form onSubmit={handleSubmit} className="space-y-14">
+      {/* ── COLOUR ────────────────────────────────────────────── */}
+      <section className="space-y-8 border-t border-border-subtle pt-10">
         <div className="space-y-2">
-          <p className="eyebrow">Layout</p>
+          <p className="eyebrow">Colour</p>
           <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
-            Choose a structure
+            Mode, palette, background
           </h2>
           <p className="max-w-2xl text-sm leading-7 text-foreground-secondary">
-            Pick a storefront structure first, then fine-tune the styling.
-            Layout changes affect the overall composition customers see when
-            they land on your store.
+            Three independent controls. Mode flips light/dark. Palette
+            sets your brand accent. Background picks the surface behind
+            product photography.
           </p>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {storefrontLayoutOptions.map((option) => {
-            const active = theme.layout === option.value;
-            // Thumbnail shows the layout with the merchant's current
-            // colors + fonts so swapping a preset updates all cards.
-            const cardTheme: StorefrontTheme = { ...theme, layout: option.value };
-            return (
-              <button
+        {/* Mode */}
+        <Field id="mode" label="Mode">
+          <ModeToggle
+            value={theme.mode}
+            disabled={disabled}
+            onChange={(mode) => updateTheme(withMode(theme, mode))}
+          />
+        </Field>
+
+        {/* Palette */}
+        <Field id="palette" label="Palette">
+          <div className="flex flex-wrap gap-2 pt-1">
+            {storefrontPaletteOptions.map((option) => (
+              <PaletteChip
                 key={option.value}
-                type="button"
-                data-testid={`layout-${option.value}`}
-                aria-pressed={active}
+                option={option}
+                active={theme.palette === option.value}
+                mode={theme.mode}
                 disabled={disabled}
-                onClick={() => updateTheme({ ...theme, layout: option.value })}
-                className={`min-h-[44px] rounded-md border p-3 text-left transition-colors ${
-                  active
-                    ? "border-moss-700 bg-moss-50"
-                    : "border-border bg-background-elevated hover:border-border-strong"
-                } disabled:cursor-not-allowed disabled:opacity-60`}
-              >
-                <div className="pointer-events-none">
-                  <StorefrontLayoutThumbnail theme={cardTheme} name={store.name} />
-                </div>
-                <p className="mt-3 text-sm font-semibold text-foreground">
-                  {option.label}
-                </p>
-                <p className="mt-1 text-xs leading-5 text-foreground-secondary">
-                  {option.description}
-                </p>
-              </button>
-            );
-          })}
+                onClick={() => updateTheme(withPalette(theme, option.value))}
+              />
+            ))}
+          </div>
+        </Field>
+
+        {/* Background */}
+        <Field id="background" label="Background">
+          <div className="flex flex-wrap gap-2 pt-1">
+            {backgroundOptions.map((option) => {
+              const active = theme.background === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={disabled}
+                  aria-pressed={active}
+                  onClick={() => updateTheme(withBackground(theme, option.value))}
+                  className={`min-h-[44px] rounded-md border px-4 text-left transition-colors ${
+                    active
+                      ? "border-moss-700 bg-moss-50"
+                      : "border-border bg-background-elevated hover:border-border-strong"
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  <p className="text-sm font-semibold text-foreground">
+                    {option.label}
+                  </p>
+                  <p className="mt-0.5 text-xs text-foreground-secondary">
+                    {option.description}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+          {theme.background === "custom" ? (
+            <div className="pt-3">
+              <ColorField
+                label="Custom background hex"
+                value={theme.colors.background}
+                disabled={disabled}
+                onChange={(v) => updateTheme(withColorOverride(theme, "background", v))}
+              />
+            </div>
+          ) : null}
+        </Field>
+
+        {/* Advanced — collapsed by default */}
+        <div className="border-t border-border-subtle pt-6">
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((o) => !o)}
+            className="text-sm font-medium text-foreground-secondary hover:text-foreground"
+          >
+            {advancedOpen ? "Hide" : "Show"} advanced colour overrides
+          </button>
+          {advancedOpen ? (
+            <div className="mt-5 grid gap-5 sm:grid-cols-3">
+              <ColorField
+                label="Primary"
+                value={theme.colors.primary}
+                disabled={disabled}
+                onChange={(v) => updateTheme(withColorOverride(theme, "primary", v))}
+              />
+              <ColorField
+                label="Accent"
+                value={theme.colors.accent}
+                disabled={disabled}
+                onChange={(v) => updateTheme(withColorOverride(theme, "accent", v))}
+              />
+              <ColorField
+                label="Background"
+                value={theme.colors.background}
+                disabled={disabled}
+                onChange={(v) => updateTheme(withColorOverride(theme, "background", v))}
+              />
+            </div>
+          ) : null}
         </div>
       </section>
 
-      {/* Style + preview */}
-      <section className="grid gap-10 border-t border-border-subtle pt-10 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
-        <div className="space-y-8">
-          <div className="space-y-2">
-            <p className="eyebrow">Style</p>
-            <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
-              Brand controls
-            </h2>
-            <p className="max-w-xl text-sm leading-7 text-foreground-secondary">
-              Start from a curated preset, then customize colors, typography,
-              motion, and density.
-            </p>
-          </div>
-
-          <Field id="preset" label="Preset">
-            <div className="flex flex-wrap gap-2 pt-1">
-              {storefrontPresetOptions.map((option) => {
-                const active = theme.preset === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => applyPreset(option.value)}
-                    className={`min-h-[44px] rounded-md border px-4 text-sm transition-colors ${
-                      active
-                        ? "border-moss-700 bg-moss-50 text-moss-700"
-                        : "border-border bg-background-elevated text-foreground-secondary hover:text-foreground"
-                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    {option.label}
-                    {option.mode === "dark" ? (
-                      <span className="ml-1.5 text-[10px] uppercase tracking-[0.18em] text-foreground-tertiary">
-                        Dark
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-
-          <SurfaceToggle
-            value={theme.surface}
-            disabled={disabled || !presetSupportsSurfaceToggle(theme.preset)}
-            helperText={
-              presetSupportsSurfaceToggle(theme.preset)
-                ? "Clean uses neutral white backgrounds so product photography carries the brand. Tinted uses the preset's tinted background for a more editorial feel."
-                : "Dark presets always use their own background — the surface toggle doesn't apply."
-            }
-            onChange={(value) => updateTheme(withSurface(theme, value))}
-          />
-
-          <div className="grid gap-5 sm:grid-cols-2">
-            <ColorField
-              label="Primary"
-              value={theme.colors.primary}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({
-                  ...theme,
-                  colors: { ...theme.colors, primary: value },
-                })
-              }
-            />
-            <ColorField
-              label="Accent"
-              value={theme.colors.accent}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({
-                  ...theme,
-                  colors: { ...theme.colors, accent: value },
-                })
-              }
-            />
-            <ColorField
-              label="Background"
-              value={theme.colors.background}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({
-                  ...theme,
-                  colors: { ...theme.colors, background: value },
-                })
-              }
-            />
-            <ColorField
-              label="Surface"
-              value={theme.colors.surface}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({
-                  ...theme,
-                  colors: { ...theme.colors, surface: value },
-                })
-              }
-            />
-            <ColorField
-              label="Text"
-              value={theme.colors.text}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({
-                  ...theme,
-                  colors: { ...theme.colors, text: value },
-                })
-              }
-            />
-          </div>
-
-          <div className="grid gap-5 sm:grid-cols-2">
-            <SelectField
-              id="heading-font"
-              label="Heading font"
-              value={theme.typography.headingFont}
-              options={storefrontFontOptions}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({
-                  ...theme,
-                  typography: {
-                    ...theme.typography,
-                    headingFont: value as StorefrontFont,
-                  },
-                })
-              }
-            />
-            <SelectField
-              id="body-font"
-              label="Body font"
-              value={theme.typography.bodyFont}
-              options={storefrontFontOptions}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({
-                  ...theme,
-                  typography: {
-                    ...theme.typography,
-                    bodyFont: value as StorefrontFont,
-                  },
-                })
-              }
-            />
-            <SelectField
-              id="motion"
-              label="Motion"
-              value={theme.motion}
-              options={[
-                { value: "none", label: "None" },
-                { value: "subtle", label: "Subtle" },
-                { value: "expressive", label: "Expressive" },
-              ]}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({ ...theme, motion: value as StorefrontMotion })
-              }
-            />
-            <SelectField
-              id="density"
-              label="Density"
-              value={theme.density}
-              options={[
-                { value: "compact", label: "Compact" },
-                { value: "balanced", label: "Balanced" },
-                { value: "airy", label: "Airy" },
-              ]}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({ ...theme, density: value as StorefrontDensity })
-              }
-            />
-            <SelectField
-              id="radius"
-              label="Corner style"
-              value={theme.radius}
-              options={[
-                { value: "sharp", label: "Sharp" },
-                { value: "soft", label: "Soft" },
-                { value: "rounded", label: "Rounded" },
-              ]}
-              disabled={disabled}
-              onChange={(value) =>
-                updateTheme({ ...theme, radius: value as StorefrontRadius })
-              }
-            />
-          </div>
+      {/* ── TYPOGRAPHY + LAYOUT ──────────────────────────────── */}
+      <section className="space-y-8 border-t border-border-subtle pt-10">
+        <div className="space-y-2">
+          <p className="eyebrow">Typography &amp; layout</p>
+          <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
+            Structure and type
+          </h2>
         </div>
 
-        <aside className="space-y-4">
-          <div className="space-y-2">
-            <p className="eyebrow">Preview</p>
-            <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
-              How it reads
-            </h2>
-            <p className="text-sm leading-7 text-foreground-secondary">
-              A compact approximation of the storefront mood. The live store
-              renders the full layout.
-            </p>
-          </div>
-
-          <StorefrontLayoutPreview
-            theme={theme}
-            name={store.name}
-            slug={store.slug}
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <SelectField
+            id="heading-font"
+            label="Heading font"
+            value={theme.typography.headingFont}
+            options={storefrontFontOptions}
+            disabled={disabled}
+            onChange={(v) =>
+              updateTheme({
+                ...theme,
+                typography: { ...theme.typography, headingFont: v as StorefrontFont },
+              })
+            }
           />
-        </aside>
+          <SelectField
+            id="body-font"
+            label="Body font"
+            value={theme.typography.bodyFont}
+            options={storefrontFontOptions}
+            disabled={disabled}
+            onChange={(v) =>
+              updateTheme({
+                ...theme,
+                typography: { ...theme.typography, bodyFont: v as StorefrontFont },
+              })
+            }
+          />
+          <SelectField
+            id="density"
+            label="Density"
+            value={theme.density}
+            options={[
+              { value: "compact", label: "Compact" },
+              { value: "balanced", label: "Balanced" },
+              { value: "airy", label: "Airy" },
+            ]}
+            disabled={disabled}
+            onChange={(v) => updateTheme({ ...theme, density: v as StorefrontDensity })}
+          />
+          <SelectField
+            id="radius"
+            label="Corner style"
+            value={theme.radius}
+            options={[
+              { value: "sharp", label: "Sharp" },
+              { value: "soft", label: "Soft" },
+              { value: "rounded", label: "Rounded" },
+            ]}
+            disabled={disabled}
+            onChange={(v) => updateTheme({ ...theme, radius: v as StorefrontRadius })}
+          />
+          <SelectField
+            id="motion"
+            label="Motion"
+            value={theme.motion}
+            options={[
+              { value: "none", label: "None" },
+              { value: "subtle", label: "Subtle" },
+              { value: "expressive", label: "Expressive" },
+            ]}
+            disabled={disabled}
+            onChange={(v) => updateTheme({ ...theme, motion: v as StorefrontMotion })}
+          />
+        </div>
+
+        <div className="space-y-3 pt-2">
+          <p className="text-sm font-medium text-foreground">Layout</p>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {storefrontLayoutOptions.map((option) => {
+              const active = theme.layout === option.value;
+              const cardTheme: StorefrontTheme = { ...theme, layout: option.value };
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  data-testid={`layout-${option.value}`}
+                  aria-pressed={active}
+                  disabled={disabled}
+                  onClick={() => updateTheme({ ...theme, layout: option.value })}
+                  className={`min-h-[44px] rounded-md border p-3 text-left transition-colors ${
+                    active
+                      ? "border-moss-700 bg-moss-50"
+                      : "border-border bg-background-elevated hover:border-border-strong"
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  <div className="pointer-events-none">
+                    <StorefrontLayoutThumbnail theme={cardTheme} name={store.name} />
+                  </div>
+                  <p className="mt-3 text-sm font-semibold text-foreground">
+                    {option.label}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-foreground-secondary">
+                    {option.description}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── PREVIEW (full width) ─────────────────────────────── */}
+      <section className="space-y-4 border-t border-border-subtle pt-10">
+        <div className="space-y-2">
+          <p className="eyebrow">Preview</p>
+          <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
+            Live storefront preview
+          </h2>
+          <p className="text-sm leading-7 text-foreground-secondary">
+            Structural render with your current selections.
+          </p>
+        </div>
+        <StorefrontLayoutPreview theme={theme} name={store.name} slug={store.slug} />
       </section>
 
       {error && (
@@ -389,6 +366,94 @@ export function StorefrontThemeForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function ModeToggle({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: StorefrontMode;
+  disabled?: boolean;
+  onChange: (value: StorefrontMode) => void;
+}) {
+  const options: Array<{ value: StorefrontMode; label: string }> = [
+    { value: "light", label: "Light" },
+    { value: "dark", label: "Dark" },
+  ];
+  return (
+    <div className="inline-flex rounded-md border border-border bg-background-elevated p-1">
+      {options.map((o) => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            disabled={disabled}
+            aria-pressed={active}
+            onClick={() => onChange(o.value)}
+            className={`min-w-[88px] rounded-sm px-4 py-2 text-sm font-medium transition-colors ${
+              active
+                ? "bg-moss-700 text-white"
+                : "text-foreground-secondary hover:text-foreground"
+            } disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PaletteChip({
+  option,
+  active,
+  mode,
+  disabled,
+  onClick,
+}: {
+  option: { value: StorefrontPalette; label: string; description: string };
+  active: boolean;
+  mode: StorefrontMode;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  // Placeholder theme used just to extract the accent dot for this
+  // palette chip — avoids spinning up a full resolved preview per chip.
+  // We construct a tiny theme with this palette at the current mode,
+  // read theme.colors.accent, and show it as a swatch.
+  const swatch = useMemo(() => {
+    const probe = normalizeStorefrontTheme({
+      mode,
+      palette: option.value,
+      background: mode === "dark" ? "obsidian" : "white",
+      layout: "editorial",
+    });
+    return probe.colors.accent;
+  }, [mode, option.value]);
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={active}
+      onClick={onClick}
+      title={option.description}
+      className={`inline-flex min-h-[44px] items-center gap-2 rounded-md border px-3 text-sm transition-colors ${
+        active
+          ? "border-moss-700 bg-moss-50 text-moss-700"
+          : "border-border bg-background-elevated text-foreground-secondary hover:text-foreground"
+      } disabled:cursor-not-allowed disabled:opacity-60`}
+    >
+      <span
+        aria-hidden
+        className="inline-block h-3.5 w-3.5 rounded-full border border-[color:var(--ink-900)]/15"
+        style={{ backgroundColor: swatch }}
+      />
+      {option.label}
+    </button>
   );
 }
 
@@ -454,54 +519,13 @@ function SelectField({
   );
 }
 
-function SurfaceToggle({
-  value,
-  disabled,
-  helperText,
-  onChange,
-}: {
-  value: StorefrontSurface;
-  disabled?: boolean;
-  helperText: string;
-  onChange: (value: StorefrontSurface) => void;
-}) {
-  const options: Array<{ value: StorefrontSurface; label: string; description: string }> = [
-    { value: "clean", label: "Clean", description: "White backgrounds. Modern default." },
-    { value: "tinted", label: "Tinted", description: "Preset's tinted background. Editorial feel." },
-  ];
-  return (
-    <Field id="surface" label="Surface">
-      <div className="space-y-2">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {options.map((option) => {
-            const active = value === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                disabled={disabled}
-                aria-pressed={active}
-                onClick={() => onChange(option.value)}
-                className={`min-h-[44px] rounded-md border px-4 py-3 text-left transition-colors ${
-                  active
-                    ? "border-moss-700 bg-moss-50"
-                    : "border-border bg-background-elevated hover:border-border-strong"
-                } disabled:cursor-not-allowed disabled:opacity-60`}
-              >
-                <p className="text-sm font-semibold text-foreground">{option.label}</p>
-                <p className="mt-1 text-xs text-foreground-secondary">{option.description}</p>
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-xs text-foreground-tertiary">{helperText}</p>
-      </div>
-    </Field>
-  );
-}
-
 export function initialStorefrontTheme(store: Store): StorefrontTheme {
   return normalizeStorefrontTheme(
     store.storefront_theme ?? defaultStorefrontTheme,
   );
 }
+
+// Silence unused-type-import warnings for types that aren't referenced
+// in the body after this refactor but are part of the public surface.
+// These are imported for downstream consumers; keep them in scope.
+export type { StorefrontBackground };

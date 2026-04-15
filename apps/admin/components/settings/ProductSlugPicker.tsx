@@ -21,6 +21,7 @@ interface Props {
   max: number;
   editable: boolean;
   label?: string;
+  onMissingChange?: (missingSlugs: string[]) => void;
 }
 
 export function ProductSlugPicker({
@@ -30,31 +31,59 @@ export function ProductSlugPicker({
   max,
   editable,
   label = "Hand-picked products",
+  onMissingChange,
 }: Props) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [resolvedLabels, setResolvedLabels] = useState<Record<string, ProductOption>>({});
+  // Slugs that have been checked and returned no matching product.
+  const [missingSlugs, setMissingSlugs] = useState<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
 
   // Resolve labels for currently-selected slugs so the chips show
-  // titles instead of raw slugs. Fires once per slug set change.
+  // titles instead of raw slugs. Fires when the selection changes.
+  // Slugs that come back without a match are flagged as missing so
+  // the form can show a warning badge — the merchant might have
+  // renamed or deleted the product since they picked it.
   useEffect(() => {
-    if (value.length === 0) return;
-    const missing = value.filter((s) => !resolvedLabels[s]);
-    if (missing.length === 0) return;
-    fetchProducts(storeId, missing.join(" "))
+    if (value.length === 0) {
+      setMissingSlugs(new Set());
+      return;
+    }
+    const unchecked = value.filter(
+      (s) => !resolvedLabels[s] && !missingSlugs.has(s),
+    );
+    if (unchecked.length === 0) return;
+    fetchProductsBySlugs(storeId, unchecked)
       .then((items) => {
         setResolvedLabels((prev) => {
           const next = { ...prev };
           for (const item of items) next[item.slug] = item;
           return next;
         });
+        const returned = new Set(items.map((i) => i.slug));
+        const freshlyMissing = unchecked.filter((s) => !returned.has(s));
+        if (freshlyMissing.length > 0) {
+          setMissingSlugs((prev) => {
+            const next = new Set(prev);
+            for (const s of freshlyMissing) next.add(s);
+            return next;
+          });
+        }
       })
       .catch(() => {
-        /* chips fall back to slug-only display */
+        /* chips fall back to slug-only display; no missing flag on error */
       });
-  }, [storeId, value, resolvedLabels]);
+  }, [storeId, value, resolvedLabels, missingSlugs]);
+
+  // Publish the current missing-slug set to the parent whenever it
+  // changes, so the containing form can render a warning banner.
+  useEffect(() => {
+    if (!onMissingChange) return;
+    const stillPicked = Array.from(missingSlugs).filter((s) => value.includes(s));
+    onMissingChange(stillPicked);
+  }, [missingSlugs, value, onMissingChange]);
 
   // Debounced search.
   useEffect(() => {
@@ -102,39 +131,60 @@ export function ProductSlugPicker({
       </FieldLabel>
 
       {value.length > 0 ? (
-        <ul className="flex flex-wrap gap-2">
-          {value.map((slug) => {
-            const resolved = resolvedLabels[slug];
-            return (
-              <li
-                key={slug}
-                className="inline-flex items-center gap-2 rounded-md border border-border bg-[color:var(--background-elevated)] px-2 py-1 text-xs text-foreground"
-              >
-                {resolved?.thumbnailUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={resolved.thumbnailUrl}
-                    alt=""
-                    className="h-6 w-6 rounded object-cover"
-                  />
-                ) : null}
-                <span className="max-w-[12rem] truncate">
-                  {resolved?.title ?? slug}
-                </span>
-                {editable ? (
-                  <button
-                    type="button"
-                    onClick={() => remove(slug)}
-                    className="text-foreground-secondary hover:text-danger"
-                    aria-label={`Remove ${resolved?.title ?? slug}`}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <ul className="flex flex-wrap gap-2">
+            {value.map((slug) => {
+              const resolved = resolvedLabels[slug];
+              const isMissing = missingSlugs.has(slug) && !resolved;
+              return (
+                <li
+                  key={slug}
+                  className={
+                    isMissing
+                      ? "inline-flex items-center gap-2 rounded-md border border-danger bg-danger/5 px-2 py-1 text-xs text-danger"
+                      : "inline-flex items-center gap-2 rounded-md border border-border bg-[color:var(--background-elevated)] px-2 py-1 text-xs text-foreground"
+                  }
+                >
+                  {resolved?.thumbnailUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={resolved.thumbnailUrl}
+                      alt=""
+                      className="h-6 w-6 rounded object-cover"
+                    />
+                  ) : null}
+                  <span className="max-w-[12rem] truncate">
+                    {resolved?.title ?? slug}
+                  </span>
+                  {isMissing ? (
+                    <span className="rounded-full bg-danger/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                      Missing
+                    </span>
+                  ) : null}
+                  {editable ? (
+                    <button
+                      type="button"
+                      onClick={() => remove(slug)}
+                      className={
+                        isMissing
+                          ? "text-danger hover:opacity-80"
+                          : "text-foreground-secondary hover:text-danger"
+                      }
+                      aria-label={`Remove ${resolved?.title ?? slug}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          {Array.from(missingSlugs).some((s) => value.includes(s)) ? (
+            <p className="text-xs text-danger">
+              Some picked products no longer exist — customers won&apos;t see them until you swap them out.
+            </p>
+          ) : null}
+        </>
       ) : null}
 
       {editable && !atMax ? (
@@ -225,4 +275,23 @@ async function fetchProducts(
     title: p.title,
     thumbnailUrl: p.media?.[0]?.url ?? null,
   }));
+}
+
+// Resolve a known slug list one-by-one via the search endpoint. Each
+// slug is issued as a search query; the returned product's handle is
+// compared exactly to filter out fuzzy matches. Used for hydrating
+// chip labels and detecting renamed/deleted products.
+async function fetchProductsBySlugs(
+  storeId: string,
+  slugs: string[],
+): Promise<ProductOption[]> {
+  const found: ProductOption[] = [];
+  await Promise.all(
+    slugs.map(async (slug) => {
+      const items = await fetchProducts(storeId, slug).catch(() => []);
+      const match = items.find((i) => i.slug === slug);
+      if (match) found.push(match);
+    }),
+  );
+  return found;
 }

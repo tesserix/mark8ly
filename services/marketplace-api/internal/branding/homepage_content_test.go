@@ -225,6 +225,86 @@ func TestValidateHomepageContent_FeaturedProductSlugsEmpty_Errors(t *testing.T) 
 	require.Error(t, ValidateHomepageContent(json.RawMessage(body)))
 }
 
+// --- New hero fields: eyebrow, secondary CTA, aside image ---
+
+func TestValidateHomepageContent_HeroNewFields_AllValid_OK(t *testing.T) {
+	body := `{"hero":{
+		"enabled":true,
+		"eyebrow":"New arrivals",
+		"cta_secondary_label":"Learn more",
+		"cta_secondary_url":"/pages/about",
+		"aside_image_url":"https://cdn.example/aside.jpg",
+		"aside_image_alt":"A product on a wooden table"
+	}}`
+	require.NoError(t, ValidateHomepageContent(json.RawMessage(body)))
+}
+
+func TestValidateHomepageContent_HeroSecondaryCTA_LabelWithoutURL_Errors(t *testing.T) {
+	body := `{"hero":{"cta_secondary_label":"Learn more","cta_secondary_url":""}}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cta_secondary_")
+}
+
+func TestValidateHomepageContent_HeroSecondaryCTA_URLWithoutLabel_Errors(t *testing.T) {
+	body := `{"hero":{"cta_secondary_label":"","cta_secondary_url":"/pages/about"}}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cta_secondary_")
+}
+
+func TestValidateHomepageContent_HeroAsideImage_URLWithoutAlt_Errors(t *testing.T) {
+	body := `{"hero":{"aside_image_url":"https://cdn.example/aside.jpg","aside_image_alt":""}}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "aside_image_alt")
+	require.Contains(t, err.Error(), "required when aside_image_url is set")
+}
+
+func TestValidateHomepageContent_HeroNewFields_CapOversize_Errors(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		value string
+	}{
+		{"eyebrow_too_long", "eyebrow", strings.Repeat("x", 81)},
+		{"cta_secondary_label_too_long", "cta_secondary_label", strings.Repeat("x", 61)},
+		{"cta_secondary_url_too_long", "cta_secondary_url", "https://example.com/" + strings.Repeat("x", 490)},
+		{"aside_image_url_too_long", "aside_image_url", "https://example.com/" + strings.Repeat("x", 490)},
+		{"aside_image_alt_too_long", "aside_image_alt", strings.Repeat("x", 201)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var body string
+			if tc.field == "aside_image_url" {
+				// Provide alt to avoid triggering alt-required rule before cap check.
+				// The URL itself is too long so it won't reach IsSafeURL.
+				body = `{"hero":{"` + tc.field + `":"` + tc.value + `","aside_image_alt":"alt"}}`
+			} else if tc.field == "cta_secondary_url" {
+				// Provide label to avoid triggering pair rule before cap check.
+				body = `{"hero":{"cta_secondary_label":"Go","` + tc.field + `":"` + tc.value + `"}}`
+			} else {
+				body = `{"hero":{"` + tc.field + `":"` + tc.value + `"}}`
+			}
+			require.Error(t, ValidateHomepageContent(json.RawMessage(body)), tc.name)
+		})
+	}
+}
+
+func TestValidateHomepageContent_HeroSecondaryCTA_JavascriptURL_Errors(t *testing.T) {
+	body := `{"hero":{"cta_secondary_label":"Go","cta_secondary_url":"javascript:alert(1)"}}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cta_secondary_url")
+}
+
+func TestValidateHomepageContent_HeroAsideImage_JavascriptURL_Errors(t *testing.T) {
+	body := `{"hero":{"aside_image_url":"javascript:alert(1)","aside_image_alt":"alt"}}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "aside_image_url")
+}
+
 // TestHomepageContent_RoundTrip_NewTypes proves a blob containing each
 // of the new section types survives the "validate → store as raw JSON
 // → reread → revalidate" cycle the service.Update path puts it

@@ -9,24 +9,29 @@ import (
 // Validation caps. These mirror the admin UI's maxLength attrs — update BOTH when changing a cap.
 // Enforced at the service layer when writing to the store_branding.homepage_content JSONB column.
 const (
-	maxHomepageSections    = 12
-	maxHeroHeading         = 200
-	maxHeroSubheading      = 400
-	maxHeroCtaLabel        = 60
-	maxSectionTextMarkdown = 20_000
-	maxSectionImageAlt     = 200
-	maxSectionImageCaption = 200
-	maxSectionQuoteText    = 500
-	maxSectionQuoteAttrib  = 200
-	maxSectionHeading      = 200
-	maxFeaturedLimit       = 24
-	maxMarqueeItems        = 8
-	maxMarqueeItemLen      = 80
-	maxLetterEyebrow       = 120
-	maxLetterTitle         = 200
-	maxLetterBody          = 10_000
-	maxProductSlugs        = 6
-	maxProductSlugLen      = 200
+	maxHomepageSections     = 12
+	maxHeroHeading          = 200
+	maxHeroSubheading       = 400
+	maxHeroCtaLabel         = 60
+	maxHeroEyebrow          = 80
+	maxHeroSecondaryCtaLabel = 60
+	maxHeroSecondaryCtaURL  = 500
+	maxHeroAsideImageURL    = 500
+	maxHeroAsideImageAlt    = 200
+	maxSectionTextMarkdown  = 20_000
+	maxSectionImageAlt      = 200
+	maxSectionImageCaption  = 200
+	maxSectionQuoteText     = 500
+	maxSectionQuoteAttrib   = 200
+	maxSectionHeading       = 200
+	maxFeaturedLimit        = 24
+	maxMarqueeItems         = 8
+	maxMarqueeItemLen       = 80
+	maxLetterEyebrow        = 120
+	maxLetterTitle          = 200
+	maxLetterBody           = 10_000
+	maxProductSlugs         = 6
+	maxProductSlugLen       = 200
 )
 
 // ValidateHomepageContent checks the shape of a homepage_content JSONB
@@ -63,12 +68,17 @@ func ValidateHomepageContent(raw json.RawMessage) error {
 }
 
 type heroInput struct {
-	Enabled    *bool   `json:"enabled"`
-	ImageURL   *string `json:"image_url"`
-	Heading    *string `json:"heading"`
-	Subheading *string `json:"subheading"`
-	CtaLabel   *string `json:"cta_label"`
-	CtaURL     *string `json:"cta_url"`
+	Enabled            *bool   `json:"enabled"`
+	ImageURL           *string `json:"image_url"`
+	Heading            *string `json:"heading"`
+	Subheading         *string `json:"subheading"`
+	CtaLabel           *string `json:"cta_label"`
+	CtaURL             *string `json:"cta_url"`
+	Eyebrow            *string `json:"eyebrow,omitempty"`
+	CtaSecondaryLabel  *string `json:"cta_secondary_label,omitempty"`
+	CtaSecondaryURL    *string `json:"cta_secondary_url,omitempty"`
+	AsideImageURL      *string `json:"aside_image_url,omitempty"`
+	AsideImageAlt      *string `json:"aside_image_alt,omitempty"`
 }
 
 type sectionInput struct {
@@ -110,6 +120,38 @@ func validateHero(h *heroInput) error {
 	}
 	if h.CtaURL != nil && *h.CtaURL != "" && !IsSafeURL(*h.CtaURL) {
 		return fmt.Errorf("hero.cta_url: unsafe URL scheme")
+	}
+	if h.Eyebrow != nil && len(*h.Eyebrow) > maxHeroEyebrow {
+		return fmt.Errorf("hero.eyebrow: max %d chars", maxHeroEyebrow)
+	}
+	if h.CtaSecondaryLabel != nil && len(*h.CtaSecondaryLabel) > maxHeroSecondaryCtaLabel {
+		return fmt.Errorf("hero.cta_secondary_label: max %d chars", maxHeroSecondaryCtaLabel)
+	}
+	if h.CtaSecondaryURL != nil && len(*h.CtaSecondaryURL) > maxHeroSecondaryCtaURL {
+		return fmt.Errorf("hero.cta_secondary_url: max %d chars", maxHeroSecondaryCtaURL)
+	}
+	// Paired rule: label and url must both be set or both empty.
+	secondaryLabel := h.CtaSecondaryLabel != nil && *h.CtaSecondaryLabel != ""
+	secondaryURL := h.CtaSecondaryURL != nil && *h.CtaSecondaryURL != ""
+	if secondaryLabel != secondaryURL {
+		return fmt.Errorf("hero.cta_secondary_*: label and url must be set together")
+	}
+	if secondaryURL && !IsSafeURL(*h.CtaSecondaryURL) {
+		return fmt.Errorf("hero.cta_secondary_url: unsafe URL scheme")
+	}
+	if h.AsideImageURL != nil && len(*h.AsideImageURL) > maxHeroAsideImageURL {
+		return fmt.Errorf("hero.aside_image_url: max %d chars", maxHeroAsideImageURL)
+	}
+	if h.AsideImageAlt != nil && len(*h.AsideImageAlt) > maxHeroAsideImageAlt {
+		return fmt.Errorf("hero.aside_image_alt: max %d chars", maxHeroAsideImageAlt)
+	}
+	asideURL := h.AsideImageURL != nil && *h.AsideImageURL != ""
+	asideAlt := h.AsideImageAlt != nil && *h.AsideImageAlt != ""
+	if asideURL && !asideAlt {
+		return fmt.Errorf("hero.aside_image_alt: required when aside_image_url is set")
+	}
+	if asideURL && !IsSafeURL(*h.AsideImageURL) {
+		return fmt.Errorf("hero.aside_image_url: unsafe URL scheme")
 	}
 	return nil
 }

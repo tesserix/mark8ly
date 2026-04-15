@@ -68,6 +68,7 @@ export function HomepageTab({
         onChange={(nextHero) => setContent({ ...content, hero: nextHero })}
         pages={pages}
         editable={editable}
+        layoutVariant={form.layout_variant}
       />
 
       <div className="border-t border-border-subtle pt-10">

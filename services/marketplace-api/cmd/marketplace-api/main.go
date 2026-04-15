@@ -371,6 +371,7 @@ func main() {
 			Logger: log,
 		})
 		brandingHandler := admin.NewBrandingHandler(brandingSvc, log)
+		brandingHandler.SetUploader(uploader)
 
 		// Test-only branding seeder. Wired only when
 		// MARKETPLACE_API_ENABLE_TEST_ROUTES=true so it can never leak

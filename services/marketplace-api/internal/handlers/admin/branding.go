@@ -4,26 +4,36 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"path"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"github.com/mark8ly/marketplace-api/internal/branding"
+	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
 // BrandingHandler handles /admin/stores/:storeId/branding endpoints.
 type BrandingHandler struct {
-	svc    *branding.Service
-	logger *slog.Logger
+	svc      *branding.Service
+	uploader media.Uploader // optional; only used by UploadURL
+	logger   *slog.Logger
 }
 
 // NewBrandingHandler constructs a BrandingHandler.
 func NewBrandingHandler(svc *branding.Service, logger *slog.Logger) *BrandingHandler {
 	return &BrandingHandler{svc: svc, logger: logger}
 }
+
+// SetUploader wires the media uploader for the upload-url endpoint.
+// Separate setter so main.go can keep existing call sites unchanged.
+func (h *BrandingHandler) SetUploader(u media.Uploader) { h.uploader = u }
 
 // BrandingResponse is the wire DTO for store branding.
 type BrandingResponse struct {
@@ -207,4 +217,118 @@ func (h *BrandingHandler) Update(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toBrandingResponse(*b))
+}
+
+// BrandingUploadURLRequest is the wire body for POST /branding/upload-url.
+type BrandingUploadURLRequest struct {
+	Filename    string `json:"filename" binding:"required,max=200"`
+	ContentType string `json:"content_type" binding:"required,max=100"`
+	Kind        string `json:"kind" binding:"required,oneof=logo favicon hero aside section"`
+}
+
+// BrandingUploadURLResponse is the wire response for POST /branding/upload-url.
+type BrandingUploadURLResponse struct {
+	UploadURL  string    `json:"upload_url"`
+	PublicURL  string    `json:"public_url"`
+	StorageKey string    `json:"storage_key"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// brandingAllowedTypes maps each branding image kind to the set of
+// accepted content-types. Raster-only for hero/aside/section; SVG is
+// allowed for logo + favicon where the merchant's brand mark often
+// arrives in SVG form.
+var brandingAllowedTypes = map[string]map[string]struct{}{
+	"logo":    {"image/png": {}, "image/jpeg": {}, "image/webp": {}, "image/svg+xml": {}},
+	"favicon": {"image/png": {}, "image/jpeg": {}, "image/webp": {}, "image/svg+xml": {}, "image/x-icon": {}, "image/vnd.microsoft.icon": {}},
+	"hero":    {"image/png": {}, "image/jpeg": {}, "image/webp": {}},
+	"aside":   {"image/png": {}, "image/jpeg": {}, "image/webp": {}},
+	"section": {"image/png": {}, "image/jpeg": {}, "image/webp": {}},
+}
+
+// UploadURL handles POST /admin/stores/:storeId/branding/upload-url.
+// Returns a V4 signed PUT URL + the public URL to store on the branding
+// record. No DB writes happen here — the merchant's next PUT /branding
+// call persists the returned `public_url` in the appropriate field.
+func (h *BrandingHandler) UploadURL(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	if tenantID == "" {
+		RespondErr(c, apperrors.ValidationFailed("tenant_id", "missing"), h.logger)
+		return
+	}
+
+	var req BrandingUploadURLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+
+	allowed, ok := brandingAllowedTypes[req.Kind]
+	if !ok {
+		RespondErr(c, apperrors.ValidationFailed("kind", "unknown kind"), h.logger)
+		return
+	}
+	if _, allowedCT := allowed[req.ContentType]; !allowedCT {
+		RespondErr(c, apperrors.ValidationFailed("content_type", "not allowed for this kind"), h.logger)
+		return
+	}
+
+	if h.uploader == nil {
+		c.AbortWithStatusJSON(http.StatusNotImplemented, gin.H{
+			"error":   "not_implemented",
+			"message": "uploads are disabled on this deployment",
+		})
+		return
+	}
+	signer, ok := h.uploader.(media.SignedURLGenerator)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusNotImplemented, gin.H{
+			"error":   "not_implemented",
+			"message": "signed upload URLs require a real GCS bucket",
+		})
+		return
+	}
+	bn, ok := h.uploader.(interface{ BucketName() string })
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusNotImplemented, gin.H{
+			"error":   "not_implemented",
+			"message": "uploader does not expose bucket name",
+		})
+		return
+	}
+
+	key := buildBrandingStorageKey(tenantID, req.Kind, req.Filename)
+	uploadURL, expiresAt, err := signer.SignedUploadURL(c.Request.Context(), key, req.ContentType, 15*time.Minute)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", bn.BucketName(), key)
+	c.JSON(http.StatusOK, BrandingUploadURLResponse{
+		UploadURL:  uploadURL,
+		PublicURL:  publicURL,
+		StorageKey: key,
+		ExpiresAt:  expiresAt,
+	})
+}
+
+// buildBrandingStorageKey returns `tenants/<tenantId>/branding/<kind>/<uuid>.<ext>`.
+// The ext comes from the filename (lowercased, ascii-safe, capped) so merchants
+// get readable URLs; a random UUID prefix prevents collisions across reuploads.
+func buildBrandingStorageKey(tenantID, kind, filename string) string {
+	ext := strings.ToLower(path.Ext(filename))
+	safe := make([]byte, 0, len(ext))
+	for _, r := range ext {
+		if r == '.' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			safe = append(safe, byte(r))
+			if len(safe) >= 8 {
+				break
+			}
+		}
+	}
+	if len(safe) < 2 {
+		safe = []byte(".bin")
+	}
+	return fmt.Sprintf("tenants/%s/branding/%s/%s%s", tenantID, kind, uuid.NewString(), string(safe))
 }

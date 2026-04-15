@@ -72,6 +72,7 @@ export function HomepageTab({
         pages={pages}
         editable={editable}
         layoutVariant={form.layout_variant}
+        storeId={form.store_id}
         onValidityChange={onHeroValidityChange}
       />
 

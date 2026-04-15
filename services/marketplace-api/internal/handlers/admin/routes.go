@@ -605,6 +605,9 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				brandingGroup.PUT("",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.BrandingEditRole),
 					deps.BrandingHandler.Update)
+				brandingGroup.POST("/upload-url",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.BrandingEditRole),
+					deps.BrandingHandler.UploadURL)
 			}
 		}
 

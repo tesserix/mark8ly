@@ -31,6 +31,7 @@ describe("HeroEditor — aside image a11y validity", () => {
         onValidityChange={onValidityChange}
         pages={[]}
         editable={true}
+          storeId="test-store"
       />
     );
 
@@ -49,6 +50,7 @@ describe("HeroEditor — aside image a11y validity", () => {
         onValidityChange={onValidityChange}
         pages={[]}
         editable={true}
+          storeId="test-store"
       />
     );
 
@@ -66,6 +68,7 @@ describe("HeroEditor — aside image a11y validity", () => {
           onValidityChange={onValidityChange}
           pages={[]}
           editable={true}
+          storeId="test-store"
         />
       );
     });
@@ -92,6 +95,7 @@ describe("HeroEditor — aside image a11y validity", () => {
           onValidityChange={onValidityChange}
           pages={[]}
           editable={true}
+          storeId="test-store"
         />
       );
     });
@@ -115,6 +119,7 @@ describe("HeroEditor — aside image a11y validity", () => {
           onValidityChange={onValidityChange}
           pages={[]}
           editable={true}
+          storeId="test-store"
         />
       );
     });
@@ -134,6 +139,7 @@ describe("HeroEditor — aside image a11y validity", () => {
           onValidityChange={onValidityChange}
           pages={[]}
           editable={true}
+          storeId="test-store"
         />
       );
     });
@@ -153,6 +159,7 @@ describe("HeroEditor — aside image a11y validity", () => {
           onValidityChange={onValidityChange}
           pages={[]}
           editable={true}
+          storeId="test-store"
         />
       );
     });
@@ -170,6 +177,7 @@ describe("HeroEditor — aside image a11y validity", () => {
           onValidityChange={onValidityChange}
           pages={[]}
           editable={true}
+          storeId="test-store"
         />
       );
     });
@@ -177,25 +185,20 @@ describe("HeroEditor — aside image a11y validity", () => {
   });
 
   it("aside URL cleared after being set — error clears, onValidityChange(true)", async () => {
-    const user = userEvent.setup();
     const onValidityChange = vi.fn();
-
-    let currentValue = baseHero({
-      aside_image_url: "https://cdn.example.com/aside.jpg",
-      aside_image_alt: null,
-    });
-
-    const onChange = vi.fn((next: HomepageHero) => {
-      currentValue = next;
-    });
+    const onChange = vi.fn();
 
     const { rerender } = render(
       <HeroEditor
-        value={currentValue}
+        value={baseHero({
+          aside_image_url: "https://cdn.example.com/aside.jpg",
+          aside_image_alt: null,
+        })}
         onChange={onChange}
         onValidityChange={onValidityChange}
         pages={[]}
         editable={true}
+        storeId="test-store"
       />
     );
 
@@ -204,13 +207,8 @@ describe("HeroEditor — aside image a11y validity", () => {
       screen.getByText(/alt text is required when an aside image is set/i)
     ).toBeInTheDocument();
 
-    // Clear the aside URL input by its stable id
-    const asideUrlById = document.getElementById("hero_aside_image_url") as HTMLInputElement;
-    expect(asideUrlById).not.toBeNull();
-
-    await user.clear(asideUrlById);
-
-    // Simulate parent receiving the cleared value and passing it back
+    // Parent clears the aside URL (via the image-upload "Remove" button)
+    // and the component re-renders with it unset.
     await act(async () => {
       rerender(
         <HeroEditor
@@ -219,12 +217,12 @@ describe("HeroEditor — aside image a11y validity", () => {
           onValidityChange={onValidityChange}
           pages={[]}
           editable={true}
+          storeId="test-store"
         />
       );
     });
 
     expect(screen.queryByText(/alt text is required/i)).not.toBeInTheDocument();
-    // Last call should be true (valid)
     const calls = onValidityChange.mock.calls;
     const lastCall = calls[calls.length - 1];
     expect(lastCall?.[0]).toBe(true);

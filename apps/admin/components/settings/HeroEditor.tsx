@@ -8,6 +8,7 @@ import {
   TextInput,
   ToggleSwitch,
 } from "./BrandingSettingsClient";
+import { ImageUploadInput } from "./ImageUploadInput";
 
 // Mirrors the storefront heroStylesFor() matrix — intentionally duplicated
 // to keep the admin bundle free of storefront imports.
@@ -28,12 +29,13 @@ interface HeroEditorProps {
   pages: Pick<AdminPage, "id" | "slug" | "title">[];
   editable: boolean;
   layoutVariant?: string;
+  storeId: string;
   // Validity signal: called whenever the aside-alt a11y constraint changes.
   // valid=false when aside_image_url is set but aside_image_alt is empty.
   onValidityChange?: (valid: boolean) => void;
 }
 
-export function HeroEditor({ value, onChange, pages, editable, layoutVariant, onValidityChange }: HeroEditorProps) {
+export function HeroEditor({ value, onChange, pages, editable, layoutVariant, storeId, onValidityChange }: HeroEditorProps) {
   const patch = (p: Partial<HomepageHero>) => onChange({ ...value, ...p });
   const enabled = value.enabled;
 
@@ -124,13 +126,14 @@ export function HeroEditor({ value, onChange, pages, editable, layoutVariant, on
           </div>
 
           <div className="space-y-1.5">
-            <FieldLabel htmlFor="hero_image">Image URL</FieldLabel>
-            <TextInput
-              id="hero_image"
-              value={value.image_url ?? ""}
-              onChange={(v) => patch({ image_url: v || null })}
-              placeholder="https://cdn.example.com/hero.jpg"
+            <FieldLabel>Hero background image</FieldLabel>
+            <ImageUploadInput
+              storeId={storeId}
+              kind="hero"
+              value={value.image_url}
+              onChange={(url) => patch({ image_url: url })}
               disabled={!editable}
+              hint="PNG, JPG, WebP — up to 5 MB. Rendered behind the heading."
             />
           </div>
 
@@ -198,17 +201,16 @@ export function HeroEditor({ value, onChange, pages, editable, layoutVariant, on
             <p className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
               Aside image
             </p>
-            <div className="space-y-1.5">
-              <FieldLabel htmlFor="hero_aside_image_url">Image URL</FieldLabel>
-              <TextInput
-                id="hero_aside_image_url"
-                value={value.aside_image_url ?? ""}
-                onChange={(v) => patch({ aside_image_url: v || null })}
-                placeholder="https://cdn.example.com/aside.jpg"
-                disabled={!editable}
-                maxLength={500}
-              />
-            </div>
+            <ImageUploadInput
+              storeId={storeId}
+              kind="aside"
+              value={value.aside_image_url}
+              onChange={(url) => patch({ aside_image_url: url })}
+              disabled={!editable}
+              label="Image"
+              hint="PNG, JPG, WebP — up to 5 MB. Rendered alongside the hero on themes that support it."
+            />
+            {/* aside_image_url key anchor: hero_aside_image_url */}
             <div className="space-y-1.5">
               <FieldLabel htmlFor="hero_aside_image_alt">
                 Alt text{asideAltMissing ? <span className="ml-1 text-[color:var(--danger)]">*</span> : null}

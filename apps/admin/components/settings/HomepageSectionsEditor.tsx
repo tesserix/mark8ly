@@ -225,7 +225,7 @@ function renderForm(
     case "text":
       return <TextSectionForm section={section} onChange={onChange} editable={editable} />;
     case "image":
-      return <ImageSectionForm section={section} onChange={onChange} editable={editable} />;
+      return <ImageSectionForm section={section} onChange={onChange} editable={editable} storeId={storeId} />;
     case "quote":
       return <QuoteSectionForm section={section} onChange={onChange} editable={editable} />;
     case "featured_products":

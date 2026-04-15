@@ -3,8 +3,10 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
 import { fetchPage } from "@/lib/api/marketplace-api";
+import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { Markdown } from "@/lib/markdown";
 import { slugFromHost } from "@/lib/slug";
+import { StorefrontNav } from "@/components/StorefrontNav";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -33,18 +35,28 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function PageView({ params }: Props) {
   const { slug } = await params;
   const storeSlug = await resolveStoreSlug();
-  const page = storeSlug ? await fetchPage(storeSlug, slug) : null;
+  if (!storeSlug) notFound();
+
+  const [page, store] = await Promise.all([
+    fetchPage(storeSlug, slug),
+    fetchStoreBySlug(storeSlug).catch(() => null),
+  ]);
 
   if (!page) notFound();
 
   return (
-    <main id="main" className="mx-auto max-w-3xl px-6 py-16 sm:py-20">
-      <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground">
-        {page.title}
-      </h1>
-      <Markdown className="prose mt-8 max-w-none prose-headings:font-serif prose-headings:text-foreground prose-a:text-moss-700">
-        {page.body}
-      </Markdown>
+    <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
+      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
+        <StorefrontNav storeName={store?.name} />
+        <article className="mx-auto max-w-3xl py-10 sm:py-14">
+          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-serif))] text-4xl font-medium tracking-tight text-[color:var(--storefront-text,var(--ink-900))]">
+            {page.title}
+          </h1>
+          <Markdown className="prose mt-8 max-w-none prose-headings:font-[family-name:var(--storefront-heading-font,var(--font-serif))] prose-headings:text-[color:var(--storefront-text,var(--ink-900))] prose-a:text-[color:var(--storefront-accent,var(--moss-700))]">
+            {page.body}
+          </Markdown>
+        </article>
+      </div>
     </main>
   );
 }

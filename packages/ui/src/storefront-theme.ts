@@ -125,9 +125,17 @@ export type StorefrontDensity = "compact" | "balanced" | "airy";
 export type StorefrontRadius = "sharp" | "soft" | "rounded";
 export type StorefrontMode = "light" | "dark";
 
+// Surface controls whether the preset's background wash is used as-is
+// ("tinted") or overridden with neutral white ("clean"). Clean mode is the
+// modern e-commerce default — the accent and product photography carry
+// brand rather than a coloured background. Dark presets ignore this — a
+// "clean dark" doesn't exist (the whole point of dark is the coloured bg).
+export type StorefrontSurface = "tinted" | "clean";
+
 export interface StorefrontTheme {
   layout: StorefrontLayout;
   preset: StorefrontPreset;
+  surface: StorefrontSurface;
   colors: {
     primary: string;
     accent: string;
@@ -451,6 +459,40 @@ export function presetMode(preset: StorefrontPreset): StorefrontMode {
   return darkPresets.has(preset) ? "dark" : "light";
 }
 
+/** Does this preset actually honour the surface toggle? Dark presets
+ *  always use their own (dark) background — the toggle is a no-op there.
+ */
+export function presetSupportsSurfaceToggle(preset: StorefrontPreset): boolean {
+  return presetMode(preset) === "light";
+}
+
+/** Neutral surface colours used when a preset is rendered in "clean"
+ *  surface mode. Chosen to feel modern and let product photography carry
+ *  the visual weight. Accent / text / primary still come from the preset.
+ */
+const cleanSurfaceColors = {
+  background: "#FCFCFC",
+  surface: "#FFFFFF",
+} as const;
+
+/** Merges preset colours with the surface choice. Dark presets and
+ *  explicit "tinted" surfaces return the palette as-is. "clean" on a
+ *  light preset swaps only background + surface, leaving accent/text/
+ *  primary untouched so the preset's identity survives.
+ */
+function resolveSurfaceColors(
+  preset: StorefrontPreset,
+  surface: StorefrontSurface,
+  palette: StorefrontTheme["colors"],
+): StorefrontTheme["colors"] {
+  if (surface === "tinted" || presetMode(preset) === "dark") return palette;
+  return {
+    ...palette,
+    background: cleanSurfaceColors.background,
+    surface: cleanSurfaceColors.surface,
+  };
+}
+
 /* ============================================================
    Option lists for the admin editor UI
    ============================================================ */
@@ -570,6 +612,9 @@ export const fontStacks: Record<StorefrontFont, string> = {
 export const defaultStorefrontTheme: StorefrontTheme = {
   layout: "editorial",
   preset: "paper",
+  // Paper is the house preset — keeps its warm tinted bg as the default.
+  // New tenants who pick any other light preset will land on "clean".
+  surface: "tinted",
   colors: { ...presetPalette.paper },
   typography: {
     headingFont: "newsreader",
@@ -580,14 +625,33 @@ export const defaultStorefrontTheme: StorefrontTheme = {
   radius: "soft",
 };
 
+/** Default surface mode for a given preset. Paper keeps tinted (house
+ *  look). Dark presets keep tinted (the toggle is a no-op there). Every
+ *  other light preset defaults to clean so new tenants land on the
+ *  modern e-commerce default.
+ */
+function defaultSurfaceFor(preset: StorefrontPreset): StorefrontSurface {
+  if (preset === "paper") return "tinted";
+  if (presetMode(preset) === "dark") return "tinted";
+  return "clean";
+}
+
 export function normalizeStorefrontTheme(value: unknown): StorefrontTheme {
   const raw = (value ?? {}) as Partial<StorefrontTheme>;
   const preset = isPreset(raw.preset) ? raw.preset : defaultStorefrontTheme.preset;
   const palette = presetPalette[preset];
+  // Records stored before the surface toggle existed don't have the
+  // field — fall back to "tinted" so existing storefronts don't visually
+  // change overnight. Merchants who pick a new preset get the clean
+  // default via withPresetColors instead.
+  const surface: StorefrontSurface = isSurface(raw.surface)
+    ? raw.surface
+    : "tinted";
 
   return {
     layout: isLayout(raw.layout) ? raw.layout : defaultStorefrontTheme.layout,
     preset,
+    surface,
     colors: {
       primary: sanitizeHex(raw.colors?.primary, palette.primary),
       accent: sanitizeHex(raw.colors?.accent, palette.accent),
@@ -618,8 +682,19 @@ export function withPresetColors(
   return {
     ...theme,
     preset,
+    // Switching presets resets surface to that preset's sensible default
+    // so a merchant clicking (say) Marigold lands on its modern clean look
+    // unless they explicitly toggle back to tinted.
+    surface: defaultSurfaceFor(preset),
     colors: { ...presetPalette[preset] },
   };
+}
+
+export function withSurface(
+  theme: StorefrontTheme,
+  surface: StorefrontSurface,
+): StorefrontTheme {
+  return { ...theme, surface };
 }
 
 /* ============================================================
@@ -645,17 +720,21 @@ export function themeSpacing(theme: StorefrontTheme): string {
 export function themeCssVariables(
   theme: StorefrontTheme,
 ): Record<string, string> {
+  // Apply the surface toggle to background + surface only. Accent, text,
+  // and primary always come through as the preset author intended.
+  const resolved = resolveSurfaceColors(theme.preset, theme.surface, theme.colors);
   return {
-    "--storefront-primary": theme.colors.primary,
-    "--storefront-accent": theme.colors.accent,
-    "--storefront-background": theme.colors.background,
-    "--storefront-surface": theme.colors.surface,
-    "--storefront-text": theme.colors.text,
+    "--storefront-primary": resolved.primary,
+    "--storefront-accent": resolved.accent,
+    "--storefront-background": resolved.background,
+    "--storefront-surface": resolved.surface,
+    "--storefront-text": resolved.text,
     "--storefront-heading-font": fontStacks[theme.typography.headingFont],
     "--storefront-body-font": fontStacks[theme.typography.bodyFont],
     "--storefront-radius": themeRadius(theme),
     "--storefront-density-scale": String(themeDensityScale(theme)),
     "--storefront-mode": presetMode(theme.preset),
+    "--storefront-surface-mode": theme.surface,
   };
 }
 
@@ -679,6 +758,10 @@ function isPreset(value: unknown): value is StorefrontPreset {
 
 function isFont(value: unknown): value is StorefrontFont {
   return storefrontFontOptions.some((option) => option.value === value);
+}
+
+function isSurface(value: unknown): value is StorefrontSurface {
+  return value === "tinted" || value === "clean";
 }
 
 function isMotion(value: unknown): value is StorefrontMotion {

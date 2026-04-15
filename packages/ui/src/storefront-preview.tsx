@@ -104,10 +104,11 @@ function LayoutSchematic({
   theme: StorefrontTheme;
   name: string;
 }) {
-  switch (theme.layout) {
+  switch (theme.layout as string) {
     case "classic-shop":
       return <ClassicSchematic theme={theme} name={name} />;
     case "split-hero":
+    case "hero-focus":
       return <SplitHeroSchematic theme={theme} name={name} />;
     case "catalog-first":
       return <CatalogFirstSchematic theme={theme} name={name} />;
@@ -119,6 +120,16 @@ function LayoutSchematic({
       return <BoldPromoSchematic theme={theme} name={name} />;
     case "compact":
       return <CompactSchematic theme={theme} />;
+    case "lookbook":
+      return <LookbookSchematic theme={theme} name={name} />;
+    case "grid-dense":
+      return <GridDenseSchematic theme={theme} />;
+    case "collection-showcase":
+      return <CollectionShowcaseSchematic theme={theme} name={name} />;
+    case "product-spotlight":
+      return <ProductSpotlightSchematic theme={theme} name={name} />;
+    case "landing-story":
+      return <LandingStorySchematic theme={theme} name={name} />;
     case "editorial":
     default:
       return <EditorialSchematic theme={theme} name={name} />;
@@ -418,6 +429,206 @@ function CompactSchematic({ theme }: { theme: StorefrontTheme }) {
           <Tile key={i} theme={theme} ratio="100%" small />
         ))}
       </div>
+    </div>
+  );
+}
+
+function LookbookSchematic({
+  theme,
+  name,
+}: {
+  theme: StorefrontTheme;
+  name: string;
+}) {
+  return (
+    <div className="space-y-4">
+      <Eyebrow theme={theme}>Spring / Summer</Eyebrow>
+      <Tile theme={theme} ratio="45%" />
+      <div className="space-y-1">
+        <HeroHeadline theme={theme} name={name} size="lg" />
+        <Bar theme={theme} width="70%" />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Tile theme={theme} ratio="120%" />
+        <Tile theme={theme} ratio="120%" />
+      </div>
+    </div>
+  );
+}
+
+function GridDenseSchematic({ theme }: { theme: StorefrontTheme }) {
+  return (
+    <div className="space-y-2">
+      <div
+        className="flex items-center justify-between border-b pb-1 text-[8px] font-semibold uppercase tracking-[0.18em]"
+        style={{
+          borderColor: `${theme.colors.primary}22`,
+          color: `${theme.colors.primary}99`,
+        }}
+      >
+        <span>All products</span>
+        <span>Filter · Sort</span>
+      </div>
+      <div className="grid grid-cols-5 gap-1.5">
+        {Array.from({ length: 15 }).map((_, i) => (
+          <Tile key={i} theme={theme} ratio="100%" small />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CollectionShowcaseSchematic({
+  theme,
+  name,
+}: {
+  theme: StorefrontTheme;
+  name: string;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <Eyebrow theme={theme}>Collections</Eyebrow>
+        <HeroHeadline theme={theme} name={name} size="md" />
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {["New", "Bestsellers", "Gifts"].map((label) => (
+          <div
+            key={label}
+            className="relative overflow-hidden"
+            style={{
+              paddingTop: "80%",
+              background: `${theme.colors.primary}12`,
+              border: `1px solid ${theme.colors.primary}22`,
+              borderRadius: "var(--storefront-radius)",
+            }}
+          >
+            <span
+              className="absolute bottom-2 left-2 text-[8px] font-semibold uppercase tracking-[0.18em]"
+              style={{ color: `${theme.colors.primary}CC` }}
+            >
+              {label}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        <Tile theme={theme} ratio="100%" small />
+        <Tile theme={theme} ratio="100%" small />
+        <Tile theme={theme} ratio="100%" small />
+        <Tile theme={theme} ratio="100%" small />
+      </div>
+    </div>
+  );
+}
+
+function ProductSpotlightSchematic({
+  theme,
+  name,
+}: {
+  theme: StorefrontTheme;
+  name: string;
+}) {
+  return (
+    <div className="mx-auto max-w-[92%] space-y-4">
+      <Eyebrow theme={theme}>Spotlight</Eyebrow>
+      <div
+        className="grid grid-cols-[55%_1fr] gap-3 overflow-hidden"
+        style={{
+          borderRadius: "var(--storefront-radius)",
+          background: `${theme.colors.surface}66`,
+        }}
+      >
+        <div className="relative">
+          <Tile theme={theme} ratio="100%" fill />
+        </div>
+        <div className="space-y-1.5 p-3">
+          <HeroHeadline theme={theme} name={name} size="sm" />
+          <Bar theme={theme} width="95%" />
+          <Bar theme={theme} width="80%" />
+          <Bar theme={theme} width="60%" />
+          <div className="pt-1.5">
+            <ButtonBlock theme={theme} label="Add to cart" />
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 pt-1">
+        <Tile theme={theme} ratio="100%" small />
+        <Tile theme={theme} ratio="100%" small />
+        <Tile theme={theme} ratio="100%" small />
+      </div>
+    </div>
+  );
+}
+
+function LandingStorySchematic({
+  theme,
+  name,
+}: {
+  theme: StorefrontTheme;
+  name: string;
+}) {
+  return (
+    <div className="mx-auto max-w-[90%] space-y-4">
+      <Eyebrow theme={theme}>The story</Eyebrow>
+      <HeroHeadline theme={theme} name={name} size="lg" />
+      <Bar theme={theme} width="90%" />
+      <Bar theme={theme} width="75%" />
+      <Tile theme={theme} ratio="42%" />
+      <div
+        className="border-l-2 pl-3 text-[9px] italic"
+        style={{
+          borderColor: theme.colors.accent,
+          color: `${theme.colors.text}CC`,
+        }}
+      >
+        &ldquo;Built slowly, on purpose.&rdquo;
+      </div>
+      <div className="grid grid-cols-4 gap-2 pt-1">
+        <Tile theme={theme} ratio="100%" small />
+        <Tile theme={theme} ratio="100%" small />
+        <Tile theme={theme} ratio="100%" small />
+        <Tile theme={theme} ratio="100%" small />
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Tiny thumbnail — compact version for use inside picker cards.
+   Takes the same props as the main preview but renders without
+   browser chrome, at a smaller vertical footprint, so a card-
+   level picker can show a real preview of the layout.
+   ============================================================ */
+
+export function StorefrontLayoutThumbnail({
+  theme,
+  name,
+}: {
+  theme: StorefrontTheme;
+  name: string;
+}) {
+  const radius =
+    theme.radius === "sharp"
+      ? "4px"
+      : theme.radius === "rounded"
+        ? "10px"
+        : "6px";
+  const themeVars = themeCssVariables(theme) as CSSProperties;
+  return (
+    <div
+      className="overflow-hidden border px-2.5 py-2.5"
+      style={{
+        ...themeVars,
+        background: "var(--storefront-background)",
+        color: "var(--storefront-text)",
+        borderColor: `${theme.colors.primary}22`,
+        borderRadius: radius,
+        fontFamily: "var(--storefront-body-font)",
+        fontSize: "6px",
+      }}
+    >
+      <LayoutSchematic theme={theme} name={name} />
     </div>
   );
 }

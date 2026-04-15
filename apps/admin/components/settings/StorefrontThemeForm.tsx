@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@tesserix/web";
 import { Field } from "@repo/ui/field";
-import { StorefrontLayoutPreview } from "@repo/ui/storefront-preview";
+import { StorefrontLayoutPreview, StorefrontLayoutThumbnail } from "@repo/ui/storefront-preview";
 
 import { updateStorefrontTheme } from "@/app/(admin)/settings/themes/actions";
 import { useToast } from "@/components/feedback/Toaster";
@@ -17,15 +17,18 @@ import type { Store } from "@/lib/api/platform-api";
 import {
   defaultStorefrontTheme,
   normalizeStorefrontTheme,
+  presetSupportsSurfaceToggle,
   storefrontFontOptions,
   storefrontLayoutOptions,
   storefrontPresetOptions,
   withPresetColors,
+  withSurface,
   type StorefrontDensity,
   type StorefrontFont,
   type StorefrontMotion,
   type StorefrontPreset,
   type StorefrontRadius,
+  type StorefrontSurface,
   type StorefrontTheme,
 } from "@repo/ui/storefront-theme";
 
@@ -108,9 +111,12 @@ export function StorefrontThemeForm({
           </p>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {storefrontLayoutOptions.map((option) => {
             const active = theme.layout === option.value;
+            // Thumbnail shows the layout with the merchant's current
+            // colors + fonts so swapping a preset updates all cards.
+            const cardTheme: StorefrontTheme = { ...theme, layout: option.value };
             return (
               <button
                 key={option.value}
@@ -119,16 +125,19 @@ export function StorefrontThemeForm({
                 aria-pressed={active}
                 disabled={disabled}
                 onClick={() => updateTheme({ ...theme, layout: option.value })}
-                className={`min-h-[44px] rounded-md border px-4 py-4 text-left transition-colors ${
+                className={`min-h-[44px] rounded-md border p-3 text-left transition-colors ${
                   active
                     ? "border-moss-700 bg-moss-50"
                     : "border-border bg-background-elevated hover:border-border-strong"
                 } disabled:cursor-not-allowed disabled:opacity-60`}
               >
-                <p className="text-sm font-semibold text-foreground">
+                <div className="pointer-events-none">
+                  <StorefrontLayoutThumbnail theme={cardTheme} name={store.name} />
+                </div>
+                <p className="mt-3 text-sm font-semibold text-foreground">
                   {option.label}
                 </p>
-                <p className="mt-2 text-xs leading-5 text-foreground-secondary">
+                <p className="mt-1 text-xs leading-5 text-foreground-secondary">
                   {option.description}
                 </p>
               </button>
@@ -168,11 +177,27 @@ export function StorefrontThemeForm({
                     } disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     {option.label}
+                    {option.mode === "dark" ? (
+                      <span className="ml-1.5 text-[10px] uppercase tracking-[0.18em] text-foreground-tertiary">
+                        Dark
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
             </div>
           </Field>
+
+          <SurfaceToggle
+            value={theme.surface}
+            disabled={disabled || !presetSupportsSurfaceToggle(theme.preset)}
+            helperText={
+              presetSupportsSurfaceToggle(theme.preset)
+                ? "Clean uses neutral white backgrounds so product photography carries the brand. Tinted uses the preset's tinted background for a more editorial feel."
+                : "Dark presets always use their own background — the surface toggle doesn't apply."
+            }
+            onChange={(value) => updateTheme(withSurface(theme, value))}
+          />
 
           <div className="grid gap-5 sm:grid-cols-2">
             <ColorField
@@ -425,6 +450,52 @@ function SelectField({
           ))}
         </SelectContent>
       </Select>
+    </Field>
+  );
+}
+
+function SurfaceToggle({
+  value,
+  disabled,
+  helperText,
+  onChange,
+}: {
+  value: StorefrontSurface;
+  disabled?: boolean;
+  helperText: string;
+  onChange: (value: StorefrontSurface) => void;
+}) {
+  const options: Array<{ value: StorefrontSurface; label: string; description: string }> = [
+    { value: "clean", label: "Clean", description: "White backgrounds. Modern default." },
+    { value: "tinted", label: "Tinted", description: "Preset's tinted background. Editorial feel." },
+  ];
+  return (
+    <Field id="surface" label="Surface">
+      <div className="space-y-2">
+        <div className="grid gap-2 sm:grid-cols-2">
+          {options.map((option) => {
+            const active = value === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                disabled={disabled}
+                aria-pressed={active}
+                onClick={() => onChange(option.value)}
+                className={`min-h-[44px] rounded-md border px-4 py-3 text-left transition-colors ${
+                  active
+                    ? "border-moss-700 bg-moss-50"
+                    : "border-border bg-background-elevated hover:border-border-strong"
+                } disabled:cursor-not-allowed disabled:opacity-60`}
+              >
+                <p className="text-sm font-semibold text-foreground">{option.label}</p>
+                <p className="mt-1 text-xs text-foreground-secondary">{option.description}</p>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-foreground-tertiary">{helperText}</p>
+      </div>
     </Field>
   );
 }

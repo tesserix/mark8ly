@@ -4,6 +4,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/order"
@@ -229,18 +231,47 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	storeUUID, _ := uuid.Parse(storeID)
 	tenantUUID, _ := uuid.Parse(tenantID)
 
+	// ship_from and ship_to are NOT NULL JSONB on the migration-defined
+	// shipments table. Build them from the warehouse + customer address
+	// we already loaded.
+	fromJSON, _ := json.Marshal(map[string]any{
+		"name":         carrierCfg.WarehouseName,
+		"line1":        carrierCfg.WarehouseLine1,
+		"line2":        carrierCfg.WarehouseLine2,
+		"city":         carrierCfg.WarehouseCity,
+		"region":       carrierCfg.WarehouseRegion,
+		"postal_code":  carrierCfg.WarehousePostal,
+		"country_code": carrierCfg.WarehouseCountry,
+		"phone":        carrierCfg.WarehousePhone,
+	})
+	toJSON, _ := json.Marshal(map[string]any{
+		"name":         shippingAddr.Name,
+		"line1":        shippingAddr.Line1,
+		"line2":        derefStringPtr(shippingAddr.Line2),
+		"city":         shippingAddr.City,
+		"region":       derefStringPtr(shippingAddr.Region),
+		"postal_code":  derefStringPtr(shippingAddr.PostalCode),
+		"country_code": shippingAddr.CountryCode,
+		"phone":        derefStringPtr(shippingAddr.Phone),
+	})
+
 	rec := &shipping.ShipmentRecord{
 		TenantID:           tenantUUID,
 		StoreID:            storeUUID,
 		OrderID:            orderID,
-		Provider:           provider,
-		ProviderShipmentID: shipment.ProviderShipmentID,
+		Carrier:            provider,
 		TrackingNumber:     shipment.TrackingNumber,
 		LabelURL:           shipment.LabelURL,
-		Service:            shipment.Service,
-		Status:             "created",
+		Status:             "pending",
+		ShipFrom:           datatypes.JSON(fromJSON),
+		ShipTo:             datatypes.JSON(toJSON),
 		CurrencyCode:       o.CurrencyCode,
 		EstimatedDelivery:  shipment.EstimatedDelivery,
+		// Response-only fields — not persisted, but carried so the wire
+		// DTO can surface them.
+		Provider:           provider,
+		ProviderShipmentID: shipment.ProviderShipmentID,
+		Service:            shipment.Service,
 	}
 
 	if err := h.repo.CreateShipment(ctx, rec); err != nil {
@@ -255,6 +286,15 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		"Shipping label created — package will be picked up shortly.")
 
 	c.JSON(http.StatusCreated, toShipmentResponse(rec))
+}
+
+// derefStringPtr returns "" when the input is nil — used while building
+// ship_to / ship_from JSONB from the OrderAddress's nullable columns.
+func derefStringPtr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // appendShipmentEvent writes a row into order_events describing a

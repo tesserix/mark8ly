@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
 
 import type {
   AdminCategory,
@@ -11,16 +12,31 @@ import { TextSectionForm } from "./sections/TextSectionForm";
 import { ImageSectionForm } from "./sections/ImageSectionForm";
 import { QuoteSectionForm } from "./sections/QuoteSectionForm";
 import { FeaturedProductsSectionForm } from "./sections/FeaturedProductsSectionForm";
+import { MarqueeSectionForm } from "./sections/MarqueeSectionForm";
+import { PullQuoteSectionForm } from "./sections/PullQuoteSectionForm";
+import { LetterSectionForm } from "./sections/LetterSectionForm";
 
 const MAX_SECTIONS = 12;
 
 type SectionType = HomepageSection["type"];
+
+interface AddGroup {
+  label: string;
+  types: SectionType[];
+}
+
+const ADD_GROUPS: AddGroup[] = [
+  { label: "Content", types: ["text", "image", "quote"] },
+  { label: "Featured", types: ["featured_products"] },
+  { label: "Editorial", types: ["marquee", "pull_quote", "letter"] },
+];
 
 interface HomepageSectionsEditorProps {
   sections: HomepageSection[];
   onChange: (next: HomepageSection[]) => void;
   categories: Pick<AdminCategory, "id" | "slug" | "name">[];
   editable: boolean;
+  storeId: string;
 }
 
 function newSection(type: SectionType): HomepageSection {
@@ -29,6 +45,9 @@ function newSection(type: SectionType): HomepageSection {
     case "image":             return { type: "image", url: "" };
     case "quote":             return { type: "quote", text: "" };
     case "featured_products": return { type: "featured_products", collection_slug: "", limit: 8 };
+    case "marquee":           return { type: "marquee", items: [] };
+    case "pull_quote":        return { type: "pull_quote", text: "" };
+    case "letter":            return { type: "letter", title: "", body: "" };
   }
 }
 
@@ -37,8 +56,10 @@ export function HomepageSectionsEditor({
   onChange,
   categories,
   editable,
+  storeId,
 }: HomepageSectionsEditorProps) {
   const canAdd = sections.length < MAX_SECTIONS;
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   const updateAt = (i: number, next: HomepageSection) => {
     onChange(sections.map((s, idx) => (idx === i ? next : s)));
@@ -108,7 +129,7 @@ export function HomepageSectionsEditor({
                 </div>
               ) : null}
             </header>
-            {renderForm(s, (next) => updateAt(i, next), categories, editable)}
+            {renderForm(s, (next) => updateAt(i, next), categories, editable, storeId)}
           </article>
         ))}
 
@@ -120,20 +141,46 @@ export function HomepageSectionsEditor({
       </div>
 
       {editable ? (
-        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-          <span className="text-xs uppercase tracking-wide text-foreground-secondary">Add block</span>
-          {(["text", "image", "quote", "featured_products"] as SectionType[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => addSection(t)}
-              disabled={!canAdd}
-              className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-sm text-foreground hover:border-[color:var(--moss-700)] disabled:opacity-40"
+        <div className="relative border-t border-border pt-4">
+          <button
+            type="button"
+            onClick={() => setAddMenuOpen((o) => !o)}
+            disabled={!canAdd}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm text-foreground hover:border-[color:var(--moss-700)] disabled:opacity-40"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add block
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          {addMenuOpen && canAdd ? (
+            <div
+              className="absolute z-10 mt-1 w-56 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] p-1 shadow-lg"
+              role="menu"
             >
-              <Plus className="h-3.5 w-3.5" />
-              {labelFor(t)}
-            </button>
-          ))}
+              {ADD_GROUPS.map((group) => (
+                <div key={group.label} className="py-1">
+                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground-secondary">
+                    {group.label}
+                  </p>
+                  {group.types.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => {
+                        addSection(t);
+                        setAddMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-foreground hover:bg-[color:var(--background)]"
+                      role="menuitem"
+                    >
+                      <Plus className="h-3 w-3 text-foreground-secondary" />
+                      {labelFor(t)}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -150,7 +197,7 @@ export function HomepageSectionsEditor({
 function sectionKey(s: HomepageSection, i: number): string {
   switch (s.type) {
     case "image":             return `image-${s.url || i}`;
-    case "featured_products": return `featured-${s.collection_slug || i}`;
+    case "featured_products": return `featured-${s.collection_slug || (s.product_slugs ?? []).join(",") || i}`;
     default:                  return `${s.type}-${i}`;
   }
 }
@@ -161,6 +208,9 @@ function labelFor(t: SectionType): string {
     case "image":             return "Image";
     case "quote":             return "Quote";
     case "featured_products": return "Featured products";
+    case "marquee":           return "Marquee";
+    case "pull_quote":        return "Pull quote";
+    case "letter":            return "Letter";
   }
 }
 
@@ -169,6 +219,7 @@ function renderForm(
   onChange: (next: HomepageSection) => void,
   categories: Pick<AdminCategory, "id" | "slug" | "name">[],
   editable: boolean,
+  storeId: string,
 ) {
   switch (section.type) {
     case "text":
@@ -184,7 +235,14 @@ function renderForm(
           onChange={onChange}
           categories={categories}
           editable={editable}
+          storeId={storeId}
         />
       );
+    case "marquee":
+      return <MarqueeSectionForm section={section} onChange={onChange} editable={editable} />;
+    case "pull_quote":
+      return <PullQuoteSectionForm section={section} onChange={onChange} editable={editable} />;
+    case "letter":
+      return <LetterSectionForm section={section} onChange={onChange} editable={editable} />;
   }
 }

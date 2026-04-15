@@ -48,6 +48,7 @@ export function HomepageTab({ form, patch, editable, pages, categories }: Homepa
           onChange={(nextSections) => setContent({ ...content, sections: nextSections })}
           categories={categories}
           editable={editable}
+          storeId={form.store_id}
         />
       </div>
     </div>

@@ -12,6 +12,9 @@ export function defaultStoryLedContent(store: PublicStore): {
       subheading: `${store.name} began as a single question: what if a store felt like a letter from the people who made it?`,
       cta_label: "Read the story",
       cta_url: "/pages/about",
+      eyebrow: "From the studio",
+      aside_image_url: "/layout-placeholders/story-aside.svg",
+      aside_image_alt: "Studio workshop",
     },
     sections: [
       {

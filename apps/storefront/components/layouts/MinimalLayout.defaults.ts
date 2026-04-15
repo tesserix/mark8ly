@@ -12,6 +12,7 @@ export function defaultMinimalContent(store: PublicStore): {
       subheading: "Fewer things, chosen carefully.",
       cta_label: "Enter the store",
       cta_url: "/products",
+      eyebrow: "Now open",
     },
     sections: [
       {

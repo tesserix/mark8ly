@@ -17,6 +17,11 @@ export function defaultEditorialContent(store: PublicStore): {
       subheading: `A considered storefront for ${store.name.toLowerCase()} — a place where the catalog feels written, not assembled.`,
       cta_label: "Shop the edit",
       cta_url: "/products",
+      eyebrow: "Issue 01 · Now open",
+      cta_secondary_label: "Read the story",
+      cta_secondary_url: "/pages/about",
+      aside_image_url: "/layout-placeholders/editorial-cover.svg",
+      aside_image_alt: `${store.name} cover story`,
     },
     sections: [
       {

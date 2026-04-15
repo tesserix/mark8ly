@@ -12,6 +12,7 @@ export function defaultClassicShopContent(store: PublicStore): {
       subheading: "A clean storefront for merchants who want familiar footing without sacrificing craft.",
       cta_label: "Shop everything",
       cta_url: "/products",
+      eyebrow: "Spring collection · Live now",
     },
     sections: [
       {

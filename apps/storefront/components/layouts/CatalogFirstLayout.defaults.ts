@@ -12,6 +12,7 @@ export function defaultCatalogFirstContent(store: PublicStore): {
       subheading: "The catalog — shop everything.",
       cta_label: "Browse all",
       cta_url: "/products",
+      eyebrow: "The catalog",
     },
     sections: [
       {

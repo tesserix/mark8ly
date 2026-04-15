@@ -12,6 +12,9 @@ export function defaultBoldPromoContent(store: PublicStore): {
       subheading: "A limited edition release. When it's gone, it's gone.",
       cta_label: "Shop the drop",
       cta_url: "/products",
+      eyebrow: "The drop · Live now",
+      cta_secondary_label: "Lookbook",
+      cta_secondary_url: "/pages/lookbook",
     },
     sections: [
       {

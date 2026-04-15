@@ -12,6 +12,9 @@ export function defaultSplitHeroContent(store: PublicStore): {
       subheading: "A cinematic opening frame — product on the right, narrative on the left. Equal weight, no competition.",
       cta_label: "Shop the drop",
       cta_url: "/products",
+      eyebrow: "Featured",
+      aside_image_url: "/layout-placeholders/split-aside.svg",
+      aside_image_alt: `${store.name} featured`,
     },
     sections: [
       {

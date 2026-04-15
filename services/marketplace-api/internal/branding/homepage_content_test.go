@@ -224,3 +224,77 @@ func TestValidateHomepageContent_FeaturedProductSlugsEmpty_Errors(t *testing.T) 
 	body := `{"sections":[{"type":"featured_products","product_slugs":["a","","b"]}]}`
 	require.Error(t, ValidateHomepageContent(json.RawMessage(body)))
 }
+
+// TestHomepageContent_RoundTrip_NewTypes proves a blob containing each
+// of the new section types survives the "validate → store as raw JSON
+// → reread → revalidate" cycle the service.Update path puts it
+// through. Catches regressions where a new field gets accidentally
+// stripped by middleware (e.g. a partial struct unmarshal that drops
+// unknown fields).
+func TestHomepageContent_RoundTrip_NewTypes(t *testing.T) {
+	input := json.RawMessage(`{
+		"hero":{"enabled":true,"heading":"Store","cta_label":"Shop","cta_url":"/products"},
+		"sections":[
+			{"type":"marquee","items":["Hand picked","Small batch"],"speed":"slow"},
+			{"type":"pull_quote","text":"A memorable line.","attribution":"Staff"},
+			{"type":"letter","eyebrow":"Note","title":"Hello","body":"Body","cta_label":"About","cta_url":"/pages/about"},
+			{"type":"featured_products","heading":"Picks","product_slugs":["alpha","bravo","charlie"]},
+			{"type":"featured_products","heading":"Collection","collection_slug":"new","limit":4}
+		]
+	}`)
+
+	// 1) validate on ingress.
+	require.NoError(t, ValidateHomepageContent(input))
+
+	// 2) simulate the JSONB column: the DB stores the bytes, verbatim.
+	stored := append(json.RawMessage{}, input...)
+
+	// 3) revalidate on read (no mutation should have occurred).
+	require.NoError(t, ValidateHomepageContent(stored))
+
+	// 4) assert no field got stripped by an intermediate unmarshal. We
+	//    unmarshal into the same sectionInput + heroInput types the
+	//    validator uses to confirm the fields round-trip through that
+	//    struct, then serialise and compare keys we care about are
+	//    still present.
+	var parsed struct {
+		Hero     *heroInput     `json:"hero"`
+		Sections []sectionInput `json:"sections"`
+	}
+	require.NoError(t, json.Unmarshal(stored, &parsed))
+	require.NotNil(t, parsed.Hero)
+	require.Len(t, parsed.Sections, 5)
+
+	marquee := parsed.Sections[0]
+	require.Equal(t, "marquee", marquee.Type)
+	require.Equal(t, []string{"Hand picked", "Small batch"}, marquee.Items)
+	require.NotNil(t, marquee.Speed)
+	require.Equal(t, "slow", *marquee.Speed)
+
+	pullQuote := parsed.Sections[1]
+	require.Equal(t, "pull_quote", pullQuote.Type)
+	require.NotNil(t, pullQuote.Text)
+	require.Equal(t, "A memorable line.", *pullQuote.Text)
+
+	letter := parsed.Sections[2]
+	require.Equal(t, "letter", letter.Type)
+	require.NotNil(t, letter.Title)
+	require.Equal(t, "Hello", *letter.Title)
+	require.NotNil(t, letter.Body)
+	require.Equal(t, "Body", *letter.Body)
+	require.NotNil(t, letter.CtaURL)
+	require.Equal(t, "/pages/about", *letter.CtaURL)
+
+	handPicked := parsed.Sections[3]
+	require.Equal(t, "featured_products", handPicked.Type)
+	require.Equal(t, []string{"alpha", "bravo", "charlie"}, handPicked.ProductSlugs)
+	require.Nil(t, handPicked.CollectionSlug)
+
+	collection := parsed.Sections[4]
+	require.Equal(t, "featured_products", collection.Type)
+	require.NotNil(t, collection.CollectionSlug)
+	require.Equal(t, "new", *collection.CollectionSlug)
+	require.Nil(t, collection.ProductSlugs)
+	require.NotNil(t, collection.Limit)
+	require.Equal(t, 4, *collection.Limit)
+}

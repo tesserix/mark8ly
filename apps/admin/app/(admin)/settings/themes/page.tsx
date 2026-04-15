@@ -33,7 +33,17 @@ export default async function ThemesSettingsPage() {
         readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
       >
         {currentStore && branding ? (
-          <BrandingSettingsClient branding={branding} editable={editable} pages={pages} categories={categories} />
+          <BrandingSettingsClient
+            branding={branding}
+            editable={editable}
+            pages={pages}
+            categories={categories}
+            store={{
+              name: currentStore.name,
+              slug: currentStore.slug,
+              countryCode: currentStore.country_code,
+            }}
+          />
         ) : currentStore ? (
           <StorefrontThemeForm store={currentStore} editable={editable} />
         ) : (

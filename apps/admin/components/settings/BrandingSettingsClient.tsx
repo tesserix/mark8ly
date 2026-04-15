@@ -14,6 +14,7 @@ import {
 
 import type { StoreBranding, UpdateBrandingInput, AdminPage, AdminCategory } from "@/lib/api/marketplace-api";
 import { HomepageTab } from "./HomepageTab";
+import type { StoreInfo } from "./HomepageTab.helpers";
 import { FooterSectionsEditor } from "./FooterSectionsEditor";
 import { updateBrandingAction } from "@/app/(admin)/settings/themes/actions";
 import { useToast } from "@/components/feedback/Toaster";
@@ -27,6 +28,7 @@ interface BrandingSettingsClientProps {
   editable: boolean;
   pages?: AdminPageSummary[];
   categories?: Pick<AdminCategory, "id" | "slug" | "name">[];
+  store: StoreInfo;
 }
 
 type Tab =
@@ -80,6 +82,7 @@ export function BrandingSettingsClient({
   editable,
   pages = [],
   categories = [],
+  store,
 }: BrandingSettingsClientProps) {
   const { toast } = useToast();
   const [form, setForm] = useState<StoreBranding>(initial);
@@ -152,7 +155,7 @@ export function BrandingSettingsClient({
         {tab === "colors" && <ColorsTab form={form} patch={patch} editable={editable} />}
         {tab === "typography" && <TypographyTab form={form} patch={patch} editable={editable} />}
         {tab === "layout" && <LayoutTab form={form} patch={patch} editable={editable} />}
-        {tab === "homepage" && <HomepageTab form={form} patch={patch} editable={editable} pages={pages} categories={categories} />}
+        {tab === "homepage" && <HomepageTab form={form} patch={patch} editable={editable} pages={pages} categories={categories} store={store} />}
         {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} pages={pages} />}
         {tab === "advanced" && <AdvancedTab form={form} patch={patch} editable={editable} />}
 

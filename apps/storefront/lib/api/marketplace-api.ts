@@ -284,6 +284,9 @@ export interface FooterSection {
 }
 
 export interface StorefrontBranding {
+  // identity
+  logo_url?: string | null;
+
   // announcement (existing)
   announcement_text?: string;
   announcement_link?: string;
@@ -303,6 +306,9 @@ export interface StorefrontBranding {
 
   // footer menu
   footer_sections?: FooterSection[];
+
+  // mark8ly badge in footer bottom bar; backend default is true.
+  show_powered_by?: boolean;
 
   // homepage content (hero + sections). Wire format is the raw JSONB
   // object; empty stores see `{}`.

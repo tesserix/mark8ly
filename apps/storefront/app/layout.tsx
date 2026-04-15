@@ -199,7 +199,10 @@ export default async function RootLayout({ children }: RootLayoutProps) {
         />
         <CustomerAuthProvider value={authState}>
           <CartProvider storeSlug={storeSlug}>{children}</CartProvider>
-          <Footer branding={brandingData?.branding ?? null} />
+          <Footer
+            branding={brandingData?.branding ?? null}
+            storeName={brandingData?.store?.name ?? null}
+          />
         </CustomerAuthProvider>
         <Toaster />
       </body>

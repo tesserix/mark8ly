@@ -33,6 +33,121 @@ export interface LetterStyles {
   cta: string;
 }
 
+export interface HeroStyles {
+  container: string;
+  eyebrow: string | null;
+  title: string;
+  subheading: string;
+  primaryCta: string;
+  secondaryCta: string | null;
+  asideSlot: string | null;
+  asideImage: string;
+}
+
+export function heroStylesFor(layout: StorefrontLayout): HeroStyles {
+  switch (layout) {
+    case "editorial":
+      return {
+        container: "relative flex flex-col gap-10 px-8 py-24 sm:flex-row sm:items-start sm:gap-16",
+        eyebrow: "text-[11px] font-semibold uppercase tracking-[0.28em] text-accent",
+        title: "mt-3 font-serif text-5xl font-medium leading-[1.05] tracking-tight text-foreground sm:text-6xl",
+        subheading: "mt-5 max-w-xl text-lg leading-relaxed text-foreground-secondary",
+        primaryCta: "mt-8 inline-flex h-12 items-center gap-2 border-b border-foreground pb-1 text-sm font-semibold uppercase tracking-[0.14em] text-foreground transition-opacity hover:opacity-70",
+        secondaryCta: "mt-8 inline-flex h-12 items-center gap-2 border-b border-foreground/30 pb-1 text-sm font-semibold uppercase tracking-[0.14em] text-foreground-secondary transition-opacity hover:opacity-70",
+        asideSlot: "shrink-0 sm:w-[45%]",
+        asideImage: "h-full w-full object-cover",
+      };
+    case "bold-promo":
+      return {
+        container: "relative px-8 py-24",
+        eyebrow: "text-xs font-bold uppercase tracking-[0.22em] text-accent",
+        title: "mt-3 font-serif text-6xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-7xl",
+        subheading: "mt-6 max-w-2xl text-xl leading-relaxed text-foreground/85",
+        primaryCta: "mt-10 inline-flex h-14 items-center justify-center bg-foreground px-10 text-sm font-bold uppercase tracking-[0.16em] text-background transition-opacity hover:opacity-90",
+        secondaryCta: "mt-10 inline-flex h-14 items-center justify-center border border-foreground px-8 text-sm font-bold uppercase tracking-[0.16em] text-foreground transition-colors hover:bg-foreground hover:text-background",
+        asideSlot: null,
+        asideImage: "",
+      };
+    case "split-hero":
+      return {
+        container: "relative grid grid-cols-1 sm:grid-cols-2",
+        eyebrow: "text-[11px] font-semibold uppercase tracking-[0.28em] text-accent",
+        title: "mt-3 font-serif text-4xl font-medium leading-[1.1] tracking-tight text-foreground sm:text-5xl",
+        subheading: "mt-5 text-base leading-relaxed text-foreground-secondary",
+        primaryCta: "mt-8 inline-flex h-12 items-center justify-center bg-foreground px-8 text-sm font-semibold uppercase tracking-[0.14em] text-background transition-opacity hover:opacity-90",
+        secondaryCta: "mt-8 inline-flex h-12 items-center justify-center border border-foreground px-6 text-sm font-semibold uppercase tracking-[0.14em] text-foreground transition-colors hover:bg-foreground/5",
+        asideSlot: "relative min-h-[400px] sm:min-h-0",
+        asideImage: "absolute inset-0 h-full w-full object-cover",
+      };
+    case "story-led":
+      return {
+        container: "relative flex flex-col gap-10 px-8 py-20 sm:flex-row sm:items-center sm:gap-14",
+        eyebrow: "text-[11px] font-semibold uppercase tracking-[0.26em] text-foreground-secondary",
+        title: "mt-4 font-serif text-4xl font-medium leading-tight text-foreground sm:text-5xl",
+        subheading: "mt-5 text-base leading-relaxed text-foreground/80",
+        primaryCta: "mt-8 inline-flex h-12 items-center justify-center border border-foreground px-8 text-xs font-semibold uppercase tracking-[0.18em] text-foreground transition-colors hover:bg-foreground hover:text-background",
+        secondaryCta: null,
+        asideSlot: "shrink-0 sm:w-[40%]",
+        asideImage: "h-full w-full object-cover",
+      };
+    case "minimal":
+      return {
+        container: "relative px-8 py-24",
+        eyebrow: "text-[11px] uppercase tracking-[0.2em] text-foreground-secondary",
+        title: "mt-2 font-serif text-5xl font-medium leading-tight tracking-tight text-foreground sm:text-6xl",
+        subheading: "mt-5 max-w-xl text-base leading-relaxed text-foreground-secondary",
+        primaryCta: "mt-8 inline-flex h-11 items-center gap-2 border-b border-foreground pb-1 text-sm font-medium uppercase tracking-[0.14em] text-foreground transition-opacity hover:opacity-70",
+        secondaryCta: null,
+        asideSlot: null,
+        asideImage: "",
+      };
+    case "classic-shop":
+      return {
+        container: "relative px-8 py-20",
+        eyebrow: "text-xs font-semibold uppercase tracking-[0.2em] text-foreground-secondary",
+        title: "mt-3 font-serif text-4xl font-medium leading-tight tracking-tight text-foreground sm:text-5xl",
+        subheading: "mt-4 max-w-2xl text-base leading-relaxed text-foreground/85",
+        primaryCta: "mt-8 inline-flex h-12 items-center justify-center rounded-md bg-foreground px-8 text-sm font-semibold text-background transition-opacity hover:opacity-90",
+        secondaryCta: null,
+        asideSlot: null,
+        asideImage: "",
+      };
+    case "catalog-first":
+      return {
+        container: "relative px-8 py-16",
+        eyebrow: "text-xs font-semibold uppercase tracking-[0.2em] text-foreground-secondary",
+        title: "mt-2 font-serif text-3xl font-medium leading-tight text-foreground sm:text-4xl",
+        subheading: "mt-4 max-w-xl text-sm leading-relaxed text-foreground/80",
+        primaryCta: "mt-6 inline-flex h-10 items-center justify-center rounded-md bg-foreground px-6 text-sm font-medium text-background transition-opacity hover:opacity-90",
+        secondaryCta: null,
+        asideSlot: null,
+        asideImage: "",
+      };
+    case "compact":
+      return {
+        container: "relative px-6 py-12",
+        eyebrow: null,
+        title: "font-serif text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl",
+        subheading: "mt-3 max-w-xl text-sm leading-relaxed text-foreground-secondary",
+        primaryCta: "mt-6 inline-flex h-10 items-center gap-2 border-b border-foreground pb-0.5 text-xs font-semibold uppercase tracking-[0.14em] text-foreground transition-opacity hover:opacity-70",
+        secondaryCta: null,
+        asideSlot: null,
+        asideImage: "",
+      };
+    default:
+      return {
+        container: "relative px-8 py-24",
+        eyebrow: null,
+        title: "font-serif text-5xl font-medium tracking-tight text-foreground",
+        subheading: "mt-5 max-w-2xl text-lg text-foreground-secondary",
+        primaryCta: "mt-8 inline-flex h-12 items-center rounded-md bg-ink-900 px-6 text-base font-medium text-paper-200 transition-colors hover:bg-moss-700",
+        secondaryCta: null,
+        asideSlot: null,
+        asideImage: "",
+      };
+  }
+}
+
 export function marqueeStylesFor(layout: StorefrontLayout): MarqueeStyles {
   switch (layout) {
     case "editorial":

@@ -75,12 +75,16 @@ type gormRepo struct {
 func NewRepository(db *gorm.DB) Repository { return &gormRepo{db: db} }
 
 func (r *gormRepo) UpsertProfile(ctx context.Context, p *CustomerProfile) (*CustomerProfile, error) {
+	// On conflict we only refresh gip_uid (in case the IdP rotated it)
+	// and updated_at. We deliberately do NOT touch first_name / last_name
+	// here — those are owned by the customer via the storefront /account
+	// PATCH. Including them in DoUpdates caused every subsequent login
+	// to clobber saved edits with whatever (usually empty) values the
+	// session carried.
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "store_id"}, {Name: "email"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"gip_uid", "first_name", "last_name", "updated_at",
-			}),
+			DoUpdates: clause.AssignmentColumns([]string{"gip_uid", "updated_at"}),
 		}).
 		Create(p).Error
 	if err != nil {

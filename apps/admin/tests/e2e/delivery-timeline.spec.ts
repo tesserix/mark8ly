@@ -268,16 +268,23 @@ test("3. advance shipment status with pauses (admin)", async ({ browser }) => {
   await page.waitForLoadState("networkidle").catch(() => {});
 
   // Click each advance button in turn, with a pause between so a
-  // watcher on the customer page can see the timeline evolve.
-  const labels = ["Mark in transit", "Out for delivery", "Mark delivered"];
-  for (const label of labels) {
-    const btn = page.getByRole("button", { name: new RegExp(`^${label}$`, "i") });
+  // watcher on the customer page can see the timeline evolve. We also
+  // wait for the admin's ShipmentDetails card to reflect the new
+  // status before clicking the next button — the server action +
+  // revalidatePath is asynchronous, and without this the second/third
+  // click can race against stale UI with a disabled "next" button.
+  type Step = { click: string; expect: RegExp };
+  const steps: Step[] = [
+    { click: "Mark in transit", expect: /in_transit/i },
+    { click: "Out for delivery", expect: /out_for_delivery/i },
+    { click: "Mark delivered", expect: /delivered/i },
+  ];
+  for (const s of steps) {
+    const btn = page.getByRole("button", { name: new RegExp(`^${s.click}$`, "i") });
     await expect(btn).toBeEnabled({ timeout: 15_000 });
     await btn.click();
-    console.log(`[advance] clicked: ${label}`);
-    // Wait for the server action + revalidation to settle.
-    await page.waitForTimeout(2_000);
-    // And then hold before the next step to let the customer see it.
+    console.log(`[advance] clicked: ${s.click}`);
+    await expect(page.getByText(s.expect).first()).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(PAUSE_MS);
   }
 

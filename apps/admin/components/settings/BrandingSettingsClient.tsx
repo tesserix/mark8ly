@@ -5,7 +5,6 @@ import {
   Palette,
   Type,
   LayoutGrid,
-  Megaphone,
   Link2,
   Code,
   Image,
@@ -784,11 +783,3 @@ export function ToggleSwitch({
   );
 }
 
-// ─── Announcement bar preview (inline) ──────────────────────────────
-
-function AnnouncementPreview({ form }: { form: StoreBranding }) {
-  if (!form.announcement_active || !form.announcement_text) return null;
-  return (
-    <Megaphone className="h-4 w-4" aria-hidden="true" />
-  );
-}

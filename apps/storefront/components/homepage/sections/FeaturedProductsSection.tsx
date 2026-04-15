@@ -26,9 +26,8 @@ export async function FeaturedProductsSection({
   });
   const products = data?.data ?? [];
 
-  // Silent empty state — the collection may have been deleted. Admin
-  // surfaces a warning badge on the section card (Task 13); storefront
-  // renders nothing so customers never see a broken section.
+  // Silent empty state — the collection may have been deleted or be empty.
+  // Storefront renders nothing so customers never see a broken section.
   if (products.length === 0) return null;
 
   return (

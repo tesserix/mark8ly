@@ -2,6 +2,7 @@ package page
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -10,17 +11,18 @@ import (
 	apperrors "github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
-// slugPattern matches URL-safe slugs: lowercase letters, digits, and
-// internal hyphens. 3 to 63 chars total. Must start and end with
-// alphanumeric (no leading/trailing/double hyphens).
-var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
-
+// Validation caps. These mirror the admin UI's maxLength attrs — update BOTH when changing a cap.
 const (
 	maxTitleLen          = 200
 	maxSEOTitleLen       = 200
 	maxSEODescriptionLen = 300
 	maxBodyLen           = 200_000
 )
+
+// slugPattern matches URL-safe slugs: lowercase letters, digits, and
+// internal hyphens. 3 to 63 chars total. Must start and end with
+// alphanumeric (no leading/trailing/double hyphens).
+var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 
 // Service is the business-logic layer for pages. It enforces slug +
 // length rules, defaults Published to true, and provides separate
@@ -125,13 +127,13 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in UpdateInput) (*Pa
 	}
 	if in.SEOTitle != nil {
 		if len(*in.SEOTitle) > maxSEOTitleLen {
-			return nil, apperrors.ValidationFailed("seo_title", "seo_title exceeds 200 chars")
+			return nil, apperrors.ValidationFailed("seo_title", fmt.Sprintf("seo_title exceeds %d chars", maxSEOTitleLen))
 		}
 		patch["seo_title"] = *in.SEOTitle
 	}
 	if in.SEODescription != nil {
 		if len(*in.SEODescription) > maxSEODescriptionLen {
-			return nil, apperrors.ValidationFailed("seo_description", "seo_description exceeds 300 chars")
+			return nil, apperrors.ValidationFailed("seo_description", fmt.Sprintf("seo_description exceeds %d chars", maxSEODescriptionLen))
 		}
 		patch["seo_description"] = *in.SEODescription
 	}

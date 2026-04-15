@@ -11,6 +11,7 @@ import (
 	apperrors "github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
+// Validation caps. These mirror the admin UI's maxLength attrs — update BOTH when changing a cap.
 const (
 	maxFooterSections    = 6
 	maxFooterItemsPerSec = 10

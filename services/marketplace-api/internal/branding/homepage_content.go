@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// Homepage content shape limits. Enforced at the service layer when
-// writing to the store_branding.homepage_content JSONB column.
+// Validation caps. These mirror the admin UI's maxLength attrs — update BOTH when changing a cap.
+// Enforced at the service layer when writing to the store_branding.homepage_content JSONB column.
 const (
 	maxHomepageSections    = 12
 	maxHeroHeading         = 200

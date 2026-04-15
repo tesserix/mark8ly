@@ -53,8 +53,10 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
-      <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
+      <div className="mx-auto max-w-6xl px-6 pt-8 sm:px-8">
         <StorefrontNav storeName={store?.name ?? ""} />
+      </div>
+      <div className="mx-auto max-w-3xl px-6 pb-8 sm:px-8">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-accent,var(--moss-700))]">
           Thank you for your order
         </p>

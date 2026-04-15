@@ -413,8 +413,13 @@ export default function CheckoutPage() {
   if (items.length === 0 && !submitting) {
     return (
       <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
-        <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
+        {/* Nav sits in a full-width wrapper so it renders at its own
+            max-width (matches home, products, cart, etc). The narrower
+            max-w-3xl is only for the checkout content below. */}
+        <div className="mx-auto max-w-6xl px-6 pt-8 sm:px-8">
           <StorefrontNav storeName="" />
+        </div>
+        <div className="mx-auto max-w-3xl px-6 pb-8 sm:px-8">
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
             Checkout
           </h1>
@@ -436,8 +441,10 @@ export default function CheckoutPage() {
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
-      <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
+      <div className="mx-auto max-w-6xl px-6 pt-8 sm:px-8">
         <StorefrontNav storeName="" />
+      </div>
+      <div className="mx-auto max-w-3xl px-6 pb-8 sm:px-8">
         <Link
           href="/cart"
           className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"

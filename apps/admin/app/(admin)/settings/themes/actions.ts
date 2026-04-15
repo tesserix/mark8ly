@@ -66,6 +66,26 @@ export async function updateStorefrontTheme(
       uid,
       storefront_theme: storefrontTheme,
     });
+
+    // Mirror the preset's resolved colors back into the legacy branding
+    // columns (color_background/text/accent/button_bg/button_text) so
+    // storefront components that still read branding.color_* keep
+    // rendering the merchant's chosen palette. Dark presets use their
+    // background for the button too; light presets use the text color as
+    // the button background (high contrast CTA). This keeps the dual-
+    // stack working while the storefront migration finishes.
+    const c = storefrontTheme.colors;
+    await updateBranding(
+      storeId,
+      {
+        color_background: c.background,
+        color_text: c.text,
+        color_accent: c.accent,
+        color_button_bg: c.text,
+        color_button_text: c.background,
+      },
+      { userId: uid, tenantId },
+    );
   } catch (err) {
     if (err instanceof PlatformApiError) {
       return { ok: false, code: err.code, message: err.message };

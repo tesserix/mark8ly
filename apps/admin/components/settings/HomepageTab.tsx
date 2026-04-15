@@ -11,6 +11,7 @@ import type {
   StoreBranding,
 } from "@/lib/api/marketplace-api";
 
+import { FieldLabel, TextInput, ToggleSwitch, ColorField } from "./BrandingSettingsClient";
 import { HeroEditor } from "./HeroEditor";
 import { HomepageSectionsEditor } from "./HomepageSectionsEditor";
 import { starterRecipeFor, type StoreInfo } from "./HomepageTab.helpers";
@@ -75,6 +76,59 @@ export function HomepageTab({
         storeId={form.store_id}
         onValidityChange={onHeroValidityChange}
       />
+
+      {/* ── Announcement bar ──────────────────────────────────────
+          Moved here from the (removed) Layout tab. Displays the
+          announcement strip above the storefront nav. */}
+      <div className="space-y-4 border-t border-border-subtle pt-10">
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-sm font-medium text-foreground">Announcement bar</p>
+            <p className="text-xs text-foreground-secondary">
+              Display a promotional message at the top of your storefront.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={form.announcement_active}
+            onChange={(v) => editable && patch({ announcement_active: v })}
+            disabled={!editable}
+          />
+        </div>
+        {form.announcement_active && (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <FieldLabel htmlFor="announcement_text">Message</FieldLabel>
+              <TextInput
+                id="announcement_text"
+                value={form.announcement_text ?? ""}
+                onChange={(v) => patch({ announcement_text: v || null })}
+                placeholder="Free shipping on orders over ₹999"
+                disabled={!editable}
+                maxLength={300}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <FieldLabel htmlFor="announcement_link">Link (optional)</FieldLabel>
+                <TextInput
+                  id="announcement_link"
+                  value={form.announcement_link ?? ""}
+                  onChange={(v) => patch({ announcement_link: v || null })}
+                  placeholder="/pages/shipping-policy"
+                  disabled={!editable}
+                />
+              </div>
+              <ColorField
+                id="announcement_bg"
+                label="Bar color"
+                value={form.announcement_bg ?? form.color_accent}
+                onChange={(v) => patch({ announcement_bg: v })}
+                disabled={!editable}
+              />
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="border-t border-border-subtle pt-10">
         {isEmpty ? (

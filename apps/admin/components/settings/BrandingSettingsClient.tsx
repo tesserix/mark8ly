@@ -67,13 +67,22 @@ const LAYOUTS: { key: string; label: string; desc: string }[] = [
   { key: "hero-focus", label: "Hero Focus", desc: "Large hero banner above featured products" },
 ];
 
+// Quick-apply presets for the Colors tab. Kept in sync with the
+// modern palettes in @repo/ui/storefront-theme so the Colors tab and
+// the Storefront Theme picker speak the same design language. Button
+// bg/text mirror text/background for high-contrast CTAs.
 const COLOR_PRESETS: { name: string; colors: Pick<StoreBranding, "color_background" | "color_text" | "color_accent" | "color_button_bg" | "color_button_text"> }[] = [
-  { name: "Paper & Ink", colors: { color_background: "#F7F6F2", color_text: "#0E0E0C", color_accent: "#2D4A2B", color_button_bg: "#0E0E0C", color_button_text: "#F7F6F2" } },
-  { name: "Warm Ivory", colors: { color_background: "#FAF8F5", color_text: "#1A1A18", color_accent: "#8B6914", color_button_bg: "#1A1A18", color_button_text: "#FAF8F5" } },
-  { name: "Cool Slate", colors: { color_background: "#F4F5F7", color_text: "#111827", color_accent: "#1D4ED8", color_button_bg: "#111827", color_button_text: "#F4F5F7" } },
-  { name: "Deep Forest", colors: { color_background: "#F5F7F5", color_text: "#0F1B0F", color_accent: "#1B5E20", color_button_bg: "#1B5E20", color_button_text: "#F5F7F5" } },
-  { name: "Plum & Sand", colors: { color_background: "#F8F6F4", color_text: "#1C1017", color_accent: "#6B2FA0", color_button_bg: "#1C1017", color_button_text: "#F8F6F4" } },
-  { name: "Ocean", colors: { color_background: "#F5F8FA", color_text: "#0C1821", color_accent: "#0E6BA8", color_button_bg: "#0C1821", color_button_text: "#F5F8FA" } },
+  { name: "Paper",  colors: { color_background: "#F7F6F2", color_text: "#0E0E0C", color_accent: "#2D4A2B", color_button_bg: "#0E0E0C", color_button_text: "#F7F6F2" } },
+  { name: "Linen",  colors: { color_background: "#F4EFE6", color_text: "#201C17", color_accent: "#6B4F2A", color_button_bg: "#201C17", color_button_text: "#F4EFE6" } },
+  { name: "Dune",   colors: { color_background: "#EFE6D7", color_text: "#2A2520", color_accent: "#9A5A32", color_button_bg: "#2A2520", color_button_text: "#EFE6D7" } },
+  { name: "Oat",    colors: { color_background: "#F0E8D8", color_text: "#2A2317", color_accent: "#6B5436", color_button_bg: "#2A2317", color_button_text: "#F0E8D8" } },
+  { name: "Clove",  colors: { color_background: "#EFEDE6", color_text: "#1C1E1B", color_accent: "#4A5D3F", color_button_bg: "#1C1E1B", color_button_text: "#EFEDE6" } },
+  { name: "Jade",   colors: { color_background: "#ECF0ED", color_text: "#14201A", color_accent: "#2B5F4D", color_button_bg: "#14201A", color_button_text: "#ECF0ED" } },
+  { name: "Slate",  colors: { color_background: "#EEEFF1", color_text: "#1A1D21", color_accent: "#5A4A3E", color_button_bg: "#1A1D21", color_button_text: "#EEEFF1" } },
+  { name: "Indigo", colors: { color_background: "#ECEFF4", color_text: "#1A1D28", color_accent: "#384C6B", color_button_bg: "#1A1D28", color_button_text: "#ECEFF4" } },
+  { name: "Bloom",  colors: { color_background: "#F5EDEA", color_text: "#2A1E1C", color_accent: "#8C3E45", color_button_bg: "#2A1E1C", color_button_text: "#F5EDEA" } },
+  { name: "Rose",   colors: { color_background: "#F2E9E4", color_text: "#221917", color_accent: "#A04A4C", color_button_bg: "#221917", color_button_text: "#F2E9E4" } },
+  { name: "Char",   colors: { color_background: "#F2F1EE", color_text: "#0C0C0A", color_accent: "#2A2A26", color_button_bg: "#0C0C0A", color_button_text: "#F2F1EE" } },
 ];
 
 // ─── Component ──────────────────────────────────────────────────────

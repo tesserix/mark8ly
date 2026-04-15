@@ -20,6 +20,13 @@ const (
 	maxSectionQuoteAttrib  = 200
 	maxSectionHeading      = 200
 	maxFeaturedLimit       = 24
+	maxMarqueeItems        = 8
+	maxMarqueeItemLen      = 80
+	maxLetterEyebrow       = 120
+	maxLetterTitle         = 200
+	maxLetterBody          = 10_000
+	maxProductSlugs        = 6
+	maxProductSlugLen      = 200
 )
 
 // ValidateHomepageContent checks the shape of a homepage_content JSONB
@@ -65,16 +72,27 @@ type heroInput struct {
 }
 
 type sectionInput struct {
-	Type           string  `json:"type"`
-	Heading        *string `json:"heading,omitempty"`
-	Markdown       *string `json:"markdown,omitempty"`
-	URL            *string `json:"url,omitempty"`
-	Alt            *string `json:"alt,omitempty"`
-	Caption        *string `json:"caption,omitempty"`
-	CollectionSlug *string `json:"collection_slug,omitempty"`
-	Limit          *int    `json:"limit,omitempty"`
-	Text           *string `json:"text,omitempty"`
-	Attribution    *string `json:"attribution,omitempty"`
+	Type           string   `json:"type"`
+	Heading        *string  `json:"heading,omitempty"`
+	Markdown       *string  `json:"markdown,omitempty"`
+	URL            *string  `json:"url,omitempty"`
+	Alt            *string  `json:"alt,omitempty"`
+	Caption        *string  `json:"caption,omitempty"`
+	CollectionSlug *string  `json:"collection_slug,omitempty"`
+	Limit          *int     `json:"limit,omitempty"`
+	Text           *string  `json:"text,omitempty"`
+	Attribution    *string  `json:"attribution,omitempty"`
+	// marquee
+	Items []string `json:"items,omitempty"`
+	Speed *string  `json:"speed,omitempty"`
+	// letter
+	Eyebrow  *string `json:"eyebrow,omitempty"`
+	Title    *string `json:"title,omitempty"`
+	Body     *string `json:"body,omitempty"`
+	CtaLabel *string `json:"cta_label,omitempty"`
+	CtaURL   *string `json:"cta_url,omitempty"`
+	// featured_products hand-picked
+	ProductSlugs []string `json:"product_slugs,omitempty"`
 }
 
 func validateHero(h *heroInput) error {
@@ -122,8 +140,23 @@ func validateSection(s sectionInput) error {
 			return fmt.Errorf("image.caption: max %d chars", maxSectionImageCaption)
 		}
 	case "featured_products":
-		if s.CollectionSlug == nil || *s.CollectionSlug == "" {
-			return fmt.Errorf("featured_products: collection_slug required")
+		hasCollection := s.CollectionSlug != nil && *s.CollectionSlug != ""
+		hasSlugs := len(s.ProductSlugs) > 0
+		if !hasCollection && !hasSlugs {
+			return fmt.Errorf("featured_products: collection_slug or product_slugs required")
+		}
+		if hasSlugs {
+			if len(s.ProductSlugs) > maxProductSlugs {
+				return fmt.Errorf("featured_products.product_slugs: max %d items", maxProductSlugs)
+			}
+			for i, sl := range s.ProductSlugs {
+				if strings.TrimSpace(sl) == "" {
+					return fmt.Errorf("featured_products.product_slugs[%d]: empty", i)
+				}
+				if len(sl) > maxProductSlugLen {
+					return fmt.Errorf("featured_products.product_slugs[%d]: max %d chars", i, maxProductSlugLen)
+				}
+			}
 		}
 		if s.Limit != nil && (*s.Limit < 1 || *s.Limit > maxFeaturedLimit) {
 			return fmt.Errorf("featured_products.limit: 1..%d", maxFeaturedLimit)
@@ -137,6 +170,60 @@ func validateSection(s sectionInput) error {
 		}
 		if s.Attribution != nil && len(*s.Attribution) > maxSectionQuoteAttrib {
 			return fmt.Errorf("quote.attribution: max %d chars", maxSectionQuoteAttrib)
+		}
+	case "marquee":
+		if len(s.Items) == 0 {
+			return fmt.Errorf("marquee: items required")
+		}
+		if len(s.Items) > maxMarqueeItems {
+			return fmt.Errorf("marquee: at most %d items", maxMarqueeItems)
+		}
+		for i, it := range s.Items {
+			if strings.TrimSpace(it) == "" {
+				return fmt.Errorf("marquee.items[%d]: empty", i)
+			}
+			if len(it) > maxMarqueeItemLen {
+				return fmt.Errorf("marquee.items[%d]: max %d chars", i, maxMarqueeItemLen)
+			}
+		}
+		if s.Speed != nil {
+			switch *s.Speed {
+			case "slow", "normal", "fast":
+			default:
+				return fmt.Errorf("marquee.speed: must be slow|normal|fast")
+			}
+		}
+	case "pull_quote":
+		if s.Text == nil || strings.TrimSpace(*s.Text) == "" {
+			return fmt.Errorf("pull_quote: text required")
+		}
+		if len(*s.Text) > maxSectionQuoteText {
+			return fmt.Errorf("pull_quote.text: max %d chars", maxSectionQuoteText)
+		}
+		if s.Attribution != nil && len(*s.Attribution) > maxSectionQuoteAttrib {
+			return fmt.Errorf("pull_quote.attribution: max %d chars", maxSectionQuoteAttrib)
+		}
+	case "letter":
+		if s.Title == nil || strings.TrimSpace(*s.Title) == "" {
+			return fmt.Errorf("letter: title required")
+		}
+		if len(*s.Title) > maxLetterTitle {
+			return fmt.Errorf("letter.title: max %d chars", maxLetterTitle)
+		}
+		if s.Eyebrow != nil && len(*s.Eyebrow) > maxLetterEyebrow {
+			return fmt.Errorf("letter.eyebrow: max %d chars", maxLetterEyebrow)
+		}
+		if s.Body == nil || strings.TrimSpace(*s.Body) == "" {
+			return fmt.Errorf("letter: body required")
+		}
+		if len(*s.Body) > maxLetterBody {
+			return fmt.Errorf("letter.body: max %d chars", maxLetterBody)
+		}
+		if s.CtaURL != nil && *s.CtaURL != "" && !IsSafeURL(*s.CtaURL) {
+			return fmt.Errorf("letter.cta_url: unsafe URL scheme")
+		}
+		if s.CtaLabel != nil && len(*s.CtaLabel) > maxHeroCtaLabel {
+			return fmt.Errorf("letter.cta_label: max %d chars", maxHeroCtaLabel)
 		}
 	default:
 		return fmt.Errorf("unknown section type %q", s.Type)

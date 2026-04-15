@@ -132,3 +132,95 @@ func TestValidateHomepageContent_HeroAcceptsSiteRelativeAndHttps(t *testing.T) {
 		require.NoError(t, ValidateHomepageContent(json.RawMessage(body)))
 	}
 }
+
+func TestValidateHomepageContent_Marquee_OK(t *testing.T) {
+	body := `{"sections":[{"type":"marquee","items":["Hand picked","Small batch"]}]}`
+	require.NoError(t, ValidateHomepageContent(json.RawMessage(body)))
+}
+
+func TestValidateHomepageContent_MarqueeTooManyItems_Errors(t *testing.T) {
+	body := `{"sections":[{"type":"marquee","items":["1","2","3","4","5","6","7","8","9"]}]}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "marquee")
+}
+
+func TestValidateHomepageContent_MarqueeEmptyItems_Errors(t *testing.T) {
+	body := `{"sections":[{"type":"marquee","items":[]}]}`
+	require.Error(t, ValidateHomepageContent(json.RawMessage(body)))
+}
+
+func TestValidateHomepageContent_MarqueeItemTooLong_Errors(t *testing.T) {
+	long := strings.Repeat("x", 81)
+	body := `{"sections":[{"type":"marquee","items":["` + long + `"]}]}`
+	require.Error(t, ValidateHomepageContent(json.RawMessage(body)))
+}
+
+func TestValidateHomepageContent_MarqueeSpeedInvalid_Errors(t *testing.T) {
+	body := `{"sections":[{"type":"marquee","items":["x"],"speed":"warp"}]}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "marquee.speed")
+}
+
+func TestValidateHomepageContent_MarqueeSpeedValid_OK(t *testing.T) {
+	for _, sp := range []string{"slow", "normal", "fast"} {
+		body := `{"sections":[{"type":"marquee","items":["x"],"speed":"` + sp + `"}]}`
+		require.NoError(t, ValidateHomepageContent(json.RawMessage(body)), sp)
+	}
+}
+
+func TestValidateHomepageContent_PullQuote_OK(t *testing.T) {
+	body := `{"sections":[{"type":"pull_quote","text":"Hello","attribution":"Staff"}]}`
+	require.NoError(t, ValidateHomepageContent(json.RawMessage(body)))
+}
+
+func TestValidateHomepageContent_PullQuoteMissingText_Errors(t *testing.T) {
+	require.Error(t, ValidateHomepageContent(json.RawMessage(`{"sections":[{"type":"pull_quote"}]}`)))
+	require.Error(t, ValidateHomepageContent(json.RawMessage(`{"sections":[{"type":"pull_quote","text":"  "}]}`)))
+}
+
+func TestValidateHomepageContent_Letter_OK(t *testing.T) {
+	body := `{"sections":[{"type":"letter","title":"Hello","body":"Body","cta_label":"Read","cta_url":"/pages/about"}]}`
+	require.NoError(t, ValidateHomepageContent(json.RawMessage(body)))
+}
+
+func TestValidateHomepageContent_LetterRejectsJavascriptCta(t *testing.T) {
+	body := `{"sections":[{"type":"letter","title":"H","body":"B","cta_url":"javascript:alert(1)"}]}`
+	err := ValidateHomepageContent(json.RawMessage(body))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "letter.cta_url")
+}
+
+func TestValidateHomepageContent_LetterMissingTitle_Errors(t *testing.T) {
+	require.Error(t, ValidateHomepageContent(json.RawMessage(`{"sections":[{"type":"letter","body":"x"}]}`)))
+}
+
+func TestValidateHomepageContent_LetterMissingBody_Errors(t *testing.T) {
+	require.Error(t, ValidateHomepageContent(json.RawMessage(`{"sections":[{"type":"letter","title":"x"}]}`)))
+}
+
+func TestValidateHomepageContent_LetterTitleTooLong_Errors(t *testing.T) {
+	long := strings.Repeat("x", 201)
+	body := `{"sections":[{"type":"letter","title":"` + long + `","body":"b"}]}`
+	require.Error(t, ValidateHomepageContent(json.RawMessage(body)))
+}
+
+func TestValidateHomepageContent_FeaturedProductSlugs_OK(t *testing.T) {
+	body := `{"sections":[{"type":"featured_products","product_slugs":["a","b","c"]}]}`
+	require.NoError(t, ValidateHomepageContent(json.RawMessage(body)))
+}
+
+func TestValidateHomepageContent_FeaturedProductSlugsTooMany_Errors(t *testing.T) {
+	body := `{"sections":[{"type":"featured_products","product_slugs":["1","2","3","4","5","6","7"]}]}`
+	require.Error(t, ValidateHomepageContent(json.RawMessage(body)))
+}
+
+func TestValidateHomepageContent_FeaturedRequiresCollectionOrSlugs(t *testing.T) {
+	require.Error(t, ValidateHomepageContent(json.RawMessage(`{"sections":[{"type":"featured_products"}]}`)))
+}
+
+func TestValidateHomepageContent_FeaturedProductSlugsEmpty_Errors(t *testing.T) {
+	body := `{"sections":[{"type":"featured_products","product_slugs":["a","","b"]}]}`
+	require.Error(t, ValidateHomepageContent(json.RawMessage(body)))
+}

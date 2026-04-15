@@ -37,6 +37,18 @@ export type StorefrontLayout =
 
 export type StorefrontPreset =
   | "paper"
+  | "linen"
+  | "dune"
+  | "oat"
+  | "clove"
+  | "jade"
+  | "slate"
+  | "indigo"
+  | "bloom"
+  | "rose"
+  | "char"
+  // Legacy preset keys — kept so existing tenant records still validate.
+  // Normalisation re-maps these to the closest modern palette below.
   | "warm"
   | "sand"
   | "forest"
@@ -79,40 +91,123 @@ export interface StorefrontTheme {
 const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
   // Mark8ly house preset — paper · ink · moss. Default for new stores.
   paper: {
-    primary: "#0E0E0C", // --ink-900
-    accent: "#2D4A2B", // --moss-700
-    background: "#F7F6F2", // --paper-200
-    surface: "#FFFFFF", // elevated
-    text: "#0E0E0C", // --ink-900
+    primary: "#0E0E0C",
+    accent: "#2D4A2B",
+    background: "#F7F6F2",
+    surface: "#FFFFFF",
+    text: "#0E0E0C",
   },
+  // Softer cream — premium linen/bakery feel.
+  linen: {
+    primary: "#201C17",
+    accent: "#6B4F2A",
+    background: "#F4EFE6",
+    surface: "#FBF8F1",
+    text: "#201C17",
+  },
+  // Warm desert earthy — terracotta accent.
+  dune: {
+    primary: "#2A2520",
+    accent: "#9A5A32",
+    background: "#EFE6D7",
+    surface: "#FAF4E8",
+    text: "#2A2520",
+  },
+  // Warm beige + umber — practical warm palette.
+  oat: {
+    primary: "#2A2317",
+    accent: "#6B5436",
+    background: "#F0E8D8",
+    surface: "#FBF6EB",
+    text: "#2A2317",
+  },
+  // Muted olive — softer forest, editorial.
+  clove: {
+    primary: "#1C1E1B",
+    accent: "#4A5D3F",
+    background: "#EFEDE6",
+    surface: "#FAF9F4",
+    text: "#1C1E1B",
+  },
+  // Pale mint + deep jade accent.
+  jade: {
+    primary: "#14201A",
+    accent: "#2B5F4D",
+    background: "#ECF0ED",
+    surface: "#F8FBF9",
+    text: "#14201A",
+  },
+  // Cool neutral — taupe accent.
+  slate: {
+    primary: "#1A1D21",
+    accent: "#5A4A3E",
+    background: "#EEEFF1",
+    surface: "#FAFBFC",
+    text: "#1A1D21",
+  },
+  // Cool light + deep navy accent — modern editorial.
+  indigo: {
+    primary: "#1A1D28",
+    accent: "#384C6B",
+    background: "#ECEFF4",
+    surface: "#F8FAFD",
+    text: "#1A1D28",
+  },
+  // Muted blush + burgundy — feminine-editorial.
+  bloom: {
+    primary: "#2A1E1C",
+    accent: "#8C3E45",
+    background: "#F5EDEA",
+    surface: "#FCF7F5",
+    text: "#2A1E1C",
+  },
+  // Blushed earthy + muted rose.
+  rose: {
+    primary: "#221917",
+    accent: "#A04A4C",
+    background: "#F2E9E4",
+    surface: "#FBF5F1",
+    text: "#221917",
+  },
+  // Quietest palette — soft off-white, near-black ink, charcoal accent.
+  char: {
+    primary: "#0C0C0A",
+    accent: "#2A2A26",
+    background: "#F2F1EE",
+    surface: "#FAFAF8",
+    text: "#0C0C0A",
+  },
+  // ── Legacy palettes — merchants on these keys still render, but the
+  // picker hides them. Normalisation leaves stored `colors` in place;
+  // re-picking a preset is what moves them onto a modern palette.
   warm: {
-    primary: "#8a6440",
-    accent: "#e67a2f",
-    background: "#fffaf3",
-    surface: "#fffdf9",
-    text: "#1f1e1c",
-  },
+    primary: "#2A2317",
+    accent: "#6B5436",
+    background: "#F0E8D8",
+    surface: "#FBF6EB",
+    text: "#2A2317",
+  }, // → oat
   sand: {
-    primary: "#7c6a4d",
-    accent: "#bf8f56",
-    background: "#f6f0e6",
-    surface: "#fffaf4",
-    text: "#211b16",
-  },
+    primary: "#201C17",
+    accent: "#6B4F2A",
+    background: "#F4EFE6",
+    surface: "#FBF8F1",
+    text: "#201C17",
+  }, // → linen
   forest: {
-    primary: "#31584a",
-    accent: "#7ca067",
-    background: "#f4f8f2",
-    surface: "#fbfdf9",
-    text: "#17211c",
-  },
+    primary: "#1C1E1B",
+    accent: "#4A5D3F",
+    background: "#EFEDE6",
+    surface: "#FAF9F4",
+    text: "#1C1E1B",
+  }, // → clove
   midnight: {
-    primary: "#28334f",
-    accent: "#b5854d",
-    background: "#eef2fb",
-    surface: "#f9fbff",
-    text: "#182033",
-  },
+    primary: "#1A1D28",
+    accent: "#384C6B",
+    background: "#ECEFF4",
+    surface: "#F8FAFD",
+    text: "#1A1D28",
+  }, // → indigo
 };
 
 /* ============================================================
@@ -166,6 +261,10 @@ export const storefrontLayoutOptions: Array<{
   },
 ];
 
+// Presets shown in the admin picker. Legacy keys (warm/sand/forest/
+// midnight) remain accepted by the type guard so historical tenant
+// records still validate, but they are intentionally absent from this
+// list — the picker only surfaces modern palettes.
 export const storefrontPresetOptions: Array<{
   value: StorefrontPreset;
   label: string;
@@ -174,16 +273,18 @@ export const storefrontPresetOptions: Array<{
   {
     value: "paper",
     label: "Paper",
-    description: "The Mark8ly house preset — warm paper, near-black ink, moss green accent.",
+    description: "The Mark8ly house preset — warm paper, near-black ink, moss accent.",
   },
-  { value: "warm", label: "Warm", description: "Cream and amber." },
-  { value: "sand", label: "Sand", description: "Neutral and walnut." },
-  { value: "forest", label: "Forest", description: "Green and leaf." },
-  {
-    value: "midnight",
-    label: "Midnight",
-    description: "Cool blue and brass.",
-  },
+  { value: "linen", label: "Linen", description: "Soft cream with espresso accent." },
+  { value: "dune",  label: "Dune",  description: "Warm desert with terracotta accent." },
+  { value: "oat",   label: "Oat",   description: "Warm beige with umber accent." },
+  { value: "clove", label: "Clove", description: "Muted olive with grey-green base." },
+  { value: "jade",  label: "Jade",  description: "Pale mint with deep jade accent." },
+  { value: "slate", label: "Slate", description: "Cool neutral with taupe accent." },
+  { value: "indigo", label: "Indigo", description: "Cool light with deep navy accent." },
+  { value: "bloom", label: "Bloom", description: "Muted blush with burgundy accent." },
+  { value: "rose",  label: "Rose",  description: "Blushed neutral with muted rose accent." },
+  { value: "char",  label: "Char",  description: "Quietest palette — near-monochrome editorial." },
 ];
 
 export const storefrontFontOptions: Array<{
@@ -360,7 +461,10 @@ function isLayout(value: unknown): value is StorefrontLayout {
 }
 
 function isPreset(value: unknown): value is StorefrontPreset {
-  return storefrontPresetOptions.some((option) => option.value === value);
+  // Validate against the palette map rather than the picker options —
+  // the picker hides legacy keys (warm/sand/forest/midnight) but those
+  // records must still normalise to themselves, not fall back to paper.
+  return typeof value === "string" && value in presetPalette;
 }
 
 function isFont(value: unknown): value is StorefrontFont {

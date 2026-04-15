@@ -16,6 +16,7 @@ import type { StoreBranding, UpdateBrandingInput, AdminPage, AdminCategory } fro
 import { HomepageTab } from "./HomepageTab";
 import type { StoreInfo } from "./HomepageTab.helpers";
 import { FooterSectionsEditor } from "./FooterSectionsEditor";
+import { ImageUploadInput } from "./ImageUploadInput";
 import { updateBrandingAction } from "@/app/(admin)/settings/themes/actions";
 import { useToast } from "@/components/feedback/Toaster";
 
@@ -310,31 +311,27 @@ function IdentityTab({ form, patch, editable }: TabProps) {
 
       <div className="space-y-5">
         <div className="space-y-1.5">
-          <FieldLabel htmlFor="logo_url">Logo URL</FieldLabel>
-          <TextInput
-            id="logo_url"
-            value={form.logo_url ?? ""}
-            onChange={(v) => patch({ logo_url: v || null })}
-            placeholder="https://storage.googleapis.com/..."
+          <FieldLabel>Logo</FieldLabel>
+          <ImageUploadInput
+            storeId={form.store_id}
+            kind="logo"
+            value={form.logo_url}
+            onChange={(url) => patch({ logo_url: url })}
             disabled={!editable}
+            hint="SVG, PNG, JPG, or WebP — up to 1 MB. At least 400px wide. Appears in storefront header."
           />
-          <p className="text-xs text-foreground-tertiary">
-            Recommended: SVG or PNG, at least 400px wide. Appears in storefront header.
-          </p>
         </div>
 
         <div className="space-y-1.5">
-          <FieldLabel htmlFor="favicon_url">Favicon URL</FieldLabel>
-          <TextInput
-            id="favicon_url"
-            value={form.favicon_url ?? ""}
-            onChange={(v) => patch({ favicon_url: v || null })}
-            placeholder="https://storage.googleapis.com/..."
+          <FieldLabel>Favicon</FieldLabel>
+          <ImageUploadInput
+            storeId={form.store_id}
+            kind="favicon"
+            value={form.favicon_url}
+            onChange={(url) => patch({ favicon_url: url })}
             disabled={!editable}
+            hint="32×32 PNG, ICO, or SVG — up to 1 MB. Shown in browser tabs and bookmarks."
           />
-          <p className="text-xs text-foreground-tertiary">
-            32×32 PNG or ICO. Shown in browser tabs and bookmarks.
-          </p>
         </div>
 
         <div className="space-y-1.5">
@@ -566,21 +563,6 @@ function LayoutTab({ form, patch, editable }: TabProps) {
             </button>
           ))}
         </div>
-      </div>
-
-      {/* Hero image */}
-      <div className="space-y-1.5">
-        <FieldLabel htmlFor="hero_image_url">Hero image URL</FieldLabel>
-        <TextInput
-          id="hero_image_url"
-          value={form.hero_image_url ?? ""}
-          onChange={(v) => patch({ hero_image_url: v || null })}
-          placeholder="https://storage.googleapis.com/..."
-          disabled={!editable}
-        />
-        <p className="text-xs text-foreground-tertiary">
-          Recommended: 1920×800 JPEG or WebP. Used in hero-focus and editorial layouts.
-        </p>
       </div>
 
       {/* Announcement bar */}

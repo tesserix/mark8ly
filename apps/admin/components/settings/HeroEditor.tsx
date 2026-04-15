@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { HomepageHero, AdminPage } from "@/lib/api/marketplace-api";
 import {
   FieldLabel,
@@ -47,9 +47,17 @@ export function HeroEditor({ value, onChange, pages, editable, layoutVariant, on
   // Notify parent whenever the form validity state changes. Gates Save
   // on both the a11y rule (aside alt required when aside URL set) and
   // the paired-CTA rule (label + URL set together or both empty).
+  //
+  // The callback is captured through a ref so the effect fires only on
+  // real validity transitions — stability of the parent's onValidityChange
+  // prop is not required (e.g. inline closures won't cause a re-run).
+  const onValidityChangeRef = useRef(onValidityChange);
   useEffect(() => {
-    onValidityChange?.(!asideAltMissing && !secondaryIncomplete);
-  }, [asideAltMissing, secondaryIncomplete, onValidityChange]);
+    onValidityChangeRef.current = onValidityChange;
+  });
+  useEffect(() => {
+    onValidityChangeRef.current?.(!asideAltMissing && !secondaryIncomplete);
+  }, [asideAltMissing, secondaryIncomplete]);
 
   const themeSupport = layoutVariant ? THEME_HERO_SUPPORT[layoutVariant] : undefined;
 
@@ -284,6 +292,7 @@ function CtaUrlPicker({
         onChange={onChange}
         placeholder="https://example.com or /collections/featured"
         disabled={disabled}
+        maxLength={500}
       />
     </div>
   );

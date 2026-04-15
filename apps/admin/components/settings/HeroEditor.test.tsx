@@ -102,6 +102,80 @@ describe("HeroEditor — aside image a11y validity", () => {
     expect(screen.queryByText(/alt text is required/i)).not.toBeInTheDocument();
   });
 
+  it("secondary CTA label set, URL empty — onValidityChange(false)", async () => {
+    const onValidityChange = vi.fn();
+    await act(async () => {
+      render(
+        <HeroEditor
+          value={baseHero({
+            cta_secondary_label: "Read the story",
+            cta_secondary_url: null,
+          })}
+          onChange={() => {}}
+          onValidityChange={onValidityChange}
+          pages={[]}
+          editable={true}
+        />
+      );
+    });
+    expect(onValidityChange).toHaveBeenCalledWith(false);
+  });
+
+  it("secondary CTA URL set, label empty — onValidityChange(false)", async () => {
+    const onValidityChange = vi.fn();
+    await act(async () => {
+      render(
+        <HeroEditor
+          value={baseHero({
+            cta_secondary_label: null,
+            cta_secondary_url: "/pages/about",
+          })}
+          onChange={() => {}}
+          onValidityChange={onValidityChange}
+          pages={[]}
+          editable={true}
+        />
+      );
+    });
+    expect(onValidityChange).toHaveBeenCalledWith(false);
+  });
+
+  it("secondary CTA both set — onValidityChange(true)", async () => {
+    const onValidityChange = vi.fn();
+    await act(async () => {
+      render(
+        <HeroEditor
+          value={baseHero({
+            cta_secondary_label: "Read the story",
+            cta_secondary_url: "/pages/about",
+          })}
+          onChange={() => {}}
+          onValidityChange={onValidityChange}
+          pages={[]}
+          editable={true}
+        />
+      );
+    });
+    expect(onValidityChange).not.toHaveBeenCalledWith(false);
+    expect(onValidityChange).toHaveBeenCalledWith(true);
+  });
+
+  it("secondary CTA both empty — onValidityChange(true)", async () => {
+    const onValidityChange = vi.fn();
+    await act(async () => {
+      render(
+        <HeroEditor
+          value={baseHero()}
+          onChange={() => {}}
+          onValidityChange={onValidityChange}
+          pages={[]}
+          editable={true}
+        />
+      );
+    });
+    expect(onValidityChange).not.toHaveBeenCalledWith(false);
+  });
+
   it("aside URL cleared after being set — error clears, onValidityChange(true)", async () => {
     const user = userEvent.setup();
     const onValidityChange = vi.fn();

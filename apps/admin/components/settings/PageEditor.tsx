@@ -29,6 +29,7 @@ import {
 } from "@/app/(admin)/settings/pages/actions";
 import { useToast } from "@/components/feedback/Toaster";
 import { Markdown } from "@/lib/markdown";
+import { PageBodyEditor } from "./PageBodyEditor";
 
 // ─── Slug pattern ─────────────────────────────────────────────────────────────
 
@@ -191,14 +192,17 @@ export function PageEditor({ page, canManage }: PageEditorProps) {
 
             {/* Body */}
             <div>
-              <Label htmlFor="body">Body (markdown)</Label>
-              <Textarea
-                id="body"
-                rows={20}
-                {...register("body")}
-                disabled={!canManage}
-                className="mt-1 font-mono text-sm"
-              />
+              <Label htmlFor="body">Body</Label>
+              <div className="mt-1">
+                <PageBodyEditor
+                  markdown={body}
+                  onChange={(md) => setValue("body", md, { shouldDirty: true })}
+                  editable={canManage}
+                />
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Format with the toolbar — content is stored as markdown.
+              </p>
             </div>
 
             {/* SEO */}

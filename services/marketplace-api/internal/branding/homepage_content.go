@@ -9,29 +9,29 @@ import (
 // Validation caps. These mirror the admin UI's maxLength attrs — update BOTH when changing a cap.
 // Enforced at the service layer when writing to the store_branding.homepage_content JSONB column.
 const (
-	maxHomepageSections     = 12
-	maxHeroHeading          = 200
-	maxHeroSubheading       = 400
-	maxHeroCtaLabel         = 60
-	maxHeroEyebrow          = 80
+	maxHomepageSections      = 12
+	maxHeroHeading           = 200
+	maxHeroSubheading        = 400
+	maxHeroCtaLabel          = 60
+	maxHeroEyebrow           = 80
 	maxHeroSecondaryCtaLabel = 60
-	maxHeroSecondaryCtaURL  = 500
-	maxHeroAsideImageURL    = 500
-	maxHeroAsideImageAlt    = 200
-	maxSectionTextMarkdown  = 20_000
-	maxSectionImageAlt      = 200
-	maxSectionImageCaption  = 200
-	maxSectionQuoteText     = 500
-	maxSectionQuoteAttrib   = 200
-	maxSectionHeading       = 200
-	maxFeaturedLimit        = 24
-	maxMarqueeItems         = 8
-	maxMarqueeItemLen       = 80
-	maxLetterEyebrow        = 120
-	maxLetterTitle          = 200
-	maxLetterBody           = 10_000
-	maxProductSlugs         = 6
-	maxProductSlugLen       = 200
+	maxHeroSecondaryCtaURL   = 500
+	maxHeroAsideImageURL     = 500
+	maxHeroAsideImageAlt     = 200
+	maxSectionTextMarkdown   = 20_000
+	maxSectionImageAlt       = 200
+	maxSectionImageCaption   = 200
+	maxSectionQuoteText      = 500
+	maxSectionQuoteAttrib    = 200
+	maxSectionHeading        = 200
+	maxFeaturedLimit         = 24
+	maxMarqueeItems          = 8
+	maxMarqueeItemLen        = 80
+	maxLetterEyebrow         = 120
+	maxLetterTitle           = 200
+	maxLetterBody            = 10_000
+	maxProductSlugs          = 6
+	maxProductSlugLen        = 200
 )
 
 // ValidateHomepageContent checks the shape of a homepage_content JSONB
@@ -68,30 +68,30 @@ func ValidateHomepageContent(raw json.RawMessage) error {
 }
 
 type heroInput struct {
-	Enabled            *bool   `json:"enabled"`
-	ImageURL           *string `json:"image_url"`
-	Heading            *string `json:"heading"`
-	Subheading         *string `json:"subheading"`
-	CtaLabel           *string `json:"cta_label"`
-	CtaURL             *string `json:"cta_url"`
-	Eyebrow            *string `json:"eyebrow,omitempty"`
-	CtaSecondaryLabel  *string `json:"cta_secondary_label,omitempty"`
-	CtaSecondaryURL    *string `json:"cta_secondary_url,omitempty"`
-	AsideImageURL      *string `json:"aside_image_url,omitempty"`
-	AsideImageAlt      *string `json:"aside_image_alt,omitempty"`
+	Enabled           *bool   `json:"enabled"`
+	ImageURL          *string `json:"image_url"`
+	Heading           *string `json:"heading"`
+	Subheading        *string `json:"subheading"`
+	CtaLabel          *string `json:"cta_label"`
+	CtaURL            *string `json:"cta_url"`
+	Eyebrow           *string `json:"eyebrow,omitempty"`
+	CtaSecondaryLabel *string `json:"cta_secondary_label,omitempty"`
+	CtaSecondaryURL   *string `json:"cta_secondary_url,omitempty"`
+	AsideImageURL     *string `json:"aside_image_url,omitempty"`
+	AsideImageAlt     *string `json:"aside_image_alt,omitempty"`
 }
 
 type sectionInput struct {
-	Type           string   `json:"type"`
-	Heading        *string  `json:"heading,omitempty"`
-	Markdown       *string  `json:"markdown,omitempty"`
-	URL            *string  `json:"url,omitempty"`
-	Alt            *string  `json:"alt,omitempty"`
-	Caption        *string  `json:"caption,omitempty"`
-	CollectionSlug *string  `json:"collection_slug,omitempty"`
-	Limit          *int     `json:"limit,omitempty"`
-	Text           *string  `json:"text,omitempty"`
-	Attribution    *string  `json:"attribution,omitempty"`
+	Type           string  `json:"type"`
+	Heading        *string `json:"heading,omitempty"`
+	Markdown       *string `json:"markdown,omitempty"`
+	URL            *string `json:"url,omitempty"`
+	Alt            *string `json:"alt,omitempty"`
+	Caption        *string `json:"caption,omitempty"`
+	CollectionSlug *string `json:"collection_slug,omitempty"`
+	Limit          *int    `json:"limit,omitempty"`
+	Text           *string `json:"text,omitempty"`
+	Attribution    *string `json:"attribution,omitempty"`
 	// marquee
 	Items []string `json:"items,omitempty"`
 	Speed *string  `json:"speed,omitempty"`

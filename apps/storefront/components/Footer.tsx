@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ComponentType, SVGProps } from "react";
 
 import type {
   FooterLinkItem,
@@ -6,6 +7,13 @@ import type {
   StorefrontBranding,
 } from "@/lib/api/marketplace-api";
 import { safeUrl } from "@/lib/safeUrl";
+import {
+  FacebookIcon,
+  InstagramIcon,
+  TikTokIcon,
+  XIcon,
+  YouTubeIcon,
+} from "./SocialIcons";
 
 interface FooterProps {
   branding?: StorefrontBranding | null;
@@ -59,28 +67,39 @@ function FooterLink({ item }: { item: FooterLinkItem }) {
   );
 }
 
-function SocialRow({ branding }: { branding: StorefrontBranding }) {
-  const links: Array<{ key: string; label: string; url?: string | null }> = [
-    { key: "instagram", label: "Instagram", url: branding.social_instagram },
-    { key: "twitter", label: "X", url: branding.social_twitter },
-    { key: "facebook", label: "Facebook", url: branding.social_facebook },
-    { key: "tiktok", label: "TikTok", url: branding.social_tiktok },
-    { key: "youtube", label: "YouTube", url: branding.social_youtube },
-  ].filter((l) => !!l.url);
+type SocialLink = {
+  key: string;
+  label: string;
+  url?: string | null;
+  Icon: ComponentType<SVGProps<SVGSVGElement>>;
+};
 
-  if (links.length === 0) return null;
+function SocialRow({ branding }: { branding: StorefrontBranding }) {
+  const links: SocialLink[] = [
+    { key: "instagram", label: "Instagram", url: branding.social_instagram, Icon: InstagramIcon },
+    { key: "twitter", label: "X", url: branding.social_twitter, Icon: XIcon },
+    { key: "facebook", label: "Facebook", url: branding.social_facebook, Icon: FacebookIcon },
+    { key: "tiktok", label: "TikTok", url: branding.social_tiktok, Icon: TikTokIcon },
+    { key: "youtube", label: "YouTube", url: branding.social_youtube, Icon: YouTubeIcon },
+  ];
+  const present = links.filter((l) => !!l.url);
+
+  if (present.length === 0) return null;
 
   return (
-    <ul className="mt-6 flex flex-wrap gap-4 text-sm">
-      {links.map((l) => (
-        <li key={l.key}>
+    <ul className="mt-6 flex flex-wrap items-center gap-4">
+      {present.map(({ key, label, url, Icon }) => (
+        <li key={key}>
           <a
-            href={safeUrl(l.url)}
+            href={safeUrl(url)}
             target="_blank"
             rel="noreferrer"
-            className="text-foreground-secondary transition-colors hover:text-moss-700"
+            aria-label={label}
+            title={label}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground-secondary transition-colors hover:bg-foreground/5 hover:text-moss-700"
           >
-            {l.label}
+            <Icon className="h-[18px] w-[18px]" />
+            <span className="sr-only">{label}</span>
           </a>
         </li>
       ))}

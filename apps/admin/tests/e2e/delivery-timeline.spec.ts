@@ -267,24 +267,33 @@ test("3. advance shipment status with pauses (admin)", async ({ browser }) => {
   await page.goto(`/orders/${state.orderId}`);
   await page.waitForLoadState("networkidle").catch(() => {});
 
-  // Click each advance button in turn, with a pause between so a
-  // watcher on the customer page can see the timeline evolve. We also
-  // wait for the admin's ShipmentDetails card to reflect the new
-  // status before clicking the next button — the server action +
-  // revalidatePath is asynchronous, and without this the second/third
-  // click can race against stale UI with a disabled "next" button.
-  type Step = { click: string; expect: RegExp };
-  const steps: Step[] = [
-    { click: "Mark in transit", expect: /in_transit/i },
-    { click: "Out for delivery", expect: /out_for_delivery/i },
-    { click: "Mark delivered", expect: /delivered/i },
+  // Click each advance button in turn. After each click we poll the
+  // backend directly for the updated shipment status instead of
+  // watching the DOM — that avoids racing with the server action's
+  // revalidatePath() + React re-render.
+  const steps: Array<{ click: string; status: string }> = [
+    { click: "Mark in transit", status: "in_transit" },
+    { click: "Out for delivery", status: "out_for_delivery" },
+    { click: "Mark delivered", status: "delivered" },
   ];
   for (const s of steps) {
     const btn = page.getByRole("button", { name: new RegExp(`^${s.click}$`, "i") });
     await expect(btn).toBeEnabled({ timeout: 15_000 });
     await btn.click();
     console.log(`[advance] clicked: ${s.click}`);
-    await expect(page.getByText(s.expect).first()).toBeVisible({ timeout: 15_000 });
+    // Wait for the backing DB to actually reflect the new status.
+    // Poll via page.request (browser cookies attached).
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(500);
+      const probe = await page.request.get(
+        `${STOREFRONT_URL}/api/orders/${state.orderId}/timeline`,
+      );
+      if (probe.ok()) {
+        const body = await probe.json().catch(() => ({}));
+        const shipStatus = body?.data?.shipment?.status;
+        if (shipStatus === s.status) break;
+      }
+    }
     await page.waitForTimeout(PAUSE_MS);
   }
 

@@ -52,19 +52,46 @@ const TABS: { key: Tab; label: string; icon: typeof Palette }[] = [
 ];
 
 const FONTS: { key: string; label: string; family: string }[] = [
-  { key: "source-serif-4", label: "Source Serif 4", family: "'Source Serif 4', Georgia, serif" },
+  // Serif — editorial + body
+  { key: "source-serif-4",   label: "Source Serif 4",   family: "'Source Serif 4', Georgia, serif" },
+  { key: "newsreader",       label: "Newsreader",       family: "'Newsreader', 'Iowan Old Style', Georgia, serif" },
   { key: "playfair-display", label: "Playfair Display", family: "'Playfair Display', Georgia, serif" },
-  { key: "lora", label: "Lora", family: "'Lora', Georgia, serif" },
-  { key: "inter", label: "Inter", family: "'Inter', system-ui, sans-serif" },
-  { key: "source-sans-3", label: "Source Sans 3", family: "'Source Sans 3', system-ui, sans-serif" },
-  { key: "dm-sans", label: "DM Sans", family: "'DM Sans', system-ui, sans-serif" },
+  { key: "cormorant",        label: "Cormorant",        family: "'Cormorant Garamond', Georgia, serif" },
+  { key: "lora",             label: "Lora",             family: "'Lora', Georgia, serif" },
+  { key: "libre-baskerville", label: "Libre Baskerville", family: "'Libre Baskerville', Baskerville, serif" },
+  { key: "crimson",          label: "Crimson Pro",      family: "'Crimson Pro', 'Crimson Text', Georgia, serif" },
+  // Sans — workhorse
+  { key: "source-sans-3",    label: "Source Sans 3",    family: "'Source Sans 3', system-ui, sans-serif" },
+  { key: "inter",            label: "Inter",            family: "'Inter', system-ui, sans-serif" },
+  { key: "manrope",          label: "Manrope",          family: "'Manrope', 'Avenir Next', sans-serif" },
+  { key: "dm-sans",          label: "DM Sans",          family: "'DM Sans', system-ui, sans-serif" },
+  { key: "work-sans",        label: "Work Sans",        family: "'Work Sans', system-ui, sans-serif" },
+  { key: "poppins",          label: "Poppins",          family: "'Poppins', system-ui, sans-serif" },
+  { key: "ibm-plex-sans",    label: "IBM Plex Sans",    family: "'IBM Plex Sans', system-ui, sans-serif" },
+  // Technical / grotesque
+  { key: "space-grotesk",    label: "Space Grotesk",    family: "'Space Grotesk', 'Inter', sans-serif" },
+  { key: "archivo",          label: "Archivo",          family: "'Archivo', 'Inter', sans-serif" },
 ];
 
 const LAYOUTS: { key: string; label: string; desc: string }[] = [
-  { key: "classic-shop", label: "Classic Shop", desc: "Traditional grid with sidebar categories" },
-  { key: "editorial", label: "Editorial", desc: "Magazine-style with hero features" },
-  { key: "minimal", label: "Minimal", desc: "Clean, product-forward with open space" },
-  { key: "hero-focus", label: "Hero Focus", desc: "Large hero banner above featured products" },
+  // Editorial / magazine
+  { key: "editorial",          label: "Editorial",          desc: "Magazine-style with hero features and premium pacing" },
+  { key: "story-led",          label: "Story-led",          desc: "Narrative flow with softer hierarchy" },
+  { key: "lookbook",           label: "Lookbook",           desc: "Big-image tiles and editorial spreads" },
+  // Shop / catalog
+  { key: "classic-shop",       label: "Classic Shop",       desc: "Traditional grid with sidebar categories" },
+  { key: "catalog-first",      label: "Catalog First",      desc: "Product-led landing with quick highlights" },
+  { key: "grid-dense",         label: "Grid Dense",         desc: "Tight product grid — maximum SKUs above the fold" },
+  { key: "collection-showcase", label: "Collection Showcase", desc: "Categories as featured tiles above products" },
+  // Hero
+  { key: "hero-focus",         label: "Hero Focus",         desc: "Large hero banner above featured products" },
+  { key: "split-hero",         label: "Split Hero",         desc: "Left-right composition with stronger action" },
+  { key: "product-spotlight",  label: "Product Spotlight",  desc: "Single hero product above a lean catalog" },
+  { key: "bold-promo",         label: "Bold Promo",         desc: "Campaign-forward with stronger contrast" },
+  // Long + quiet
+  { key: "landing-story",      label: "Landing Story",      desc: "Long-scroll brand narrative with modular sections" },
+  { key: "minimal",            label: "Minimal",            desc: "Clean, product-forward with open space" },
+  { key: "compact",            label: "Compact",            desc: "Dense storefront for practical browsing" },
 ];
 
 // Quick-apply presets for the Colors tab. Kept in sync with the
@@ -72,17 +99,39 @@ const LAYOUTS: { key: string; label: string; desc: string }[] = [
 // the Storefront Theme picker speak the same design language. Button
 // bg/text mirror text/background for high-contrast CTAs.
 const COLOR_PRESETS: { name: string; colors: Pick<StoreBranding, "color_background" | "color_text" | "color_accent" | "color_button_bg" | "color_button_text"> }[] = [
-  { name: "Paper",  colors: { color_background: "#F7F6F2", color_text: "#0E0E0C", color_accent: "#2D4A2B", color_button_bg: "#0E0E0C", color_button_text: "#F7F6F2" } },
-  { name: "Linen",  colors: { color_background: "#F4EFE6", color_text: "#201C17", color_accent: "#6B4F2A", color_button_bg: "#201C17", color_button_text: "#F4EFE6" } },
-  { name: "Dune",   colors: { color_background: "#EFE6D7", color_text: "#2A2520", color_accent: "#9A5A32", color_button_bg: "#2A2520", color_button_text: "#EFE6D7" } },
-  { name: "Oat",    colors: { color_background: "#F0E8D8", color_text: "#2A2317", color_accent: "#6B5436", color_button_bg: "#2A2317", color_button_text: "#F0E8D8" } },
-  { name: "Clove",  colors: { color_background: "#EFEDE6", color_text: "#1C1E1B", color_accent: "#4A5D3F", color_button_bg: "#1C1E1B", color_button_text: "#EFEDE6" } },
-  { name: "Jade",   colors: { color_background: "#ECF0ED", color_text: "#14201A", color_accent: "#2B5F4D", color_button_bg: "#14201A", color_button_text: "#ECF0ED" } },
-  { name: "Slate",  colors: { color_background: "#EEEFF1", color_text: "#1A1D21", color_accent: "#5A4A3E", color_button_bg: "#1A1D21", color_button_text: "#EEEFF1" } },
-  { name: "Indigo", colors: { color_background: "#ECEFF4", color_text: "#1A1D28", color_accent: "#384C6B", color_button_bg: "#1A1D28", color_button_text: "#ECEFF4" } },
-  { name: "Bloom",  colors: { color_background: "#F5EDEA", color_text: "#2A1E1C", color_accent: "#8C3E45", color_button_bg: "#2A1E1C", color_button_text: "#F5EDEA" } },
-  { name: "Rose",   colors: { color_background: "#F2E9E4", color_text: "#221917", color_accent: "#A04A4C", color_button_bg: "#221917", color_button_text: "#F2E9E4" } },
-  { name: "Char",   colors: { color_background: "#F2F1EE", color_text: "#0C0C0A", color_accent: "#2A2A26", color_button_bg: "#0C0C0A", color_button_text: "#F2F1EE" } },
+  // House
+  { name: "Paper",         colors: { color_background: "#F7F6F2", color_text: "#0E0E0C", color_accent: "#2D4A2B", color_button_bg: "#0E0E0C", color_button_text: "#F7F6F2" } },
+  // Warm
+  { name: "Saffron Dusk",  colors: { color_background: "#FBF3E2", color_text: "#2C1A06", color_accent: "#C47C0A", color_button_bg: "#3D2208", color_button_text: "#FBF3E2" } },
+  { name: "Marigold",      colors: { color_background: "#FFF0D0", color_text: "#271600", color_accent: "#B86800", color_button_bg: "#3B1E00", color_button_text: "#FFF0D0" } },
+  { name: "Terracotta",    colors: { color_background: "#FAF0E8", color_text: "#2A1208", color_accent: "#C05A28", color_button_bg: "#3C1E0E", color_button_text: "#FAF0E8" } },
+  { name: "Blush Studio",  colors: { color_background: "#FDF0F0", color_text: "#2A1010", color_accent: "#C03858", color_button_bg: "#3E1212", color_button_text: "#FDF0F0" } },
+  { name: "Copper Roast",  colors: { color_background: "#F5EDE0", color_text: "#1E0E00", color_accent: "#9A4A00", color_button_bg: "#2E1600", color_button_text: "#F5EDE0" } },
+  // Cool
+  { name: "Arctic",        colors: { color_background: "#EDF4F7", color_text: "#0C1E26", color_accent: "#0D7FA5", color_button_bg: "#0F2D3A", color_button_text: "#EDF4F7" } },
+  { name: "Pacific",       colors: { color_background: "#EBF0F5", color_text: "#0D1B2A", color_accent: "#1A5FA8", color_button_bg: "#0D2240", color_button_text: "#EBF0F5" } },
+  { name: "Slate Cloud",   colors: { color_background: "#F0F1F5", color_text: "#141820", color_accent: "#3B5EE8", color_button_bg: "#1E2436", color_button_text: "#F0F1F5" } },
+  // Bold / pop
+  { name: "Citrus Burst",  colors: { color_background: "#FFF8D6", color_text: "#1E1600", color_accent: "#C88000", color_button_bg: "#2E2000", color_button_text: "#FFF8D6" } },
+  { name: "Coral Pop",     colors: { color_background: "#FFF2EE", color_text: "#250D08", color_accent: "#D94832", color_button_bg: "#3A1008", color_button_text: "#FFF2EE" } },
+  // Natural
+  { name: "Greenhouse",    colors: { color_background: "#EDF5EE", color_text: "#0C1E10", color_accent: "#2A7A3C", color_button_bg: "#103018", color_button_text: "#EDF5EE" } },
+  { name: "Matcha",        colors: { color_background: "#F2F5EC", color_text: "#141A0E", color_accent: "#5A7A28", color_button_bg: "#1E2E14", color_button_text: "#F2F5EC" } },
+  // Pastel
+  { name: "Lavender Mist", colors: { color_background: "#F3F0FA", color_text: "#1A1028", color_accent: "#6C40C8", color_button_bg: "#2A1848", color_button_text: "#F3F0FA" } },
+  { name: "Sky Linen",     colors: { color_background: "#EBF4FC", color_text: "#0E1A24", color_accent: "#1A78C8", color_button_bg: "#122030", color_button_text: "#EBF4FC" } },
+  // Monochrome
+  { name: "Noir Pop",      colors: { color_background: "#EDEDEB", color_text: "#080808", color_accent: "#D41A1A", color_button_bg: "#0A0A0A", color_button_text: "#EDEDEB" } },
+  // Jewel
+  { name: "Plum Noir",     colors: { color_background: "#F0E8F5", color_text: "#1A0820", color_accent: "#8B2090", color_button_bg: "#2E0E40", color_button_text: "#F0E8F5" } },
+  // Heritage
+  { name: "Indigo Block",  colors: { color_background: "#EEF0F8", color_text: "#0C1030", color_accent: "#B07800", color_button_bg: "#12185A", color_button_text: "#EEF0F8" } },
+  // Dark mode — admin-only selection; storefront renders the dark bg.
+  { name: "Obsidian",      colors: { color_background: "#0A0A0A", color_text: "#EDEDED", color_accent: "#F5B800", color_button_bg: "#FAFAFA", color_button_text: "#0A0A0A" } },
+  { name: "Velvet",        colors: { color_background: "#180B14", color_text: "#F0E5D8", color_accent: "#D9A652", color_button_bg: "#FBF5EA", color_button_text: "#180B14" } },
+  { name: "Ember",         colors: { color_background: "#14100C", color_text: "#ECE4D4", color_accent: "#E6793E", color_button_bg: "#F5EFE3", color_button_text: "#14100C" } },
+  { name: "Nebula",        colors: { color_background: "#0D0A24", color_text: "#E8E6F8", color_accent: "#D438C6", color_button_bg: "#F8F6FC", color_button_text: "#0D0A24" } },
+  { name: "Aurora Dark",   colors: { color_background: "#081814", color_text: "#DDEFE5", color_accent: "#36E0A6", color_button_bg: "#F0FCF5", color_button_text: "#081814" } },
 ];
 
 // ─── Component ──────────────────────────────────────────────────────

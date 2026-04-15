@@ -11,14 +11,17 @@
  * change that both apps pick up on the next build.
  *
  * Design contract:
- *   - `paper` is the canonical Mark8ly default preset and maps to
- *     the paper/ink/moss tokens used by the marketing + admin
- *     surfaces. Merchants get the house look unless they opt out.
- *   - Legacy presets (warm, sand, forest, midnight) remain so that
- *     existing tenant theme records keep rendering — merchants can
- *     migrate at their own pace.
- *   - Colors are hex strings so they survive JSON storage in the
- *     platform-api tenant record.
+ *   - `paper` is the Mark8ly house preset (editorial restraint) and
+ *     remains the default for new stores. The rest of the presets are
+ *     for the merchants' customer-facing storefronts and span a wider
+ *     range of moods — warm, cool, bold, pastel, jewel, dark.
+ *   - Dark-mode is a merchant-set choice via dark presets. There is no
+ *     customer-facing mode toggle. Storefront components should consume
+ *     `--storefront-*` CSS variables (not hardcoded light tokens) so
+ *     dark presets invert cleanly.
+ *   - Legacy preset keys remain accepted by the type guard so existing
+ *     tenant records keep rendering — they are hidden from the picker.
+ *   - Colors are hex strings so they survive JSON storage.
  */
 
 /* ============================================================
@@ -26,17 +29,66 @@
    ============================================================ */
 
 export type StorefrontLayout =
+  // Editorial / magazine
   | "editorial"
-  | "classic-shop"
-  | "split-hero"
-  | "catalog-first"
   | "story-led"
-  | "minimal"
+  | "lookbook"
+  // Shop / catalog
+  | "classic-shop"
+  | "catalog-first"
+  | "grid-dense"
+  | "collection-showcase"
+  // Hero-forward
+  | "split-hero"
+  | "product-spotlight"
   | "bold-promo"
+  // Long-form + quiet
+  | "landing-story"
+  | "minimal"
   | "compact";
 
 export type StorefrontPreset =
+  // House
   | "paper"
+  // Warm
+  | "saffron-dusk"
+  | "marigold"
+  | "terracotta"
+  | "blush-studio"
+  | "copper-roast"
+  // Cool
+  | "arctic"
+  | "pacific"
+  | "slate-cloud"
+  // Bold / pop
+  | "citrus-burst"
+  | "coral-pop"
+  // Natural
+  | "greenhouse"
+  | "matcha"
+  // Pastel
+  | "lavender-mist"
+  | "sky-linen"
+  // Monochrome
+  | "noir-pop"
+  // Jewel
+  | "plum-noir"
+  // Heritage
+  | "indigo-block"
+  // Dark mode
+  | "obsidian"
+  | "velvet"
+  | "ember"
+  | "nebula"
+  | "aurora-dark"
+  // Legacy — kept for backwards compatibility with existing tenant
+  // records. Hidden from the picker. Normalise to themselves so a
+  // merchant on "midnight" keeps seeing their old palette until they
+  // actively pick a new one.
+  | "warm"
+  | "sand"
+  | "forest"
+  | "midnight"
   | "linen"
   | "dune"
   | "oat"
@@ -46,24 +98,32 @@ export type StorefrontPreset =
   | "indigo"
   | "bloom"
   | "rose"
-  | "char"
-  // Legacy preset keys — kept so existing tenant records still validate.
-  // Normalisation re-maps these to the closest modern palette below.
-  | "warm"
-  | "sand"
-  | "forest"
-  | "midnight";
+  | "char";
 
 export type StorefrontFont =
+  // Serif — display + body
+  | "newsreader"
+  | "playfair"
+  | "cormorant"
+  | "lora"
+  | "libre-baskerville"
+  | "crimson"
+  // Sans — workhorse
   | "source"
   | "inter"
   | "manrope"
-  | "newsreader"
-  | "space";
+  | "dm-sans"
+  | "work-sans"
+  | "poppins"
+  | "ibm-plex-sans"
+  // Grotesque / technical
+  | "space"
+  | "archivo";
 
 export type StorefrontMotion = "none" | "subtle" | "expressive";
 export type StorefrontDensity = "compact" | "balanced" | "airy";
 export type StorefrontRadius = "sharp" | "soft" | "rounded";
+export type StorefrontMode = "light" | "dark";
 
 export interface StorefrontTheme {
   layout: StorefrontLayout;
@@ -89,7 +149,7 @@ export interface StorefrontTheme {
    ============================================================ */
 
 const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
-  // Mark8ly house preset — paper · ink · moss. Default for new stores.
+  // ── House ──────────────────────────────────────────────────
   paper: {
     primary: "#0E0E0C",
     accent: "#2D4A2B",
@@ -97,7 +157,212 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#FFFFFF",
     text: "#0E0E0C",
   },
-  // Softer cream — premium linen/bakery feel.
+
+  // ── Warm ───────────────────────────────────────────────────
+  "saffron-dusk": {
+    primary: "#3D2208",
+    accent: "#C47C0A",
+    background: "#FBF3E2",
+    surface: "#FFFDF5",
+    text: "#2C1A06",
+  },
+  marigold: {
+    primary: "#3B1E00",
+    accent: "#B86800",
+    background: "#FFF0D0",
+    surface: "#FFFDF5",
+    text: "#271600",
+  },
+  terracotta: {
+    primary: "#3C1E0E",
+    accent: "#C05A28",
+    background: "#FAF0E8",
+    surface: "#FFFCF8",
+    text: "#2A1208",
+  },
+  "blush-studio": {
+    primary: "#3E1212",
+    accent: "#C03858",
+    background: "#FDF0F0",
+    surface: "#FFFAFA",
+    text: "#2A1010",
+  },
+  "copper-roast": {
+    primary: "#2E1600",
+    accent: "#9A4A00",
+    background: "#F5EDE0",
+    surface: "#FBF5EB",
+    text: "#1E0E00",
+  },
+
+  // ── Cool ───────────────────────────────────────────────────
+  arctic: {
+    primary: "#0F2D3A",
+    accent: "#0D7FA5",
+    background: "#EDF4F7",
+    surface: "#F8FCFE",
+    text: "#0C1E26",
+  },
+  pacific: {
+    primary: "#0D2240",
+    accent: "#1A5FA8",
+    background: "#EBF0F5",
+    surface: "#F6F9FC",
+    text: "#0D1B2A",
+  },
+  "slate-cloud": {
+    primary: "#1E2436",
+    accent: "#3B5EE8",
+    background: "#F0F1F5",
+    surface: "#F9FAFC",
+    text: "#141820",
+  },
+
+  // ── Bold / pop ────────────────────────────────────────────
+  "citrus-burst": {
+    primary: "#2E2000",
+    accent: "#C88000",
+    background: "#FFF8D6",
+    surface: "#FFFEF0",
+    text: "#1E1600",
+  },
+  "coral-pop": {
+    primary: "#3A1008",
+    accent: "#D94832",
+    background: "#FFF2EE",
+    surface: "#FFFCFB",
+    text: "#250D08",
+  },
+
+  // ── Natural ────────────────────────────────────────────────
+  greenhouse: {
+    primary: "#103018",
+    accent: "#2A7A3C",
+    background: "#EDF5EE",
+    surface: "#F7FBF7",
+    text: "#0C1E10",
+  },
+  matcha: {
+    primary: "#1E2E14",
+    accent: "#5A7A28",
+    background: "#F2F5EC",
+    surface: "#F9FBF6",
+    text: "#141A0E",
+  },
+
+  // ── Pastel ────────────────────────────────────────────────
+  "lavender-mist": {
+    primary: "#2A1848",
+    accent: "#6C40C8",
+    background: "#F3F0FA",
+    surface: "#FAF8FE",
+    text: "#1A1028",
+  },
+  "sky-linen": {
+    primary: "#122030",
+    accent: "#1A78C8",
+    background: "#EBF4FC",
+    surface: "#F6FBFE",
+    text: "#0E1A24",
+  },
+
+  // ── Monochrome ────────────────────────────────────────────
+  "noir-pop": {
+    primary: "#0A0A0A",
+    accent: "#D41A1A",
+    background: "#EDEDEB",
+    surface: "#F8F8F7",
+    text: "#080808",
+  },
+
+  // ── Jewel ─────────────────────────────────────────────────
+  "plum-noir": {
+    primary: "#2E0E40",
+    accent: "#8B2090",
+    background: "#F0E8F5",
+    surface: "#FBF6FF",
+    text: "#1A0820",
+  },
+
+  // ── Heritage ──────────────────────────────────────────────
+  "indigo-block": {
+    primary: "#12185A",
+    accent: "#B07800",
+    background: "#EEF0F8",
+    surface: "#F7F8FD",
+    text: "#0C1030",
+  },
+
+  // ── Dark mode ─────────────────────────────────────────────
+  // NOTE: dark presets set a dark background. Storefront components
+  // must consume --storefront-* tokens (never hardcode --paper-200 /
+  // --ink-900) for these to render correctly. Components that still
+  // hardcode light tokens will appear broken on these presets.
+  obsidian: {
+    primary: "#FAFAFA",
+    accent: "#F5B800",
+    background: "#0A0A0A",
+    surface: "#1A1A1A",
+    text: "#EDEDED",
+  },
+  velvet: {
+    primary: "#FBF5EA",
+    accent: "#D9A652",
+    background: "#180B14",
+    surface: "#24101C",
+    text: "#F0E5D8",
+  },
+  ember: {
+    primary: "#F5EFE3",
+    accent: "#E6793E",
+    background: "#14100C",
+    surface: "#211B14",
+    text: "#ECE4D4",
+  },
+  nebula: {
+    primary: "#F8F6FC",
+    accent: "#D438C6",
+    background: "#0D0A24",
+    surface: "#1A1636",
+    text: "#E8E6F8",
+  },
+  "aurora-dark": {
+    primary: "#F0FCF5",
+    accent: "#36E0A6",
+    background: "#081814",
+    surface: "#112520",
+    text: "#DDEFE5",
+  },
+
+  // ── Legacy (hidden from picker, still validated) ──────────
+  warm: {
+    primary: "#2A2317",
+    accent: "#6B5436",
+    background: "#F0E8D8",
+    surface: "#FBF6EB",
+    text: "#2A2317",
+  },
+  sand: {
+    primary: "#201C17",
+    accent: "#6B4F2A",
+    background: "#F4EFE6",
+    surface: "#FBF8F1",
+    text: "#201C17",
+  },
+  forest: {
+    primary: "#1C1E1B",
+    accent: "#4A5D3F",
+    background: "#EFEDE6",
+    surface: "#FAF9F4",
+    text: "#1C1E1B",
+  },
+  midnight: {
+    primary: "#1A1D28",
+    accent: "#384C6B",
+    background: "#ECEFF4",
+    surface: "#F8FAFD",
+    text: "#1A1D28",
+  },
   linen: {
     primary: "#201C17",
     accent: "#6B4F2A",
@@ -105,7 +370,6 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#FBF8F1",
     text: "#201C17",
   },
-  // Warm desert earthy — terracotta accent.
   dune: {
     primary: "#2A2520",
     accent: "#9A5A32",
@@ -113,7 +377,6 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#FAF4E8",
     text: "#2A2520",
   },
-  // Warm beige + umber — practical warm palette.
   oat: {
     primary: "#2A2317",
     accent: "#6B5436",
@@ -121,7 +384,6 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#FBF6EB",
     text: "#2A2317",
   },
-  // Muted olive — softer forest, editorial.
   clove: {
     primary: "#1C1E1B",
     accent: "#4A5D3F",
@@ -129,7 +391,6 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#FAF9F4",
     text: "#1C1E1B",
   },
-  // Pale mint + deep jade accent.
   jade: {
     primary: "#14201A",
     accent: "#2B5F4D",
@@ -137,7 +398,6 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#F8FBF9",
     text: "#14201A",
   },
-  // Cool neutral — taupe accent.
   slate: {
     primary: "#1A1D21",
     accent: "#5A4A3E",
@@ -145,7 +405,6 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#FAFBFC",
     text: "#1A1D21",
   },
-  // Cool light + deep navy accent — modern editorial.
   indigo: {
     primary: "#1A1D28",
     accent: "#384C6B",
@@ -153,7 +412,6 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#F8FAFD",
     text: "#1A1D28",
   },
-  // Muted blush + burgundy — feminine-editorial.
   bloom: {
     primary: "#2A1E1C",
     accent: "#8C3E45",
@@ -161,7 +419,6 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#FCF7F5",
     text: "#2A1E1C",
   },
-  // Blushed earthy + muted rose.
   rose: {
     primary: "#221917",
     accent: "#A04A4C",
@@ -169,7 +426,6 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#FBF5F1",
     text: "#221917",
   },
-  // Quietest palette — soft off-white, near-black ink, charcoal accent.
   char: {
     primary: "#0C0C0A",
     accent: "#2A2A26",
@@ -177,38 +433,23 @@ const presetPalette: Record<StorefrontPreset, StorefrontTheme["colors"]> = {
     surface: "#FAFAF8",
     text: "#0C0C0A",
   },
-  // ── Legacy palettes — merchants on these keys still render, but the
-  // picker hides them. Normalisation leaves stored `colors` in place;
-  // re-picking a preset is what moves them onto a modern palette.
-  warm: {
-    primary: "#2A2317",
-    accent: "#6B5436",
-    background: "#F0E8D8",
-    surface: "#FBF6EB",
-    text: "#2A2317",
-  }, // → oat
-  sand: {
-    primary: "#201C17",
-    accent: "#6B4F2A",
-    background: "#F4EFE6",
-    surface: "#FBF8F1",
-    text: "#201C17",
-  }, // → linen
-  forest: {
-    primary: "#1C1E1B",
-    accent: "#4A5D3F",
-    background: "#EFEDE6",
-    surface: "#FAF9F4",
-    text: "#1C1E1B",
-  }, // → clove
-  midnight: {
-    primary: "#1A1D28",
-    accent: "#384C6B",
-    background: "#ECEFF4",
-    surface: "#F8FAFD",
-    text: "#1A1D28",
-  }, // → indigo
 };
+
+/** Presets that render with a dark background. Used to derive the
+ *  `--storefront-mode` CSS var so downstream components can branch on
+ *  `body[data-theme-mode="dark"]` if they must.
+ */
+const darkPresets: ReadonlySet<StorefrontPreset> = new Set([
+  "obsidian",
+  "velvet",
+  "ember",
+  "nebula",
+  "aurora-dark",
+]);
+
+export function presetMode(preset: StorefrontPreset): StorefrontMode {
+  return darkPresets.has(preset) ? "dark" : "light";
+}
 
 /* ============================================================
    Option lists for the admin editor UI
@@ -219,72 +460,62 @@ export const storefrontLayoutOptions: Array<{
   label: string;
   description: string;
 }> = [
-  {
-    value: "editorial",
-    label: "Editorial",
-    description: "Story-led hero with premium pacing.",
-  },
-  {
-    value: "classic-shop",
-    label: "Classic Shop",
-    description: "Balanced retail landing with trust cues.",
-  },
-  {
-    value: "split-hero",
-    label: "Split Hero",
-    description: "Left-right composition with stronger action.",
-  },
-  {
-    value: "catalog-first",
-    label: "Catalog First",
-    description: "Product-led opening with quick highlights.",
-  },
-  {
-    value: "story-led",
-    label: "Story-led",
-    description: "Narrative presentation with softer hierarchy.",
-  },
-  {
-    value: "minimal",
-    label: "Minimal",
-    description: "Quiet storefront with lots of breathing room.",
-  },
-  {
-    value: "bold-promo",
-    label: "Bold Promo",
-    description: "Campaign-forward layout with stronger contrast.",
-  },
-  {
-    value: "compact",
-    label: "Compact",
-    description: "Dense storefront for practical browsing.",
-  },
+  { value: "editorial",          label: "Editorial",          description: "Story-led hero with premium pacing." },
+  { value: "story-led",          label: "Story-led",          description: "Narrative presentation with softer hierarchy." },
+  { value: "lookbook",           label: "Lookbook",           description: "Big-image tiles, editorial spreads — ideal for fashion." },
+  { value: "classic-shop",       label: "Classic Shop",       description: "Balanced retail landing with trust cues." },
+  { value: "catalog-first",      label: "Catalog First",      description: "Product-led opening with quick highlights." },
+  { value: "grid-dense",         label: "Grid Dense",         description: "Tight product grid — maximum SKUs above the fold." },
+  { value: "collection-showcase", label: "Collection Showcase", description: "Categories as featured tiles above the product grid." },
+  { value: "split-hero",         label: "Split Hero",         description: "Left-right composition with stronger action." },
+  { value: "product-spotlight",  label: "Product Spotlight",  description: "Single hero product above a lean catalog." },
+  { value: "bold-promo",         label: "Bold Promo",         description: "Campaign-forward layout with stronger contrast." },
+  { value: "landing-story",      label: "Landing Story",      description: "Long-scroll brand narrative with modular sections." },
+  { value: "minimal",            label: "Minimal",            description: "Quiet storefront with lots of breathing room." },
+  { value: "compact",            label: "Compact",            description: "Dense storefront for practical browsing." },
 ];
 
-// Presets shown in the admin picker. Legacy keys (warm/sand/forest/
-// midnight) remain accepted by the type guard so historical tenant
-// records still validate, but they are intentionally absent from this
-// list — the picker only surfaces modern palettes.
+// Presets shown in the admin picker. Legacy keys are accepted by the
+// type guard but intentionally absent from this list.
 export const storefrontPresetOptions: Array<{
   value: StorefrontPreset;
   label: string;
   description: string;
+  mode: StorefrontMode;
 }> = [
-  {
-    value: "paper",
-    label: "Paper",
-    description: "The Mark8ly house preset — warm paper, near-black ink, moss accent.",
-  },
-  { value: "linen", label: "Linen", description: "Soft cream with espresso accent." },
-  { value: "dune",  label: "Dune",  description: "Warm desert with terracotta accent." },
-  { value: "oat",   label: "Oat",   description: "Warm beige with umber accent." },
-  { value: "clove", label: "Clove", description: "Muted olive with grey-green base." },
-  { value: "jade",  label: "Jade",  description: "Pale mint with deep jade accent." },
-  { value: "slate", label: "Slate", description: "Cool neutral with taupe accent." },
-  { value: "indigo", label: "Indigo", description: "Cool light with deep navy accent." },
-  { value: "bloom", label: "Bloom", description: "Muted blush with burgundy accent." },
-  { value: "rose",  label: "Rose",  description: "Blushed neutral with muted rose accent." },
-  { value: "char",  label: "Char",  description: "Quietest palette — near-monochrome editorial." },
+  // House
+  { value: "paper",         label: "Paper",         description: "Mark8ly house — warm paper, near-black ink, moss accent.", mode: "light" },
+  // Warm
+  { value: "saffron-dusk",  label: "Saffron Dusk",  description: "Warm Indian marketplace — ceramics, artisans, handcrafted goods.", mode: "light" },
+  { value: "marigold",      label: "Marigold",      description: "Festive saffron with tobacco ink — Indian DTC and gifting.", mode: "light" },
+  { value: "terracotta",    label: "Terracotta",    description: "Mediterranean clay — artisan food, pottery, handmade goods.", mode: "light" },
+  { value: "blush-studio",  label: "Blush Studio",  description: "Rose-tinted premium — skincare, beauty, wellness, bridal.", mode: "light" },
+  { value: "copper-roast",  label: "Copper Roast",  description: "Amber-brown with espresso depth — coffee roasters, whisky, craft beer.", mode: "light" },
+  // Cool
+  { value: "arctic",        label: "Arctic",        description: "Glacier wash with deep teal — skincare, homeware, tech brands.", mode: "light" },
+  { value: "pacific",       label: "Pacific",       description: "Navy with sea-glass — coffee, spirits, outdoor gear.", mode: "light" },
+  { value: "slate-cloud",   label: "Slate Cloud",   description: "Cool grey with electric blue — gadgets, electronics, tools.", mode: "light" },
+  // Bold
+  { value: "citrus-burst",  label: "Citrus Burst",  description: "Loud lemon with amber pop — snacks, kids, stationery.", mode: "light" },
+  { value: "coral-pop",     label: "Coral Pop",     description: "Red-coral punch — Gen Z DTC, lifestyle, streetwear.", mode: "light" },
+  // Natural
+  { value: "greenhouse",    label: "Greenhouse",    description: "Mint wash with saturated green — plants, garden, outdoor.", mode: "light" },
+  { value: "matcha",        label: "Matcha",        description: "Earthy olive-sage — wellness, yoga, supplements.", mode: "light" },
+  // Pastel
+  { value: "lavender-mist", label: "Lavender Mist", description: "Lilac with jewel-violet accent — baby, maternity, gifting.", mode: "light" },
+  { value: "sky-linen",     label: "Sky Linen",     description: "Pale sky with friendly warmth — pets, children's toys, books.", mode: "light" },
+  // Monochrome
+  { value: "noir-pop",      label: "Noir Pop",      description: "Near-monochrome charcoal with electric red — streetwear, sneakers.", mode: "light" },
+  // Jewel
+  { value: "plum-noir",     label: "Plum Noir",     description: "Plum wash with amethyst — jewellery, wine, perfume.", mode: "light" },
+  // Heritage
+  { value: "indigo-block",  label: "Indigo Block",  description: "Indigo with gold — block-print textiles, heritage crafts.", mode: "light" },
+  // Dark mode
+  { value: "obsidian",      label: "Obsidian",      description: "Near-black with amber — luxury fashion, watches, tech premium.", mode: "dark" },
+  { value: "velvet",        label: "Velvet",        description: "Deep plum-black with gold — wine, perfume, fine jewellery.", mode: "dark" },
+  { value: "ember",         label: "Ember",         description: "Dark espresso with warm copper — craft coffee, whisky bars.", mode: "dark" },
+  { value: "nebula",        label: "Nebula",        description: "Dark violet with electric magenta — gaming, music, creative tech.", mode: "dark" },
+  { value: "aurora-dark",   label: "Aurora Dark",   description: "Deep forest-teal with neon mint — outdoor gear, modern streetwear.", mode: "dark" },
 ];
 
 export const storefrontFontOptions: Array<{
@@ -292,40 +523,44 @@ export const storefrontFontOptions: Array<{
   label: string;
   description: string;
 }> = [
-  {
-    value: "source",
-    label: "Source Sans 3",
-    description: "House sans. Neutral, workhorse.",
-  },
-  {
-    value: "inter",
-    label: "Inter",
-    description: "Geometric modern sans.",
-  },
-  {
-    value: "manrope",
-    label: "Manrope",
-    description: "Friendly rounded sans.",
-  },
-  {
-    value: "newsreader",
-    label: "Newsreader",
-    description: "Editorial serif for display.",
-  },
-  {
-    value: "space",
-    label: "Space Grotesk",
-    description: "Technical grotesk.",
-  },
+  // Serifs
+  { value: "newsreader",        label: "Newsreader",        description: "Editorial serif. Strong display, good body." },
+  { value: "playfair",          label: "Playfair Display",  description: "High-contrast display serif — premium fashion, beauty." },
+  { value: "cormorant",         label: "Cormorant",         description: "Elegant low-contrast serif — luxury editorial." },
+  { value: "lora",              label: "Lora",              description: "Warm, readable serif — long-form storytelling." },
+  { value: "libre-baskerville", label: "Libre Baskerville", description: "Classic body serif — dependable, literary feel." },
+  { value: "crimson",           label: "Crimson Pro",       description: "Old-style serif — book-like, warm." },
+  // Sans workhorses
+  { value: "source",            label: "Source Sans 3",     description: "House sans. Neutral workhorse." },
+  { value: "inter",             label: "Inter",             description: "Geometric modern sans — the safe, clean choice." },
+  { value: "manrope",           label: "Manrope",           description: "Friendly rounded sans — approachable DTC." },
+  { value: "dm-sans",           label: "DM Sans",           description: "Geometric with warmth — balanced, versatile." },
+  { value: "work-sans",         label: "Work Sans",         description: "Functional sans — editorial and retail both." },
+  { value: "poppins",           label: "Poppins",           description: "Round geometric sans — lively, popular DTC." },
+  { value: "ibm-plex-sans",     label: "IBM Plex Sans",     description: "Technical-editorial hybrid — confident." },
+  // Technical grotesques
+  { value: "space",             label: "Space Grotesk",     description: "Technical grotesque — tech, gaming, modern." },
+  { value: "archivo",           label: "Archivo",           description: "Industrial grotesque — streetwear, bold brands." },
 ];
 
 export const fontStacks: Record<StorefrontFont, string> = {
-  source: '"Source Sans 3", "Inter", "Segoe UI", sans-serif',
-  inter: '"Inter", "Segoe UI", sans-serif',
-  manrope: '"Manrope", "Avenir Next", sans-serif',
-  newsreader:
-    '"Newsreader", "Iowan Old Style", "Times New Roman", serif',
-  space: '"Space Grotesk", "Inter", sans-serif',
+  // Serifs
+  newsreader:        '"Newsreader", "Iowan Old Style", "Times New Roman", serif',
+  playfair:          '"Playfair Display", "Iowan Old Style", Georgia, serif',
+  cormorant:         '"Cormorant Garamond", "Iowan Old Style", Georgia, serif',
+  lora:              '"Lora", Georgia, "Times New Roman", serif',
+  "libre-baskerville": '"Libre Baskerville", Baskerville, Georgia, serif',
+  crimson:           '"Crimson Pro", "Crimson Text", Georgia, serif',
+  // Sans
+  source:            '"Source Sans 3", "Inter", "Segoe UI", sans-serif',
+  inter:             '"Inter", "Segoe UI", sans-serif',
+  manrope:           '"Manrope", "Avenir Next", sans-serif',
+  "dm-sans":         '"DM Sans", "Inter", "Segoe UI", sans-serif',
+  "work-sans":       '"Work Sans", "Inter", "Segoe UI", sans-serif',
+  poppins:           '"Poppins", "Inter", "Segoe UI", sans-serif',
+  "ibm-plex-sans":   '"IBM Plex Sans", "Inter", "Segoe UI", sans-serif',
+  space:             '"Space Grotesk", "Inter", sans-serif',
+  archivo:           '"Archivo", "Inter", "Segoe UI", sans-serif',
 };
 
 /* ============================================================
@@ -345,12 +580,6 @@ export const defaultStorefrontTheme: StorefrontTheme = {
   radius: "soft",
 };
 
-/**
- * normalizeStorefrontTheme — safe constructor for theme values
- * coming in from untrusted sources (platform-api JSON, form
- * submissions, legacy records). Any field that fails validation
- * falls back to the preset's default.
- */
 export function normalizeStorefrontTheme(value: unknown): StorefrontTheme {
   const raw = (value ?? {}) as Partial<StorefrontTheme>;
   const preset = isPreset(raw.preset) ? raw.preset : defaultStorefrontTheme.preset;
@@ -382,12 +611,6 @@ export function normalizeStorefrontTheme(value: unknown): StorefrontTheme {
   };
 }
 
-/**
- * withPresetColors — swap to a preset's canonical colors while
- * preserving the rest of the theme (layout, typography, motion,
- * density, radius). Used by the admin editor when a merchant
- * clicks a preset swatch.
- */
 export function withPresetColors(
   theme: StorefrontTheme,
   preset: StorefrontPreset,
@@ -400,8 +623,7 @@ export function withPresetColors(
 }
 
 /* ============================================================
-   Style helpers — translate a theme into computed values the
-   storefront can consume in its layout and CSS.
+   Style helpers
    ============================================================ */
 
 export function themeRadius(theme: StorefrontTheme): string {
@@ -416,22 +638,10 @@ export function themeDensityScale(theme: StorefrontTheme): number {
   return 1;
 }
 
-/**
- * themeSpacing — legacy string form of themeDensityScale, kept
- * for existing storefront render code that passes the scale
- * through CSS as a unitless multiplier. New code should prefer
- * themeDensityScale which returns a proper number.
- */
 export function themeSpacing(theme: StorefrontTheme): string {
   return String(themeDensityScale(theme));
 }
 
-/**
- * themeCssVariables — returns a Record suitable for spreading
- * into a JSX `style` prop or stringifying into a <style> block.
- * Every storefront layout should consume these vars so the
- * merchant's choices cascade through the whole render.
- */
 export function themeCssVariables(
   theme: StorefrontTheme,
 ): Record<string, string> {
@@ -445,6 +655,7 @@ export function themeCssVariables(
     "--storefront-body-font": fontStacks[theme.typography.bodyFont],
     "--storefront-radius": themeRadius(theme),
     "--storefront-density-scale": String(themeDensityScale(theme)),
+    "--storefront-mode": presetMode(theme.preset),
   };
 }
 
@@ -461,9 +672,8 @@ function isLayout(value: unknown): value is StorefrontLayout {
 }
 
 function isPreset(value: unknown): value is StorefrontPreset {
-  // Validate against the palette map rather than the picker options —
-  // the picker hides legacy keys (warm/sand/forest/midnight) but those
-  // records must still normalise to themselves, not fall back to paper.
+  // Validate against the palette map so legacy keys (hidden from the
+  // picker) still normalise to themselves.
   return typeof value === "string" && value in presetPalette;
 }
 

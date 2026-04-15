@@ -33,6 +33,11 @@ export interface HomepageHero {
   cta_label?: string | null;
   cta_url?: string | null;
   image_url?: string | null;
+  eyebrow?: string | null;
+  cta_secondary_label?: string | null;
+  cta_secondary_url?: string | null;
+  aside_image_url?: string | null;
+  aside_image_alt?: string | null;
 }
 
 export type HomepageSection =
@@ -92,6 +97,11 @@ export const CUSTOM_CONTENT: HomepageContent = {
     subheading: "This store's homepage is driven by the test fixture.",
     cta_label: "Shop",
     cta_url: "/products",
+    eyebrow: "Fixture eyebrow",
+    cta_secondary_label: "Secondary",
+    cta_secondary_url: "/pages/about",
+    aside_image_url: "/layout-placeholders/editorial-cover.svg",
+    aside_image_alt: "Fixture aside image",
   },
   sections: [
     {

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,6 +14,11 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
+
+// maxStorefrontSlugBatch caps how many product handles a single
+// ?slugs=a,b,c request can resolve. Mirrors homepage_content's
+// maxProductSlugs. Anything above is trimmed silently.
+const maxStorefrontSlugBatch = 6
 
 // StorefrontHandler serves the public read routes rooted under
 // /storefront/stores/:storeSlug. It owns no admin or tenant-scoped
@@ -57,6 +64,12 @@ func (q *listPublishedQuery) defaults() {
 }
 
 // List handles GET /storefront/stores/:storeSlug/products.
+//
+// When the ?slugs=a,b,c query param is present, resolves those exact
+// handles in order (capped at maxStorefrontSlugBatch) via the batched
+// ListPublishedBySlugs path — used by the featured_products homepage
+// block when the merchant hand-picks products. Otherwise returns the
+// paginated published listing.
 func (h *StorefrontHandler) List(c *gin.Context) {
 	store := c.MustGet("store").(*stores.Store)
 	watermark, err := h.watermarks.GetProductsWatermark(c.Request.Context(), store.ID)
@@ -65,6 +78,11 @@ func (h *StorefrontHandler) List(c *gin.Context) {
 		return
 	}
 	if checkIfNoneMatch(c, store, watermark) {
+		return
+	}
+
+	if rawSlugs := c.Query("slugs"); rawSlugs != "" {
+		h.listBySlugs(c, store, watermark, rawSlugs)
 		return
 	}
 
@@ -103,6 +121,45 @@ func (h *StorefrontHandler) List(c *gin.Context) {
 		"data": out,
 		"meta": gin.H{"page": q.Page, "page_size": q.PageSize},
 	})
+}
+
+// listBySlugs resolves the ?slugs=a,b,c batch path. Duplicate and
+// empty tokens are dropped; the set is capped at maxStorefrontSlugBatch.
+// Missing handles silently drop from the response (no 404).
+func (h *StorefrontHandler) listBySlugs(c *gin.Context, store *stores.Store, watermark time.Time, rawSlugs string) {
+	parts := strings.Split(rawSlugs, ",")
+	slugs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		slugs = append(slugs, p)
+		if len(slugs) >= maxStorefrontSlugBatch {
+			break
+		}
+	}
+
+	aggs, err := h.productRepo.ListPublishedBySlugs(c.Request.Context(), store.ID, slugs)
+	if err != nil {
+		respondInternal(c, h.logger, err)
+		return
+	}
+
+	catByID, err := h.storeCategoryMap(c, store.ID)
+	if err != nil {
+		respondInternal(c, h.logger, err)
+		return
+	}
+
+	out := make([]StorefrontProductResponse, 0, len(aggs))
+	for i := range aggs {
+		refs := resolveStorefrontCategoryRefs(&aggs[i], catByID)
+		out = append(out, ToStorefrontProductResponse(&aggs[i], refs))
+	}
+
+	setCacheHeaders(c, store, watermark)
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 // GetByHandle handles GET /storefront/stores/:storeSlug/products/:handle.

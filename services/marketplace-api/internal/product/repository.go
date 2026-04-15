@@ -43,6 +43,7 @@ type Repository interface {
 	GetByIDForStore(ctx context.Context, id, storeID, tenantID string) (*Aggregate, error)
 	ListAdmin(ctx context.Context, q ListAdminQuery) ([]Aggregate, int64, error)
 	ListPublished(ctx context.Context, q ListPublishedQuery) ([]Aggregate, error)
+	ListPublishedBySlugs(ctx context.Context, storeID string, slugs []string) ([]Aggregate, error)
 	GetPublishedByHandle(ctx context.Context, storeID, handle string) (*Aggregate, error)
 	UpdateBasicsInTx(ctx context.Context, tx *gorm.DB, id, storeID, tenantID string, fields map[string]any) error
 	ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, productID, storeID string, diff VariantDiff) error
@@ -359,6 +360,68 @@ func (r *gormRepository) ListPublished(ctx context.Context, q ListPublishedQuery
 
 	out := make([]Aggregate, 0, len(rows))
 	for _, p := range rows {
+		out = append(out, Aggregate{
+			Product:  p,
+			Options:  p.Options,
+			Variants: p.Variants,
+			Media:    p.Media,
+		})
+	}
+	return out, nil
+}
+
+// ---------- ListPublishedBySlugs ----------
+
+// ListPublishedBySlugs returns published products whose handle matches
+// any of the supplied slugs, preserving the input order. Missing slugs
+// silently drop (the storefront falls back to "fewer products" rather
+// than 404ing the whole homepage). Applies the same hard-coded
+// storefront visibility filter as ListPublished.
+func (r *gormRepository) ListPublishedBySlugs(ctx context.Context, storeID string, slugs []string) ([]Aggregate, error) {
+	if len(slugs) == 0 {
+		return []Aggregate{}, nil
+	}
+	// Dedupe while preserving first-seen order.
+	seen := make(map[string]struct{}, len(slugs))
+	ordered := make([]string, 0, len(slugs))
+	for _, s := range slugs {
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		ordered = append(ordered, s)
+	}
+	if len(ordered) == 0 {
+		return []Aggregate{}, nil
+	}
+
+	var rows []Product
+	err := r.db.WithContext(ctx).
+		Preload("Options").
+		Preload("Options.Values").
+		Preload("Variants").
+		Preload("Media").
+		Where("store_id = ? AND handle IN ? AND status = ? AND deleted_at IS NULL AND published_at IS NOT NULL AND published_at <= now()",
+			storeID, ordered, StatusActive).
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("product: list published by slugs: %w", err)
+	}
+
+	byHandle := make(map[string]Product, len(rows))
+	for _, p := range rows {
+		byHandle[p.Handle] = p
+	}
+
+	out := make([]Aggregate, 0, len(rows))
+	for _, h := range ordered {
+		p, ok := byHandle[h]
+		if !ok {
+			continue
+		}
 		out = append(out, Aggregate{
 			Product:  p,
 			Options:  p.Options,

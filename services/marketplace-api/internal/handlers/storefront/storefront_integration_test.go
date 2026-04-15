@@ -261,6 +261,74 @@ func TestAPI_Storefront_GetProductByHandle_200(t *testing.T) {
 	}
 }
 
+func TestAPI_Storefront_ListProducts_BySlugs_PreservesOrder(t *testing.T) {
+	r, db := setupStorefrontRouter(t, setupOpts{})
+	storeID, tenantID := seedStorefrontStore(t, db, "slugs", "USD")
+	seedProduct(t, db, storeID, tenantID, productOpts{
+		Status: product.StatusActive, PublishedAt: pastTime(), Handle: "alpha",
+	})
+	seedProduct(t, db, storeID, tenantID, productOpts{
+		Status: product.StatusActive, PublishedAt: pastTime(), Handle: "bravo",
+	})
+	seedProduct(t, db, storeID, tenantID, productOpts{
+		Status: product.StatusActive, PublishedAt: pastTime(), Handle: "charlie",
+	})
+	w := request(t, r, "GET", "/api/v1/storefront/stores/slugs/products?slugs=charlie,alpha", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("want 2 products, got %d", len(body.Data))
+	}
+	if body.Data[0]["handle"] != "charlie" || body.Data[1]["handle"] != "alpha" {
+		t.Fatalf("want order [charlie, alpha], got [%v, %v]", body.Data[0]["handle"], body.Data[1]["handle"])
+	}
+}
+
+func TestAPI_Storefront_ListProducts_BySlugs_DropsMissing(t *testing.T) {
+	r, db := setupStorefrontRouter(t, setupOpts{})
+	storeID, tenantID := seedStorefrontStore(t, db, "slugs2", "USD")
+	seedProduct(t, db, storeID, tenantID, productOpts{
+		Status: product.StatusActive, PublishedAt: pastTime(), Handle: "only-one",
+	})
+	w := request(t, r, "GET", "/api/v1/storefront/stores/slugs2/products?slugs=missing,only-one,also-missing", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var body struct {
+		Data []map[string]any `json:"data"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if len(body.Data) != 1 || body.Data[0]["handle"] != "only-one" {
+		t.Fatalf("want [only-one], got %+v", body.Data)
+	}
+}
+
+func TestAPI_Storefront_ListProducts_BySlugs_ExcludesDraft(t *testing.T) {
+	r, db := setupStorefrontRouter(t, setupOpts{})
+	storeID, tenantID := seedStorefrontStore(t, db, "slugs3", "USD")
+	seedProduct(t, db, storeID, tenantID, productOpts{
+		Status: product.StatusDraft, Handle: "hidden",
+	})
+	w := request(t, r, "GET", "/api/v1/storefront/stores/slugs3/products?slugs=hidden", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var body struct {
+		Data []map[string]any `json:"data"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if len(body.Data) != 0 {
+		t.Fatalf("want 0 products (draft filtered), got %d", len(body.Data))
+	}
+}
+
 func TestAPI_Storefront_ListCategories_200(t *testing.T) {
 	r, db := setupStorefrontRouter(t, setupOpts{})
 	storeID, tenantID := seedStorefrontStore(t, db, "cats", "USD")

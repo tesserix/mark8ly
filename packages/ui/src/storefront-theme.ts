@@ -815,30 +815,31 @@ export function themeCssVariables(
   theme: StorefrontTheme,
 ): Record<string, string> {
   const { primary, accent, background, surface, text } = theme.colors;
-  // Emit both the dedicated --storefront-* tokens AND overrides for the
-  // mark8ly house tokens (--foreground, --moss-700, --paper-200, …)
-  // so Tailwind utilities like text-foreground / bg-[var(--paper-200)]
-  // that pre-date the --storefront-* migration render correctly —
-  // especially critical in dark mode, where "text-foreground" would
-  // otherwise resolve to near-black against a dark background.
+  // "On-X" contrast colours — used by buttons / chips where bg is the
+  // brand colour and text needs legible contrast. Light mode: white
+  // text on saturated accent; dark mode: dark text because dark-mode
+  // accents are designed brighter for visibility against the dark bg.
+  const onAccent = theme.mode === "dark" ? "#0E0E0C" : "#FFFFFF";
+  const onPrimary = theme.mode === "dark" ? "#0E0E0C" : "#FFFFFF";
   return {
     "--storefront-primary": primary,
     "--storefront-accent": accent,
     "--storefront-background": background,
     "--storefront-surface": surface,
     "--storefront-text": text,
+    "--storefront-on-accent": onAccent,
+    "--storefront-on-primary": onPrimary,
     "--storefront-heading-font": fontStacks[theme.typography.headingFont],
     "--storefront-body-font": fontStacks[theme.typography.bodyFont],
     "--storefront-radius": themeRadius(theme),
     "--storefront-density-scale": String(themeDensityScale(theme)),
     "--storefront-mode": theme.mode,
-    // House-token overrides — scoped to the storefront <body> via the
-    // layout.tsx inline style prop; admin surfaces never see these.
+    // Narrow house-token overrides — only the three foreground colours,
+    // which always need to flip with mode. We intentionally DO NOT
+    // override --ink-900 / --paper-200 / --moss-700 — those are used
+    // as button backgrounds and borders where flipping breaks contrast.
     "--foreground": text,
-    "--foreground-secondary": `${text}B3`, // ~70% opacity hex
-    "--foreground-tertiary": `${text}80`,  // ~50% opacity hex
-    "--ink-900": text,
-    "--paper-200": background,
-    "--moss-700": accent,
+    "--foreground-secondary": `${text}B3`,
+    "--foreground-tertiary": `${text}80`,
   };
 }

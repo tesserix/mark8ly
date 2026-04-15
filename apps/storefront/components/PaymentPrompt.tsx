@@ -155,15 +155,15 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
   return (
     <section
       aria-labelledby="pay-now-heading"
-      className="mt-8 rounded-md border border-[color:var(--moss-700)]/30 bg-[color:var(--moss-700)]/5 px-6 py-5"
+      className="mt-8 rounded-md border border-[color:var(--storefront-accent,var(--moss-700))]/30 bg-[color:var(--storefront-accent,var(--moss-700))]/5 px-6 py-5"
     >
       <h2
         id="pay-now-heading"
-        className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--moss-700)]"
+        className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-accent,var(--moss-700))]"
       >
         Complete your payment
       </h2>
-      <p className="mt-2 text-sm text-[color:var(--ink-900)] opacity-80">
+      <p className="mt-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-80">
         Your order is reserved. Pay {pending.currencyCode} {pending.amount} now to
         confirm and start fulfillment.
       </p>
@@ -171,7 +171,7 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
         type="button"
         onClick={handlePay}
         disabled={busy}
-        className="mt-4 inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-5 py-2.5 text-sm font-medium text-[color:var(--paper-200)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-4 inline-flex items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-5 py-2.5 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Opening…" : "Pay now"}
       </button>

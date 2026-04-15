@@ -1,6 +1,7 @@
 import { AdminPage, ReadOnlyNotice } from "@/components/layout";
 import { StorefrontThemeForm } from "@/components/settings/StorefrontThemeForm";
 import { BrandingSettingsClient } from "@/components/settings/BrandingSettingsClient";
+import { PagesList } from "@/components/settings/PagesList";
 import {
   canEditSettings,
   getServerSessionContext,
@@ -30,8 +31,8 @@ export default async function ThemesSettingsPage() {
   return (
           <AdminPage
         eyebrow="Store"
-        title="Themes & branding"
-        description="Define your store identity, color palette, typography, layout, and footer. Changes are reflected on your live storefront immediately."
+        title="Branding"
+        description="Identity, theme, homepage, pages, footer, and advanced options for your storefront. Changes are reflected on your live storefront immediately."
         readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
       >
         {currentStore && branding ? (
@@ -48,6 +49,7 @@ export default async function ThemesSettingsPage() {
             themeContent={
               <StorefrontThemeForm store={currentStore} editable={editable} />
             }
+            pagesContent={<PagesList pages={pages} canManage={editable} />}
           />
         ) : currentStore ? (
           <StorefrontThemeForm store={currentStore} editable={editable} />

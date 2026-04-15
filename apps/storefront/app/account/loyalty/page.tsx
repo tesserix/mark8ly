@@ -24,10 +24,10 @@ export default async function LoyaltyAccountPage() {
   if (!program || !program.is_active) {
     return (
       <div className="space-y-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           Loyalty
         </h1>
-        <p className="text-sm text-[color:var(--ink-900)] opacity-50">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           Loyalty program is not available for this store.
         </p>
       </div>
@@ -37,10 +37,10 @@ export default async function LoyaltyAccountPage() {
   if (!session) {
     return (
       <div className="space-y-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           Loyalty
         </h1>
-        <p className="text-sm text-[color:var(--ink-900)] opacity-50">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           Please sign in to view your loyalty balance.
         </p>
       </div>
@@ -55,7 +55,7 @@ export default async function LoyaltyAccountPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
         Loyalty
       </h1>
       <LoyaltyDashboard

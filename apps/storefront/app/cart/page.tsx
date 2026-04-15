@@ -15,10 +15,10 @@ export default function CartPage() {
   const { items, updateQty, remove, subtotal, count, clear } = useCart();
 
   return (
-    <div className="min-h-screen bg-[color:var(--paper-200)]">
+    <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <StorefrontNav />
       <main id="main" className="mx-auto max-w-3xl px-6 py-12 sm:px-8">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
+        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
           Cart
         </h1>
 
@@ -26,7 +26,7 @@ export default function CartPage() {
           <EmptyCart />
         ) : (
           <>
-            <ul className="mt-8 divide-y divide-[color:var(--ink-900)]/10">
+            <ul className="mt-8 divide-y divide-[color:var(--storefront-text,var(--ink-900))]/10">
               {items.map((item) => (
                 <CartRow
                   key={`${item.productId}-${item.variantId}`}
@@ -39,13 +39,13 @@ export default function CartPage() {
               ))}
             </ul>
 
-            <footer className="mt-8 border-t border-[color:var(--ink-900)]/10 pt-6">
+            <footer className="mt-8 border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6">
               <div aria-live="polite" className="flex items-baseline justify-between">
-                <p className="text-sm text-[color:var(--ink-900)] opacity-60">
+                <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
                   {count} {count === 1 ? "item" : "items"}
                 </p>
                 <p
-                  className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-[color:var(--ink-900)]"
+                  className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-[color:var(--storefront-text,var(--ink-900))]"
                   style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
                 >
                   {formatSubtotal(subtotal, items[0]?.currencyCode ?? "USD")}
@@ -55,14 +55,14 @@ export default function CartPage() {
               <div className="mt-6 flex items-center gap-4">
                 <Link
                   href="/checkout"
-                  className="rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-[color:var(--paper-200)] transition-all duration-150 hover:opacity-90 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  className="rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-all duration-150 hover:opacity-90 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
                 >
                   Checkout
                 </Link>
                 <button
                   type="button"
                   onClick={clear}
-                  className="text-sm text-[color:var(--ink-900)] opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
                 >
                   Clear cart
                 </button>
@@ -82,12 +82,12 @@ export default function CartPage() {
 function EmptyCart() {
   return (
     <div className="mt-12 text-center">
-      <p className="text-lg text-[color:var(--ink-900)] opacity-60">
+      <p className="text-lg text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
         Your cart is empty.
       </p>
       <Link
         href="/products"
-        className="mt-4 inline-block text-sm font-semibold text-[color:var(--moss-700)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        className="mt-4 inline-block text-sm font-semibold text-[color:var(--storefront-accent,var(--moss-700))] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       >
         Continue shopping →
       </Link>
@@ -116,7 +116,7 @@ function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
   return (
     <li className="flex gap-4 py-6">
       {item.imageUrl ? (
-        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md bg-[color:var(--paper-200)]">
+        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]">
           <Image
             src={item.imageUrl}
             alt={item.title}
@@ -126,19 +126,19 @@ function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
           />
         </div>
       ) : (
-        <div className="h-20 w-20 shrink-0 rounded-md bg-[color:var(--paper-200)]" />
+        <div className="h-20 w-20 shrink-0 rounded-md bg-[color:var(--storefront-background,var(--paper-200))]" />
       )}
 
       <div className="flex flex-1 flex-col justify-between">
         <div className="flex items-start justify-between">
           <Link
             href={`/products/${item.handle}`}
-            className="text-sm font-medium text-[color:var(--ink-900)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
           >
             {item.title}
           </Link>
           <p
-            className="text-sm text-[color:var(--ink-900)]"
+            className="text-sm text-[color:var(--storefront-text,var(--ink-900))]"
             style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
           >
             {formatSubtotal(lineTotal, item.currencyCode)}
@@ -149,13 +149,13 @@ function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
           <label className="sr-only" htmlFor={`qty-${item.variantId}`}>
             Quantity for {item.title}
           </label>
-          <div className="flex items-center rounded-md border border-[color:var(--ink-900)]/15">
+          <div className="flex items-center rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15">
             <button
               type="button"
               disabled={item.qty <= 1}
               onClick={() => onQtyChange(item.qty - 1)}
               aria-label={`Decrease quantity of ${item.title}`}
-              className="px-2 py-1 text-sm text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="px-2 py-1 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60 transition-opacity hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
             >
               −
             </button>
@@ -169,13 +169,13 @@ function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
                 const n = Number.parseInt(e.target.value, 10);
                 if (Number.isFinite(n) && n > 0) onQtyChange(n);
               }}
-              className="w-10 bg-transparent text-center text-sm text-[color:var(--ink-900)] [appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              className="w-10 bg-transparent text-center text-sm text-[color:var(--storefront-text,var(--ink-900))] [appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
             <button
               type="button"
               onClick={() => onQtyChange(item.qty + 1)}
               aria-label={`Increase quantity of ${item.title}`}
-              className="px-2 py-1 text-sm text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="px-2 py-1 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
             >
               +
             </button>
@@ -184,7 +184,7 @@ function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
           <button
             type="button"
             onClick={onRemove}
-            className="text-xs text-[color:var(--ink-900)] opacity-40 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-40 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
           >
             Remove
           </button>

@@ -22,15 +22,15 @@ export async function FeaturedProducts({ storeSlug, max = 8 }: FeaturedProductsP
   return (
     <section
       aria-label="Featured products"
-      className="mt-16 border-t border-[color:var(--ink-900)] border-opacity-10 pt-12"
+      className="mt-16 border-t border-[color:var(--storefront-text,var(--ink-900))] border-opacity-10 pt-12"
     >
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
+        <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
           Featured
         </h2>
         <Link
           href="/products"
-          className="text-sm text-[color:var(--moss-700)] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="text-sm text-[color:var(--storefront-accent,var(--moss-700))] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         >
           Shop all →
         </Link>
@@ -63,9 +63,9 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
     <li>
       <Link
         href={`/products/${encodeURIComponent(product.handle)}`}
-        className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       >
-        <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]">
+        <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]">
           {cover ? (
             <Image
               src={cover.url}
@@ -75,17 +75,17 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
               className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-[10px] uppercase tracking-widest text-[color:var(--ink-900)] opacity-30">
+            <div className="flex h-full w-full items-center justify-center text-[10px] uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-30">
               No image
             </div>
           )}
         </div>
         <div className="mt-3 flex items-start justify-between gap-2">
-          <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm text-[color:var(--ink-900)] group-hover:underline">
+          <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm text-[color:var(--storefront-text,var(--ink-900))] group-hover:underline">
             {product.title}
           </h3>
           <span
-            className="text-xs text-[color:var(--ink-900)] opacity-80"
+            className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-80"
             style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
           >
             {isRange ? `from ${min}` : min}
@@ -100,13 +100,13 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
 function FeaturedStockBadge({ tone, text }: { tone: "ok" | "warn" | "danger"; text: string }) {
   const toneClass =
     tone === "ok"
-      ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
+      ? "bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]"
       : tone === "warn"
         ? "bg-amber-50 text-amber-700"
         : "bg-red-50 text-red-700";
   const dotClass =
     tone === "ok"
-      ? "bg-[color:var(--moss-700)]"
+      ? "bg-[color:var(--storefront-accent,var(--moss-700))]"
       : tone === "warn"
         ? "bg-amber-500"
         : "bg-red-500";

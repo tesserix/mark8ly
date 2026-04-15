@@ -209,27 +209,27 @@ export function AddressBook() {
   }
 
   if (!loaded) {
-    return <p className="text-sm text-[color:var(--ink-900)] opacity-50">Loading…</p>;
+    return <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">Loading…</p>;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm text-[color:var(--ink-900)] opacity-70">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
           {addresses.length}/{MAX_ADDRESSES} saved
         </p>
         <button
           type="button"
           onClick={startAdd}
           disabled={addresses.length >= MAX_ADDRESSES}
-          className="rounded-md border border-[color:var(--ink-900)]/15 bg-white px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-4 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] transition-colors hover:border-[color:var(--storefront-accent,var(--moss-700))] hover:text-[color:var(--storefront-accent,var(--moss-700))] disabled:cursor-not-allowed disabled:opacity-40"
         >
           + Add address
         </button>
       </div>
 
       {addresses.length === 0 && !showForm && (
-        <p className="text-sm text-[color:var(--ink-900)] opacity-60">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           Your saved addresses will appear here.
         </p>
       )}
@@ -238,22 +238,22 @@ export function AddressBook() {
         {addresses.map((a) => (
           <li
             key={a.id}
-            className="rounded-md border border-[color:var(--ink-900)]/10 bg-white p-4"
+            className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-white p-4"
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="flex items-center gap-2 text-sm font-semibold text-[color:var(--ink-900)]">
-                <span className="grid h-7 w-7 place-items-center rounded-full bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[color:var(--storefront-text,var(--ink-900))]">
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]">
                   <LabelIcon label={a.label || "Home"} />
                 </span>
                 {a.label || "Home"}
                 {a.is_default && (
-                  <span className="ml-1 rounded-full bg-[color:var(--moss-700)]/10 px-2 py-0.5 text-[11px] font-medium text-[color:var(--moss-700)]">
+                  <span className="ml-1 rounded-full bg-[color:var(--storefront-accent,var(--moss-700))]/10 px-2 py-0.5 text-[11px] font-medium text-[color:var(--storefront-accent,var(--moss-700))]">
                     Default
                   </span>
                 )}
               </p>
             </div>
-            <address className="mt-2 text-sm not-italic leading-relaxed text-[color:var(--ink-900)] opacity-80">
+            <address className="mt-2 text-sm not-italic leading-relaxed text-[color:var(--storefront-text,var(--ink-900))] opacity-80">
               {a.name}
               <br />
               {a.line1}
@@ -270,7 +270,7 @@ export function AddressBook() {
               <button
                 type="button"
                 onClick={() => startEdit(a)}
-                className="text-[color:var(--moss-700)] underline-offset-2 hover:underline"
+                className="text-[color:var(--storefront-accent,var(--moss-700))] underline-offset-2 hover:underline"
               >
                 Edit
               </button>
@@ -278,7 +278,7 @@ export function AddressBook() {
                 <button
                   type="button"
                   onClick={() => void setDefault(a)}
-                  className="text-[color:var(--ink-900)] opacity-70 underline-offset-2 hover:underline hover:opacity-100"
+                  className="text-[color:var(--storefront-text,var(--ink-900))] opacity-70 underline-offset-2 hover:underline hover:opacity-100"
                 >
                   Set as default
                 </button>
@@ -298,13 +298,13 @@ export function AddressBook() {
       {showForm && (
         <form
           onSubmit={save}
-          className="space-y-4 rounded-md border border-[color:var(--ink-900)]/15 bg-white p-5"
+          className="space-y-4 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white p-5"
         >
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-[color:var(--ink-900)] opacity-70">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
             {form.id ? "Edit address" : "Add address"}
           </h3>
           <div>
-            <label className="mb-1 block text-xs text-[color:var(--ink-900)] opacity-70">
+            <label className="mb-1 block text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
               Label
             </label>
             <div className="flex flex-wrap gap-2">
@@ -315,8 +315,8 @@ export function AddressBook() {
                   onClick={() => setForm({ ...form, label: l })}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
                     form.label === l
-                      ? "border-[color:var(--moss-700)] bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
-                      : "border-[color:var(--ink-900)]/15 text-[color:var(--ink-900)] opacity-70 hover:opacity-100"
+                      ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]"
+                      : "border-[color:var(--storefront-text,var(--ink-900))]/15 text-[color:var(--storefront-text,var(--ink-900))] opacity-70 hover:opacity-100"
                   }`}
                 >
                   <LabelIcon label={l} className="h-3.5 w-3.5" />
@@ -395,7 +395,7 @@ export function AddressBook() {
               type="checkbox"
               checked={form.is_default}
               onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
-              className="h-4 w-4 accent-[color:var(--moss-700)]"
+              className="h-4 w-4 accent-[color:var(--storefront-accent,var(--moss-700))]"
             />
             Set as default shipping address
           </label>
@@ -403,14 +403,14 @@ export function AddressBook() {
             <button
               type="submit"
               disabled={saving}
-              className="rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-[color:var(--storefront-accent,var(--moss-700))] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? "Saving…" : form.id ? "Update address" : "Save address"}
             </button>
             <button
               type="button"
               onClick={() => setShowForm(false)}
-              className="text-sm text-[color:var(--ink-900)] opacity-70 hover:opacity-100"
+              className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-70 hover:opacity-100"
             >
               Cancel
             </button>
@@ -422,12 +422,12 @@ export function AddressBook() {
 }
 
 const inputClass =
-  "w-full rounded-md border border-[color:var(--ink-900)]/15 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]";
+  "w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs text-[color:var(--ink-900)] opacity-70">
+      <span className="mb-1 block text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
         {label}
       </span>
       {children}

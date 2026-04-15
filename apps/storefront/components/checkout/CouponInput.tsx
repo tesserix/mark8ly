@@ -90,7 +90,7 @@ export function CouponInput({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-sm text-moss-700 underline-offset-2 hover:underline"
+        className="text-sm text-[color:var(--storefront-accent,theme(colors.moss.700))] underline-offset-2 hover:underline"
       >
         Have a promo code?
       </button>
@@ -101,7 +101,7 @@ export function CouponInput({
     return (
       <div className="flex items-center justify-between rounded-md border border-moss-200 bg-moss-50 px-3 py-2">
         <div className="text-sm">
-          <span className="font-mono font-medium text-moss-700">
+          <span className="font-mono font-medium text-[color:var(--storefront-accent,theme(colors.moss.700))]">
             {applied.code}
           </span>
           <span className="ml-2 text-ink-500">

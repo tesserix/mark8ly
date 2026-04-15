@@ -23,10 +23,10 @@ export default async function AccountDashboardPage() {
   if (!session) {
     return (
       <div className="space-y-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           My Account
         </h1>
-        <p className="text-sm text-[color:var(--ink-900)] opacity-50">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           Please sign in to view your account.
         </p>
       </div>
@@ -35,11 +35,11 @@ export default async function AccountDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
         My Account
       </h1>
 
-      <div className="border-t border-[color:var(--ink-900)]/10 pt-6">
+      <div className="border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6">
         <ProfileForm email={session.email} />
       </div>
     </div>

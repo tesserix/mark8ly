@@ -110,10 +110,10 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
   if (success) {
     return (
       <div
-        className="rounded-md border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-5 py-4"
+        className="rounded-md border border-[color:var(--storefront-accent,var(--moss-700))]/20 bg-[color:var(--storefront-accent,var(--moss-700))]/5 px-5 py-4"
         role="status"
       >
-        <p className="text-sm leading-6 text-[color:var(--ink-900)]">
+        <p className="text-sm leading-6 text-[color:var(--storefront-text,var(--ink-900))]">
           Thank you for your review. It will appear after moderation.
         </p>
       </div>
@@ -124,13 +124,13 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl text-[color:var(--ink-900)]">
+      <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl text-[color:var(--storefront-text,var(--ink-900))]">
         Write a review
       </h3>
 
       {/* Star rating */}
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60">
+        <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           Rating
         </legend>
         <div
@@ -147,9 +147,9 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
               onMouseEnter={() => setHoveredRating(star)}
               className={`cursor-pointer transition-colors ${
                 star <= activeRating
-                  ? "text-[color:var(--ink-900)]"
-                  : "text-[color:var(--ink-900)]/20"
-              } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]`}
+                  ? "text-[color:var(--storefront-text,var(--ink-900))]"
+                  : "text-[color:var(--storefront-text,var(--ink-900))]/20"
+              } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]`}
               role="radio"
               aria-checked={star === rating}
               aria-label={`${star} star${star !== 1 ? "s" : ""}`}
@@ -162,7 +162,7 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
 
       {/* Title (optional) */}
       <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60">
+        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           Title{" "}
           <span className="normal-case tracking-normal opacity-60">
             (optional)
@@ -174,13 +174,13 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
           onChange={(e) => setTitle(e.target.value)}
           maxLength={MAX_TITLE_LENGTH}
           placeholder="Summarise your experience"
-          className="rounded-md border border-[color:var(--ink-900)]/15 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+          className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
         />
       </label>
 
       {/* Content (required) */}
       <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60">
+        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           Review
         </span>
         <textarea
@@ -190,7 +190,7 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
           rows={4}
           required
           placeholder="Share details of your experience with this product"
-          className="resize-y rounded-md border border-[color:var(--ink-900)]/15 bg-white px-3 py-2 text-sm leading-6 text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+          className="resize-y rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm leading-6 text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
         />
       </label>
 
@@ -204,7 +204,7 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
       <button
         type="submit"
         disabled={isPending}
-        className="self-start rounded-md bg-[color:var(--ink-900)] px-6 py-2.5 text-sm font-semibold text-[color:var(--paper-200)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
+        className="self-start rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-2.5 text-sm font-semibold text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] disabled:opacity-40"
       >
         {isPending ? "Submitting..." : "Submit review"}
       </button>

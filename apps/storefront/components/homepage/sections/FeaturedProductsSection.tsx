@@ -77,7 +77,7 @@ export async function FeaturedProductsSection({
             ) : (
               <div className="aspect-square w-full rounded-md bg-muted" />
             )}
-            <p className="mt-3 font-serif text-base text-foreground transition-colors group-hover:text-moss-700">
+            <p className="mt-3 font-serif text-base text-foreground transition-colors group-hover:text-[color:var(--storefront-accent,theme(colors.moss.700))]">
               {p.title}
             </p>
           </Link>

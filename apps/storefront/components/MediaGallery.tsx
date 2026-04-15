@@ -32,8 +32,8 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
 
   if (media.length === 0) {
     return (
-      <div className="aspect-square rounded-md bg-[color:var(--paper-200)] flex items-center justify-center">
-        <span className="text-xs uppercase tracking-widest text-[color:var(--ink-900)] opacity-30">
+      <div className="aspect-square rounded-md bg-[color:var(--storefront-background,var(--paper-200))] flex items-center justify-center">
+        <span className="text-xs uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-30">
           No image
         </span>
       </div>
@@ -44,7 +44,7 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
     <div className="flex flex-col gap-3">
       {/* Main image — cross-fades between all images on an auto cycle */}
       <div
-        className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]"
+        className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]"
         onMouseEnter={() => (pausedRef.current = true)}
         onMouseLeave={() => (pausedRef.current = false)}
       >
@@ -64,7 +64,7 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
         ))}
         {media.length > 1 && (
           <p
-            className="absolute bottom-3 right-3 rounded-full bg-[color:var(--ink-900)]/60 px-2.5 py-1 text-xs text-[color:var(--paper-200)]"
+            className="absolute bottom-3 right-3 rounded-full bg-[color:var(--storefront-accent,var(--ink-900))]/60 px-2.5 py-1 text-xs text-[color:var(--storefront-on-accent,var(--paper-200))]"
             style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
           >
             {activeIndex + 1} / {media.length}
@@ -88,9 +88,9 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
               onClick={() => setActiveIndex(i)}
               className={[
                 "relative h-16 w-16 shrink-0 overflow-hidden rounded-md transition-all duration-150",
-                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
                 i === activeIndex
-                  ? "ring-2 ring-[color:var(--ink-900)]"
+                  ? "ring-2 ring-[color:var(--storefront-text,var(--ink-900))]"
                   : "opacity-50 hover:opacity-100",
               ].join(" ")}
             >

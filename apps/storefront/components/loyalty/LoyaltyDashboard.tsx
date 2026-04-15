@@ -41,14 +41,14 @@ export function LoyaltyDashboard({
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-500">
               Your {program.points_currency}
             </p>
-            <p className="mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium text-[color:var(--ink-900)]">
+            <p className="mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
               {customer.points_balance.toLocaleString()}
             </p>
             <p className="mt-0.5 text-xs text-ink-500">
               Lifetime: {customer.lifetime_points.toLocaleString()}
             </p>
           </div>
-          <span className="inline-block rounded-md bg-[color:var(--moss-700)]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--moss-700)]">
+          <span className="inline-block rounded-md bg-[color:var(--storefront-accent,var(--moss-700))]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--storefront-accent,var(--moss-700))]">
             {customer.tier}
           </span>
         </div>
@@ -74,11 +74,11 @@ export function LoyaltyDashboard({
                 key={tier.name}
                 className={`flex items-center justify-between rounded-[6px] px-4 py-2.5 ${
                   customer.tier === tier.name.toLowerCase()
-                    ? "border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5"
-                    : "bg-[color:var(--paper-200)]"
+                    ? "border border-[color:var(--storefront-accent,var(--moss-700))]/20 bg-[color:var(--storefront-accent,var(--moss-700))]/5"
+                    : "bg-[color:var(--storefront-background,var(--paper-200))]"
                 }`}
               >
-                <span className="text-sm font-medium text-[color:var(--ink-900)]">
+                <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                   {tier.name}
                 </span>
                 <span className="text-xs text-ink-500">
@@ -135,13 +135,13 @@ function ReferralCard({
       </h3>
 
       <div className="flex items-center gap-3">
-        <code className="rounded-md bg-[color:var(--paper-200)] px-3 py-1.5 font-mono text-sm font-medium text-[color:var(--ink-900)]">
+        <code className="rounded-md bg-[color:var(--storefront-background,var(--paper-200))] px-3 py-1.5 font-mono text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           {code}
         </code>
         <button
           type="button"
           onClick={() => copy(code, "code")}
-          className="rounded-[6px] px-3 py-1.5 text-xs font-medium text-[color:var(--moss-700)] transition-colors hover:bg-[color:var(--moss-700)]/5"
+          className="rounded-[6px] px-3 py-1.5 text-xs font-medium text-[color:var(--storefront-accent,var(--moss-700))] transition-colors hover:bg-[color:var(--storefront-accent,var(--moss-700))]/5"
         >
           {copied === "code" ? "Copied" : "Copy code"}
         </button>
@@ -149,13 +149,13 @@ function ReferralCard({
 
       {shareLink && (
         <div className="flex items-center gap-3">
-          <span className="flex-1 min-w-0 truncate rounded-md bg-[color:var(--paper-200)] px-3 py-1.5 font-mono text-xs text-ink-600">
+          <span className="flex-1 min-w-0 truncate rounded-md bg-[color:var(--storefront-background,var(--paper-200))] px-3 py-1.5 font-mono text-xs text-ink-600">
             {shareLink}
           </span>
           <button
             type="button"
             onClick={() => copy(shareLink, "link")}
-            className="rounded-[6px] px-3 py-1.5 text-xs font-medium text-[color:var(--moss-700)] transition-colors hover:bg-[color:var(--moss-700)]/5"
+            className="rounded-[6px] px-3 py-1.5 text-xs font-medium text-[color:var(--storefront-accent,var(--moss-700))] transition-colors hover:bg-[color:var(--storefront-accent,var(--moss-700))]/5"
           >
             {copied === "link" ? "Copied" : "Copy link"}
           </button>

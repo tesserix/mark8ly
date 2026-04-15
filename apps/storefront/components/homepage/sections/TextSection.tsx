@@ -15,7 +15,7 @@ export function TextSection({ section }: TextSectionProps) {
           {section.heading}
         </h2>
       ) : null}
-      <Markdown className="prose mt-6 max-w-none prose-headings:font-serif prose-headings:text-foreground prose-a:text-moss-700">
+      <Markdown className="prose mt-6 max-w-none prose-headings:font-serif prose-headings:text-foreground prose-a:text-[color:var(--storefront-accent,theme(colors.moss.700))]">
         {section.markdown}
       </Markdown>
     </section>

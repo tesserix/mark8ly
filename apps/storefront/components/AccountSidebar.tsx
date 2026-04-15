@@ -33,10 +33,10 @@ export function AccountSidebar() {
             href={item.href}
             className={[
               "block rounded-[6px] px-3 py-2 text-sm transition-colors",
-              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
               isActive
-                ? "bg-[color:var(--paper-200)] font-medium text-[color:var(--ink-900)]"
-                : "text-[color:var(--ink-900)] opacity-60 hover:opacity-100 hover:bg-[color:var(--paper-200)]",
+                ? "bg-[color:var(--storefront-background,var(--paper-200))] font-medium text-[color:var(--storefront-text,var(--ink-900))]"
+                : "text-[color:var(--storefront-text,var(--ink-900))] opacity-60 hover:opacity-100 hover:bg-[color:var(--storefront-background,var(--paper-200))]",
             ].join(" ")}
             aria-current={isActive ? "page" : undefined}
           >

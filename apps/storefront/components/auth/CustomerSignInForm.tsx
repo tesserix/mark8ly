@@ -133,7 +133,7 @@ export function CustomerSignInForm({
       <div className="space-y-1.5">
         <label
           htmlFor="customer-email"
-          className="block text-sm font-medium text-[color:var(--ink-900)]"
+          className="block text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]"
         >
           Email address
         </label>
@@ -144,14 +144,14 @@ export function CustomerSignInForm({
           spellCheck={false}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-md border border-[color:var(--ink-900)]/20 bg-white px-3 py-2.5 text-base text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-white px-3 py-2.5 text-base text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         />
       </div>
 
       <div className="space-y-1.5">
         <label
           htmlFor="customer-password"
-          className="block text-sm font-medium text-[color:var(--ink-900)]"
+          className="block text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]"
         >
           Password
         </label>
@@ -161,7 +161,7 @@ export function CustomerSignInForm({
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-md border border-[color:var(--ink-900)]/20 bg-white px-3 py-2.5 text-base text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-white px-3 py-2.5 text-base text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         />
       </div>
 
@@ -174,16 +174,16 @@ export function CustomerSignInForm({
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        className="w-full rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       >
         {pending ? "Signing in..." : "Sign in"}
       </button>
 
-      <p className="text-center text-xs text-[color:var(--ink-900)] opacity-60">
+      <p className="text-center text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
         Don&apos;t have an account?{" "}
         <Link
           href="/create-account"
-          className="text-[color:var(--moss-700)] underline underline-offset-4"
+          className="text-[color:var(--storefront-accent,var(--moss-700))] underline underline-offset-4"
         >
           Create one
         </Link>

@@ -3,7 +3,7 @@ import { StorefrontNav } from "@/components/StorefrontNav";
 
 export default function GiftCardsPage() {
   return (
-    <div className="min-h-screen bg-[color:var(--paper-200)]">
+    <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <StorefrontNav />
       <main id="main" className="mx-auto max-w-4xl px-6 py-16 sm:px-8">
         <header className="space-y-4">
@@ -46,7 +46,7 @@ export default function GiftCardsPage() {
                 recipient immediately after payment clears.
               </p>
             </div>
-            <span className="text-sm font-medium text-moss-700 underline-offset-4 group-hover:underline">
+            <span className="text-sm font-medium text-[color:var(--storefront-accent,theme(colors.moss.700))] underline-offset-4 group-hover:underline">
               Start purchase →
             </span>
           </Link>
@@ -67,7 +67,7 @@ export default function GiftCardsPage() {
                 left and when it expires.
               </p>
             </div>
-            <span className="text-sm font-medium text-moss-700 underline-offset-4 group-hover:underline">
+            <span className="text-sm font-medium text-[color:var(--storefront-accent,theme(colors.moss.700))] underline-offset-4 group-hover:underline">
               Check balance →
             </span>
           </Link>

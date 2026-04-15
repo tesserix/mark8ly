@@ -40,7 +40,7 @@ export default async function AccountLayout({ children }: AccountLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[color:var(--paper-200)]">
+    <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <StorefrontNav />
       <div className="mx-auto max-w-4xl px-4 py-12">
         {/* Mobile nav - horizontal scroll */}

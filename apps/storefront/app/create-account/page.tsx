@@ -31,17 +31,17 @@ export default async function CreateAccountPage() {
   const origin = host ? `${protocol}://${host}` : "";
 
   return (
-    <div className="min-h-screen bg-[color:var(--paper-200)]">
+    <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <StorefrontNav storeName={store?.name} />
       <main id="main" className="mx-auto max-w-md px-6 py-16 sm:px-8 sm:py-24">
         <header className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[color:var(--ink-900)] opacity-55">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[color:var(--storefront-text,var(--ink-900))] opacity-55">
             {store?.name ?? "Store"}
           </p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-[color:var(--ink-900)]">
+          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
             Create account
           </h1>
-          <p className="text-sm leading-6 text-[color:var(--ink-900)] opacity-70">
+          <p className="text-sm leading-6 text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
             Create an account to track orders, save addresses, and earn loyalty
             rewards.
           </p>

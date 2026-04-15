@@ -19,11 +19,11 @@ export default async function GiftCardPurchaseSuccessPage({
   const { session_id } = await searchParams;
 
   return (
-    <div className="min-h-screen bg-[color:var(--paper-200)]">
+    <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <StorefrontNav />
       <main id="main" className="mx-auto max-w-2xl px-6 py-20 sm:px-8">
         <header className="space-y-4">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-moss-700">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-[color:var(--storefront-accent,theme(colors.moss.700))]">
             Payment received
           </p>
           <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium tracking-tight text-ink-900">

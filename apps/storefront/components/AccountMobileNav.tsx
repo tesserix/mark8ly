@@ -22,7 +22,7 @@ export function AccountMobileNav() {
 
   return (
     <nav
-      className="flex gap-2 overflow-x-auto border-b border-[color:var(--ink-900)]/10 pb-3 md:hidden"
+      className="flex gap-2 overflow-x-auto border-b border-[color:var(--storefront-text,var(--ink-900))]/10 pb-3 md:hidden"
       aria-label="Account"
     >
       {NAV_ITEMS.map((item) => {
@@ -37,10 +37,10 @@ export function AccountMobileNav() {
             href={item.href}
             className={[
               "shrink-0 rounded-[6px] px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
-              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
               isActive
-                ? "bg-[color:var(--paper-200)] font-medium text-[color:var(--ink-900)]"
-                : "text-[color:var(--ink-900)] opacity-60 hover:opacity-100 hover:bg-[color:var(--paper-200)]",
+                ? "bg-[color:var(--storefront-background,var(--paper-200))] font-medium text-[color:var(--storefront-text,var(--ink-900))]"
+                : "text-[color:var(--storefront-text,var(--ink-900))] opacity-60 hover:opacity-100 hover:bg-[color:var(--storefront-background,var(--paper-200))]",
             ].join(" ")}
             aria-current={isActive ? "page" : undefined}
           >

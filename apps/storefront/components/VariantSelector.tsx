@@ -97,7 +97,7 @@ export function VariantSelector({
     <div className="flex flex-col gap-5">
       {options.map((opt) => (
         <fieldset key={opt.name} className="flex flex-col gap-2">
-          <legend className="text-xs font-semibold uppercase tracking-widest text-[color:var(--ink-900)] opacity-60">
+          <legend className="text-xs font-semibold uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
             {opt.name}
             {selected[opt.name] && (
               <span className="ml-2 normal-case tracking-normal opacity-80">
@@ -118,12 +118,12 @@ export function VariantSelector({
                   aria-pressed={isSelected}
                   className={[
                     "rounded-md border px-4 py-2 text-sm transition-all duration-150",
-                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]",
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
                     isSelected
-                      ? "border-[color:var(--ink-900)] bg-[color:var(--ink-900)] text-[color:var(--paper-200)] scale-[1.02]"
+                      ? "border-[color:var(--storefront-text,var(--ink-900))] bg-[color:var(--storefront-accent,var(--ink-900))] text-[color:var(--storefront-on-accent,var(--paper-200))] scale-[1.02]"
                       : available
-                        ? "border-[color:var(--ink-900)]/20 text-[color:var(--ink-900)] hover:border-[color:var(--ink-900)]/50 active:scale-95"
-                        : "border-[color:var(--ink-900)]/10 text-[color:var(--ink-900)] opacity-30 line-through cursor-not-allowed",
+                        ? "border-[color:var(--storefront-text,var(--ink-900))]/20 text-[color:var(--storefront-text,var(--ink-900))] hover:border-[color:var(--storefront-text,var(--ink-900))]/50 active:scale-95"
+                        : "border-[color:var(--storefront-text,var(--ink-900))]/10 text-[color:var(--storefront-text,var(--ink-900))] opacity-30 line-through cursor-not-allowed",
                   ].join(" ")}
                 >
                   {v.value}

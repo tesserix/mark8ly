@@ -412,19 +412,19 @@ export default function CheckoutPage() {
 
   if (items.length === 0 && !submitting) {
     return (
-      <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
+      <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
         <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
           <StorefrontNav storeName="" />
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
+          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
             Checkout
           </h1>
           <div className="mt-12 text-center">
-            <p className="text-lg text-[color:var(--ink-900)] opacity-60">
+            <p className="text-lg text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
               Your cart is empty.
             </p>
             <Link
               href="/products"
-              className="mt-4 inline-block text-sm font-semibold text-[color:var(--moss-700)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="mt-4 inline-block text-sm font-semibold text-[color:var(--storefront-accent,var(--moss-700))] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
             >
               Continue shopping
             </Link>
@@ -435,16 +435,16 @@ export default function CheckoutPage() {
   }
 
   return (
-    <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
+    <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName="" />
         <Link
           href="/cart"
-          className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         >
           ← Back to cart
         </Link>
-        <h1 className="mt-4 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
+        <h1 className="mt-4 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
           Checkout
         </h1>
 
@@ -460,11 +460,11 @@ export default function CheckoutPage() {
         <section aria-labelledby="order-summary-heading" className="mt-8">
           <h2
             id="order-summary-heading"
-            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60"
+            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
           >
             Order summary
           </h2>
-          <ul className="mt-4 divide-y divide-[color:var(--ink-900)]/10">
+          <ul className="mt-4 divide-y divide-[color:var(--storefront-text,var(--ink-900))]/10">
             {items.map((item) => {
               const lineTotal = Number.parseFloat(item.priceAmount) * item.qty;
               return (
@@ -473,7 +473,7 @@ export default function CheckoutPage() {
                   className="flex gap-4 py-4"
                 >
                   {item.imageUrl ? (
-                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-[color:var(--paper-200)]">
+                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]">
                       <Image
                         src={item.imageUrl}
                         alt={item.title}
@@ -483,19 +483,19 @@ export default function CheckoutPage() {
                       />
                     </div>
                   ) : (
-                    <div className="h-16 w-16 shrink-0 rounded-md bg-[color:var(--ink-900)]/5" />
+                    <div className="h-16 w-16 shrink-0 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))]/5" />
                   )}
                   <div className="flex flex-1 items-start justify-between">
                     <div>
-                      <p className="text-sm font-medium text-[color:var(--ink-900)]">
+                      <p className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                         {item.title}
                       </p>
-                      <p className="mt-0.5 text-xs text-[color:var(--ink-900)] opacity-50">
+                      <p className="mt-0.5 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
                         Qty {item.qty}
                       </p>
                     </div>
                     <p
-                      className="text-sm text-[color:var(--ink-900)]"
+                      className="text-sm text-[color:var(--storefront-text,var(--ink-900))]"
                       style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
                     >
                       {formatPrice(lineTotal, item.currencyCode)}
@@ -547,13 +547,13 @@ export default function CheckoutPage() {
         <section aria-labelledby="contact-heading" className="mt-10">
           <h2
             id="contact-heading"
-            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60"
+            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
           >
             Contact
           </h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label htmlFor="email" className="block text-sm text-[color:var(--ink-900)]">
+              <label htmlFor="email" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
                 Email address
               </label>
               <input
@@ -563,12 +563,12 @@ export default function CheckoutPage() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-md border border-[color:var(--ink-900)]/15 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                className="mt-1 w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
                 placeholder="you@example.com"
               />
             </div>
             <div className="sm:col-span-2">
-              <label htmlFor="customer-name" className="block text-sm text-[color:var(--ink-900)]">
+              <label htmlFor="customer-name" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
                 Full name
               </label>
               <input
@@ -577,7 +577,7 @@ export default function CheckoutPage() {
                 autoComplete="name"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="mt-1 w-full rounded-md border border-[color:var(--ink-900)]/15 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                className="mt-1 w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
                 placeholder="Jane Doe"
               />
             </div>
@@ -588,20 +588,20 @@ export default function CheckoutPage() {
         <section aria-labelledby="shipping-heading" className="mt-10">
           <h2
             id="shipping-heading"
-            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60"
+            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
           >
             Shipping address
           </h2>
           <AddressForm address={address} onChange={setAddress} />
 
           {canOfferSave && (
-            <div className="mt-4 rounded-md border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-3">
-              <label className="flex flex-wrap items-center gap-3 text-sm text-[color:var(--ink-900)]">
+            <div className="mt-4 rounded-md border border-[color:var(--storefront-accent,var(--moss-700))]/20 bg-[color:var(--storefront-accent,var(--moss-700))]/5 px-4 py-3">
+              <label className="flex flex-wrap items-center gap-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]">
                 <input
                   type="checkbox"
                   checked={saveAddress}
                   onChange={(e) => setSaveAddress(e.target.checked)}
-                  className="h-4 w-4 accent-[color:var(--moss-700)]"
+                  className="h-4 w-4 accent-[color:var(--storefront-accent,var(--moss-700))]"
                 />
                 <span>Save this address to my profile as</span>
                 <select
@@ -610,7 +610,7 @@ export default function CheckoutPage() {
                     setSaveAddressLabel(e.target.value as "Home" | "Office" | "Other")
                   }
                   disabled={!saveAddress}
-                  className="rounded-md border border-[color:var(--ink-900)]/15 bg-white px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
+                  className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] disabled:opacity-40"
                 >
                   <option value="Home">Home</option>
                   <option value="Office">Office</option>
@@ -620,7 +620,7 @@ export default function CheckoutPage() {
             </div>
           )}
           {addressAlreadySaved && (
-            <p className="mt-3 text-xs text-[color:var(--ink-900)] opacity-60">
+            <p className="mt-3 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
               This address is already in your address book.
             </p>
           )}
@@ -630,18 +630,18 @@ export default function CheckoutPage() {
         <section aria-labelledby="shipping-method-heading" className="mt-10">
           <h2
             id="shipping-method-heading"
-            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60"
+            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
           >
             Shipping method
           </h2>
           <div aria-live="polite" aria-atomic="true">
           {!isAddressFilled(address) ? (
             <div className="mt-4 space-y-2">
-              <p className="text-sm text-[color:var(--ink-900)] opacity-60">
+              <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
                 Enter your shipping address above to see live rates.
               </p>
               {shippingOptions.length > 0 && (
-                <div className="rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-4 py-3 text-xs text-[color:var(--ink-900)] opacity-80">
+                <div className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-background,var(--paper-200))] px-4 py-3 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-80">
                   <p className="mb-1 font-semibold uppercase tracking-wider opacity-70">
                     This store ships via
                   </p>
@@ -662,7 +662,7 @@ export default function CheckoutPage() {
               )}
             </div>
           ) : loadingRates ? (
-            <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-40">
+            <p className="mt-4 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-40">
               Loading shipping rates...
             </p>
           ) : shippingRates.length === 0 ? (
@@ -679,8 +679,8 @@ export default function CheckoutPage() {
                     key={rate.service}
                     className={`flex cursor-pointer items-center justify-between rounded-md border px-4 py-3 transition-all duration-150 ${
                       selectedShipping === rate.service
-                        ? "border-[color:var(--moss-700)] bg-[color:var(--moss-700)]/5"
-                        : "border-[color:var(--ink-900)]/15 hover:border-[color:var(--ink-900)]/30"
+                        ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/5"
+                        : "border-[color:var(--storefront-text,var(--ink-900))]/15 hover:border-[color:var(--storefront-text,var(--ink-900))]/30"
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -690,19 +690,19 @@ export default function CheckoutPage() {
                         value={rate.service}
                         checked={selectedShipping === rate.service}
                         onChange={() => setSelectedShipping(rate.service)}
-                        className="accent-[color:var(--moss-700)]"
+                        className="accent-[color:var(--storefront-accent,var(--moss-700))]"
                       />
                       <div>
-                        <p className="text-sm font-medium text-[color:var(--ink-900)]">
+                        <p className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                           {humanizeService(rate.service)}
                         </p>
-                        <p className="text-xs text-[color:var(--ink-900)] opacity-50">
+                        <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
                           Est. {rate.estimated_days} business day{rate.estimated_days !== 1 ? "s" : ""}
                         </p>
                       </div>
                     </div>
                     <span
-                      className="text-sm text-[color:var(--ink-900)]"
+                      className="text-sm text-[color:var(--storefront-text,var(--ink-900))]"
                       style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
                     >
                       {formatPrice(Number.parseFloat(rate.price), rate.currency_code)}
@@ -719,12 +719,12 @@ export default function CheckoutPage() {
         <section aria-labelledby="payment-heading" className="mt-10">
           <h2
             id="payment-heading"
-            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60"
+            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
           >
             Payment
           </h2>
           {paymentMethods.length === 0 ? (
-            <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-40">
+            <p className="mt-4 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-40">
               Payment methods are being loaded. If this persists, please refresh the page.
             </p>
           ) : (
@@ -736,8 +736,8 @@ export default function CheckoutPage() {
                     key={pm.provider}
                     className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 transition-all duration-150 ${
                       selectedProvider === pm.provider
-                        ? "border-[color:var(--moss-700)] bg-[color:var(--moss-700)]/5"
-                        : "border-[color:var(--ink-900)]/15 hover:border-[color:var(--ink-900)]/30"
+                        ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/5"
+                        : "border-[color:var(--storefront-text,var(--ink-900))]/15 hover:border-[color:var(--storefront-text,var(--ink-900))]/30"
                     }`}
                   >
                     <input
@@ -746,13 +746,13 @@ export default function CheckoutPage() {
                       value={pm.provider}
                       checked={selectedProvider === pm.provider}
                       onChange={() => setSelectedProvider(pm.provider)}
-                      className="accent-[color:var(--moss-700)]"
+                      className="accent-[color:var(--storefront-accent,var(--moss-700))]"
                     />
                     <span className="flex flex-col">
-                      <span className="text-sm font-medium text-[color:var(--ink-900)]">
+                      <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                         {providerBrand(pm.provider)}
                       </span>
-                      <span className="text-xs text-[color:var(--ink-900)] opacity-60">
+                      <span className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
                         {providerLabel(pm.provider)}
                       </span>
                     </span>
@@ -761,17 +761,17 @@ export default function CheckoutPage() {
               </div>
             </fieldset>
           )}
-          <p className="mt-3 text-xs text-[color:var(--ink-900)] opacity-40">
+          <p className="mt-3 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-40">
             Your payment is processed securely. We never store your card details.
           </p>
         </section>
 
         {/* Order totals */}
-        <section aria-labelledby="totals-heading" className="mt-10 border-t border-[color:var(--ink-900)]/10 pt-6">
+        <section aria-labelledby="totals-heading" className="mt-10 border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6">
           <h2 id="totals-heading" className="sr-only">
             Order totals
           </h2>
-          <dl aria-live="polite" className="space-y-2 text-sm text-[color:var(--ink-900)]">
+          <dl aria-live="polite" className="space-y-2 text-sm text-[color:var(--storefront-text,var(--ink-900))]">
             <div className="flex justify-between">
               <dt className="opacity-60">Subtotal ({count} {count === 1 ? "item" : "items"})</dt>
               <dd style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
@@ -791,7 +791,7 @@ export default function CheckoutPage() {
             {loyaltyDiscount > 0 && (
               <div className="flex justify-between">
                 <dt className="opacity-60">Loyalty discount</dt>
-                <dd className="text-[color:var(--moss-700)]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                <dd className="text-[color:var(--storefront-accent,var(--moss-700))]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
                   -{formatPrice(loyaltyDiscount, currencyCode)}
                 </dd>
               </div>
@@ -807,7 +807,7 @@ export default function CheckoutPage() {
             {couponDiscount > 0 && (
               <div className="flex justify-between">
                 <dt className="opacity-60">Discount</dt>
-                <dd className="text-[color:var(--moss-700)]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                <dd className="text-[color:var(--storefront-accent,var(--moss-700))]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
                   -{formatPrice(couponDiscount, currencyCode)}
                 </dd>
               </div>
@@ -815,7 +815,7 @@ export default function CheckoutPage() {
             {couponFreeShipping && (
               <div className="flex justify-between">
                 <dt className="opacity-60">Shipping</dt>
-                <dd className="text-[color:var(--moss-700)]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                <dd className="text-[color:var(--storefront-accent,var(--moss-700))]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
                   Free
                 </dd>
               </div>
@@ -823,7 +823,7 @@ export default function CheckoutPage() {
             {giftCardDeduction > 0 && (
               <div className="flex justify-between">
                 <dt className="opacity-60">Gift card</dt>
-                <dd className="text-[color:var(--moss-700)]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                <dd className="text-[color:var(--storefront-accent,var(--moss-700))]" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
                   -{formatPrice(giftCardDeduction, currencyCode)}
                 </dd>
               </div>
@@ -834,7 +834,7 @@ export default function CheckoutPage() {
                 Calculated at checkout
               </dd>
             </div>
-            <div className="flex justify-between border-t border-[color:var(--ink-900)]/10 pt-2 font-medium">
+            <div className="flex justify-between border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-2 font-medium">
               <dt>Estimated total</dt>
               <dd
                 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg"
@@ -859,7 +859,7 @@ export default function CheckoutPage() {
             type="button"
             disabled={!canSubmit}
             onClick={handleSubmit}
-            className="w-full rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-[color:var(--paper-200)] transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="w-full rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
           >
             {submitting ? "Placing order..." : "Place order"}
           </button>
@@ -883,12 +883,12 @@ function AddressForm({ address, onChange }: AddressFormProps) {
     onChange({ ...address, [field]: value });
 
   const inputClass =
-    "mt-1 w-full rounded-md border border-[color:var(--ink-900)]/15 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]";
+    "mt-1 w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]";
 
   return (
     <div className="mt-4 grid gap-4 sm:grid-cols-2">
       <div className="sm:col-span-2">
-        <label htmlFor="ship-name" className="block text-sm text-[color:var(--ink-900)]">
+        <label htmlFor="ship-name" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           Full name
         </label>
         <input
@@ -903,7 +903,7 @@ function AddressForm({ address, onChange }: AddressFormProps) {
         />
       </div>
       <div className="sm:col-span-2">
-        <label htmlFor="ship-line1" className="block text-sm text-[color:var(--ink-900)]">
+        <label htmlFor="ship-line1" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           Address line 1
         </label>
         <input
@@ -918,7 +918,7 @@ function AddressForm({ address, onChange }: AddressFormProps) {
         />
       </div>
       <div className="sm:col-span-2">
-        <label htmlFor="ship-line2" className="block text-sm text-[color:var(--ink-900)]">
+        <label htmlFor="ship-line2" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           Address line 2
         </label>
         <input
@@ -932,7 +932,7 @@ function AddressForm({ address, onChange }: AddressFormProps) {
         />
       </div>
       <div>
-        <label htmlFor="ship-city" className="block text-sm text-[color:var(--ink-900)]">
+        <label htmlFor="ship-city" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           City
         </label>
         <input
@@ -946,7 +946,7 @@ function AddressForm({ address, onChange }: AddressFormProps) {
         />
       </div>
       <div>
-        <label htmlFor="ship-region" className="block text-sm text-[color:var(--ink-900)]">
+        <label htmlFor="ship-region" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           State / Region
         </label>
         <input
@@ -959,7 +959,7 @@ function AddressForm({ address, onChange }: AddressFormProps) {
         />
       </div>
       <div>
-        <label htmlFor="ship-postal" className="block text-sm text-[color:var(--ink-900)]">
+        <label htmlFor="ship-postal" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           Postal code
         </label>
         <input
@@ -972,7 +972,7 @@ function AddressForm({ address, onChange }: AddressFormProps) {
         />
       </div>
       <div>
-        <label htmlFor="ship-country" className="block text-sm text-[color:var(--ink-900)]">
+        <label htmlFor="ship-country" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           Country
         </label>
         <select
@@ -1046,7 +1046,7 @@ function NoShippingFallback({
 
   if (options.length === 0) {
     return (
-      <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-60">
+      <p className="mt-4 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
         We couldn&apos;t find shipping options for this address. Please double-check your details or try a different address.
       </p>
     );
@@ -1060,13 +1060,13 @@ function NoShippingFallback({
   );
 
   return (
-    <div className="mt-4 space-y-3 rounded-md border border-[color:var(--ink-900)]/15 bg-[color:var(--paper-200)] px-4 py-3 text-sm">
-      <p className="text-[color:var(--ink-900)]">
+    <div className="mt-4 space-y-3 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))] px-4 py-3 text-sm">
+      <p className="text-[color:var(--storefront-text,var(--ink-900))]">
         {shipsHere
           ? "We couldn\u2019t get a live rate for this address right now. Please try again in a moment or double-check your postal code."
           : `Sorry \u2014 we don\u2019t currently ship to ${pretty(country) || "this country"}.`}
       </p>
-      <div className="space-y-1.5 text-xs text-[color:var(--ink-900)] opacity-80">
+      <div className="space-y-1.5 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-80">
         <p className="font-semibold uppercase tracking-wider opacity-70">
           This store ships via
         </p>
@@ -1143,13 +1143,13 @@ function CheckoutSteps({ contactDone, addressDone, shippingDone, paymentDone }: 
       {steps.map((step, i) => (
         <div key={step.label} className="flex items-center gap-1">
           {i > 0 && (
-            <div className={`h-px w-6 ${step.done || steps[i - 1]!.done ? "bg-[color:var(--moss-700)]" : "bg-[color:var(--ink-900)]/15"}`} />
+            <div className={`h-px w-6 ${step.done || steps[i - 1]!.done ? "bg-[color:var(--storefront-accent,var(--moss-700))]" : "bg-[color:var(--storefront-accent,var(--ink-900))]/15"}`} />
           )}
           <span
             className={`text-xs tracking-wide ${
               step.done
-                ? "font-semibold text-[color:var(--moss-700)]"
-                : "text-[color:var(--ink-900)] opacity-40"
+                ? "font-semibold text-[color:var(--storefront-accent,var(--moss-700))]"
+                : "text-[color:var(--storefront-text,var(--ink-900))] opacity-40"
             }`}
           >
             {step.label}

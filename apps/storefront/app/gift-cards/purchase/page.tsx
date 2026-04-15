@@ -29,7 +29,7 @@ export default async function GiftCardPurchasePage() {
   const currency = await getStoreCurrency(origin);
 
   return (
-    <div className="min-h-screen bg-[color:var(--paper-200)]">
+    <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <StorefrontNav />
       <main id="main" className="mx-auto max-w-2xl px-6 py-16 sm:px-8">
         <header className="space-y-3">

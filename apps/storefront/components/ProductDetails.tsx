@@ -55,19 +55,19 @@ export function ProductDetails({ product }: ProductDetailsProps) {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl leading-tight text-[color:var(--ink-900)]">
+        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl leading-tight text-[color:var(--storefront-text,var(--ink-900))]">
           {product.title}
         </h1>
         <div className="flex items-baseline gap-3">
           <p
-            className="text-2xl text-[color:var(--ink-900)]"
+            className="text-2xl text-[color:var(--storefront-text,var(--ink-900))]"
             style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
           >
             {displayPrice}
           </p>
           {comparePrice && (
             <p
-              className="text-lg text-[color:var(--ink-900)] opacity-40 line-through"
+              className="text-lg text-[color:var(--storefront-text,var(--ink-900))] opacity-40 line-through"
               style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
             >
               {comparePrice}
@@ -77,13 +77,13 @@ export function ProductDetails({ product }: ProductDetailsProps) {
       </header>
 
       {product.description && (
-        <p className="whitespace-pre-line text-base leading-7 text-[color:var(--ink-900)] opacity-80">
+        <p className="whitespace-pre-line text-base leading-7 text-[color:var(--storefront-text,var(--ink-900))] opacity-80">
           {product.description}
         </p>
       )}
 
       {hasOptions && (
-        <section className="border-t border-[color:var(--ink-900)]/10 pt-6">
+        <section className="border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6">
           <VariantSelector
             options={product.options}
             variants={product.variants}
@@ -131,8 +131,8 @@ export function ProductDetails({ product }: ProductDetailsProps) {
       />
 
       {product.categories.length > 0 && (
-        <footer className="border-t border-[color:var(--ink-900)]/10 pt-6">
-          <p className="text-xs uppercase tracking-widest text-[color:var(--ink-900)] opacity-50">
+        <footer className="border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6">
+          <p className="text-xs uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
             In
           </p>
           <ul className="mt-2 flex flex-wrap gap-2">
@@ -140,7 +140,7 @@ export function ProductDetails({ product }: ProductDetailsProps) {
               <li key={c.slug}>
                 <Link
                   href={`/categories/${encodeURIComponent(c.slug)}`}
-                  className="rounded-full border border-[color:var(--ink-900)]/15 px-3 py-1 text-sm text-[color:var(--ink-900)] opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  className="rounded-full border border-[color:var(--storefront-text,var(--ink-900))]/15 px-3 py-1 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
                 >
                   {c.name}
                 </Link>

@@ -74,20 +74,20 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
   if (search) extraParams.search = search;
 
   return (
-    <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
+    <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store.name} />
-        <header className="mb-10 flex flex-col gap-4 border-b border-[color:var(--ink-900)]/10 pb-6">
+        <header className="mb-10 flex flex-col gap-4 border-b border-[color:var(--storefront-text,var(--ink-900))]/10 pb-6">
           <Link
             href="/"
-            className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
           >
             ← {store.name}
           </Link>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--ink-900)]">
+          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
             Shop
           </h1>
-          <p className="text-sm text-[color:var(--ink-900)] opacity-60">
+          <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
             {products.length === 0
               ? search
                 ? (
@@ -95,7 +95,7 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
                       No matches for &quot;{search}&quot;.{" "}
                       <a
                         href="/products"
-                        className="text-[color:var(--moss-700)] underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                        className="text-[color:var(--storefront-accent,var(--moss-700))] underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
                       >
                         Clear search
                       </a>
@@ -156,15 +156,15 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
     <li>
       <Link
         href={`/products/${encodeURIComponent(product.handle)}`}
-        className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       >
         <ProductCardMedia media={product.media} alt={product.title} />
         <div className="mt-4 flex items-start justify-between gap-3">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--ink-900)] group-hover:underline">
+          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--storefront-text,var(--ink-900))] group-hover:underline">
             {product.title}
           </h2>
           <span
-            className="text-sm text-[color:var(--ink-900)] opacity-80"
+            className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-80"
             style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
           >
             {isRange ? `from ${min}` : min}
@@ -179,13 +179,13 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
 function StockBadge({ tone, text }: { tone: "ok" | "warn" | "danger"; text: string }) {
   const toneClass =
     tone === "ok"
-      ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
+      ? "bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]"
       : tone === "warn"
         ? "bg-amber-50 text-amber-700"
         : "bg-red-50 text-red-700";
   const dotClass =
     tone === "ok"
-      ? "bg-[color:var(--moss-700)]"
+      ? "bg-[color:var(--storefront-accent,var(--moss-700))]"
       : tone === "warn"
         ? "bg-amber-500"
         : "bg-red-500";
@@ -200,10 +200,10 @@ function StockBadge({ tone, text }: { tone: "ok" | "warn" | "danger"; text: stri
 function EmptyCatalogue() {
   return (
     <div className="mx-auto max-w-xl py-16 text-center">
-      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
+      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
         Nothing in the shop yet
       </h2>
-      <p className="mt-4 text-[color:var(--ink-900)] opacity-60">
+      <p className="mt-4 text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
         New arrivals are on their way. Check back soon or browse our categories.
       </p>
     </div>
@@ -213,13 +213,13 @@ function EmptyCatalogue() {
 function NotFound({ slug }: { slug: string }) {
   return (
     <main id="main" className="mx-auto flex min-h-screen max-w-2xl flex-col items-start justify-center gap-6 px-6 py-20">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--ink-900)] opacity-60">
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
         Store not found
       </p>
-      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--ink-900)]">
+      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
         Nothing here yet
       </h1>
-      <p className="max-w-xl text-lg text-[color:var(--ink-900)] opacity-70">
+      <p className="max-w-xl text-lg text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
         {slug
           ? `We couldn't find a store at "${slug}". The URL may be wrong, or the store isn't live yet.`
           : "This domain isn't pointed at a live store yet."}

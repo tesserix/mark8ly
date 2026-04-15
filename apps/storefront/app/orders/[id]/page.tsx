@@ -52,16 +52,16 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
   }
 
   return (
-    <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
+    <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <div className="mx-auto max-w-3xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store?.name ?? ""} />
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--moss-700)]">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-accent,var(--moss-700))]">
           Thank you for your order
         </p>
-        <h1 className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]">
+        <h1 className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
           {order.order_number}
         </h1>
-        <p className="mt-2 text-sm text-[color:var(--ink-900)] opacity-60">
+        <p className="mt-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           We&apos;ve received your order and will send you a confirmation email shortly.
         </p>
 
@@ -87,11 +87,11 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
         <section aria-labelledby="items-heading" className="mt-10">
           <h2
             id="items-heading"
-            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60"
+            className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
           >
             Items
           </h2>
-          <ul className="mt-4 divide-y divide-[color:var(--ink-900)]/10">
+          <ul className="mt-4 divide-y divide-[color:var(--storefront-text,var(--ink-900))]/10">
             {order.items.map((item, i) => (
               <OrderItemRow key={i} item={item} />
             ))}
@@ -103,11 +103,11 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
           <section aria-labelledby="shipping-heading" className="mt-10">
             <h2
               id="shipping-heading"
-              className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60"
+              className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
             >
               Shipping address
             </h2>
-            <address className="mt-4 text-sm not-italic leading-relaxed text-[color:var(--ink-900)]">
+            <address className="mt-4 text-sm not-italic leading-relaxed text-[color:var(--storefront-text,var(--ink-900))]">
               {order.shipping_address.name}
               <br />
               {order.shipping_address.line1}
@@ -128,11 +128,11 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
         )}
 
         {/* Totals */}
-        <section aria-labelledby="totals-heading" className="mt-10 border-t border-[color:var(--ink-900)]/10 pt-6">
+        <section aria-labelledby="totals-heading" className="mt-10 border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6">
           <h2 id="totals-heading" className="sr-only">
             Order totals
           </h2>
-          <dl className="space-y-2 text-sm text-[color:var(--ink-900)]">
+          <dl className="space-y-2 text-sm text-[color:var(--storefront-text,var(--ink-900))]">
             <div className="flex justify-between">
               <dt className="opacity-60">Subtotal</dt>
               <dd style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
@@ -151,7 +151,7 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
                 {formatPrice(order.tax_total, order.currency_code)}
               </dd>
             </div>
-            <div className="flex justify-between border-t border-[color:var(--ink-900)]/10 pt-2 font-medium">
+            <div className="flex justify-between border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-2 font-medium">
               <dt>Total</dt>
               <dd
                 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg"
@@ -167,7 +167,7 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
         <div className="mt-10">
           <Link
             href="/products"
-            className="inline-block rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm font-medium text-[color:var(--paper-200)] transition-all duration-150 hover:opacity-90 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="inline-block rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-all duration-150 hover:opacity-90 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
           >
             Continue shopping
           </Link>
@@ -186,7 +186,7 @@ function StatusBadge({ label, value }: { label: string; value: string }) {
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--ink-900)]/15 px-3 py-1 text-xs text-[color:var(--ink-900)]">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--storefront-text,var(--ink-900))]/15 px-3 py-1 text-xs text-[color:var(--storefront-text,var(--ink-900))]">
       <span className="opacity-50">{label}:</span>
       <span className="font-medium">{humanized}</span>
     </span>
@@ -197,7 +197,7 @@ function OrderItemRow({ item }: { item: OrderItem }) {
   return (
     <li className="flex gap-4 py-4">
       {item.image_url ? (
-        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-[color:var(--paper-200)]">
+        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]">
           <Image
             src={item.image_url}
             alt={item.title_snapshot}
@@ -207,24 +207,24 @@ function OrderItemRow({ item }: { item: OrderItem }) {
           />
         </div>
       ) : (
-        <div className="h-16 w-16 shrink-0 rounded-md bg-[color:var(--ink-900)]/5" />
+        <div className="h-16 w-16 shrink-0 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))]/5" />
       )}
       <div className="flex flex-1 items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-[color:var(--ink-900)]">
+          <p className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
             {item.title_snapshot}
           </p>
           {item.option_summary && (
-            <p className="mt-0.5 text-xs text-[color:var(--ink-900)] opacity-50">
+            <p className="mt-0.5 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
               {item.option_summary}
             </p>
           )}
-          <p className="mt-0.5 text-xs text-[color:var(--ink-900)] opacity-50">
+          <p className="mt-0.5 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
             Qty {item.quantity}
           </p>
         </div>
         <p
-          className="text-sm text-[color:var(--ink-900)]"
+          className="text-sm text-[color:var(--storefront-text,var(--ink-900))]"
           style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
         >
           {formatPrice(item.line_total, item.currency_code)}

@@ -10,7 +10,7 @@ export default async function GiftCardBalancePage() {
     slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
 
   return (
-    <div className="min-h-screen bg-[color:var(--paper-200)]">
+    <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <StorefrontNav />
       <main id="main" className="mx-auto max-w-2xl px-6 py-16 sm:px-8">
         <header className="space-y-3">

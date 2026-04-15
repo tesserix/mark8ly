@@ -726,11 +726,16 @@ function ButtonBlock({
   theme: StorefrontTheme;
   label: string;
 }) {
+  // CTA takes the accent (brand palette colour). Text contrast pairs
+  // with the mode: light mode accents are mid-saturated → white text;
+  // dark mode accents are brighter → dark text reads best.
+  const onAccent = theme.mode === "dark" ? "#0E0E0C" : "#FFFFFF";
   return (
     <span
-      className="inline-flex h-6 items-center px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-white"
+      className="inline-flex h-6 items-center px-3 text-[9px] font-semibold uppercase tracking-[0.14em]"
       style={{
-        background: theme.colors.primary,
+        background: theme.colors.accent,
+        color: onAccent,
         borderRadius: "var(--storefront-radius)",
       }}
     >

@@ -31,10 +31,10 @@ export default async function AccountOrderPage({ params }: PageProps) {
   if (!session) {
     return (
       <div className="space-y-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           Order
         </h1>
-        <p className="text-sm text-[color:var(--ink-900)] opacity-50">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           Please sign in to view this order.
         </p>
       </div>
@@ -55,14 +55,14 @@ export default async function AccountOrderPage({ params }: PageProps) {
       <div>
         <Link
           href="/account/orders"
-          className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100"
+          className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60 transition-opacity hover:opacity-100"
         >
           ← All orders
         </Link>
-        <h1 className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+        <h1 className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           {order.order_number}
         </h1>
-        <p className="mt-1 text-xs text-[color:var(--ink-900)] opacity-50">
+        <p className="mt-1 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           Placed {new Date(order.placed_at).toLocaleDateString("en-US", {
             year: "numeric", month: "short", day: "numeric",
           })}
@@ -75,10 +75,10 @@ export default async function AccountOrderPage({ params }: PageProps) {
       </div>
 
       <section>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           Items
         </h2>
-        <ul className="mt-4 divide-y divide-[color:var(--ink-900)]/10 border-t border-[color:var(--ink-900)]/10">
+        <ul className="mt-4 divide-y divide-[color:var(--storefront-text,var(--ink-900))]/10 border-t border-[color:var(--storefront-text,var(--ink-900))]/10">
           {order.items.map((item, i) => (
             <OrderItemRow key={i} item={item} />
           ))}
@@ -87,10 +87,10 @@ export default async function AccountOrderPage({ params }: PageProps) {
 
       {order.shipping_address && (
         <section>
-          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
             Shipping to
           </h2>
-          <address className="mt-3 text-sm not-italic leading-relaxed text-[color:var(--ink-900)]">
+          <address className="mt-3 text-sm not-italic leading-relaxed text-[color:var(--storefront-text,var(--ink-900))]">
             {order.shipping_address.name}
             <br />
             {order.shipping_address.line1}
@@ -112,14 +112,14 @@ export default async function AccountOrderPage({ params }: PageProps) {
       />
 
       <section>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           Totals
         </h2>
-        <dl className="mt-3 space-y-1.5 text-sm text-[color:var(--ink-900)]">
+        <dl className="mt-3 space-y-1.5 text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           <TotalRow label="Subtotal" value={order.subtotal} ccy={order.currency_code} />
           <TotalRow label="Shipping" value={order.shipping_total} ccy={order.currency_code} />
           <TotalRow label="Tax" value={order.tax_total} ccy={order.currency_code} />
-          <div className="mt-2 flex justify-between border-t border-[color:var(--ink-900)]/10 pt-2 text-base font-medium">
+          <div className="mt-2 flex justify-between border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-2 text-base font-medium">
             <dt>Total</dt>
             <dd style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
               {formatCurrency(order.grand_total, order.currency_code)}
@@ -134,10 +134,10 @@ export default async function AccountOrderPage({ params }: PageProps) {
 function StatusBadge({ label, value }: { label: string; value: string }) {
   const tone =
     value === "paid" || value === "captured" || value === "confirmed" || value === "fulfilled"
-      ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
+      ? "bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]"
       : value === "pending"
         ? "bg-amber-50 text-amber-700"
-        : "bg-[color:var(--ink-900)]/5 text-[color:var(--ink-900)]/70";
+        : "bg-[color:var(--storefront-accent,var(--ink-900))]/5 text-[color:var(--storefront-text,var(--ink-900))]/70";
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`}>
       <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
@@ -149,7 +149,7 @@ function StatusBadge({ label, value }: { label: string; value: string }) {
 function OrderItemRow({ item }: { item: OrderItem }) {
   return (
     <li className="flex items-start gap-4 py-4">
-      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-[color:var(--paper-200)]">
+      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]">
         {item.image_url ? (
           <Image
             src={item.image_url}
@@ -161,16 +161,16 @@ function OrderItemRow({ item }: { item: OrderItem }) {
         ) : null}
       </div>
       <div className="flex-1 text-sm">
-        <p className="font-medium text-[color:var(--ink-900)]">{item.title_snapshot}</p>
+        <p className="font-medium text-[color:var(--storefront-text,var(--ink-900))]">{item.title_snapshot}</p>
         {item.option_summary && (
-          <p className="text-xs text-[color:var(--ink-900)] opacity-50">{item.option_summary}</p>
+          <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">{item.option_summary}</p>
         )}
-        <p className="mt-1 text-xs text-[color:var(--ink-900)] opacity-50">
+        <p className="mt-1 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           Qty {item.quantity} · {formatCurrency(item.unit_price, item.currency_code)}
         </p>
       </div>
       <span
-        className="text-sm text-[color:var(--ink-900)]"
+        className="text-sm text-[color:var(--storefront-text,var(--ink-900))]"
         style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
       >
         {formatCurrency(item.line_total, item.currency_code)}

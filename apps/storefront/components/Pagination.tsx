@@ -41,12 +41,12 @@ export function Pagination({
   return (
     <nav
       aria-label="Pagination"
-      className="mt-12 flex items-center justify-between border-t border-[color:var(--ink-900)]/10 pt-6"
+      className="mt-12 flex items-center justify-between border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6"
     >
       {hasPrev ? (
         <Link
           href={buildHref(basePath, currentPage - 1, extraParams)}
-          className="text-sm font-semibold text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="text-sm font-semibold text-[color:var(--storefront-text,var(--ink-900))] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         >
           ← Previous
         </Link>
@@ -55,7 +55,7 @@ export function Pagination({
       )}
 
       <span
-        className="text-xs text-[color:var(--ink-900)] opacity-40"
+        className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-40"
         style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
       >
         Page {currentPage}
@@ -64,7 +64,7 @@ export function Pagination({
       {hasNext ? (
         <Link
           href={buildHref(basePath, currentPage + 1, extraParams)}
-          className="text-sm font-semibold text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="text-sm font-semibold text-[color:var(--storefront-text,var(--ink-900))] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         >
           Next →
         </Link>

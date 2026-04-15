@@ -25,10 +25,10 @@ export function CategoryFilter({
         href="/products"
         className={[
           "rounded-full border px-4 py-1.5 text-sm transition-all",
-          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]",
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
           isAll
-            ? "border-[color:var(--ink-900)] bg-[color:var(--ink-900)] text-[color:var(--paper-200)]"
-            : "border-[color:var(--ink-900)]/15 text-[color:var(--ink-900)] opacity-70 hover:opacity-100",
+            ? "border-[color:var(--storefront-text,var(--ink-900))] bg-[color:var(--storefront-accent,var(--ink-900))] text-[color:var(--storefront-on-accent,var(--paper-200))]"
+            : "border-[color:var(--storefront-text,var(--ink-900))]/15 text-[color:var(--storefront-text,var(--ink-900))] opacity-70 hover:opacity-100",
         ].join(" ")}
       >
         All
@@ -41,10 +41,10 @@ export function CategoryFilter({
             href={`/categories/${encodeURIComponent(cat.slug)}`}
             className={[
               "rounded-full border px-4 py-1.5 text-sm transition-all",
-              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
               active
-                ? "border-[color:var(--ink-900)] bg-[color:var(--ink-900)] text-[color:var(--paper-200)]"
-                : "border-[color:var(--ink-900)]/15 text-[color:var(--ink-900)] opacity-70 hover:opacity-100",
+                ? "border-[color:var(--storefront-text,var(--ink-900))] bg-[color:var(--storefront-accent,var(--ink-900))] text-[color:var(--storefront-on-accent,var(--paper-200))]"
+                : "border-[color:var(--storefront-text,var(--ink-900))]/15 text-[color:var(--storefront-text,var(--ink-900))] opacity-70 hover:opacity-100",
             ].join(" ")}
           >
             {cat.name}

@@ -67,12 +67,12 @@ export default async function StorefrontProductPage({
   if (!product) notFound();
 
   return (
-    <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
+    <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store.name} />
         <Link
           href="/products"
-          className="mb-8 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="mb-8 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         >
           ← Shop
         </Link>

@@ -94,12 +94,12 @@ export function ProductReviews({
 
   return (
     <section
-      className="border-t border-[color:var(--ink-900)]/10 pt-12"
+      className="border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-12"
       aria-labelledby="reviews-heading"
     >
       <h2
         id="reviews-heading"
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--ink-900)]"
+        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]"
       >
         Reviews
       </h2>
@@ -108,13 +108,13 @@ export function ProductReviews({
       {!loading && !error && reviews.length > 0 && (
         <div className="mt-4 flex items-center gap-3">
           <span
-            className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-[color:var(--ink-900)]"
+            className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-[color:var(--storefront-text,var(--ink-900))]"
             style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
           >
             {averageRating.toFixed(1)}
           </span>
           <StarDisplay rating={Math.round(averageRating)} />
-          <span className="text-sm text-[color:var(--ink-900)] opacity-50">
+          <span className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
             {reviews.length} review{reviews.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -122,7 +122,7 @@ export function ProductReviews({
 
       {/* Loading state */}
       {loading && (
-        <p className="mt-6 text-sm text-[color:var(--ink-900)] opacity-50">
+        <p className="mt-6 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           Loading reviews...
         </p>
       )}
@@ -136,7 +136,7 @@ export function ProductReviews({
 
       {/* Empty state */}
       {!loading && !error && reviews.length === 0 && (
-        <p className="mt-6 text-sm text-[color:var(--ink-900)] opacity-50">
+        <p className="mt-6 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           No reviews yet. Be the first to share your experience.
         </p>
       )}
@@ -147,20 +147,20 @@ export function ProductReviews({
           {reviews.map((review) => (
             <li
               key={review.id}
-              className="border-b border-[color:var(--ink-900)]/5 pb-8 last:border-b-0"
+              className="border-b border-[color:var(--storefront-text,var(--ink-900))]/5 pb-8 last:border-b-0"
             >
               <div className="flex items-center gap-3">
                 <StarDisplay rating={review.rating} />
                 {review.title && (
-                  <span className="text-sm font-semibold text-[color:var(--ink-900)]">
+                  <span className="text-sm font-semibold text-[color:var(--storefront-text,var(--ink-900))]">
                     {review.title}
                   </span>
                 )}
               </div>
-              <p className="mt-2 text-sm leading-6 text-[color:var(--ink-900)] opacity-80">
+              <p className="mt-2 text-sm leading-6 text-[color:var(--storefront-text,var(--ink-900))] opacity-80">
                 {review.content}
               </p>
-              <p className="mt-3 text-xs text-[color:var(--ink-900)] opacity-40">
+              <p className="mt-3 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-40">
                 {review.customer_name}
                 {review.created_at && (
                   <> &middot; {formatDate(review.created_at)}</>
@@ -176,11 +176,11 @@ export function ProductReviews({
         {isAuthenticated ? (
           <ReviewForm productHandle={productHandle} />
         ) : (
-          <div className="rounded-md border border-[color:var(--ink-900)]/10 px-5 py-4">
-            <p className="text-sm text-[color:var(--ink-900)] opacity-70">
+          <div className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/10 px-5 py-4">
+            <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
               <Link
                 href="/sign-in"
-                className="font-semibold text-[color:var(--moss-700)] underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                className="font-semibold text-[color:var(--storefront-accent,var(--moss-700))] underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
               >
                 Sign in
               </Link>{" "}

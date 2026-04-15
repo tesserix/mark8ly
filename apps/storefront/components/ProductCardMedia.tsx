@@ -30,8 +30,8 @@ export function ProductCardMedia({ media, alt }: Props) {
 
   if (media.length === 0) {
     return (
-      <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]">
-        <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-widest text-[color:var(--ink-900)] opacity-30">
+      <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]">
+        <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-30">
           No image
         </div>
       </div>
@@ -40,7 +40,7 @@ export function ProductCardMedia({ media, alt }: Props) {
 
   return (
     <div
-      className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]"
+      className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]"
       onMouseEnter={() => (pausedRef.current = true)}
       onMouseLeave={() => (pausedRef.current = false)}
     >
@@ -67,8 +67,8 @@ export function ProductCardMedia({ media, alt }: Props) {
               className={[
                 "h-1.5 rounded-full transition-all duration-300",
                 i === index
-                  ? "w-5 bg-[color:var(--paper-200)]"
-                  : "w-1.5 bg-[color:var(--paper-200)]/60",
+                  ? "w-5 bg-[color:var(--storefront-background,var(--paper-200))]"
+                  : "w-1.5 bg-[color:var(--storefront-background,var(--paper-200))]/60",
               ].join(" ")}
             />
           ))}

@@ -61,7 +61,7 @@ export function AddToCartButton({
       <button
         type="button"
         disabled
-        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm text-[color:var(--paper-200)] opacity-40 cursor-not-allowed"
+        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm text-[color:var(--storefront-on-accent,var(--paper-200))] opacity-40 cursor-not-allowed"
       >
         Out of stock
       </button>
@@ -73,7 +73,7 @@ export function AddToCartButton({
       <button
         type="button"
         disabled
-        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm text-[color:var(--paper-200)] opacity-40 cursor-not-allowed"
+        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm text-[color:var(--storefront-on-accent,var(--paper-200))] opacity-40 cursor-not-allowed"
       >
         {disabledReason ?? "Add to cart"}
       </button>
@@ -84,7 +84,7 @@ export function AddToCartButton({
     <button
       type="button"
       onClick={handleClick}
-      className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-6 py-3 text-sm text-[color:var(--paper-200)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+      className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
     >
       {justAdded ? "Added ✓" : "Add to cart"}
     </button>

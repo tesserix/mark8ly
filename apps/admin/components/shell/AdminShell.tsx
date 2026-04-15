@@ -133,8 +133,8 @@ const navigation: NavSection[] = [
     icon: Settings,
     children: [
       { group: "Store", label: "Stores", href: "/settings/stores" },
-      { group: "Store", label: "Pages", href: "/settings/pages" },
-      { group: "Store", label: "Themes", href: "/settings/themes" },
+      // Pages have moved into the Branding → Pages tab.
+      { group: "Store", label: "Branding", href: "/settings/themes" },
       { group: "Store", label: "Domains", href: "/settings/domains" },
       { group: "Selling", label: "Payments", href: "/settings/payments" },
       { group: "Selling", label: "Shipping", href: "/settings/shipping" },
@@ -580,7 +580,7 @@ function getPageTitle(pathname: string | null): {
     return { eyebrow: "Store Setup", title: "Stores" };
   }
   if (pathname.startsWith("/settings/themes")) {
-    return { eyebrow: "Themes", title: "Themes & Branding" };
+    return { eyebrow: "Store", title: "Branding" };
   }
   if (pathname.startsWith("/settings/payments")) {
     return { eyebrow: "Selling", title: "Payments & Tax" };

@@ -65,14 +65,14 @@ export function ProfileForm({ email }: { email: string }) {
 
   if (!loaded) {
     return (
-      <p className="text-sm text-[color:var(--ink-900)] opacity-50">Loading profile…</p>
+      <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">Loading profile…</p>
     );
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <Row label="Email">
-        <span className="text-sm text-[color:var(--ink-900)]">{email}</span>
+        <span className="text-sm text-[color:var(--storefront-text,var(--ink-900))]">{email}</span>
       </Row>
       <Row label="First name">
         <input
@@ -102,12 +102,12 @@ export function ProfileForm({ email }: { email: string }) {
         />
       </Row>
       <Row label="Marketing emails">
-        <label className="inline-flex items-center gap-2 text-sm text-[color:var(--ink-900)]">
+        <label className="inline-flex items-center gap-2 text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           <input
             type="checkbox"
             checked={marketing}
             onChange={(e) => setMarketing(e.target.checked)}
-            className="h-4 w-4 accent-[color:var(--moss-700)]"
+            className="h-4 w-4 accent-[color:var(--storefront-accent,var(--moss-700))]"
           />
           Send me updates about promotions &amp; new arrivals
         </label>
@@ -116,7 +116,7 @@ export function ProfileForm({ email }: { email: string }) {
         <button
           type="submit"
           disabled={saving}
-          className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--moss-700))] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save changes"}
         </button>
@@ -126,12 +126,12 @@ export function ProfileForm({ email }: { email: string }) {
 }
 
 const inputClass =
-  "w-full rounded-md border border-[color:var(--ink-900)]/15 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]";
+  "w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-[160px_1fr] sm:items-center">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
         {label}
       </div>
       <div>{children}</div>

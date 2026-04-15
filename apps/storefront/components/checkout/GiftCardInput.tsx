@@ -74,7 +74,7 @@ export function GiftCardInput({
   if (applied && balance) {
     return (
       <div className="flex items-center justify-between rounded-md border border-moss-200 bg-moss-50 px-4 py-3">
-        <span className="text-sm text-moss-700">
+        <span className="text-sm text-[color:var(--storefront-accent,theme(colors.moss.700))]">
           Gift card applied: up to{" "}
           {formatPrice(Number(balance.current_balance), balance.currency_code)}
         </span>
@@ -95,7 +95,7 @@ export function GiftCardInput({
       <button
         type="button"
         onClick={() => setShowInput((v) => !v)}
-        className="text-sm text-moss-700 transition-colors hover:text-moss-800"
+        className="text-sm text-[color:var(--storefront-accent,theme(colors.moss.700))] transition-colors hover:text-[color:var(--storefront-accent,theme(colors.moss.800))]"
       >
         Have a gift card?
       </button>
@@ -137,7 +137,7 @@ export function GiftCardInput({
               <button
                 type="button"
                 onClick={handleApply}
-                className="text-sm font-medium text-moss-700 transition-colors hover:text-moss-800"
+                className="text-sm font-medium text-[color:var(--storefront-accent,theme(colors.moss.700))] transition-colors hover:text-[color:var(--storefront-accent,theme(colors.moss.800))]"
               >
                 Apply
               </button>

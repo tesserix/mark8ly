@@ -81,7 +81,6 @@ export function ImageUploadInput({
             className="h-16 w-16 shrink-0 rounded border border-border object-cover"
           />
           <div className="min-w-0 flex-1 space-y-1">
-            <p className="truncate text-xs text-foreground-secondary">{value}</p>
             <div className="flex gap-2">
               <button
                 type="button"

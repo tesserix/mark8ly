@@ -12,9 +12,9 @@ interface ToastRecord extends ToastInput {
 }
 
 const TONE_STYLES: Record<ToastTone, string> = {
-  success: "border-[color:var(--moss-700)]/30 bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]",
+  success: "border-[color:var(--storefront-accent,var(--moss-700))]/30 bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]",
   error: "border-red-300 bg-red-50 text-red-800",
-  info: "border-[color:var(--ink-900)]/15 bg-[color:var(--paper-200)] text-[color:var(--ink-900)]",
+  info: "border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]",
   warn: "border-amber-300 bg-amber-50 text-amber-800",
 };
 

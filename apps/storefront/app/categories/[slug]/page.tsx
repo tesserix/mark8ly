@@ -72,20 +72,20 @@ export default async function CategoryLandingPage({
   if (sp.slug) extraParams.slug = sp.slug;
 
   return (
-    <main id="main" className="min-h-screen bg-[color:var(--paper-200)]">
+    <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <StorefrontNav storeName={store.name} />
-        <header className="mb-10 flex flex-col gap-4 border-b border-[color:var(--ink-900)]/10 pb-6">
+        <header className="mb-10 flex flex-col gap-4 border-b border-[color:var(--storefront-text,var(--ink-900))]/10 pb-6">
           <Link
             href="/products"
-            className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--ink-900)] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
           >
             ← Shop all
           </Link>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--ink-900)]">
+          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
             {prettify(categorySlug)}
           </h1>
-          <p className="text-sm text-[color:var(--ink-900)] opacity-60">
+          <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
             {products.length === 0
               ? "Nothing in this category yet. Try browsing all products instead."
               : `${products.length} ${products.length === 1 ? "product" : "products"}`}
@@ -130,9 +130,9 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
     <li>
       <Link
         href={`/products/${encodeURIComponent(product.handle)}`}
-        className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       >
-        <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--paper-200)]">
+        <div className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]">
           {cover ? (
             <Image
               src={cover.url}
@@ -142,17 +142,17 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
               className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-widest text-[color:var(--ink-900)] opacity-30">
+            <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-30">
               No image
             </div>
           )}
         </div>
         <div className="mt-4 flex items-start justify-between gap-3">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--ink-900)] group-hover:underline">
+          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--storefront-text,var(--ink-900))] group-hover:underline">
             {product.title}
           </h2>
           <span
-            className="text-sm text-[color:var(--ink-900)] opacity-80"
+            className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-80"
             style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
           >
             {isRange ? `from ${min}` : min}

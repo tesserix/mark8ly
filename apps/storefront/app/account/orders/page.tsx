@@ -98,10 +98,10 @@ export default async function OrdersPage() {
   if (!session) {
     return (
       <div className="space-y-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           Orders
         </h1>
-        <p className="text-sm text-[color:var(--ink-900)] opacity-50">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           Please sign in to view your orders.
         </p>
       </div>
@@ -145,24 +145,24 @@ export default async function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
         Orders
       </h1>
 
       {fetchError && (
-        <p className="text-sm text-[color:var(--ink-900)] opacity-50">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           Unable to load your orders right now. Please try again later.
         </p>
       )}
 
       {!fetchError && orders.length === 0 && (
-        <p className="text-sm text-[color:var(--ink-900)] opacity-50">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           You have not placed any orders yet.
         </p>
       )}
 
       {orders.length > 0 && (
-        <ul className="divide-y divide-[color:var(--ink-900)]/10 border-t border-[color:var(--ink-900)]/10">
+        <ul className="divide-y divide-[color:var(--storefront-text,var(--ink-900))]/10 border-t border-[color:var(--storefront-text,var(--ink-900))]/10">
           {orders.map((order) => (
             <li key={order.id}>
               <Link
@@ -171,7 +171,7 @@ export default async function OrdersPage() {
               >
                 <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium text-[color:var(--ink-900)]">
+                    <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                       #{order.order_number}
                     </span>
                     <span
@@ -180,12 +180,12 @@ export default async function OrdersPage() {
                       {statusLabel(order.status)}
                     </span>
                   </div>
-                  <p className="text-xs text-[color:var(--ink-900)] opacity-50">
+                  <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
                     {formatDate(order.placed_at)}
                   </p>
                 </div>
 
-                <span className="shrink-0 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm font-medium text-[color:var(--ink-900)]">
+                <span className="shrink-0 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                   {formatCurrency(order.grand_total, order.currency_code)}
                 </span>
               </Link>

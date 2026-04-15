@@ -39,15 +39,15 @@ function iconFor(kind: string): string {
 
 function toneFor(kind: string): string {
   if (kind === "shipment_delivered" || kind === "fulfilled") {
-    return "border-[color:var(--moss-700)] bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]";
+    return "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]";
   }
   if (kind === "shipment_exception" || kind === "cancelled") {
     return "border-red-300 bg-red-50 text-red-700";
   }
   if (kind.startsWith("shipment_")) {
-    return "border-[color:var(--ink-900)]/20 bg-[color:var(--paper-200)] text-[color:var(--ink-900)]";
+    return "border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]";
   }
-  return "border-[color:var(--ink-900)]/15 bg-[color:var(--paper-200)] text-[color:var(--ink-900)]";
+  return "border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]";
 }
 
 function fmtDate(iso: string): string {
@@ -126,20 +126,20 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
     <section aria-labelledby="timeline-heading" className="mt-8">
       <h2
         id="timeline-heading"
-        className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60"
+        className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
       >
         Delivery timeline
       </h2>
 
       {shipment && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[color:var(--ink-900)] opacity-70">
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
           <span className="font-medium uppercase tracking-wider">
             {shipment.carrier}
           </span>
           {shipment.tracking_number && (
             <span>
               Tracking:{" "}
-              <span className="font-mono tracking-tight text-[color:var(--ink-900)]">
+              <span className="font-mono tracking-tight text-[color:var(--storefront-text,var(--ink-900))]">
                 {shipment.tracking_number}
               </span>
             </span>
@@ -152,7 +152,7 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
       )}
 
       {events.length === 0 ? (
-        <p className="mt-4 text-sm text-[color:var(--ink-900)] opacity-60">
+        <p className="mt-4 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           We&apos;ll post updates here the moment your order is on the way.
         </p>
       ) : (

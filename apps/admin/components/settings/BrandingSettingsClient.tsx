@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useCallback, type ReactNode } from "react";
-import { Link2, Code, Image, Check, Home, Palette } from "lucide-react";
+import { Link2, Code, Image, Check, Home, Palette, FileText } from "lucide-react";
 
 import type { StoreBranding, UpdateBrandingInput, AdminPage, AdminCategory } from "@/lib/api/marketplace-api";
 import { HomepageTab } from "./HomepageTab";
@@ -25,14 +25,19 @@ interface BrandingSettingsClientProps {
   // owns the <StorefrontThemeForm> instance (needs the full Store,
   // which BrandingSettingsClient doesn't have).
   themeContent?: ReactNode;
+  // Rendered inside the Pages tab. PagesList needs the full AdminPage
+  // list (not the trimmed summaries used for the footer editor), so
+  // the parent server component owns the data fetch + render.
+  pagesContent?: ReactNode;
 }
 
-type Tab = "identity" | "theme" | "homepage" | "footer" | "advanced";
+type Tab = "identity" | "theme" | "homepage" | "pages" | "footer" | "advanced";
 
 const TABS: { key: Tab; label: string; icon: typeof Image }[] = [
   { key: "identity", label: "Identity", icon: Image },
   { key: "theme",    label: "Theme",    icon: Palette },
   { key: "homepage", label: "Homepage", icon: Home },
+  { key: "pages",    label: "Pages",    icon: FileText },
   { key: "footer",   label: "Footer",   icon: Link2 },
   { key: "advanced", label: "Advanced", icon: Code },
 ];
@@ -54,6 +59,7 @@ export function BrandingSettingsClient({
   categories = [],
   store,
   themeContent,
+  pagesContent,
 }: BrandingSettingsClientProps) {
   const { toast } = useToast();
   const [form, setForm] = useState<StoreBranding>(initial);
@@ -144,6 +150,7 @@ export function BrandingSettingsClient({
         {tab === "identity" && <IdentityTab form={form} patch={patch} editable={editable} />}
         {tab === "theme" && themeContent}
         {tab === "homepage" && <HomepageTab form={form} patch={patch} editable={editable} pages={pages} categories={categories} store={store} onHeroValidityChange={setHeroValid} />}
+        {tab === "pages" && pagesContent}
         {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} pages={pages} />}
         {tab === "advanced" && <AdvancedTab form={form} patch={patch} editable={editable} />}
 

@@ -120,3 +120,20 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Editorial marquee block (homepage `marquee` section type).
+   Track is duplicated in the renderer so the loop is seamless. Speed
+   honoured via [data-speed] override on the track element. The global
+   prefers-reduced-motion rule above already pins this to one frame; the
+   renderer additionally applies `motion-reduce:animate-none` so the
+   track stays static rather than visibly jittering. */
+@keyframes storefront-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: storefront-marquee 30s linear infinite;
+}
+.animate-marquee[data-speed="slow"]   { animation-duration: 60s; }
+.animate-marquee[data-speed="normal"] { animation-duration: 30s; }
+.animate-marquee[data-speed="fast"]   { animation-duration: 18s; }

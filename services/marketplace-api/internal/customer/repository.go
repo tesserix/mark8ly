@@ -90,7 +90,20 @@ func (r *gormRepo) UpsertProfile(ctx context.Context, p *CustomerProfile) (*Cust
 	if err != nil {
 		return nil, fmt.Errorf("customer: upsert profile: %w", err)
 	}
-	return p, nil
+	// `Create(p)` with OnConflict doesn't repopulate `p` after the conflict
+	// update — it keeps whatever values were passed in. For an existing
+	// profile that has been edited via PATCH /account, returning the
+	// input struct means first_name/last_name/etc. appear as whatever
+	// the caller supplied (usually nil from the session cookie) even
+	// though the DB row has the customer's saved values. Re-read the
+	// row so the context carries the authoritative state.
+	var fresh CustomerProfile
+	if err := r.db.WithContext(ctx).
+		Where("store_id = ? AND email = ?", p.StoreID, p.Email).
+		First(&fresh).Error; err != nil {
+		return nil, fmt.Errorf("customer: reload after upsert: %w", err)
+	}
+	return &fresh, nil
 }
 
 func (r *gormRepo) GetProfileByGipUID(ctx context.Context, storeID uuid.UUID, gipUID string) (*CustomerProfile, error) {
@@ -122,13 +135,21 @@ func (r *gormRepo) GetProfileByID(ctx context.Context, profileID uuid.UUID) (*Cu
 }
 
 func (r *gormRepo) UpdateProfile(ctx context.Context, profileID uuid.UUID, updates map[string]any) (*CustomerProfile, error) {
-	updates["updated_at"] = "now()"
-	err := r.db.WithContext(ctx).
+	// Drop the string "now()" placeholder the handler used to set —
+	// Postgres doesn't accept it as a timestamp expression. Replace with
+	// a proper SQL expression so updated_at reflects the write.
+	delete(updates, "updated_at")
+	result := r.db.WithContext(ctx).
 		Model(&CustomerProfile{}).
 		Where("id = ?", profileID).
-		Updates(updates).Error
-	if err != nil {
-		return nil, fmt.Errorf("customer: update profile: %w", err)
+		Updates(updates)
+	if result.Error != nil {
+		return nil, fmt.Errorf("customer: update profile: %w", result.Error)
+	}
+	// Separate UPDATE for updated_at so GORM's type-coercion doesn't mis-quote it.
+	if err := r.db.WithContext(ctx).
+		Exec("UPDATE customer_profiles SET updated_at = now() WHERE id = ?", profileID).Error; err != nil {
+		return nil, fmt.Errorf("customer: stamp updated_at: %w", err)
 	}
 	return r.GetProfileByID(ctx, profileID)
 }

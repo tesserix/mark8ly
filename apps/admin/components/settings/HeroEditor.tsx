@@ -40,14 +40,16 @@ export function HeroEditor({ value, onChange, pages, editable, layoutVariant, on
   const asideImageSet = Boolean(value.aside_image_url);
   const asideAltMissing = asideImageSet && !value.aside_image_alt;
 
-  // Notify parent whenever the a11y validity state changes.
-  useEffect(() => {
-    onValidityChange?.(!asideAltMissing);
-  }, [asideAltMissing, onValidityChange]);
-
   const secondaryLabelSet = Boolean(value.cta_secondary_label);
   const secondaryUrlSet = Boolean(value.cta_secondary_url);
   const secondaryIncomplete = secondaryLabelSet !== secondaryUrlSet;
+
+  // Notify parent whenever the form validity state changes. Gates Save
+  // on both the a11y rule (aside alt required when aside URL set) and
+  // the paired-CTA rule (label + URL set together or both empty).
+  useEffect(() => {
+    onValidityChange?.(!asideAltMissing && !secondaryIncomplete);
+  }, [asideAltMissing, secondaryIncomplete, onValidityChange]);
 
   const themeSupport = layoutVariant ? THEME_HERO_SUPPORT[layoutVariant] : undefined;
 

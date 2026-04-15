@@ -89,6 +89,9 @@ export function BrandingSettingsClient({
   const [tab, setTab] = useState<Tab>("identity");
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "idle" | "saved" | "error"; message?: string }>({ type: "idle" });
+  // heroValid tracks whether HeroEditor's aside-alt a11y constraint is satisfied.
+  // Defaults true so the Save button isn't blocked before the homepage tab is visited.
+  const [heroValid, setHeroValid] = useState(true);
 
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
 
@@ -155,7 +158,7 @@ export function BrandingSettingsClient({
         {tab === "colors" && <ColorsTab form={form} patch={patch} editable={editable} />}
         {tab === "typography" && <TypographyTab form={form} patch={patch} editable={editable} />}
         {tab === "layout" && <LayoutTab form={form} patch={patch} editable={editable} />}
-        {tab === "homepage" && <HomepageTab form={form} patch={patch} editable={editable} pages={pages} categories={categories} store={store} />}
+        {tab === "homepage" && <HomepageTab form={form} patch={patch} editable={editable} pages={pages} categories={categories} store={store} onHeroValidityChange={setHeroValid} />}
         {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} pages={pages} />}
         {tab === "advanced" && <AdvancedTab form={form} patch={patch} editable={editable} />}
 
@@ -165,7 +168,7 @@ export function BrandingSettingsClient({
             <button
               type="button"
               onClick={handleSave}
-              disabled={!dirty || isPending}
+              disabled={!dirty || isPending || !heroValid}
               className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-40"
             >
               {isPending ? "Saving..." : status.type === "saved" ? (

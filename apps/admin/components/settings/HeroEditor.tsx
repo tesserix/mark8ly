@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { HomepageHero, AdminPage } from "@/lib/api/marketplace-api";
 import {
   FieldLabel,
@@ -27,14 +28,22 @@ interface HeroEditorProps {
   pages: Pick<AdminPage, "id" | "slug" | "title">[];
   editable: boolean;
   layoutVariant?: string;
+  // Validity signal: called whenever the aside-alt a11y constraint changes.
+  // valid=false when aside_image_url is set but aside_image_alt is empty.
+  onValidityChange?: (valid: boolean) => void;
 }
 
-export function HeroEditor({ value, onChange, pages, editable, layoutVariant }: HeroEditorProps) {
+export function HeroEditor({ value, onChange, pages, editable, layoutVariant, onValidityChange }: HeroEditorProps) {
   const patch = (p: Partial<HomepageHero>) => onChange({ ...value, ...p });
   const enabled = value.enabled;
 
   const asideImageSet = Boolean(value.aside_image_url);
   const asideAltMissing = asideImageSet && !value.aside_image_alt;
+
+  // Notify parent whenever the a11y validity state changes.
+  useEffect(() => {
+    onValidityChange?.(!asideAltMissing);
+  }, [asideAltMissing, onValidityChange]);
 
   const secondaryLabelSet = Boolean(value.cta_secondary_label);
   const secondaryUrlSet = Boolean(value.cta_secondary_url);

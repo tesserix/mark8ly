@@ -22,6 +22,8 @@ interface HomepageTabProps {
   pages: Pick<AdminPage, "id" | "slug" | "title">[];
   categories: Pick<AdminCategory, "id" | "slug" | "name">[];
   store: StoreInfo;
+  // Bubbles hero a11y validity to parent so the global Save can be gated.
+  onHeroValidityChange?: (valid: boolean) => void;
 }
 
 function defaultHero(): HomepageHero {
@@ -35,6 +37,7 @@ export function HomepageTab({
   pages,
   categories,
   store,
+  onHeroValidityChange,
 }: HomepageTabProps) {
   const content: HomepageContent = form.homepage_content ?? {};
   const hero: HomepageHero = content.hero ?? defaultHero();
@@ -69,6 +72,7 @@ export function HomepageTab({
         pages={pages}
         editable={editable}
         layoutVariant={form.layout_variant}
+        onValidityChange={onHeroValidityChange}
       />
 
       <div className="border-t border-border-subtle pt-10">

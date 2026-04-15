@@ -80,7 +80,7 @@ function editorialRecipe(store: StoreInfo): HomepageContent {
       cta_secondary_label: "Read the story",
       cta_secondary_url: "/pages/about",
       aside_image_url: "/layout-placeholders/editorial-cover.svg",
-      aside_image_alt: `${store.name} editorial cover image`,
+      aside_image_alt: `${store.name} cover story`,
     },
     sections,
   };
@@ -94,9 +94,9 @@ function boldPromoRecipe(store: StoreInfo): HomepageContent {
       subheading: "A limited edition release. When it's gone, it's gone.",
       cta_label: "Shop the drop",
       cta_url: "/products",
-      eyebrow: "Drop 01 · Limited run",
-      cta_secondary_label: "See what's coming",
-      cta_secondary_url: "/pages/about",
+      eyebrow: "The drop · Live now",
+      cta_secondary_label: "Lookbook",
+      cta_secondary_url: "/pages/lookbook",
     },
     sections: [
       { type: "featured_products", heading: "The pieces", limit: 3 },
@@ -117,7 +117,7 @@ function catalogFirstRecipe(store: StoreInfo): HomepageContent {
       subheading: "The catalog — shop everything.",
       cta_label: "Browse all",
       cta_url: "/products",
-      eyebrow: "The full catalog",
+      eyebrow: "The catalog",
     },
     sections: [
       { type: "featured_products", heading: "Featured", limit: 5 },
@@ -135,7 +135,7 @@ function classicShopRecipe(store: StoreInfo): HomepageContent {
         "A clean storefront for merchants who want familiar footing without sacrificing craft.",
       cta_label: "Shop everything",
       cta_url: "/products",
-      eyebrow: "Welcome",
+      eyebrow: "Spring collection · Live now",
     },
     sections: [
       { type: "featured_products", heading: "What's in this week", limit: 4 },
@@ -177,7 +177,7 @@ function minimalRecipe(store: StoreInfo): HomepageContent {
       subheading: "Fewer things, chosen carefully.",
       cta_label: "Enter the store",
       cta_url: "/products",
-      eyebrow: "A considered selection",
+      eyebrow: "Now open",
     },
     sections: [{ type: "featured_products", limit: 1 }],
   };
@@ -192,9 +192,9 @@ function splitHeroRecipe(store: StoreInfo): HomepageContent {
         "A cinematic opening frame — product on the right, narrative on the left. Equal weight, no competition.",
       cta_label: "Shop the drop",
       cta_url: "/products",
-      eyebrow: "New arrivals",
+      eyebrow: "Featured",
       aside_image_url: "/layout-placeholders/split-aside.svg",
-      aside_image_alt: `${store.name} product aside image`,
+      aside_image_alt: `${store.name} featured`,
     },
     sections: [{ type: "featured_products", limit: 3 }],
   };
@@ -209,9 +209,9 @@ function storyLedRecipe(store: StoreInfo): HomepageContent {
       subheading: `${store.name} began as a single question: what if a store felt like a letter from the people who made it?`,
       cta_label: "Read the story",
       cta_url: "/pages/about",
-      eyebrow: "Letter from the studio",
+      eyebrow: "From the studio",
       aside_image_url: "/layout-placeholders/story-aside.svg",
-      aside_image_alt: `${store.name} story image`,
+      aside_image_alt: "Studio workshop",
     },
     sections: [
       {

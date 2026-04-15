@@ -12,6 +12,7 @@ import { Field } from "@repo/ui/field";
 import { StorefrontLayoutPreview } from "@repo/ui/storefront-preview";
 
 import { updateStorefrontTheme } from "@/app/(admin)/settings/themes/actions";
+import { useToast } from "@/components/feedback/Toaster";
 import type { Store } from "@/lib/api/platform-api";
 import {
   defaultStorefrontTheme,
@@ -56,6 +57,7 @@ export function StorefrontThemeForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [pending, startTransition] = useTransition();
+  const { toast } = useToast();
 
   const dirty = JSON.stringify(theme) !== JSON.stringify(initialTheme);
 
@@ -79,9 +81,12 @@ export function StorefrontThemeForm({
       const result = await updateStorefrontTheme(theme);
       if (!result.ok) {
         setError(result.message);
+        toast.error("Couldn't save storefront theme", result.message);
         return;
       }
       setSuccess(true);
+      toast.success("Storefront theme saved", "Changes are live on your storefront.");
+      setTimeout(() => setSuccess(false), 3000);
     });
   }
 

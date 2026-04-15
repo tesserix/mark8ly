@@ -1,11 +1,17 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ExternalLink, Plus } from "lucide-react";
+import { ExternalLink, EyeOff, Plus, Send, Trash2 } from "lucide-react";
+import { AlertDialog } from "@tesserix/web";
 
 import type { AdminPageSummary } from "@/lib/api/marketplace-api";
-import { createDraftPageAndRedirect } from "@/app/(admin)/settings/pages/actions";
+import {
+  createDraftPageAndRedirect,
+  deletePageAction,
+  updatePageAction,
+} from "@/app/(admin)/settings/pages/actions";
 import { useToast } from "@/components/feedback/Toaster";
 
 interface PagesListProps {
@@ -26,8 +32,10 @@ function formatDate(iso: string): string {
 }
 
 export function PagesList({ pages, canManage }: PagesListProps) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminPageSummary | null>(null);
   const { toast } = useToast();
 
   const handleAdd = () => {
@@ -38,6 +46,34 @@ export function PagesList({ pages, canManage }: PagesListProps) {
       if (result && !result.ok) {
         setError(result.message);
         toast.error("Could not create page", result.message);
+      }
+    });
+  };
+
+  const handleTogglePublished = (p: AdminPageSummary) => {
+    const next = !p.published;
+    startTransition(async () => {
+      const result = await updatePageAction(p.id, { published: next });
+      if (result.ok) {
+        toast.success(next ? "Page published" : "Page unpublished");
+        router.refresh();
+      } else {
+        toast.error("Update failed", result.message);
+      }
+    });
+  };
+
+  const handleDeleteConfirm = () => {
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    if (!target) return;
+    startTransition(async () => {
+      const result = await deletePageAction(target.id);
+      if (result.ok) {
+        toast.success("Page deleted");
+        router.refresh();
+      } else {
+        toast.error("Delete failed", result.message);
       }
     });
   };
@@ -116,15 +152,46 @@ export function PagesList({ pages, canManage }: PagesListProps) {
                     {formatDate(p.updated_at)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <a
-                      href={`/pages/${p.slug}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center text-sm text-moss-700 hover:underline"
-                      aria-label={`Preview ${p.title}`}
-                    >
-                      Preview <ExternalLink className="ml-1 h-3 w-3" />
-                    </a>
+                    <div className="flex items-center justify-end gap-1">
+                      <a
+                        href={`/pages/${p.slug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-8 items-center rounded-md px-2 text-sm text-moss-700 hover:bg-moss-50"
+                        aria-label={`Preview ${p.title}`}
+                        title="Preview"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                      {canManage ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePublished(p)}
+                            disabled={pending}
+                            className="inline-flex h-8 items-center rounded-md px-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                            aria-label={p.published ? `Unpublish ${p.title}` : `Publish ${p.title}`}
+                            title={p.published ? "Unpublish" : "Publish"}
+                          >
+                            {p.published ? (
+                              <EyeOff className="h-4 w-4" />
+                            ) : (
+                              <Send className="h-4 w-4" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteTarget(p)}
+                            disabled={pending}
+                            className="inline-flex h-8 items-center rounded-md px-2 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                            aria-label={`Delete ${p.title}`}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -132,6 +199,22 @@ export function PagesList({ pages, canManage }: PagesListProps) {
           </table>
         </div>
       )}
+
+      <AlertDialog
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete page"
+        message={
+          deleteTarget
+            ? `Delete "${deleteTarget.title}"? This cannot be undone.`
+            : ""
+        }
+        type="confirm"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </section>
   );
 }

@@ -17,13 +17,14 @@ interface Props {
 
 export default async function PageEditorRoute({ params }: Props) {
   const { id } = await params;
-  const { role, email, tenantId } = await getServerSessionContext();
+  const { role, userId, tenantId } = await getServerSessionContext();
   const canManage = canEditSettings(role);
 
   const storeId = await resolveStoreId();
   if (!storeId) notFound();
 
-  const session: SessionHeaders = { userId: email, tenantId };
+  // FGA tuples key on the Firebase UID (x-session-user-id), not email.
+  const session: SessionHeaders = { userId, tenantId };
   const page = await getPage(storeId, id, session).catch(() => null);
   if (!page) notFound();
 

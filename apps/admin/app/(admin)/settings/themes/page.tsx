@@ -8,16 +8,18 @@ import {
 import { getBranding, listPages, listCategories, type AdminCategory, type SessionHeaders } from "@/lib/api/marketplace-api";
 
 export default async function ThemesSettingsPage() {
-  const { tenantName, email, role, memberships, tenantId, currentStore } =
+  const { tenantName, userId, role, memberships, tenantId, currentStore } =
     await getServerSessionContext();
   const editable = canEditSettings(role);
 
-  // Fetch branding from marketplace-api (B1).
+  // Fetch branding from marketplace-api (B1). FGA tuples are keyed by the
+  // Firebase UID (x-session-user-id), NOT email — passing email to
+  // SessionHeaders makes the Check fail and the endpoint 404s.
   let branding = null;
   let pages: Awaited<ReturnType<typeof listPages>> = [];
   let categories: AdminCategory[] = [];
   if (currentStore) {
-    const session: SessionHeaders = { userId: email, tenantId };
+    const session: SessionHeaders = { userId, tenantId };
     [branding, pages, categories] = await Promise.all([
       getBranding(currentStore.id, session),
       listPages(currentStore.id, session).catch(() => []),

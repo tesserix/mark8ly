@@ -10,11 +10,12 @@ import { listPages, type SessionHeaders } from "@/lib/api/marketplace-api";
 export const dynamic = "force-dynamic";
 
 export default async function PagesIndexPage() {
-  const { role, email, tenantId } = await getServerSessionContext();
+  const { role, userId, tenantId } = await getServerSessionContext();
   const canManage = canEditSettings(role);
 
   const storeId = await resolveStoreId();
-  const session: SessionHeaders = { userId: email, tenantId };
+  // FGA tuples key on the Firebase UID (x-session-user-id), not email.
+  const session: SessionHeaders = { userId, tenantId };
   const pages = storeId ? await listPages(storeId, session).catch(() => []) : [];
 
   return (

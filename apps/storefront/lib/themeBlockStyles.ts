@@ -41,7 +41,7 @@ export interface HeroStyles {
   primaryCta: string;
   secondaryCta: string | null;
   asideSlot: string | null;
-  asideImage: string;
+  asideImage: string | null;
 }
 
 export function heroStylesFor(layout: StorefrontLayout): HeroStyles {
@@ -66,7 +66,7 @@ export function heroStylesFor(layout: StorefrontLayout): HeroStyles {
         primaryCta: "mt-10 inline-flex h-14 items-center justify-center bg-foreground px-10 text-sm font-bold uppercase tracking-[0.16em] text-background transition-opacity hover:opacity-90",
         secondaryCta: "mt-10 inline-flex h-14 items-center justify-center border border-foreground px-8 text-sm font-bold uppercase tracking-[0.16em] text-foreground transition-colors hover:bg-foreground hover:text-background",
         asideSlot: null,
-        asideImage: "",
+        asideImage: null,
       };
     case "split-hero":
       return {
@@ -99,7 +99,7 @@ export function heroStylesFor(layout: StorefrontLayout): HeroStyles {
         primaryCta: "mt-8 inline-flex h-11 items-center gap-2 border-b border-foreground pb-1 text-sm font-medium uppercase tracking-[0.14em] text-foreground transition-opacity hover:opacity-70",
         secondaryCta: null,
         asideSlot: null,
-        asideImage: "",
+        asideImage: null,
       };
     case "classic-shop":
       return {
@@ -110,7 +110,7 @@ export function heroStylesFor(layout: StorefrontLayout): HeroStyles {
         primaryCta: "mt-8 inline-flex h-12 items-center justify-center rounded-md bg-foreground px-8 text-sm font-semibold text-background transition-opacity hover:opacity-90",
         secondaryCta: null,
         asideSlot: null,
-        asideImage: "",
+        asideImage: null,
       };
     case "catalog-first":
       return {
@@ -121,7 +121,7 @@ export function heroStylesFor(layout: StorefrontLayout): HeroStyles {
         primaryCta: "mt-6 inline-flex h-10 items-center justify-center rounded-md bg-foreground px-6 text-sm font-medium text-background transition-opacity hover:opacity-90",
         secondaryCta: null,
         asideSlot: null,
-        asideImage: "",
+        asideImage: null,
       };
     case "compact":
       return {
@@ -132,7 +132,7 @@ export function heroStylesFor(layout: StorefrontLayout): HeroStyles {
         primaryCta: "mt-6 inline-flex h-10 items-center gap-2 border-b border-foreground pb-0.5 text-xs font-semibold uppercase tracking-[0.14em] text-foreground transition-opacity hover:opacity-70",
         secondaryCta: null,
         asideSlot: null,
-        asideImage: "",
+        asideImage: null,
       };
     default:
       return {
@@ -143,7 +143,7 @@ export function heroStylesFor(layout: StorefrontLayout): HeroStyles {
         primaryCta: "mt-8 inline-flex h-12 items-center rounded-md bg-ink-900 px-6 text-base font-medium text-paper-200 transition-colors hover:bg-moss-700",
         secondaryCta: null,
         asideSlot: null,
-        asideImage: "",
+        asideImage: null,
       };
   }
 }

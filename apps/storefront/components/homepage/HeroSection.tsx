@@ -86,7 +86,7 @@ export function HeroSection({
           ) : null}
         </div>
         {/* Aside image — only rendered when layout declares asideSlot support */}
-        {asideImageUrl && styles.asideSlot && safeUrl(asideImageUrl) !== "#" ? (
+        {asideImageUrl && styles.asideSlot && styles.asideImage && safeUrl(asideImageUrl) !== "#" ? (
           <div className={styles.asideSlot}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

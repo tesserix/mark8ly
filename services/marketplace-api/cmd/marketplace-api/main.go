@@ -40,6 +40,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
+	"github.com/mark8ly/marketplace-api/internal/handlers/testroutes"
 	"github.com/mark8ly/marketplace-api/internal/health"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/media"
@@ -151,6 +152,9 @@ func main() {
 	// /internal vendor endpoints, so no self-vendor lookup is needed.
 	// product.Service.resolveVendorID is nil-safe for exactly this case.
 	var vendorSvc *vendor.Service
+	// brandingSeeder is non-nil only when MARKETPLACE_API_ENABLE_TEST_ROUTES=true.
+	// Declared at func scope so the later route-mount block can see it.
+	var brandingSeeder *testroutes.BrandingSeeder
 	if m == mode.Admin || m == mode.Both {
 		productRepo := product.NewRepository(conn)
 		categoryRepo := category.NewRepository(conn)
@@ -367,6 +371,16 @@ func main() {
 			Logger: log,
 		})
 		brandingHandler := admin.NewBrandingHandler(brandingSvc, log)
+
+		// Test-only branding seeder. Wired only when
+		// MARKETPLACE_API_ENABLE_TEST_ROUTES=true so it can never leak
+		// into a deployed environment. Used by the storefront visual-
+		// regression Playwright suite to flip layout + homepage_content
+		// between snapshots. brandingSeeder is declared at func scope.
+		if os.Getenv("MARKETPLACE_API_ENABLE_TEST_ROUTES") == "true" {
+			brandingSeeder = testroutes.NewBrandingSeeder(storesRepo, brandingSvc, log)
+			log.Warn("test routes enabled — do not use in production")
+		}
 
 		// Pages (CMS).
 		pageSvc := page.NewService(page.NewRepository(conn))
@@ -728,6 +742,9 @@ func main() {
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
 		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
+		if brandingSeeder != nil {
+			brandingSeeder.Register(r.Group("/api/v1/test"))
+		}
 		if pushWebhookHandler != nil {
 			r.POST("/internal/push-webhook", pushWebhookHandler)
 		}

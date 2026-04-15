@@ -33,14 +33,16 @@ import {
   LAYOUTS,
 } from "./layout-blocks.fixtures";
 
-const API_URL = process.env.API_URL ?? "http://localhost:8086";
+const MARKETPLACE_API_URL =
+  process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 const STOREFRONT_URL =
   process.env.STOREFRONT_BASE_URL ?? "http://localhost:4203";
 const TEST_SLUG = process.env.STOREFRONT_VISUAL_TEST_SLUG ?? "";
 
 test.skip(
   !TEST_SLUG,
-  "Set STOREFRONT_VISUAL_TEST_SLUG to run visual-regression against a seeded store",
+  "Set STOREFRONT_VISUAL_TEST_SLUG to run visual-regression against a seeded store " +
+    "(also requires marketplace-api running with MARKETPLACE_API_ENABLE_TEST_ROUTES=true)",
 );
 
 type ContentState = "empty" | "default" | "custom";
@@ -57,12 +59,12 @@ async function seedBranding(
   layout: StorefrontLayoutKey,
   content: HomepageContent,
 ): Promise<void> {
-  // Assumes marketplace-api exposes a test-only route:
+  // Hits the marketplace-api test-only route:
   //   POST /api/v1/test/branding
   //   body: { slug, layout_variant, homepage_content }
-  // If the route does not exist, the response will be non-OK and the
-  // test will fail clearly rather than silently diffing stale content.
-  const res = await request.post(`${API_URL}/api/v1/test/branding`, {
+  // The route is mounted only when MARKETPLACE_API_ENABLE_TEST_ROUTES=true.
+  // Implementation: services/marketplace-api/internal/handlers/testroutes.
+  const res = await request.post(`${MARKETPLACE_API_URL}/api/v1/test/branding`, {
     data: {
       slug,
       layout_variant: layout,
@@ -72,7 +74,7 @@ async function seedBranding(
   if (!res.ok()) {
     throw new Error(
       `seedBranding failed: ${res.status()} ${await res.text()} — ` +
-        `is marketplace-api's test route enabled?`,
+        `is marketplace-api running with MARKETPLACE_API_ENABLE_TEST_ROUTES=true?`,
     );
   }
 }

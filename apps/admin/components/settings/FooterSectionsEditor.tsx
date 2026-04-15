@@ -159,8 +159,9 @@ export function FooterSectionsEditor({
           {/* Items list */}
           <div className="space-y-2 pl-3 border-l-2 border-border-subtle ml-1">
             {section.items.map((item, itemIdx) => (
-              // Stable key: label + kind discriminator. Falls back to index.
-              <div key={`${item.kind}-${item.label || itemIdx}`} className="flex items-center gap-2">
+              // Key by index — NOT by label. Keying on content would
+              // remount the input on every keystroke and steal focus.
+              <div key={`item-${itemIdx}`} className="flex items-center gap-2">
                 {/* Label */}
                 <input
                   type="text"

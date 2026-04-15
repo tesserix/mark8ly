@@ -61,6 +61,7 @@ export function StorefrontThemeForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const { toast } = useToast();
 
@@ -318,20 +319,6 @@ export function StorefrontThemeForm({
         </div>
       </section>
 
-      {/* ── PREVIEW (full width) ─────────────────────────────── */}
-      <section className="space-y-4 border-t border-border-subtle pt-10">
-        <div className="space-y-2">
-          <p className="eyebrow">Preview</p>
-          <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
-            Live storefront preview
-          </h2>
-          <p className="text-sm leading-7 text-foreground-secondary">
-            Structural render with your current selections.
-          </p>
-        </div>
-        <StorefrontLayoutPreview theme={theme} name={store.name} slug={store.slug} />
-      </section>
-
       {error && (
         <p role="alert" className="text-sm text-danger">
           {error}
@@ -357,6 +344,13 @@ export function StorefrontThemeForm({
           Reset
         </button>
         <button
+          type="button"
+          onClick={() => setPreviewOpen(true)}
+          className="inline-flex h-11 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground hover:border-[color:var(--moss-700)]"
+        >
+          Preview
+        </button>
+        <button
           type="submit"
           data-testid="save-storefront-theme"
           disabled={!editable || !dirty || pending}
@@ -365,7 +359,57 @@ export function StorefrontThemeForm({
           {pending ? "Saving…" : "Save storefront theme"}
         </button>
       </div>
+
+      {previewOpen ? (
+        <PreviewModal
+          theme={theme}
+          name={store.name}
+          slug={store.slug}
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
     </form>
+  );
+}
+
+function PreviewModal({
+  theme,
+  name,
+  slug,
+  onClose,
+}: {
+  theme: StorefrontTheme;
+  name: string;
+  slug: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Storefront preview"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-5xl overflow-hidden rounded-lg bg-[color:var(--background-elevated)] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3">
+          <p className="text-sm font-medium text-foreground">Storefront preview</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm text-foreground-secondary hover:text-foreground"
+          >
+            Close ✕
+          </button>
+        </div>
+        <div className="max-h-[80vh] overflow-y-auto p-6">
+          <StorefrontLayoutPreview theme={theme} name={name} slug={slug} />
+        </div>
+      </div>
+    </div>
   );
 }
 

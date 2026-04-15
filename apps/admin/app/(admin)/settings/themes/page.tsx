@@ -34,27 +34,23 @@ export default async function ThemesSettingsPage() {
         description="Define your store identity, color palette, typography, layout, and footer. Changes are reflected on your live storefront immediately."
         readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
       >
-        {currentStore ? (
-          <div className="space-y-16">
-            {branding ? (
-              <BrandingSettingsClient
-                branding={branding}
-                editable={editable}
-                pages={pages}
-                categories={categories}
-                store={{
-                  name: currentStore.name,
-                  slug: currentStore.slug,
-                  countryCode: currentStore.country_code,
-                }}
-              />
-            ) : null}
-            {/* Storefront theme (preset-driven) — modern layout picker with
-                thumbnails, surface toggle (clean/tinted), and live preview.
-                Writes to stores.storefront_theme JSON, separate from the
-                legacy per-column branding above. */}
-            <StorefrontThemeForm store={currentStore} editable={editable} />
-          </div>
+        {currentStore && branding ? (
+          <BrandingSettingsClient
+            branding={branding}
+            editable={editable}
+            pages={pages}
+            categories={categories}
+            store={{
+              name: currentStore.name,
+              slug: currentStore.slug,
+              countryCode: currentStore.country_code,
+            }}
+            themeContent={
+              <StorefrontThemeForm store={currentStore} editable={editable} />
+            }
+          />
+        ) : currentStore ? (
+          <StorefrontThemeForm store={currentStore} editable={editable} />
         ) : (
           <p className="text-sm text-danger">
             We couldn&apos;t load the current store. Please refresh, or contact

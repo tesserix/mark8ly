@@ -33,12 +33,12 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
   return (
     <nav
       aria-label="Store"
-      className="mb-10 w-full border-b border-[color:var(--ink-900)] border-opacity-10"
+      className="mb-10 w-full border-b border-[color:var(--storefront-text,var(--ink-900))] border-opacity-10"
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4 sm:px-8">
         <Link
           href="/"
-          className="truncate font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="truncate font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         >
           {storeName ?? "Store"}
         </Link>
@@ -53,7 +53,7 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
                 <Link
                   href={link.href}
                   aria-current={isActive ? "page" : undefined}
-                  className="min-h-[44px] flex items-center text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  className="min-h-[44px] flex items-center text-[color:var(--storefront-text,var(--ink-900))] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
                 >
                   {link.label}
                 </Link>
@@ -64,7 +64,7 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
             <Link
               href="/cart"
               aria-current={pathname === "/cart" ? "page" : undefined}
-              className="min-h-[44px] inline-flex items-center gap-1.5 text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="min-h-[44px] inline-flex items-center gap-1.5 text-[color:var(--storefront-text,var(--ink-900))] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
             >
               Cart
               <Suspense fallback={null}>

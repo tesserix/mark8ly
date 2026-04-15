@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition, useCallback } from "react";
-import { Link2, Code, Image, Check, Home } from "lucide-react";
+import { useState, useTransition, useCallback, type ReactNode } from "react";
+import { Link2, Code, Image, Check, Home, Palette } from "lucide-react";
 
 import type { StoreBranding, UpdateBrandingInput, AdminPage, AdminCategory } from "@/lib/api/marketplace-api";
 import { HomepageTab } from "./HomepageTab";
@@ -21,14 +21,19 @@ interface BrandingSettingsClientProps {
   pages?: AdminPageSummary[];
   categories?: Pick<AdminCategory, "id" | "slug" | "name">[];
   store: StoreInfo;
+  // Rendered inside the Theme tab. Passed in as a slot so the page
+  // owns the <StorefrontThemeForm> instance (needs the full Store,
+  // which BrandingSettingsClient doesn't have).
+  themeContent?: ReactNode;
 }
 
-type Tab = "identity" | "homepage" | "footer" | "advanced";
+type Tab = "identity" | "theme" | "homepage" | "footer" | "advanced";
 
 const TABS: { key: Tab; label: string; icon: typeof Image }[] = [
   { key: "identity", label: "Identity", icon: Image },
+  { key: "theme",    label: "Theme",    icon: Palette },
   { key: "homepage", label: "Homepage", icon: Home },
-  { key: "footer", label: "Footer", icon: Link2 },
+  { key: "footer",   label: "Footer",   icon: Link2 },
   { key: "advanced", label: "Advanced", icon: Code },
 ];
 
@@ -48,6 +53,7 @@ export function BrandingSettingsClient({
   pages = [],
   categories = [],
   store,
+  themeContent,
 }: BrandingSettingsClientProps) {
   const { toast } = useToast();
   const [form, setForm] = useState<StoreBranding>(initial);
@@ -99,9 +105,11 @@ export function BrandingSettingsClient({
   return (
     <div className="space-y-8">
       {/* Horizontal tab bar — reclaims the full content width for the
-          main editing surface. Underline style, Shopify/Linear-like. */}
+          main editing surface. Underline style, Shopify/Linear-like.
+          No overflow-x-auto — the tab set is bounded (4 tabs), so a
+          scrollbar is never needed and fires false on wide screens. */}
       <nav
-        className="flex gap-1 overflow-x-auto border-b border-border-subtle"
+        className="flex flex-wrap gap-1 border-b border-border-subtle"
         aria-label="Branding sections"
       >
         {TABS.map(({ key, label, icon: Icon }) => {
@@ -134,12 +142,14 @@ export function BrandingSettingsClient({
       {/* Main content */}
       <div className="min-w-0 space-y-8">
         {tab === "identity" && <IdentityTab form={form} patch={patch} editable={editable} />}
+        {tab === "theme" && themeContent}
         {tab === "homepage" && <HomepageTab form={form} patch={patch} editable={editable} pages={pages} categories={categories} store={store} onHeroValidityChange={setHeroValid} />}
         {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} pages={pages} />}
         {tab === "advanced" && <AdvancedTab form={form} patch={patch} editable={editable} />}
 
-        {/* Save bar */}
-        {editable && (
+        {/* Save bar — hidden on the Theme tab, which ships its own
+            save/reset/preview controls inside the StorefrontThemeForm. */}
+        {editable && tab !== "theme" && (
           <div className="flex items-center gap-3 border-t border-border-subtle pt-6">
             <button
               type="button"

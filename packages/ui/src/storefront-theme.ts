@@ -59,25 +59,33 @@ export type StorefrontPalette =
   | "terracotta"
   | "blush-studio"
   | "copper-roast"
+  | "tangerine"
+  | "raspberry"
+  | "mocha"
   // Cool
   | "arctic"
   | "pacific"
   | "slate-cloud"
+  | "cerulean"
   // Bold / pop
   | "citrus-burst"
   | "coral-pop"
+  | "mustard"
   // Natural
   | "greenhouse"
   | "matcha"
+  | "spearmint"
   // Pastel
   | "lavender-mist"
   | "sky-linen"
   // Monochrome
   | "noir-pop"
+  | "graphite"
   // Jewel
   | "plum-noir"
   // Heritage
-  | "indigo-block";
+  | "indigo-block"
+  | "peacock";
 
 export type StorefrontBackground =
   // Light-mode options
@@ -245,6 +253,44 @@ const palettes: Record<StorefrontPalette, PaletteDef> = {
     light: { accent: "#B07800", primary: "#12185A" },
     dark:  { accent: "#F5C040", primary: "#F5F7FC" },
   },
+  // Warm — additions
+  tangerine: {
+    light: { accent: "#E8711A", primary: "#2A1405" },
+    dark:  { accent: "#FF9A4A", primary: "#FFF5EC" },
+  },
+  raspberry: {
+    light: { accent: "#C1185E", primary: "#32081A" },
+    dark:  { accent: "#F25585", primary: "#FFEEF4" },
+  },
+  mocha: {
+    light: { accent: "#6B3A1F", primary: "#1F120A" },
+    dark:  { accent: "#C08860", primary: "#F8EDE0" },
+  },
+  // Cool — additions
+  cerulean: {
+    light: { accent: "#1C9BD4", primary: "#0C2435" },
+    dark:  { accent: "#5FD0FF", primary: "#F0FAFF" },
+  },
+  // Bold — additions
+  mustard: {
+    light: { accent: "#B58A1A", primary: "#241A00" },
+    dark:  { accent: "#F5C74A", primary: "#FFF9E5" },
+  },
+  // Natural — additions
+  spearmint: {
+    light: { accent: "#1DA684", primary: "#0A2A20" },
+    dark:  { accent: "#5CE0B0", primary: "#EBFDF6" },
+  },
+  // Monochrome — additions
+  graphite: {
+    light: { accent: "#4A4A48", primary: "#0C0C0A" },
+    dark:  { accent: "#C8C8C5", primary: "#FAFAFA" },
+  },
+  // Heritage — additions
+  peacock: {
+    light: { accent: "#0F5A68", primary: "#071E24" },
+    dark:  { accent: "#5EC0D0", primary: "#EEFAFD" },
+  },
 };
 
 /* ============================================================
@@ -297,6 +343,14 @@ const defaultDarkBackground: Record<StorefrontPalette, StorefrontBackground> = {
   "noir-pop":     "obsidian",
   "plum-noir":    "velvet",
   "indigo-block": "nebula",
+  tangerine:      "ember",
+  raspberry:      "velvet",
+  mocha:          "ember",
+  cerulean:       "nebula",
+  mustard:        "ember",
+  spearmint:      "aurora",
+  graphite:       "obsidian",
+  peacock:        "aurora",
 };
 
 /** Returns the sensible default background for (mode, palette). */
@@ -413,6 +467,14 @@ export const storefrontPaletteOptions: Array<{
   { value: "noir-pop",      label: "Noir Pop",      description: "Electric red — streetwear, sneakers, limited drops." },
   { value: "plum-noir",     label: "Plum Noir",     description: "Amethyst — jewellery, wine, perfume." },
   { value: "indigo-block",  label: "Indigo Block",  description: "Heritage gold — block-print textiles, handloom." },
+  { value: "tangerine",     label: "Tangerine",     description: "Bright orange — fresh, juice, energetic DTC." },
+  { value: "raspberry",     label: "Raspberry",     description: "Warm pink-red — cheerful, feminine DTC." },
+  { value: "mocha",          label: "Mocha",         description: "Warm dark brown — editorial luxe, leather goods." },
+  { value: "cerulean",      label: "Cerulean",      description: "Vivid sky blue — summery, fresh, travel." },
+  { value: "mustard",       label: "Mustard",       description: "Muted yellow-brown — editorial fashion." },
+  { value: "spearmint",     label: "Spearmint",     description: "Cool mint-teal — oral care, fresh, minty brands." },
+  { value: "graphite",      label: "Graphite",      description: "Grey-black — industrial, architectural, tech tools." },
+  { value: "peacock",       label: "Peacock",       description: "Deep teal + gold — classic Indian wedding & heritage." },
 ];
 
 export const storefrontBackgroundOptions: Record<StorefrontMode, Array<{
@@ -752,16 +814,31 @@ export function themeSpacing(theme: StorefrontTheme): string {
 export function themeCssVariables(
   theme: StorefrontTheme,
 ): Record<string, string> {
+  const { primary, accent, background, surface, text } = theme.colors;
+  // Emit both the dedicated --storefront-* tokens AND overrides for the
+  // mark8ly house tokens (--foreground, --moss-700, --paper-200, …)
+  // so Tailwind utilities like text-foreground / bg-[var(--paper-200)]
+  // that pre-date the --storefront-* migration render correctly —
+  // especially critical in dark mode, where "text-foreground" would
+  // otherwise resolve to near-black against a dark background.
   return {
-    "--storefront-primary": theme.colors.primary,
-    "--storefront-accent": theme.colors.accent,
-    "--storefront-background": theme.colors.background,
-    "--storefront-surface": theme.colors.surface,
-    "--storefront-text": theme.colors.text,
+    "--storefront-primary": primary,
+    "--storefront-accent": accent,
+    "--storefront-background": background,
+    "--storefront-surface": surface,
+    "--storefront-text": text,
     "--storefront-heading-font": fontStacks[theme.typography.headingFont],
     "--storefront-body-font": fontStacks[theme.typography.bodyFont],
     "--storefront-radius": themeRadius(theme),
     "--storefront-density-scale": String(themeDensityScale(theme)),
     "--storefront-mode": theme.mode,
+    // House-token overrides — scoped to the storefront <body> via the
+    // layout.tsx inline style prop; admin surfaces never see these.
+    "--foreground": text,
+    "--foreground-secondary": `${text}B3`, // ~70% opacity hex
+    "--foreground-tertiary": `${text}80`,  // ~50% opacity hex
+    "--ink-900": text,
+    "--paper-200": background,
+    "--moss-700": accent,
   };
 }

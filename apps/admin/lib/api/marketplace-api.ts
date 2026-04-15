@@ -502,6 +502,42 @@ export async function requestMediaUploadUrl(
   };
 }
 
+export type BrandingImageKind = "logo" | "favicon" | "hero" | "aside" | "section";
+
+export interface RequestBrandingUploadUrlInput {
+  filename: string;
+  content_type: string;
+  kind: BrandingImageKind;
+}
+
+export interface BrandingUploadUrl {
+  upload_url: string;
+  public_url: string;
+  storage_key: string;
+  expires_at: string;
+}
+
+export async function requestBrandingUploadUrl(
+  storeId: string,
+  body: RequestBrandingUploadUrlInput,
+  session: SessionHeaders,
+): Promise<MutationResult<BrandingUploadUrl>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/branding/upload-url`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const raw = (await res.json()) as BrandingUploadUrl;
+  return { ok: true, data: raw };
+}
+
 export interface FinalizeMediaInput {
   storage_key: string;
   url: string;

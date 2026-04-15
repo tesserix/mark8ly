@@ -3,10 +3,9 @@
 // 2. PUT file to GCS using upload_url
 // 3. Return public_url so the caller can set it on the branding form field.
 
-const MARKETPLACE_API_URL =
-  process.env.NEXT_PUBLIC_MARKETPLACE_API_URL ??
-  process.env.MARKETPLACE_API_URL ??
-  "";
+// Same-origin proxy — see
+// apps/admin/app/api/admin/stores/[storeId]/branding/upload-url/route.ts
+// for why we don't call marketplace-api directly from the browser.
 
 export type BrandingImageKind = "logo" | "favicon" | "hero" | "aside" | "section";
 
@@ -27,7 +26,7 @@ async function requestSignedUrl(
   kind: BrandingImageKind,
 ): Promise<SignedURLResponse> {
   const res = await fetch(
-    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/branding/upload-url`,
+    `/api/admin/stores/${storeId}/branding/upload-url`,
     {
       method: "POST",
       credentials: "include",

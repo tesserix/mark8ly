@@ -91,10 +91,10 @@ function SocialRow({ branding }: { branding: StorefrontBranding }) {
 function Section({ section }: { section: FooterSection }) {
   return (
     <div>
-      <p className="font-serif text-base font-medium text-foreground">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground">
         {section.label}
       </p>
-      <ul className="mt-4 space-y-2">
+      <ul className="mt-4 space-y-2.5">
         {section.items.map((item, i) => (
           <li key={`${item.label}-${i}`}>
             <FooterLink item={item} />

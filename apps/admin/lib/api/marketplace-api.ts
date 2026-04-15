@@ -1782,6 +1782,11 @@ export interface HomepageHero {
   subheading?: string | null;
   cta_label?: string | null;
   cta_url?: string | null;
+  eyebrow?: string | null;
+  cta_secondary_label?: string | null;
+  cta_secondary_url?: string | null;
+  aside_image_url?: string | null;
+  aside_image_alt?: string | null;
 }
 
 export type HomepageSection =

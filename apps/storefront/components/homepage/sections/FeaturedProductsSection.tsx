@@ -1,13 +1,15 @@
 // Note: multiple FeaturedProductsSection instances with the same
-// collection_slug will make identical fetch() calls — Next.js automatically
-// dedupes these within a single render tree, so the backend only sees one
-// request per unique (storeSlug, collection_slug, pageSize) tuple.
-// Revalidation window is 60s (set in lib/api/marketplace-api.ts listProducts).
+// collection_slug (or same ordered set of product_slugs) will make
+// identical fetch() calls — Next.js automatically dedupes these within
+// a single render tree, so the backend only sees one request per
+// unique (storeSlug, ...key) tuple. Revalidation window is 60s.
 import Link from "next/link";
 
-import type { HomepageSection } from "@/lib/api/marketplace-api";
+import type { HomepageSection, StorefrontProduct } from "@/lib/api/marketplace-api";
 import type { StorefrontTheme } from "@repo/ui/storefront-theme";
-import { listProducts } from "@/lib/api/marketplace-api";
+import { fetchProductsBySlugs, listProducts } from "@/lib/api/marketplace-api";
+
+const MAX_SLUGS = 6;
 
 type FeaturedProductsSectionProps = {
   section: Extract<HomepageSection, { type: "featured_products" }>;
@@ -20,11 +22,26 @@ export async function FeaturedProductsSection({
   storeSlug,
 }: FeaturedProductsSectionProps) {
   const limit = Math.max(1, Math.min(section.limit ?? 8, 24));
-  const data = await listProducts(storeSlug, {
-    categorySlug: section.collection_slug,
-    pageSize: limit,
-  });
-  const products = data?.data ?? [];
+
+  // Hand-picked mode: merchant chose specific products by slug. Order is
+  // preserved server-side. Falls through to collection mode when no slugs.
+  const handPickedSlugs =
+    section.product_slugs && section.product_slugs.length > 0
+      ? section.product_slugs.slice(0, MAX_SLUGS)
+      : null;
+
+  let products: StorefrontProduct[];
+  if (handPickedSlugs) {
+    products = await fetchProductsBySlugs(storeSlug, handPickedSlugs);
+  } else if (section.collection_slug) {
+    const data = await listProducts(storeSlug, {
+      categorySlug: section.collection_slug,
+      pageSize: limit,
+    });
+    products = data?.data ?? [];
+  } else {
+    products = [];
+  }
 
   // Silent empty state — the collection may have been deleted or be empty.
   // Storefront renders nothing so customers never see a broken section.

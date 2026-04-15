@@ -5,6 +5,9 @@ import { TextSection } from "./sections/TextSection";
 import { ImageSection } from "./sections/ImageSection";
 import { FeaturedProductsSection } from "./sections/FeaturedProductsSection";
 import { QuoteSection } from "./sections/QuoteSection";
+import { MarqueeSection } from "./sections/MarqueeSection";
+import { PullQuoteSection } from "./sections/PullQuoteSection";
+import { LetterSection } from "./sections/LetterSection";
 
 type SectionsRendererProps = {
   sections: HomepageSection[];
@@ -38,7 +41,16 @@ export function SectionsRenderer({
                 storeSlug={storeSlug}
               />
             );
+          case "marquee":
+            return <MarqueeSection key={key} section={s} theme={theme} />;
+          case "pull_quote":
+            return <PullQuoteSection key={key} section={s} theme={theme} />;
+          case "letter":
+            return <LetterSection key={key} section={s} theme={theme} />;
           default:
+            // Forward-compat: an unknown section type (e.g. one added in a
+            // later build and served by a stale storefront) renders as a
+            // silent gap rather than crashing the homepage.
             return null;
         }
       })}

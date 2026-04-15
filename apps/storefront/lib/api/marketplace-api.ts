@@ -141,6 +141,37 @@ export async function listProducts(
 }
 
 /**
+ * Resolves a batched set of product handles in a single request. Used
+ * by the featured_products homepage block when the merchant hand-picks
+ * products instead of selecting a collection. Missing handles silently
+ * drop (the API does not 404 on partial matches), and the order the
+ * handles are returned in matches the order they were requested in.
+ *
+ * Caller should cap at 6 slugs — matches the validator's
+ * maxProductSlugs and the API handler's maxStorefrontSlugBatch.
+ */
+export async function fetchProductsBySlugs(
+  storeSlug: string,
+  slugs: string[],
+): Promise<StorefrontProduct[]> {
+  if (slugs.length === 0) return [];
+  const url = `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(
+    storeSlug,
+  )}/products?slugs=${slugs.map(encodeURIComponent).join(",")}`;
+  try {
+    const res = await fetch(url, {
+      headers: commonHeaders(),
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data?: StorefrontProduct[] };
+    return body.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Fetches a single published product by handle.
  */
 export async function getProductByHandle(
@@ -201,8 +232,24 @@ export interface HomepageHero {
 export type HomepageSection =
   | { type: "text"; heading?: string | null; markdown: string }
   | { type: "image"; url: string; alt?: string | null; caption?: string | null; heading?: string | null }
-  | { type: "featured_products"; collection_slug: string; limit?: number; heading?: string | null }
-  | { type: "quote"; text: string; attribution?: string | null; heading?: string | null };
+  | {
+      type: "featured_products";
+      collection_slug?: string;
+      product_slugs?: string[];
+      limit?: number;
+      heading?: string | null;
+    }
+  | { type: "quote"; text: string; attribution?: string | null; heading?: string | null }
+  | { type: "marquee"; items: string[]; speed?: "slow" | "normal" | "fast" }
+  | { type: "pull_quote"; text: string; attribution?: string | null; heading?: string | null }
+  | {
+      type: "letter";
+      eyebrow?: string | null;
+      title: string;
+      body: string;
+      cta_label?: string | null;
+      cta_url?: string | null;
+    };
 
 export interface HomepageContent {
   hero?: HomepageHero;

@@ -6,8 +6,8 @@
     "dev": "next dev --port 4203",
     "build": "next build",
     "start": "next start --port 4203",
-    "lint": "node scripts/check-no-jsx-literals.mjs",
-    "lint:layouts": "node scripts/check-no-jsx-literals.mjs",
+    "lint": "npm run lint:layouts && eslint .",
+    "lint:layouts": "eslint --max-warnings=0 components/layouts/",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,9 +23,11 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@repo/eslint-config": "*",
     "@types/node": "^24.9.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "eslint": "^9.39.1",
     "typescript": "^5.9.3"
   }
 }

@@ -132,7 +132,7 @@ export default async function AccountOrderPage({ params }: PageProps) {
       <DocumentsSection
         orderId={order.id}
         orderNumber={order.order_number}
-        paymentStatus={order.payment_status}
+        shipmentStatus={order.shipment?.status ?? null}
       />
     </div>
   );
@@ -141,18 +141,16 @@ export default async function AccountOrderPage({ params }: PageProps) {
 function DocumentsSection({
   orderId,
   orderNumber,
-  paymentStatus,
+  shipmentStatus,
 }: {
   orderId: string;
   orderNumber: string;
-  paymentStatus: string;
+  shipmentStatus: string | null;
 }) {
   const invoiceNumber = invoiceNumberFromOrder(orderNumber);
   const receiptNumber = receiptNumberFromOrder(orderNumber);
-  const receiptAvailable =
-    paymentStatus === "paid" ||
-    paymentStatus === "captured" ||
-    paymentStatus === "partially_refunded";
+  // Receipts are issued post-delivery, not on payment.
+  const receiptAvailable = shipmentStatus === "delivered";
 
   return (
     <section>
@@ -194,7 +192,7 @@ function DocumentsSection({
               className="text-xs text-[color:var(--ink-900)] opacity-60"
               style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
             >
-              {receiptAvailable ? receiptNumber : "Available after payment clears"}
+              {receiptAvailable ? receiptNumber : "Available after delivery"}
             </span>
           </div>
           {receiptAvailable ? (

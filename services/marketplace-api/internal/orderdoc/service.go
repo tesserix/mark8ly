@@ -1,0 +1,178 @@
+package orderdoc
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/internal/branding"
+	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/pkg/apperrors"
+)
+
+// Service composes the mailer with the data lookups required to fill a
+// DocumentInput from an order_id alone. Handlers call SendInvoice or
+// SendReceipt and the service handles loading the order, branding,
+// store and the deep link.
+type Service struct {
+	db                *gorm.DB
+	mailer            Mailer
+	orderRepo         order.Repository
+	brandingSvc       *branding.Service
+	storefrontURLBase string // template with {slug}
+}
+
+// NewService constructs a Service. Pass empty storefrontURLBase to
+// disable the CTA link in emails (button still renders fallback).
+func NewService(db *gorm.DB, mailer Mailer, orderRepo order.Repository, brandingSvc *branding.Service, storefrontURLBase string) *Service {
+	return &Service{
+		db:                db,
+		mailer:            mailer,
+		orderRepo:         orderRepo,
+		brandingSvc:       brandingSvc,
+		storefrontURLBase: storefrontURLBase,
+	}
+}
+
+// SendInvoice loads the order context and dispatches the invoice
+// envelope. Safe to call from a fire-and-forget goroutine — failures
+// are logged via the underlying mailer but do not return upstream.
+func (s *Service) SendInvoice(ctx context.Context, orderID uuid.UUID) error {
+	in, err := s.buildInput(ctx, orderID, false)
+	if err != nil {
+		return err
+	}
+	return s.mailer.SendInvoice(ctx, in)
+}
+
+// SendReceipt loads the order context and dispatches the receipt
+// envelope. Caller is responsible for ensuring the order has actually
+// been delivered before invoking — the mailer doesn't re-validate.
+func (s *Service) SendReceipt(ctx context.Context, orderID uuid.UUID) error {
+	in, err := s.buildInput(ctx, orderID, true)
+	if err != nil {
+		return err
+	}
+	return s.mailer.SendReceipt(ctx, in)
+}
+
+func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt bool) (DocumentInput, error) {
+	o, items, _, err := s.orderRepo.GetByID(ctx, s.db, orderID)
+	if err != nil {
+		return DocumentInput{}, fmt.Errorf("orderdoc: load order: %w", err)
+	}
+	if o == nil {
+		return DocumentInput{}, fmt.Errorf("orderdoc: order %s not found", orderID)
+	}
+	if o.CustomerEmail == "" {
+		return DocumentInput{}, fmt.Errorf("orderdoc: order %s has no customer email", orderID)
+	}
+
+	var store stores.Store
+	if err := s.db.WithContext(ctx).Where("id = ?", o.StoreID).First(&store).Error; err != nil {
+		return DocumentInput{}, fmt.Errorf("orderdoc: load store: %w", err)
+	}
+
+	theme := Theme{StoreName: store.Name}
+	b, berr := s.brandingSvc.GetByStoreID(ctx, o.StoreID)
+	if berr != nil && !errors.Is(berr, apperrors.ErrNotFound) {
+		return DocumentInput{}, fmt.Errorf("orderdoc: load branding: %w", berr)
+	}
+	if b != nil {
+		theme.ColorBackground = b.ColorBackground
+		theme.ColorText = b.ColorText
+		theme.ColorAccent = b.ColorAccent
+		theme.ColorButtonBg = b.ColorButtonBg
+		theme.ColorButtonText = b.ColorButtonText
+		theme.HeadingFont = fontFamilyFor(b.HeadingFont, true)
+		theme.BodyFont = fontFamilyFor(b.BodyFont, false)
+		if b.LogoURL != nil {
+			theme.LogoURL = *b.LogoURL
+		}
+		if b.Tagline != nil {
+			theme.Tagline = *b.Tagline
+		}
+		if b.FooterTagline != nil {
+			theme.FooterTagline = *b.FooterTagline
+		}
+		if b.FooterCopyright != nil {
+			theme.FooterCopyright = *b.FooterCopyright
+		}
+	}
+
+	// Deep link to the customer's account order page on the storefront.
+	// Falls back to empty so the email template can suppress the CTA.
+	orderURL := ""
+	if store.Slug != "" && s.storefrontURLBase != "" {
+		base := strings.ReplaceAll(s.storefrontURLBase, "{slug}", store.Slug)
+		orderURL = strings.TrimRight(base, "/") + "/account/orders/" + orderID.String()
+	}
+
+	in := DocumentInput{
+		Recipient:      o.CustomerEmail,
+		DocumentNumber: documentNumber(asReceipt, o.OrderNumber),
+		OrderNumber:    o.OrderNumber,
+		OrderURL:       orderURL,
+		PlacedAt:       o.PlacedAt,
+		GrandTotal:     o.GrandTotal,
+		CurrencyCode:   o.CurrencyCode,
+		ItemCount:      len(items),
+		Theme:          theme,
+	}
+	if asReceipt {
+		// Use updated_at as the delivery timestamp proxy — it gets touched
+		// on the shipment status PATCH that triggered this email.
+		t := o.UpdatedAt
+		in.DeliveredAt = &t
+	}
+	return in, nil
+}
+
+// documentNumber derives the deterministic invoice/receipt number from
+// the order_number. Mirrors apps/admin/lib/invoices/numbering.ts so the
+// email and the PDF show identical IDs for the same order.
+//
+//   M-PLA-260417-01154 → INV-PLA-260417-01154 / RCP-PLA-260417-01154
+func documentNumber(receipt bool, orderNumber string) string {
+	prefix := "INV-"
+	if receipt {
+		prefix = "RCP-"
+	}
+	if strings.HasPrefix(orderNumber, "M-") && len(orderNumber) > 2 {
+		return prefix + orderNumber[2:]
+	}
+	return prefix + orderNumber
+}
+
+// fontFamilyFor maps merchant font keys to email-safe CSS stacks. Same
+// table the giftcard package uses; duplicated to avoid a cross-package
+// import that would couple two unrelated email pipelines.
+func fontFamilyFor(key string, heading bool) string {
+	const (
+		serifFallback = "'Source Serif 4', 'Times New Roman', serif"
+		sansFallback  = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+	)
+	switch key {
+	case "source-serif-4":
+		return "'Source Serif 4', Georgia, 'Times New Roman', serif"
+	case "playfair-display":
+		return "'Playfair Display', Georgia, 'Times New Roman', serif"
+	case "lora":
+		return "'Lora', Georgia, 'Times New Roman', serif"
+	case "inter":
+		return "'Inter', " + sansFallback
+	case "source-sans-3":
+		return "'Source Sans 3', " + sansFallback
+	case "dm-sans":
+		return "'DM Sans', " + sansFallback
+	}
+	if heading {
+		return "Georgia, " + serifFallback
+	}
+	return sansFallback
+}

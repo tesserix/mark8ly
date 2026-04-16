@@ -1,0 +1,20 @@
+{{.Theme.StoreName}}
+{{if .Theme.Tagline}}{{.Theme.Tagline}}{{end}}
+
+INVOICE · {{.DocumentNumber}}
+
+{{.Heading}}
+
+{{.Lede}}
+
+Order:        {{.OrderNumber}}
+Placed:       {{.PlacedAt}}
+Items:        {{.ItemCount}}
+Total:        {{.GrandTotal}} {{.CurrencyCode}}
+
+View your invoice: {{.OrderURL}}
+
+—
+Need help? Reply to this email and someone from {{.Theme.StoreName}} will get back to you.
+{{if .Theme.FooterCopyright}}
+{{.Theme.FooterCopyright}}{{end}}

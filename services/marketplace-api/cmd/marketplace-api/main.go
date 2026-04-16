@@ -50,6 +50,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/push"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/page"
 	"github.com/mark8ly/marketplace-api/internal/product"
@@ -268,7 +269,24 @@ func main() {
 		orderSvc := order.NewService(conn, orderRepo, outboxRepo)
 		returnSvc := order.NewReturnService(conn, returnRepo, orderRepo, orderSvc, outboxRepo)
 		abandonedCartSvc := order.NewAbandonedCartService(conn, abandonedCartRepo, outboxRepo)
-		ordersHandler := admin.NewOrdersHandler(conn, orderSvc, orderRepo, log)
+		// Order document mailer — invoice on accept, receipt on delivery.
+		// Built up here because both OrdersHandler and ShipmentsHandler need
+		// it. SendGrid when an API key is configured, log fallback otherwise
+		// so local dev still exercises the dispatch path.
+		var orderDocMailer orderdoc.Mailer
+		if cfg.SendGridAPIKey != "" {
+			orderDocMailer = orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+		} else {
+			orderDocMailer = &orderdoc.LogMailer{Logger: log}
+		}
+		orderDocBrandingSvc := branding.NewService(branding.ServiceConfig{
+			DB:     conn,
+			Repo:   branding.NewRepository(),
+			Logger: log,
+		})
+		orderDocSvc := orderdoc.NewService(conn, orderDocMailer, orderRepo, orderDocBrandingSvc, cfg.StorefrontBaseURLTemplate)
+
+		ordersHandler := admin.NewOrdersHandler(conn, orderSvc, orderRepo, orderDocSvc, log)
 		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log)
 		abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, log)
 
@@ -287,7 +305,7 @@ func main() {
 		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, log)
 		shippingRepo := shipping.NewRepository(conn)
 		shippingService := shipping.NewShippingService(shippingRepo)
-		shipmentsHandler := admin.NewShipmentsHandler(conn, shippingService, shippingRepo, log)
+		shipmentsHandler := admin.NewShipmentsHandler(conn, shippingService, shippingRepo, orderDocSvc, log)
 		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, log)
 		settingsMetaHandler := admin.NewSettingsMetaHandler(countryRepoAdmin, log)
 

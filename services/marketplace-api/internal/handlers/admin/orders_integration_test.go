@@ -68,7 +68,7 @@ func setupOrdersRouter(t *testing.T) *ordersTestEnv {
 	})
 	authzMW := authz.NewMiddleware(fga, nil)
 
-	ordersHandler := admin.NewOrdersHandler(db, orderSvc, orderRepo, nil)
+	ordersHandler := admin.NewOrdersHandler(db, orderSvc, orderRepo, nil, nil)
 	returnsHandler := admin.NewReturnsHandler(db, returnSvc, returnRepo, orderRepo, orderSvc, nil)
 	abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, nil)
 

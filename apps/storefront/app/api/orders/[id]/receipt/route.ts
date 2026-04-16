@@ -1,5 +1,7 @@
 // GET /api/orders/:id/receipt — customer-facing PDF receipt.
-// Only available once payment_status is paid / partially_refunded.
+// Issued only once the merchant has marked the shipment as delivered;
+// paid-but-pending-delivery orders intentionally don't have a receipt
+// yet (use the invoice instead).
 
 import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
@@ -16,7 +18,6 @@ import { buildDocument } from "@/lib/invoices/build";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PAID_STATUSES = new Set(["paid", "captured", "partially_refunded"]);
 
 export async function GET(
   _req: Request,
@@ -47,9 +48,12 @@ export async function GET(
   if (!order) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  if (!PAID_STATUSES.has(order.payment_status)) {
+  if (!order.shipment || order.shipment.status !== "delivered") {
     return NextResponse.json(
-      { error: "not_paid", message: "Receipts are issued once payment clears." },
+      {
+        error: "not_delivered",
+        message: "Receipts are issued once your order has been delivered.",
+      },
       { status: 409 },
     );
   }

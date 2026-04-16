@@ -16,8 +16,8 @@ interface BuildArgs {
   paymentDate?: string;
 }
 
-const PAID_NOTE =
-  "Thank you for your purchase. This receipt confirms payment in full and serves as your official record.";
+const RECEIPT_NOTE =
+  "Thank you for your purchase. This receipt confirms that your order has been delivered and serves as your official record of the transaction.";
 const INVOICE_NOTE =
   "If you have any questions about this invoice, please reply to your order confirmation email and our team will be happy to help.";
 
@@ -78,6 +78,6 @@ export function buildDocument({
       color_accent: extras.color_accent ?? undefined,
       color_text: extras.color_text ?? undefined,
     },
-    notes: kind === "receipt" ? PAID_NOTE : INVOICE_NOTE,
+    notes: kind === "receipt" ? RECEIPT_NOTE : INVOICE_NOTE,
   };
 }

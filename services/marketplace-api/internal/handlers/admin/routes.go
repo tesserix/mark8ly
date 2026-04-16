@@ -208,6 +208,16 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersRefundRole),
 					deps.OrdersHandler.Refund)
 
+				// Customer-facing document emails. Auto-fire on Confirm
+				// (invoice) and on shipment delivery (receipt); these
+				// endpoints let the merchant resend on demand.
+				orders.POST("/:id/invoice/email",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+					deps.OrdersHandler.EmailInvoice)
+				orders.POST("/:id/receipt/email",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+					deps.OrdersHandler.EmailReceipt)
+
 				// Shipments — shipping label creation + retrieval.
 				if deps.ShipmentsHandler != nil {
 					orders.POST("/:id/shipments",

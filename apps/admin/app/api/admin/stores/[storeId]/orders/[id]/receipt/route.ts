@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { pdf } from "@react-pdf/renderer";
 
 import { getBranding, getOrder } from "@/lib/api/marketplace-api";
+import { getOrderShipment } from "@/lib/api/shipping-api";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { InvoicePdf } from "@/lib/invoices/InvoicePdf";
 import { receiptNumberFromOrder } from "@/lib/invoices/numbering";
@@ -16,7 +17,9 @@ import { buildDocument } from "@/lib/invoices/build";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PAID_STATUSES = new Set(["paid", "captured", "partially_refunded"]);
+// A receipt is the post-delivery proof of completion. Issued only once
+// the merchant has marked the shipment as delivered — paid-but-not-yet-
+// shipped orders intentionally don't have a receipt yet.
 
 export async function GET(
   _request: Request,
@@ -31,16 +34,20 @@ export async function GET(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const [order, branding] = await Promise.all([
+  const [order, branding, shipment] = await Promise.all([
     getOrder(storeId, id, { userId: session.userId, tenantId: session.tenantId }),
     getBranding(storeId, { userId: session.userId, tenantId: session.tenantId }),
+    getOrderShipment(storeId, id, { userId: session.userId, tenantId: session.tenantId }),
   ]);
   if (!order) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  if (!PAID_STATUSES.has(order.payment_status)) {
+  if (!shipment || shipment.status !== "delivered") {
     return NextResponse.json(
-      { error: "not_paid", message: "Receipts are only issued for paid orders." },
+      {
+        error: "not_delivered",
+        message: "Receipts are issued once the order has been delivered.",
+      },
       { status: 409 },
     );
   }
@@ -52,8 +59,9 @@ export async function GET(
     store: session.currentStore,
     documentNumber: receiptNumberFromOrder(order.order_number),
     contactEmail: session.email,
-    // The payment timestamp isn't on AdminOrder yet; use updated_at as a
-    // reasonable proxy for "when this was last reconciled to paid".
+    // No `delivered_at` on the wire ShipmentResponse yet — fall back to
+    // order.updated_at, which gets touched on every shipment status
+    // transition and is therefore a tight proxy for the delivery moment.
     paymentDate: order.updated_at,
   });
 

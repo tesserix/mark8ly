@@ -5,30 +5,53 @@
 package admin
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
 // OrdersHandler bundles dependencies for the admin order endpoints.
 type OrdersHandler struct {
-	db     *gorm.DB
-	svc    *order.Service
-	repo   order.Repository
-	logger *slog.Logger
+	db        *gorm.DB
+	svc       *order.Service
+	repo      order.Repository
+	docMailer *orderdoc.Service // optional — nil disables auto-emails
+	logger    *slog.Logger
 }
 
-// NewOrdersHandler constructs an OrdersHandler.
-func NewOrdersHandler(db *gorm.DB, svc *order.Service, repo order.Repository, logger *slog.Logger) *OrdersHandler {
-	return &OrdersHandler{db: db, svc: svc, repo: repo, logger: logger}
+// NewOrdersHandler constructs an OrdersHandler. docMailer is optional;
+// when nil, lifecycle emails are skipped (useful for tests + early
+// boot ordering when the mailer hasn't been wired yet).
+func NewOrdersHandler(db *gorm.DB, svc *order.Service, repo order.Repository, docMailer *orderdoc.Service, logger *slog.Logger) *OrdersHandler {
+	return &OrdersHandler{db: db, svc: svc, repo: repo, docMailer: docMailer, logger: logger}
+}
+
+// dispatchInvoiceEmail fires the invoice email on a detached background
+// context — the merchant's confirm response should never block on
+// SendGrid latency or fail because email dispatch failed.
+func (h *OrdersHandler) dispatchInvoiceEmail(orderID uuid.UUID) {
+	if h.docMailer == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.docMailer.SendInvoice(ctx, orderID); err != nil {
+			h.logger.Warn("orderdoc: invoice email dispatch failed",
+				"order_id", orderID, "err", err)
+		}
+	}()
 }
 
 // List handles GET /admin/stores/:storeId/orders.
@@ -210,6 +233,9 @@ func (h *OrdersHandler) Confirm(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	// Order accepted — fire the invoice email. Detached so a SendGrid
+	// outage never blocks the confirm response.
+	h.dispatchInvoiceEmail(id)
 	o, items, addrs, err := h.repo.GetByID(c.Request.Context(), h.db, id)
 	if err != nil {
 		RespondErr(c, err, h.logger)
@@ -300,6 +326,80 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, ToAdminOrderResponse(o, items, addrs))
+}
+
+// EmailInvoice handles POST /admin/stores/:storeId/orders/:id/invoice/email
+// — re-sends the invoice email on demand (e.g. customer lost the original).
+func (h *OrdersHandler) EmailInvoice(c *gin.Context) {
+	h.emailDocument(c, false)
+}
+
+// EmailReceipt handles POST /admin/stores/:storeId/orders/:id/receipt/email.
+// Receipts are gated on shipment delivery — sending one before then is a
+// 409 because the document doesn't exist yet.
+func (h *OrdersHandler) EmailReceipt(c *gin.Context) {
+	h.emailDocument(c, true)
+}
+
+func (h *OrdersHandler) emailDocument(c *gin.Context, asReceipt bool) {
+	if h.docMailer == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "mailer_unavailable",
+			"message": "Email dispatch is not configured for this deployment.",
+		})
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	if err := h.verifyOrderOwnership(c, id); err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	if asReceipt {
+		// Don't email a receipt for an order that hasn't been delivered.
+		// Look up the latest shipment and bail if it isn't delivered yet.
+		var status string
+		row := h.db.WithContext(c.Request.Context()).
+			Table("shipments").
+			Select("status").
+			Where("order_id = ?", id).
+			Order("created_at DESC").
+			Limit(1).
+			Row()
+		if err := row.Scan(&status); err != nil || status != "delivered" {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "not_delivered",
+				"message": "Receipt is issued only after the shipment has been delivered.",
+			})
+			return
+		}
+	}
+
+	var sendErr error
+	o, _, _, err := h.repo.GetByID(c.Request.Context(), h.db, id)
+	if err != nil || o == nil {
+		RespondErr(c, apperrors.NotFound("order"), h.logger)
+		return
+	}
+	if asReceipt {
+		sendErr = h.docMailer.SendReceipt(c.Request.Context(), id)
+	} else {
+		sendErr = h.docMailer.SendInvoice(c.Request.Context(), id)
+	}
+	if sendErr != nil {
+		h.logger.Warn("orderdoc: manual resend failed",
+			"order_id", id, "receipt", asReceipt, "err", sendErr)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":   "send_failed",
+			"message": sendErr.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"sent": true, "recipient": o.CustomerEmail})
 }
 
 // -----------------------------------------------------------------------------

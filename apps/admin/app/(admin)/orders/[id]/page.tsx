@@ -14,6 +14,7 @@ import { OrderDocumentsPanel } from "@/components/orders/OrderDocumentsPanel";
 import { OrderItemsTable } from "@/components/orders/OrderItemsTable";
 import { OrderTotalsCard } from "@/components/orders/OrderTotalsCard";
 import { getOrder } from "@/lib/api/marketplace-api";
+import { getOrderShipment } from "@/lib/api/shipping-api";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 
 interface PageProps {
@@ -33,6 +34,13 @@ export default async function OrderDetailPage({ params }: PageProps) {
   if (!order) {
     notFound();
   }
+  // Receipt availability is gated on shipment delivery, so we look it up
+  // in parallel-friendly fashion. Failures (no shipment yet) yield null
+  // and the documents panel renders the receipt as not-yet-available.
+  const shipment = await getOrderShipment(currentStore.id, id, {
+    userId,
+    tenantId,
+  }).catch(() => null);
 
   return (
           <main
@@ -57,7 +65,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
               orderId={order.id}
               orderStatus={order.status}
             />
-            <OrderDocumentsPanel order={order} />
+            <OrderDocumentsPanel order={order} shipmentStatus={shipment?.status ?? null} />
           </div>
         </div>
       </main>

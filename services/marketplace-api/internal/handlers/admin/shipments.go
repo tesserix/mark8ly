@@ -17,26 +17,47 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
 // ShipmentsHandler bundles dependencies for the admin shipment endpoints.
 type ShipmentsHandler struct {
-	db      *gorm.DB
-	svc     *shipping.ShippingService
-	repo    shipping.Repository
-	logger  *slog.Logger
+	db        *gorm.DB
+	svc       *shipping.ShippingService
+	repo      shipping.Repository
+	docMailer *orderdoc.Service // optional — nil disables receipt-on-delivery email
+	logger    *slog.Logger
 }
 
-// NewShipmentsHandler constructs a ShipmentsHandler.
+// NewShipmentsHandler constructs a ShipmentsHandler. docMailer is
+// optional; when nil, the receipt email on delivery is skipped.
 func NewShipmentsHandler(
 	db *gorm.DB,
 	svc *shipping.ShippingService,
 	repo shipping.Repository,
+	docMailer *orderdoc.Service,
 	logger *slog.Logger,
 ) *ShipmentsHandler {
-	return &ShipmentsHandler{db: db, svc: svc, repo: repo, logger: logger}
+	return &ShipmentsHandler{db: db, svc: svc, repo: repo, docMailer: docMailer, logger: logger}
+}
+
+// dispatchReceiptEmail fires the receipt email on a detached background
+// context. Caller has already verified the shipment transitioned to
+// "delivered".
+func (h *ShipmentsHandler) dispatchReceiptEmail(orderID uuid.UUID) {
+	if h.docMailer == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.docMailer.SendReceipt(ctx, orderID); err != nil {
+			h.logger.Warn("orderdoc: receipt email dispatch failed",
+				"order_id", orderID, "err", err)
+		}
+	}()
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -414,6 +435,13 @@ func (h *ShipmentsHandler) UpdateStatus(c *gin.Context) {
 		desc = shipmentStatusDefaultCopy[status]
 	}
 	h.appendShipmentEvent(ctx, orderID, rec, kind, desc)
+
+	// Customer notification: shipment just moved into "delivered" — fire
+	// the receipt email. Detached from the request context so the merchant
+	// gets a fast 200 even if SendGrid is slow.
+	if status == "delivered" {
+		h.dispatchReceiptEmail(orderID)
+	}
 
 	c.JSON(http.StatusOK, toShipmentResponse(rec))
 }

@@ -1,0 +1,21 @@
+{{.Theme.StoreName}}
+{{if .Theme.Tagline}}{{.Theme.Tagline}}{{end}}
+
+RECEIPT · {{.DocumentNumber}}
+
+{{.Heading}}
+
+{{.Lede}}
+
+Order:        {{.OrderNumber}}
+Placed:       {{.PlacedAt}}{{if .DeliveredAt}}
+Delivered:    {{.DeliveredAt}}{{end}}
+Items:        {{.ItemCount}}
+Total:        {{.GrandTotal}} {{.CurrencyCode}}
+
+View your receipt: {{.OrderURL}}
+
+—
+Thank you for shopping with {{.Theme.StoreName}}.
+{{if .Theme.FooterCopyright}}
+{{.Theme.FooterCopyright}}{{end}}

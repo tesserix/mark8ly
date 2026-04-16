@@ -317,13 +317,16 @@ export function InvoicePdf({ doc }: PdfProps) {
   const accent = doc.store.color_accent || INK;
   const isReceipt = doc.kind === "receipt";
   const titleText = isReceipt ? "RECEIPT" : "INVOICE";
+  // Invoice statuses pivot on whether the customer has settled payment.
+  // Receipts are only ever issued post-delivery, so the banner reads as
+  // a confirmation rather than a request.
   const statusLabel = isReceipt
-    ? "PAID IN FULL"
+    ? "DELIVERED"
     : isPaid(doc.payment_status)
       ? "PAID"
       : "AMOUNT DUE";
   const statusMeta = isReceipt
-    ? `Payment received ${doc.payment_date ? formatDate(doc.payment_date) : formatDate(doc.issue_date)}`
+    ? `Order delivered ${doc.payment_date ? formatDate(doc.payment_date) : formatDate(doc.issue_date)}`
     : isPaid(doc.payment_status)
       ? `Payment received ${formatDate(doc.issue_date)}`
       : `Please remit ${formatCurrency(doc.totals.grand_total, doc.totals.currency_code)} on or before this date`;

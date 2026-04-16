@@ -49,6 +49,11 @@ var (
 		Version:  "v1",
 		Resource: "virtualservices",
 	}
+	gvrAuthorizationPolicy = schema.GroupVersionResource{
+		Group:    "security.istio.io",
+		Version:  "v1",
+		Resource: "authorizationpolicies",
+	}
 )
 
 // Provisioner creates and deletes the per-domain k8s resources.
@@ -100,6 +105,7 @@ func (p *Provisioner) Provision(ctx context.Context, domain string) (*ProvisionR
 	certName := slug + "-tls"
 	gatewayName := slug + "-gateway"
 	routeName := slug + "-route"
+	authzName := "allow-custom-domain-" + slug
 
 	// Covers apex + wildcard so merchants can use subdomains without
 	// adding more records later.
@@ -113,6 +119,9 @@ func (p *Provisioner) Provision(ctx context.Context, domain string) (*ProvisionR
 	}
 	if err := p.applyVirtualService(ctx, routeName, slug, gatewayName, hosts); err != nil {
 		return nil, fmt.Errorf("virtualservice: %w", err)
+	}
+	if err := p.applyAuthorizationPolicy(ctx, authzName, slug, hosts); err != nil {
+		return nil, fmt.Errorf("authorizationpolicy: %w", err)
 	}
 
 	return &ProvisionResult{CertSecretName: certName}, nil
@@ -129,6 +138,7 @@ func (p *Provisioner) Deprovision(ctx context.Context, domain string) error {
 		name      string
 	}
 	targets := []target{
+		{gvrAuthorizationPolicy, istioIngressNS, "allow-custom-domain-" + slug},
 		{gvrVirtualService, storefrontNS, slug + "-route"},
 		{gvrGateway, istioIngressNS, slug + "-gateway"},
 		{gvrCertificate, istioIngressNS, slug + "-tls"},
@@ -265,6 +275,41 @@ func (p *Provisioner) applyVirtualService(ctx context.Context, name, slug, gatew
 		},
 	}
 	return p.upsert(ctx, gvrVirtualService, storefrontNS, u)
+}
+
+// applyAuthorizationPolicy creates the Istio AuthorizationPolicy that
+// allowlists traffic for the custom domain on the custom-ingressgateway.
+// Without this, the gateway rejects all requests with 403.
+func (p *Provisioner) applyAuthorizationPolicy(ctx context.Context, name, slug string, hosts []string) error {
+	hostRules := make([]interface{}, 0, len(hosts))
+	for _, h := range hosts {
+		hostRules = append(hostRules, map[string]interface{}{
+			"to": []interface{}{
+				map[string]interface{}{
+					"operation": map[string]interface{}{
+						"hosts": []interface{}{h},
+					},
+				},
+			},
+		})
+	}
+	u := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "security.istio.io/v1",
+			"kind":       "AuthorizationPolicy",
+			"metadata":   commonMeta(name, istioIngressNS, labelsFor(slug)),
+			"spec": map[string]interface{}{
+				"selector": map[string]interface{}{
+					"matchLabels": map[string]interface{}{
+						"istio": istioGatewaySelector,
+					},
+				},
+				"action": "ALLOW",
+				"rules":  hostRules,
+			},
+		},
+	}
+	return p.upsert(ctx, gvrAuthorizationPolicy, istioIngressNS, u)
 }
 
 func (p *Provisioner) upsert(ctx context.Context, gvr schema.GroupVersionResource, namespace string, obj *unstructured.Unstructured) error {

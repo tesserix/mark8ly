@@ -66,8 +66,17 @@ export interface AccountProfile {
   user_id: string;
   name: string;
   email: string;
+  phone: string;
+  avatar_url: string;
   mfa_enabled: boolean;
   created_at: string;
+}
+
+export interface AvatarUploadURLResponse {
+  upload_url: string;
+  public_url: string;
+  storage_key: string;
+  expires_at: string;
 }
 
 export interface AccountSession {
@@ -82,7 +91,7 @@ export async function getAccountProfile(
   session: SessionHeaders,
 ): Promise<AccountProfile | null> {
   const res = await fetch(
-    `${MARKETPLACE_API_URL}/api/v1/admin/account/profile`,
+    `${MARKETPLACE_API_URL}/api/v1/admin/account`,
     { cache: "no-store", headers: readHeaders(session) },
   );
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -91,18 +100,48 @@ export async function getAccountProfile(
   if (!res.ok) {
     throw new Error(`marketplace-api: getAccountProfile ${res.status}`);
   }
-  const body = (await res.json()) as { data: AccountProfile };
-  return body.data;
+  const body = (await res.json()) as
+    | { data: AccountProfile }
+    | AccountProfile;
+  return "data" in body ? body.data : (body as AccountProfile);
 }
 
 export async function updateAccountProfile(
-  body: { name?: string; email?: string },
+  body: { name?: string; phone?: string; avatar_url?: string },
   session: SessionHeaders,
 ): Promise<MutationResult<AccountProfile>> {
+  const payload: Record<string, unknown> = {};
+  if (body.name !== undefined) payload.display_name = body.name;
+  if (body.phone !== undefined) payload.phone = body.phone;
+  if (body.avatar_url !== undefined) payload.avatar_url = body.avatar_url;
+
   const res = await fetch(
-    `${MARKETPLACE_API_URL}/api/v1/admin/account/profile`,
+    `${MARKETPLACE_API_URL}/api/v1/admin/account`,
     {
       method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const raw = (await res.json()) as
+    | { data: AccountProfile }
+    | AccountProfile;
+  const data = "data" in raw ? raw.data : (raw as AccountProfile);
+  return { ok: true, data };
+}
+
+export async function createAvatarUploadURL(
+  body: { filename: string; content_type: string },
+  session: SessionHeaders,
+): Promise<MutationResult<AvatarUploadURLResponse>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/account/avatar/upload-url`,
+    {
+      method: "POST",
       cache: "no-store",
       headers: commonHeaders(session),
       body: JSON.stringify(body),
@@ -111,8 +150,8 @@ export async function updateAccountProfile(
   if (!res.ok) {
     return { ok: false, error: await parseMutationError(res) };
   }
-  const data = (await res.json()) as { data: AccountProfile };
-  return { ok: true, data: data.data };
+  const data = (await res.json()) as AvatarUploadURLResponse;
+  return { ok: true, data };
 }
 
 export async function listAccountSessions(

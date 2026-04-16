@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { Shield, Monitor, Trash2 } from "lucide-react";
+import { Shield, Monitor, Trash2, Upload, User as UserIcon } from "lucide-react";
 
 import type { AccountProfile, AccountSession } from "@/lib/api/settings-tier2-api";
 import {
   updateProfile,
+  createAvatarUploadURL,
   toggleMFA,
   revokeSessionAction,
   deleteAccountAction,
@@ -55,17 +56,26 @@ function ProfileSection({
   editable: boolean;
 }) {
   const [name, setName] = useState(profile?.name ?? "");
+  const [phone, setPhone] = useState(profile?.phone ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url ?? "");
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const email = profile?.email || sessionEmail || "";
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   function handleSave() {
     setError(null);
     setSuccess(false);
     startTransition(async () => {
-      const result = await updateProfile({ name: name.trim() });
+      const result = await updateProfile({
+        name: name.trim(),
+        phone: phone.trim(),
+        avatar_url: avatarUrl.trim(),
+      });
       if (!result.ok) {
         setError(result.message);
       } else {
@@ -73,6 +83,44 @@ function ProfileSection({
         router.refresh();
       }
     });
+  }
+
+  async function handleAvatarFile(file: File) {
+    setAvatarError(null);
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setAvatarError("Please upload a PNG, JPEG, or WebP image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError("Image must be under 5 MB.");
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const signed = await createAvatarUploadURL({
+        filename: file.name,
+        content_type: file.type,
+      });
+      if (!signed.ok) {
+        setAvatarError(signed.message);
+        return;
+      }
+      const put = await fetch(signed.data.upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!put.ok) {
+        setAvatarError(`Upload failed (${put.status}).`);
+        return;
+      }
+      setAvatarUrl(signed.data.public_url);
+      setSuccess(false);
+    } catch (e) {
+      setAvatarError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setAvatarUploading(false);
+    }
   }
 
   return (
@@ -85,6 +133,69 @@ function ProfileSection({
           Your personal account details.
         </p>
       </div>
+
+      <div className="flex items-start gap-6">
+        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-border bg-[color:var(--paper-200)]">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt="Profile picture"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-foreground-tertiary">
+              <UserIcon className="h-8 w-8" aria-hidden="true" />
+            </div>
+          )}
+        </div>
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Profile picture</p>
+          <p className="text-xs text-foreground-secondary">
+            PNG, JPEG, or WebP · up to 5 MB.
+          </p>
+          {editable && (
+            <div className="flex items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleAvatarFile(f);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={avatarUploading || isPending}
+                className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+              >
+                <Upload className="h-4 w-4" aria-hidden="true" />
+                {avatarUploading ? "Uploading..." : "Upload new picture"}
+              </button>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={() => setAvatarUrl("")}
+                  disabled={avatarUploading || isPending}
+                  className="text-xs font-medium text-foreground-secondary hover:text-foreground disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          )}
+          {avatarError && (
+            <p role="alert" className="text-xs text-[color:var(--signal)]">
+              {avatarError}
+            </p>
+          )}
+        </div>
+      </div>
+
       <div className="grid max-w-md gap-4">
         <div className="space-y-1.5">
           <label htmlFor="profile-name" className="text-sm font-medium text-foreground">
@@ -115,6 +226,20 @@ function ProfileSection({
             placeholder="you@example.com"
           />
         </div>
+        <div className="space-y-1.5">
+          <label htmlFor="profile-phone" className="text-sm font-medium text-foreground">
+            Phone
+          </label>
+          <input
+            id="profile-phone"
+            type="tel"
+            value={phone}
+            onChange={(e) => { setPhone(e.target.value); setSuccess(false); }}
+            disabled={!editable || isPending}
+            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            placeholder="+1 555 123 4567"
+          />
+        </div>
       </div>
       {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
       {success && <p role="status" className="text-sm text-[color:var(--moss-700)]">Profile updated.</p>}
@@ -122,7 +247,7 @@ function ProfileSection({
         <button
           type="button"
           onClick={handleSave}
-          disabled={isPending}
+          disabled={isPending || avatarUploading}
           className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
         >
           {isPending ? "Saving..." : "Save changes"}

@@ -86,6 +86,9 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			account.DELETE("",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountDeleteRole),
 				deps.AccountHandler.DeleteAccount)
+			account.POST("/avatar/upload-url",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountEditRole),
+				deps.AccountHandler.AvatarUploadURL)
 			account.POST("/mfa/enable",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountEditRole),
 				deps.AccountHandler.EnableMFA)

@@ -1,61 +1,115 @@
 // Package admin — account.go: HTTP handler for the admin account
-// endpoints (S1). Profile read/update is direct DB. MFA and sessions
-// proxy to auth-bff.
+// endpoints (S1). Profile read/update persists to the user_profiles
+// table. MFA and sessions proxy to auth-bff.
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
+// userProfile is the GORM model for user_profiles. Keep in sync with
+// migrations/000036_user_profiles.up.sql.
+type userProfile struct {
+	UserID      string    `gorm:"column:user_id;primaryKey"`
+	Email       string    `gorm:"column:email"`
+	DisplayName string    `gorm:"column:display_name"`
+	Phone       string    `gorm:"column:phone"`
+	AvatarURL   string    `gorm:"column:avatar_url"`
+	CreatedAt   time.Time `gorm:"column:created_at"`
+	UpdatedAt   time.Time `gorm:"column:updated_at"`
+}
+
+func (userProfile) TableName() string { return "user_profiles" }
+
+// profileDTO is the wire shape the admin UI consumes. Field names mirror
+// AccountProfile in apps/admin/lib/api/settings-tier2-api.ts.
+type profileDTO struct {
+	UserID     string    `json:"user_id"`
+	Email      string    `json:"email"`
+	Name       string    `json:"name"`
+	Phone      string    `json:"phone"`
+	AvatarURL  string    `json:"avatar_url"`
+	MFAEnabled bool      `json:"mfa_enabled"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+func toProfileDTO(p userProfile) profileDTO {
+	return profileDTO{
+		UserID:     p.UserID,
+		Email:      p.Email,
+		Name:       p.DisplayName,
+		Phone:      p.Phone,
+		AvatarURL:  p.AvatarURL,
+		MFAEnabled: false,
+		CreatedAt:  p.CreatedAt,
+	}
+}
+
 // AccountHandler handles /admin/account endpoints.
-// Profile read/update is direct DB. MFA and sessions proxy to auth-bff.
+// Profile persists to user_profiles. MFA and sessions proxy to auth-bff.
 type AccountHandler struct {
+	db         *gorm.DB
+	uploader   media.Uploader
 	authBFFURL string
 	httpClient *http.Client
 	logger     *slog.Logger
 }
 
-// NewAccountHandler constructs an AccountHandler.
-func NewAccountHandler(authBFFURL string, logger *slog.Logger) *AccountHandler {
+// NewAccountHandler constructs an AccountHandler. db is required.
+// uploader is optional (nil disables avatar uploads).
+func NewAccountHandler(db *gorm.DB, authBFFURL string, logger *slog.Logger) *AccountHandler {
 	return &AccountHandler{
+		db:         db,
 		authBFFURL: strings.TrimRight(authBFFURL, "/"),
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 		logger:     logger,
 	}
 }
 
-// GetProfile handles GET /admin/account — returns the current user's profile.
+// SetUploader wires the media uploader for the avatar upload-url endpoint.
+func (h *AccountHandler) SetUploader(u media.Uploader) { h.uploader = u }
+
+// GetProfile handles GET /admin/account.
+// Upsert-on-read: if the row doesn't exist yet, create one from the
+// session headers. Response is wrapped as {data: ...} so the client
+// can stay consistent with the rest of the admin API.
 func (h *AccountHandler) GetProfile(c *gin.Context) {
 	userID := c.GetString("user_id")
 	email := c.GetString("email")
-	tenantID := c.GetString("tenant_id")
-
 	if userID == "" {
 		RespondErr(c, apperrors.ValidationFailed("user_id", "missing user context"), h.logger)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"user_id":   userID,
-		"email":     email,
-		"tenant_id": tenantID,
-	})
+	profile, err := h.loadOrSeed(c, userID, email)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": toProfileDTO(profile)})
 }
 
 // UpdateProfileRequest is the request body for PATCH /admin/account.
+// All fields are pointers so the client can send a partial update; nil
+// means "leave this field alone".
 type UpdateProfileRequest struct {
 	DisplayName *string `json:"display_name"`
 	Phone       *string `json:"phone"`
+	AvatarURL   *string `json:"avatar_url"`
 }
 
 // UpdateProfile handles PATCH /admin/account.
@@ -67,20 +121,185 @@ func (h *AccountHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	email := c.GetString("email")
 	if userID == "" {
 		RespondErr(c, apperrors.ValidationFailed("user_id", "missing user context"), h.logger)
 		return
 	}
 
-	// In a full implementation, this would update the user profile in the
-	// auth provider. For now, return the acknowledged update.
-	c.JSON(http.StatusOK, gin.H{
-		"user_id":      userID,
-		"display_name": req.DisplayName,
-		"phone":        req.Phone,
-		"updated":      true,
+	profile, err := h.loadOrSeed(c, userID, email)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	updates := map[string]any{"updated_at": time.Now()}
+	if req.DisplayName != nil {
+		updates["display_name"] = strings.TrimSpace(*req.DisplayName)
+	}
+	if req.Phone != nil {
+		updates["phone"] = strings.TrimSpace(*req.Phone)
+	}
+	if req.AvatarURL != nil {
+		updates["avatar_url"] = strings.TrimSpace(*req.AvatarURL)
+	}
+
+	if len(updates) > 1 {
+		if err := h.db.WithContext(c.Request.Context()).
+			Model(&userProfile{}).
+			Where("user_id = ?", userID).
+			Updates(updates).Error; err != nil {
+			h.logger.Error("update user profile", "user_id", userID, "err", err)
+			RespondErr(c, fmt.Errorf("update profile: %w", err), h.logger)
+			return
+		}
+		// re-load so response reflects the freshly persisted row
+		if err := h.db.WithContext(c.Request.Context()).
+			Where("user_id = ?", userID).
+			First(&profile).Error; err != nil {
+			RespondErr(c, fmt.Errorf("reload profile: %w", err), h.logger)
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": toProfileDTO(profile)})
+}
+
+// loadOrSeed returns the user_profile row, inserting a skeleton row on
+// first read so the rest of the admin UI can count on a stable shape.
+func (h *AccountHandler) loadOrSeed(c *gin.Context, userID, email string) (userProfile, error) {
+	var p userProfile
+	err := h.db.WithContext(c.Request.Context()).
+		Where("user_id = ?", userID).
+		First(&p).Error
+	if err == nil {
+		// Keep email mirrored if it drifted (e.g. GIP change).
+		if email != "" && p.Email != email {
+			_ = h.db.WithContext(c.Request.Context()).
+				Model(&userProfile{}).
+				Where("user_id = ?", userID).
+				Updates(map[string]any{"email": email, "updated_at": time.Now()}).Error
+			p.Email = email
+		}
+		return p, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return userProfile{}, fmt.Errorf("load profile: %w", err)
+	}
+	now := time.Now()
+	p = userProfile{
+		UserID:    userID,
+		Email:     email,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := h.db.WithContext(c.Request.Context()).Create(&p).Error; err != nil {
+		return userProfile{}, fmt.Errorf("seed profile: %w", err)
+	}
+	return p, nil
+}
+
+// ─── Avatar upload ───────────────────────────────────────────────────
+
+var avatarAllowedContentTypes = map[string]struct{}{
+	"image/png":  {},
+	"image/jpeg": {},
+	"image/webp": {},
+}
+
+// AvatarUploadURLRequest is the POST body for avatar/upload-url.
+type AvatarUploadURLRequest struct {
+	Filename    string `json:"filename" binding:"required"`
+	ContentType string `json:"content_type" binding:"required"`
+}
+
+// AvatarUploadURLResponse mirrors BrandingUploadURLResponse. The client
+// PUTs the file to upload_url, then PATCH /admin/account with
+// {avatar_url: public_url} to persist.
+type AvatarUploadURLResponse struct {
+	UploadURL  string    `json:"upload_url"`
+	PublicURL  string    `json:"public_url"`
+	StorageKey string    `json:"storage_key"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// AvatarUploadURL handles POST /admin/account/avatar/upload-url.
+// Returns a V4 signed PUT URL plus the public URL the client should
+// persist via PATCH /admin/account. No DB writes happen here.
+func (h *AccountHandler) AvatarUploadURL(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		RespondErr(c, apperrors.ValidationFailed("user_id", "missing user context"), h.logger)
+		return
+	}
+
+	var req AvatarUploadURLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+	if _, ok := avatarAllowedContentTypes[req.ContentType]; !ok {
+		RespondErr(c, apperrors.ValidationFailed("content_type", "must be image/png, image/jpeg, or image/webp"), h.logger)
+		return
+	}
+
+	if h.uploader == nil {
+		c.AbortWithStatusJSON(http.StatusNotImplemented, gin.H{
+			"error":   "not_implemented",
+			"message": "uploads are disabled on this deployment",
+		})
+		return
+	}
+	signer, ok := h.uploader.(media.SignedURLGenerator)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusNotImplemented, gin.H{
+			"error":   "not_implemented",
+			"message": "signed upload URLs require a real GCS bucket",
+		})
+		return
+	}
+	bn, ok := h.uploader.(interface{ BucketName() string })
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusNotImplemented, gin.H{
+			"error":   "not_implemented",
+			"message": "uploader does not expose bucket name",
+		})
+		return
+	}
+
+	key := buildAvatarStorageKey(userID, req.Filename)
+	uploadURL, expiresAt, err := signer.SignedUploadURL(c.Request.Context(), key, req.ContentType, 15*time.Minute)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", bn.BucketName(), key)
+	c.JSON(http.StatusOK, AvatarUploadURLResponse{
+		UploadURL:  uploadURL,
+		PublicURL:  publicURL,
+		StorageKey: key,
+		ExpiresAt:  expiresAt,
 	})
 }
+
+// buildAvatarStorageKey returns `users/<userId>/avatar/<uuid>.<ext>`.
+// Random UUID prevents CDN-cache hits after a reupload.
+func buildAvatarStorageKey(userID, filename string) string {
+	ext := strings.ToLower(path.Ext(filename))
+	safe := make([]byte, 0, len(ext))
+	for _, r := range ext {
+		if r == '.' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			safe = append(safe, byte(r))
+		}
+	}
+	if len(safe) == 0 || safe[0] != '.' {
+		safe = append([]byte("."), safe...)
+	}
+	return fmt.Sprintf("users/%s/avatar/%s%s", userID, uuid.NewString(), string(safe))
+}
+
+// ─── MFA (proxy to auth-bff) ────────────────────────────────────────
 
 // EnableMFA handles POST /admin/account/mfa/enable — proxies to auth-bff.
 func (h *AccountHandler) EnableMFA(c *gin.Context) {
@@ -111,19 +330,32 @@ func (h *AccountHandler) DeleteAccount(c *gin.Context) {
 		return
 	}
 
-	// Require confirmation header to prevent accidental deletion.
-	confirm := c.GetHeader("X-Confirm-Delete")
-	if confirm != "true" {
-		RespondErr(c, apperrors.ValidationFailed("confirmation", "X-Confirm-Delete header must be 'true'"), h.logger)
+	// Accept the confirmation either in the body (what the UI sends) or
+	// the X-Confirm-Delete header (what the old API contract required).
+	var body struct {
+		Confirmation string `json:"confirmation"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	confirm := body.Confirmation
+	if confirm == "" {
+		confirm = c.GetHeader("X-Confirm-Delete")
+	}
+	if confirm != "delete my store" {
+		RespondErr(c, apperrors.ValidationFailed("confirmation", "confirmation text does not match"), h.logger)
 		return
 	}
 
-	// In a full implementation, this would delete the user account from
-	// the auth provider and cascade-delete related data.
-	c.JSON(http.StatusOK, gin.H{
-		"deleted": true,
-		"user_id": userID,
-	})
+	// Real cascade-delete is a dedicated phase (tenant cleanup,
+	// OpenFGA tuples, GIP user removal). Until then this just wipes the
+	// local user_profile row so the UI stops showing stale data.
+	if err := h.db.WithContext(c.Request.Context()).
+		Where("user_id = ?", userID).
+		Delete(&userProfile{}).Error; err != nil {
+		RespondErr(c, fmt.Errorf("delete profile: %w", err), h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"deleted": true, "user_id": userID}})
 }
 
 // proxyToAuthBFF forwards the request to the auth-bff service.
@@ -148,7 +380,6 @@ func (h *AccountHandler) proxyToAuthBFF(c *gin.Context, method, path string) {
 		return
 	}
 
-	// Forward auth headers.
 	req.Header.Set("Content-Type", c.GetHeader("Content-Type"))
 	if userID := c.GetString("user_id"); userID != "" {
 		req.Header.Set("X-User-ID", userID)

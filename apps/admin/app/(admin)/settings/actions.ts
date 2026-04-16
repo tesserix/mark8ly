@@ -11,6 +11,7 @@ import { revalidatePath } from "next/cache";
 
 import {
   updateAccountProfile,
+  createAvatarUploadURL as createAvatarUploadURLApi,
   enableMFA as enableMFAApi,
   disableMFA as disableMFAApi,
   revokeSession as revokeSessionApi,
@@ -26,6 +27,7 @@ import {
   updateNotificationPreferences as updatePrefsApi,
   exportAuditLogsCSV as exportCSVApi,
 } from "@/lib/api/settings-tier2-api";
+import type { AvatarUploadURLResponse } from "@/lib/api/settings-tier2-api";
 import type {
   NotificationPreferences,
   AuditLogsQuery,
@@ -61,9 +63,9 @@ function forbidden(): ActionResult {
 // ─── S1: Account ──────────────────────────────────────────────────────
 
 export async function updateProfile(
-  input: { name?: string; email?: string },
+  input: { name?: string; phone?: string; avatar_url?: string },
 ): Promise<ActionResult> {
-  const { userId, tenantId, role } = await getSession();
+  const { userId, tenantId } = await getSession();
   if (!userId || !tenantId) return noSession();
 
   const result = await updateAccountProfile(input, { userId, tenantId });
@@ -73,6 +75,20 @@ export async function updateProfile(
 
   revalidatePath("/settings/account");
   return { ok: true };
+}
+
+export async function createAvatarUploadURL(
+  input: { filename: string; content_type: string },
+): Promise<ActionResultWithData<AvatarUploadURLResponse>> {
+  const { userId, tenantId } = await getSession();
+  if (!userId || !tenantId) {
+    return { ok: false, code: "no_session", message: "Session expired." };
+  }
+  const result = await createAvatarUploadURLApi(input, { userId, tenantId });
+  if (!result.ok) {
+    return { ok: false, code: result.error.code, message: result.error.message };
+  }
+  return { ok: true, data: result.data };
 }
 
 export async function toggleMFA(

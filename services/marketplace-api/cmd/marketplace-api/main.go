@@ -365,7 +365,8 @@ func main() {
 		reviewsHandler := admin.NewReviewsHandler(reviewRepoAdmin, log)
 
 		// Settings S1 — Account & Security.
-		accountHandler := admin.NewAccountHandler(cfg.AuthBFFURL, log)
+		accountHandler := admin.NewAccountHandler(conn, cfg.AuthBFFURL, log)
+		accountHandler.SetUploader(uploader)
 
 		// Settings S2 — Custom Domains: domainSvc + domainsHandler hoisted
 		// above mode blocks so the storefront can also use the resolve endpoint.

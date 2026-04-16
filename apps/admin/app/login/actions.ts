@@ -9,7 +9,11 @@
 
 import { cookies, headers } from "next/headers";
 
-import { autoLogin, AuthBffError } from "@/lib/auth/auth-bff";
+import {
+  autoLogin,
+  completeMFAChallenge,
+  AuthBffError,
+} from "@/lib/auth/auth-bff";
 import {
   listMemberTenants,
   PlatformApiError,
@@ -68,6 +72,11 @@ interface SignInSuccess {
   // The initial tenant is the first one returned by platform-api's
   // /users/me/tenants (priority: owner first, then by created_at).
   multipleTenants: boolean;
+  // true when the user has MFA enabled — the signIn flow wrote the
+  // short-lived m8_mfa_pending cookie instead of a real session.
+  // The UI must collect a 6-digit code and call confirmMFALogin
+  // before treating the sign-in as complete.
+  mfaRequired: boolean;
 }
 
 export async function signIn(
@@ -141,8 +150,54 @@ export async function signIn(
       data: {
         tenantId: primary.tenant_id,
         multipleTenants,
+        mfaRequired: result.mfaRequired,
       },
     };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * confirmMFALogin finishes a two-factor sign-in. The client already
+ * has the m8_mfa_pending cookie from the preceding signIn call; we
+ * forward it to auth-bff /auth/mfa-challenge along with the 6-digit
+ * code. On success auth-bff mints the real session cookie which we
+ * set on the response.
+ */
+export async function confirmMFALogin(
+  code: string,
+): Promise<Result<{ tenantId: string }>> {
+  try {
+    if (!code.trim()) {
+      return {
+        ok: false,
+        code: "invalid_code",
+        message: "Enter the 6-digit code from your authenticator app.",
+      };
+    }
+    const c = await cookies();
+    const cookieHeader = c
+      .getAll()
+      .map((x) => `${x.name}=${x.value}`)
+      .join("; ");
+    const result = await completeMFAChallenge(code.trim(), cookieHeader);
+    if (result.setCookie) {
+      const parsed = parseSetCookie(result.setCookie);
+      if (parsed) {
+        c.set({
+          name: parsed.name,
+          value: parsed.value,
+          path: parsed.path ?? "/",
+          domain: parsed.domain,
+          httpOnly: parsed.httpOnly,
+          secure: parsed.secure,
+          sameSite: "lax",
+          maxAge: parsed.maxAge,
+        });
+      }
+    }
+    return { ok: true, data: { tenantId: result.tenant_id } };
   } catch (err) {
     return fail(err);
   }

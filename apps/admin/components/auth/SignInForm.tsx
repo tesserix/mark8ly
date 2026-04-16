@@ -22,7 +22,7 @@ import { GoogleMark } from "@repo/ui/google-mark";
 
 import { signInWithPassword, signInWithGoogle, GIPError } from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
-import { signIn } from "@/app/login/actions";
+import { signIn, confirmMFALogin } from "@/app/login/actions";
 
 const MARKETING_URL =
   process.env.NEXT_PUBLIC_MARKETING_URL ?? "http://localhost:4201";
@@ -68,6 +68,16 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [googlePending, setGooglePending] = useState(false);
+
+  // MFA challenge state — when the signIn server action reports
+  // mfaRequired, we switch the form to a 6-digit challenge instead
+  // of redirecting. `mfaMultipleTenants` is remembered from the
+  // first step so the post-challenge redirect still respects
+  // pick-tenant vs dashboard.
+  const [mfaStep, setMfaStep] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaPending, setMfaPending] = useState(false);
+  const [mfaMultipleTenants, setMfaMultipleTenants] = useState(false);
 
   const {
     register,
@@ -119,6 +129,11 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
         }
         return;
       }
+      if (r.data.mfaRequired) {
+        setMfaMultipleTenants(r.data.multipleTenants);
+        setMfaStep(true);
+        return;
+      }
       goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
     });
   }
@@ -138,6 +153,11 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
         );
         return;
       }
+      if (r.data.mfaRequired) {
+        setMfaMultipleTenants(r.data.multipleTenants);
+        setMfaStep(true);
+        return;
+      }
       goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
     } catch (err) {
       setSubmitError(
@@ -148,6 +168,85 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
     } finally {
       setGooglePending(false);
     }
+  }
+
+  async function handleMFA(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitError(null);
+    setMfaPending(true);
+    try {
+      const r = await confirmMFALogin(mfaCode);
+      if (!r.ok) {
+        setSubmitError(r.message);
+        return;
+      }
+      goToDestination(mfaMultipleTenants ? "/pick-tenant" : "/dashboard");
+    } finally {
+      setMfaPending(false);
+    }
+  }
+
+  function cancelMFA() {
+    setMfaStep(false);
+    setMfaCode("");
+    setSubmitError(null);
+  }
+
+  if (mfaStep) {
+    return (
+      <div className="w-full max-w-md">
+        <div className="space-y-2">
+          <p className="eyebrow">mark8ly admin</p>
+          <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground">
+            Two-factor check
+          </h1>
+          <p className="text-base leading-7 text-foreground-secondary">
+            Enter the 6-digit code from your authenticator app to finish
+            signing in.
+          </p>
+        </div>
+
+        <form onSubmit={handleMFA} className="mt-8 space-y-5">
+          <Field id="mfa-code" label="Verification code">
+            <Input
+              id="mfa-code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="000000"
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
+              disabled={mfaPending}
+              autoFocus
+              className="font-mono text-lg tracking-[0.4em]"
+            />
+          </Field>
+
+          {submitError && (
+            <p role="alert" aria-live="polite" className="text-sm text-danger">
+              {submitError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={mfaPending || mfaCode.length !== 6}
+            className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
+          >
+            {mfaPending ? "Verifying…" : "Verify and continue"}
+          </button>
+
+          <button
+            type="button"
+            onClick={cancelMFA}
+            className="inline-flex h-11 w-full items-center justify-center text-sm text-foreground-secondary underline underline-offset-4 decoration-border-subtle hover:text-foreground"
+          >
+            Use a different account
+          </button>
+        </form>
+      </div>
+    );
   }
 
   return (

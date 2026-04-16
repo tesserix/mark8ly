@@ -118,23 +118,10 @@ func main() {
 		panic(err)
 	}
 
-	// ─── Autologin ─────────────────────────────────────────────────────
-	autologinSvc := autologin.NewService(autologin.Config{
-		GIP:      verifier,
-		FGA:      fgaClient,
-		Sessions: sessions,
-		Registry: sessionRegistry,
-		Logger:   log,
-	})
-	autologinHandler := autologin.NewHandler(autologinSvc)
-
-	// ─── Session introspection + logout ────────────────────────────────
-	sessionHandler := session.NewHandler(sessions, fgaClient).
-		WithRegistry(sessionRegistry, log)
-
 	// ─── MFA (TOTP) ────────────────────────────────────────────────────
-	// Reuses the session encrypt key for at-rest secret encryption. The
-	// service is fatal-on-init-error because MFA cannot degrade to
+	// Constructed before autologin so the MFA gate can be injected into
+	// the login path. Reuses the session encrypt key for at-rest secret
+	// encryption — fatal-on-init-error because MFA cannot degrade to
 	// plaintext storage safely.
 	mfaSvc, err := usermfa.NewService(dbConn, cfg.SessionEncryptKey)
 	if err != nil {
@@ -142,6 +129,22 @@ func main() {
 		panic(err)
 	}
 	mfaHandler := usermfa.NewHandler(mfaSvc, log)
+
+	// ─── Autologin ─────────────────────────────────────────────────────
+	autologinSvc := autologin.NewService(autologin.Config{
+		GIP:      verifier,
+		FGA:      fgaClient,
+		Sessions: sessions,
+		Registry: sessionRegistry,
+		MFA:      mfaSvc,
+		Logger:   log,
+	})
+	autologinHandler := autologin.NewHandler(autologinSvc)
+
+	// ─── Session introspection + logout ────────────────────────────────
+	sessionHandler := session.NewHandler(sessions, fgaClient).
+		WithRegistry(sessionRegistry, log).
+		WithMFA(mfaSvc)
 
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)

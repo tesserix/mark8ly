@@ -20,6 +20,12 @@ type FGAChecker interface {
 	CheckMembership(ctx context.Context, userID, tenantID string) (bool, error)
 }
 
+// MFAVerifier is the narrow interface /auth/mfa-challenge needs from
+// the usermfa service. Accepts a TOTP code and returns nil on match.
+type MFAVerifier interface {
+	Verify(ctx context.Context, userID, code string) error
+}
+
 // Handler is the HTTP layer for session introspection and logout. Lives
 // in the same package as Manager because these routes are the only two
 // callers of Read/Clear outside the autologin mint path.
@@ -27,6 +33,7 @@ type Handler struct {
 	mgr      *Manager
 	fga      FGAChecker // may be nil in dev if OpenFGA init failed
 	registry *usersessions.Repository
+	mfa      MFAVerifier
 	logger   *slog.Logger
 }
 
@@ -49,6 +56,13 @@ func (h *Handler) WithRegistry(r *usersessions.Repository, logger *slog.Logger) 
 	return h
 }
 
+// WithMFA wires the TOTP verifier. When nil, /auth/mfa-challenge
+// returns 501 — safe default for deployments that skip MFA setup.
+func (h *Handler) WithMFA(v MFAVerifier) *Handler {
+	h.mfa = v
+	return h
+}
+
 // Register mounts the session routes onto the given gin.RouterGroup.
 //
 //	GET  /auth/session          — returns { user_id, email, tenant_id }
@@ -64,6 +78,7 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	r.POST("/logout", h.logout)
 	r.POST("/switch-tenant", h.switchTenant)
 	r.POST("/switch-store", h.switchStore)
+	r.POST("/mfa-challenge", h.mfaChallenge)
 }
 
 // RegisterAPI mounts the /api/v1 subset of session routes. Kept separate
@@ -119,6 +134,98 @@ func (h *Handler) getSession(c *gin.Context) {
 			Email:    s.Email,
 			TenantID: s.TenantID,
 			StoreID:  s.StoreID,
+		},
+	})
+}
+
+// mfaChallengeRequest is the body shape for POST /auth/mfa-challenge.
+type mfaChallengeRequest struct {
+	Code string `json:"code" binding:"required"`
+}
+
+// mfaChallenge completes a two-factor login. The client reaches this
+// endpoint after /auth/auto-login has replied with mfa_required=true
+// and set the m8_mfa_pending cookie. We read that pending state, run
+// the TOTP verify, and on success mint the real session cookie while
+// clearing the pending one.
+func (h *Handler) mfaChallenge(c *gin.Context) {
+	if h.mfa == nil {
+		c.JSON(http.StatusNotImplemented, gin.H{
+			"error":   "not_implemented",
+			"message": "MFA is not configured on this deployment",
+		})
+		return
+	}
+
+	pending, err := h.mgr.ReadPending(c.Request)
+	switch {
+	case errors.Is(err, ErrExpiredSession):
+		h.mgr.ClearPending(c.Writer)
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "pending_expired",
+			"message": "your sign-in took too long — please start again",
+		})
+		return
+	case errors.Is(err, ErrInvalidSession):
+		h.mgr.ClearPending(c.Writer)
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "invalid_pending",
+			"message": "sign-in state is invalid — please start again",
+		})
+		return
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal_error",
+			"message": "failed to read pending sign-in",
+		})
+		return
+	}
+	if pending == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "no_pending",
+			"message": "no sign-in is in progress",
+		})
+		return
+	}
+
+	var req mfaChallengeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_body",
+			"message": "code is required",
+		})
+		return
+	}
+
+	if err := h.mfa.Verify(c.Request.Context(), pending.UID, req.Code); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_code",
+			"message": "that code is not valid — please try again",
+		})
+		return
+	}
+
+	if err := h.mgr.Mint(c.Writer, Session{
+		UID:      pending.UID,
+		Email:    pending.Email,
+		TenantID: pending.TenantID,
+	}); err != nil {
+		if h.logger != nil {
+			h.logger.Error("mfa-challenge: mint", "err", err, "user_id", pending.UID)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "session_mint_failed",
+			"message": "failed to complete sign-in",
+		})
+		return
+	}
+	h.mgr.ClearPending(c.Writer)
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": sessionResponse{
+			UserID:   pending.UID,
+			Email:    pending.Email,
+			TenantID: pending.TenantID,
 		},
 	})
 }

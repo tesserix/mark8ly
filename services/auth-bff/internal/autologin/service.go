@@ -32,12 +32,21 @@ import (
 	"github.com/mark8ly/auth-bff/internal/usersessions"
 )
 
+// MFAStatusChecker is the narrow interface autologin needs from the
+// MFA service: "is this user enrolled and enabled?" Kept as an
+// interface so the autologin package doesn't take a hard dependency
+// on the usermfa types.
+type MFAStatusChecker interface {
+	IsEnabled(ctx context.Context, userID string) (bool, error)
+}
+
 // Service is the autologin business logic.
 type Service struct {
 	gip      gip.Verifier
 	fga      authz.Client
 	sessions *session.Manager
 	registry *usersessions.Repository
+	mfa      MFAStatusChecker
 	logger   *slog.Logger
 	policy   RetryPolicy
 }
@@ -62,8 +71,13 @@ type Config struct {
 	// nil, the autologin path still mints JWT cookies normally and the
 	// admin "Active sessions" UI just stays empty.
 	Registry *usersessions.Repository
-	Logger   *slog.Logger
-	Policy   RetryPolicy
+	// MFA is the TOTP enrolment checker. Optional — when nil, every
+	// login skips the challenge step (pre-MFA behaviour). When wired,
+	// AutoLogin short-circuits to MintPending + MFARequired whenever
+	// the user has a verified enrolment on file.
+	MFA    MFAStatusChecker
+	Logger *slog.Logger
+	Policy RetryPolicy
 }
 
 // NewService constructs a Service. Defaults are applied to Policy.
@@ -83,6 +97,7 @@ func NewService(cfg Config) *Service {
 		fga:      cfg.FGA,
 		sessions: cfg.Sessions,
 		registry: cfg.Registry,
+		mfa:      cfg.MFA,
 		logger:   cfg.Logger,
 		policy:   p,
 	}
@@ -105,6 +120,11 @@ type Result struct {
 	UID      string
 	Email    string
 	TenantID string
+	// MFARequired is true when the user has MFA enabled and the session
+	// cookie was NOT minted. Instead a short-lived pending cookie was
+	// written; the caller must complete POST /auth/mfa-challenge before
+	// any authenticated request will succeed.
+	MFARequired bool
 }
 
 // Errors. Each maps to a specific HTTP response in the handler.
@@ -138,6 +158,35 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 	// Step 2: check FGA membership with retry. THE BUG-FIX LOOP.
 	if err := s.checkMembershipWithRetry(ctx, tok.UID, req.WorkspaceTenant); err != nil {
 		return nil, err
+	}
+
+	// Step 2b: gate on MFA enrolment. Users with a verified TOTP
+	// enrolment must complete a second factor before they see a real
+	// session cookie. We write a short-lived pending cookie carrying
+	// just enough context to finish the challenge without re-verifying
+	// the GIP token, and flag MFARequired on the result so the handler
+	// can respond with the right HTTP shape.
+	if s.mfa != nil {
+		enabled, err := s.mfa.IsEnabled(ctx, tok.UID)
+		if err != nil && s.logger != nil {
+			s.logger.Warn("autologin: mfa status check failed — treating as disabled",
+				"err", err, "user_id", tok.UID)
+		}
+		if enabled {
+			if err := s.sessions.MintPending(w, session.Pending{
+				UID:      tok.UID,
+				Email:    tok.Email,
+				TenantID: req.WorkspaceTenant,
+			}); err != nil {
+				return nil, fmt.Errorf("%w: %s", ErrSessionMintFail, err)
+			}
+			return &Result{
+				UID:         tok.UID,
+				Email:       tok.Email,
+				TenantID:    req.WorkspaceTenant,
+				MFARequired: true,
+			}, nil
+		}
 	}
 
 	// Step 3: mint the session cookie.

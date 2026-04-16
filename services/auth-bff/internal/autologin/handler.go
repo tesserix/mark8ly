@@ -82,9 +82,10 @@ func (h *Handler) autoLogin(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"uid":       res.UID,
-			"email":     res.Email,
-			"tenant_id": res.TenantID,
+			"uid":          res.UID,
+			"email":        res.Email,
+			"tenant_id":    res.TenantID,
+			"mfa_required": res.MFARequired,
 		},
 	})
 }

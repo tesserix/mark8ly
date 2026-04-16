@@ -221,6 +221,18 @@ func (s *Service) GetStatus(ctx context.Context, userID string) (Status, error) 
 	return Status{Enabled: e.Enabled, Verified: e.VerifiedAt != nil}, nil
 }
 
+// IsEnabled is a convenience over GetStatus for callers that only
+// need the boolean — the autologin MFA gate, specifically. Any error
+// collapses into (false, err) so the gate can decide whether to
+// treat the user as not-enrolled under a transient DB blip.
+func (s *Service) IsEnabled(ctx context.Context, userID string) (bool, error) {
+	st, err := s.GetStatus(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return st.Enabled, nil
+}
+
 // EnrollResult is what Enroll returns to the caller. QRDataURL is a
 // ready-to-embed `data:image/png;base64,...` string the admin UI can
 // drop straight into an <img src>. OtpauthURL is the raw URI in case

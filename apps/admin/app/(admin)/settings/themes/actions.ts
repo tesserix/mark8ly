@@ -28,6 +28,7 @@ export async function updateStorefrontTheme(
   const h = await headers();
   const tenantId = h.get("x-session-tenant-id") ?? "";
   const uid = h.get("x-session-user-id") ?? "";
+  const email = h.get("x-session-email") ?? "";
   const role = (h.get("x-session-role") ?? "viewer") as TenantRole;
   const currentStoreId = h.get("x-session-store-id") ?? "";
 
@@ -84,7 +85,7 @@ export async function updateStorefrontTheme(
         color_button_bg: c.text,
         color_button_text: c.background,
       },
-      { userId: uid, tenantId },
+      { userId: uid, tenantId, email },
     );
   } catch (err) {
     if (err instanceof PlatformApiError) {
@@ -114,6 +115,7 @@ export async function updateBrandingAction(
   const h = await headers();
   const tenantId = h.get("x-session-tenant-id") ?? "";
   const uid = h.get("x-session-user-id") ?? "";
+  const email = h.get("x-session-email") ?? "";
   const role = (h.get("x-session-role") ?? "viewer") as TenantRole;
   const currentStoreId = h.get("x-session-store-id") ?? "";
 
@@ -150,6 +152,7 @@ export async function updateBrandingAction(
   const result = await updateBranding(storeId, input, {
     userId: uid,
     tenantId,
+    email,
   });
 
   if (!result.ok) {

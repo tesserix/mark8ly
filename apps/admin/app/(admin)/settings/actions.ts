@@ -47,9 +47,10 @@ async function getSession() {
   const h = await headers();
   const userId = h.get("x-session-user-id") ?? "";
   const tenantId = h.get("x-session-tenant-id") ?? "";
+  const email = h.get("x-session-email") ?? "";
   const role = (h.get("x-session-role") ?? "viewer") as TenantRole;
   const storeId = await resolveStoreId();
-  return { userId, tenantId, role, storeId };
+  return { userId, tenantId, email, role, storeId };
 }
 
 function noSession(): ActionResult {
@@ -65,10 +66,10 @@ function forbidden(): ActionResult {
 export async function updateProfile(
   input: { name?: string; phone?: string; avatar_url?: string },
 ): Promise<ActionResult> {
-  const { userId, tenantId } = await getSession();
+  const { userId, tenantId, email } = await getSession();
   if (!userId || !tenantId) return noSession();
 
-  const result = await updateAccountProfile(input, { userId, tenantId });
+  const result = await updateAccountProfile(input, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -80,11 +81,11 @@ export async function updateProfile(
 export async function createAvatarUploadURL(
   input: { filename: string; content_type: string },
 ): Promise<ActionResultWithData<AvatarUploadURLResponse>> {
-  const { userId, tenantId } = await getSession();
+  const { userId, tenantId, email } = await getSession();
   if (!userId || !tenantId) {
     return { ok: false, code: "no_session", message: "Session expired." };
   }
-  const result = await createAvatarUploadURLApi(input, { userId, tenantId });
+  const result = await createAvatarUploadURLApi(input, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -94,13 +95,13 @@ export async function createAvatarUploadURL(
 export async function toggleMFA(
   enable: boolean,
 ): Promise<ActionResultWithData<{ qr_code_url?: string }>> {
-  const { userId, tenantId } = await getSession();
+  const { userId, tenantId, email } = await getSession();
   if (!userId || !tenantId) {
     return { ok: false, code: "no_session", message: "Session expired." };
   }
 
   if (enable) {
-    const result = await enableMFAApi({ userId, tenantId });
+    const result = await enableMFAApi({ userId, tenantId, email });
     if (!result.ok) {
       return { ok: false, code: result.error.code, message: result.error.message };
     }
@@ -108,7 +109,7 @@ export async function toggleMFA(
     return { ok: true, data: { qr_code_url: result.data.qr_code_url } };
   }
 
-  const result = await disableMFAApi({ userId, tenantId });
+  const result = await disableMFAApi({ userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -119,10 +120,10 @@ export async function toggleMFA(
 export async function revokeSessionAction(
   sessionId: string,
 ): Promise<ActionResult> {
-  const { userId, tenantId } = await getSession();
+  const { userId, tenantId, email } = await getSession();
   if (!userId || !tenantId) return noSession();
 
-  const result = await revokeSessionApi(sessionId, { userId, tenantId });
+  const result = await revokeSessionApi(sessionId, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -134,7 +135,7 @@ export async function revokeSessionAction(
 export async function deleteAccountAction(
   confirmation: string,
 ): Promise<ActionResult> {
-  const { userId, tenantId, role } = await getSession();
+  const { userId, tenantId, email, role } = await getSession();
   if (!userId || !tenantId) return noSession();
   if (!canEditSettings(role)) return forbidden();
 
@@ -142,7 +143,7 @@ export async function deleteAccountAction(
     return { ok: false, code: "validation", message: "Confirmation text does not match." };
   }
 
-  const result = await deleteAccountApi(confirmation, { userId, tenantId });
+  const result = await deleteAccountApi(confirmation, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -156,7 +157,7 @@ export async function addDomainAction(
   dnsMethod: "manual" | "cloudflare",
   cfApiToken?: string,
 ): Promise<ActionResult> {
-  const { userId, tenantId, role, storeId } = await getSession();
+  const { userId, tenantId, email, role, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) return noSession();
   if (!canEditSettings(role)) return forbidden();
 
@@ -174,7 +175,7 @@ export async function addDomainAction(
       dns_method: dnsMethod,
       cf_api_token: dnsMethod === "cloudflare" ? cfApiToken?.trim() : undefined,
     },
-    { userId, tenantId },
+    { userId, tenantId, email },
   );
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
@@ -187,11 +188,11 @@ export async function addDomainAction(
 export async function removeDomainAction(
   domainId: string,
 ): Promise<ActionResult> {
-  const { userId, tenantId, role, storeId } = await getSession();
+  const { userId, tenantId, email, role, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) return noSession();
   if (!canEditSettings(role)) return forbidden();
 
-  const result = await removeDomainApi(storeId, domainId, { userId, tenantId });
+  const result = await removeDomainApi(storeId, domainId, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -203,14 +204,14 @@ export async function removeDomainAction(
 export async function refreshDomainStatusAction(
   domainId: string,
 ): Promise<VerifyDomainResult> {
-  const { userId, tenantId, role, storeId } = await getSession();
+  const { userId, tenantId, email, role, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) {
     return { ok: false, code: "no_session", message: "Session expired. Please sign in again." };
   }
   if (!canEditSettings(role)) {
     return { ok: false, code: "forbidden", message: "You do not have permission to perform this action." };
   }
-  const result = await refreshDomainStatusApi(storeId, domainId, { userId, tenantId });
+  const result = await refreshDomainStatusApi(storeId, domainId, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -230,7 +231,7 @@ export type VerifyDomainResult =
 export async function verifyDomainAction(
   domainId: string,
 ): Promise<VerifyDomainResult> {
-  const { userId, tenantId, role, storeId } = await getSession();
+  const { userId, tenantId, email, role, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) {
     return { ok: false, code: "no_session", message: "Session expired. Please sign in again." };
   }
@@ -238,7 +239,7 @@ export async function verifyDomainAction(
     return { ok: false, code: "forbidden", message: "You do not have permission to perform this action." };
   }
 
-  const result = await verifyDomainApi(storeId, domainId, { userId, tenantId });
+  const result = await verifyDomainApi(storeId, domainId, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -257,7 +258,7 @@ export async function verifyDomainAction(
 export async function createCheckout(
   plan: string,
 ): Promise<ActionResultWithData<{ checkout_url: string }>> {
-  const { userId, tenantId, role, storeId } = await getSession();
+  const { userId, tenantId, email, role, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) {
     return { ok: false, code: "no_session", message: "Session expired." };
   }
@@ -265,7 +266,7 @@ export async function createCheckout(
     return { ok: false, code: "forbidden", message: "You do not have permission." };
   }
 
-  const result = await createCheckoutApi(storeId, plan, { userId, tenantId });
+  const result = await createCheckoutApi(storeId, plan, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -273,7 +274,7 @@ export async function createCheckout(
 }
 
 export async function createPortal(): Promise<ActionResultWithData<{ portal_url: string }>> {
-  const { userId, tenantId, role, storeId } = await getSession();
+  const { userId, tenantId, email, role, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) {
     return { ok: false, code: "no_session", message: "Session expired." };
   }
@@ -281,7 +282,7 @@ export async function createPortal(): Promise<ActionResultWithData<{ portal_url:
     return { ok: false, code: "forbidden", message: "You do not have permission." };
   }
 
-  const result = await createPortalApi(storeId, { userId, tenantId });
+  const result = await createPortalApi(storeId, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -293,10 +294,10 @@ export async function createPortal(): Promise<ActionResultWithData<{ portal_url:
 export async function markNotificationReadAction(
   notificationId: string,
 ): Promise<ActionResult> {
-  const { userId, tenantId, storeId } = await getSession();
+  const { userId, tenantId, email, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) return noSession();
 
-  const result = await markReadApi(storeId, notificationId, { userId, tenantId });
+  const result = await markReadApi(storeId, notificationId, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -306,10 +307,10 @@ export async function markNotificationReadAction(
 }
 
 export async function markAllNotificationsReadAction(): Promise<ActionResult> {
-  const { userId, tenantId, storeId } = await getSession();
+  const { userId, tenantId, email, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) return noSession();
 
-  const result = await markAllReadApi(storeId, { userId, tenantId });
+  const result = await markAllReadApi(storeId, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -321,11 +322,11 @@ export async function markAllNotificationsReadAction(): Promise<ActionResult> {
 export async function updateNotificationPreferencesAction(
   prefs: Partial<NotificationPreferences>,
 ): Promise<ActionResult> {
-  const { userId, tenantId, role, storeId } = await getSession();
+  const { userId, tenantId, email, role, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) return noSession();
   if (!canEditSettings(role)) return forbidden();
 
-  const result = await updatePrefsApi(storeId, prefs, { userId, tenantId });
+  const result = await updatePrefsApi(storeId, prefs, { userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
@@ -339,13 +340,13 @@ export async function updateNotificationPreferencesAction(
 export async function exportAuditCSV(
   query: AuditLogsQuery,
 ): Promise<ActionResultWithData<string>> {
-  const { userId, tenantId, storeId } = await getSession();
+  const { userId, tenantId, email, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) {
     return { ok: false, code: "no_session", message: "Session expired." };
   }
 
   try {
-    const csv = await exportCSVApi(storeId, query, { userId, tenantId });
+    const csv = await exportCSVApi(storeId, query, { userId, tenantId, email });
     return { ok: true, data: csv };
   } catch {
     return { ok: false, code: "export_error", message: "Failed to export audit logs." };

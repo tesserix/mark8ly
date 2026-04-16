@@ -47,6 +47,7 @@ export interface ActionResult {
 interface ActionContext {
   userId: string;
   tenantId: string;
+  email: string;
   storeId: string;
   currencyCode: string;
 }
@@ -55,8 +56,9 @@ async function readContext(storeId: string, currencyCode: string): Promise<Actio
   const h = await headers();
   const userId = h.get("x-session-user-id") ?? "";
   const tenantId = h.get("x-session-tenant-id") ?? "";
+  const email = h.get("x-session-email") ?? "";
   if (!userId || !tenantId || !storeId) return null;
-  return { userId, tenantId, storeId, currencyCode };
+  return { userId, tenantId, email, storeId, currencyCode };
 }
 
 function slugFromTitle(title: string): string {
@@ -108,7 +110,7 @@ export async function createProductAction(
     category_ids: parsed.data.categoryIds.length > 0 ? parsed.data.categoryIds : undefined,
   };
 
-  const result = await createProduct(ctx.storeId, body, { userId: ctx.userId, tenantId: ctx.tenantId });
+  const result = await createProduct(ctx.storeId, body, { userId: ctx.userId, tenantId: ctx.tenantId, email: ctx.email });
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
@@ -163,6 +165,7 @@ export async function updateProductAction(
     const existing = await getProduct(ctx.storeId, productId, {
       userId: ctx.userId,
       tenantId: ctx.tenantId,
+      email: ctx.email,
     });
     const firstVariant = existing?.variants[0];
     const qty = Number.parseInt(parsed.data.inventoryQuantity, 10);
@@ -204,7 +207,7 @@ export async function updateProductAction(
     removed_variant_ids: parsed.data.removed_variant_ids ?? [],
   };
 
-  const result = await updateProduct(ctx.storeId, productId, body, { userId: ctx.userId, tenantId: ctx.tenantId });
+  const result = await updateProduct(ctx.storeId, productId, body, { userId: ctx.userId, tenantId: ctx.tenantId, email: ctx.email });
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
@@ -221,7 +224,7 @@ export async function deleteProductAction(
   const ctx = await readContext(storeId, "USD");
   if (!ctx) return { ok: false, error: { code: "no_session", message: "Your session has expired. Please sign in again." } };
 
-  const result = await deleteProduct(ctx.storeId, productId, { userId: ctx.userId, tenantId: ctx.tenantId });
+  const result = await deleteProduct(ctx.storeId, productId, { userId: ctx.userId, tenantId: ctx.tenantId, email: ctx.email });
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
@@ -250,7 +253,7 @@ export async function copyProductAction(
   const result = await copyProduct(ctx.storeId, productId, {
     target_store_id: input.targetStoreId,
     copy_media: input.copyMedia,
-  }, { userId: ctx.userId, tenantId: ctx.tenantId });
+  }, { userId: ctx.userId, tenantId: ctx.tenantId, email: ctx.email });
 
   if (!result.ok) {
     return { ok: false, error: result.error };
@@ -285,7 +288,7 @@ async function executeBulkAction(
     action,
     product_ids: productIds,
     params,
-  }, { userId: ctx.userId, tenantId: ctx.tenantId });
+  }, { userId: ctx.userId, tenantId: ctx.tenantId, email: ctx.email });
 
   if (!result.ok) {
     return { ok: false, error: result.error };

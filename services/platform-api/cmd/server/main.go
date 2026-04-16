@@ -183,7 +183,7 @@ func main() {
 	// Cross-service audit client — posts staff lifecycle events to
 	// marketplace-api's /internal/audit-events ingest. Empty URL or
 	// secret disables it (dev convenience).
-	auditClient := audit.New(cfg.MarketplaceAPIURL, cfg.MarketplaceInternalAuthSecret, log)
+	auditClient := audit.New(cfg.MarketplaceAPIURL, cfg.AuditIngestSecret, log)
 
 	invitationSvc := invitation.NewService(invitation.Config{
 		Repo:       invitation.NewRepository(conn),

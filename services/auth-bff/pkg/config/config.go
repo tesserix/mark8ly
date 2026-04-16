@@ -38,10 +38,19 @@ type Config struct {
 	FGAStoreID string `envconfig:"FGA_STORE_ID"`
 
 	// marketplace-api audit ingest. Empty URL disables emit (so dev
-	// without marketplace-api still works). The shared secret matches
-	// MARKETPLACE_INTERNAL_AUTH_SECRET in marketplace-api's config.
-	MarketplaceAPIURL          string `envconfig:"MARKETPLACE_API_URL"`
+	// without marketplace-api still works).
+	//
+	// MarketplaceInternalAuthSecret is the existing service-to-service
+	// secret reused by other inbound paths (e.g. auth-bff's
+	// /internal/users handler that marketplace-api calls). Kept here for
+	// backwards compatibility.
+	//
+	// AuditIngestSecret is the narrow secret gating ONLY the audit
+	// ingest endpoint on marketplace-api. Forwarded as X-Internal-Auth
+	// when set. Empty = audit endpoint runs in permissive mode.
+	MarketplaceAPIURL             string `envconfig:"MARKETPLACE_API_URL"`
 	MarketplaceInternalAuthSecret string `envconfig:"MARKETPLACE_INTERNAL_AUTH_SECRET"`
+	AuditIngestSecret             string `envconfig:"AUDIT_INGEST_SECRET"`
 }
 
 // Load reads .env (if present) and binds environment variables.

@@ -73,6 +73,15 @@ type Config struct {
 	StripeBillingSecretKey     string `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
 	StripeBillingWebhookSecret string `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
 
+	// AUDIT — shared secret gating /internal/audit-events. When empty,
+	// the endpoint is permissive (dev convenience). Set to the SAME
+	// non-empty value on auth-bff and platform-api to enforce
+	// service-to-service auth on the audit ingest path. Deliberately
+	// separate from InternalAuthSecret (which gates HeaderTrustAuth
+	// across the entire admin surface and would require admin BFF
+	// changes to enable safely).
+	AuditIngestSecret string `envconfig:"AUDIT_INGEST_SECRET" default:""`
+
 	// P0 — CORS allowed origins (comma-separated, storefront engine only).
 	CORSAllowedOrigins string `envconfig:"CORS_ALLOWED_ORIGINS" default:"https://*.mark8ly.com"`
 	// P0 — Encryption mode: "kms" for GCP KMS, "noop" for base64 dev stub.

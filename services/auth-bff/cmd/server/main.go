@@ -135,7 +135,7 @@ func main() {
 	// Posts user.signed_in / user.signed_out events to marketplace-api's
 	// /internal/audit-events ingest endpoint. Empty MarketplaceAPIURL
 	// disables it so dev environments without marketplace-api still boot.
-	auditClient := audit.New(cfg.MarketplaceAPIURL, cfg.MarketplaceInternalAuthSecret, log)
+	auditClient := audit.New(cfg.MarketplaceAPIURL, cfg.AuditIngestSecret, log)
 
 	// ─── Autologin ─────────────────────────────────────────────────────
 	autologinSvc := autologin.NewService(autologin.Config{
@@ -167,6 +167,19 @@ func main() {
 	apiV1 := r.Group("/api/v1")
 	sessionHandler.RegisterAPI(apiV1)
 	mfaHandler.Register(apiV1)
+
+	// /internal surface for service-to-service calls. Guarded per-route
+	// by the X-Internal-Auth header; the handler fails closed when the
+	// secret is unset. marketplace-api calls DELETE /internal/users/:id
+	// when the merchant triggers "reset my profile".
+	internalGroup := r.Group("/internal")
+	internalUsers := session.NewInternalUsersHandler(
+		sessionRegistry,
+		mfaSvc,
+		cfg.MarketplaceInternalAuthSecret,
+		log,
+	)
+	internalUsers.Register(internalGroup)
 
 	if err := httpserver.Run(ctx, cfg.HTTPPort, r, log); err != nil {
 		log.Error("http server", "err", err)

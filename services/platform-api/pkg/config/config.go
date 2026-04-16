@@ -56,10 +56,15 @@ type Config struct {
 	MarketplaceAPIURL string `envconfig:"MARKETPLACE_API_URL" default:"http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8086"`
 
 	// MarketplaceInternalAuthSecret is the shared secret used to sign
-	// service-to-service calls to marketplace-api's /internal endpoints,
-	// including the /audit-events ingest. Must match marketplace-api's
-	// MARKETPLACE_INTERNAL_AUTH_SECRET. Empty disables the audit client.
+	// service-to-service calls to marketplace-api's HeaderTrustAuth
+	// surface. Currently empty in prod (admin BFF migration pending).
 	MarketplaceInternalAuthSecret string `envconfig:"MARKETPLACE_INTERNAL_AUTH_SECRET"`
+
+	// AuditIngestSecret gates ONLY the /internal/audit-events endpoint
+	// on marketplace-api. Forwarded as X-Internal-Auth on staff invite/
+	// accept/revoke audit posts. Empty = audit endpoint runs in
+	// permissive mode (rollout-safe default).
+	AuditIngestSecret string `envconfig:"AUDIT_INGEST_SECRET"`
 
 	// GIP (Google Identity Platform) admin settings used by the
 	// password-reset flow. ProjectID + TenantID are required in prod;

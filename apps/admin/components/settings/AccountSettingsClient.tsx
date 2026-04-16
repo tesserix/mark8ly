@@ -552,9 +552,12 @@ function DangerZone({ editable }: { editable: boolean }) {
         <div className="flex items-start gap-3">
           <Trash2 className="mt-0.5 h-5 w-5 text-[color:var(--danger)]" aria-hidden="true" />
           <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">Delete your account</p>
+            <p className="text-sm font-medium text-foreground">Reset my profile</p>
             <p className="text-sm text-foreground-secondary">
-              This will permanently delete your account, all stores, and all data. This action cannot be undone.
+              Clears your name, phone, profile picture, and two-factor
+              enrolment, and signs you out of every device. Your store
+              data is preserved — sign in again to pick up where you
+              left off. To remove your store entirely, contact support.
             </p>
           </div>
         </div>
@@ -564,12 +567,12 @@ function DangerZone({ editable }: { editable: boolean }) {
             onClick={() => setShowConfirm(true)}
             className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90"
           >
-            Delete account
+            Reset my profile
           </button>
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-foreground">
-              Type <strong>delete my store</strong> to confirm:
+              Type <strong>reset my profile</strong> to confirm:
             </p>
             <input
               type="text"
@@ -577,16 +580,16 @@ function DangerZone({ editable }: { editable: boolean }) {
               onChange={(e) => setConfirmation(e.target.value)}
               disabled={isPending}
               className="h-10 w-full max-w-xs rounded-[6px] border border-[color:var(--danger)]/30 bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--danger)] focus:outline-none focus:ring-1 focus:ring-[color:var(--danger)] disabled:opacity-50"
-              placeholder="delete my store"
+              placeholder="reset my profile"
             />
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={handleDelete}
-                disabled={isPending || confirmation !== "delete my store"}
+                disabled={isPending || confirmation !== "reset my profile"}
                 className="h-10 rounded-[6px] bg-[color:var(--danger)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--danger)]/90 disabled:opacity-50"
               >
-                {isPending ? "Deleting..." : "Permanently delete"}
+                {isPending ? "Resetting..." : "Reset and sign out"}
               </button>
               <button
                 type="button"

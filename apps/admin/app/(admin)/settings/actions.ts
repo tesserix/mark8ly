@@ -154,7 +154,7 @@ export async function deleteAccountAction(
   if (!userId || !tenantId) return noSession();
   if (!canEditSettings(role)) return forbidden();
 
-  if (confirmation !== "delete my store") {
+  if (confirmation !== "reset my profile") {
     return { ok: false, code: "validation", message: "Confirmation text does not match." };
   }
 

@@ -64,21 +64,26 @@ func toProfileDTO(p userProfile, mfaEnabled bool) profileDTO {
 // AccountHandler handles /admin/account endpoints.
 // Profile persists to user_profiles. MFA and sessions proxy to auth-bff.
 type AccountHandler struct {
-	db         *gorm.DB
-	uploader   media.Uploader
-	authBFFURL string
-	httpClient *http.Client
-	logger     *slog.Logger
+	db             *gorm.DB
+	uploader       media.Uploader
+	authBFFURL     string
+	internalSecret string
+	httpClient     *http.Client
+	logger         *slog.Logger
 }
 
 // NewAccountHandler constructs an AccountHandler. db is required.
-// uploader is optional (nil disables avatar uploads).
-func NewAccountHandler(db *gorm.DB, authBFFURL string, logger *slog.Logger) *AccountHandler {
+// uploader is optional (nil disables avatar uploads). internalSecret
+// is the shared MARKETPLACE_INTERNAL_AUTH_SECRET used to sign
+// outbound calls to auth-bff's /internal endpoints; empty value
+// disables the "reset my profile" cascade beyond the local DB wipe.
+func NewAccountHandler(db *gorm.DB, authBFFURL, internalSecret string, logger *slog.Logger) *AccountHandler {
 	return &AccountHandler{
-		db:         db,
-		authBFFURL: strings.TrimRight(authBFFURL, "/"),
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		logger:     logger,
+		db:             db,
+		authBFFURL:     strings.TrimRight(authBFFURL, "/"),
+		internalSecret: internalSecret,
+		httpClient:     &http.Client{Timeout: 10 * time.Second},
+		logger:         logger,
 	}
 }
 
@@ -333,7 +338,19 @@ func (h *AccountHandler) RevokeSession(c *gin.Context) {
 	h.proxyToAuthBFF(c, "DELETE", fmt.Sprintf("/api/v1/sessions/%s", sessionID))
 }
 
-// DeleteAccount handles DELETE /admin/account — owner-only with confirmation.
+// ResetProfileConfirmation is the exact text the user must type in the
+// Danger Zone input to trigger DELETE /admin/account. Scoped to a
+// "reset" rather than a full tenant delete so the name accurately
+// reflects the server-side behaviour: wipe the user's personal data
+// and force sign-out. Store data is preserved.
+const ResetProfileConfirmation = "reset my profile"
+
+// DeleteAccount handles DELETE /admin/account — resets the caller's
+// personal data: deletes the user_profile row, revokes every active
+// session, and wipes MFA enrolment. Tenant + store data stays intact
+// so the user can recover by signing back in. A future phase may add
+// a true tenant cascade; until then this keeps the blast radius
+// contained to the authenticated user.
 func (h *AccountHandler) DeleteAccount(c *gin.Context) {
 	userID := c.GetString("user_id")
 	if userID == "" {
@@ -341,8 +358,6 @@ func (h *AccountHandler) DeleteAccount(c *gin.Context) {
 		return
 	}
 
-	// Accept the confirmation either in the body (what the UI sends) or
-	// the X-Confirm-Delete header (what the old API contract required).
 	var body struct {
 		Confirmation string `json:"confirmation"`
 	}
@@ -351,14 +366,24 @@ func (h *AccountHandler) DeleteAccount(c *gin.Context) {
 	if confirm == "" {
 		confirm = c.GetHeader("X-Confirm-Delete")
 	}
-	if confirm != "delete my store" {
-		RespondErr(c, apperrors.ValidationFailed("confirmation", "confirmation text does not match"), h.logger)
+	if confirm != ResetProfileConfirmation {
+		RespondErr(c, apperrors.ValidationFailed(
+			"confirmation",
+			fmt.Sprintf("confirmation text must be %q", ResetProfileConfirmation),
+		), h.logger)
 		return
 	}
 
-	// Real cascade-delete is a dedicated phase (tenant cleanup,
-	// OpenFGA tuples, GIP user removal). Until then this just wipes the
-	// local user_profile row so the UI stops showing stale data.
+	// Best-effort: ask auth-bff to revoke every session and wipe MFA
+	// for this user. We run this before the local profile delete so a
+	// failure here aborts the whole operation — don't wipe profile
+	// data if we can't also sign the user out.
+	if err := h.cascadeAuthBFFReset(c.Request.Context(), userID); err != nil {
+		h.logger.Error("delete account: auth-bff cascade", "err", err, "user_id", userID)
+		RespondErr(c, fmt.Errorf("reset sessions: %w", err), h.logger)
+		return
+	}
+
 	if err := h.db.WithContext(c.Request.Context()).
 		Where("user_id = ?", userID).
 		Delete(&userProfile{}).Error; err != nil {
@@ -366,7 +391,38 @@ func (h *AccountHandler) DeleteAccount(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"deleted": true, "user_id": userID}})
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"reset": true, "user_id": userID}})
+}
+
+// cascadeAuthBFFReset calls auth-bff's DELETE /internal/users/:id to
+// revoke sessions + wipe MFA. Returns nil when the endpoint succeeds
+// or when auth-bff / the internal secret is not wired (graceful
+// degradation for dev environments). Any 4xx/5xx from auth-bff
+// surfaces as an error so the caller can abort.
+func (h *AccountHandler) cascadeAuthBFFReset(parent context.Context, userID string) error {
+	if h.authBFFURL == "" || h.internalSecret == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodDelete,
+		fmt.Sprintf("%s/internal/users/%s", h.authBFFURL, userID),
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Internal-Auth", h.internalSecret)
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("auth-bff internal delete returned %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // proxyToAuthBFF forwards the request to the auth-bff service.

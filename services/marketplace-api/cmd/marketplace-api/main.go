@@ -374,7 +374,7 @@ func main() {
 		reviewsHandler := admin.NewReviewsHandler(reviewRepoAdmin, log)
 
 		// Settings S1 — Account & Security.
-		accountHandler := admin.NewAccountHandler(conn, cfg.AuthBFFURL, log)
+		accountHandler := admin.NewAccountHandler(conn, cfg.AuthBFFURL, cfg.InternalAuthSecret, log)
 		accountHandler.SetUploader(uploader)
 
 		// Settings S2 — Custom Domains: domainSvc + domainsHandler hoisted
@@ -840,7 +840,7 @@ func main() {
 		// platform-api posts staff invite/accept/revoke. Mounted on the
 		// existing /internal namespace gated by X-Internal-Auth.
 		internalsvc.NewAuditIngestHandler(auditEmitter, domainStoresRepo, log).
-			Register(r.Group("/internal"), cfg.InternalAuthSecret)
+			Register(r.Group("/internal"), cfg.AuditIngestSecret)
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
 			Handler: r,
@@ -870,7 +870,7 @@ func main() {
 			// + read on the same pod simplifies ops and keeps the
 			// storefront engine's surface area small.
 			internalsvc.NewAuditIngestHandler(auditEmitter, domainStoresRepo, log).
-				Register(engine.Group("/internal"), cfg.InternalAuthSecret)
+				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
 		}
 		if m == mode.Storefront {
 			storefront.RegisterStorefront(engine.Group("/api/v1"), storefrontDeps)

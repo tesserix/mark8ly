@@ -356,6 +356,9 @@ function CancelForm({ storeId, orderId, customerEmail, onDone }: CancelFormProps
     setError(undefined);
     startTransition(async () => {
       const r = await cancelOrderAction(storeId, orderId, { reason });
+      if (typeof window !== "undefined") {
+        console.log("[cancel-debug] result", JSON.stringify(r));
+      }
       if (!r.ok) {
         setError(r.error);
         setStep("form");

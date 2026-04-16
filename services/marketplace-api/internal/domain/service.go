@@ -27,24 +27,43 @@ type CloudflareClient interface {
 type ServiceConfig struct {
 	DB     *gorm.DB
 	Repo   Repository
-	CF     CloudflareClient
-	Logger *slog.Logger
+	CF          CloudflareClient
+	Provisioner Provisioner
+	Logger      *slog.Logger
+}
+
+// Provisioner is the k8s provisioning interface consumed by Service.
+// Implemented by internal/k8sprov.Provisioner. Kept as an interface so
+// the service can run without cluster access (local dev, tests) and so
+// the k8sprov import doesn't pull into every unit test.
+type Provisioner interface {
+	Provision(ctx context.Context, domain string) (*ProvisionResult, error)
+	Deprovision(ctx context.Context, domain string) error
+	CertStatus(ctx context.Context, domain string) (ready bool, message string, err error)
+}
+
+// ProvisionResult mirrors k8sprov.ProvisionResult so the domain package
+// doesn't import k8sprov (avoids cycles, keeps deps narrow).
+type ProvisionResult struct {
+	CertSecretName string
 }
 
 // Service implements custom domain CRUD operations.
 type Service struct {
-	db     *gorm.DB
-	repo   Repository
-	cf     CloudflareClient
-	logger *slog.Logger
+	db          *gorm.DB
+	repo        Repository
+	cf          CloudflareClient
+	provisioner Provisioner
+	logger      *slog.Logger
 }
 
 func NewService(cfg ServiceConfig) *Service {
 	return &Service{
-		db:     cfg.DB,
-		repo:   cfg.Repo,
-		cf:     cfg.CF,
-		logger: cfg.Logger,
+		db:          cfg.DB,
+		repo:        cfg.Repo,
+		cf:          cfg.CF,
+		provisioner: cfg.Provisioner,
+		logger:      cfg.Logger,
 	}
 }
 
@@ -170,6 +189,13 @@ func (s *Service) Remove(ctx context.Context, storeID, id uuid.UUID) error {
 		}
 	}
 
+	// Tear down k8s resources for manual domains — best effort.
+	if s.provisioner != nil && d.DNSMethod == DNSMethodManual {
+		if err := s.provisioner.Deprovision(ctx, d.Domain); err != nil {
+			s.logger.Error("k8sprov deprovision failed", "domain", d.Domain, "err", err)
+		}
+	}
+
 	return s.repo.Delete(ctx, s.db, storeID, id)
 }
 
@@ -260,8 +286,27 @@ func (s *Service) markVerified(ctx context.Context, d *CustomDomain) (*CustomDom
 	d.Status = DomainStatusActive
 	d.VerifiedAt = &now
 	d.ErrorMessage = nil
-	d.SSLStatus = SSLStatusActive
+	// DNS is confirmed; SSL provisioning begins below. Keep SSLStatus as
+	// pending until cert-manager reports Ready=True.
+	d.SSLStatus = SSLStatusPending
 	d.UpdatedAt = now
+
+	// Kick off k8s provisioning: Certificate + Gateway + VirtualService.
+	// Best-effort — failures log but don't fail the verify since DNS is
+	// already confirmed. A background poller can retry later.
+	if s.provisioner != nil && d.DNSMethod == DNSMethodManual {
+		if res, err := s.provisioner.Provision(ctx, d.Domain); err != nil {
+			s.logger.Error("k8sprov provision failed", "domain", d.Domain, "err", err)
+			msg := "SSL provisioning error: " + err.Error()
+			d.CertError = &msg
+			d.CertStatus = "failed"
+		} else {
+			d.CertSecretName = &res.CertSecretName
+			d.CertStatus = "issuing"
+			d.CertError = nil
+		}
+	}
+
 	if err := s.repo.Update(ctx, s.db, d); err != nil {
 		return nil, err
 	}

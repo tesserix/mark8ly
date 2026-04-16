@@ -35,6 +35,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
 	"github.com/mark8ly/marketplace-api/internal/domain"
+	"github.com/mark8ly/marketplace-api/internal/k8sprov"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
@@ -146,11 +147,22 @@ func main() {
 	// Custom domain service — shared between admin (CRUD) and storefront
 	// (domain resolution). Constructed once so both modes use the same repo.
 	domainRepo := domain.NewRepository()
+	// K8s provisioner — best-effort. Returns nil when not running inside
+	// a cluster (local dev); the service handles nil gracefully.
+	domainProvisioner, provErr := k8sprov.New(log)
+	if provErr != nil {
+		log.Warn("k8sprov unavailable", "err", provErr)
+	}
+	var provIface domain.Provisioner
+	if domainProvisioner != nil {
+		provIface = k8sprovAdapter{p: domainProvisioner}
+	}
 	domainSvc := domain.NewService(domain.ServiceConfig{
-		DB:     conn,
-		Repo:   domainRepo,
-		CF:     nil, // Stub — real Cloudflare client wired in production config
-		Logger: log,
+		DB:          conn,
+		Repo:        domainRepo,
+		CF:          nil, // Stub — real Cloudflare client wired in production config
+		Provisioner: provIface,
+		Logger:      log,
 	})
 	domainStoresRepo := stores.NewRepository(conn)
 	domainsHandler := admin.NewDomainsHandler(domainSvc, domainStoresRepo, log)
@@ -848,4 +860,26 @@ func main() {
 		}
 	}
 	log.Info("bye")
+}
+
+// k8sprovAdapter bridges the concrete *k8sprov.Provisioner to the
+// domain.Provisioner interface so the domain package doesn't import
+// the k8sprov package (avoids a large transitive client-go import in
+// unit tests + keeps the boundary clean).
+type k8sprovAdapter struct{ p *k8sprov.Provisioner }
+
+func (a k8sprovAdapter) Provision(ctx context.Context, domainName string) (*domain.ProvisionResult, error) {
+	res, err := a.p.Provision(ctx, domainName)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.ProvisionResult{CertSecretName: res.CertSecretName}, nil
+}
+
+func (a k8sprovAdapter) Deprovision(ctx context.Context, domainName string) error {
+	return a.p.Deprovision(ctx, domainName)
+}
+
+func (a k8sprovAdapter) CertStatus(ctx context.Context, domainName string) (bool, string, error) {
+	return a.p.CertStatus(ctx, domainName)
 }

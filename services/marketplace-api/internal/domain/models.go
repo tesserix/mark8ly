@@ -51,6 +51,11 @@ type CustomDomain struct {
 	SSLStatus             SSLStatus    `gorm:"column:ssl_status;type:varchar(20);not null;default:pending"`
 	VerifiedAt            *time.Time   `gorm:"column:verified_at"`
 	ErrorMessage          *string      `gorm:"column:error_message;type:text"`
+	// Cert provisioning state. Populated when k8sprov creates a
+	// cert-manager Certificate resource for the domain.
+	CertStatus     string  `gorm:"column:cert_status;type:varchar(20);not null;default:pending"`
+	CertSecretName *string `gorm:"column:cert_secret_name;type:varchar(253)"`
+	CertError      *string `gorm:"column:cert_error;type:text"`
 	CreatedAt             time.Time    `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt             time.Time    `gorm:"column:updated_at;not null;default:now()"`
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/tax"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -198,7 +199,26 @@ func (h *OrdersHandler) Get(c *gin.Context) {
 		RespondErr(c, apperrors.NotFound("order"), h.logger)
 		return
 	}
-	c.JSON(http.StatusOK, ToAdminOrderResponse(o, items, addrs))
+	resp := ToAdminOrderResponse(o, items, addrs)
+	// Hydrate the per-jurisdiction tax breakdown so the invoice/receipt
+	// PDFs (which fetch via this endpoint) can render CGST/SGST/IGST/VAT
+	// lines instead of a single aggregate tax_total. Empty for orders
+	// placed before the persistence wiring landed — the PDF falls back
+	// to the single Tax line in that case.
+	taxRepo := tax.NewRepository()
+	if rows, err := taxRepo.GetTaxLines(c.Request.Context(), h.db, id); err == nil && len(rows) > 0 {
+		out := make([]AdminOrderTaxLineResponse, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, AdminOrderTaxLineResponse{
+				Description:  r.Description,
+				Rate:         r.Rate,
+				Amount:       r.Amount,
+				Jurisdiction: r.Jurisdiction,
+			})
+		}
+		resp.TaxLines = out
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // Create handles POST /admin/stores/:storeId/orders. Admin-side order

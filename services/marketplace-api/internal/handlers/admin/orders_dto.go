@@ -143,6 +143,11 @@ type AdminOrderResponse struct {
 	Subtotal          decimal.Decimal          `json:"subtotal"`
 	ShippingTotal     decimal.Decimal          `json:"shipping_total"`
 	TaxTotal          decimal.Decimal          `json:"tax_total"`
+	// TaxLines is the per-jurisdiction breakdown (CGST/SGST/IGST for
+	// India, VAT for flat-rate countries, state+county+city for TaxJar).
+	// Populated by single-order Get handler; List leaves it nil to keep
+	// the page payload tight.
+	TaxLines          []AdminOrderTaxLineResponse `json:"tax_lines,omitempty"`
 	DiscountTotal     decimal.Decimal          `json:"discount_total"`
 	GrandTotal        decimal.Decimal          `json:"grand_total"`
 	RefundedAmount    decimal.Decimal          `json:"refunded_amount"`
@@ -154,6 +159,15 @@ type AdminOrderResponse struct {
 	FulfilledAt       *time.Time               `json:"fulfilled_at,omitempty"`
 	CreatedAt         time.Time                `json:"created_at"`
 	UpdatedAt         time.Time                `json:"updated_at"`
+}
+
+// AdminOrderTaxLineResponse is one row from order_tax_lines in the
+// admin wire shape.
+type AdminOrderTaxLineResponse struct {
+	Description  string          `json:"description"`
+	Rate         decimal.Decimal `json:"rate"`
+	Amount       decimal.Decimal `json:"amount"`
+	Jurisdiction string          `json:"jurisdiction,omitempty"`
 }
 
 // ToAdminOrderResponse renders the persistence types into the wire shape.

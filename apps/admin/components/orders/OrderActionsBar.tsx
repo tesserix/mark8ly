@@ -375,7 +375,7 @@ function CancelForm({ storeId, orderId, customerEmail, onDone }: CancelFormProps
         </div>
         <FormError error={error} />
         <div className="flex items-center gap-3">
-          <SubmitButton pending={pending} label="Cancel order" />
+          <SubmitButton pending={pending} label="Cancel order" onClick={submit} />
           <DismissButton onClick={() => setStep("form")} disabled={pending} label="Go back" />
         </div>
       </PanelShell>
@@ -479,7 +479,7 @@ function RefundForm({
         </div>
         <FormError error={error} />
         <div className="flex items-center gap-3">
-          <SubmitButton pending={pending} label="Confirm refund" />
+          <SubmitButton pending={pending} label="Confirm refund" onClick={submit} />
           <DismissButton onClick={() => setStep("form")} disabled={pending} label="Go back" />
         </div>
       </PanelShell>
@@ -556,11 +556,23 @@ function RefundForm({
 const inputCls =
   "rounded-md border border-[color:var(--ink-900)] border-opacity-30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none";
 
-function SubmitButton({ pending, label }: { pending: boolean; label: string }) {
+function SubmitButton({
+  pending,
+  label,
+  onClick,
+}: {
+  pending: boolean;
+  label: string;
+  // Optional click handler — when the button isn't inside a <form>
+  // (e.g. the cancel/refund "review" panels) the action must wire its
+  // own onClick or nothing happens.
+  onClick?: () => void;
+}) {
   return (
     <button
-      type="submit"
+      type={onClick ? "button" : "submit"}
       disabled={pending}
+      onClick={onClick}
       className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
     >
       {pending ? "Working…" : label}

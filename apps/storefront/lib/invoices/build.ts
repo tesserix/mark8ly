@@ -64,6 +64,12 @@ export function buildDocument({
       subtotal: order.subtotal,
       shipping_total: order.shipping_total,
       tax_total: order.tax_total,
+      tax_lines: (order.tax_lines ?? []).map((l) => ({
+        description: l.description,
+        rate: l.rate,
+        amount: l.amount,
+        jurisdiction: l.jurisdiction,
+      })),
       // storefront Order doesn't carry discount_total — show 0 so the
       // totals block doesn't render the discount row at all.
       discount_total: "0",
@@ -75,6 +81,7 @@ export function buildDocument({
       slug: branding?.store?.slug ?? "",
       logo_url: extras.logo_url ?? undefined,
       tagline: extras.tagline ?? undefined,
+      country_code: branding?.store?.country_code ?? undefined,
       color_accent: extras.color_accent ?? undefined,
       color_text: extras.color_text ?? undefined,
     },

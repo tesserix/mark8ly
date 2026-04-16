@@ -20,6 +20,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/tax"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -53,12 +54,27 @@ type storefrontOrderResponse struct {
 	// RefundedAmount surfaces partial + full refunds on the customer
 	// account page. Always present (zero-value "0.00" when no refunds).
 	RefundedAmount  string                       `json:"refunded_amount"`
+	// TaxLines is the per-jurisdiction breakdown of the tax_total.
+	// India GST splits into CGST + SGST (intra-state) or IGST (inter-
+	// state); flat-rate countries get a single VAT/GST line; TaxJar
+	// returns state + county + city + special breakdowns. Empty when
+	// the order pre-dates the persistence wiring.
+	TaxLines        []storefrontTaxLineResponse  `json:"tax_lines"`
 	CurrencyCode    string                       `json:"currency_code"`
 	Items           []storefrontOrderItemResponse `json:"items"`
 	ShippingAddress *storefrontAddressResponse    `json:"shipping_address"`
 	Shipment        *storefrontShipmentResponse   `json:"shipment,omitempty"`
 	Timeline        []storefrontTimelineEntry     `json:"timeline"`
 	PlacedAt        string                       `json:"placed_at"`
+}
+
+// storefrontTaxLineResponse is the public view of one persisted
+// order_tax_lines row.
+type storefrontTaxLineResponse struct {
+	Description  string `json:"description"`
+	Rate         string `json:"rate"`
+	Amount       string `json:"amount"`
+	Jurisdiction string `json:"jurisdiction,omitempty"`
 }
 
 // storefrontShipmentResponse is the public view of a shipment. The
@@ -144,11 +160,34 @@ func (h *OrderDetailHandler) GetOrder(c *gin.Context) {
 
 	shipment := h.loadShipment(c.Request.Context(), orderID)
 	timeline := h.loadTimeline(c.Request.Context(), orderID)
+	taxLines := h.loadTaxLines(c.Request.Context(), orderID)
 
 	resp := mapOrderToStorefrontResponse(o, items, addrs)
 	resp.Shipment = shipment
 	resp.Timeline = timeline
+	resp.TaxLines = taxLines
 	c.JSON(http.StatusOK, gin.H{"data": resp})
+}
+
+// loadTaxLines fetches the persisted per-jurisdiction tax breakdown.
+// Returns empty (non-nil) on miss so the JSON is `[]` rather than null.
+func (h *OrderDetailHandler) loadTaxLines(ctx context.Context, orderID uuid.UUID) []storefrontTaxLineResponse {
+	repo := tax.NewRepository()
+	rows, err := repo.GetTaxLines(ctx, h.db, orderID)
+	if err != nil {
+		h.logger.Warn("storefront order: load tax lines", "err", err, "order_id", orderID)
+		return []storefrontTaxLineResponse{}
+	}
+	out := make([]storefrontTaxLineResponse, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, storefrontTaxLineResponse{
+			Description:  r.Description,
+			Rate:         r.Rate.StringFixed(2),
+			Amount:       r.Amount.StringFixed(2),
+			Jurisdiction: r.Jurisdiction,
+		})
+	}
+	return out
 }
 
 type shipmentRow struct {

@@ -339,6 +339,20 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		return
 	}
 
+	// Persist the per-jurisdiction tax breakdown (CGST/SGST/IGST for
+	// India, VAT line for flat-rate countries, state+county+city splits
+	// for TaxJar) so the customer's invoice + receipt PDFs can render
+	// the same lines the merchant sees on the audit trail. Best-effort:
+	// failures get logged but never fail the checkout — the aggregate
+	// tax_total is already on the order.
+	if !result.Reused && taxBreakdown != nil && len(taxBreakdown.Lines) > 0 {
+		taxRepo := tax.NewRepository()
+		if err := taxRepo.SaveTaxLines(ctx, h.db, result.Order.ID, taxBreakdown.Lines); err != nil {
+			h.logger.Warn("checkout: failed to persist tax lines",
+				"order_id", result.Order.ID, "err", err)
+		}
+	}
+
 	// If idempotent replay, return the existing order without re-creating
 	// payment intents or tax lines.
 	if result.Reused {

@@ -959,6 +959,13 @@ export interface AdminOrderAddress {
   phone?: string;
 }
 
+export interface AdminOrderTaxLine {
+  description: string; // "CGST 9%", "IGST 18%", "VAT 20%", "CA State Tax"
+  rate: string;        // decimal as string
+  amount: string;      // decimal as string
+  jurisdiction?: string;
+}
+
 export interface AdminOrder {
   id: string;
   tenant_id: string;
@@ -973,6 +980,10 @@ export interface AdminOrder {
   subtotal: string;
   shipping_total: string;
   tax_total: string;
+  // tax_lines: per-jurisdiction breakdown surfaced by Get-by-id endpoint.
+  // Empty/undefined for orders pre-dating the persistence wiring; the
+  // PDF then falls back to the aggregate Tax line.
+  tax_lines?: AdminOrderTaxLine[];
   discount_total: string;
   grand_total: string;
   refunded_amount: string;

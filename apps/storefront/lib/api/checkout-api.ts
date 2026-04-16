@@ -166,6 +166,13 @@ export interface OrderShipment {
   estimated_delivery?: string;
 }
 
+export interface OrderTaxLine {
+  description: string;
+  rate: string;
+  amount: string;
+  jurisdiction?: string;
+}
+
 export interface OrderTimelineEntry {
   kind: string;
   description: string;
@@ -188,6 +195,10 @@ export interface Order {
   // refunds have been issued. Surfaces partial + full refund history on
   // the customer's account order page.
   refunded_amount?: string;
+  // tax_lines: per-jurisdiction breakdown (CGST/SGST/IGST for India,
+  // VAT for flat-rate countries, state+county+city for TaxJar). Empty
+  // for orders pre-dating the persistence wiring.
+  tax_lines?: OrderTaxLine[];
   currency_code: string;
   items: OrderItem[];
   shipping_address: OrderAddress;

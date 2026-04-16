@@ -172,6 +172,71 @@ const styles = StyleSheet.create({
     lineHeight: 1.55,
   },
 
+  // Tax breakdown block — sits between the items table and totals,
+  // detailed per-jurisdiction rendering for GST/VAT/sales tax.
+  taxBlock: { marginBottom: 18 },
+  taxHeading: {
+    fontFamily: SANS_BOLD,
+    fontSize: 8,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  taxTable: {
+    flexDirection: "column",
+    borderWidth: 0.5,
+    borderColor: HAIRLINE,
+    borderStyle: "solid",
+  },
+  taxHeaderRow: {
+    flexDirection: "row",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: SUBTLE_FILL,
+    borderBottomWidth: 0.5,
+    borderBottomColor: HAIRLINE,
+    borderBottomStyle: "solid",
+  },
+  taxRow: {
+    flexDirection: "row",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderBottomWidth: 0.5,
+    borderBottomColor: HAIRLINE,
+    borderBottomStyle: "solid",
+  },
+  taxTh: {
+    fontFamily: SANS_BOLD,
+    fontSize: 7,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: SUBDUED,
+  },
+  taxTd: { fontSize: 9, color: INK },
+  taxTdMuted: { fontSize: 7.5, color: SUBDUED, marginTop: 1 },
+  taxColDesc: { flex: 4 },
+  taxColRate: { flex: 1, textAlign: "right", paddingRight: 8 },
+  taxColAmount: { flex: 1.6, textAlign: "right" },
+
+  // Receipt-only: filled status banner so the document reads visually
+  // distinct from the invoice at a glance.
+  statusBannerFilled: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    marginBottom: 24,
+  },
+  statusLabelFilled: {
+    fontFamily: SERIF_BOLD,
+    fontSize: 13,
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+    color: PAPER,
+  },
+  statusMetaFilled: { fontSize: 9, color: PAPER, opacity: 0.85 },
+
   footer: {
     position: "absolute",
     bottom: 32,
@@ -268,6 +333,7 @@ function PartyBlock({
 function Totals({ totals }: { totals: DocumentTotals }) {
   const refunded = totals.refunded_amount ? Number.parseFloat(totals.refunded_amount) : 0;
   const ccy = totals.currency_code;
+  const hasBreakdown = !!(totals.tax_lines && totals.tax_lines.length > 0);
   return (
     <View style={styles.totalsRow}>
       <View style={styles.totalsBox}>
@@ -279,10 +345,23 @@ function Totals({ totals }: { totals: DocumentTotals }) {
           <Text style={styles.totalsLabel}>Shipping</Text>
           <Text style={styles.totalsValue}>{formatCurrency(totals.shipping_total, ccy)}</Text>
         </View>
-        <View style={styles.totalsLine}>
-          <Text style={styles.totalsLabel}>Tax</Text>
-          <Text style={styles.totalsValue}>{formatCurrency(totals.tax_total, ccy)}</Text>
-        </View>
+        {/* When the per-jurisdiction breakdown is available, render each
+            line individually and skip the aggregate "Tax" row to avoid
+            double-counting visually. Falls back to a single Tax row for
+            orders pre-dating the persistence wiring. */}
+        {hasBreakdown ? (
+          totals.tax_lines!.map((tl, i) => (
+            <View key={i} style={styles.totalsLine}>
+              <Text style={styles.totalsLabel}>{tl.description}</Text>
+              <Text style={styles.totalsValue}>{formatCurrency(tl.amount, ccy)}</Text>
+            </View>
+          ))
+        ) : (
+          <View style={styles.totalsLine}>
+            <Text style={styles.totalsLabel}>Tax</Text>
+            <Text style={styles.totalsValue}>{formatCurrency(totals.tax_total, ccy)}</Text>
+          </View>
+        )}
         {Number.parseFloat(totals.discount_total) > 0 && (
           <View style={styles.totalsLine}>
             <Text style={styles.totalsLabel}>Discount</Text>
@@ -303,6 +382,52 @@ function Totals({ totals }: { totals: DocumentTotals }) {
       </View>
     </View>
   );
+}
+
+// TaxBreakdownBlock renders the full per-jurisdiction breakdown above
+// the totals strip — useful for India GST where customers + auditors
+// expect to see CGST + SGST or IGST split out with HSN/rate context.
+// Heading switches to "GST breakdown" when the seller country is IN.
+function TaxBreakdownBlock({
+  totals,
+  countryCode,
+  accent,
+}: {
+  totals: DocumentTotals;
+  countryCode?: string;
+  accent: string;
+}) {
+  if (!totals.tax_lines || totals.tax_lines.length === 0) return null;
+  const heading = countryCode === "IN" ? "GST breakdown" : "Tax breakdown";
+  return (
+    <View style={styles.taxBlock}>
+      <Text style={[styles.taxHeading, { color: accent }]}>{heading}</Text>
+      <View style={styles.taxTable}>
+        <View style={styles.taxHeaderRow}>
+          <Text style={[styles.taxTh, styles.taxColDesc]}>Component</Text>
+          <Text style={[styles.taxTh, styles.taxColRate]}>Rate</Text>
+          <Text style={[styles.taxTh, styles.taxColAmount]}>Amount</Text>
+        </View>
+        {totals.tax_lines.map((tl, i) => (
+          <View key={i} style={styles.taxRow}>
+            <View style={styles.taxColDesc}>
+              <Text style={styles.taxTd}>{tl.description}</Text>
+              {tl.jurisdiction ? <Text style={styles.taxTdMuted}>{tl.jurisdiction}</Text> : null}
+            </View>
+            <Text style={[styles.taxTd, styles.taxColRate]}>{formatRate(tl.rate)}</Text>
+            <Text style={[styles.taxTd, styles.taxColAmount]}>{formatCurrency(tl.amount, totals.currency_code)}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function formatRate(rate: string): string {
+  const n = Number.parseFloat(rate);
+  if (Number.isNaN(n)) return rate;
+  // Canonical: percentage with up to 2 decimals, no trailing zero noise.
+  return `${n.toFixed(2).replace(/\.?0+$/, "")}%`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -343,7 +468,12 @@ export function InvoicePdf({ doc }: PdfProps) {
       producer={doc.store.name}
     >
       <Page size="A4" style={styles.page}>
-        <View style={[styles.accentRule, { backgroundColor: accent }]} fixed />
+        {/* Accent strip — thin for invoice, taller for receipt so the
+            two documents read visually distinct at a glance. */}
+        <View
+          style={[styles.accentRule, { backgroundColor: accent, height: isReceipt ? 8 : 3 }]}
+          fixed
+        />
 
         {/* Header — logo + store identity */}
         <View style={styles.header}>
@@ -359,9 +489,11 @@ export function InvoicePdf({ doc }: PdfProps) {
           </View>
         </View>
 
-        {/* Title + meta */}
+        {/* Title + meta — receipt picks up the accent colour on the
+            heading so it reads as the celebratory "you're done" moment
+            rather than the matter-of-fact "here's the bill" of an invoice. */}
         <View style={styles.titleBlock}>
-          <Text style={styles.titleHeading}>{titleText}</Text>
+          <Text style={[styles.titleHeading, { color: isReceipt ? accent : INK }]}>{titleText}</Text>
           <View style={styles.titleMeta}>
             <Text style={styles.metaLabel}>{titleText} №</Text>
             <Text style={styles.metaValue}>{doc.document_number}</Text>
@@ -391,16 +523,28 @@ export function InvoicePdf({ doc }: PdfProps) {
           ))}
         </View>
 
+        {/* Per-jurisdiction tax breakdown — GST/VAT/sales-tax detail. */}
+        <TaxBreakdownBlock totals={doc.totals} countryCode={doc.store.country_code} accent={accent} />
+
         {/* Totals */}
         <Totals totals={doc.totals} />
 
-        {/* Status banner */}
-        <View style={styles.statusBanner}>
-          <Text style={[styles.statusLabel, { color: isReceipt || isPaid(doc.payment_status) ? accent : INK }]}>
-            {statusLabel}
-          </Text>
-          <Text style={styles.statusMeta}>{statusMeta}</Text>
-        </View>
+        {/* Status banner — receipts get a filled accent banner so the
+            document reads as the official "delivered & paid" record at
+            a glance; invoices get the quieter hairline-rule banner. */}
+        {isReceipt ? (
+          <View style={[styles.statusBannerFilled, { backgroundColor: accent }]}>
+            <Text style={styles.statusLabelFilled}>{statusLabel}</Text>
+            <Text style={styles.statusMetaFilled}>{statusMeta}</Text>
+          </View>
+        ) : (
+          <View style={styles.statusBanner}>
+            <Text style={[styles.statusLabel, { color: isPaid(doc.payment_status) ? accent : INK }]}>
+              {statusLabel}
+            </Text>
+            <Text style={styles.statusMeta}>{statusMeta}</Text>
+          </View>
+        )}
 
         {/* Notes */}
         {doc.notes ? <View style={styles.notes}><Text>{doc.notes}</Text></View> : null}

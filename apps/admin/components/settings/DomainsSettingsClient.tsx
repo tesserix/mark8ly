@@ -410,6 +410,19 @@ function DomainCard({
             </p>
           </div>
 
+          {/* Record 3 (optional): admin subdomain routing */}
+          <div className="mt-4 space-y-2 border-l-2 border-[color:var(--moss-700)]/40 pl-3">
+            <p className="text-xs font-medium text-foreground">
+              3. Admin panel subdomain (optional)
+            </p>
+            <p className="text-xs text-foreground-secondary">
+              Adds <code>admin.{d.domain}</code> as a branded URL for your admin dashboard. Skip if you&apos;re happy using the default admin URL.
+            </p>
+            <DnsRecord label="Type" value="A" />
+            <DnsRecord label="Name" value={`admin.${d.domain}`} copyable />
+            <DnsRecord label="Value" value="34.14.139.74" copyable />
+          </div>
+
           <p className="mt-4 text-xs text-foreground-tertiary">
             DNS changes can take up to 48 hours to propagate. Click &quot;Verify&quot; once both records are live.
           </p>

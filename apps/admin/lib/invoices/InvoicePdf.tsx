@@ -10,7 +10,7 @@
 // rule and on the totals divider; everything else is greyscale so it
 // prints cleanly on B&W and in colour.
 
-import { Document, Page, View, Text, Image, StyleSheet, Font } from "@react-pdf/renderer";
+import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 
 import type {
   DocumentAddress,
@@ -19,29 +19,14 @@ import type {
   InvoiceDocument,
 } from "./types";
 
-// ─────────────────────────────────────────────────────────────────────────
-// Fonts — Inter (sans) for body + numerics, Source Serif for headings.
-// Loaded from Google's static CDN; bundle stays small.
-// ─────────────────────────────────────────────────────────────────────────
-
-Font.register({
-  family: "Inter",
-  fonts: [
-    { src: "https://fonts.gstatic.com/s/inter/v18/UcCo3FwrK3iLTcvneQg7Ca725JhhKnNqk4j1ebLhAm8SrXTc2dRr.ttf", fontWeight: 400 },
-    { src: "https://fonts.gstatic.com/s/inter/v18/UcCo3FwrK3iLTcvneQg7Ca725JhhKnNqk4j1ebLhAm8SrXTcw9dr.ttf", fontWeight: 500 },
-    { src: "https://fonts.gstatic.com/s/inter/v18/UcCo3FwrK3iLTcvneQg7Ca725JhhKnNqk4j1ebLhAm8SrXTcudtr.ttf", fontWeight: 600 },
-    { src: "https://fonts.gstatic.com/s/inter/v18/UcCo3FwrK3iLTcvneQg7Ca725JhhKnNqk4j1ebLhAm8SrXTcsNtr.ttf", fontWeight: 700 },
-  ],
-});
-
-Font.register({
-  family: "SourceSerif",
-  fonts: [
-    { src: "https://fonts.gstatic.com/s/sourceserif4/v8/vEFy2_tTDB4M7-auWDN0ahZJW3IX2ih5nk3AucvUHf6OAVIJmeUDygwjihdqs8aKHmdv7nP6t2J6.ttf", fontWeight: 400 },
-    { src: "https://fonts.gstatic.com/s/sourceserif4/v8/vEFy2_tTDB4M7-auWDN0ahZJW3IX2ih5nk3AucvUHf6OAVIJmeUDygwjicNqs8aKHmdv7nP6t2J6.ttf", fontWeight: 600 },
-    { src: "https://fonts.gstatic.com/s/sourceserif4/v8/vEFy2_tTDB4M7-auWDN0ahZJW3IX2ih5nk3AucvUHf6OAVIJmeUDygwjijdqs8aKHmdv7nP6t2J6.ttf", fontWeight: 700 },
-  ],
-});
+// We use react-pdf's built-in fonts (Helvetica for body, Times-Roman for
+// the document title) so no external network fetch is required at render
+// time. This makes the PDF endpoint resilient — egress restrictions or a
+// fonts.gstatic.com outage cannot break invoice generation.
+const SANS = "Helvetica";
+const SANS_BOLD = "Helvetica-Bold";
+const SERIF = "Times-Roman";
+const SERIF_BOLD = "Times-Bold";
 
 const INK = "#0E0E0C";
 const PAPER = "#FFFFFF";
@@ -58,55 +43,27 @@ const styles = StyleSheet.create({
     paddingTop: 48,
     paddingBottom: 56,
     paddingHorizontal: 48,
-    fontFamily: "Inter",
+    fontFamily: SANS,
     fontSize: 9.5,
     color: INK,
     backgroundColor: PAPER,
     lineHeight: 1.5,
   },
 
-  // Top rule — thin coloured strip identifying the brand.
-  accentRule: {
-    height: 3,
-    marginBottom: 24,
-  },
+  accentRule: { height: 3, marginBottom: 24 },
 
-  // Header: logo left, store identity right.
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     marginBottom: 28,
   },
-  logo: {
-    maxWidth: 130,
-    maxHeight: 52,
-    objectFit: "contain",
-  },
-  logoFallback: {
-    fontFamily: "SourceSerif",
-    fontSize: 22,
-    fontWeight: 600,
-    color: INK,
-    letterSpacing: 0.2,
-  },
-  storeMeta: {
-    textAlign: "right",
-    flexDirection: "column",
-    gap: 2,
-  },
-  storeName: {
-    fontFamily: "SourceSerif",
-    fontSize: 11,
-    fontWeight: 600,
-    color: INK,
-  },
-  storeMetaLine: {
-    fontSize: 8.5,
-    color: SUBDUED,
-  },
+  logo: { maxWidth: 130, maxHeight: 52, objectFit: "contain" },
+  logoFallback: { fontFamily: SERIF_BOLD, fontSize: 22, color: INK, letterSpacing: 0.2 },
+  storeMeta: { textAlign: "right", flexDirection: "column", gap: 2 },
+  storeName: { fontFamily: SERIF_BOLD, fontSize: 11, color: INK },
+  storeMetaLine: { fontSize: 8.5, color: SUBDUED },
 
-  // Title block — "INVOICE" + document number side-by-side.
   titleBlock: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -117,71 +74,32 @@ const styles = StyleSheet.create({
     borderBottomColor: HAIRLINE,
     borderBottomStyle: "solid",
   },
-  titleHeading: {
-    fontFamily: "SourceSerif",
-    fontSize: 28,
-    fontWeight: 700,
-    letterSpacing: 4,
-    color: INK,
-  },
-  titleMeta: {
-    flexDirection: "column",
-    alignItems: "flex-end",
-    gap: 2,
-  },
+  titleHeading: { fontFamily: SERIF_BOLD, fontSize: 28, letterSpacing: 4, color: INK },
+  titleMeta: { flexDirection: "column", alignItems: "flex-end", gap: 2 },
   metaLabel: {
+    fontFamily: SANS_BOLD,
     fontSize: 7.5,
-    fontWeight: 600,
     letterSpacing: 1.2,
     textTransform: "uppercase",
     color: SUBDUED,
   },
-  metaValue: {
-    fontSize: 11,
-    fontWeight: 500,
-    color: INK,
-  },
+  metaValue: { fontSize: 11, color: INK },
 
-  // Bill-to / ship-to grid.
-  partiesRow: {
-    flexDirection: "row",
-    gap: 32,
-    marginBottom: 28,
-  },
-  partyBlock: {
-    flex: 1,
-    flexDirection: "column",
-    gap: 4,
-  },
+  partiesRow: { flexDirection: "row", gap: 32, marginBottom: 28 },
+  partyBlock: { flex: 1, flexDirection: "column", gap: 4 },
   partyLabel: {
+    fontFamily: SANS_BOLD,
     fontSize: 7.5,
-    fontWeight: 600,
     letterSpacing: 1.2,
     textTransform: "uppercase",
     color: SUBDUED,
     marginBottom: 6,
   },
-  partyName: {
-    fontWeight: 600,
-    fontSize: 10.5,
-    color: INK,
-  },
-  partyLine: {
-    fontSize: 9.5,
-    color: INK,
-    lineHeight: 1.4,
-  },
-  partyEmail: {
-    fontSize: 9,
-    color: SUBDUED,
-    marginTop: 2,
-  },
+  partyName: { fontFamily: SANS_BOLD, fontSize: 10.5, color: INK },
+  partyLine: { fontSize: 9.5, color: INK, lineHeight: 1.4 },
+  partyEmail: { fontSize: 9, color: SUBDUED, marginTop: 2 },
 
-  // Line-item table.
-  table: {
-    flexDirection: "column",
-    marginBottom: 22,
-  },
+  table: { flexDirection: "column", marginBottom: 22 },
   tableHeader: {
     flexDirection: "row",
     paddingVertical: 8,
@@ -197,8 +115,8 @@ const styles = StyleSheet.create({
     borderBottomStyle: "solid",
   },
   th: {
+    fontFamily: SANS_BOLD,
     fontSize: 7.5,
-    fontWeight: 600,
     letterSpacing: 1.1,
     textTransform: "uppercase",
     color: SUBDUED,
@@ -207,54 +125,23 @@ const styles = StyleSheet.create({
   tdMuted: { fontSize: 8.5, color: SUBDUED, marginTop: 1 },
   colDescription: { flex: 5, paddingRight: 10 },
   colQty: { flex: 1, textAlign: "right", paddingRight: 8 },
-  colPrice: { flex: 1.6, textAlign: "right", paddingRight: 8, fontFeatureSettings: '"tnum" 1, "lnum" 1' },
-  colTotal: { flex: 1.6, textAlign: "right", fontFeatureSettings: '"tnum" 1, "lnum" 1' },
+  colPrice: { flex: 1.6, textAlign: "right", paddingRight: 8 },
+  colTotal: { flex: 1.6, textAlign: "right" },
 
-  // Totals + payment notice.
-  totalsRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginBottom: 28,
-  },
-  totalsBox: {
-    width: 240,
-    flexDirection: "column",
-    gap: 6,
-  },
-  totalsLine: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
+  totalsRow: { flexDirection: "row", justifyContent: "flex-end", marginBottom: 28 },
+  totalsBox: { width: 240, flexDirection: "column", gap: 6 },
+  totalsLine: { flexDirection: "row", justifyContent: "space-between" },
   totalsLabel: { fontSize: 9.5, color: SUBDUED },
-  totalsValue: {
-    fontSize: 9.5,
-    color: INK,
-    fontFeatureSettings: '"tnum" 1, "lnum" 1',
-  },
-  grandRule: {
-    marginVertical: 6,
-    height: 1,
-  },
+  totalsValue: { fontSize: 9.5, color: INK },
+  grandRule: { marginVertical: 6, height: 1 },
   grandLine: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  grandLabel: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: INK,
-  },
-  grandValue: {
-    fontFamily: "SourceSerif",
-    fontSize: 16,
-    fontWeight: 700,
-    color: INK,
-    fontFeatureSettings: '"tnum" 1, "lnum" 1',
-  },
+  grandLabel: { fontFamily: SANS_BOLD, fontSize: 11, color: INK },
+  grandValue: { fontFamily: SERIF_BOLD, fontSize: 16, color: INK },
 
-  // Status banner — single line, no fill, just a hairline rule above &
-  // below. Reads as "OFFICIAL" not as a sticker.
   statusBanner: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -269,9 +156,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   statusLabel: {
-    fontFamily: "SourceSerif",
+    fontFamily: SERIF_BOLD,
     fontSize: 12,
-    fontWeight: 600,
     letterSpacing: 1.4,
     textTransform: "uppercase",
   },
@@ -286,7 +172,6 @@ const styles = StyleSheet.create({
     lineHeight: 1.55,
   },
 
-  // Footer — anchored to bottom of every page.
   footer: {
     position: "absolute",
     bottom: 32,

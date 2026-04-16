@@ -213,7 +213,32 @@ export default async function RootLayout({ children }: RootLayoutProps) {
           />
         </CustomerAuthProvider>
         <Toaster />
+        <MerchantCSS css={brandingData?.branding?.custom_css} />
       </body>
     </html>
   );
+}
+
+/**
+ * Sanitize and inject merchant-authored CSS. Strips @import, url(),
+ * expression(), javascript:, behavior:, -moz-binding, and HTML tags
+ * to prevent XSS / data exfiltration via stylesheets.
+ */
+function MerchantCSS({ css }: { css?: string | null }) {
+  if (!css) return null;
+  const sanitized = sanitizeCss(css);
+  if (!sanitized) return null;
+  return <style dangerouslySetInnerHTML={{ __html: sanitized }} />;
+}
+
+function sanitizeCss(raw: string): string {
+  let css = raw;
+  css = css.replace(/<[^>]*>/g, "");
+  css = css.replace(/@import\b[^;]*/gi, "/* blocked @import */");
+  css = css.replace(/url\s*\([^)]*\)/gi, "/* blocked url() */");
+  css = css.replace(/expression\s*\([^)]*\)/gi, "/* blocked expression() */");
+  css = css.replace(/javascript\s*:/gi, "/* blocked */");
+  css = css.replace(/behavior\s*:/gi, "/* blocked */");
+  css = css.replace(/-moz-binding\s*:/gi, "/* blocked */");
+  return css.trim();
 }

@@ -425,11 +425,15 @@ function FooterTab({ form, patch, editable, pages = [] }: TabProps) {
 // ─── Advanced Tab ───────────────────────────────────────────────────
 
 function AdvancedTab({ form, patch, editable }: TabProps) {
+  // TODO: gate on actual plan tier once subscription system is wired.
+  // For now, badge removal is locked for all stores (Pro+ required).
+  const canRemoveBadge = false;
+
   return (
     <div className="space-y-8">
       <SectionHeader
         title="Advanced"
-        description="Custom CSS injection and branding controls. Custom CSS is available on Enterprise plans."
+        description="Custom CSS injection and branding controls."
       />
 
       <div className="space-y-4">
@@ -437,13 +441,15 @@ function AdvancedTab({ form, patch, editable }: TabProps) {
           <div className="space-y-0.5">
             <p className="text-sm font-medium text-foreground">Show &quot;Powered by mark8ly&quot;</p>
             <p className="text-xs text-foreground-secondary">
-              Display the mark8ly badge in the storefront footer. Pro plans and above can remove this.
+              {canRemoveBadge
+                ? "Display the mark8ly badge in the storefront footer."
+                : "Upgrade to Pro to remove the mark8ly badge from your storefront footer."}
             </p>
           </div>
           <ToggleSwitch
-            checked={form.show_powered_by}
-            onChange={(v) => editable && patch({ show_powered_by: v })}
-            disabled={!editable}
+            checked={canRemoveBadge ? form.show_powered_by : true}
+            onChange={(v) => canRemoveBadge && editable && patch({ show_powered_by: v })}
+            disabled={!canRemoveBadge || !editable}
           />
         </div>
       </div>
@@ -451,17 +457,18 @@ function AdvancedTab({ form, patch, editable }: TabProps) {
       <div className="space-y-3 border-t border-border-subtle pt-6">
         <FieldLabel htmlFor="custom_css">Custom CSS</FieldLabel>
         <p className="text-xs text-foreground-secondary">
-          Inject CSS directly into your storefront. External URLs and JavaScript expressions are stripped for security.
+          Inject CSS directly into your storefront. Applies to every page.
+          External URLs and JavaScript expressions are stripped for security.
         </p>
         <textarea
           id="custom_css"
           value={form.custom_css ?? ""}
           onChange={(e) => patch({ custom_css: e.target.value || null })}
           disabled={!editable}
-          rows={12}
+          rows={14}
           spellCheck={false}
           className="w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 font-mono text-xs leading-5 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
-          placeholder={`.storefront-header {\n  /* Your custom styles */\n}`}
+          placeholder={`/* Override storefront theme variables */\n:root {\n  --storefront-accent: #B86800;\n}\n\n/* Style product cards */\nmain#main .rounded-md {\n  box-shadow: 0 1px 3px rgba(0,0,0,.08);\n}\n\n/* Adjust nav spacing */\nnav[aria-label="Store"] {\n  padding-block: 1.5rem;\n}`}
         />
       </div>
     </div>

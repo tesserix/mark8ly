@@ -310,6 +310,9 @@ export interface StorefrontBranding {
   // mark8ly badge in footer bottom bar; backend default is true.
   show_powered_by?: boolean;
 
+  // merchant-injected CSS. Sanitized at render time.
+  custom_css?: string | null;
+
   // homepage content (hero + sections). Wire format is the raw JSONB
   // object; empty stores see `{}`.
   homepage_content?: HomepageContent;

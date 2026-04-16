@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { Globe, Plus, RefreshCw, Trash2, Lock, Copy, Check } from "lucide-react";
+import { Globe, Plus, RefreshCw, Trash2, Lock, Copy, Check, AlertCircle } from "lucide-react";
 
 import type { CustomDomain, DNSMethod } from "@/lib/api/settings-tier2-api";
 import {
@@ -195,10 +195,22 @@ function DomainsList({
       if (!result.ok) {
         setError(result.message);
         toast.error("Verification failed", result.message);
-      } else {
-        toast.success("Verification triggered", "Checking DNS now…");
-        router.refresh();
+        return;
       }
+      // Action succeeded but the resulting status tells us whether the
+      // DNS check actually passed. `active` = verified; anything else
+      // means DNS isn't ready yet, and `error` carries the reason.
+      if (result.status === "active") {
+        toast.success("Domain verified", "Your custom domain is live.");
+      } else if (result.error) {
+        toast.error("DNS not ready yet", result.error);
+      } else {
+        toast.info(
+          "Still verifying",
+          "DNS hasn't propagated yet. Try again in a few minutes.",
+        );
+      }
+      router.refresh();
     });
   }
 
@@ -302,8 +314,24 @@ function DomainCard({
         </p>
       </div>
 
-      {d.error_message && (
-        <p className="mt-2 text-xs text-[color:var(--signal)]">{d.error_message}</p>
+      {d.error && (
+        <div className="mt-3 rounded-md border border-[color:var(--signal)]/30 bg-[color:var(--signal)]/5 p-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle
+              className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--signal)]"
+              aria-hidden="true"
+            />
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-[color:var(--signal)]">
+                Verification failed
+              </p>
+              <p className="text-xs text-foreground">{d.error}</p>
+              <p className="text-xs text-foreground-secondary">
+                {errorHint(d.error)}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Manual DNS instructions */}
@@ -322,6 +350,18 @@ function DomainCard({
           </div>
           <p className="mt-3 text-xs text-foreground-tertiary">
             DNS changes can take up to 48 hours to propagate. Click &quot;Verify&quot; once you&apos;ve added the record.
+          </p>
+          <p className="mt-2 text-xs text-foreground-tertiary">
+            Tip: check propagation with{" "}
+            <a
+              href={`https://dnschecker.org/#CNAME/${encodeURIComponent(d.domain)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              dnschecker.org
+            </a>{" "}
+            before clicking Verify.
           </p>
         </div>
       )}
@@ -379,6 +419,21 @@ function DomainCard({
       )}
     </div>
   );
+}
+
+/**
+ * Translate a backend verification error into a merchant-friendly hint
+ * on what to fix next.
+ */
+function errorHint(error: string): string {
+  const lower = error.toLowerCase();
+  if (lower.includes("cname record not found") || lower.includes("no such host")) {
+    return "We couldn't find any CNAME record at your domain. Add the CNAME shown above at your DNS provider, then try Verify again.";
+  }
+  if (lower.includes("points to") && lower.includes("expected")) {
+    return "A record exists but isn't pointing to our target. Most likely you added an A record instead of a CNAME, or the CNAME points somewhere else. Replace it with the exact CNAME shown above.";
+  }
+  return "Re-check the Name and Target values above, then try Verify again once your DNS provider confirms the change is live.";
 }
 
 function DnsRecord({

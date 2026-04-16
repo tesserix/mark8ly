@@ -213,7 +213,9 @@ export interface CustomDomain {
   status: "pending" | "verifying" | "active" | "error" | "removing";
   ssl_status: "pending" | "active" | "error";
   verified_at: string | null;
-  error_message: string | null;
+  /** Verification/registration error from the backend. Populated when status is "error"
+   *  or when verification can't find the expected DNS record. */
+  error?: string | null;
   created_at: string;
 }
 

@@ -183,12 +183,20 @@ export async function removeDomainAction(
   return { ok: true };
 }
 
+export type VerifyDomainResult =
+  | { ok: true; status: string; ssl_status: string; error?: string | null }
+  | { ok: false; code: string; message: string };
+
 export async function verifyDomainAction(
   domainId: string,
-): Promise<ActionResult> {
+): Promise<VerifyDomainResult> {
   const { userId, tenantId, role, storeId } = await getSession();
-  if (!userId || !tenantId || !storeId) return noSession();
-  if (!canEditSettings(role)) return forbidden();
+  if (!userId || !tenantId || !storeId) {
+    return { ok: false, code: "no_session", message: "Session expired. Please sign in again." };
+  }
+  if (!canEditSettings(role)) {
+    return { ok: false, code: "forbidden", message: "You do not have permission to perform this action." };
+  }
 
   const result = await verifyDomainApi(storeId, domainId, { userId, tenantId });
   if (!result.ok) {
@@ -196,7 +204,12 @@ export async function verifyDomainAction(
   }
 
   revalidatePath("/settings/domains");
-  return { ok: true };
+  return {
+    ok: true,
+    status: result.data.status,
+    ssl_status: result.data.ssl_status,
+    error: result.data.error ?? null,
+  };
 }
 
 // ─── S3: Subscription ────────────────────────────────────────────────

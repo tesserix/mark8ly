@@ -110,7 +110,13 @@ func (s *Service) Add(ctx context.Context, in AddInput) (*CustomDomain, error) {
 	if in.StoreSlug == "" {
 		return nil, apperrors.ValidationFailed("store_slug", "store slug is required to build CNAME target")
 	}
-	cnameTarget := in.StoreSlug + ".mark8ly.com"
+	// edge.mark8ly.com is a DNS-only A record pointing to our
+	// custom-ingressgateway public IP (not proxied through Cloudflare).
+	// Merchants CNAME their domain here so TLS terminates at our gateway
+	// where the per-domain cert lives — Cloudflare edge doesn't have
+	// certs for arbitrary merchant domains, so we bypass CF entirely.
+	cnameTarget := "edge.mark8ly.com"
+	_ = in.StoreSlug
 
 	now := time.Now()
 	d := &CustomDomain{

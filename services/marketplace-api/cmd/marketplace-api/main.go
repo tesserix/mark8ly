@@ -401,6 +401,10 @@ func main() {
 		domainsHandler.WithAudit(auditEmitter)
 		customersHandler.WithAudit(auditEmitter)
 		reviewsHandler.WithAudit(auditEmitter)
+		couponHandler.WithAudit(auditEmitter)
+		giftCardHandler.WithAudit(auditEmitter)
+		subscriptionHandler.WithAudit(auditEmitter)
+		paymentSettingsHandler.WithAudit(auditEmitter)
 
 		// Dashboard D1 wiring.
 		dashboardHandler := admin.NewDashboardHandler(conn, log)

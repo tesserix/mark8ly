@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -15,12 +16,20 @@ import (
 // GiftCardHandler handles admin gift card endpoints.
 type GiftCardHandler struct {
 	svc    *giftcard.Service
+	audit  *audit.Emitter // optional — nil-safe
 	logger *slog.Logger
 }
 
 // NewGiftCardHandler constructs a GiftCardHandler.
 func NewGiftCardHandler(svc *giftcard.Service, logger *slog.Logger) *GiftCardHandler {
 	return &GiftCardHandler{svc: svc, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so gift card lifecycle events show
+// up in Settings -> Audit Logs. Nil-safe.
+func (h *GiftCardHandler) WithAudit(e *audit.Emitter) *GiftCardHandler {
+	h.audit = e
+	return h
 }
 
 // List handles GET /admin/stores/:storeId/gift-cards.
@@ -108,6 +117,16 @@ func (h *GiftCardHandler) Issue(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "gift_card.issued",
+		ResourceType: "gift_card",
+		ResourceID:   gc.ID.String(),
+		Metadata: map[string]any{
+			"initial_balance": req.InitialBalance,
+			"currency":        req.CurrencyCode,
+			"recipient_email": req.RecipientEmail,
+		},
+	})
 	c.JSON(http.StatusCreated, gin.H{"data": toAdminGiftCardResponse(gc)})
 }
 

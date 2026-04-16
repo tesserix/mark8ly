@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -17,12 +18,20 @@ import (
 // CouponHandler bundles dependencies for the admin coupon endpoints.
 type CouponHandler struct {
 	svc    *coupon.Service
+	audit  *audit.Emitter // optional — nil-safe
 	logger *slog.Logger
 }
 
 // NewCouponHandler constructs a CouponHandler.
 func NewCouponHandler(svc *coupon.Service, logger *slog.Logger) *CouponHandler {
 	return &CouponHandler{svc: svc, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so coupon CRUD events show up in
+// Settings -> Audit Logs. Nil-safe.
+func (h *CouponHandler) WithAudit(e *audit.Emitter) *CouponHandler {
+	h.audit = e
+	return h
 }
 
 // List handles GET /admin/stores/:storeId/coupons.
@@ -113,6 +122,16 @@ func (h *CouponHandler) Create(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "coupon.created",
+		ResourceType: "coupon",
+		ResourceID:   created.ID.String(),
+		Metadata: map[string]any{
+			"code":  created.Code,
+			"type":  created.Type,
+			"value": created.Value,
+		},
+	})
 	c.JSON(http.StatusCreated, gin.H{"data": toAdminCouponResponse(created)})
 }
 
@@ -200,6 +219,15 @@ func (h *CouponHandler) Patch(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "coupon.updated",
+		ResourceType: "coupon",
+		ResourceID:   couponID.String(),
+		Metadata: map[string]any{
+			"code":   updated.Code,
+			"status": updated.Status,
+		},
+	})
 	c.JSON(http.StatusOK, gin.H{"data": toAdminCouponResponse(updated)})
 }
 
@@ -222,5 +250,11 @@ func (h *CouponHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "coupon.deactivated",
+		ResourceType: "coupon",
+		ResourceID:   couponID.String(),
+		Severity:     audit.SeverityWarning,
+	})
 	c.JSON(http.StatusOK, gin.H{"message": "coupon disabled"})
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -18,6 +19,7 @@ import (
 type SubscriptionHandler struct {
 	svc           *subscription.Service
 	webhookSecret string
+	audit         *audit.Emitter // optional — nil-safe
 	logger        *slog.Logger
 }
 
@@ -28,6 +30,13 @@ func NewSubscriptionHandler(svc *subscription.Service, webhookSecret string, log
 		webhookSecret: webhookSecret,
 		logger:        logger,
 	}
+}
+
+// WithAudit attaches an audit emitter so subscription/billing actions
+// land in Settings -> Audit Logs. Nil-safe.
+func (h *SubscriptionHandler) WithAudit(e *audit.Emitter) *SubscriptionHandler {
+	h.audit = e
+	return h
 }
 
 // SubscriptionResponse is the wire DTO for a store subscription.
@@ -121,6 +130,14 @@ func (h *SubscriptionHandler) CreateCheckout(c *gin.Context) {
 		return
 	}
 
+	// Records the *intent* to change plan. The actual plan transition
+	// fires from the Stripe webhook once the customer completes payment;
+	// that event will land here too once HandleWebhook is fully wired.
+	h.audit.Emit(c, audit.Event{
+		Action:       "subscription.checkout_started",
+		ResourceType: "subscription",
+		Metadata:     map[string]any{"plan": req.Plan},
+	})
 	c.JSON(http.StatusOK, gin.H{"url": url})
 }
 
@@ -149,6 +166,10 @@ func (h *SubscriptionHandler) CreatePortal(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "subscription.billing_portal_opened",
+		ResourceType: "subscription",
+	})
 	c.JSON(http.StatusOK, gin.H{"url": url})
 }
 

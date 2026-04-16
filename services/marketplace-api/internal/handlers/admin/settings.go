@@ -15,6 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
@@ -93,12 +94,20 @@ func (PaymentGatewayConfig) TableName() string { return "payment_gateway_configs
 type PaymentSettingsHandler struct {
 	db          *gorm.DB
 	countryRepo country.Repository
+	audit       *audit.Emitter // optional — nil-safe
 	logger      *slog.Logger
 }
 
 // NewPaymentSettingsHandler constructs a PaymentSettingsHandler.
 func NewPaymentSettingsHandler(db *gorm.DB, countryRepo country.Repository, logger *slog.Logger) *PaymentSettingsHandler {
 	return &PaymentSettingsHandler{db: db, countryRepo: countryRepo, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so payment provider changes land
+// in Settings -> Audit Logs. Nil-safe.
+func (h *PaymentSettingsHandler) WithAudit(e *audit.Emitter) *PaymentSettingsHandler {
+	h.audit = e
+	return h
 }
 
 // paymentConfigResponse is the safe wire DTO with keys masked.
@@ -269,6 +278,17 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 			First(&cfg)
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "payment_provider.updated",
+		ResourceType: "payment_provider",
+		ResourceID:   provider,
+		Severity:     audit.SeverityWarning,
+		Metadata: map[string]any{
+			"provider":  provider,
+			"mode":      req.Mode,
+			"is_active": req.IsActive,
+		},
+	})
 	c.JSON(http.StatusOK, gin.H{"data": toPaymentResponse(cfg)})
 }
 
@@ -307,6 +327,13 @@ func (h *PaymentSettingsHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "payment_provider.removed",
+		ResourceType: "payment_provider",
+		ResourceID:   provider,
+		Severity:     audit.SeverityWarning,
+		Metadata:     map[string]any{"provider": provider},
+	})
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"deleted": true}})
 }
 

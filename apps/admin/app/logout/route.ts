@@ -20,13 +20,24 @@ const SESSION_COOKIE_DOMAIN =
 export async function GET(req: NextRequest) {
   await revokeSession(req.headers.get("cookie"));
 
-  // Stay on the same admin host — custom domain merchants should land
-  // on their own admin.<domain>/login, not bounce back to mark8ly.com.
-  const target = req.nextUrl.clone();
-  target.pathname = "/login";
-  target.search = "";
+  // Stay on the same admin host the browser is actually connected to.
+  // `req.nextUrl` reflects the internal bind (0.0.0.0:4202 in-cluster)
+  // behind the Istio ingress + Cloudflare tunnel — use the forwarded
+  // host/proto headers the proxy sets so the redirect lands back on
+  // the merchant's admin subdomain or custom domain.
+  const forwardedHost =
+    req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
+  const forwardedProto = req.headers.get("x-forwarded-proto") ?? "https";
+  const targetHref = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}/login`
+    : (() => {
+        const u = req.nextUrl.clone();
+        u.pathname = "/login";
+        u.search = "";
+        return u.toString();
+      })();
 
-  const response = NextResponse.redirect(target);
+  const response = NextResponse.redirect(targetHref);
   // Must match the Domain/Path used when setting the cookie or the
   // browser creates a duplicate cookie instead of deleting.
   response.cookies.set({

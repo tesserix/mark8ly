@@ -398,6 +398,13 @@ func (h *AccountHandler) proxyToAuthBFF(c *gin.Context, method, path string) {
 	if tenantID := c.GetString("tenant_id"); tenantID != "" {
 		req.Header.Set("X-Tenant-ID", tenantID)
 	}
+	// Forward email so auth-bff's MFA enrolment can label the QR with
+	// the account name the user expects to see in their authenticator
+	// app (e.g. "Mark8ly: alice@example.com") instead of falling back
+	// to the opaque GIP sub.
+	if email := c.GetString("email"); email != "" {
+		req.Header.Set("X-User-Email", email)
+	}
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {

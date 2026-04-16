@@ -167,6 +167,28 @@ func (h *DomainsHandler) Verify(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": toDomainResponse(*d)})
 }
 
+// RefreshStatus handles POST /admin/.../domains/:id/refresh-status.
+// Merchants click "Refresh SSL" after DNS changes / cert issuance to
+// sync the DB row with cert-manager's actual state.
+func (h *DomainsHandler) RefreshStatus(c *gin.Context) {
+	storeID, err := uuid.Parse(c.Param("storeId"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "invalid uuid"), h.logger)
+		return
+	}
+	d, err := h.svc.RefreshCertStatus(c.Request.Context(), storeID, id)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": toDomainResponse(*d)})
+}
+
 // ResolveDomain handles GET /storefront/resolve-domain?domain=x — public,
 // used by the storefront to map custom domains to store slugs.
 func (h *DomainsHandler) ResolveDomain(c *gin.Context) {

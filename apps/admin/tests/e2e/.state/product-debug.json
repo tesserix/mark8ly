@@ -1,0 +1,20 @@
+{
+  "errorTexts": [
+    "internal server error",
+    ""
+  ],
+  "errorTextsAfterScroll": [
+    "india storeowner",
+    "internal server error",
+    "Draft",
+    ""
+  ],
+  "apiResponses": [
+    {
+      "url": "https://india-store-admin.mark8ly.com/products/new",
+      "status": 200,
+      "body": "0:{\"a\":\"$@1\",\"f\":\"\",\"q\":\"\",\"i\":false,\"b\":\"DYWXeEaUaAAxHz7biPaqJ\"}\n1:{\"ok\":false,\"error\":{\"code\":\"internal\",\"message\":\"internal server error\",\"field\":\"$undefined\",\"details\":\"$undefined\"}}\n"
+    }
+  ],
+  "consoleErrors": []
+}

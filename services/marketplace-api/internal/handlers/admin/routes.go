@@ -518,6 +518,9 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				domains.POST("/:id/verify",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.DomainsViewRole),
 					deps.DomainsHandler.Verify)
+				domains.POST("/:id/refresh-status",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.DomainsViewRole),
+					deps.DomainsHandler.RefreshStatus)
 			}
 		}
 

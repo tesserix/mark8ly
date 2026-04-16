@@ -300,6 +300,26 @@ export async function verifyDomain(
   return { ok: true, data: data.data };
 }
 
+export async function refreshDomainStatus(
+  storeId: string,
+  domainId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<CustomDomain>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/domains/${domainId}/refresh-status`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const data = (await res.json()) as { data: CustomDomain };
+  return { ok: true, data: data.data };
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // S3 — Subscription
 // ─────────────────────────────────────────────────────────────────────────

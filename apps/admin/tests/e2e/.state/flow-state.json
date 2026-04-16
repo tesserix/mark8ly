@@ -1,0 +1,11 @@
+{
+  "adminStorageState": "tests/e2e/.state/admin-state.json",
+  "categoryName": "E2E Apparel mnvz8up5",
+  "productHandle": "e2e-linen-mnvz8up5",
+  "productTitle": "E2E Linen Shirt mnvz8up5",
+  "campaignName": "E2E Campaign mnvn46m6",
+  "couponCode": "E2E10OFFmnvn46m6",
+  "giftCardCode": "V3BO-3EZP-PPND-O742-4X5W-FNTF-PM",
+  "orderId": "sAddressesSign",
+  "customerStorageState": "tests/e2e/.state/customer-state.json"
+}

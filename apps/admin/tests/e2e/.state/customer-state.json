@@ -1,0 +1,37 @@
+{
+  "cookies": [
+    {
+      "name": "cf_clearance",
+      "value": "OKovY5ANG47CVrt6TqINjlBzFZUB5pgBMlI.kYkRdwE-1776012120-1.2.1.1-Od5OKJFEkpnQ9UsF7RyAjq31jUHzzydvpPS9B5l34PiAQIFPIV8eyt7hEG19V2aur7GT5x20l6FoEJLSorfDkXju5aPuNXcnjUEp.Wn5utz.a57xuc3U2PktrVxcGKTxV3NQXXk7aXTRnKlSe12E7I1ot2NvR7iw2Am1W1RTZQG5HIb_3KyTHtHINrmU56JAyIYOo0RHX1Fpr_8DNrEZLae30vWsp91AaDqE7o2DANyQuyeQNtkRzxHq_bp1vCwFUHr88M2Y_7tPPa.7NFr5QMDipY6ys9PG70GAUQHtNqpFTmKUOGB3TykXzAaIsOAkQLUFDhUPYcIA2mgti3ZQiA",
+      "domain": ".mark8ly.com",
+      "path": "/",
+      "expires": 1807548119.76632,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None",
+      "partitionKey": "https://mark8ly.com",
+      "_crHasCrossSiteAncestor": false
+    },
+    {
+      "name": "mp_customer_session",
+      "value": "eyJ1aWQiOiJWV1AyYkw5TFRyYTlxZEVRMndQNzU5Qzl4ZFUyIiwiZW1haWwiOiJhZG10ZXNzZXJpeEBnbWFpbC5jb20iLCJzdG9yZV9zbHVnIjoiaW5kaWEtc3RvcmUiLCJzdG9yZV9pZCI6ImM1MDMyYTFkLTZjNDktNGRjYS05ZWRjLTg3OWVmYzYyNmQ3ZSIsInRlbmFudF9pZCI6IjdkM2VlOTlmLTE5NjEtNGZhYy1hYmJjLWM2Nzg2MWZhZTljNCJ9.c1fddec073b9556a159502b81f4e78e8d05f5479ff3eda212e1486d9ec702ab1",
+      "domain": ".mark8ly.com",
+      "path": "/",
+      "expires": 1778604121.971185,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://india-store.mark8ly.com",
+      "localStorage": [
+        {
+          "name": "mark8ly.cart.india-store",
+          "value": "[{\"productId\":\"860a3be2-8d1a-46f4-afe0-a239130240dc\",\"variantId\":\"f49c5d39-f9ce-4faf-8d4f-ee2176aee9c9\",\"handle\":\"e2e-linen-mnviveds\",\"title\":\"E2E Linen Shirt mnviveds\",\"priceAmount\":\"1299\",\"currencyCode\":\"INR\",\"qty\":1}]"
+        }
+      ]
+    }
+  ]
+}

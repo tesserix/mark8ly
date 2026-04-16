@@ -18,6 +18,7 @@ import {
   addDomain as addDomainApi,
   removeDomain as removeDomainApi,
   verifyDomain as verifyDomainApi,
+  refreshDomainStatus as refreshDomainStatusApi,
   createCheckoutSession as createCheckoutApi,
   createPortalSession as createPortalApi,
   markNotificationRead as markReadApi,
@@ -181,6 +182,29 @@ export async function removeDomainAction(
 
   revalidatePath("/settings/domains");
   return { ok: true };
+}
+
+export async function refreshDomainStatusAction(
+  domainId: string,
+): Promise<VerifyDomainResult> {
+  const { userId, tenantId, role, storeId } = await getSession();
+  if (!userId || !tenantId || !storeId) {
+    return { ok: false, code: "no_session", message: "Session expired. Please sign in again." };
+  }
+  if (!canEditSettings(role)) {
+    return { ok: false, code: "forbidden", message: "You do not have permission to perform this action." };
+  }
+  const result = await refreshDomainStatusApi(storeId, domainId, { userId, tenantId });
+  if (!result.ok) {
+    return { ok: false, code: result.error.code, message: result.error.message };
+  }
+  revalidatePath("/settings/domains");
+  return {
+    ok: true,
+    status: result.data.status,
+    ssl_status: result.data.ssl_status,
+    error: result.data.error ?? null,
+  };
 }
 
 export type VerifyDomainResult =

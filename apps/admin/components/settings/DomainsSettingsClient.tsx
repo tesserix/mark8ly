@@ -10,6 +10,7 @@ import {
   addDomainAction,
   removeDomainAction,
   verifyDomainAction,
+  refreshDomainStatusAction,
 } from "@/app/(admin)/settings/actions";
 import { useToast } from "@/components/feedback/Toaster";
 
@@ -188,6 +189,25 @@ function DomainsList({
   const router = useRouter();
   const { toast } = useToast();
 
+  function handleRefreshStatus(domainId: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await refreshDomainStatusAction(domainId);
+      if (!result.ok) {
+        toast.error("Couldn't refresh status", result.message);
+        return;
+      }
+      if (result.ssl_status === "active") {
+        toast.success("SSL active", "Your certificate is live.");
+      } else if (result.error) {
+        toast.info("SSL still provisioning", result.error);
+      } else {
+        toast.info("SSL still provisioning", "Check back in a minute.");
+      }
+      router.refresh();
+    });
+  }
+
   function handleVerify(domainId: string) {
     setError(null);
     startTransition(async () => {
@@ -259,6 +279,7 @@ function DomainsList({
               isPending={isPending}
               confirmRemove={confirmRemoveId === d.id}
               onVerify={() => handleVerify(d.id)}
+              onRefreshStatus={() => handleRefreshStatus(d.id)}
               onRemove={() => handleRemove(d.id)}
               onConfirmRemove={() => setConfirmRemoveId(d.id)}
               onCancelRemove={() => setConfirmRemoveId(null)}
@@ -276,6 +297,7 @@ function DomainCard({
   isPending,
   confirmRemove,
   onVerify,
+  onRefreshStatus,
   onRemove,
   onConfirmRemove,
   onCancelRemove,
@@ -285,6 +307,7 @@ function DomainCard({
   isPending: boolean;
   confirmRemove: boolean;
   onVerify: () => void;
+  onRefreshStatus: () => void;
   onRemove: () => void;
   onConfirmRemove: () => void;
   onCancelRemove: () => void;
@@ -423,6 +446,17 @@ function DomainCard({
             >
               <RefreshCw className="h-3 w-3" aria-hidden="true" />
               Verify
+            </button>
+          )}
+          {d.status === "active" && d.ssl_status !== "active" && (
+            <button
+              type="button"
+              onClick={onRefreshStatus}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] disabled:opacity-50"
+            >
+              <RefreshCw className="h-3 w-3" aria-hidden="true" />
+              Refresh SSL status
             </button>
           )}
           {confirmRemove ? (

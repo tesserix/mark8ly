@@ -1,0 +1,27 @@
+{
+  "cookies": [
+    {
+      "name": "cf_clearance",
+      "value": "Jcek9de6lkVZnol2562e9_BreaMssthIJ22y1IqZvN4-1776012013-1.2.1.1-YOGO.zh7hb5uTnugZ7KKEYsEjk9J_L0ehcxew6jx8yrxZANk.bvE8sHlgETRdJ0S7ec0vqzyTL9bcfCh7Xg34VaxkHGdhSaanHaKZf3QVkF.TShBg2XbnMvJrlEWU6MOfMHj0Cd3qGXXDVFvZBd6tkiQEW6HOHcKzDIe7Ubaxq2lvsUlVgGi8N0MorkNSirDT4E9azNjPde38.xmTEFquvw1HHaVDPQH3.QEMM_CShO7E.55QXs1OOzuZQ537VlH5yDbuWsrS0XnwhccgO_J23l8WYwte7OVs0qt9LBxyxN3v0shZmEeBfDqxGufieWbPkdrYl1kU1dFPto8aihjSw",
+      "domain": ".mark8ly.com",
+      "path": "/",
+      "expires": 1807548013.223039,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None",
+      "partitionKey": "https://mark8ly.com",
+      "_crHasCrossSiteAncestor": false
+    },
+    {
+      "name": "m8_session",
+      "value": "ykhHCpFKudtwCAhpxCmRqWVxGIaDpryzkheqI2Dpa8uVcZfjrXrzAsCvizWW90Bb7r3XpeVNTk6qV3L2agb3BzODS6s99n2u86KVpkjkW5BjQijuHEs59AnRDbn0c6HAGZ9Ys24LPErufrn8t2Y9pAHFFb5jexipm_ygzVoPheDtQmjgqDjajtXoDQWIDEWcAjqbSj1FNLuQ2DXzb1RczoKs0Wl3SzDzXDdVxt3BVWtQgOe58UqFjpnCqbzFk8Io8ppZNSNK2eZ5_EcxfWNr4eBsIMZIcuRzJiyeUNpnqZVtYa4C6-0D",
+      "domain": ".mark8ly.com",
+      "path": "/",
+      "expires": 1776616815.819296,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

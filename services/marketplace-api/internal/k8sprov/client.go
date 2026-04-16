@@ -27,6 +27,8 @@ const (
 	storefrontNS           = "mark8ly"
 	storefrontService      = "mark8ly-storefront.mark8ly.svc.cluster.local"
 	storefrontPort         = 4203
+	adminService           = "mark8ly-admin.mark8ly.svc.cluster.local"
+	adminPort              = 4202
 	clusterIssuer          = "letsencrypt-custom-domain"
 	istioGatewaySelector   = "custom-ingressgateway"
 	managedByLabel         = "mark8ly-marketplace-api"
@@ -248,6 +250,10 @@ func (p *Provisioner) applyGateway(ctx context.Context, name, slug, certName str
 }
 
 func (p *Provisioner) applyVirtualService(ctx context.Context, name, slug, gatewayName string, hosts []string) error {
+	// hosts is typically [domain, *.domain]. We route admin.<domain> to
+	// the admin app and everything else to the storefront. Merchants get
+	// a white-labeled admin panel at admin.<their-domain> for free.
+	adminHost := "admin." + hosts[0]
 	u := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "networking.istio.io/v1",
@@ -257,6 +263,24 @@ func (p *Provisioner) applyVirtualService(ctx context.Context, name, slug, gatew
 				"gateways": []interface{}{istioIngressNS + "/" + gatewayName},
 				"hosts":    toIfaceSlice(hosts),
 				"http": []interface{}{
+					// Admin route — matched first.
+					map[string]interface{}{
+						"match": []interface{}{
+							map[string]interface{}{
+								"authority": map[string]interface{}{"exact": adminHost},
+							},
+						},
+						"route": []interface{}{
+							map[string]interface{}{
+								"destination": map[string]interface{}{
+									"host": adminService,
+									"port": map[string]interface{}{"number": int64(adminPort)},
+								},
+							},
+						},
+						"timeout": "30s",
+					},
+					// Default — storefront.
 					map[string]interface{}{
 						"route": []interface{}{
 							map[string]interface{}{

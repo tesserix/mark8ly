@@ -72,6 +72,39 @@ func (s *Service) List(ctx context.Context, storeID uuid.UUID) ([]CustomDomain, 
 	return s.repo.List(ctx, s.db, storeID)
 }
 
+// RefreshCertStatus queries cert-manager for the current Certificate
+// status and syncs cert_status + ssl_status on the DB row. Called when
+// a merchant clicks "Refresh SSL status" in the admin UI.
+func (s *Service) RefreshCertStatus(ctx context.Context, storeID, id uuid.UUID) (*CustomDomain, error) {
+	d, err := s.repo.GetByID(ctx, s.db, storeID, id)
+	if err != nil {
+		return nil, err
+	}
+	if s.provisioner == nil || d.DNSMethod != DNSMethodManual {
+		return d, nil
+	}
+	ready, message, err := s.provisioner.CertStatus(ctx, d.Domain)
+	if err != nil {
+		errMsg := err.Error()
+		d.CertError = &errMsg
+		d.CertStatus = "failed"
+	} else if ready {
+		d.CertStatus = "ready"
+		d.SSLStatus = SSLStatusActive
+		d.CertError = nil
+	} else {
+		d.CertStatus = "issuing"
+		if message != "" {
+			d.CertError = &message
+		}
+	}
+	d.UpdatedAt = time.Now()
+	if err := s.repo.Update(ctx, s.db, d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
 // ResolveByDomain looks up a verified custom domain by FQDN and returns
 // the associated store ID. Used by the storefront to route requests.
 func (s *Service) ResolveByDomain(ctx context.Context, domainName string) (*CustomDomain, error) {

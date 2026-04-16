@@ -138,8 +138,12 @@ func (h *OrderDetailHandler) GetOrder(c *gin.Context) {
 }
 
 type shipmentRow struct {
-	Carrier           string  `gorm:"column:provider"`
-	Service           string  `gorm:"column:service"`
+	// Real DB columns: shipments has `carrier` (not `provider`) and no
+	// `service` column at all — service level is kept in-memory on the
+	// canonical shipping.Shipment model (gorm:"-"). Earlier this struct
+	// queried non-existent columns and silently returned nil, which made
+	// every customer-side receipt download return 409 not_delivered.
+	Carrier           string  `gorm:"column:carrier"`
 	TrackingNumber    string  `gorm:"column:tracking_number"`
 	Status            string  `gorm:"column:status"`
 	EstimatedDelivery *string `gorm:"column:estimated_delivery"`
@@ -151,7 +155,7 @@ func (h *OrderDetailHandler) loadShipment(ctx context.Context, orderID uuid.UUID
 	var row shipmentRow
 	err := h.db.WithContext(ctx).
 		Table("shipments").
-		Select("provider", "service", "tracking_number", "status", "estimated_delivery").
+		Select("carrier", "tracking_number", "status", "estimated_delivery").
 		Where("order_id = ?", orderID).
 		Order("created_at DESC").
 		Limit(1).
@@ -161,7 +165,9 @@ func (h *OrderDetailHandler) loadShipment(ctx context.Context, orderID uuid.UUID
 	}
 	resp := &storefrontShipmentResponse{
 		Carrier:        row.Carrier,
-		Service:        row.Service,
+		// Service level isn't persisted, so we leave it empty on the
+		// public DTO — the customer card already reads "Standard delivery"
+		// from the order's chosen shipping_service.
 		TrackingNumber: row.TrackingNumber,
 		Status:         row.Status,
 	}

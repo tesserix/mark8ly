@@ -27,11 +27,13 @@ interface AutoLoginResult {
   uid: string;
   email: string;
   tenant_id: string;
-  /** Set-Cookie header value from auth-bff. The caller forwards this to
-   *  the browser response. This will carry either the full session
-   *  cookie (normal login) or the short-lived m8_mfa_pending cookie
-   *  (MFA challenge pending) — the caller just forwards it verbatim. */
-  setCookie: string;
+  /** Every Set-Cookie header auth-bff emitted, as an array. auto-login
+   *  may send more than one (e.g. the m8_mfa_pending cookie plus a
+   *  clear for a stale session), and mfa-challenge always sends two
+   *  (the new m8_session + a clear for m8_mfa_pending). The caller
+   *  must forward ALL of them to the browser — `headers.get()` joins
+   *  them with commas and breaks the parser. */
+  setCookies: string[];
   /** True when the user has MFA enrolled. The caller should NOT treat
    *  this as a successful sign-in; it must collect the 6-digit code and
    *  call completeMFAChallenge before authenticated requests work. */
@@ -42,7 +44,7 @@ interface MFAChallengeResult {
   uid: string;
   email: string;
   tenant_id: string;
-  setCookie: string;
+  setCookies: string[];
 }
 
 interface SwitchTenantResult {
@@ -164,15 +166,30 @@ export async function autoLogin(
       mfa_required?: boolean;
     };
   };
-  const setCookie = res.headers.get("set-cookie") ?? "";
+  const setCookies = readAllSetCookies(res);
 
   return {
     uid: body.data.uid,
     email: body.data.email,
     tenant_id: body.data.tenant_id,
-    setCookie,
+    setCookies,
     mfaRequired: body.data.mfa_required === true,
   };
+}
+
+// readAllSetCookies returns every Set-Cookie header auth-bff sent.
+// Uses the Undici-specific `getSetCookie()` when present (Node 18+
+// stable fetch), falling back to parsing the joined `.get()` value
+// on older environments.
+function readAllSetCookies(res: Response): string[] {
+  const h = res.headers as unknown as {
+    getSetCookie?: () => string[];
+  };
+  if (typeof h.getSetCookie === "function") {
+    return h.getSetCookie();
+  }
+  const raw = res.headers.get("set-cookie");
+  return raw ? [raw] : [];
 }
 
 /**
@@ -213,11 +230,10 @@ export async function completeMFAChallenge(
   const body = (await res.json()) as {
     data: { user_id: string; email: string; tenant_id: string };
   };
-  const setCookie = res.headers.get("set-cookie") ?? "";
   return {
     uid: body.data.user_id,
     email: body.data.email,
     tenant_id: body.data.tenant_id,
-    setCookie,
+    setCookies: readAllSetCookies(res),
   };
 }

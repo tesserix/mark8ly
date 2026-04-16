@@ -76,20 +76,22 @@ export async function acceptInvite(
       expectedTenantId: publicConfig.gipTenantId,
       workspaceTenant: accepted.tenant_id,
     });
-    if (login.setCookie) {
-      const parsed = parseSetCookie(login.setCookie);
-      if (parsed) {
-        const c = await cookies();
-        c.set({
-          name: parsed.name,
-          value: parsed.value,
-          path: parsed.path ?? "/",
-          domain: parsed.domain,
-          httpOnly: parsed.httpOnly,
-          secure: parsed.secure,
-          sameSite: "lax",
-          maxAge: parsed.maxAge,
-        });
+    if (login.setCookies.length) {
+      const c = await cookies();
+      for (const raw of login.setCookies) {
+        const parsed = parseSetCookie(raw);
+        if (parsed) {
+          c.set({
+            name: parsed.name,
+            value: parsed.value,
+            path: parsed.path ?? "/",
+            domain: parsed.domain,
+            httpOnly: parsed.httpOnly,
+            secure: parsed.secure,
+            sameSite: "lax",
+            maxAge: parsed.maxAge,
+          });
+        }
       }
     }
 

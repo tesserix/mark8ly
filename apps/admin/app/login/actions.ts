@@ -123,20 +123,22 @@ export async function signIn(
       workspaceTenant: primary.tenant_id,
     });
 
-    if (result.setCookie) {
-      const parsed = parseSetCookie(result.setCookie);
-      if (parsed) {
-        const c = await cookies();
-        c.set({
-          name: parsed.name,
-          value: parsed.value,
-          path: parsed.path ?? "/",
-          domain: parsed.domain,
-          httpOnly: parsed.httpOnly,
-          secure: parsed.secure,
-          sameSite: "lax",
-          maxAge: parsed.maxAge,
-        });
+    if (result.setCookies.length) {
+      const c = await cookies();
+      for (const raw of result.setCookies) {
+        const parsed = parseSetCookie(raw);
+        if (parsed) {
+          c.set({
+            name: parsed.name,
+            value: parsed.value,
+            path: parsed.path ?? "/",
+            domain: parsed.domain,
+            httpOnly: parsed.httpOnly,
+            secure: parsed.secure,
+            sameSite: "lax",
+            maxAge: parsed.maxAge,
+          });
+        }
       }
     }
 
@@ -182,8 +184,8 @@ export async function confirmMFALogin(
       .map((x) => `${x.name}=${x.value}`)
       .join("; ");
     const result = await completeMFAChallenge(code.trim(), cookieHeader);
-    if (result.setCookie) {
-      const parsed = parseSetCookie(result.setCookie);
+    for (const raw of result.setCookies) {
+      const parsed = parseSetCookie(raw);
       if (parsed) {
         c.set({
           name: parsed.name,

@@ -24,6 +24,12 @@ export function slugFromHost(host: string | null): string | null {
   }
   const parts = withoutPort.split(".");
   if (parts.length < 2) return null;
+  // Only treat the first label as a slug when the host lives under a
+  // mark8ly-controlled TLD. Custom domains (like primasyss.com) must
+  // fall through to the resolveCustomDomain API lookup — returning
+  // "primasyss" here would send users to a "Store not found" page.
+  const parent = parts.slice(-2).join(".");
+  if (!MARK8LY_TLDS.has(parent)) return null;
   const sub = parts[0] ?? "";
   if (!sub || RESERVED_SUBDOMAINS.has(sub)) return null;
   if (sub.endsWith("-admin")) return null;
@@ -87,9 +93,7 @@ export async function resolveCustomDomain(
     if (!res.ok) return null;
     const body = (await res.json()) as { slug?: string };
     if (!body.slug) return null;
-    // slug comes back as "india-store.mark8ly.com" — extract just the slug part
-    const slug = body.slug.split(".")[0];
-    return slug || null;
+    return body.slug;
   } catch {
     return null;
   }

@@ -515,11 +515,61 @@ func (s *Service) UpdateMemberRole(ctx context.Context, in UpdateMemberRoleInput
 
 	// Update the display label on the invitation row so ListMembers
 	// reflects the new role without another FGA roundtrip.
+	previousRole := strings.ToLower(inv.Role)
 	if err := s.repo.UpdateRoleByEmail(ctx, tenantID, targetEmail, newRole); err != nil {
 		return nil, err
 	}
 
+	storeIDForEvent := ""
+	if inv.StoreID != nil {
+		storeIDForEvent = *inv.StoreID
+	}
+	severity := ""
+	// Demotions (admin → staff/viewer, staff → viewer) are operationally
+	// noisier than promotions and worth flagging as warnings so they
+	// stand out in the audit timeline.
+	if isDemotion(previousRole, newRole) {
+		severity = "warning"
+	}
+	s.audit.EmitAsync(audit.Event{
+		TenantID:     tenantID,
+		StoreID:      storeIDForEvent,
+		Action:       "staff.role_changed",
+		ResourceType: "staff_member",
+		ResourceID:   targetUID,
+		Severity:     severity,
+		ActorType:    "user",
+		ActorUserID:  actorUID,
+		Metadata: map[string]any{
+			"target_email":  targetEmail,
+			"previous_role": previousRole,
+			"new_role":      newRole,
+		},
+	})
+
 	return &UpdateMemberRoleResult{Email: targetEmail, Role: newRole}, nil
+}
+
+// roleRank gives an ordering used by isDemotion. Higher = more
+// privileged. Roles outside the known set return 0 so unknown values
+// don't trigger false demotions.
+func roleRank(r string) int {
+	switch r {
+	case "owner":
+		return 4
+	case "admin":
+		return 3
+	case "staff":
+		return 2
+	case "viewer":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func isDemotion(prev, next string) bool {
+	return roleRank(prev) > 0 && roleRank(next) > 0 && roleRank(next) < roleRank(prev)
 }
 
 // actorRole is a small helper that resolves the caller's effective

@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -191,10 +192,80 @@ func (h *SubscriptionHandler) HandleWebhook(c *gin.Context) {
 		return
 	}
 
-	// Parse the event from the body. In a real implementation, this would
-	// use the Stripe SDK to construct and verify the event.
-	_ = body
+	// Parse the event envelope so we can emit a useful audit row even
+	// before the full state-machine processing is wired. We pull the
+	// minimum we need (event id, type, and the tenant/store hints
+	// Stripe carries in metadata) and forward the rest as-is for the
+	// real handler to consume later.
+	var event stripeWebhookEvent
+	if err := json.Unmarshal(body, &event); err != nil {
+		h.logger.Warn("stripe webhook: parse failed", "err", err)
+		// Acknowledge anyway — Stripe will retry on non-2xx and we don't
+		// want a parse glitch to spam its retry queue.
+		c.JSON(http.StatusOK, gin.H{"received": true})
+		return
+	}
 
-	// Acknowledge receipt — real event processing would happen here.
+	if event.Type != "" {
+		// Severity heuristic: cancellations and payment failures are
+		// operationally interesting. Everything else is informational.
+		severity := audit.SeverityInfo
+		switch event.Type {
+		case "customer.subscription.deleted",
+			"invoice.payment_failed",
+			"charge.dispute.created":
+			severity = audit.SeverityWarning
+		case "charge.refunded":
+			severity = audit.SeverityWarning
+		}
+
+		h.audit.Emit(c, audit.Event{
+			TenantID:       parseUUIDOrZero(event.Data.Object.Metadata.TenantID),
+			StoreID:        parseUUIDOrZero(event.Data.Object.Metadata.StoreID),
+			ForceActorType: audit.ActorSystem,
+			Action:         "subscription.webhook_received",
+			ResourceType:   "subscription",
+			ResourceID:     event.ID,
+			Severity:       severity,
+			Metadata: map[string]any{
+				"event_type": event.Type,
+				"livemode":   event.Livemode,
+			},
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{"received": true})
+}
+
+// stripeWebhookEvent is a minimal subset of Stripe's webhook envelope
+// — enough to extract the event type, id, and the tenant/store hints
+// Stripe carries in subscription metadata. We deliberately don't take a
+// dependency on the Stripe SDK here; full processing will move to a
+// dedicated handler later.
+type stripeWebhookEvent struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Livemode bool   `json:"livemode"`
+	Data     struct {
+		Object struct {
+			Metadata struct {
+				TenantID string `json:"tenant_id"`
+				StoreID  string `json:"store_id"`
+			} `json:"metadata"`
+		} `json:"object"`
+	} `json:"data"`
+}
+
+// parseUUIDOrZero returns the parsed uuid or uuid.Nil. Used by the
+// webhook emit path so missing metadata falls through to the emitter's
+// store-resolver / drop-with-warning path instead of crashing.
+func parseUUIDOrZero(s string) uuid.UUID {
+	if s == "" {
+		return uuid.Nil
+	}
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return uuid.Nil
+	}
+	return id
 }

@@ -343,14 +343,35 @@ function DomainCard({
             DNS setup — add both records
           </p>
 
-          {/* Record 1: routing */}
-          <div className="mt-3 space-y-2 border-l-2 border-[color:var(--moss-700)]/40 pl-3">
+          {/* Record 1: routing — two options depending on domain type */}
+          <div className="mt-3 space-y-3 border-l-2 border-[color:var(--moss-700)]/40 pl-3">
             <p className="text-xs font-medium text-foreground">
               1. Route traffic to your storefront
             </p>
-            <DnsRecord label="Type" value="CNAME" />
-            <DnsRecord label="Name" value={d.domain} copyable />
-            <DnsRecord label="Target" value={d.cname_target} copyable />
+            <p className="text-xs text-foreground-secondary">
+              Pick ONE: Option A (simpler, works for apex / subdomains) or Option B (cleaner if your DNS supports CNAME here).
+            </p>
+
+            <div className="rounded border border-border bg-[color:var(--background-elevated)] p-2.5">
+              <p className="text-xs font-medium text-foreground">Option A — A record</p>
+              <div className="mt-2 space-y-1.5">
+                <DnsRecord label="Type" value="A" />
+                <DnsRecord label="Name" value={d.domain} copyable />
+                <DnsRecord label="Value" value="34.14.139.74" copyable />
+              </div>
+            </div>
+
+            <div className="rounded border border-border bg-[color:var(--background-elevated)] p-2.5">
+              <p className="text-xs font-medium text-foreground">Option B — CNAME</p>
+              <p className="text-xs text-foreground-tertiary">
+                CNAME not allowed at apex by most DNS providers — use Option A for apex domains.
+              </p>
+              <div className="mt-2 space-y-1.5">
+                <DnsRecord label="Type" value="CNAME" />
+                <DnsRecord label="Name" value={d.domain} copyable />
+                <DnsRecord label="Target" value={d.cname_target} copyable />
+              </div>
+            </div>
           </div>
 
           {/* Record 2: ACME delegation */}

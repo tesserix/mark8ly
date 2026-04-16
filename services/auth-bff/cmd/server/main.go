@@ -19,6 +19,7 @@ import (
 	"github.com/mark8ly/auth-bff/internal/autologin"
 	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
+	"github.com/mark8ly/auth-bff/internal/usermfa"
 	"github.com/mark8ly/auth-bff/internal/usersessions"
 	"github.com/mark8ly/auth-bff/pkg/config"
 	"github.com/mark8ly/auth-bff/pkg/httpserver"
@@ -131,6 +132,17 @@ func main() {
 	sessionHandler := session.NewHandler(sessions, fgaClient).
 		WithRegistry(sessionRegistry, log)
 
+	// ─── MFA (TOTP) ────────────────────────────────────────────────────
+	// Reuses the session encrypt key for at-rest secret encryption. The
+	// service is fatal-on-init-error because MFA cannot degrade to
+	// plaintext storage safely.
+	mfaSvc, err := usermfa.NewService(dbConn, cfg.SessionEncryptKey)
+	if err != nil {
+		log.Error("usermfa: new service", "err", err)
+		panic(err)
+	}
+	mfaHandler := usermfa.NewHandler(mfaSvc, log)
+
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)
 	v1 := r.Group("/auth")
@@ -142,6 +154,7 @@ func main() {
 	// /auth so the existing login + cookie routes stay untouched.
 	apiV1 := r.Group("/api/v1")
 	sessionHandler.RegisterAPI(apiV1)
+	mfaHandler.Register(apiV1)
 
 	if err := httpserver.Run(ctx, cfg.HTTPPort, r, log); err != nil {
 		log.Error("http server", "err", err)

@@ -171,9 +171,15 @@ export async function listAccountSessions(
   return body.data ?? [];
 }
 
+export interface EnableMFAResult {
+  qr_code_url: string;
+  otpauth_url: string;
+  secret: string;
+}
+
 export async function enableMFA(
   session: SessionHeaders,
-): Promise<MutationResult<{ qr_code_url: string }>> {
+): Promise<MutationResult<EnableMFAResult>> {
   const res = await fetch(
     `${MARKETPLACE_API_URL}/api/v1/admin/account/mfa/enable`,
     {
@@ -185,8 +191,27 @@ export async function enableMFA(
   if (!res.ok) {
     return { ok: false, error: await parseMutationError(res) };
   }
-  const data = (await res.json()) as { data: { qr_code_url: string } };
+  const data = (await res.json()) as { data: EnableMFAResult };
   return { ok: true, data: data.data };
+}
+
+export async function verifyMFA(
+  code: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/account/mfa/verify`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ code }),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: true };
 }
 
 export async function disableMFA(

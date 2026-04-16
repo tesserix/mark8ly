@@ -16,13 +16,17 @@ import { revokeSession } from "@/lib/auth/session";
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "m8_session";
 const SESSION_COOKIE_DOMAIN =
   process.env.SESSION_COOKIE_DOMAIN ?? ".mark8ly.com";
-const MARKETING_URL =
-  process.env.NEXT_PUBLIC_MARKETING_URL ?? "http://localhost:4201";
 
 export async function GET(req: NextRequest) {
   await revokeSession(req.headers.get("cookie"));
 
-  const response = NextResponse.redirect(MARKETING_URL);
+  // Stay on the same admin host — custom domain merchants should land
+  // on their own admin.<domain>/login, not bounce back to mark8ly.com.
+  const target = req.nextUrl.clone();
+  target.pathname = "/login";
+  target.search = "";
+
+  const response = NextResponse.redirect(target);
   // Must match the Domain/Path used when setting the cookie or the
   // browser creates a duplicate cookie instead of deleting.
   response.cookies.set({

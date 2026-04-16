@@ -92,6 +92,9 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			account.POST("/mfa/enable",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountEditRole),
 				deps.AccountHandler.EnableMFA)
+			account.POST("/mfa/verify",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountEditRole),
+				deps.AccountHandler.VerifyMFA)
 			account.POST("/mfa/disable",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountEditRole),
 				deps.AccountHandler.DisableMFA)

@@ -4,6 +4,8 @@
 package admin
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -47,14 +49,14 @@ type profileDTO struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-func toProfileDTO(p userProfile) profileDTO {
+func toProfileDTO(p userProfile, mfaEnabled bool) profileDTO {
 	return profileDTO{
 		UserID:     p.UserID,
 		Email:      p.Email,
 		Name:       p.DisplayName,
 		Phone:      p.Phone,
 		AvatarURL:  p.AvatarURL,
-		MFAEnabled: false,
+		MFAEnabled: mfaEnabled,
 		CreatedAt:  p.CreatedAt,
 	}
 }
@@ -100,7 +102,8 @@ func (h *AccountHandler) GetProfile(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": toProfileDTO(profile)})
+	mfa := h.fetchMFAEnabled(c.Request.Context(), userID, email)
+	c.JSON(http.StatusOK, gin.H{"data": toProfileDTO(profile, mfa)})
 }
 
 // UpdateProfileRequest is the request body for PATCH /admin/account.
@@ -162,7 +165,8 @@ func (h *AccountHandler) UpdateProfile(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": toProfileDTO(profile)})
+	mfa := h.fetchMFAEnabled(c.Request.Context(), userID, email)
+	c.JSON(http.StatusOK, gin.H{"data": toProfileDTO(profile, mfa)})
 }
 
 // loadOrSeed returns the user_profile row, inserting a skeleton row on
@@ -306,6 +310,13 @@ func (h *AccountHandler) EnableMFA(c *gin.Context) {
 	h.proxyToAuthBFF(c, "POST", "/api/v1/mfa/enable")
 }
 
+// VerifyMFA handles POST /admin/account/mfa/verify — proxies to auth-bff.
+// The body is { code: "123456" } and auth-bff flips enabled=true on a
+// successful validation.
+func (h *AccountHandler) VerifyMFA(c *gin.Context) {
+	h.proxyToAuthBFF(c, "POST", "/api/v1/mfa/verify")
+}
+
 // DisableMFA handles POST /admin/account/mfa/disable — proxies to auth-bff.
 func (h *AccountHandler) DisableMFA(c *gin.Context) {
 	h.proxyToAuthBFF(c, "POST", "/api/v1/mfa/disable")
@@ -407,4 +418,42 @@ func (h *AccountHandler) proxyToAuthBFF(c *gin.Context, method, path string) {
 // account handler (operates outside store scope) but kept for consistency.
 func parseStoreID(c *gin.Context) (uuid.UUID, error) {
 	return uuid.Parse(c.Param("storeId"))
+}
+
+// fetchMFAEnabled asks auth-bff for the user's current MFA state.
+// Best-effort — if auth-bff is unreachable or returns anything other
+// than a clean 2xx we default to false so the UI doesn't lie about
+// the user being protected. A 2-second timeout keeps the profile
+// endpoint fast under partial outage.
+func (h *AccountHandler) fetchMFAEnabled(parent context.Context, userID, email string) bool {
+	if h.authBFFURL == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", h.authBFFURL+"/api/v1/mfa/status", nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("X-User-ID", userID)
+	if email != "" {
+		req.Header.Set("X-User-Email", email)
+	}
+	resp, err := h.httpClient.Do(req)
+	if err != nil || resp == nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	var body struct {
+		Data struct {
+			Enabled bool `json:"enabled"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return false
+	}
+	return body.Data.Enabled
 }

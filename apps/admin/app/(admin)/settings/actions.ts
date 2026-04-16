@@ -13,6 +13,7 @@ import {
   updateAccountProfile,
   createAvatarUploadURL as createAvatarUploadURLApi,
   enableMFA as enableMFAApi,
+  verifyMFA as verifyMFAApi,
   disableMFA as disableMFAApi,
   revokeSession as revokeSessionApi,
   deleteAccount as deleteAccountApi,
@@ -92,29 +93,43 @@ export async function createAvatarUploadURL(
   return { ok: true, data: result.data };
 }
 
-export async function toggleMFA(
-  enable: boolean,
-): Promise<ActionResultWithData<{ qr_code_url?: string }>> {
+export async function enrollMFA(): Promise<
+  ActionResultWithData<{ qr_code_url: string; otpauth_url: string; secret: string }>
+> {
   const { userId, tenantId, email } = await getSession();
   if (!userId || !tenantId) {
     return { ok: false, code: "no_session", message: "Session expired." };
   }
-
-  if (enable) {
-    const result = await enableMFAApi({ userId, tenantId, email });
-    if (!result.ok) {
-      return { ok: false, code: result.error.code, message: result.error.message };
-    }
-    revalidatePath("/settings/account");
-    return { ok: true, data: { qr_code_url: result.data.qr_code_url } };
+  const result = await enableMFAApi({ userId, tenantId, email });
+  if (!result.ok) {
+    return { ok: false, code: result.error.code, message: result.error.message };
   }
+  return { ok: true, data: result.data };
+}
 
+export async function confirmMFA(code: string): Promise<ActionResult> {
+  const { userId, tenantId, email } = await getSession();
+  if (!userId || !tenantId) return noSession();
+  if (!code.trim()) {
+    return { ok: false, code: "validation", message: "Enter the 6-digit code." };
+  }
+  const result = await verifyMFAApi(code.trim(), { userId, tenantId, email });
+  if (!result.ok) {
+    return { ok: false, code: result.error.code, message: result.error.message };
+  }
+  revalidatePath("/settings/account");
+  return { ok: true };
+}
+
+export async function disableMFAAction(): Promise<ActionResult> {
+  const { userId, tenantId, email } = await getSession();
+  if (!userId || !tenantId) return noSession();
   const result = await disableMFAApi({ userId, tenantId, email });
   if (!result.ok) {
     return { ok: false, code: result.error.code, message: result.error.message };
   }
   revalidatePath("/settings/account");
-  return { ok: true, data: {} };
+  return { ok: true };
 }
 
 export async function revokeSessionAction(

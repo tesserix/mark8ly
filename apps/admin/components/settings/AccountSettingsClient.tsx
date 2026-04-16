@@ -9,7 +9,9 @@ import type { AccountProfile, AccountSession } from "@/lib/api/settings-tier2-ap
 import {
   updateProfile,
   createAvatarUploadURL,
-  toggleMFA,
+  enrollMFA,
+  confirmMFA,
+  disableMFAAction,
   revokeSessionAction,
   deleteAccountAction,
 } from "@/app/(admin)/settings/actions";
@@ -274,27 +276,57 @@ function MFASection({
 }) {
   const [isPending, startTransition] = useTransition();
   const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [secret, setSecret] = useState<string | null>(null);
+  const [code, setCode] = useState("");
   const router = useRouter();
   const { toast } = useToast();
 
-  function handleToggle() {
-    setQrUrl(null);
+  function handleEnroll() {
     startTransition(async () => {
-      const result = await toggleMFA(!mfaEnabled);
+      const result = await enrollMFA();
       if (!result.ok) {
-        toast.error(
-          mfaEnabled ? "Couldn't disable MFA" : "Couldn't enable MFA",
-          result.message,
-        );
-      } else {
-        if (result.data.qr_code_url) {
-          setQrUrl(result.data.qr_code_url);
-        }
-        toast.success(mfaEnabled ? "MFA disabled" : "MFA enabled");
-        router.refresh();
+        toast.error("Couldn't start MFA setup", result.message);
+        return;
       }
+      setQrUrl(result.data.qr_code_url);
+      setSecret(result.data.secret);
     });
   }
+
+  function handleCancelEnroll() {
+    setQrUrl(null);
+    setSecret(null);
+    setCode("");
+  }
+
+  function handleConfirm() {
+    startTransition(async () => {
+      const result = await confirmMFA(code);
+      if (!result.ok) {
+        toast.error("Couldn't verify code", result.message);
+        return;
+      }
+      toast.success("Two-factor authentication enabled");
+      setQrUrl(null);
+      setSecret(null);
+      setCode("");
+      router.refresh();
+    });
+  }
+
+  function handleDisable() {
+    startTransition(async () => {
+      const result = await disableMFAAction();
+      if (!result.ok) {
+        toast.error("Couldn't disable MFA", result.message);
+        return;
+      }
+      toast.success("Two-factor authentication disabled");
+      router.refresh();
+    });
+  }
+
+  const enrolling = qrUrl !== null;
 
   return (
     <section className="space-y-6">
@@ -318,17 +350,78 @@ function MFASection({
           {mfaEnabled ? "Enabled" : "Disabled"}
         </span>
       </div>
-      {qrUrl && (
-        <div className="max-w-xs space-y-2">
-          <p className="text-sm font-medium text-foreground">Scan this QR code with your authenticator app:</p>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={qrUrl} alt="MFA QR code" className="h-48 w-48" />
+
+      {enrolling && (
+        <div className="max-w-md space-y-4 rounded-[6px] border border-border bg-[color:var(--background-elevated)] p-5">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">
+              1. Scan this QR code with your authenticator app
+            </p>
+            <p className="text-xs text-foreground-secondary">
+              Google Authenticator, 1Password, Authy — any TOTP-compatible app works.
+            </p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrUrl!}
+              alt="MFA QR code"
+              className="h-48 w-48 rounded-[6px] border border-border bg-white"
+            />
+            {secret && (
+              <details className="text-xs text-foreground-secondary">
+                <summary className="cursor-pointer">Can&rsquo;t scan? Show setup key</summary>
+                <code className="mt-2 block break-all rounded-[4px] bg-[color:var(--paper-200)] px-2 py-1 font-mono">
+                  {secret}
+                </code>
+              </details>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="mfa-code"
+              className="block text-sm font-medium text-foreground"
+            >
+              2. Enter the 6-digit code from your app
+            </label>
+            <input
+              id="mfa-code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              disabled={isPending}
+              className="h-10 w-40 rounded-[6px] border border-border bg-white px-3 font-mono text-lg tracking-[0.4em] text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+              placeholder="000000"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={isPending || code.length !== 6}
+              className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
+            >
+              {isPending ? "Verifying..." : "Verify & enable"}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelEnroll}
+              disabled={isPending}
+              className="h-10 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
-      {editable && (
+
+      {editable && !enrolling && (
         <button
           type="button"
-          onClick={handleToggle}
+          onClick={mfaEnabled ? handleDisable : handleEnroll}
           disabled={isPending}
           className={`h-10 rounded-[6px] px-5 text-sm font-medium transition-colors disabled:opacity-50 ${
             mfaEnabled

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
-  Bell,
   ChevronLeft,
   ChevronRight,
   Package,
@@ -51,6 +50,7 @@ import type { Membership, Store, TenantRole } from "@/lib/api/platform-api";
 import { UserMenu } from "./UserMenu";
 import { TenantSwitcher } from "./TenantSwitcher";
 import { StoreSwitcher } from "./StoreSwitcher";
+import { NotificationBell } from "./NotificationBell";
 
 /**
  * AdminShell wraps every authenticated admin page with the sidebar +
@@ -68,6 +68,8 @@ interface AdminShellProps {
   currentTenantId?: string;
   stores?: Store[];
   currentStoreId?: string;
+  userId?: string;
+  tenantId?: string;
 }
 
 interface NavLeaf {
@@ -177,6 +179,8 @@ function AdminShellFrame({
   currentTenantId,
   stores,
   currentStoreId,
+  userId,
+  tenantId,
 }: AdminShellProps) {
   const pathname = usePathname();
   const { state, toggleSidebar } = useSidebar();
@@ -328,13 +332,15 @@ function AdminShellFrame({
                   <RoleBadge role={role} size="md" />
                 </div>
               )}
-              <button
-                type="button"
-                className="hidden h-11 w-11 items-center justify-center rounded-md text-foreground-secondary transition-colors hover:bg-paper-100 hover:text-foreground sm:inline-flex"
-                aria-label="Notifications"
-              >
-                <Bell className="h-4 w-4" aria-hidden="true" />
-              </button>
+              {currentStoreId && userId && tenantId && (
+                <div className="hidden sm:inline-flex">
+                  <NotificationBell
+                    storeId={currentStoreId}
+                    userId={userId}
+                    tenantId={tenantId}
+                  />
+                </div>
+              )}
               <UserMenu
                 email={userEmail}
                 name={userName}

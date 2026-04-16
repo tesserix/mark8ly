@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/mark8ly/marketplace-api/internal/customer"
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/review"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -19,6 +21,7 @@ type ReviewsHandler struct {
 	reviewSvc   *review.Service
 	reviewRepo  review.Repository
 	productRepo product.Repository
+	notify      *notification.Service // optional — nil-safe
 	logger      *slog.Logger
 }
 
@@ -35,6 +38,13 @@ func NewReviewsHandler(
 		productRepo: productRepo,
 		logger:      logger,
 	}
+}
+
+// WithNotifier attaches the notification service so review submissions
+// fire in-app notifications. Nil-safe.
+func (h *ReviewsHandler) WithNotifier(n *notification.Service) *ReviewsHandler {
+	h.notify = n
+	return h
 }
 
 // listReviewsQuery is the pagination input for listing reviews.
@@ -169,6 +179,26 @@ func (h *ReviewsHandler) SubmitReview(c *gin.Context) {
 		}
 		respondInternal(c, h.logger, err)
 		return
+	}
+
+	if tenantUUID, err1 := uuid.Parse(result.TenantID); err1 == nil {
+		if storeUUID, err2 := uuid.Parse(result.StoreID); err2 == nil {
+			reviewMsg := "A customer submitted a product review."
+			reviewResource := "review"
+			var reviewID *uuid.UUID
+			if rid, err3 := uuid.Parse(result.ID); err3 == nil {
+				reviewID = &rid
+			}
+			notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
+				TenantID:     tenantUUID,
+				StoreID:      storeUUID,
+				Type:         notification.TypeReviewSubmitted,
+				Title:        "New product review",
+				Message:      &reviewMsg,
+				ResourceType: &reviewResource,
+				ResourceID:   reviewID,
+			})
+		}
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"data": toStorefrontReviewResponse(result)})

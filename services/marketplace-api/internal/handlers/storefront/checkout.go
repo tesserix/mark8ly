@@ -18,6 +18,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/customer"
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -26,11 +27,12 @@ import (
 // CheckoutHandler is the public storefront checkout endpoint. Constructed
 // in cmd/marketplace-api/main.go for storefront and both modes.
 type CheckoutHandler struct {
-	db       *gorm.DB
-	orderSvc *order.Service
+	db        *gorm.DB
+	orderSvc  *order.Service
 	orderRepo order.Repository
-	audit    *audit.Emitter // optional — nil-safe
-	logger   *slog.Logger
+	audit     *audit.Emitter        // optional — nil-safe
+	notify    *notification.Service // optional — nil-safe
+	logger    *slog.Logger
 }
 
 // NewCheckoutHandler constructs a CheckoutHandler.
@@ -42,6 +44,13 @@ func NewCheckoutHandler(db *gorm.DB, orderSvc *order.Service, orderRepo order.Re
 // order.created as system events. Nil-safe.
 func (h *CheckoutHandler) WithAudit(e *audit.Emitter) *CheckoutHandler {
 	h.audit = e
+	return h
+}
+
+// WithNotifier attaches the notification service so storefront checkouts
+// fire in-app notifications to the merchant. Nil-safe.
+func (h *CheckoutHandler) WithNotifier(n *notification.Service) *CheckoutHandler {
+	h.notify = n
 	return h
 }
 
@@ -230,6 +239,17 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 				"source":         "storefront",
 				"customer_email": req.CustomerEmail,
 			},
+		})
+		newOrderMsg := "New order " + result.Order.OrderNumber + " placed."
+		newOrderResource := "order"
+		notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
+			TenantID:     tenantID,
+			StoreID:      storeID,
+			Type:         notification.TypeNewOrder,
+			Title:        "New order received",
+			Message:      &newOrderMsg,
+			ResourceType: &newOrderResource,
+			ResourceID:   &result.Order.ID,
 		})
 	}
 

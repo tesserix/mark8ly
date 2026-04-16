@@ -195,6 +195,17 @@ func main() {
 		Repo:   auditRepo,
 		Logger: log,
 	})
+
+	// Settings S5 — Notifications. Constructed early so both admin and
+	// storefront modes can share a single service instance: storefront
+	// checkout + review submission emit merchant notifications via this
+	// service, while admin exposes the CRUD endpoints.
+	notificationSvc := notification.NewService(notification.ServiceConfig{
+		DB:     conn,
+		Repo:   notification.NewRepository(),
+		Logger: log,
+	})
+
 	if m == mode.Admin || m == mode.Both {
 		productRepo := product.NewRepository(conn)
 		categoryRepo := category.NewRepository(conn)
@@ -419,14 +430,14 @@ func main() {
 		})
 		ticketsHandler := admin.NewTicketsHandler(ticketSvc, log)
 
-		// Settings S5 — Notifications.
-		notificationRepo := notification.NewRepository()
-		notificationSvc := notification.NewService(notification.ServiceConfig{
-			DB:     conn,
-			Repo:   notificationRepo,
-			Logger: log,
-		})
+		// Settings S5 — Notifications handler uses the shared notificationSvc
+		// constructed above. Wire the notifier into lifecycle handlers so
+		// events like new orders / cancellations / deliveries / returns fire
+		// in-app notifications (respecting merchant preferences).
 		notificationsHandler := admin.NewNotificationsHandler(notificationSvc, log)
+		ordersHandler.WithNotifier(notificationSvc)
+		returnsHandler.WithNotifier(notificationSvc)
+		shipmentsHandler.WithNotifier(notificationSvc)
 
 		// B1 — Storefront Branding.
 		brandingRepo := branding.NewRepository()
@@ -551,7 +562,9 @@ func main() {
 		orderRepoSF := order.NewRepository()
 		outboxRepoSF := outbox.NewRepository(conn)
 		orderSvcSF := order.NewService(conn, orderRepoSF, outboxRepoSF)
-		checkoutHandler := storefront.NewCheckoutHandler(conn, orderSvcSF, orderRepoSF, log).WithAudit(auditEmitter)
+		checkoutHandler := storefront.NewCheckoutHandler(conn, orderSvcSF, orderRepoSF, log).
+			WithAudit(auditEmitter).
+			WithNotifier(notificationSvc)
 
 		countryRepo := country.NewRepository(conn)
 		countryHandler := country.NewHandler(countryRepo)
@@ -594,7 +607,8 @@ func main() {
 		// C3 — Reviews.
 		reviewRepoSF := review.NewRepository(conn)
 		reviewSvcSF := review.NewService(conn, reviewRepoSF, log)
-		sfReviewsHandler := storefront.NewReviewsHandler(reviewSvcSF, reviewRepoSF, productRepoSF, log)
+		sfReviewsHandler := storefront.NewReviewsHandler(reviewSvcSF, reviewRepoSF, productRepoSF, log).
+			WithNotifier(notificationSvc)
 
 		// C4 — Wishlists.
 		wishlistRepo := wishlist.NewRepository(conn)

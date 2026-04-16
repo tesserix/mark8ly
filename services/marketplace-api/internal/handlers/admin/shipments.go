@@ -16,6 +16,7 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
@@ -27,7 +28,8 @@ type ShipmentsHandler struct {
 	db        *gorm.DB
 	svc       *shipping.ShippingService
 	repo      shipping.Repository
-	docMailer *orderdoc.Service // optional — nil disables receipt-on-delivery email
+	docMailer *orderdoc.Service     // optional — nil disables receipt-on-delivery email
+	notify    *notification.Service // optional — nil-safe
 	logger    *slog.Logger
 }
 
@@ -41,6 +43,13 @@ func NewShipmentsHandler(
 	logger *slog.Logger,
 ) *ShipmentsHandler {
 	return &ShipmentsHandler{db: db, svc: svc, repo: repo, docMailer: docMailer, logger: logger}
+}
+
+// WithNotifier attaches the notification service so delivery events fire
+// in-app notifications. Nil-safe.
+func (h *ShipmentsHandler) WithNotifier(n *notification.Service) *ShipmentsHandler {
+	h.notify = n
+	return h
 }
 
 // dispatchReceiptEmail fires the receipt email on a detached background
@@ -441,6 +450,17 @@ func (h *ShipmentsHandler) UpdateStatus(c *gin.Context) {
 	// gets a fast 200 even if SendGrid is slow.
 	if status == "delivered" {
 		h.dispatchReceiptEmail(orderID)
+		fulfilledMsg := "An order was marked delivered."
+		fulfilledResource := "order"
+		notification.Emit(ctx, h.notify, h.logger, notification.Notification{
+			TenantID:     rec.TenantID,
+			StoreID:      rec.StoreID,
+			Type:         notification.TypeOrderFulfilled,
+			Title:        "Order fulfilled",
+			Message:      &fulfilledMsg,
+			ResourceType: &fulfilledResource,
+			ResourceID:   &orderID,
+		})
 	}
 
 	c.JSON(http.StatusOK, toShipmentResponse(rec))

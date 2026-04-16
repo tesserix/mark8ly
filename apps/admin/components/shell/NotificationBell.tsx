@@ -56,11 +56,11 @@ export function NotificationBell({
         { cache: "no-store" },
       );
       if (res.ok) {
-        const data = (await res.json()) as { count: number };
-        setUnreadCount(data.count);
+        const data = (await res.json()) as { unread_count: number };
+        setUnreadCount(data.unread_count ?? 0);
       }
-    } catch {
-      // Silently fail — the count badge will just show stale data
+    } catch (error: unknown) {
+      console.error("NotificationBell: unread-count fetch failed", error);
     }
   }, [storeId]);
 
@@ -81,11 +81,11 @@ export function NotificationBell({
           { cache: "no-store" },
         );
         if (res.ok) {
-          const data = (await res.json()) as { data: NotificationItem[] };
-          setNotifications(data.data ?? []);
+          const data = (await res.json()) as { notifications: NotificationItem[] };
+          setNotifications(data.notifications ?? []);
         }
-      } catch {
-        // Silently fail
+      } catch (error: unknown) {
+        console.error("NotificationBell: list fetch failed", error);
       } finally {
         setLoading(false);
       }
@@ -94,15 +94,19 @@ export function NotificationBell({
 
   async function handleMarkAllRead() {
     try {
-      await fetch(`/api/notifications/read-all?storeId=${storeId}`, {
-        method: "POST",
+      const res = await fetch(`/api/notifications/read-all?storeId=${storeId}`, {
+        method: "PATCH",
       });
+      if (!res.ok) {
+        console.error("NotificationBell: mark-all-read failed", res.status);
+        return;
+      }
       setUnreadCount(0);
       setNotifications((prev) =>
         prev.map((n) => ({ ...n, is_read: true })),
       );
-    } catch {
-      // Silently fail
+    } catch (error: unknown) {
+      console.error("NotificationBell: mark-all-read threw", error);
     }
   }
 

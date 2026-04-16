@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -23,12 +24,20 @@ type ReturnsHandler struct {
 	repo      order.ReturnRepository
 	orderRepo order.Repository
 	orderSvc  *order.Service
+	notify    *notification.Service // optional — nil-safe
 	logger    *slog.Logger
 }
 
 // NewReturnsHandler constructs a ReturnsHandler.
 func NewReturnsHandler(db *gorm.DB, svc *order.ReturnService, repo order.ReturnRepository, orderRepo order.Repository, orderSvc *order.Service, logger *slog.Logger) *ReturnsHandler {
 	return &ReturnsHandler{db: db, svc: svc, repo: repo, orderRepo: orderRepo, orderSvc: orderSvc, logger: logger}
+}
+
+// WithNotifier attaches the notification service so return requests fire
+// in-app notifications. Nil-safe.
+func (h *ReturnsHandler) WithNotifier(n *notification.Service) *ReturnsHandler {
+	h.notify = n
+	return h
 }
 
 // List handles GET /admin/stores/:storeId/returns.
@@ -164,6 +173,17 @@ func (h *ReturnsHandler) Request(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	returnMsg := "A customer requested a return on order " + orderID + "."
+	returnResourceType := "return"
+	notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
+		TenantID:     tenantUUID,
+		StoreID:      storeUUID,
+		Type:         notification.TypeReturnRequested,
+		Title:        "Return requested",
+		Message:      &returnMsg,
+		ResourceType: &returnResourceType,
+		ResourceID:   &full.ID,
+	})
 	c.JSON(http.StatusCreated, ToAdminReturnResponse(full, fullItems))
 }
 

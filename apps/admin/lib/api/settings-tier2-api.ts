@@ -629,8 +629,8 @@ export async function listNotifications(
   if (!res.ok) {
     throw new Error(`marketplace-api: listNotifications ${res.status}`);
   }
-  const body = (await res.json()) as { data: Notification[] };
-  return body.data ?? [];
+  const body = (await res.json()) as { notifications: Notification[] };
+  return body.notifications ?? [];
 }
 
 export async function getUnreadCount(
@@ -644,8 +644,8 @@ export async function getUnreadCount(
   if (!res.ok) {
     return 0;
   }
-  const body = (await res.json()) as { data: { count: number } };
-  return body.data?.count ?? 0;
+  const body = (await res.json()) as { unread_count: number };
+  return body.unread_count ?? 0;
 }
 
 export async function markNotificationRead(
@@ -656,7 +656,7 @@ export async function markNotificationRead(
   const res = await fetch(
     `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications/${notificationId}/read`,
     {
-      method: "POST",
+      method: "PATCH",
       cache: "no-store",
       headers: commonHeaders(session),
     },
@@ -674,7 +674,7 @@ export async function markAllNotificationsRead(
   const res = await fetch(
     `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications/read-all`,
     {
-      method: "POST",
+      method: "PATCH",
       cache: "no-store",
       headers: commonHeaders(session),
     },
@@ -690,7 +690,7 @@ export async function getNotificationPreferences(
   session: SessionHeaders,
 ): Promise<NotificationPreferences | null> {
   const res = await fetch(
-    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications/preferences`,
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notification-preferences`,
     { cache: "no-store", headers: readHeaders(session) },
   );
   if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -699,8 +699,11 @@ export async function getNotificationPreferences(
   if (!res.ok) {
     throw new Error(`marketplace-api: getNotificationPreferences ${res.status}`);
   }
-  const body = (await res.json()) as { data: NotificationPreferences };
-  return body.data;
+  const body = (await res.json()) as {
+    store_id: string;
+    preferences: NotificationPreferences;
+  };
+  return body.preferences ?? null;
 }
 
 export async function updateNotificationPreferences(
@@ -709,17 +712,20 @@ export async function updateNotificationPreferences(
   session: SessionHeaders,
 ): Promise<MutationResult<NotificationPreferences>> {
   const res = await fetch(
-    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notifications/preferences`,
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/notification-preferences`,
     {
       method: "PATCH",
       cache: "no-store",
       headers: commonHeaders(session),
-      body: JSON.stringify(prefs),
+      body: JSON.stringify({ preferences: prefs }),
     },
   );
   if (!res.ok) {
     return { ok: false, error: await parseMutationError(res) };
   }
-  const data = (await res.json()) as { data: NotificationPreferences };
-  return { ok: true, data: data.data };
+  const body = (await res.json()) as {
+    store_id: string;
+    preferences: NotificationPreferences;
+  };
+  return { ok: true, data: body.preferences };
 }

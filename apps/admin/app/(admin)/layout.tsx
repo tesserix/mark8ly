@@ -50,6 +50,8 @@ export default async function AdminLayout({
         currentTenantId={tenantId}
         stores={stores}
         currentStoreId={currentStore?.id}
+        userId={userId}
+        tenantId={tenantId}
       >
         {children}
       </AdminShell>

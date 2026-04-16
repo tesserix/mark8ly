@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -29,8 +30,9 @@ type OrdersHandler struct {
 	db        *gorm.DB
 	svc       *order.Service
 	repo      order.Repository
-	docMailer *orderdoc.Service // optional — nil disables auto-emails
-	audit     *audit.Emitter    // optional — nil-safe; Emit is no-op when nil
+	docMailer *orderdoc.Service     // optional — nil disables auto-emails
+	audit     *audit.Emitter        // optional — nil-safe; Emit is no-op when nil
+	notify    *notification.Service // optional — nil-safe; notification.Emit skips when nil
 	logger    *slog.Logger
 }
 
@@ -46,6 +48,14 @@ func NewOrdersHandler(db *gorm.DB, svc *order.Service, repo order.Repository, do
 // still work; they just don't record audit rows.
 func (h *OrdersHandler) WithAudit(e *audit.Emitter) *OrdersHandler {
 	h.audit = e
+	return h
+}
+
+// WithNotifier attaches the notification service so order lifecycle
+// events fire in-app notifications (respecting merchant preferences).
+// Nil-safe — notification.Emit is a no-op without a service.
+func (h *OrdersHandler) WithNotifier(n *notification.Service) *OrdersHandler {
+	h.notify = n
 	return h
 }
 
@@ -425,8 +435,20 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	cancelMsg := "Order " + o.OrderNumber + " was cancelled."
+	notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
+		TenantID:     o.TenantID,
+		StoreID:      o.StoreID,
+		Type:         notification.TypeOrderCancelled,
+		Title:        "Order cancelled",
+		Message:      &cancelMsg,
+		ResourceType: stringPtr("order"),
+		ResourceID:   &o.ID,
+	})
 	c.JSON(http.StatusOK, ToAdminOrderResponse(o, items, addrs))
 }
+
+func stringPtr(s string) *string { return &s }
 
 // Refund handles POST /admin/stores/:storeId/orders/:id/refund. The
 // payment_status target is required because the service layer needs to

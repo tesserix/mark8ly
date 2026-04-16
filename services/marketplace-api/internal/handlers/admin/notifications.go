@@ -4,6 +4,7 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -168,6 +169,44 @@ type UpdatePreferencesRequest struct {
 	Preferences json.RawMessage `json:"preferences" binding:"required"`
 }
 
+// allowedPreferenceKeys is the closed set of user-toggleable notification
+// types. Non-toggleable types (e.g. system_alert) are omitted on purpose —
+// the UI must not be able to silence them. Keep in sync with
+// apps/admin/components/settings/NotificationSettingsClient.tsx.
+var allowedPreferenceKeys = map[string]struct{}{
+	"new_order":         {},
+	"low_stock":         {},
+	"return_requested":  {},
+	"payment_received":  {},
+	"review_submitted":  {},
+}
+
+// validatePreferences rejects unknown keys and non-boolean values. Returns
+// the normalized map of keys the client submitted on success.
+func validatePreferences(raw json.RawMessage) (map[string]bool, error) {
+	if !json.Valid(raw) {
+		return nil, apperrors.ValidationFailed("preferences", "must be valid JSON")
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, apperrors.ValidationFailed("preferences", "must be a JSON object")
+	}
+
+	out := make(map[string]bool, len(parsed))
+	for key, val := range parsed {
+		if _, ok := allowedPreferenceKeys[key]; !ok {
+			return nil, apperrors.ValidationFailed("preferences."+key, "unknown preference key")
+		}
+		b, ok := val.(bool)
+		if !ok {
+			return nil, apperrors.ValidationFailed("preferences."+key, "must be a boolean")
+		}
+		out[key] = b
+	}
+	return out, nil
+}
+
 // UpdatePreferences handles PATCH /admin/stores/:storeId/notification-preferences.
 func (h *NotificationsHandler) UpdatePreferences(c *gin.Context) {
 	storeID, err := uuid.Parse(c.Param("storeId"))
@@ -187,13 +226,23 @@ func (h *NotificationsHandler) UpdatePreferences(c *gin.Context) {
 		return
 	}
 
-	// Validate that preferences is valid JSON.
-	if !json.Valid(req.Preferences) {
-		RespondErr(c, apperrors.ValidationFailed("preferences", "must be valid JSON"), h.logger)
+	normalized, err := validatePreferences(req.Preferences)
+	if err != nil {
+		RespondErr(c, err, h.logger)
 		return
 	}
 
-	prefs, err := h.svc.UpsertPreferences(c.Request.Context(), storeID, tenantID, req.Preferences)
+	// Re-marshal from the whitelisted map so arbitrary keys cannot slip
+	// into the JSONB column even if a future validator regression lets
+	// them through the loop above. Marshaling map[string]bool cannot
+	// fail in practice; surface as 500 if it ever does.
+	clean, err := json.Marshal(normalized)
+	if err != nil {
+		RespondErr(c, fmt.Errorf("marshal preferences: %w", err), h.logger)
+		return
+	}
+
+	prefs, err := h.svc.UpsertPreferences(c.Request.Context(), storeID, tenantID, clean)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return

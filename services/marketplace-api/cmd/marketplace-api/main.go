@@ -437,6 +437,7 @@ func main() {
 		notificationsHandler := admin.NewNotificationsHandler(notificationSvc, log)
 		ordersHandler.WithNotifier(notificationSvc)
 		returnsHandler.WithNotifier(notificationSvc)
+		variantHandler.WithNotifier(conn, notificationSvc)
 		shipmentsHandler.WithNotifier(notificationSvc)
 
 		// B1 — Storefront Branding.
@@ -636,7 +637,8 @@ func main() {
 		shippingOptionsHandler := storefront.NewShippingOptionsHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
 			WithGiftCardService(giftCardSvcSF).
-			WithLoyaltyService(loyaltySvcSF)
+			WithLoyaltyService(loyaltySvcSF).
+			WithNotifier(notificationSvc)
 		// Order document mailer for the storefront — needed so the
 		// customer self-service cancel path can fire the cancellation
 		// email itself (the admin OrdersHandler.dispatchCancellationEmail

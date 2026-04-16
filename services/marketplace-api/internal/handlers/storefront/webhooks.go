@@ -20,6 +20,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 )
@@ -40,14 +41,22 @@ func (webhookGatewayConfigRow) TableName() string { return "payment_gateway_conf
 type WebhookHandler struct {
 	db          *gorm.DB
 	orderSvc    *order.Service
-	giftCardSvc *giftcard.Service // optional — when set, gift card checkout events activate cards
-	loyaltySvc  *loyalty.Service  // optional — when set, awards points after payment success
+	giftCardSvc *giftcard.Service     // optional — when set, gift card checkout events activate cards
+	loyaltySvc  *loyalty.Service      // optional — when set, awards points after payment success
+	notify      *notification.Service // optional — nil-safe; emits payment_received on success
 	logger      *slog.Logger
 }
 
 // NewWebhookHandler constructs a WebhookHandler.
 func NewWebhookHandler(db *gorm.DB, orderSvc *order.Service, logger *slog.Logger) *WebhookHandler {
 	return &WebhookHandler{db: db, orderSvc: orderSvc, logger: logger}
+}
+
+// WithNotifier attaches the notification service so payment-succeeded
+// events fire in-app notifications. Nil-safe.
+func (h *WebhookHandler) WithNotifier(svc *notification.Service) *WebhookHandler {
+	h.notify = svc
+	return h
 }
 
 // WithGiftCardService attaches the gift card service so webhook events
@@ -284,7 +293,48 @@ func (h *WebhookHandler) handlePaymentSucceeded(ctx context.Context, provider st
 		if h.loyaltySvc != nil {
 			h.awardLoyaltyPoints(ctx, orderID)
 		}
+
+		// Emit payment_received notification. Look up tenant/store/order
+		// number off the order so the notification is properly scoped and
+		// the merchant sees which order was paid. Failures are logged and
+		// swallowed — the webhook must not be rejected over notification
+		// issues.
+		h.emitPaymentReceived(ctx, orderID)
 	}
+}
+
+// emitPaymentReceived fires the payment_received notification for an
+// order that just transitioned to paid. Nil-safe when the notifier is
+// not wired. All errors are swallowed after logging.
+func (h *WebhookHandler) emitPaymentReceived(ctx context.Context, orderID uuid.UUID) {
+	if h.notify == nil {
+		return
+	}
+	var row struct {
+		TenantID    uuid.UUID `gorm:"column:tenant_id"`
+		StoreID     uuid.UUID `gorm:"column:store_id"`
+		OrderNumber string    `gorm:"column:order_number"`
+	}
+	if err := h.db.WithContext(ctx).
+		Table("orders").
+		Select("tenant_id, store_id, order_number").
+		Where("id = ?", orderID).
+		Take(&row).Error; err != nil {
+		h.logError("webhook: order lookup for notification failed",
+			"order_id", orderID.String(), "err", err)
+		return
+	}
+	msg := "Payment received for order " + row.OrderNumber + "."
+	resourceType := "order"
+	notification.Emit(ctx, h.notify, h.logger, notification.Notification{
+		TenantID:     row.TenantID,
+		StoreID:      row.StoreID,
+		Type:         notification.TypePaymentReceived,
+		Title:        "Payment received",
+		Message:      &msg,
+		ResourceType: &resourceType,
+		ResourceID:   &orderID,
+	})
 }
 
 // awardLoyaltyPoints looks up the order and credits points on the

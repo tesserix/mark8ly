@@ -11,6 +11,7 @@ import {
   removeDomainAction,
   verifyDomainAction,
 } from "@/app/(admin)/settings/actions";
+import { useToast } from "@/components/feedback/Toaster";
 
 interface DomainsSettingsClientProps {
   domains: CustomDomain[];
@@ -53,6 +54,7 @@ function AddDomainForm() {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { toast } = useToast();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -65,7 +67,14 @@ function AddDomainForm() {
       );
       if (!result.ok) {
         setError(result.message);
+        toast.error("Couldn't add domain", result.message);
       } else {
+        toast.success(
+          "Domain added",
+          method === "manual"
+            ? "Follow the CNAME instructions, then click Verify."
+            : "We're provisioning via Cloudflare — this can take a minute.",
+        );
         setDomain("");
         setCfToken("");
         router.refresh();
@@ -177,6 +186,7 @@ function DomainsList({
   const [error, setError] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const router = useRouter();
+  const { toast } = useToast();
 
   function handleVerify(domainId: string) {
     setError(null);
@@ -184,7 +194,9 @@ function DomainsList({
       const result = await verifyDomainAction(domainId);
       if (!result.ok) {
         setError(result.message);
+        toast.error("Verification failed", result.message);
       } else {
+        toast.success("Verification triggered", "Checking DNS now…");
         router.refresh();
       }
     });
@@ -196,7 +208,9 @@ function DomainsList({
       const result = await removeDomainAction(domainId);
       if (!result.ok) {
         setError(result.message);
+        toast.error("Couldn't remove domain", result.message);
       } else {
+        toast.success("Domain removed", "The custom domain has been disconnected.");
         setConfirmRemoveId(null);
         router.refresh();
       }

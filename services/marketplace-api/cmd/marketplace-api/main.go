@@ -152,7 +152,8 @@ func main() {
 		CF:     nil, // Stub — real Cloudflare client wired in production config
 		Logger: log,
 	})
-	domainsHandler := admin.NewDomainsHandler(domainSvc, log)
+	domainStoresRepo := stores.NewRepository(conn)
+	domainsHandler := admin.NewDomainsHandler(domainSvc, domainStoresRepo, log)
 
 	// Admin wiring — constructed for admin and both modes. The storefront
 	// process never mounts the admin group so these dependencies would go

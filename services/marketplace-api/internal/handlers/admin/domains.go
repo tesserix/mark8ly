@@ -8,16 +8,18 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mark8ly/marketplace-api/internal/domain"
+	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
 type DomainsHandler struct {
-	svc    *domain.Service
-	logger *slog.Logger
+	svc       *domain.Service
+	storeRepo stores.Repository
+	logger    *slog.Logger
 }
 
-func NewDomainsHandler(svc *domain.Service, logger *slog.Logger) *DomainsHandler {
-	return &DomainsHandler{svc: svc, logger: logger}
+func NewDomainsHandler(svc *domain.Service, storeRepo stores.Repository, logger *slog.Logger) *DomainsHandler {
+	return &DomainsHandler{svc: svc, storeRepo: storeRepo, logger: logger}
 }
 
 type DomainResponse struct {
@@ -89,7 +91,13 @@ func (h *DomainsHandler) Add(c *gin.Context) {
 		return
 	}
 
-	storeSlug := c.GetString("tenant_slug")
+	// Resolve store slug so cname_target can be populated correctly.
+	store, err := h.storeRepo.GetByIDForTenant(c.Request.Context(), storeID.String(), tenantID.String())
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	storeSlug := store.Slug
 
 	var req AddDomainRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -88,6 +88,9 @@ func (s *Service) Add(ctx context.Context, in AddInput) (*CustomDomain, error) {
 		return nil, apperrors.ValidationFailed("cf_api_token", "Cloudflare API token is required for cloudflare method")
 	}
 
+	if in.StoreSlug == "" {
+		return nil, apperrors.ValidationFailed("store_slug", "store slug is required to build CNAME target")
+	}
 	cnameTarget := in.StoreSlug + ".mark8ly.com"
 
 	now := time.Now()

@@ -99,7 +99,7 @@ export function ProductReviews({
     >
       <h2
         id="reviews-heading"
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]"
+        className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]"
       >
         Reviews
       </h2>
@@ -108,7 +108,7 @@ export function ProductReviews({
       {!loading && !error && reviews.length > 0 && (
         <div className="mt-4 flex items-center gap-3">
           <span
-            className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-[color:var(--storefront-text,var(--ink-900))]"
+            className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl text-[color:var(--storefront-text,var(--ink-900))]"
             style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
           >
             {averageRating.toFixed(1)}

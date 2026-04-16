@@ -60,7 +60,7 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-accent,var(--moss-700))]">
           Thank you for your order
         </p>
-        <h1 className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
+        <h1 className="mt-2 font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
           {order.order_number}
         </h1>
         <p className="mt-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
@@ -156,7 +156,7 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
             <div className="flex justify-between border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-2 font-medium">
               <dt>Total</dt>
               <dd
-                className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg"
+                className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg"
                 style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
               >
                 {formatPrice(order.grand_total, order.currency_code)}

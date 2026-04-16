@@ -74,6 +74,7 @@ function StoreLanding({
   return (
     <main
       id="main"
+      data-storefront-home=""
       className="min-h-screen"
       style={{
         background:

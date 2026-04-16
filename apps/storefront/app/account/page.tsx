@@ -23,7 +23,7 @@ export default async function AccountDashboardPage() {
   if (!session) {
     return (
       <div className="space-y-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+        <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           My Account
         </h1>
         <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
@@ -35,7 +35,7 @@ export default async function AccountDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+      <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
         My Account
       </h1>
 

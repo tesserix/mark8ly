@@ -55,7 +55,7 @@ export function ProductDetails({ product }: ProductDetailsProps) {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl leading-tight text-[color:var(--storefront-text,var(--ink-900))]">
+        <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-4xl leading-tight text-[color:var(--storefront-text,var(--ink-900))]">
           {product.title}
         </h1>
         <div className="flex items-baseline gap-3">

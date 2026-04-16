@@ -801,9 +801,32 @@ export function themeRadius(theme: StorefrontTheme): string {
   return "1.5rem";
 }
 
+/**
+ * Card-level radius scale applied to Tailwind `.rounded-*` utilities
+ * inside the storefront. Multiplies the default Tailwind radius so
+ * choosing "sharp" / "soft" / "rounded" flows through every product
+ * card, image, button, and chip without touching component code.
+ */
+export function themeRadiusScale(theme: StorefrontTheme): number {
+  if (theme.radius === "sharp") return 0.25;
+  if (theme.radius === "rounded") return 2;
+  return 1;
+}
+
 export function themeDensityScale(theme: StorefrontTheme): number {
   if (theme.density === "compact") return 0.88;
   if (theme.density === "airy") return 1.12;
+  return 1;
+}
+
+/**
+ * Motion scale. 0 kills all transitions/animations via CSS. Subtle is
+ * the default (1x). Expressive lengthens transitions (1.4x) for a
+ * slower, more luxurious feel.
+ */
+export function themeMotionScale(theme: StorefrontTheme): number {
+  if (theme.motion === "none") return 0;
+  if (theme.motion === "expressive") return 1.4;
   return 1;
 }
 
@@ -832,7 +855,9 @@ export function themeCssVariables(
     "--storefront-heading-font": fontStacks[theme.typography.headingFont],
     "--storefront-body-font": fontStacks[theme.typography.bodyFont],
     "--storefront-radius": themeRadius(theme),
+    "--storefront-radius-scale": String(themeRadiusScale(theme)),
     "--storefront-density-scale": String(themeDensityScale(theme)),
+    "--storefront-motion-scale": String(themeMotionScale(theme)),
     "--storefront-mode": theme.mode,
     // Narrow house-token overrides — only the three foreground colours,
     // which always need to flip with mode. We intentionally DO NOT

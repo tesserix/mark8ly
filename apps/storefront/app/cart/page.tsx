@@ -18,7 +18,7 @@ export default function CartPage() {
     <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <StorefrontNav />
       <main id="main" className="mx-auto max-w-3xl px-6 py-12 sm:px-8">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
+        <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
           Cart
         </h1>
 
@@ -45,7 +45,7 @@ export default function CartPage() {
                   {count} {count === 1 ? "item" : "items"}
                 </p>
                 <p
-                  className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-[color:var(--storefront-text,var(--ink-900))]"
+                  className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl text-[color:var(--storefront-text,var(--ink-900))]"
                   style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
                 >
                   {formatSubtotal(subtotal, items[0]?.currencyCode ?? "USD")}

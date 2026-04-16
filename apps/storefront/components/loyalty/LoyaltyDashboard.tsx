@@ -24,7 +24,7 @@ export function LoyaltyDashboard({
     // broken "Join" button — the next page load will likely recover.
     return (
       <div className="rounded-[6px] bg-white px-6 py-6">
-        <p className="text-sm text-ink-600">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))]/70">
           We couldn&apos;t fetch your loyalty balance right now. Refresh in
           a moment and it should appear.
         </p>
@@ -38,13 +38,13 @@ export function LoyaltyDashboard({
       <div className="rounded-[6px] bg-white px-6 py-6">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-500">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))]/60">
               Your {program.points_currency}
             </p>
-            <p className="mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+            <p className="mt-1 font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-4xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
               {customer.points_balance.toLocaleString()}
             </p>
-            <p className="mt-0.5 text-xs text-ink-500">
+            <p className="mt-0.5 text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
               Lifetime: {customer.lifetime_points.toLocaleString()}
             </p>
           </div>
@@ -65,7 +65,7 @@ export function LoyaltyDashboard({
       {/* Tiers */}
       {program.tiers.length > 0 && (
         <div className="rounded-[6px] bg-white px-6 py-5">
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))]/60">
             Tiers
           </h3>
           <div className="space-y-2">
@@ -81,7 +81,7 @@ export function LoyaltyDashboard({
                 <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                   {tier.name}
                 </span>
-                <span className="text-xs text-ink-500">
+                <span className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
                   {tier.min_points.toLocaleString()} pts &middot;{" "}
                   {tier.multiplier}x
                 </span>
@@ -130,7 +130,7 @@ function ReferralCard({
 
   return (
     <div className="rounded-[6px] bg-white px-6 py-5 space-y-3">
-      <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
+      <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))]/60">
         Invite friends
       </h3>
 
@@ -149,7 +149,7 @@ function ReferralCard({
 
       {shareLink && (
         <div className="flex items-center gap-3">
-          <span className="flex-1 min-w-0 truncate rounded-md bg-[color:var(--storefront-background,var(--paper-200))] px-3 py-1.5 font-mono text-xs text-ink-600">
+          <span className="flex-1 min-w-0 truncate rounded-md bg-[color:var(--storefront-background,var(--paper-200))] px-3 py-1.5 font-mono text-xs text-[color:var(--storefront-text,var(--ink-900))]/70">
             {shareLink}
           </span>
           <button
@@ -163,7 +163,7 @@ function ReferralCard({
       )}
 
       {referralBonus > 0 && (
-        <p className="text-xs text-ink-500">
+        <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
           Share your link and earn {referralBonus} {pointsCurrency} for each
           friend who joins.
         </p>

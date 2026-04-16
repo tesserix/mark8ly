@@ -30,7 +30,9 @@
   --storefront-heading-font: var(--font-source-serif), Georgia, serif;
   --storefront-body-font: var(--font-source-sans), system-ui, sans-serif;
   --storefront-radius: 1.5rem;
+  --storefront-radius-scale: 1;
   --storefront-density-scale: 1;
+  --storefront-motion-scale: 1;
 }
 
 /* ============================================================
@@ -137,3 +139,62 @@
 .animate-marquee[data-speed="slow"]   { animation-duration: 60s; }
 .animate-marquee[data-speed="normal"] { animation-duration: 30s; }
 .animate-marquee[data-speed="fast"]   { animation-duration: 18s; }
+
+/* ============================================================
+   Merchant theme: radius · density · motion
+   ------------------------------------------------------------
+   Each lives as a CSS variable (set on <body> via themeCssVariables)
+   AND as a data attribute (set on <body> in layout.tsx). Variables
+   drive calc-based scaling; data attributes drive conditional
+   overrides that can't be expressed as a scalar.
+   ============================================================ */
+
+/* ---- Radius --------------------------------------------------
+   Multiply Tailwind's default `rounded-*` radii by the merchant's
+   selected scale so every product card, image, button, and chip
+   inside the storefront picks up "sharp / soft / rounded" without
+   touching component code. Scoped to <main id="main"> so admin
+   primitives inside the page (if any) are unaffected. */
+main#main .rounded-sm { border-radius: calc(0.125rem * var(--storefront-radius-scale, 1)); }
+main#main .rounded-md { border-radius: calc(0.375rem * var(--storefront-radius-scale, 1)); }
+main#main .rounded-lg { border-radius: calc(0.5rem   * var(--storefront-radius-scale, 1)); }
+main#main .rounded-xl { border-radius: calc(0.75rem  * var(--storefront-radius-scale, 1)); }
+main#main .rounded-2xl { border-radius: calc(1rem    * var(--storefront-radius-scale, 1)); }
+main#main .rounded-3xl { border-radius: calc(1.5rem  * var(--storefront-radius-scale, 1)); }
+/* `rounded` (default 0.25rem) and `rounded-full` intentionally left
+   alone — full should stay circular, and tiny default corners don't
+   need scaling. */
+
+/* ---- Density -------------------------------------------------
+   Scale the homepage wrapper padding and inter-section margins
+   by the merchant's density choice. Compact tightens, airy loosens.
+   Scoped to [data-storefront-home] (set by page.tsx) so per-page
+   layouts like /cart and /checkout keep their tuned rhythm. */
+[data-storefront-home] > div {
+  padding-top: calc(2rem * var(--storefront-density-scale, 1));
+  padding-bottom: calc(2rem * var(--storefront-density-scale, 1));
+}
+[data-storefront-home] section + section {
+  margin-top: calc(4rem * var(--storefront-density-scale, 1));
+}
+
+/* ---- Motion --------------------------------------------------
+   "none" hard-disables every transition + animation (including the
+   marquee). "expressive" lengthens transitions for a slower, more
+   deliberate feel. "subtle" is the current default and needs no
+   override. The OS-level prefers-reduced-motion rule above still
+   wins — accessibility trumps merchant preference. */
+[data-motion="none"] *,
+[data-motion="none"] *::before,
+[data-motion="none"] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+[data-motion="expressive"] a,
+[data-motion="expressive"] button {
+  transition-duration: calc(var(--duration-fast, 150ms) * 2.4);
+}
+[data-motion="expressive"] .animate-marquee[data-speed="slow"]   { animation-duration: 84s; }
+[data-motion="expressive"] .animate-marquee[data-speed="normal"] { animation-duration: 42s; }
+[data-motion="expressive"] .animate-marquee[data-speed="fast"]   { animation-duration: 25s; }

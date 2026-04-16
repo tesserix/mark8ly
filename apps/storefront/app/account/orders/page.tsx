@@ -98,7 +98,7 @@ export default async function OrdersPage() {
   if (!session) {
     return (
       <div className="space-y-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+        <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           Orders
         </h1>
         <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
@@ -145,7 +145,7 @@ export default async function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+      <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
         Orders
       </h1>
 
@@ -185,7 +185,7 @@ export default async function OrdersPage() {
                   </p>
                 </div>
 
-                <span className="shrink-0 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+                <span className="shrink-0 font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                   {formatCurrency(order.grand_total, order.currency_code)}
                 </span>
               </Link>

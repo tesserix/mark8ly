@@ -25,7 +25,7 @@ export async function FeaturedProducts({ storeSlug, max = 8 }: FeaturedProductsP
       className="mt-16 border-t border-[color:var(--storefront-text,var(--ink-900))] border-opacity-10 pt-12"
     >
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
+        <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
           Featured
         </h2>
         <Link
@@ -81,7 +81,7 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
           )}
         </div>
         <div className="mt-3 flex items-start justify-between gap-2">
-          <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm text-[color:var(--storefront-text,var(--ink-900))] group-hover:underline">
+          <h3 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-sm text-[color:var(--storefront-text,var(--ink-900))] group-hover:underline">
             {product.title}
           </h3>
           <span

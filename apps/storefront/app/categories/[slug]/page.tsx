@@ -82,7 +82,7 @@ export default async function CategoryLandingPage({
           >
             ← Shop all
           </Link>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
+          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
             {prettify(categorySlug)}
           </h1>
           <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
@@ -148,7 +148,7 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
           )}
         </div>
         <div className="mt-4 flex items-start justify-between gap-3">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--storefront-text,var(--ink-900))] group-hover:underline">
+          <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))] group-hover:underline">
             {product.title}
           </h2>
           <span

@@ -46,7 +46,7 @@ export default async function SignInPage() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[color:var(--storefront-text,var(--ink-900))] opacity-55">
             {store?.name ?? "Store"}
           </p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
             Sign in
           </h1>
           <p className="text-sm leading-6 text-[color:var(--storefront-text,var(--ink-900))] opacity-70">

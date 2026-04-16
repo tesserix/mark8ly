@@ -124,7 +124,7 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl text-[color:var(--storefront-text,var(--ink-900))]">
+      <h3 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-xl text-[color:var(--storefront-text,var(--ink-900))]">
         Write a review
       </h3>
 

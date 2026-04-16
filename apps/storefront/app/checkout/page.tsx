@@ -420,7 +420,7 @@ export default function CheckoutPage() {
           <StorefrontNav storeName="" />
         </div>
         <div className="mx-auto max-w-3xl px-6 pb-8 sm:px-8">
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
+          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
             Checkout
           </h1>
           <div className="mt-12 text-center">
@@ -451,7 +451,7 @@ export default function CheckoutPage() {
         >
           ← Back to cart
         </Link>
-        <h1 className="mt-4 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
+        <h1 className="mt-4 font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
           Checkout
         </h1>
 
@@ -844,7 +844,7 @@ export default function CheckoutPage() {
             <div className="flex justify-between border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-2 font-medium">
               <dt>Estimated total</dt>
               <dd
-                className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg"
+                className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg"
                 style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
               >
                 {formatPrice(total, currencyCode)}

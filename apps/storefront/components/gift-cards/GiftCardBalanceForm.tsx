@@ -41,7 +41,7 @@ export function GiftCardBalanceForm({ storeSlug }: GiftCardBalanceFormProps) {
     <div className="space-y-8">
       <form onSubmit={onSubmit} className="space-y-4">
         <label htmlFor="gift-card-code" className="block">
-          <span className="text-sm font-medium text-ink-900">
+          <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
             Gift card code
           </span>
           <input
@@ -57,14 +57,14 @@ export function GiftCardBalanceForm({ storeSlug }: GiftCardBalanceFormProps) {
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
-            className="mt-2 block w-full rounded-md border border-ink-200 bg-white px-4 py-3 font-mono text-sm uppercase tracking-wider text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="mt-2 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-4 py-3 font-mono text-sm uppercase tracking-wider text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/40 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
         </label>
 
         <button
           type="submit"
           disabled={loading || !code.trim()}
-          className="inline-flex items-center justify-center rounded-md bg-ink-900 px-6 py-3 text-sm font-medium text-paper-200 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center justify-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-background,var(--paper-200))] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Checking..." : "Check balance"}
         </button>
@@ -98,41 +98,41 @@ function BalanceResult({ result }: { result: GiftCardBalanceResult }) {
   return (
     <section
       aria-live="polite"
-      className="rounded-md border border-ink-200 bg-white p-6"
+      className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] p-6"
     >
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-ink-500">
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--storefront-text,var(--ink-900))]/60">
         Current balance
       </p>
-      <p className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium tracking-tight text-ink-900">
+      <p className="mt-2 font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-4xl font-medium tracking-tight text-[color:var(--storefront-text,var(--ink-900))]">
         {formatted}
       </p>
 
       <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-xs font-medium uppercase tracking-[0.14em] text-ink-500">
+          <dt className="text-xs font-medium uppercase tracking-[0.14em] text-[color:var(--storefront-text,var(--ink-900))]/60">
             Code
           </dt>
-          <dd className="mt-1 font-mono text-sm text-ink-900 break-all">
+          <dd className="mt-1 font-mono text-sm text-[color:var(--storefront-text,var(--ink-900))] break-all">
             {formatCodeDisplay(result.code)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs font-medium uppercase tracking-[0.14em] text-ink-500">
+          <dt className="text-xs font-medium uppercase tracking-[0.14em] text-[color:var(--storefront-text,var(--ink-900))]/60">
             Status
           </dt>
-          <dd className="mt-1 text-ink-900 capitalize">{result.status}</dd>
+          <dd className="mt-1 text-[color:var(--storefront-text,var(--ink-900))] capitalize">{result.status}</dd>
         </div>
         {expires && (
           <div className="sm:col-span-2">
-            <dt className="text-xs font-medium uppercase tracking-[0.14em] text-ink-500">
+            <dt className="text-xs font-medium uppercase tracking-[0.14em] text-[color:var(--storefront-text,var(--ink-900))]/60">
               Expires
             </dt>
-            <dd className="mt-1 text-ink-900">{expires}</dd>
+            <dd className="mt-1 text-[color:var(--storefront-text,var(--ink-900))]">{expires}</dd>
           </div>
         )}
       </dl>
 
-      <p className="mt-6 text-sm text-ink-700">
+      <p className="mt-6 text-sm text-[color:var(--storefront-text,var(--ink-900))]/80">
         Apply this code at checkout to spend your balance.
       </p>
     </section>

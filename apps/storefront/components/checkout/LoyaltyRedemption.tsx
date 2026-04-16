@@ -42,7 +42,7 @@ export function LoyaltyRedemption({
 
   if (!canRedeem) {
     return (
-      <div className="text-xs text-ink-500">
+      <div className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
         You have {pointsBalance.toLocaleString()} {pointsCurrency} (min{" "}
         {minRedeemPoints} to redeem)
       </div>
@@ -55,7 +55,7 @@ export function LoyaltyRedemption({
         <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           Use {pointsBalance.toLocaleString()} {pointsCurrency}
         </p>
-        <p className="text-xs text-ink-500">
+        <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
           Worth {formatMoney(monetaryValue, currencyCode)}
         </p>
       </div>
@@ -70,7 +70,7 @@ export function LoyaltyRedemption({
           className="peer sr-only"
           aria-label={`Redeem ${pointsBalance} ${pointsCurrency}`}
         />
-        <div className="h-6 w-11 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))]/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-md after:bg-white after:transition-all peer-checked:bg-[color:var(--storefront-accent,var(--moss-700))] peer-checked:after:translate-x-full" />
+        <div className="h-6 w-11 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))]/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-md after:bg-[color:var(--storefront-surface,#ffffff)] after:transition-all peer-checked:bg-[color:var(--storefront-accent,var(--moss-700))] peer-checked:after:translate-x-full" />
       </label>
     </div>
   );

@@ -99,12 +99,12 @@ export function CouponInput({
 
   if (applied) {
     return (
-      <div className="flex items-center justify-between rounded-md border border-moss-200 bg-moss-50 px-3 py-2">
+      <div className="flex items-center justify-between rounded-md border border-[color:var(--storefront-accent,theme(colors.moss.700))]/25 bg-[color:var(--storefront-accent,theme(colors.moss.700))]/8 px-3 py-2">
         <div className="text-sm">
           <span className="font-mono font-medium text-[color:var(--storefront-accent,theme(colors.moss.700))]">
             {applied.code}
           </span>
-          <span className="ml-2 text-ink-500">
+          <span className="ml-2 text-[color:var(--storefront-text,var(--ink-900))]/60">
             {applied.free_shipping
               ? "Free shipping"
               : `-${currencyCode} ${applied.discount_amount}`}
@@ -114,7 +114,7 @@ export function CouponInput({
           type="button"
           onClick={remove}
           aria-label="Remove coupon"
-          className="text-xs text-ink-500 hover:text-ink-700"
+          className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/60 hover:text-[color:var(--storefront-text,var(--ink-900))]/90"
         >
           Remove
         </button>
@@ -140,13 +140,13 @@ export function CouponInput({
             }
           }}
           placeholder="Enter promo code"
-          className="flex-1 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm font-mono uppercase text-ink-900 placeholder:text-ink-500 placeholder:normal-case focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+          className="flex-1 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2 text-sm font-mono uppercase text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/50 placeholder:normal-case focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
         />
         <button
           type="button"
           onClick={validate}
           disabled={loading || !code.trim()}
-          className="rounded-md bg-ink-900 px-4 py-2.5 text-sm font-medium text-paper-200 transition hover:bg-ink-800 disabled:opacity-50"
+          className="rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-4 py-2.5 text-sm font-medium text-[color:var(--storefront-background,var(--paper-200))] transition hover:opacity-90 disabled:opacity-50"
         >
           {loading ? "..." : "Apply"}
         </button>

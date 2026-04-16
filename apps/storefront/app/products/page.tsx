@@ -84,7 +84,7 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
           >
             ← {store.name}
           </Link>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
+          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
             Shop
           </h1>
           <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
@@ -160,7 +160,7 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
       >
         <ProductCardMedia media={product.media} alt={product.title} />
         <div className="mt-4 flex items-start justify-between gap-3">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg text-[color:var(--storefront-text,var(--ink-900))] group-hover:underline">
+          <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))] group-hover:underline">
             {product.title}
           </h2>
           <span
@@ -200,7 +200,7 @@ function StockBadge({ tone, text }: { tone: "ok" | "warn" | "danger"; text: stri
 function EmptyCatalogue() {
   return (
     <div className="mx-auto max-w-xl py-16 text-center">
-      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
+      <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
         Nothing in the shop yet
       </h2>
       <p className="mt-4 text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
@@ -216,7 +216,7 @@ function NotFound({ slug }: { slug: string }) {
       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
         Store not found
       </p>
-      <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
+      <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
         Nothing here yet
       </h1>
       <p className="max-w-xl text-lg text-[color:var(--storefront-text,var(--ink-900))] opacity-70">

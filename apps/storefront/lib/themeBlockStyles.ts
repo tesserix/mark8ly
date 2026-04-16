@@ -140,7 +140,7 @@ export function heroStylesFor(layout: StorefrontLayout): HeroStyles {
         eyebrow: null,
         title: "font-serif text-5xl font-medium tracking-tight text-foreground",
         subheading: "mt-5 max-w-2xl text-lg text-foreground-secondary",
-        primaryCta: "mt-8 inline-flex h-12 items-center rounded-md bg-ink-900 px-6 text-base font-medium text-paper-200 transition-colors hover:bg-moss-700",
+        primaryCta: "mt-8 inline-flex h-12 items-center rounded-md bg-foreground px-6 text-base font-medium text-background transition-colors hover:bg-accent",
         secondaryCta: null,
         asideSlot: null,
         asideImage: null,
@@ -191,7 +191,7 @@ export function pullQuoteStylesFor(layout: StorefrontLayout): PullQuoteStyles {
   switch (layout) {
     case "editorial":
       return {
-        container: "mx-auto max-w-3xl border-l-2 border-moss-700 px-6 py-4 sm:px-8",
+        container: "mx-auto max-w-3xl border-l-2 border-[color:var(--storefront-accent,theme(colors.moss.700))] px-6 py-4 sm:px-8",
         text: "font-serif text-3xl font-medium leading-[1.25] tracking-tight text-foreground sm:text-4xl",
         attribution: "mt-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-foreground-secondary",
       };

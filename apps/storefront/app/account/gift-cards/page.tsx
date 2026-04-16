@@ -59,20 +59,20 @@ export default async function MyGiftCardsPage() {
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-ink-900">
+        <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           Gift cards
         </h1>
-        <p className="text-sm text-ink-700">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))]/80">
           Cards you&apos;ve purchased, and cards others have sent you.
         </p>
       </header>
 
       {cards.length === 0 ? (
-        <div className="rounded-md border border-ink-200 bg-white p-8 text-sm text-ink-700">
+        <div className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] p-8 text-sm text-[color:var(--storefront-text,var(--ink-900))]/80">
           You don&apos;t have any gift cards yet.{" "}
           <Link
             href="/gift-cards/purchase"
-            className="text-moss-700 underline-offset-2 hover:underline"
+            className="text-[color:var(--storefront-accent,var(--moss-700))] underline-offset-2 hover:underline"
           >
             Buy a gift card
           </Link>
@@ -83,27 +83,27 @@ export default async function MyGiftCardsPage() {
           {cards.map((c) => (
             <li
               key={c.id}
-              className="rounded-md border border-ink-200 bg-white p-5"
+              className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] p-5"
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="font-mono text-sm text-ink-900">
+                  <p className="font-mono text-sm text-[color:var(--storefront-text,var(--ink-900))]">
                     {c.code_display}
                   </p>
-                  <p className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-ink-900">
+                  <p className="mt-2 font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl text-[color:var(--storefront-text,var(--ink-900))]">
                     {formatMoney(c.current_balance, c.currency_code)}
                   </p>
-                  <p className="text-xs text-ink-500">
+                  <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
                     of {formatMoney(c.initial_balance, c.currency_code)}{" "}
                     initial
                   </p>
                 </div>
-                <span className="inline-flex items-center rounded-full bg-ink-100 px-2.5 py-0.5 text-xs capitalize text-ink-700">
+                <span className="inline-flex items-center rounded-full bg-[color:var(--storefront-text,var(--ink-900))]/10 px-2.5 py-0.5 text-xs capitalize text-[color:var(--storefront-text,var(--ink-900))]/80">
                   {c.status}
                 </span>
               </div>
               {c.expires_at && (
-                <p className="mt-3 text-xs text-ink-500">
+                <p className="mt-3 text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
                   Expires{" "}
                   {new Date(c.expires_at).toLocaleDateString(undefined, {
                     year: "numeric",

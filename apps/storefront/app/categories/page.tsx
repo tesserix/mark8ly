@@ -40,7 +40,7 @@ export default async function CategoriesIndexPage() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[color:var(--storefront-text,var(--ink-900))] opacity-55">
             Browse
           </p>
-          <h1 className="mt-4 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium text-[color:var(--storefront-text,var(--ink-900))] sm:text-5xl">
+          <h1 className="mt-4 font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-4xl font-medium text-[color:var(--storefront-text,var(--ink-900))] sm:text-5xl">
             Categories
           </h1>
           <p className="mt-4 text-base leading-7 text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
@@ -71,7 +71,7 @@ export default async function CategoriesIndexPage() {
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-55">
                     Collection
                   </p>
-                  <h2 className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl text-[color:var(--storefront-text,var(--ink-900))] transition-opacity group-hover:opacity-80">
+                  <h2 className="mt-2 font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl text-[color:var(--storefront-text,var(--ink-900))] transition-opacity group-hover:opacity-80">
                     {c.name}
                   </h2>
                 </Link>

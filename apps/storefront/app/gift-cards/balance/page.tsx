@@ -14,19 +14,19 @@ export default async function GiftCardBalancePage() {
       <StorefrontNav />
       <main id="main" className="mx-auto max-w-2xl px-6 py-16 sm:px-8">
         <header className="space-y-3">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-ink-500">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))]/60">
             Gift cards
           </p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium tracking-tight text-ink-900">
+          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-4xl font-medium tracking-tight text-[color:var(--storefront-text,var(--ink-900))]">
             Check your balance
           </h1>
-          <p className="text-base leading-7 text-ink-700">
+          <p className="text-base leading-7 text-[color:var(--storefront-text,var(--ink-900))]/80">
             Enter your gift card code below. Dashes and spaces are fine — we'll
             sort the rest out.
           </p>
         </header>
 
-        <hr className="my-10 border-ink-200" />
+        <hr className="my-10 border-[color:var(--storefront-text,var(--ink-900))]/20" />
 
         <GiftCardBalanceForm storeSlug={storeSlug} />
       </main>

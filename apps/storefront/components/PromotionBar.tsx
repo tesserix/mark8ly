@@ -50,7 +50,9 @@ function CampaignStrip({ promotion }: { promotion: ActivePromotion }) {
   }, [promotion.coupon_code]);
 
   return (
-    <div className="bg-ink-900 text-paper-200">
+    <div
+      className="bg-[color:var(--storefront-text)] text-[color:var(--storefront-background)]"
+    >
       <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 py-2.5 text-sm">
         <p className="text-center">{promotion.label}</p>
 
@@ -58,7 +60,7 @@ function CampaignStrip({ promotion }: { promotion: ActivePromotion }) {
           <button
             type="button"
             onClick={copyCode}
-            className="inline-flex items-center gap-1.5 rounded border border-paper-200/20 bg-paper-200/10 px-2.5 py-1 font-mono text-xs font-medium tracking-wider transition hover:bg-paper-200/20"
+            className="inline-flex items-center gap-1.5 rounded border border-[color:var(--storefront-background)]/20 bg-[color:var(--storefront-background)]/10 px-2.5 py-1 font-mono text-xs font-medium tracking-wider transition hover:bg-[color:var(--storefront-background)]/20"
           >
             {promotion.coupon_code}
             {copied ? (
@@ -91,7 +93,7 @@ function AnnouncementStrip({
 
   return (
     <div
-      className="bg-ink-900 text-paper-200 px-4 py-2.5"
+      className="bg-[color:var(--storefront-text)] text-[color:var(--storefront-background)] px-4 py-2.5"
       style={style}
     >
       <div className="mx-auto max-w-7xl">

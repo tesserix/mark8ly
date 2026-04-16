@@ -106,7 +106,7 @@ export function GiftCardPurchaseForm({
 
       {/* Amount */}
       <section className="space-y-3">
-        <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-ink-500">
+        <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--storefront-text,var(--ink-900))]/60">
           Amount
         </h2>
         <div className="flex flex-wrap gap-2">
@@ -117,8 +117,8 @@ export function GiftCardPurchaseForm({
               onClick={() => setAmount(String(preset))}
               className={`rounded-md border px-4 py-2 text-sm font-medium transition ${
                 amount === String(preset)
-                  ? "border-ink-900 bg-ink-900 text-paper-200"
-                  : "border-ink-200 bg-white text-ink-900 hover:border-ink-400"
+                  ? "border-[color:var(--storefront-text,var(--ink-900))] bg-[color:var(--storefront-text,var(--ink-900))] text-[color:var(--storefront-background,var(--paper-200))]"
+                  : "border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] text-[color:var(--storefront-text,var(--ink-900))] hover:border-[color:var(--storefront-text,var(--ink-900))]/40"
               }`}
             >
               {preset} {currency}
@@ -134,41 +134,41 @@ export function GiftCardPurchaseForm({
             onChange={(e) => setAmount(e.target.value)}
             required
             placeholder="50.00"
-            className="flex-1 rounded-md border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="flex-1 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-4 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/40 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
-          <span className="inline-flex items-center rounded-md border border-ink-200 bg-paper-200 px-3 font-mono text-sm font-medium text-ink-700">
+          <span className="inline-flex items-center rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-background,var(--paper-200))] px-3 font-mono text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]/80">
             {currency}
           </span>
         </div>
       </section>
 
-      <hr className="border-ink-200" />
+      <hr className="border-[color:var(--storefront-text,var(--ink-900))]/20" />
 
       {/* Purchaser */}
       <section className="space-y-3">
-        <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-ink-500">
+        <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--storefront-text,var(--ink-900))]/60">
           Your details
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className="text-sm font-medium text-ink-900">Your name</span>
+            <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">Your name</span>
             <input
               type="text"
               value={purchaserName}
               onChange={(e) => setPurchaserName(e.target.value)}
               placeholder="For your receipt"
-              className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
           <label className="block">
-            <span className="text-sm font-medium text-ink-900">Your email *</span>
+            <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">Your email *</span>
             <input
               type="email"
               value={purchaserEmail}
               onChange={(e) => setPurchaserEmail(e.target.value)}
               required
               placeholder="you@example.com"
-              className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
         </div>
@@ -176,12 +176,12 @@ export function GiftCardPurchaseForm({
 
       {/* Recipient */}
       <section className="space-y-3">
-        <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-ink-500">
+        <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--storefront-text,var(--ink-900))]/60">
           Recipient
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className="text-sm font-medium text-ink-900">
+            <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
               Recipient name
             </span>
             <input
@@ -189,11 +189,11 @@ export function GiftCardPurchaseForm({
               value={recipientName}
               onChange={(e) => setRecipientName(e.target.value)}
               placeholder="Optional — shown in the email"
-              className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
           <label className="block">
-            <span className="text-sm font-medium text-ink-900">
+            <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
               Recipient email *
             </span>
             <input
@@ -202,12 +202,12 @@ export function GiftCardPurchaseForm({
               onChange={(e) => setRecipientEmail(e.target.value)}
               required
               placeholder="gift-recipient@example.com"
-              className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
         </div>
         <label className="block">
-          <span className="text-sm font-medium text-ink-900">
+          <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
             Your name as sender
           </span>
           <input
@@ -215,11 +215,11 @@ export function GiftCardPurchaseForm({
             value={senderName}
             onChange={(e) => setSenderName(e.target.value)}
             placeholder='Appears as "From …" in the email'
-            className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
         </label>
         <label className="block">
-          <span className="text-sm font-medium text-ink-900">
+          <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
             Personal message (optional)
           </span>
           <textarea
@@ -228,16 +228,16 @@ export function GiftCardPurchaseForm({
             rows={3}
             maxLength={500}
             placeholder="Write a short note for the recipient"
-            className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
         </label>
       </section>
 
-      <hr className="border-ink-200" />
+      <hr className="border-[color:var(--storefront-text,var(--ink-900))]/20" />
 
       {/* Expiry */}
       <section className="space-y-3">
-        <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-ink-500">
+        <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--storefront-text,var(--ink-900))]/60">
           Expiry (optional)
         </h2>
         <label className="block max-w-xs">
@@ -245,7 +245,7 @@ export function GiftCardPurchaseForm({
             type="date"
             value={expiresAt}
             onChange={(e) => setExpiresAt(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
         </label>
       </section>
@@ -255,11 +255,11 @@ export function GiftCardPurchaseForm({
         <button
           type="submit"
           disabled={submitting}
-          className="inline-flex items-center justify-center rounded-md bg-ink-900 px-6 py-3 text-sm font-medium text-paper-200 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center justify-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-background,var(--paper-200))] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? "Redirecting..." : "Continue to payment"}
         </button>
-        <p className="mt-3 text-xs text-ink-500">
+        <p className="mt-3 text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
           Payment is handled securely by Stripe. You'll be redirected to
           complete checkout.
         </p>

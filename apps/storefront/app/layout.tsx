@@ -176,13 +176,21 @@ export default async function RootLayout({ children }: RootLayoutProps) {
   // page inherits the merchant's font + radius + color choices.
   // Without this the storefront rendered with the browser's default
   // body font regardless of what they picked in /settings/themes.
-  const themeStyle = store?.storefront_theme
-    ? (themeCssVariables(normalizeStorefrontTheme(store.storefront_theme)) as Record<string, string>)
+  const normalizedTheme = store?.storefront_theme
+    ? normalizeStorefrontTheme(store.storefront_theme)
+    : null;
+  const themeStyle = normalizedTheme
+    ? (themeCssVariables(normalizedTheme) as Record<string, string>)
     : undefined;
 
   return (
     <html lang="en" className={fontVars}>
-      <body style={themeStyle}>
+      <body
+        style={themeStyle}
+        data-motion={normalizedTheme?.motion ?? "subtle"}
+        data-density={normalizedTheme?.density ?? "balanced"}
+        data-radius={normalizedTheme?.radius ?? "soft"}
+      >
         <SkipLink />
         <PromotionBar
           promotion={brandingData?.active_promotion}

@@ -26,27 +26,27 @@ export default async function GiftCardPurchaseSuccessPage({
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-[color:var(--storefront-accent,theme(colors.moss.700))]">
             Payment received
           </p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium tracking-tight text-ink-900">
+          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-4xl font-medium tracking-tight text-[color:var(--storefront-text,var(--ink-900))]">
             Your gift card is on its way.
           </h1>
-          <p className="text-base leading-7 text-ink-700">
+          <p className="text-base leading-7 text-[color:var(--storefront-text,var(--ink-900))]/80">
             Thanks for your purchase. The recipient will receive the gift card
             by email in the next few moments. If they don't see it, ask them to
             check spam.
           </p>
         </header>
 
-        <hr className="my-10 border-ink-200" />
+        <hr className="my-10 border-[color:var(--storefront-text,var(--ink-900))]/20" />
 
-        <div className="space-y-4 text-sm text-ink-700">
+        <div className="space-y-4 text-sm text-[color:var(--storefront-text,var(--ink-900))]/80">
           <p>
             A receipt has been sent to the email address you provided at
             checkout. You can keep that email for your records.
           </p>
           {session_id && (
-            <p className="text-xs text-ink-500">
+            <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
               Transaction reference:{" "}
-              <span className="font-mono text-ink-700 break-all">
+              <span className="font-mono text-[color:var(--storefront-text,var(--ink-900))]/80 break-all">
                 {session_id}
               </span>
             </p>
@@ -56,13 +56,13 @@ export default async function GiftCardPurchaseSuccessPage({
         <div className="mt-12 flex gap-3">
           <Link
             href="/"
-            className="inline-flex items-center rounded-md bg-ink-900 px-5 py-2.5 text-sm font-medium text-paper-200 transition hover:bg-ink-800"
+            className="inline-flex items-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-5 py-2.5 text-sm font-medium text-[color:var(--storefront-background,var(--paper-200))] transition hover:opacity-90"
           >
             Continue shopping
           </Link>
           <Link
             href="/gift-cards/balance"
-            className="inline-flex items-center rounded-md border border-ink-200 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-ink-50"
+            className="inline-flex items-center rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 px-5 py-2.5 text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))] transition hover:bg-[color:var(--storefront-text,var(--ink-900))]/5"
           >
             Check balance
           </Link>

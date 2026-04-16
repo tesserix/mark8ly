@@ -70,7 +70,7 @@ func (h *DomainsHandler) List(c *gin.Context) {
 		out = append(out, toDomainResponse(d))
 	}
 
-	c.JSON(http.StatusOK, gin.H{"domains": out})
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 type AddDomainRequest struct {
@@ -123,7 +123,7 @@ func (h *DomainsHandler) Add(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, toDomainResponse(*d))
+	c.JSON(http.StatusCreated, gin.H{"data": toDomainResponse(*d)})
 }
 
 func (h *DomainsHandler) Remove(c *gin.Context) {
@@ -164,7 +164,7 @@ func (h *DomainsHandler) Verify(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toDomainResponse(*d))
+	c.JSON(http.StatusOK, gin.H{"data": toDomainResponse(*d)})
 }
 
 // ResolveDomain handles GET /storefront/resolve-domain?domain=x — public,

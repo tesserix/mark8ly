@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -60,6 +61,12 @@ func (gormRepository) GetByID(ctx context.Context, db *gorm.DB, storeID, id uuid
 
 func (gormRepository) Create(ctx context.Context, db *gorm.DB, d *CustomDomain) error {
 	if err := db.WithContext(ctx).Create(d).Error; err != nil {
+		// Translate unique constraint violations to a friendly error so
+		// the admin UI can show "already exists" instead of a raw 500.
+		if strings.Contains(err.Error(), "custom_domains_domain_key") ||
+			strings.Contains(err.Error(), "SQLSTATE 23505") {
+			return apperrors.ValidationFailed("domain", "this domain is already connected to a store")
+		}
 		return fmt.Errorf("domain create: %w", err)
 	}
 	return nil

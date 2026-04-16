@@ -22,12 +22,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
+	"github.com/mark8ly/auth-bff/internal/usersessions"
 )
 
 // Service is the autologin business logic.
@@ -35,6 +37,8 @@ type Service struct {
 	gip      gip.Verifier
 	fga      authz.Client
 	sessions *session.Manager
+	registry *usersessions.Repository
+	logger   *slog.Logger
 	policy   RetryPolicy
 }
 
@@ -54,6 +58,11 @@ type Config struct {
 	GIP      gip.Verifier
 	FGA      authz.Client
 	Sessions *session.Manager
+	// Registry is the side-table of active sessions. Optional — when
+	// nil, the autologin path still mints JWT cookies normally and the
+	// admin "Active sessions" UI just stays empty.
+	Registry *usersessions.Repository
+	Logger   *slog.Logger
 	Policy   RetryPolicy
 }
 
@@ -73,6 +82,8 @@ func NewService(cfg Config) *Service {
 		gip:      cfg.GIP,
 		fga:      cfg.FGA,
 		sessions: cfg.Sessions,
+		registry: cfg.Registry,
+		logger:   cfg.Logger,
 		policy:   p,
 	}
 }
@@ -82,6 +93,11 @@ type Request struct {
 	IDToken          string // Firebase/GIP ID token from the frontend
 	ExpectedTenantID string // The GIP tenant pool we expect (e.g. MP-Internal-...)
 	WorkspaceTenant  string // The Mark8ly tenant UUID the user is logging into
+	// Client metadata captured for the sessions UI. Best-effort — when
+	// any field is empty, the row shows a sensible placeholder ("Browser").
+	Device    string
+	IPAddress string
+	UserAgent string
 }
 
 // Result is what AutoLogin returns on success.
@@ -131,6 +147,25 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 		TenantID: req.WorkspaceTenant,
 	}); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrSessionMintFail, err)
+	}
+
+	// Step 4 (best-effort): record the new session in the registry for
+	// the admin "Active sessions" UI. A DB failure here must not break
+	// login — the user is already authenticated and the cookie is set.
+	if s.registry != nil {
+		device := req.Device
+		if device == "" {
+			device = "Browser"
+		}
+		if _, err := s.registry.Create(ctx, usersessions.CreateParams{
+			UserID:    tok.UID,
+			TenantID:  req.WorkspaceTenant,
+			Device:    device,
+			IPAddress: req.IPAddress,
+			UserAgent: req.UserAgent,
+		}); err != nil && s.logger != nil {
+			s.logger.Warn("usersessions: create failed", "err", err, "user_id", tok.UID)
+		}
 	}
 
 	return &Result{

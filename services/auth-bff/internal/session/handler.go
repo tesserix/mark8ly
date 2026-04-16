@@ -3,10 +3,13 @@ package session
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/mark8ly/auth-bff/internal/usersessions"
 )
 
 // FGAChecker is the subset of the authz.Client interface that the
@@ -21,8 +24,10 @@ type FGAChecker interface {
 // in the same package as Manager because these routes are the only two
 // callers of Read/Clear outside the autologin mint path.
 type Handler struct {
-	mgr *Manager
-	fga FGAChecker // may be nil in dev if OpenFGA init failed
+	mgr      *Manager
+	fga      FGAChecker // may be nil in dev if OpenFGA init failed
+	registry *usersessions.Repository
+	logger   *slog.Logger
 }
 
 // NewHandler constructs a Handler over the given Manager.
@@ -30,8 +35,18 @@ type Handler struct {
 // fga may be nil — dev without OpenFGA degrades the switch-tenant
 // endpoint to "allow any target id", consistent with the rest of the
 // platform-api Phase O/P fallbacks. Never deploy to prod with fga nil.
+// registry and logger are optional — when nil, the active-sessions UI
+// simply shows no sessions.
 func NewHandler(mgr *Manager, fga FGAChecker) *Handler {
 	return &Handler{mgr: mgr, fga: fga}
+}
+
+// WithRegistry wires the user_sessions registry + logger. Nil-safe:
+// the list/revoke endpoints return empty / no-op when registry is nil.
+func (h *Handler) WithRegistry(r *usersessions.Repository, logger *slog.Logger) *Handler {
+	h.registry = r
+	h.logger = logger
+	return h
 }
 
 // Register mounts the session routes onto the given gin.RouterGroup.
@@ -39,15 +54,23 @@ func NewHandler(mgr *Manager, fga FGAChecker) *Handler {
 //	GET  /auth/session          — returns { user_id, email, tenant_id }
 //	POST /auth/logout           — clears the session cookie
 //	POST /auth/switch-tenant    — re-mints the cookie with a new tenant_id
+//	GET  /api/v1/sessions       — list active sessions for the current user
+//	DELETE /api/v1/sessions/:id — revoke a single session row
 //
-// All three are deliberately simple: no DB lookup, no tenant row
-// resolution. The cookie IS the session; anything that needs more than
-// what's encoded in it should call platform-api directly.
+// The cookie IS the session for auth purposes; the list/revoke endpoints
+// read/write the side-registry used by the admin "Active sessions" UI.
 func (h *Handler) Register(r *gin.RouterGroup) {
 	r.GET("/session", h.getSession)
 	r.POST("/logout", h.logout)
 	r.POST("/switch-tenant", h.switchTenant)
 	r.POST("/switch-store", h.switchStore)
+}
+
+// RegisterAPI mounts the /api/v1 subset of session routes. Kept separate
+// from Register so main.go can pick the mount path per route group.
+func (h *Handler) RegisterAPI(r *gin.RouterGroup) {
+	r.GET("/sessions", h.listSessions)
+	r.DELETE("/sessions/:id", h.revokeSession)
 }
 
 // sessionResponse is the JSON shape handed back to authenticated
@@ -100,12 +123,130 @@ func (h *Handler) getSession(c *gin.Context) {
 	})
 }
 
-// logout clears the session cookie. Always returns 200 — logging out
-// when you're already logged out is not an error, and returning the
-// same status for both cases saves the client a branch.
+// logout clears the session cookie and revokes every active registry
+// row for the user. Always returns 200 — logging out when you're
+// already logged out is not an error.
 func (h *Handler) logout(c *gin.Context) {
+	// Best-effort revoke before clearing the cookie so we can still read
+	// the user id from the existing session.
+	if h.registry != nil {
+		if existing, err := h.mgr.Read(c.Request); err == nil && existing != nil {
+			if err := h.registry.RevokeAllForUser(c.Request.Context(), existing.UID); err != nil && h.logger != nil {
+				h.logger.Warn("usersessions: revoke-all on logout failed", "err", err, "user_id", existing.UID)
+			}
+		}
+	}
 	h.mgr.Clear(c.Writer)
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"logged_out": true}})
+}
+
+// sessionRow is the wire shape for a single session in the list response.
+// Field names match AccountSession in apps/admin/lib/api/settings-tier2-api.ts.
+type sessionRow struct {
+	ID         string `json:"id"`
+	Device     string `json:"device"`
+	IPAddress  string `json:"ip_address"`
+	LastActive string `json:"last_active"`
+	Current    bool   `json:"current"`
+}
+
+// listSessions handles GET /api/v1/sessions — returns every non-revoked
+// session row for the requesting user. User is identified by the
+// X-User-Id header forwarded by marketplace-api (which itself extracts
+// it from the session cookie).
+func (h *Handler) listSessions(c *gin.Context) {
+	userID := c.GetHeader("X-User-Id")
+	if userID == "" {
+		// Fall back to the cookie for direct auth-bff calls.
+		if s, err := h.mgr.Read(c.Request); err == nil && s != nil {
+			userID = s.UID
+		}
+	}
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "no_session",
+			"message": "no user context on request",
+		})
+		return
+	}
+	if h.registry == nil {
+		c.JSON(http.StatusOK, gin.H{"data": []sessionRow{}})
+		return
+	}
+
+	rows, err := h.registry.ListForUser(c.Request.Context(), userID)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("usersessions: list failed", "err", err, "user_id", userID)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal_error",
+			"message": "failed to list sessions",
+		})
+		return
+	}
+
+	out := make([]sessionRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, sessionRow{
+			ID:         r.ID,
+			Device:     r.Device,
+			IPAddress:  r.IPAddress,
+			LastActive: r.LastActiveAt.UTC().Format(time.RFC3339),
+			// "Current" marker deferred: needs session_id inside the
+			// JWT cookie payload to correlate registry row → request.
+			Current: false,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
+// revokeSession handles DELETE /api/v1/sessions/:id — marks one row
+// revoked. User scoping is enforced inside the repository.
+func (h *Handler) revokeSession(c *gin.Context) {
+	userID := c.GetHeader("X-User-Id")
+	if userID == "" {
+		if s, err := h.mgr.Read(c.Request); err == nil && s != nil {
+			userID = s.UID
+		}
+	}
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "no_session",
+			"message": "no user context on request",
+		})
+		return
+	}
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_id",
+			"message": "session id is required",
+		})
+		return
+	}
+	if h.registry == nil {
+		c.Status(http.StatusNoContent)
+		return
+	}
+	err := h.registry.Revoke(c.Request.Context(), id, userID)
+	switch {
+	case err == nil:
+		c.Status(http.StatusNoContent)
+	case errors.Is(err, usersessions.ErrNotOwned):
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "forbidden",
+			"message": "session does not belong to the current user",
+		})
+	default:
+		if h.logger != nil {
+			h.logger.Error("usersessions: revoke failed", "err", err, "user_id", userID, "session_id", id)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal_error",
+			"message": "failed to revoke session",
+		})
+	}
 }
 
 // switchTenantRequest is the body shape for POST /auth/switch-tenant.

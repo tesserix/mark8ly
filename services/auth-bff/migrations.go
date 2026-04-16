@@ -6,4 +6,4 @@ import "embed"
 var MigrationsFS embed.FS
 
 // ExpectedSchemaVersion is the version cmd/server requires on startup.
-const ExpectedSchemaVersion uint = 1
+const ExpectedSchemaVersion uint = 2

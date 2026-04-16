@@ -3,9 +3,35 @@ package autologin
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+// deviceFromUA produces a short, human-readable device label from a
+// User-Agent string. Intentionally crude — users just need to tell
+// their laptop from their phone in the "Active sessions" list.
+func deviceFromUA(ua string) string {
+	ua = strings.ToLower(ua)
+	switch {
+	case ua == "":
+		return "Unknown device"
+	case strings.Contains(ua, "iphone"):
+		return "iPhone"
+	case strings.Contains(ua, "ipad"):
+		return "iPad"
+	case strings.Contains(ua, "android"):
+		return "Android"
+	case strings.Contains(ua, "mac os x"), strings.Contains(ua, "macintosh"):
+		return "Mac"
+	case strings.Contains(ua, "windows"):
+		return "Windows"
+	case strings.Contains(ua, "linux"):
+		return "Linux"
+	default:
+		return "Browser"
+	}
+}
 
 // Handler is the HTTP layer for autologin.
 type Handler struct {
@@ -46,6 +72,9 @@ func (h *Handler) autoLogin(c *gin.Context) {
 		IDToken:          req.IDToken,
 		ExpectedTenantID: req.ExpectedTenantID,
 		WorkspaceTenant:  req.WorkspaceTenant,
+		Device:           deviceFromUA(c.Request.UserAgent()),
+		IPAddress:        c.ClientIP(),
+		UserAgent:        c.Request.UserAgent(),
 	})
 	if err != nil {
 		respondError(c, err)

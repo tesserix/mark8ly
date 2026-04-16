@@ -7,15 +7,19 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"os/signal"
 	"syscall"
 	"time"
+
+	_ "github.com/lib/pq"
 
 	authbff "github.com/mark8ly/auth-bff"
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/autologin"
 	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
+	"github.com/mark8ly/auth-bff/internal/usersessions"
 	"github.com/mark8ly/auth-bff/pkg/config"
 	"github.com/mark8ly/auth-bff/pkg/httpserver"
 	"github.com/mark8ly/auth-bff/pkg/logger"
@@ -39,6 +43,25 @@ func main() {
 		log.Error("schema version mismatch — run migrations first", "err", err)
 		panic(err)
 	}
+
+	// ─── DB connection for the user_sessions registry ──────────────────
+	// database/sql + lib/pq — lightweight, no ORM. The auth flow does
+	// not need one; the registry just needs simple insert/select.
+	dbConn, err := sql.Open("postgres", cfg.DatabaseURL)
+	if err != nil {
+		log.Error("db: open", "err", err)
+		panic(err)
+	}
+	dbConn.SetMaxOpenConns(5)
+	dbConn.SetMaxIdleConns(2)
+	dbConn.SetConnMaxLifetime(30 * time.Minute)
+	if err := dbConn.Ping(); err != nil {
+		log.Error("db: ping", "err", err)
+		panic(err)
+	}
+	defer dbConn.Close()
+
+	sessionRegistry := usersessions.NewRepository(dbConn)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -99,17 +122,26 @@ func main() {
 		GIP:      verifier,
 		FGA:      fgaClient,
 		Sessions: sessions,
+		Registry: sessionRegistry,
+		Logger:   log,
 	})
 	autologinHandler := autologin.NewHandler(autologinSvc)
 
 	// ─── Session introspection + logout ────────────────────────────────
-	sessionHandler := session.NewHandler(sessions, fgaClient)
+	sessionHandler := session.NewHandler(sessions, fgaClient).
+		WithRegistry(sessionRegistry, log)
 
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)
 	v1 := r.Group("/auth")
 	autologinHandler.Register(v1)
 	sessionHandler.Register(v1)
+
+	// /api/v1 surface consumed by marketplace-api's account handler,
+	// which proxies admin UI requests through to us. Kept separate from
+	// /auth so the existing login + cookie routes stay untouched.
+	apiV1 := r.Group("/api/v1")
+	sessionHandler.RegisterAPI(apiV1)
 
 	if err := httpserver.Run(ctx, cfg.HTTPPort, r, log); err != nil {
 		log.Error("http server", "err", err)

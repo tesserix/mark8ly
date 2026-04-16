@@ -446,26 +446,20 @@ func (h *OrderDetailHandler) Cancel(c *gin.Context) {
 		return
 	}
 
-	// Belt-and-braces shipment guard — once a shipment is in flight the
-	// customer can't self-cancel; they need to contact support for a
-	// return-to-sender + refund.
-	var shipStatus string
-	row := h.db.WithContext(c.Request.Context()).
+	// Shipment guard — the customer cannot self-cancel once the merchant
+	// has cut a shipping label, regardless of whether the parcel is
+	// physically moving yet. From that moment the right operation is a
+	// return + refund, not a cancellation.
+	var shipCount int64
+	if err := h.db.WithContext(c.Request.Context()).
 		Table("shipments").
-		Select("status").
 		Where("order_id = ?", orderID).
-		Order("created_at DESC").
-		Limit(1).
-		Row()
-	if scanErr := row.Scan(&shipStatus); scanErr == nil {
-		switch shipStatus {
-		case "in_transit", "out_for_delivery", "delivered":
-			c.JSON(http.StatusConflict, gin.H{
-				"error":   "shipment_in_flight",
-				"message": "Your order has already shipped — please contact support to arrange a return and refund.",
-			})
-			return
-		}
+		Count(&shipCount).Error; err == nil && shipCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "shipment_in_flight",
+			"message": "Your order has already been picked up for delivery — please reply to your order confirmation email to arrange a return and refund.",
+		})
+		return
 	}
 
 	var req CancelRequest

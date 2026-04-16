@@ -21,7 +21,6 @@ interface Props {
 }
 
 const CANCELLABLE_ORDER_STATUSES = new Set(["pending", "confirmed"]);
-const SHIPMENT_BLOCKS = new Set(["in_transit", "out_for_delivery", "delivered"]);
 
 export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Props) {
   const router = useRouter();
@@ -31,7 +30,11 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
   const [error, setError] = useState<string | null>(null);
 
   const orderCancellable = CANCELLABLE_ORDER_STATUSES.has(orderStatus);
-  const shipmentBlocks = shipmentStatus !== null && SHIPMENT_BLOCKS.has(shipmentStatus);
+  // Once the merchant has cut a shipping label (any shipment row exists,
+  // regardless of its status) the order is in flight from the store's
+  // perspective — cancellation isn't safe and the customer needs to use
+  // the return path instead.
+  const shipmentBlocks = shipmentStatus !== null;
 
   if (!orderCancellable || step === "done") {
     if (step === "done") {
@@ -48,8 +51,9 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
   if (shipmentBlocks) {
     return (
       <section className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))]/40 px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]/70">
-        This order has already shipped — please reply to your order
-        confirmation email to arrange a return and refund.
+        Your order has been picked up for delivery — cancellation is no
+        longer available. To return it, reply to your order confirmation
+        email and we'll arrange a return + refund.
       </section>
     );
   }

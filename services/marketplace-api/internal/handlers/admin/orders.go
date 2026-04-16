@@ -88,29 +88,30 @@ func (h *OrdersHandler) dispatchRefundEmail(orderID uuid.UUID, refundAmount, tot
 	}()
 }
 
-// shipmentBlocksCancel returns true when the order has a shipment that
-// has already been dispatched (in_transit / out_for_delivery / delivered).
-// In those states cancellation is unsafe — the merchant should issue a
-// refund + return-to-sender instead.
+// shipmentBlocksCancel returns true when ANY shipment row exists for
+// the order. The store owner has "started delivery" the moment they cut
+// a shipping label — the carrier has been notified, the package is being
+// picked / packed, and there's typically a non-refundable shipping fee
+// already on the books. From that point on the right operation is a
+// refund (+ return-to-sender if the parcel is in transit), not a cancel.
+//
+// We deliberately do NOT inspect the shipment's status here: even a
+// freshly-created shipment in "pending" or "created" state should block
+// cancel — the act of generating the label is what kicks off delivery.
 func (h *OrdersHandler) shipmentBlocksCancel(ctx context.Context, orderID uuid.UUID) bool {
-	var status string
-	row := h.db.WithContext(ctx).
+	var count int64
+	if err := h.db.WithContext(ctx).
 		Table("shipments").
-		Select("status").
 		Where("order_id = ?", orderID).
-		Order("created_at DESC").
-		Limit(1).
-		Row()
-	if err := row.Scan(&status); err != nil {
-		// No shipment, or scan failed — let the cancel proceed; the
-		// state-machine guard in service.Cancel still catches fulfilled.
+		Count(&count).Error; err != nil {
+		// DB error — fail open so a transient issue doesn't trap a
+		// merchant who legitimately needs to cancel. The state-machine
+		// guard in service.Cancel still catches fulfilled orders.
+		h.logger.Warn("shipmentBlocksCancel: count failed",
+			"order_id", orderID, "err", err)
 		return false
 	}
-	switch status {
-	case "in_transit", "out_for_delivery", "delivered":
-		return true
-	}
-	return false
+	return count > 0
 }
 
 // List handles GET /admin/stores/:storeId/orders.
@@ -368,7 +369,7 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 	if h.shipmentBlocksCancel(c.Request.Context(), id) {
 		c.JSON(http.StatusConflict, gin.H{
 			"error":   "shipment_in_flight",
-			"message": "Cancel is unavailable once a shipment has dispatched. Issue a refund or arrange a return instead.",
+			"message": "Cancel is unavailable once a shipping label has been generated. Issue a refund (and arrange a return-to-sender if the parcel is in transit) instead.",
 		})
 		return
 	}

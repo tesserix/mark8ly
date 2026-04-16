@@ -182,8 +182,16 @@ func (h *DomainsHandler) ResolveDomain(c *gin.Context) {
 		return
 	}
 
+	// Look up the actual store slug — not the cname_target, which is
+	// now a generic edge hostname shared by all custom domains.
+	store, err := h.storeRepo.GetByIDForTenant(c.Request.Context(), d.StoreID.String(), d.TenantID.String())
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "store not found"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"store_id": d.StoreID.String(),
-		"slug":     d.CnameTarget,
+		"slug":     store.Slug,
 	})
 }

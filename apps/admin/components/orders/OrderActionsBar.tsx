@@ -260,7 +260,7 @@ function FormError({ error }: { error: OrderActionResult["error"] | undefined })
   if (!error) return null;
   return (
     <p role="alert" className="text-sm text-[color:var(--danger,#5a1010)]">
-      {error.message}
+      {error.message || "Something went wrong. Please try again."}
     </p>
   );
 }
@@ -356,9 +356,6 @@ function CancelForm({ storeId, orderId, customerEmail, onDone }: CancelFormProps
     setError(undefined);
     startTransition(async () => {
       const r = await cancelOrderAction(storeId, orderId, { reason });
-      if (typeof window !== "undefined") {
-        console.log("[cancel-debug] result", JSON.stringify(r));
-      }
       if (!r.ok) {
         setError(r.error);
         setStep("form");

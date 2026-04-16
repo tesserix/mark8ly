@@ -143,12 +143,6 @@ export async function cancelOrderAction(
     { reason: input.reason.trim() },
     { userId: ctx.userId, tenantId: ctx.tenantId },
   );
-  console.log(
-    `[cancel-debug-server] orderId=${orderId} storeId=${ctx.storeId} userId=${ctx.userId} tenantId=${ctx.tenantId} ok=${result.ok}` +
-    (!result.ok
-      ? ` err.code=${result.error.code} err.msg=${JSON.stringify(result.error.message)} err.details=${JSON.stringify(result.error.details ?? null)}`
-      : ""),
-  );
   if (!result.ok) {
     return { ok: false, error: { code: result.error.code, message: result.error.message } };
   }

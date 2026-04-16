@@ -287,14 +287,18 @@ func (s *Service) Cancel(ctx context.Context, tx *gorm.DB, orderID uuid.UUID, re
 		if !OrderStatus(o.Status).CanTransitionTo(OrderStatusCancelled) {
 			return apperrors.InvalidTransition("order", o.Status, string(OrderStatusCancelled))
 		}
-		if err := s.repo.UpdateOrderStatus(tx, orderID, OrderStatusCancelled); err != nil {
-			return err
+		res := tx.Model(&Order{}).
+			Where("id = ? AND deleted_at IS NULL", orderID).
+			Updates(map[string]any{
+				"status":       string(OrderStatusCancelled),
+				"cancelled_at": gorm.Expr("now()"),
+				"updated_at":   gorm.Expr("now()"),
+			})
+		if res.Error != nil {
+			return res.Error
 		}
-		// Stamp cancelled_at via a separate UPDATE — keeps repository methods
-		// single-purpose.
-		if err := tx.Model(&Order{}).Where("id = ?", orderID).
-			Update("cancelled_at", gorm.Expr("now()")).Error; err != nil {
-			return err
+		if res.RowsAffected == 0 {
+			return apperrors.NotFound("order")
 		}
 		if err := s.repo.AppendEvent(tx, &OrderEvent{
 			OrderID: orderID,

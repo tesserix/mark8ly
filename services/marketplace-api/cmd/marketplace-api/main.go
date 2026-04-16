@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/branding"
@@ -180,6 +181,11 @@ func main() {
 	// brandingSeeder is non-nil only when MARKETPLACE_API_ENABLE_TEST_ROUTES=true.
 	// Declared at func scope so the later route-mount block can see it.
 	var brandingSeeder *testroutes.BrandingSeeder
+	// auditEmitter is the async audit-log writer. Initialised inside the
+	// admin-mode block but declared here so handlers in other groups
+	// (storefront events, system jobs) can also call Emit, and so the
+	// shutdown path can drain it.
+	var auditEmitter *audit.Emitter
 	if m == mode.Admin || m == mode.Both {
 		productRepo := product.NewRepository(conn)
 		categoryRepo := category.NewRepository(conn)
@@ -374,8 +380,22 @@ func main() {
 		})
 		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, cfg.StripeBillingWebhookSecret, log)
 
-		// Settings S4 — Audit Logs.
-		auditLogsHandler := admin.NewAuditLogsHandler(cfg.AuditServiceURL, log)
+		// Settings S4 — Audit Logs. Native, in-process: events flow into
+		// the audit_logs table via auditEmitter from any handler that
+		// calls auditEmitter.Emit(c, audit.Event{...}).
+		auditRepo := audit.NewRepository()
+		auditEmitter = audit.NewEmitter(audit.EmitterConfig{
+			DB:     conn,
+			Repo:   auditRepo,
+			Logger: log,
+		})
+		auditLogsHandler := admin.NewAuditLogsHandler(conn, auditRepo, log)
+
+		// Wire the emitter into the handlers that own audited resources.
+		// brandingHandler is wired below where it's constructed.
+		ordersHandler.WithAudit(auditEmitter)
+		productHandler.WithAudit(auditEmitter)
+		domainsHandler.WithAudit(auditEmitter)
 
 		// Dashboard D1 wiring.
 		dashboardHandler := admin.NewDashboardHandler(conn, log)
@@ -407,6 +427,7 @@ func main() {
 		})
 		brandingHandler := admin.NewBrandingHandler(brandingSvc, log)
 		brandingHandler.SetUploader(uploader)
+		brandingHandler.WithAudit(auditEmitter)
 
 		// Test-only branding seeder. Wired only when
 		// MARKETPLACE_API_ENABLE_TEST_ROUTES=true so it can never leak
@@ -893,6 +914,12 @@ func main() {
 		case <-time.After(5 * time.Second):
 			log.Warn("campaign: send worker did not stop in time")
 		}
+	}
+	if auditEmitter != nil {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		auditEmitter.Stop(stopCtx)
+		stopCancel()
+		log.Info("audit emitter stopped")
 	}
 	log.Info("bye")
 }

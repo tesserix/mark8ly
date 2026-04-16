@@ -21,20 +21,28 @@ interface ApiError {
 }
 
 function commonHeaders(session: SessionHeaders): HeadersInit {
-  return {
+  const headers: Record<string, string> = {
     "X-User-Id": session.userId,
     "X-Tenant-Id": session.tenantId,
     Accept: "application/json",
     "Content-Type": "application/json",
   };
+  if (session.email) {
+    headers["X-User-Email"] = session.email;
+  }
+  return headers;
 }
 
 function readHeaders(session: SessionHeaders): HeadersInit {
-  return {
+  const headers: Record<string, string> = {
     "X-User-Id": session.userId,
     "X-Tenant-Id": session.tenantId,
     Accept: "application/json",
   };
+  if (session.email) {
+    headers["X-User-Email"] = session.email;
+  }
+  return headers;
 }
 
 async function parseMutationError(res: Response): Promise<MutationError> {

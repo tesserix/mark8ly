@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/domain"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -15,11 +16,19 @@ import (
 type DomainsHandler struct {
 	svc       *domain.Service
 	storeRepo stores.Repository
+	audit     *audit.Emitter // optional — nil-safe
 	logger    *slog.Logger
 }
 
 func NewDomainsHandler(svc *domain.Service, storeRepo stores.Repository, logger *slog.Logger) *DomainsHandler {
 	return &DomainsHandler{svc: svc, storeRepo: storeRepo, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so domain lifecycle events are
+// recorded. Nil-safe.
+func (h *DomainsHandler) WithAudit(e *audit.Emitter) *DomainsHandler {
+	h.audit = e
+	return h
 }
 
 type DomainResponse struct {
@@ -123,6 +132,15 @@ func (h *DomainsHandler) Add(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "domain.added",
+		ResourceType: "domain",
+		ResourceID:   d.ID.String(),
+		Metadata: map[string]any{
+			"domain":     d.Domain,
+			"dns_method": string(d.DNSMethod),
+		},
+	})
 	c.JSON(http.StatusCreated, gin.H{"data": toDomainResponse(*d)})
 }
 
@@ -143,6 +161,12 @@ func (h *DomainsHandler) Remove(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "domain.removed",
+		ResourceType: "domain",
+		ResourceID:   id.String(),
+		Severity:     audit.SeverityWarning,
+	})
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
 
@@ -164,6 +188,15 @@ func (h *DomainsHandler) Verify(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "domain.verified",
+		ResourceType: "domain",
+		ResourceID:   id.String(),
+		Metadata: map[string]any{
+			"domain": d.Domain,
+			"status": string(d.Status),
+		},
+	})
 	c.JSON(http.StatusOK, gin.H{"data": toDomainResponse(*d)})
 }
 
@@ -186,6 +219,14 @@ func (h *DomainsHandler) RefreshStatus(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	h.audit.Emit(c, audit.Event{
+		Action:       "domain.ssl_refreshed",
+		ResourceType: "domain",
+		ResourceID:   id.String(),
+		Metadata: map[string]any{
+			"ssl_status": string(d.SSLStatus),
+		},
+	})
 	c.JSON(http.StatusOK, gin.H{"data": toDomainResponse(*d)})
 }
 

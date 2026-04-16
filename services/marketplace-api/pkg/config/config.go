@@ -72,8 +72,6 @@ type Config struct {
 	// S3 — Stripe Billing keys.
 	StripeBillingSecretKey     string `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
 	StripeBillingWebhookSecret string `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
-	// S4 — Audit service URL for proxy.
-	AuditServiceURL string `envconfig:"AUDIT_SERVICE_URL" default:""`
 
 	// P0 — CORS allowed origins (comma-separated, storefront engine only).
 	CORSAllowedOrigins string `envconfig:"CORS_ALLOWED_ORIGINS" default:"https://*.mark8ly.com"`

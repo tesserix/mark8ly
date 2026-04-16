@@ -16,6 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -29,6 +30,7 @@ type OrdersHandler struct {
 	svc       *order.Service
 	repo      order.Repository
 	docMailer *orderdoc.Service // optional — nil disables auto-emails
+	audit     *audit.Emitter    // optional — nil-safe; Emit is no-op when nil
 	logger    *slog.Logger
 }
 
@@ -37,6 +39,14 @@ type OrdersHandler struct {
 // boot ordering when the mailer hasn't been wired yet).
 func NewOrdersHandler(db *gorm.DB, svc *order.Service, repo order.Repository, docMailer *orderdoc.Service, logger *slog.Logger) *OrdersHandler {
 	return &OrdersHandler{db: db, svc: svc, repo: repo, docMailer: docMailer, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so order lifecycle events show up
+// in Settings -> Audit Logs. Nil-safe — handlers without an emitter
+// still work; they just don't record audit rows.
+func (h *OrdersHandler) WithAudit(e *audit.Emitter) *OrdersHandler {
+	h.audit = e
+	return h
 }
 
 // dispatchInvoiceEmail fires the invoice email on a detached background
@@ -285,6 +295,18 @@ func (h *OrdersHandler) Create(c *gin.Context) {
 	if result.Reused {
 		status = http.StatusOK
 	}
+	if !result.Reused {
+		h.audit.Emit(c, audit.Event{
+			Action:       "order.created",
+			ResourceType: "order",
+			ResourceID:   result.Order.ID.String(),
+			Metadata: map[string]any{
+				"order_number": result.Order.OrderNumber,
+				"grand_total":  result.Order.GrandTotal,
+				"currency":     result.Order.CurrencyCode,
+			},
+		})
+	}
 	c.JSON(status, ToAdminOrderResponse(result.Order, result.Items, result.Addrs))
 }
 
@@ -312,6 +334,12 @@ func (h *OrdersHandler) Confirm(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	h.audit.Emit(c, audit.Event{
+		Action:       "order.confirmed",
+		ResourceType: "order",
+		ResourceID:   id.String(),
+		Metadata:     map[string]any{"reason": req.Reason},
+	})
 	// Order accepted — fire the invoice email. Detached so a SendGrid
 	// outage never blocks the confirm response.
 	h.dispatchInvoiceEmail(id)
@@ -338,6 +366,11 @@ func (h *OrdersHandler) MarkFulfilled(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	h.audit.Emit(c, audit.Event{
+		Action:       "order.fulfilled",
+		ResourceType: "order",
+		ResourceID:   id.String(),
+	})
 	o, items, addrs, err := h.repo.GetByID(c.Request.Context(), h.db, id)
 	if err != nil {
 		RespondErr(c, err, h.logger)
@@ -377,6 +410,13 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	h.audit.Emit(c, audit.Event{
+		Action:       "order.cancelled",
+		ResourceType: "order",
+		ResourceID:   id.String(),
+		Severity:     audit.SeverityWarning,
+		Metadata:     map[string]any{"reason": req.Reason},
+	})
 	// Cancellation succeeded — fire the customer email. Detached so a
 	// SendGrid blip never blocks the cancel response.
 	h.dispatchCancellationEmail(id, req.Reason, false)
@@ -418,6 +458,18 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	h.audit.Emit(c, audit.Event{
+		Action:       "order.refunded",
+		ResourceType: "order",
+		ResourceID:   id.String(),
+		Severity:     audit.SeverityWarning,
+		Metadata: map[string]any{
+			"refund_amount":    req.Amount,
+			"refunded_total":   o.RefundedAmount,
+			"payment_status":   req.PaymentStatus,
+			"reason":           req.Reason,
+		},
+	})
 	// Refund recorded — fire the customer email with this refund's
 	// amount + the running total. The post-refund order row already
 	// reflects the new refunded_amount.

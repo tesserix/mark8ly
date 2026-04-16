@@ -1,101 +1,197 @@
-// Package admin — audit_logs.go: HTTP handler for audit log endpoints
-// (Settings S4). Proxies requests to the audit-service.
+// Package admin — audit_logs.go: HTTP handler for the Settings -> Audit
+// Logs page. Reads from the in-process audit_logs table via the audit
+// repository (no external service).
 package admin
 
 import (
-	"fmt"
-	"io"
+	"encoding/csv"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
-// AuditLogsHandler handles /admin/stores/:storeId/audit-logs endpoints.
-// All calls proxy to the audit-service.
+// AuditLogsHandler serves /admin/stores/:storeId/audit-logs endpoints.
 type AuditLogsHandler struct {
-	auditServiceURL string
-	httpClient      *http.Client
-	logger          *slog.Logger
+	db     *gorm.DB
+	repo   audit.Repository
+	logger *slog.Logger
 }
 
-// NewAuditLogsHandler constructs an AuditLogsHandler.
-func NewAuditLogsHandler(auditServiceURL string, logger *slog.Logger) *AuditLogsHandler {
-	return &AuditLogsHandler{
-		auditServiceURL: strings.TrimRight(auditServiceURL, "/"),
-		httpClient:      &http.Client{Timeout: 30 * time.Second},
-		logger:          logger,
-	}
+// NewAuditLogsHandler constructs an AuditLogsHandler. db and repo are
+// required; logger is required for diagnostics.
+func NewAuditLogsHandler(db *gorm.DB, repo audit.Repository, logger *slog.Logger) *AuditLogsHandler {
+	return &AuditLogsHandler{db: db, repo: repo, logger: logger}
 }
 
-// List handles GET /admin/stores/:storeId/audit-logs — proxies to audit-service.
+// listResponse mirrors the AuditLogsResponse interface in
+// apps/admin/lib/api/settings-tier2-api.ts. Keep field names in sync.
+type listResponse struct {
+	Data []audit.Response `json:"data"`
+	Meta listMeta         `json:"meta"`
+}
+
+type listMeta struct {
+	Page       int   `json:"page"`
+	PageSize   int   `json:"page_size"`
+	Total      int64 `json:"total"`
+	TotalPages int64 `json:"total_pages"`
+}
+
+// List handles GET /admin/stores/:storeId/audit-logs.
 func (h *AuditLogsHandler) List(c *gin.Context) {
-	storeID, err := uuid.Parse(c.Param("storeId"))
+	filter, err := h.parseFilter(c)
 	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
+		RespondErr(c, err, h.logger)
 		return
 	}
 
-	h.proxyToAuditService(c, "GET", fmt.Sprintf("/api/v1/stores/%s/audit-logs?%s", storeID, c.Request.URL.RawQuery))
+	result, err := h.repo.List(c.Request.Context(), h.db, filter)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	out := listResponse{
+		Data: make([]audit.Response, 0, len(result.Entries)),
+		Meta: listMeta{
+			Page:       max(filter.Page, 1),
+			PageSize:   filter.PageSize,
+			Total:      result.Total,
+			TotalPages: totalPages(result.Total, filter.PageSize),
+		},
+	}
+	for _, e := range result.Entries {
+		out.Data = append(out.Data, e.ToResponse())
+	}
+
+	c.JSON(http.StatusOK, out)
 }
 
-// ExportCSV handles GET /admin/stores/:storeId/audit-logs/export — proxies to audit-service.
+// ExportCSV handles GET /admin/stores/:storeId/audit-logs/export.
+// Streams matching rows as CSV. Pagination is ignored.
 func (h *AuditLogsHandler) ExportCSV(c *gin.Context) {
-	storeID, err := uuid.Parse(c.Param("storeId"))
+	filter, err := h.parseFilter(c)
 	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
+		RespondErr(c, err, h.logger)
+		return
+	}
+	// Export ignores pagination — clear so the stream returns all rows.
+	filter.Page = 0
+	filter.PageSize = 0
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="audit-logs.csv"`)
+	c.Status(http.StatusOK)
+
+	w := csv.NewWriter(c.Writer)
+	defer w.Flush()
+
+	header := []string{
+		"id", "timestamp", "user_email", "action", "resource_type",
+		"resource_id", "status", "severity", "ip_address", "user_agent",
+	}
+	if err := w.Write(header); err != nil {
+		h.logger.Error("audit export: write header", "err", err)
 		return
 	}
 
-	h.proxyToAuditService(c, "GET", fmt.Sprintf("/api/v1/stores/%s/audit-logs/export?%s", storeID, c.Request.URL.RawQuery))
+	streamErr := h.repo.Stream(c.Request.Context(), h.db, filter, func(e *audit.Entry) error {
+		r := e.ToResponse()
+		return w.Write([]string{
+			r.ID, r.Timestamp, r.UserEmail, r.Action, r.ResourceType,
+			r.ResourceID, r.Status, r.Severity, r.IPAddress, r.UserAgent,
+		})
+	})
+	if streamErr != nil {
+		// Headers already sent; just log so the operator can see it.
+		h.logger.Error("audit export: stream", "err", streamErr)
+	}
 }
 
-// proxyToAuditService forwards the request to the audit-service.
-func (h *AuditLogsHandler) proxyToAuditService(c *gin.Context, method, path string) {
-	if h.auditServiceURL == "" {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error":   "service_unavailable",
-			"message": "audit service not configured",
-		})
-		return
-	}
-
-	targetURL := h.auditServiceURL + path
-
-	req, err := http.NewRequestWithContext(c.Request.Context(), method, targetURL, nil)
+// parseFilter pulls tenant + store from gin context and the rest from
+// query string. Returns an apperrors.* error suitable for RespondErr.
+func (h *AuditLogsHandler) parseFilter(c *gin.Context) (audit.ListFilter, error) {
+	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
-		h.logger.Error("failed to create audit proxy request", "url", targetURL, "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "internal",
-			"message": "failed to proxy request",
-		})
-		return
+		return audit.ListFilter{}, apperrors.ValidationFailed("storeId", "invalid uuid")
 	}
-
-	// Forward tenant context headers.
-	if tenantID := c.GetString("tenant_id"); tenantID != "" {
-		req.Header.Set("X-Tenant-ID", tenantID)
-	}
-	if userID := c.GetString("user_id"); userID != "" {
-		req.Header.Set("X-User-ID", userID)
-	}
-
-	resp, err := h.httpClient.Do(req)
+	tenantID, err := uuid.Parse(c.GetString("tenant_id"))
 	if err != nil {
-		h.logger.Error("audit service proxy failed", "url", targetURL, "err", err)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error":   "bad_gateway",
-			"message": "audit service unavailable",
-		})
-		return
+		return audit.ListFilter{}, apperrors.ValidationFailed("tenant_id", "invalid uuid")
 	}
-	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	f := audit.ListFilter{
+		TenantID:     tenantID,
+		StoreID:      storeID,
+		UserEmail:    strings.TrimSpace(c.Query("user")),
+		Action:       strings.TrimSpace(c.Query("action")),
+		ResourceType: strings.TrimSpace(c.Query("resource_type")),
+		Severity:     strings.TrimSpace(c.Query("severity")),
+		Search:       strings.TrimSpace(c.Query("search")),
+	}
+
+	if v := c.Query("date_from"); v != "" {
+		t, err := parseDate(v)
+		if err != nil {
+			return audit.ListFilter{}, apperrors.ValidationFailed("date_from", "invalid date")
+		}
+		f.DateFrom = t
+	}
+	if v := c.Query("date_to"); v != "" {
+		t, err := parseDate(v)
+		if err != nil {
+			return audit.ListFilter{}, apperrors.ValidationFailed("date_to", "invalid date")
+		}
+		// Treat as end-of-day so a single-day filter matches all events that day.
+		f.DateTo = t.Add(24*time.Hour - time.Second)
+	}
+
+	if v := c.Query("page"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return audit.ListFilter{}, apperrors.ValidationFailed("page", "invalid")
+		}
+		f.Page = n
+	} else {
+		f.Page = 1
+	}
+	if v := c.Query("page_size"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return audit.ListFilter{}, apperrors.ValidationFailed("page_size", "invalid")
+		}
+		f.PageSize = n
+	} else {
+		f.PageSize = 25
+	}
+
+	return f, nil
+}
+
+// parseDate accepts either RFC3339 timestamps or YYYY-MM-DD dates.
+func parseDate(v string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02", v)
+}
+
+func totalPages(total int64, pageSize int) int64 {
+	if pageSize <= 0 || total <= 0 {
+		return 0
+	}
+	pages := total / int64(pageSize)
+	if total%int64(pageSize) != 0 {
+		pages++
+	}
+	return pages
 }

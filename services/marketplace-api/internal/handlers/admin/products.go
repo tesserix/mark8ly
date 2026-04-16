@@ -20,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -29,12 +30,20 @@ import (
 type ProductHandler struct {
 	svc     *product.Service
 	catRepo category.Repository
+	audit   *audit.Emitter // optional — nil-safe
 	logger  *slog.Logger
 }
 
 // NewProductHandler constructs a ProductHandler.
 func NewProductHandler(svc *product.Service, catRepo category.Repository, logger *slog.Logger) *ProductHandler {
 	return &ProductHandler{svc: svc, catRepo: catRepo, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so product lifecycle events are
+// recorded. Nil-safe.
+func (h *ProductHandler) WithAudit(e *audit.Emitter) *ProductHandler {
+	h.audit = e
+	return h
 }
 
 // List handles GET /admin/stores/:storeId/products.
@@ -113,6 +122,16 @@ func (h *ProductHandler) Create(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	h.audit.Emit(c, audit.Event{
+		Action:       "product.created",
+		ResourceType: "product",
+		ResourceID:   agg.Product.ID,
+		Metadata: map[string]any{
+			"handle": agg.Product.Handle,
+			"title":  agg.Product.Title,
+			"status": agg.Product.Status,
+		},
+	})
 	categories := h.resolveCategoryRefs(c, agg.CategoryLinks, storeID, tenantID)
 	c.JSON(http.StatusCreated, ToAdminProductResponse(agg, categories))
 }
@@ -204,6 +223,16 @@ func (h *ProductHandler) Patch(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	h.audit.Emit(c, audit.Event{
+		Action:       "product.updated",
+		ResourceType: "product",
+		ResourceID:   agg.Product.ID,
+		Metadata: map[string]any{
+			"handle": agg.Product.Handle,
+			"title":  agg.Product.Title,
+			"status": agg.Product.Status,
+		},
+	})
 	categories := h.resolveCategoryRefs(c, agg.CategoryLinks, storeID, tenantID)
 	c.JSON(http.StatusOK, ToAdminProductResponse(agg, categories))
 }
@@ -218,6 +247,12 @@ func (h *ProductHandler) Delete(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	h.audit.Emit(c, audit.Event{
+		Action:       "product.deleted",
+		ResourceType: "product",
+		ResourceID:   id,
+		Severity:     audit.SeverityWarning,
+	})
 	c.Status(http.StatusNoContent)
 }
 

@@ -33,6 +33,12 @@ func HeaderTrustAuth(internalSecret string) gin.HandlerFunc {
 		}
 		c.Set("user_id", userID)
 		c.Set("tenant_id", tenantID)
+		// Optional. When present, audit-log emitter records it as the
+		// actor; when absent, audit rows store NULL for actor_email and
+		// the UI shows the user_id instead.
+		if email := c.GetHeader("X-User-Email"); email != "" {
+			c.Set("user_email", email)
+		}
 		c.Next()
 	}
 }

@@ -21,6 +21,11 @@ const MARKETPLACE_INTERNAL_AUTH =
 export interface SessionHeaders {
   userId: string;
   tenantId: string;
+  /** User's email for audit-log attribution. Optional for backward
+   *  compatibility — when present it's forwarded to marketplace-api as
+   *  X-User-Email and recorded against any audit event the request
+   *  emits. */
+  email?: string;
 }
 
 /** Admin product row as returned by GET /api/v1/admin/stores/:storeId/products. */
@@ -276,6 +281,9 @@ function commonHeaders(session: SessionHeaders): HeadersInit {
     Accept: "application/json",
     "Content-Type": "application/json",
   };
+  if (session.email) {
+    headers["X-User-Email"] = session.email;
+  }
   if (MARKETPLACE_INTERNAL_AUTH) {
     headers["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
   }
@@ -288,6 +296,9 @@ function readHeaders(session: SessionHeaders): HeadersInit {
     "X-Tenant-Id": session.tenantId,
     Accept: "application/json",
   };
+  if (session.email) {
+    headers["X-User-Email"] = session.email;
+  }
   if (MARKETPLACE_INTERNAL_AUTH) {
     headers["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
   }

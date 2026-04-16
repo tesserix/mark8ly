@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -23,6 +24,7 @@ import (
 type BrandingHandler struct {
 	svc      *branding.Service
 	uploader media.Uploader // optional; only used by UploadURL
+	audit    *audit.Emitter // optional — nil-safe
 	logger   *slog.Logger
 }
 
@@ -34,6 +36,13 @@ func NewBrandingHandler(svc *branding.Service, logger *slog.Logger) *BrandingHan
 // SetUploader wires the media uploader for the upload-url endpoint.
 // Separate setter so main.go can keep existing call sites unchanged.
 func (h *BrandingHandler) SetUploader(u media.Uploader) { h.uploader = u }
+
+// WithAudit attaches an audit emitter so branding changes are recorded.
+// Nil-safe.
+func (h *BrandingHandler) WithAudit(e *audit.Emitter) *BrandingHandler {
+	h.audit = e
+	return h
+}
 
 // BrandingResponse is the wire DTO for store branding.
 type BrandingResponse struct {
@@ -253,6 +262,11 @@ func (h *BrandingHandler) Update(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "branding.updated",
+		ResourceType: "branding",
+		ResourceID:   b.ID.String(),
+	})
 	c.JSON(http.StatusOK, toBrandingResponse(*b))
 }
 

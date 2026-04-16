@@ -55,6 +55,12 @@ type Config struct {
 	// Knative admin revision; override with an env var for local dev.
 	MarketplaceAPIURL string `envconfig:"MARKETPLACE_API_URL" default:"http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8086"`
 
+	// MarketplaceInternalAuthSecret is the shared secret used to sign
+	// service-to-service calls to marketplace-api's /internal endpoints,
+	// including the /audit-events ingest. Must match marketplace-api's
+	// MARKETPLACE_INTERNAL_AUTH_SECRET. Empty disables the audit client.
+	MarketplaceInternalAuthSecret string `envconfig:"MARKETPLACE_INTERNAL_AUTH_SECRET"`
+
 	// GIP (Google Identity Platform) admin settings used by the
 	// password-reset flow. ProjectID + TenantID are required in prod;
 	// WebAPIKey is the public Firebase Web API key. If any of the

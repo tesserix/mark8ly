@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mark8ly/auth-bff/internal/audit"
 	"github.com/mark8ly/auth-bff/internal/usersessions"
 )
 
@@ -34,6 +35,7 @@ type Handler struct {
 	fga      FGAChecker // may be nil in dev if OpenFGA init failed
 	registry *usersessions.Repository
 	mfa      MFAVerifier
+	audit    *audit.Client // optional — emits user.signed_out / user.mfa_completed
 	logger   *slog.Logger
 }
 
@@ -60,6 +62,13 @@ func (h *Handler) WithRegistry(r *usersessions.Repository, logger *slog.Logger) 
 // returns 501 — safe default for deployments that skip MFA setup.
 func (h *Handler) WithMFA(v MFAVerifier) *Handler {
 	h.mfa = v
+	return h
+}
+
+// WithAudit attaches the cross-service audit client. Nil-safe — when
+// unset, login/logout events are not posted to marketplace-api.
+func (h *Handler) WithAudit(c *audit.Client) *Handler {
+	h.audit = c
 	return h
 }
 
@@ -221,6 +230,19 @@ func (h *Handler) mfaChallenge(c *gin.Context) {
 	}
 	h.mgr.ClearPending(c.Writer)
 
+	h.audit.EmitAsync(audit.Event{
+		TenantID:    pending.TenantID,
+		Action:      "user.signed_in",
+		ResourceType: "user",
+		ResourceID:  pending.UID,
+		ActorType:   "user",
+		ActorUserID: pending.UID,
+		ActorEmail:  pending.Email,
+		IPAddress:   c.ClientIP(),
+		UserAgent:   c.Request.UserAgent(),
+		Metadata:    map[string]any{"method": "mfa_challenge"},
+	})
+
 	c.JSON(http.StatusOK, gin.H{
 		"data": sessionResponse{
 			UserID:   pending.UID,
@@ -234,16 +256,40 @@ func (h *Handler) mfaChallenge(c *gin.Context) {
 // row for the user. Always returns 200 — logging out when you're
 // already logged out is not an error.
 func (h *Handler) logout(c *gin.Context) {
-	// Best-effort revoke before clearing the cookie so we can still read
-	// the user id from the existing session.
-	if h.registry != nil {
-		if existing, err := h.mgr.Read(c.Request); err == nil && existing != nil {
+	// Read the session BEFORE clearing so the audit row carries the
+	// real actor identity (user_id, email, tenant) rather than an
+	// anonymous "someone hit /logout" entry.
+	var (
+		existingUID, existingEmail, existingTenant string
+	)
+	if existing, err := h.mgr.Read(c.Request); err == nil && existing != nil {
+		existingUID = existing.UID
+		existingEmail = existing.Email
+		existingTenant = existing.TenantID
+
+		// Best-effort registry revoke uses the same read.
+		if h.registry != nil {
 			if err := h.registry.RevokeAllForUser(c.Request.Context(), existing.UID); err != nil && h.logger != nil {
 				h.logger.Warn("usersessions: revoke-all on logout failed", "err", err, "user_id", existing.UID)
 			}
 		}
 	}
 	h.mgr.Clear(c.Writer)
+
+	if existingTenant != "" {
+		h.audit.EmitAsync(audit.Event{
+			TenantID:    existingTenant,
+			Action:      "user.signed_out",
+			ResourceType: "user",
+			ResourceID:  existingUID,
+			ActorType:   "user",
+			ActorUserID: existingUID,
+			ActorEmail:  existingEmail,
+			IPAddress:   c.ClientIP(),
+			UserAgent:   c.Request.UserAgent(),
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"logged_out": true}})
 }
 

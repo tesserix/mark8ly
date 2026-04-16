@@ -15,6 +15,7 @@ import (
 	_ "github.com/lib/pq"
 
 	authbff "github.com/mark8ly/auth-bff"
+	"github.com/mark8ly/auth-bff/internal/audit"
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/autologin"
 	"github.com/mark8ly/auth-bff/internal/gip"
@@ -130,6 +131,12 @@ func main() {
 	}
 	mfaHandler := usermfa.NewHandler(mfaSvc, log)
 
+	// ─── Cross-service audit client ────────────────────────────────────
+	// Posts user.signed_in / user.signed_out events to marketplace-api's
+	// /internal/audit-events ingest endpoint. Empty MarketplaceAPIURL
+	// disables it so dev environments without marketplace-api still boot.
+	auditClient := audit.New(cfg.MarketplaceAPIURL, cfg.MarketplaceInternalAuthSecret, log)
+
 	// ─── Autologin ─────────────────────────────────────────────────────
 	autologinSvc := autologin.NewService(autologin.Config{
 		GIP:      verifier,
@@ -137,6 +144,7 @@ func main() {
 		Sessions: sessions,
 		Registry: sessionRegistry,
 		MFA:      mfaSvc,
+		Audit:    auditClient,
 		Logger:   log,
 	})
 	autologinHandler := autologin.NewHandler(autologinSvc)
@@ -144,7 +152,8 @@ func main() {
 	// ─── Session introspection + logout ────────────────────────────────
 	sessionHandler := session.NewHandler(sessions, fgaClient).
 		WithRegistry(sessionRegistry, log).
-		WithMFA(mfaSvc)
+		WithMFA(mfaSvc).
+		WithAudit(auditClient)
 
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)

@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mark8ly/auth-bff/internal/audit"
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
@@ -47,6 +48,7 @@ type Service struct {
 	sessions *session.Manager
 	registry *usersessions.Repository
 	mfa      MFAStatusChecker
+	audit    *audit.Client // optional — nil/no-op when marketplace-api is not wired
 	logger   *slog.Logger
 	policy   RetryPolicy
 }
@@ -75,7 +77,9 @@ type Config struct {
 	// login skips the challenge step (pre-MFA behaviour). When wired,
 	// AutoLogin short-circuits to MintPending + MFARequired whenever
 	// the user has a verified enrolment on file.
-	MFA    MFAStatusChecker
+	MFA MFAStatusChecker
+	// Audit posts cross-service audit events to marketplace-api. Optional.
+	Audit  *audit.Client
 	Logger *slog.Logger
 	Policy RetryPolicy
 }
@@ -98,6 +102,7 @@ func NewService(cfg Config) *Service {
 		sessions: cfg.Sessions,
 		registry: cfg.Registry,
 		mfa:      cfg.MFA,
+		audit:    cfg.Audit,
 		logger:   cfg.Logger,
 		policy:   p,
 	}
@@ -216,6 +221,22 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 			s.logger.Warn("usersessions: create failed", "err", err, "user_id", tok.UID)
 		}
 	}
+
+	// Step 5 (best-effort): emit cross-service audit event. Async, never
+	// blocks login — a slow or down marketplace-api must not delay the
+	// happy path.
+	s.audit.EmitAsync(audit.Event{
+		TenantID:    req.WorkspaceTenant,
+		Action:      "user.signed_in",
+		ResourceType: "user",
+		ResourceID:  tok.UID,
+		ActorType:   "user",
+		ActorUserID: tok.UID,
+		ActorEmail:  tok.Email,
+		IPAddress:   req.IPAddress,
+		UserAgent:   req.UserAgent,
+		Metadata:    map[string]any{"device": req.Device, "method": "auto_login"},
+	})
 
 	return &Result{
 		UID:      tok.UID,

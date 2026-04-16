@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mark8ly/platform-api/internal/audit"
 	"github.com/mark8ly/platform-api/internal/authz"
 	"github.com/mark8ly/platform-api/internal/notification"
 	"github.com/mark8ly/platform-api/internal/store"
@@ -32,6 +33,7 @@ type Service struct {
 	acceptURL  func(slug, token string) string
 	expiry     time.Duration
 	recorder   TokenRecorder
+	audit      *audit.Client // optional — emits staff lifecycle events
 }
 
 // TokenRecorder is the narrow interface the service calls to publish
@@ -61,6 +63,9 @@ type Config struct {
 	// Expiry defaults to 72h when zero.
 	Expiry   time.Duration
 	Recorder TokenRecorder
+	// Audit posts cross-service audit events to marketplace-api.
+	// Optional — empty client makes every emit a no-op.
+	Audit *audit.Client
 }
 
 // NewService constructs a Service.
@@ -78,6 +83,7 @@ func NewService(cfg Config) *Service {
 		acceptURL:  cfg.AcceptURL,
 		expiry:     cfg.Expiry,
 		recorder:   cfg.Recorder,
+		audit:      cfg.Audit,
 	}
 }
 
@@ -225,6 +231,24 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Invitation, erro
 		}
 	}
 
+	storeIDForEvent := ""
+	if inv.StoreID != nil {
+		storeIDForEvent = *inv.StoreID
+	}
+	s.audit.EmitAsync(audit.Event{
+		TenantID:     tenantID,
+		StoreID:      storeIDForEvent,
+		Action:       "staff.invited",
+		ResourceType: "invitation",
+		ResourceID:   inv.ID,
+		ActorType:    "user",
+		ActorUserID:  uid,
+		Metadata: map[string]any{
+			"invited_email": email,
+			"role":          role,
+		},
+	})
+
 	return inv, nil
 }
 
@@ -360,6 +384,24 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 	if err := s.repo.MarkAccepted(ctx, inv.ID, uid); err != nil {
 		return nil, err
 	}
+	storeIDForEvent := ""
+	if inv.StoreID != nil {
+		storeIDForEvent = *inv.StoreID
+	}
+	s.audit.EmitAsync(audit.Event{
+		TenantID:     inv.TenantID,
+		StoreID:      storeIDForEvent,
+		Action:       "staff.invitation_accepted",
+		ResourceType: "invitation",
+		ResourceID:   inv.ID,
+		ActorType:    "user",
+		ActorUserID:  uid,
+		ActorEmail:   inv.Email,
+		Metadata: map[string]any{
+			"role":          inv.Role,
+			"invited_email": inv.Email,
+		},
+	})
 	return &AcceptResult{
 		TenantID: inv.TenantID,
 		Role:     inv.Role,
@@ -580,7 +622,28 @@ func (s *Service) Revoke(ctx context.Context, tenantID, invitationID, uid string
 	if inv.TenantID != tenantID {
 		return apperrors.NotFound("invitation_not_found", "no invitation with that id")
 	}
-	return s.repo.MarkRevoked(ctx, invitationID)
+	if err := s.repo.MarkRevoked(ctx, invitationID); err != nil {
+		return err
+	}
+	storeIDForEvent := ""
+	if inv.StoreID != nil {
+		storeIDForEvent = *inv.StoreID
+	}
+	s.audit.EmitAsync(audit.Event{
+		TenantID:     tenantID,
+		StoreID:      storeIDForEvent,
+		Action:       "staff.invitation_revoked",
+		ResourceType: "invitation",
+		ResourceID:   invitationID,
+		Severity:     "warning",
+		ActorType:    "user",
+		ActorUserID:  uid,
+		Metadata: map[string]any{
+			"invited_email": inv.Email,
+			"role":          inv.Role,
+		},
+	})
+	return nil
 }
 
 // newToken generates a fresh invitation token and returns

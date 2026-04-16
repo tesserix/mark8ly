@@ -36,6 +36,12 @@ type Config struct {
 	// OpenFGA — used by autologin to verify membership tuple before issuing session
 	FGAAPIURL  string `envconfig:"FGA_API_URL" default:"http://openfga:8080"`
 	FGAStoreID string `envconfig:"FGA_STORE_ID"`
+
+	// marketplace-api audit ingest. Empty URL disables emit (so dev
+	// without marketplace-api still works). The shared secret matches
+	// MARKETPLACE_INTERNAL_AUTH_SECRET in marketplace-api's config.
+	MarketplaceAPIURL          string `envconfig:"MARKETPLACE_API_URL"`
+	MarketplaceInternalAuthSecret string `envconfig:"MARKETPLACE_INTERNAL_AUTH_SECRET"`
 }
 
 // Load reads .env (if present) and binds environment variables.

@@ -41,6 +41,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
+	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
 	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
 	"github.com/mark8ly/marketplace-api/internal/handlers/testroutes"
 	"github.com/mark8ly/marketplace-api/internal/health"
@@ -835,6 +836,11 @@ func main() {
 		if vendorHandler != nil {
 			vendorHandler.RegisterRoutes(r.Group("/internal"))
 		}
+		// Cross-service audit ingest — auth-bff posts login/logout,
+		// platform-api posts staff invite/accept/revoke. Mounted on the
+		// existing /internal namespace gated by X-Internal-Auth.
+		internalsvc.NewAuditIngestHandler(auditEmitter, domainStoresRepo, log).
+			Register(r.Group("/internal"), cfg.InternalAuthSecret)
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
 			Handler: r,
@@ -859,6 +865,12 @@ func main() {
 			if vendorHandler != nil {
 				vendorHandler.RegisterRoutes(engine.Group("/internal"))
 			}
+			// Audit ingest is admin-only because the audit_logs read
+			// endpoint also lives on the admin engine — keeping write
+			// + read on the same pod simplifies ops and keeps the
+			// storefront engine's surface area small.
+			internalsvc.NewAuditIngestHandler(auditEmitter, domainStoresRepo, log).
+				Register(engine.Group("/internal"), cfg.InternalAuthSecret)
 		}
 		if m == mode.Storefront {
 			storefront.RegisterStorefront(engine.Group("/api/v1"), storefrontDeps)

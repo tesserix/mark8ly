@@ -22,6 +22,7 @@ import (
 	_ "time/tzdata"
 
 	platformapi "github.com/mark8ly/platform-api"
+	"github.com/mark8ly/platform-api/internal/audit"
 	"github.com/mark8ly/platform-api/internal/auth"
 	"github.com/mark8ly/platform-api/internal/authz"
 	"github.com/mark8ly/platform-api/internal/gipadmin"
@@ -179,6 +180,11 @@ func main() {
 		}
 		return base + "/accept-invite?token=" + token
 	}
+	// Cross-service audit client — posts staff lifecycle events to
+	// marketplace-api's /internal/audit-events ingest. Empty URL or
+	// secret disables it (dev convenience).
+	auditClient := audit.New(cfg.MarketplaceAPIURL, cfg.MarketplaceInternalAuthSecret, log)
+
 	invitationSvc := invitation.NewService(invitation.Config{
 		Repo:       invitation.NewRepository(conn),
 		TenantRepo: tenantRepo,
@@ -188,6 +194,7 @@ func main() {
 		EmailFrom:  cfg.EmailFrom,
 		AcceptURL:  acceptURL,
 		Recorder:   invitationRec,
+		Audit:      auditClient,
 	})
 	invitationHandler := invitation.NewHandler(invitationSvc)
 

@@ -26,6 +26,8 @@ const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "m8_session";
 const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
+const MARKETPLACE_API_URL =
+  process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 // Canonical sign-in host. This is the single host we register with
 // Google OAuth as an "Authorized JavaScript origin" — every per-tenant
 // subdomain ({slug}-admin.mark8ly.com) bounces here for unauthenticated
@@ -96,9 +98,28 @@ export async function middleware(req: NextRequest) {
   // auto-switch the session to the correct tenant (when the user has
   // membership) instead of silently rendering an empty dashboard.
   const host = req.headers.get("host") ?? "";
-  const slugMatch = host.match(/^([^.]+)-admin\.mark8ly\.com$/);
-  if (slugMatch && slugMatch[1]) {
-    const requestedSlug = slugMatch[1];
+  let requestedSlug: string | null = null;
+  const mark8lyMatch = host.match(/^([^.]+)-admin\.mark8ly\.com$/);
+  if (mark8lyMatch && mark8lyMatch[1]) {
+    requestedSlug = mark8lyMatch[1];
+  } else if (host.startsWith("admin.") && !host.endsWith(".mark8ly.com")) {
+    // Custom domain pattern: admin.<merchant-domain>. Resolve via
+    // marketplace-api's custom domain resolver.
+    const customDomain = host.slice("admin.".length);
+    try {
+      const res = await fetch(
+        `${MARKETPLACE_API_URL}/api/v1/storefront/resolve-domain?domain=${encodeURIComponent(customDomain)}`,
+        { cache: "no-store" },
+      );
+      if (res.ok) {
+        const body = (await res.json()) as { slug?: string };
+        if (body.slug) requestedSlug = body.slug;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  if (requestedSlug) {
     try {
       const storeRes = await fetch(
         `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(requestedSlug)}`,

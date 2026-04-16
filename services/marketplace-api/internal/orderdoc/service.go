@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/branding"
@@ -59,6 +60,37 @@ func (s *Service) SendReceipt(ctx context.Context, orderID uuid.UUID) error {
 		return err
 	}
 	return s.mailer.SendReceipt(ctx, in)
+}
+
+// SendCancellation loads the order context and dispatches the cancel
+// envelope. `byCustomer` switches the subject + lede copy between
+// "cancelled by you" and "cancelled by the merchant" tones.
+func (s *Service) SendCancellation(ctx context.Context, orderID uuid.UUID, reason string, byCustomer bool) error {
+	in, err := s.buildInput(ctx, orderID, false)
+	if err != nil {
+		return err
+	}
+	// Cancellation doesn't have its own document number — strip the
+	// invoice-style INV- prefix that buildInput puts there.
+	in.DocumentNumber = ""
+	in.CancellationReason = strings.TrimSpace(reason)
+	in.CancelledByCustomer = byCustomer
+	return s.mailer.SendCancellation(ctx, in)
+}
+
+// SendRefund dispatches a "refund issued" email. The caller passes the
+// amount of THIS refund and the running total after it (which the
+// service.RecordRefund returns); we pull the rest from the order row.
+func (s *Service) SendRefund(ctx context.Context, orderID uuid.UUID, refundAmount, totalRefundedAfter decimal.Decimal) error {
+	in, err := s.buildInput(ctx, orderID, false)
+	if err != nil {
+		return err
+	}
+	in.DocumentNumber = ""
+	in.RefundAmount = refundAmount
+	in.TotalRefunded = totalRefundedAfter
+	in.IsFullRefund = totalRefundedAfter.GreaterThanOrEqual(in.GrandTotal)
+	return s.mailer.SendRefund(ctx, in)
 }
 
 func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt bool) (DocumentInput, error) {

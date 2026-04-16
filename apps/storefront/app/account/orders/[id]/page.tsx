@@ -12,6 +12,7 @@ import { resolveStoreSlug } from "@/lib/slug";
 import { decodeSession } from "@/lib/session";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { OrderTimeline } from "@/components/OrderTimeline";
+import { CancelOrderButton } from "@/components/account/CancelOrderButton";
 import { invoiceNumberFromOrder, receiptNumberFromOrder } from "@/lib/invoices/numbering";
 
 export const dynamic = "force-dynamic";
@@ -126,12 +127,26 @@ export default async function AccountOrderPage({ params }: PageProps) {
               {formatCurrency(order.grand_total, order.currency_code)}
             </dd>
           </div>
+          {order.refunded_amount && Number(order.refunded_amount) > 0 && (
+            <div className="mt-1 flex justify-between text-sm text-[color:var(--storefront-accent,var(--moss-700))]">
+              <dt>Refunded</dt>
+              <dd style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                −{formatCurrency(order.refunded_amount, order.currency_code)}
+              </dd>
+            </div>
+          )}
         </dl>
       </section>
 
       <DocumentsSection
         orderId={order.id}
         orderNumber={order.order_number}
+        shipmentStatus={order.shipment?.status ?? null}
+      />
+
+      <CancelOrderButton
+        orderId={order.id}
+        orderStatus={order.status}
         shipmentStatus={order.shipment?.status ?? null}
       />
     </div>

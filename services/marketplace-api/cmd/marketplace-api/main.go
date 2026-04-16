@@ -592,7 +592,24 @@ func main() {
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
 			WithGiftCardService(giftCardSvcSF).
 			WithLoyaltyService(loyaltySvcSF)
-		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, log)
+		// Order document mailer for the storefront — needed so the
+		// customer self-service cancel path can fire the cancellation
+		// email itself (the admin OrdersHandler.dispatchCancellationEmail
+		// only runs when the admin route was hit).
+		var orderDocMailerSF orderdoc.Mailer
+		if cfg.SendGridAPIKey != "" {
+			orderDocMailerSF = orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+		} else {
+			orderDocMailerSF = &orderdoc.LogMailer{Logger: log}
+		}
+		orderDocBrandingSvcSF := branding.NewService(branding.ServiceConfig{
+			DB:     conn,
+			Repo:   branding.NewRepository(),
+			Logger: log,
+		})
+		orderDocSvcSF := orderdoc.NewService(conn, orderDocMailerSF, orderRepoSF, orderDocBrandingSvcSF, cfg.StorefrontBaseURLTemplate)
+
+		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log)
 
 		storefrontDeps = storefront.Deps{
 			Handler:               storefrontHandler,

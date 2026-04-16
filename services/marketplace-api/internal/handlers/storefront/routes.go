@@ -107,6 +107,9 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		}
 		if deps.OrderDetailHandler != nil {
 			group.GET("/orders/:id", deps.OrderDetailHandler.GetOrder)
+			// Customer self-service cancel — gated server-side on
+			// order ownership + status machine + shipment guard.
+			group.POST("/orders/:id/cancel", deps.OrderDetailHandler.Cancel)
 		}
 
 		// Razorpay client-side checkout callback. The widget on the order

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/order"
@@ -52,6 +53,63 @@ func (h *OrdersHandler) dispatchInvoiceEmail(orderID uuid.UUID) {
 				"order_id", orderID, "err", err)
 		}
 	}()
+}
+
+// dispatchCancellationEmail fires the cancellation notification on a
+// detached context. Mirrors dispatchInvoiceEmail's never-block contract.
+func (h *OrdersHandler) dispatchCancellationEmail(orderID uuid.UUID, reason string, byCustomer bool) {
+	if h.docMailer == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.docMailer.SendCancellation(ctx, orderID, reason, byCustomer); err != nil {
+			h.logger.Warn("orderdoc: cancellation email dispatch failed",
+				"order_id", orderID, "err", err)
+		}
+	}()
+}
+
+// dispatchRefundEmail fires the refund-issued notification on a
+// detached context.
+func (h *OrdersHandler) dispatchRefundEmail(orderID uuid.UUID, refundAmount, totalRefundedAfter decimal.Decimal) {
+	if h.docMailer == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.docMailer.SendRefund(ctx, orderID, refundAmount, totalRefundedAfter); err != nil {
+			h.logger.Warn("orderdoc: refund email dispatch failed",
+				"order_id", orderID, "err", err)
+		}
+	}()
+}
+
+// shipmentBlocksCancel returns true when the order has a shipment that
+// has already been dispatched (in_transit / out_for_delivery / delivered).
+// In those states cancellation is unsafe — the merchant should issue a
+// refund + return-to-sender instead.
+func (h *OrdersHandler) shipmentBlocksCancel(ctx context.Context, orderID uuid.UUID) bool {
+	var status string
+	row := h.db.WithContext(ctx).
+		Table("shipments").
+		Select("status").
+		Where("order_id = ?", orderID).
+		Order("created_at DESC").
+		Limit(1).
+		Row()
+	if err := row.Scan(&status); err != nil {
+		// No shipment, or scan failed — let the cancel proceed; the
+		// state-machine guard in service.Cancel still catches fulfilled.
+		return false
+	}
+	switch status {
+	case "in_transit", "out_for_delivery", "delivered":
+		return true
+	}
+	return false
 }
 
 // List handles GET /admin/stores/:storeId/orders.
@@ -283,10 +341,24 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
 		return
 	}
+	// Belt-and-braces: even though service.Cancel rejects fulfilled
+	// orders via the status machine, a confirmed order with an in-flight
+	// shipment must not silently slip through. Bounce here with a 409 so
+	// the merchant sees a clear "issue a refund / RTS instead" hint.
+	if h.shipmentBlocksCancel(c.Request.Context(), id) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "shipment_in_flight",
+			"message": "Cancel is unavailable once a shipment has dispatched. Issue a refund or arrange a return instead.",
+		})
+		return
+	}
 	if err := h.svc.Cancel(c.Request.Context(), nil, id, req.Reason); err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	// Cancellation succeeded — fire the customer email. Detached so a
+	// SendGrid blip never blocks the cancel response.
+	h.dispatchCancellationEmail(id, req.Reason, false)
 	o, items, addrs, err := h.repo.GetByID(c.Request.Context(), h.db, id)
 	if err != nil {
 		RespondErr(c, err, h.logger)
@@ -325,6 +397,10 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	// Refund recorded — fire the customer email with this refund's
+	// amount + the running total. The post-refund order row already
+	// reflects the new refunded_amount.
+	h.dispatchRefundEmail(id, req.Amount, o.RefundedAmount)
 	c.JSON(http.StatusOK, ToAdminOrderResponse(o, items, addrs))
 }
 

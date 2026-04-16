@@ -184,6 +184,10 @@ export interface Order {
   shipping_total: string;
   tax_total: string;
   grand_total: string;
+  // refunded_amount: total refunded against this order. "0.00" when no
+  // refunds have been issued. Surfaces partial + full refund history on
+  // the customer's account order page.
+  refunded_amount?: string;
   currency_code: string;
   items: OrderItem[];
   shipping_address: OrderAddress;

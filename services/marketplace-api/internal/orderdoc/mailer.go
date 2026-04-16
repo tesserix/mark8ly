@@ -1,11 +1,10 @@
-// Package orderdoc dispatches invoice and receipt emails for an order.
+// Package orderdoc dispatches lifecycle emails for an order.
 //
-// Two distinct lifecycle hooks:
-//   • Invoice — fired the moment an order is confirmed (accepted) by
-//     the merchant. Tells the customer "we've taken your order, here's
-//     the paperwork".
-//   • Receipt — fired the moment a shipment transitions to delivered.
-//     Confirms the transaction is complete.
+// Four distinct hooks:
+//   • Invoice       — fired when an order is confirmed (accepted)
+//   • Receipt       — fired when a shipment transitions to delivered
+//   • Cancellation  — fired when an order is cancelled (admin or customer)
+//   • Refund        — fired when a refund is recorded against an order
 //
 // Emails contain a deep link back to the customer's account order page,
 // where they can download the actual PDF (rendered by the storefront's
@@ -31,20 +30,23 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Kind discriminates between the two documents this package mails.
+// Kind discriminates the lifecycle email this package is dispatching.
 type Kind string
 
 const (
-	KindInvoice Kind = "invoice"
-	KindReceipt Kind = "receipt"
+	KindInvoice      Kind = "invoice"
+	KindReceipt      Kind = "receipt"
+	KindCancellation Kind = "cancellation"
+	KindRefund       Kind = "refund"
 )
 
-// Mailer is the contract between the order/shipment lifecycle and the
-// underlying email transport. Two methods (rather than one with a Kind)
-// so handler code reads as intent: "SendInvoice" / "SendReceipt".
+// Mailer is the contract between the order lifecycle and the underlying
+// email transport. One method per intent so handler code reads cleanly.
 type Mailer interface {
 	SendInvoice(ctx context.Context, in DocumentInput) error
 	SendReceipt(ctx context.Context, in DocumentInput) error
+	SendCancellation(ctx context.Context, in DocumentInput) error
+	SendRefund(ctx context.Context, in DocumentInput) error
 }
 
 // DocumentInput is everything the email template needs to render. The
@@ -56,6 +58,8 @@ type DocumentInput struct {
 	Recipient string
 
 	// Document identity — formatted "INV-PLA-260417-01154" / "RCP-...".
+	// Empty for cancellation + refund (those reference the order_number
+	// directly; no separate document number issued).
 	DocumentNumber string
 
 	// Order context — used in subject line + email body.
@@ -68,6 +72,15 @@ type DocumentInput struct {
 	GrandTotal   decimal.Decimal
 	CurrencyCode string
 	ItemCount    int
+
+	// Cancellation-specific
+	CancellationReason string // free text from the cancel form, may be empty
+	CancelledByCustomer bool  // true when self-service cancel; affects copy
+
+	// Refund-specific
+	RefundAmount    decimal.Decimal // amount of THIS refund
+	TotalRefunded   decimal.Decimal // running total after this refund
+	IsFullRefund    bool            // refunded == grand_total
 
 	// Brand surface
 	Theme Theme
@@ -152,6 +165,15 @@ type renderData struct {
 	GrandTotal      string
 	CurrencyCode    string
 	ItemCount       int
+
+	// Cancellation rendering
+	CancellationReason string
+
+	// Refund rendering
+	RefundAmount  string
+	TotalRefunded string
+	IsFullRefund  bool
+
 	Theme           Theme
 	HairlineColor   string
 	SupportingCopy  string
@@ -172,18 +194,50 @@ var (
 	receiptTextTemplate = template.Must(
 		template.ParseFS(templateFS, "templates/receipt_email.txt"),
 	)
+	cancellationHTMLTemplate = template.Must(
+		template.ParseFS(templateFS, "templates/cancellation_email.html"),
+	)
+	cancellationTextTemplate = template.Must(
+		template.ParseFS(templateFS, "templates/cancellation_email.txt"),
+	)
+	refundHTMLTemplate = template.Must(
+		template.ParseFS(templateFS, "templates/refund_email.html"),
+	)
+	refundTextTemplate = template.Must(
+		template.ParseFS(templateFS, "templates/refund_email.txt"),
+	)
 )
 
 func render(kind Kind, in DocumentInput) (subject, html, text string, err error) {
 	theme := in.Theme.withDefaults()
 
 	var heading, lede, cta string
-	if kind == KindReceipt {
+	switch kind {
+	case KindReceipt:
 		subject = fmt.Sprintf("Receipt for order %s — delivered", in.OrderNumber)
 		heading = "Your order has been delivered."
 		lede = fmt.Sprintf("This is your receipt for order %s. Keep it for your records — and thank you for shopping with %s.", in.OrderNumber, theme.StoreName)
 		cta = "View receipt"
-	} else {
+	case KindCancellation:
+		subject = fmt.Sprintf("Order %s has been cancelled", in.OrderNumber)
+		heading = "Your order has been cancelled."
+		if in.CancelledByCustomer {
+			lede = fmt.Sprintf("Order %s has been cancelled at your request. If a payment was captured, the refund will follow shortly.", in.OrderNumber)
+		} else {
+			lede = fmt.Sprintf("Order %s has been cancelled by %s. If a payment was captured, the refund will follow shortly.", in.OrderNumber, theme.StoreName)
+		}
+		cta = "View order"
+	case KindRefund:
+		if in.IsFullRefund {
+			subject = fmt.Sprintf("Refund issued for order %s — fully refunded", in.OrderNumber)
+			heading = "Your refund has been issued in full."
+		} else {
+			subject = fmt.Sprintf("Partial refund issued for order %s", in.OrderNumber)
+			heading = "A partial refund has been issued."
+		}
+		lede = fmt.Sprintf("We've issued a refund of %s %s against order %s. It typically takes 3–10 business days to appear on your statement, depending on your bank.", in.RefundAmount.StringFixed(2), in.CurrencyCode, in.OrderNumber)
+		cta = "View order"
+	default: // KindInvoice
 		subject = fmt.Sprintf("Invoice for order %s — confirmed", in.OrderNumber)
 		heading = "Your order is confirmed."
 		lede = fmt.Sprintf("This is your invoice for order %s. We're getting it ready and will let you know when it ships.", in.OrderNumber)
@@ -196,30 +250,39 @@ func render(kind Kind, in DocumentInput) (subject, html, text string, err error)
 	}
 
 	data := renderData{
-		Subject:        subject,
-		Heading:        heading,
-		Lede:           lede,
-		CTAButtonLabel: cta,
-		DocumentNumber: in.DocumentNumber,
-		OrderNumber:    in.OrderNumber,
-		OrderURL:       in.OrderURL,
-		PlacedAt:       in.PlacedAt.Format("January 2, 2006"),
-		DeliveredAt:    deliveredAt,
-		GrandTotal:     in.GrandTotal.StringFixed(2),
-		CurrencyCode:   in.CurrencyCode,
-		ItemCount:      in.ItemCount,
-		Theme:          theme,
-		HairlineColor:  emailHairline,
-		SupportingCopy: emailSupporting,
-		MutedCopy:      emailMuted,
-		FaintCopy:      emailFaint,
+		Subject:            subject,
+		Heading:            heading,
+		Lede:               lede,
+		CTAButtonLabel:     cta,
+		DocumentNumber:     in.DocumentNumber,
+		OrderNumber:        in.OrderNumber,
+		OrderURL:           in.OrderURL,
+		PlacedAt:           in.PlacedAt.Format("January 2, 2006"),
+		DeliveredAt:        deliveredAt,
+		GrandTotal:         in.GrandTotal.StringFixed(2),
+		CurrencyCode:       in.CurrencyCode,
+		ItemCount:          in.ItemCount,
+		CancellationReason: in.CancellationReason,
+		RefundAmount:       in.RefundAmount.StringFixed(2),
+		TotalRefunded:      in.TotalRefunded.StringFixed(2),
+		IsFullRefund:       in.IsFullRefund,
+		Theme:              theme,
+		HairlineColor:      emailHairline,
+		SupportingCopy:     emailSupporting,
+		MutedCopy:          emailMuted,
+		FaintCopy:          emailFaint,
 	}
 
-	htmlTmpl := invoiceHTMLTemplate
-	textTmpl := invoiceTextTemplate
-	if kind == KindReceipt {
-		htmlTmpl = receiptHTMLTemplate
-		textTmpl = receiptTextTemplate
+	var htmlTmpl, textTmpl *template.Template
+	switch kind {
+	case KindReceipt:
+		htmlTmpl, textTmpl = receiptHTMLTemplate, receiptTextTemplate
+	case KindCancellation:
+		htmlTmpl, textTmpl = cancellationHTMLTemplate, cancellationTextTemplate
+	case KindRefund:
+		htmlTmpl, textTmpl = refundHTMLTemplate, refundTextTemplate
+	default:
+		htmlTmpl, textTmpl = invoiceHTMLTemplate, invoiceTextTemplate
 	}
 
 	var htmlBuf, textBuf bytes.Buffer
@@ -248,6 +311,16 @@ func (m *LogMailer) SendInvoice(_ context.Context, in DocumentInput) error {
 // SendReceipt logs the receipt email payload.
 func (m *LogMailer) SendReceipt(_ context.Context, in DocumentInput) error {
 	return m.log(KindReceipt, in)
+}
+
+// SendCancellation logs the cancellation email payload.
+func (m *LogMailer) SendCancellation(_ context.Context, in DocumentInput) error {
+	return m.log(KindCancellation, in)
+}
+
+// SendRefund logs the refund email payload.
+func (m *LogMailer) SendRefund(_ context.Context, in DocumentInput) error {
+	return m.log(KindRefund, in)
 }
 
 func (m *LogMailer) log(kind Kind, in DocumentInput) error {
@@ -290,6 +363,16 @@ func (m *SendGridMailer) SendInvoice(ctx context.Context, in DocumentInput) erro
 // SendReceipt renders + dispatches the receipt envelope.
 func (m *SendGridMailer) SendReceipt(ctx context.Context, in DocumentInput) error {
 	return m.send(ctx, KindReceipt, in)
+}
+
+// SendCancellation renders + dispatches the cancellation envelope.
+func (m *SendGridMailer) SendCancellation(ctx context.Context, in DocumentInput) error {
+	return m.send(ctx, KindCancellation, in)
+}
+
+// SendRefund renders + dispatches the refund-issued envelope.
+func (m *SendGridMailer) SendRefund(ctx context.Context, in DocumentInput) error {
+	return m.send(ctx, KindRefund, in)
 }
 
 func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) error {

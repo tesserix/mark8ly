@@ -1,0 +1,20 @@
+{{.Theme.StoreName}}
+{{if .Theme.Tagline}}{{.Theme.Tagline}}{{end}}
+
+ORDER CANCELLED
+
+{{.Heading}}
+
+{{.Lede}}
+
+Order:        {{.OrderNumber}}
+Placed:       {{.PlacedAt}}
+Order total:  {{.GrandTotal}} {{.CurrencyCode}}
+{{if .CancellationReason}}Reason:       {{.CancellationReason}}
+{{end}}
+View order: {{.OrderURL}}
+
+—
+Need help? Reply to this email and someone from {{.Theme.StoreName}} will get back to you.
+{{if .Theme.FooterCopyright}}
+{{.Theme.FooterCopyright}}{{end}}

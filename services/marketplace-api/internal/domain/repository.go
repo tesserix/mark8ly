@@ -29,6 +29,9 @@ type Repository interface {
 
 	// ListByStatus returns all domains with a given status (across all stores).
 	ListByStatus(ctx context.Context, db *gorm.DB, status DomainStatus) ([]CustomDomain, error)
+
+	// GetByDomain looks up a verified custom domain by its FQDN.
+	GetByDomain(ctx context.Context, db *gorm.DB, domain string) (*CustomDomain, error)
 }
 
 type gormRepository struct{}
@@ -86,4 +89,15 @@ func (gormRepository) ListByStatus(ctx context.Context, db *gorm.DB, status Doma
 		return nil, fmt.Errorf("domain list by status: %w", err)
 	}
 	return domains, nil
+}
+
+func (gormRepository) GetByDomain(ctx context.Context, db *gorm.DB, domainName string) (*CustomDomain, error) {
+	var d CustomDomain
+	if err := db.WithContext(ctx).Where("domain = ? AND status = ?", domainName, DomainStatusActive).First(&d).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperrors.NotFound("custom domain")
+		}
+		return nil, fmt.Errorf("domain get by domain: %w", err)
+	}
+	return &d, nil
 }

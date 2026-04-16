@@ -21,7 +21,7 @@ import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
 import { Footer } from "@/components/Footer";
 import { PromotionBar } from "@/components/PromotionBar";
 import { Toaster } from "@/components/Toaster";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { buildLoginUrl, buildLogoutUrl, hasSessionCookie, decodeSession } from "@/lib/auth";
 import { fetchBranding } from "@/lib/api/marketplace-api";
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
@@ -125,7 +125,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
 
   // --- Customer auth state ---
   const cookieStore = await cookies();

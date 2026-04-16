@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { cookies } from "next/headers";
 
 interface MyGiftCard {
@@ -53,7 +53,7 @@ export default async function MyGiftCardsPage() {
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
   const cards = await fetchMyGiftCards(storeSlug);
 
   return (

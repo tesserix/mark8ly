@@ -4,7 +4,7 @@ import { AccountSidebar } from "@/components/AccountSidebar";
 import { AccountMobileNav } from "@/components/AccountMobileNav";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { decodeSession } from "@/lib/auth";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { enrollCustomer } from "@/lib/api/loyalty";
 
 const STOREFRONT_KEY = process.env.MARKETPLACE_STOREFRONT_KEY ?? "";
@@ -25,9 +25,7 @@ export default async function AccountLayout({ children }: AccountLayoutProps) {
     if (session) {
       const h = await headers();
       const storeSlug =
-        slugFromHost(h.get("host")) ||
-        process.env.DEFAULT_STORE_SLUG ||
-        "default";
+        await resolveStoreSlug(h.get("host"));
       const referralCode = cookieStore.get("mp_referral")?.value;
       await enrollCustomer(
         storeSlug,

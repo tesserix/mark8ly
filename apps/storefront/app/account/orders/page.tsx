@@ -1,6 +1,6 @@
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { decodeSession } from "@/lib/auth";
 
 export const metadata = {
@@ -111,7 +111,7 @@ export default async function OrdersPage() {
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
 
   let orders: OrderSummary[] = [];
   let fetchError = false;

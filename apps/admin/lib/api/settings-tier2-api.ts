@@ -203,9 +203,13 @@ export async function deleteAccount(
 // S2 — Custom Domains
 // ─────────────────────────────────────────────────────────────────────────
 
+export type DNSMethod = "manual" | "cloudflare";
+
 export interface CustomDomain {
   id: string;
   domain: string;
+  dns_method: DNSMethod;
+  cname_target?: string | null;
   status: "pending" | "verifying" | "active" | "error" | "removing";
   ssl_status: "pending" | "active" | "error";
   verified_at: string | null;
@@ -233,7 +237,7 @@ export async function listDomains(
 
 export async function addDomain(
   storeId: string,
-  body: { domain: string; cf_api_token: string },
+  body: { domain: string; dns_method: DNSMethod; cf_api_token?: string },
   session: SessionHeaders,
 ): Promise<MutationResult<CustomDomain>> {
   const res = await fetch(

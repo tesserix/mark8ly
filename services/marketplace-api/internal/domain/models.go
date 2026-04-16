@@ -18,6 +18,14 @@ const (
 	DomainStatusRemoving  DomainStatus = "removing"
 )
 
+// DNSMethod indicates how DNS is managed for the custom domain.
+type DNSMethod string
+
+const (
+	DNSMethodManual     DNSMethod = "manual"
+	DNSMethodCloudflare DNSMethod = "cloudflare"
+)
+
 // SSLStatus enumerates the SSL provisioning states.
 type SSLStatus string
 
@@ -34,10 +42,12 @@ type CustomDomain struct {
 	TenantID              uuid.UUID    `gorm:"column:tenant_id;type:uuid;not null"`
 	StoreID               uuid.UUID    `gorm:"column:store_id;type:uuid;not null"`
 	Domain                string       `gorm:"column:domain;type:varchar(253);not null;uniqueIndex"`
+	DNSMethod             DNSMethod    `gorm:"column:dns_method;type:varchar(20);not null;default:manual"`
+	CnameTarget           *string      `gorm:"column:cname_target;type:varchar(253)"`
 	Status                DomainStatus `gorm:"column:status;type:varchar(20);not null;default:pending"`
 	CloudflareZoneID      *string      `gorm:"column:cloudflare_zone_id;type:varchar(100)"`
 	CloudflareDNSRecordID *string      `gorm:"column:cloudflare_dns_record_id;type:varchar(100)"`
-	CFAPITokenEncrypted   string       `gorm:"column:cf_api_token_encrypted;type:text;not null"`
+	CFAPITokenEncrypted   string       `gorm:"column:cf_api_token_encrypted;type:text;default:''"`
 	SSLStatus             SSLStatus    `gorm:"column:ssl_status;type:varchar(20);not null;default:pending"`
 	VerifiedAt            *time.Time   `gorm:"column:verified_at"`
 	ErrorMessage          *string      `gorm:"column:error_message;type:text"`

@@ -6,7 +6,7 @@ import {
   listProducts,
   listCategories,
 } from "@/lib/api/marketplace-api";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { canonicalUrl } from "@/lib/seo";
 
 /**
@@ -20,7 +20,7 @@ import { canonicalUrl } from "@/lib/seo";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const h = await headers();
   const host = h.get("host");
-  const slug = slugFromHost(host) ?? process.env.DEFAULT_STORE_SLUG ?? "";
+  const slug = await resolveStoreSlug(host);
 
   if (!slug) return [];
 

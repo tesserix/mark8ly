@@ -1,13 +1,13 @@
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { GiftCardBalanceForm } from "@/components/gift-cards/GiftCardBalanceForm";
 import { headers } from "next/headers";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 
 export default async function GiftCardBalancePage() {
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
 
   return (
     <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">

@@ -10,7 +10,7 @@ import {
   themeSpacing,
   type StorefrontTheme,
 } from "@repo/ui/storefront-theme";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { makeTenantMetadata } from "@/lib/seo";
 import { StorefrontLayoutRenderer } from "@/components/layouts";
 import { FeaturedProducts } from "@/components/FeaturedProducts";
@@ -31,9 +31,7 @@ export async function generateMetadata({
   const host = h.get("host");
   const slug =
     slugFromQuery ||
-    slugFromHost(host) ||
-    process.env.DEFAULT_STORE_SLUG ||
-    "";
+    await resolveStoreSlug(host);
   const store = slug ? await fetchStoreBySlug(slug).catch(() => null) : null;
   return makeTenantMetadata(store, slug);
 }
@@ -45,9 +43,7 @@ export default async function StoreHomePage({ searchParams }: PageProps) {
 
   const slug =
     slugFromQuery ||
-    slugFromHost(host) ||
-    process.env.DEFAULT_STORE_SLUG ||
-    "";
+    await resolveStoreSlug(host);
 
   const store = slug ? await fetchStoreBySlug(slug) : null;
 

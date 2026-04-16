@@ -4,7 +4,7 @@
 // a new review (requires mp_customer_session cookie forwarded upstream).
 
 import { headers } from "next/headers";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { marketplaceStoreUrl, proxyJson } from "../../checkout/_proxy";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ async function resolveSlug(req: Request): Promise<string | null> {
 
   const h = await headers();
   const host = h.get("host");
-  return slugFromHost(host) ?? process.env.DEFAULT_STORE_SLUG ?? null;
+  return await resolveStoreSlug(host);
 }
 
 export async function GET(

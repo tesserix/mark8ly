@@ -1,5 +1,3 @@
-// Package admin — domains.go: HTTP handler for custom domain management
-// endpoints (Settings S2).
 package admin
 
 import (
@@ -13,36 +11,37 @@ import (
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
-// DomainsHandler handles /admin/stores/:storeId/domains endpoints.
 type DomainsHandler struct {
 	svc    *domain.Service
 	logger *slog.Logger
 }
 
-// NewDomainsHandler constructs a DomainsHandler.
 func NewDomainsHandler(svc *domain.Service, logger *slog.Logger) *DomainsHandler {
 	return &DomainsHandler{svc: svc, logger: logger}
 }
 
-// DomainResponse is the wire DTO for a custom domain.
 type DomainResponse struct {
-	ID         string  `json:"id"`
-	Domain     string  `json:"domain"`
-	Status     string  `json:"status"`
-	SSLStatus  string  `json:"ssl_status"`
-	VerifiedAt *string `json:"verified_at,omitempty"`
-	Error      *string `json:"error,omitempty"`
-	CreatedAt  string  `json:"created_at"`
+	ID          string  `json:"id"`
+	Domain      string  `json:"domain"`
+	DNSMethod   string  `json:"dns_method"`
+	CnameTarget *string `json:"cname_target,omitempty"`
+	Status      string  `json:"status"`
+	SSLStatus   string  `json:"ssl_status"`
+	VerifiedAt  *string `json:"verified_at,omitempty"`
+	Error       *string `json:"error,omitempty"`
+	CreatedAt   string  `json:"created_at"`
 }
 
 func toDomainResponse(d domain.CustomDomain) DomainResponse {
 	resp := DomainResponse{
-		ID:        d.ID.String(),
-		Domain:    d.Domain,
-		Status:    string(d.Status),
-		SSLStatus: string(d.SSLStatus),
-		Error:     d.ErrorMessage,
-		CreatedAt: d.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:          d.ID.String(),
+		Domain:      d.Domain,
+		DNSMethod:   string(d.DNSMethod),
+		CnameTarget: d.CnameTarget,
+		Status:      string(d.Status),
+		SSLStatus:   string(d.SSLStatus),
+		Error:       d.ErrorMessage,
+		CreatedAt:   d.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 	if d.VerifiedAt != nil {
 		t := d.VerifiedAt.Format("2006-01-02T15:04:05Z")
@@ -51,7 +50,6 @@ func toDomainResponse(d domain.CustomDomain) DomainResponse {
 	return resp
 }
 
-// List handles GET /admin/stores/:storeId/domains.
 func (h *DomainsHandler) List(c *gin.Context) {
 	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
@@ -73,13 +71,12 @@ func (h *DomainsHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"domains": out})
 }
 
-// AddDomainRequest is the request body for POST /admin/stores/:storeId/domains.
 type AddDomainRequest struct {
 	Domain     string `json:"domain" binding:"required"`
-	CFAPIToken string `json:"cf_api_token" binding:"required"`
+	DNSMethod  string `json:"dns_method"`
+	CFAPIToken string `json:"cf_api_token"`
 }
 
-// Add handles POST /admin/stores/:storeId/domains.
 func (h *DomainsHandler) Add(c *gin.Context) {
 	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
@@ -92,17 +89,26 @@ func (h *DomainsHandler) Add(c *gin.Context) {
 		return
 	}
 
+	storeSlug := c.GetString("tenant_slug")
+
 	var req AddDomainRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondErr(c, apperrors.ValidationFailed("body", "invalid request body"), h.logger)
 		return
 	}
 
+	method := domain.DNSMethodManual
+	if req.DNSMethod == "cloudflare" {
+		method = domain.DNSMethodCloudflare
+	}
+
 	d, err := h.svc.Add(c.Request.Context(), domain.AddInput{
 		TenantID:            tenantID,
 		StoreID:             storeID,
+		StoreSlug:           storeSlug,
 		Domain:              req.Domain,
-		CFAPITokenEncrypted: req.CFAPIToken, // encryption happens at a higher layer
+		DNSMethod:           method,
+		CFAPITokenEncrypted: req.CFAPIToken,
 	})
 	if err != nil {
 		RespondErr(c, err, h.logger)
@@ -112,7 +118,6 @@ func (h *DomainsHandler) Add(c *gin.Context) {
 	c.JSON(http.StatusCreated, toDomainResponse(*d))
 }
 
-// Remove handles DELETE /admin/stores/:storeId/domains/:id.
 func (h *DomainsHandler) Remove(c *gin.Context) {
 	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
@@ -133,7 +138,6 @@ func (h *DomainsHandler) Remove(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
 
-// Verify handles POST /admin/stores/:storeId/domains/:id/verify.
 func (h *DomainsHandler) Verify(c *gin.Context) {
 	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
@@ -153,4 +157,25 @@ func (h *DomainsHandler) Verify(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toDomainResponse(*d))
+}
+
+// ResolveDomain handles GET /storefront/resolve-domain?domain=x — public,
+// used by the storefront to map custom domains to store slugs.
+func (h *DomainsHandler) ResolveDomain(c *gin.Context) {
+	domainName := c.Query("domain")
+	if domainName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "domain query param is required"})
+		return
+	}
+
+	d, err := h.svc.ResolveByDomain(c.Request.Context(), domainName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "domain not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"store_id": d.StoreID.String(),
+		"slug":     d.CnameTarget,
+	})
 }

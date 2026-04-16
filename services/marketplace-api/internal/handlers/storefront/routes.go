@@ -42,7 +42,9 @@ type Deps struct {
 	BrandingHandler *BrandingHandler
 	// Content pages.
 	PagesHandler *PagesHandler
-	Logger       *slog.Logger
+	// Domain resolution (custom domains → store slug).
+	DomainResolveHandler gin.HandlerFunc
+	Logger               *slog.Logger
 }
 
 // CountryLister is satisfied by country.Handler.ListSupported.
@@ -54,6 +56,12 @@ type CountryLister interface {
 // group. Chain: RequireStorefrontKey → StoreContext → handler. No auth,
 // no authz, no admin middleware.
 func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
+	// Public domain resolver — no store key, no store context. Used by the
+	// storefront to map custom domains (e.g. shop.mybrand.com) to a store slug.
+	if deps.DomainResolveHandler != nil {
+		router.GET("/storefront/resolve-domain", deps.DomainResolveHandler)
+	}
+
 	keyMW := RequireStorefrontKey(deps.StorefrontKey)
 	storeMW := StoreContext(deps.SlugCache)
 

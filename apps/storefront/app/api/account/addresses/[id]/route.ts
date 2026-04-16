@@ -1,14 +1,14 @@
 // Proxy for individual address mutations.
 
 import { cookies, headers } from "next/headers";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { marketplaceStoreUrl, proxyJson } from "../../../checkout/_proxy";
 
 export const dynamic = "force-dynamic";
 
 async function resolveSlug(): Promise<string | null> {
   const h = await headers();
-  return slugFromHost(h.get("host")) ?? process.env.DEFAULT_STORE_SLUG ?? null;
+  return await resolveStoreSlug(h.get("host"));
 }
 
 async function sessionHeaders(): Promise<Record<string, string>> {

@@ -16,7 +16,7 @@ import {
   listCategories,
   type StorefrontProduct,
 } from "@/lib/api/marketplace-api";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { Pagination } from "@/components/Pagination";
@@ -30,15 +30,10 @@ interface PageProps {
   searchParams: Promise<{ slug?: string; page?: string }>;
 }
 
-async function resolveStoreSlug(query: { slug?: string }): Promise<string> {
+async function getStoreSlug(query: { slug?: string }): Promise<string> {
+  if (query.slug) return query.slug;
   const h = await headers();
-  const host = h.get("host");
-  return (
-    query.slug ||
-    slugFromHost(host) ||
-    process.env.DEFAULT_STORE_SLUG ||
-    ""
-  );
+  return resolveStoreSlug(h.get("host"));
 }
 
 export async function generateMetadata({
@@ -56,7 +51,7 @@ export default async function CategoryLandingPage({
 }: PageProps) {
   const { slug: categorySlug } = await params;
   const sp = await searchParams;
-  const storeSlug = await resolveStoreSlug(sp);
+  const storeSlug = await getStoreSlug(sp);
   const page = sp.page ? Number.parseInt(sp.page, 10) || 1 : 1;
 
   const store = storeSlug ? await fetchStoreBySlug(storeSlug) : null;

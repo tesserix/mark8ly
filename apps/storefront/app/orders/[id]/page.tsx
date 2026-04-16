@@ -10,7 +10,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { StorefrontNav } from "@/components/StorefrontNav";
@@ -29,9 +29,7 @@ async function resolveSlug(query: { slug?: string }): Promise<string> {
   const host = h.get("host");
   return (
     query.slug ||
-    slugFromHost(host) ||
-    process.env.DEFAULT_STORE_SLUG ||
-    ""
+    await resolveStoreSlug(host)
   );
 }
 

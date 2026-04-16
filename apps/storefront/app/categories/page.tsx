@@ -11,7 +11,7 @@ import { headers } from "next/headers";
 
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { listCategories } from "@/lib/api/marketplace-api";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { StorefrontNav } from "@/components/StorefrontNav";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function CategoriesIndexPage() {
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
 
   const store = await fetchStoreBySlug(storeSlug).catch(() => null);
   const categories = await listCategories(storeSlug);

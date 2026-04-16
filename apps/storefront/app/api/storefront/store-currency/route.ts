@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { fetchBranding } from "@/lib/api/marketplace-api";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 
 // Returns the store's currency code as resolved from the host. Used by
 // server components that need to know the currency before rendering
@@ -12,7 +12,7 @@ export async function GET() {
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
 
   const branding = await fetchBranding(storeSlug);
   const currency =

@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { headers } from "next/headers";
 
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 
 export const runtime = "edge";
 export const alt = "Mark8ly store";
@@ -20,7 +20,7 @@ export const contentType = "image/png";
 export default async function OgImage() {
   const h = await headers();
   const host = h.get("host");
-  const slug = slugFromHost(host) ?? process.env.DEFAULT_STORE_SLUG ?? "";
+  const slug = await resolveStoreSlug(host);
   const store = slug ? await fetchStoreBySlug(slug).catch(() => null) : null;
 
   const name = store?.name ?? "Mark8ly";

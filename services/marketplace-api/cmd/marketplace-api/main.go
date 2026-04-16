@@ -143,6 +143,17 @@ func main() {
 		Logger: log,
 	})
 
+	// Custom domain service — shared between admin (CRUD) and storefront
+	// (domain resolution). Constructed once so both modes use the same repo.
+	domainRepo := domain.NewRepository()
+	domainSvc := domain.NewService(domain.ServiceConfig{
+		DB:     conn,
+		Repo:   domainRepo,
+		CF:     nil, // Stub — real Cloudflare client wired in production config
+		Logger: log,
+	})
+	domainsHandler := admin.NewDomainsHandler(domainSvc, log)
+
 	// Admin wiring — constructed for admin and both modes. The storefront
 	// process never mounts the admin group so these dependencies would go
 	// unused there.
@@ -319,15 +330,8 @@ func main() {
 		// Settings S1 — Account & Security.
 		accountHandler := admin.NewAccountHandler(cfg.AuthBFFURL, log)
 
-		// Settings S2 — Custom Domains.
-		domainRepo := domain.NewRepository()
-		domainSvc := domain.NewService(domain.ServiceConfig{
-			DB:     conn,
-			Repo:   domainRepo,
-			CF:     nil, // Stub — real Cloudflare client wired in production config
-			Logger: log,
-		})
-		domainsHandler := admin.NewDomainsHandler(domainSvc, log)
+		// Settings S2 — Custom Domains: domainSvc + domainsHandler hoisted
+		// above mode blocks so the storefront can also use the resolve endpoint.
 
 		// Settings S3 — Subscription/Billing.
 		subscriptionRepo := subscription.NewRepository()
@@ -583,9 +587,10 @@ func main() {
 			// C4 wishlists.
 			WishlistHandler: wishlistHandler,
 			// B1 branding.
-			BrandingHandler: sfBrandingHandler,
-			PagesHandler:    sfPagesHandler,
-			Logger:          log,
+			BrandingHandler:      sfBrandingHandler,
+			PagesHandler:         sfPagesHandler,
+			DomainResolveHandler: domainsHandler.ResolveDomain,
+			Logger:               log,
 		}
 	}
 

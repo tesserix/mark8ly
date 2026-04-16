@@ -15,7 +15,7 @@ import {
   listCategories,
   type StorefrontProduct,
 } from "@/lib/api/marketplace-api";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { makeTenantMetadata } from "@/lib/seo";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { ProductSearchInput } from "@/components/ProductSearchInput";
@@ -36,9 +36,7 @@ async function resolveSlug(query: { slug?: string }): Promise<string> {
   const host = h.get("host");
   return (
     query.slug ||
-    slugFromHost(host) ||
-    process.env.DEFAULT_STORE_SLUG ||
-    ""
+    await resolveStoreSlug(host)
   );
 }
 

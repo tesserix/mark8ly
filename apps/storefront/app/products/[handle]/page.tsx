@@ -11,7 +11,7 @@ import { notFound } from "next/navigation";
 
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { getProductByHandle } from "@/lib/api/marketplace-api";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { hasSessionCookie } from "@/lib/auth";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { MediaGallery } from "@/components/MediaGallery";
@@ -30,9 +30,7 @@ async function resolveSlug(query: { slug?: string }): Promise<string> {
   const host = h.get("host");
   return (
     query.slug ||
-    slugFromHost(host) ||
-    process.env.DEFAULT_STORE_SLUG ||
-    ""
+    await resolveStoreSlug(host)
   );
 }
 

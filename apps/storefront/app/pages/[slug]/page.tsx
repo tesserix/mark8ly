@@ -5,25 +5,21 @@ import type { Metadata } from "next";
 import { fetchPage } from "@/lib/api/marketplace-api";
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { Markdown } from "@/lib/markdown";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { StorefrontNav } from "@/components/StorefrontNav";
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
-async function resolveStoreSlug(): Promise<string> {
+async function getStoreSlug(): Promise<string> {
   const h = await headers();
-  const storeSlug = slugFromHost(h.get("host")) ?? process.env.DEFAULT_STORE_SLUG ?? "";
-  if (!storeSlug) {
-    console.warn("[storefront] /pages/[slug]: no store context (host + DEFAULT_STORE_SLUG both empty)");
-  }
-  return storeSlug;
+  return resolveStoreSlug(h.get("host"));
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const storeSlug = await resolveStoreSlug();
+  const storeSlug = await getStoreSlug();
   const page = storeSlug ? await fetchPage(storeSlug, slug) : null;
   if (!page) return { title: "Page not found" };
   return {
@@ -34,7 +30,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PageView({ params }: Props) {
   const { slug } = await params;
-  const storeSlug = await resolveStoreSlug();
+  const storeSlug = await getStoreSlug();
   if (!storeSlug) notFound();
 
   const [page, store] = await Promise.all([

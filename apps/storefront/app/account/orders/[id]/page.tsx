@@ -8,7 +8,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cookies, headers } from "next/headers";
 
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { decodeSession } from "@/lib/session";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { OrderTimeline } from "@/components/OrderTimeline";
@@ -44,7 +44,7 @@ export default async function AccountOrderPage({ params }: PageProps) {
   const h = await headers();
   const host = h.get("host");
   const slug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "";
+    await resolveStoreSlug(host);
   if (!slug || !id) notFound();
 
   const order = await fetchOrder(slug, id);

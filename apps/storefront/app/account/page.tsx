@@ -1,5 +1,5 @@
 import { cookies, headers } from "next/headers";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { decodeSession } from "@/lib/auth";
 import { ProfileForm } from "@/components/account/ProfileForm";
 
@@ -14,7 +14,7 @@ export default async function AccountDashboardPage() {
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
 
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";

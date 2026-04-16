@@ -136,7 +136,8 @@ export async function deleteAccountAction(
 
 export async function addDomainAction(
   domain: string,
-  cfApiToken: string,
+  dnsMethod: "manual" | "cloudflare",
+  cfApiToken?: string,
 ): Promise<ActionResult> {
   const { userId, tenantId, role, storeId } = await getSession();
   if (!userId || !tenantId || !storeId) return noSession();
@@ -145,13 +146,17 @@ export async function addDomainAction(
   if (!domain.trim()) {
     return { ok: false, code: "validation", message: "Domain is required." };
   }
-  if (!cfApiToken.trim()) {
+  if (dnsMethod === "cloudflare" && !cfApiToken?.trim()) {
     return { ok: false, code: "validation", message: "Cloudflare API token is required." };
   }
 
   const result = await addDomainApi(
     storeId,
-    { domain: domain.trim(), cf_api_token: cfApiToken.trim() },
+    {
+      domain: domain.trim(),
+      dns_method: dnsMethod,
+      cf_api_token: dnsMethod === "cloudflare" ? cfApiToken?.trim() : undefined,
+    },
     { userId, tenantId },
   );
   if (!result.ok) {

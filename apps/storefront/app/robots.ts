@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { headers } from "next/headers";
 
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { canonicalUrl } from "@/lib/seo";
 
 /**
@@ -14,7 +14,7 @@ import { canonicalUrl } from "@/lib/seo";
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const h = await headers();
   const host = h.get("host");
-  const slug = slugFromHost(host) ?? process.env.DEFAULT_STORE_SLUG ?? "";
+  const slug = await resolveStoreSlug(host);
   const base = slug ? canonicalUrl(slug) : `https://${host ?? "mark8ly.com"}`;
 
   return {

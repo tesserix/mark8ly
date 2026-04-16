@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { Globe, Plus, RefreshCw, Trash2, Lock } from "lucide-react";
+import { Globe, Plus, RefreshCw, Trash2, Lock, Copy, Check } from "lucide-react";
 
-import type { CustomDomain } from "@/lib/api/settings-tier2-api";
+import type { CustomDomain, DNSMethod } from "@/lib/api/settings-tier2-api";
 import {
   addDomainAction,
   removeDomainAction,
@@ -48,6 +48,7 @@ export function DomainsSettingsClient({
 
 function AddDomainForm() {
   const [domain, setDomain] = useState("");
+  const [method, setMethod] = useState<DNSMethod>("manual");
   const [cfToken, setCfToken] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +58,11 @@ function AddDomainForm() {
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await addDomainAction(domain, cfToken);
+      const result = await addDomainAction(
+        domain,
+        method,
+        method === "cloudflare" ? cfToken : undefined,
+      );
       if (!result.ok) {
         setError(result.message);
       } else {
@@ -68,19 +73,51 @@ function AddDomainForm() {
     });
   }
 
+  const canSubmit =
+    domain.trim() &&
+    (method === "manual" || cfToken.trim()) &&
+    !isPending;
+
   return (
-    <section className="space-y-4">
+    <section className="space-y-6">
       <div className="flex items-start gap-3">
         <Plus className="mt-0.5 h-5 w-5 text-foreground-secondary" aria-hidden="true" />
         <div className="space-y-1">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
+          <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
             Add a custom domain
           </h2>
           <p className="text-sm text-foreground-secondary">
-            Connect your own domain to your storefront. You will need a Cloudflare API token with DNS edit permissions.
+            Connect your own domain to your storefront. Your customers will see your brand, not ours.
           </p>
         </div>
       </div>
+
+      {/* Method toggle */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-foreground">DNS setup method</p>
+        <div className="inline-flex rounded-md border border-border bg-[color:var(--background-elevated)] p-1">
+          {(["manual", "cloudflare"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMethod(m)}
+              className={`rounded-sm px-4 py-2 text-sm font-medium transition-colors ${
+                method === m
+                  ? "bg-[color:var(--moss-700)] text-white"
+                  : "text-foreground-secondary hover:text-foreground"
+              }`}
+            >
+              {m === "manual" ? "Manual (CNAME)" : "Cloudflare (auto)"}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-foreground-secondary">
+          {method === "manual"
+            ? "You'll add a CNAME record at your DNS provider. Works with any registrar."
+            : "Automated via Cloudflare API. Requires a Cloudflare API token with DNS edit permissions."}
+        </p>
+      </div>
+
       <form onSubmit={handleSubmit} className="grid max-w-md gap-4">
         <div className="space-y-1.5">
           <label htmlFor="domain-name" className="text-sm font-medium text-foreground">
@@ -96,24 +133,28 @@ function AddDomainForm() {
             placeholder="shop.example.com"
           />
         </div>
-        <div className="space-y-1.5">
-          <label htmlFor="cf-token" className="text-sm font-medium text-foreground">
-            Cloudflare API token
-          </label>
-          <input
-            id="cf-token"
-            type="password"
-            value={cfToken}
-            onChange={(e) => setCfToken(e.target.value)}
-            disabled={isPending}
-            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
-            placeholder="Your Cloudflare API token"
-          />
-        </div>
+
+        {method === "cloudflare" && (
+          <div className="space-y-1.5">
+            <label htmlFor="cf-token" className="text-sm font-medium text-foreground">
+              Cloudflare API token
+            </label>
+            <input
+              id="cf-token"
+              type="password"
+              value={cfToken}
+              onChange={(e) => setCfToken(e.target.value)}
+              disabled={isPending}
+              className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+              placeholder="Your Cloudflare API token"
+            />
+          </div>
+        )}
+
         {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
         <button
           type="submit"
-          disabled={isPending || !domain.trim() || !cfToken.trim()}
+          disabled={!canSubmit}
           className="h-10 w-fit rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
         >
           {isPending ? "Adding..." : "Add domain"}
@@ -167,7 +208,7 @@ function DomainsList({
       <div className="flex items-start gap-3">
         <Globe className="mt-0.5 h-5 w-5 text-foreground-secondary" aria-hidden="true" />
         <div className="space-y-1">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
+          <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
             Connected domains
           </h2>
           <p className="text-sm text-foreground-secondary">
@@ -183,96 +224,182 @@ function DomainsList({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="pb-3 pr-4 font-medium text-foreground-secondary">Domain</th>
-                <th className="pb-3 pr-4 font-medium text-foreground-secondary">Status</th>
-                <th className="pb-3 pr-4 font-medium text-foreground-secondary">SSL</th>
-                <th className="pb-3 pr-4 font-medium text-foreground-secondary">Verified</th>
-                <th className="pb-3 font-medium text-foreground-secondary" />
-              </tr>
-            </thead>
-            <tbody>
-              {domains.map((d) => (
-                <tr key={d.id} className="border-b border-border">
-                  <td className="py-3 pr-4 font-medium text-foreground">{d.domain}</td>
-                  <td className="py-3 pr-4">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[d.status] ?? STATUS_STYLES.pending}`}
-                    >
-                      {d.status}
-                    </span>
-                    {d.error_message && (
-                      <p className="mt-1 text-xs text-[color:var(--signal)]">{d.error_message}</p>
-                    )}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${SSL_STYLES[d.ssl_status] ?? SSL_STYLES.pending}`}
-                    >
-                      <Lock className="h-3 w-3" aria-hidden="true" />
-                      {d.ssl_status}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4 text-foreground-secondary">
-                    {d.verified_at
-                      ? formatDistanceToNow(new Date(d.verified_at), { addSuffix: true })
-                      : "---"}
-                  </td>
-                  <td className="py-3 text-right">
-                    {editable && (
-                      <div className="flex items-center justify-end gap-2">
-                        {(d.status === "pending" || d.status === "error") && (
-                          <button
-                            type="button"
-                            onClick={() => handleVerify(d.id)}
-                            disabled={isPending}
-                            className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center gap-1 py-2 px-3 text-xs font-medium text-[color:var(--moss-700)] hover:underline disabled:opacity-50"
-                          >
-                            <RefreshCw className="h-3 w-3" aria-hidden="true" />
-                            Verify
-                          </button>
-                        )}
-                        {confirmRemoveId === d.id ? (
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleRemove(d.id)}
-                              disabled={isPending}
-                              className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center py-2 px-3 text-xs font-medium text-[color:var(--danger)] hover:underline disabled:opacity-50"
-                            >
-                              Confirm
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmRemoveId(null)}
-                              className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center py-2 px-3 text-xs font-medium text-foreground-secondary hover:underline"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmRemoveId(d.id)}
-                            disabled={isPending}
-                            className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center gap-1 py-2 px-3 text-xs font-medium text-[color:var(--signal)] hover:underline disabled:opacity-50"
-                          >
-                            <Trash2 className="h-3 w-3" aria-hidden="true" />
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {domains.map((d) => (
+            <DomainCard
+              key={d.id}
+              domain={d}
+              editable={editable}
+              isPending={isPending}
+              confirmRemove={confirmRemoveId === d.id}
+              onVerify={() => handleVerify(d.id)}
+              onRemove={() => handleRemove(d.id)}
+              onConfirmRemove={() => setConfirmRemoveId(d.id)}
+              onCancelRemove={() => setConfirmRemoveId(null)}
+            />
+          ))}
         </div>
       )}
     </section>
+  );
+}
+
+function DomainCard({
+  domain: d,
+  editable,
+  isPending,
+  confirmRemove,
+  onVerify,
+  onRemove,
+  onConfirmRemove,
+  onCancelRemove,
+}: {
+  domain: CustomDomain;
+  editable: boolean;
+  isPending: boolean;
+  confirmRemove: boolean;
+  onVerify: () => void;
+  onRemove: () => void;
+  onConfirmRemove: () => void;
+  onCancelRemove: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-[color:var(--background-elevated)] p-5">
+      {/* Header row */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <p className="font-medium text-foreground">{d.domain}</p>
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[d.status] ?? STATUS_STYLES.pending}`}
+          >
+            {d.status}
+          </span>
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${SSL_STYLES[d.ssl_status] ?? SSL_STYLES.pending}`}
+          >
+            <Lock className="h-3 w-3" aria-hidden="true" />
+            SSL {d.ssl_status}
+          </span>
+        </div>
+        <p className="text-xs text-foreground-secondary">
+          {d.verified_at
+            ? `Verified ${formatDistanceToNow(new Date(d.verified_at), { addSuffix: true })}`
+            : "Not verified"}
+        </p>
+      </div>
+
+      {d.error_message && (
+        <p className="mt-2 text-xs text-[color:var(--signal)]">{d.error_message}</p>
+      )}
+
+      {/* Manual DNS instructions */}
+      {d.dns_method === "manual" && d.cname_target && d.status !== "active" && (
+        <div className="mt-4 rounded-md border border-border bg-background p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-foreground-secondary">
+            DNS setup required
+          </p>
+          <p className="mt-2 text-sm text-foreground-secondary">
+            Add a <strong>CNAME</strong> record at your DNS provider:
+          </p>
+          <div className="mt-3 space-y-2">
+            <DnsRecord label="Type" value="CNAME" />
+            <DnsRecord label="Name" value={d.domain} copyable />
+            <DnsRecord label="Target" value={d.cname_target} copyable />
+          </div>
+          <p className="mt-3 text-xs text-foreground-tertiary">
+            DNS changes can take up to 48 hours to propagate. Click &quot;Verify&quot; once you&apos;ve added the record.
+          </p>
+        </div>
+      )}
+
+      {d.dns_method === "manual" && d.status === "active" && (
+        <p className="mt-3 text-xs text-[color:var(--moss-700)]">
+          CNAME verified and active. Your custom domain is live.
+        </p>
+      )}
+
+      {/* Actions */}
+      {editable && (
+        <div className="mt-4 flex items-center gap-2 border-t border-border pt-3">
+          {(d.status === "pending" || d.status === "verifying" || d.status === "error") && (
+            <button
+              type="button"
+              onClick={onVerify}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] disabled:opacity-50"
+            >
+              <RefreshCw className="h-3 w-3" aria-hidden="true" />
+              Verify
+            </button>
+          )}
+          {confirmRemove ? (
+            <>
+              <button
+                type="button"
+                onClick={onRemove}
+                disabled={isPending}
+                className="inline-flex items-center rounded-md bg-[color:var(--danger)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+              >
+                Confirm remove
+              </button>
+              <button
+                type="button"
+                onClick={onCancelRemove}
+                className="px-3 py-1.5 text-xs font-medium text-foreground-secondary hover:text-foreground"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onConfirmRemove}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground-secondary transition-colors hover:border-[color:var(--signal)] hover:text-[color:var(--signal)] disabled:opacity-50"
+            >
+              <Trash2 className="h-3 w-3" aria-hidden="true" />
+              Remove
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DnsRecord({
+  label,
+  value,
+  copyable,
+}: {
+  label: string;
+  value: string;
+  copyable?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      <span className="w-14 shrink-0 text-xs font-medium text-foreground-secondary">{label}</span>
+      <code className="flex-1 rounded bg-[color:var(--ink-900)]/5 px-2 py-1 font-mono text-xs text-foreground">
+        {value}
+      </code>
+      {copyable && (
+        <button
+          type="button"
+          onClick={copy}
+          className="shrink-0 rounded p-1 text-foreground-secondary hover:text-foreground"
+          aria-label={`Copy ${label}`}
+        >
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+      )}
+    </div>
   );
 }

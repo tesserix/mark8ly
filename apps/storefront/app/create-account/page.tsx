@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { CreateAccountForm } from "@/components/auth/CreateAccountForm";
 import { StorefrontNav } from "@/components/StorefrontNav";
@@ -14,7 +14,7 @@ export default async function CreateAccountPage() {
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
 
   const store = await fetchStoreBySlug(storeSlug).catch(() => null);
 

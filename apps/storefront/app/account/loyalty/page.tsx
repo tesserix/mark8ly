@@ -1,5 +1,5 @@
 import { cookies, headers } from "next/headers";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { decodeSession } from "@/lib/auth";
 import { LoyaltyDashboard } from "@/components/loyalty/LoyaltyDashboard";
 import { getProgram, getMe } from "@/lib/api/loyalty";
@@ -16,7 +16,7 @@ export default async function LoyaltyAccountPage() {
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
   const storefrontKey = process.env.MARKETPLACE_STOREFRONT_KEY ?? "";
 
   const program = await getProgram(storeSlug, storefrontKey);

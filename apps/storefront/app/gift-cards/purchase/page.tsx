@@ -1,7 +1,7 @@
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { GiftCardPurchaseForm } from "@/components/gift-cards/GiftCardPurchaseForm";
 import { headers } from "next/headers";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 
 // Resolve the store's currency server-side (same pattern as other
 // storefront pages). We proxy the branding endpoint instead of a
@@ -25,7 +25,7 @@ export default async function GiftCardPurchasePage() {
   const proto = h.get("x-forwarded-proto") ?? "https";
   const origin = host ? `${proto}://${host}` : "";
   const storeSlug =
-    slugFromHost(host) || process.env.DEFAULT_STORE_SLUG || "default";
+    await resolveStoreSlug(host);
   const currency = await getStoreCurrency(origin);
 
   return (

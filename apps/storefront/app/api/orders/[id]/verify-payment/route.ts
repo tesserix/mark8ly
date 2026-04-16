@@ -6,7 +6,7 @@
 // need to know it.
 
 import { marketplaceStoreUrl, proxyJson } from "../../../checkout/_proxy";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +26,7 @@ export async function POST(
   const explicitSlug = url.searchParams.get("store");
   const slug =
     explicitSlug ||
-    slugFromHost(req.headers.get("host")) ||
-    process.env.DEFAULT_STORE_SLUG ||
-    "";
+    await resolveStoreSlug(req.headers.get("host"));
   if (!slug) {
     return Response.json(
       { error: "missing_store", message: "could not resolve store slug from host" },

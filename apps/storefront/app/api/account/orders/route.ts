@@ -6,7 +6,7 @@
 // backend middleware can authenticate the customer.
 
 import { cookies, headers } from "next/headers";
-import { slugFromHost } from "@/lib/slug";
+import { resolveStoreSlug } from "@/lib/slug";
 import { decodeSession } from "@/lib/session";
 import { marketplaceStoreUrl, proxyJson } from "../../checkout/_proxy";
 
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 async function resolveSlug(): Promise<string | null> {
   const h = await headers();
   const host = h.get("host");
-  return slugFromHost(host) ?? process.env.DEFAULT_STORE_SLUG ?? null;
+  return await resolveStoreSlug(host);
 }
 
 export async function GET(): Promise<Response> {

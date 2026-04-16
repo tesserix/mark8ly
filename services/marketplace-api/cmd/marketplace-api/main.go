@@ -181,11 +181,19 @@ func main() {
 	// brandingSeeder is non-nil only when MARKETPLACE_API_ENABLE_TEST_ROUTES=true.
 	// Declared at func scope so the later route-mount block can see it.
 	var brandingSeeder *testroutes.BrandingSeeder
-	// auditEmitter is the async audit-log writer. Initialised inside the
-	// admin-mode block but declared here so handlers in other groups
-	// (storefront events, system jobs) can also call Emit, and so the
-	// shutdown path can drain it.
-	var auditEmitter *audit.Emitter
+
+	// auditEmitter is the async audit-log writer. Init runs unconditionally
+	// because both admin AND storefront emit (e.g. storefront checkout
+	// fires order.created, signup fires customer.signed_up). Previously
+	// this was init'd inside the admin-mode block, which meant the
+	// storefront pod (MODE=storefront) ran with auditEmitter == nil and
+	// silently dropped every storefront event.
+	auditRepo := audit.NewRepository()
+	auditEmitter := audit.NewEmitter(audit.EmitterConfig{
+		DB:     conn,
+		Repo:   auditRepo,
+		Logger: log,
+	})
 	if m == mode.Admin || m == mode.Both {
 		productRepo := product.NewRepository(conn)
 		categoryRepo := category.NewRepository(conn)
@@ -381,15 +389,9 @@ func main() {
 		})
 		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, cfg.StripeBillingWebhookSecret, log)
 
-		// Settings S4 — Audit Logs. Native, in-process: events flow into
-		// the audit_logs table via auditEmitter from any handler that
-		// calls auditEmitter.Emit(c, audit.Event{...}).
-		auditRepo := audit.NewRepository()
-		auditEmitter = audit.NewEmitter(audit.EmitterConfig{
-			DB:     conn,
-			Repo:   auditRepo,
-			Logger: log,
-		})
+		// Settings S4 — Audit Logs read endpoint (admin-only). The
+		// emitter + repo are initialised unconditionally above so the
+		// storefront pod can also write events.
 		auditLogsHandler := admin.NewAuditLogsHandler(conn, auditRepo, log)
 
 		// Wire the emitter into the handlers that own audited resources.

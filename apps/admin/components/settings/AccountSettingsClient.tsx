@@ -15,18 +15,24 @@ import {
 
 interface AccountSettingsClientProps {
   profile: AccountProfile | null;
+  sessionEmail: string;
   sessions: AccountSession[];
   editable: boolean;
 }
 
 export function AccountSettingsClient({
   profile,
+  sessionEmail,
   sessions,
   editable,
 }: AccountSettingsClientProps) {
   return (
     <div className="space-y-10">
-      <ProfileSection profile={profile} editable={editable} />
+      <ProfileSection
+        profile={profile}
+        sessionEmail={sessionEmail}
+        editable={editable}
+      />
       <hr className="border-border" />
       <MFASection mfaEnabled={profile?.mfa_enabled ?? false} editable={editable} />
       <hr className="border-border" />
@@ -41,13 +47,15 @@ export function AccountSettingsClient({
 
 function ProfileSection({
   profile,
+  sessionEmail,
   editable,
 }: {
   profile: AccountProfile | null;
+  sessionEmail: string;
   editable: boolean;
 }) {
   const [name, setName] = useState(profile?.name ?? "");
-  const [email, setEmail] = useState(profile?.email ?? "");
+  const email = profile?.email || sessionEmail || "";
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -57,7 +65,7 @@ function ProfileSection({
     setError(null);
     setSuccess(false);
     startTransition(async () => {
-      const result = await updateProfile({ name: name.trim(), email: email.trim() });
+      const result = await updateProfile({ name: name.trim() });
       if (!result.ok) {
         setError(result.message);
       } else {
@@ -100,9 +108,10 @@ function ProfileSection({
             id="profile-email"
             type="email"
             value={email}
-            onChange={(e) => { setEmail(e.target.value); setSuccess(false); }}
-            disabled={!editable || isPending}
-            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            readOnly
+            disabled
+            aria-readonly="true"
+            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary disabled:opacity-60 disabled:cursor-not-allowed"
             placeholder="you@example.com"
           />
         </div>

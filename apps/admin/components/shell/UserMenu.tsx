@@ -60,7 +60,7 @@ export function UserMenu({ email }: UserMenuProps) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <a href="/settings">
+          <a href="/settings/account">
             <User className="mr-2 h-4 w-4" />
             Profile
           </a>

@@ -13,8 +13,7 @@ import { AccountSettingsClient } from "@/components/settings/AccountSettingsClie
  * /settings/account — account profile, MFA, sessions, and danger zone.
  */
 export default async function AccountSettingsPage() {
-  const { tenantName, email, role, memberships, tenantId, userId } =
-    await getServerSessionContext();
+  const { email, role, tenantId, userId } = await getServerSessionContext();
 
   const editable = canEditSettings(role);
 
@@ -28,6 +27,7 @@ export default async function AccountSettingsPage() {
         <AccountSettingsContent
           userId={userId}
           tenantId={tenantId}
+          sessionEmail={email}
           editable={editable}
         />
       </AdminPage>
@@ -37,10 +37,12 @@ export default async function AccountSettingsPage() {
 async function AccountSettingsContent({
   userId,
   tenantId,
+  sessionEmail,
   editable,
 }: {
   userId: string;
   tenantId: string;
+  sessionEmail: string;
   editable: boolean;
 }) {
   const session = { userId, tenantId };
@@ -52,6 +54,7 @@ async function AccountSettingsContent({
   return (
     <AccountSettingsClient
       profile={profile}
+      sessionEmail={sessionEmail}
       sessions={sessions}
       editable={editable}
     />

@@ -12,6 +12,8 @@ import {
 
 interface UserMenuProps {
   email?: string;
+  name?: string;
+  avatarUrl?: string;
 }
 
 // Pull a short display name out of the email's local part so the
@@ -28,14 +30,13 @@ function displayNameFromEmail(email: string | undefined): string {
 }
 
 /**
- * Top-right user menu. Shows a short display name derived from the
- * session email (from the middleware-forwarded headers) and exposes
- * the logout flow and a shortcut into settings. The full email is
- * still visible inside the dropdown label.
+ * Top-right user menu. Shows the user's avatar if they've uploaded one,
+ * otherwise the first letter of their display name. Display name prefers
+ * the persisted profile name, then falls back to an email-derived label.
  */
-export function UserMenu({ email }: UserMenuProps) {
-  const initial = email?.trim().charAt(0).toUpperCase() ?? "M";
-  const display = displayNameFromEmail(email);
+export function UserMenu({ email, name, avatarUrl }: UserMenuProps) {
+  const display = (name && name.trim()) || displayNameFromEmail(email);
+  const initial = display.trim().charAt(0).toUpperCase() || "M";
 
   return (
     <DropdownMenu>
@@ -46,9 +47,18 @@ export function UserMenu({ email }: UserMenuProps) {
           aria-label="Account menu"
           aria-haspopup="menu"
         >
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(34,28,23,0.16)]">
-            {initial}
-          </span>
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt=""
+              className="h-8 w-8 rounded-full object-cover shadow-[0_8px_20px_rgba(34,28,23,0.16)]"
+            />
+          ) : (
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(34,28,23,0.16)]">
+              {initial}
+            </span>
+          )}
           <span className="hidden max-w-[12rem] truncate pr-2 sm:inline">
             {display}
           </span>

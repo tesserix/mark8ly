@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Toaster } from "@/components/feedback/Toaster";
+import { getAccountProfile } from "@/lib/api/settings-tier2-api";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 
 /**
@@ -27,14 +28,23 @@ export default async function AdminLayout({
 }: {
   children: ReactNode;
 }) {
-  const { tenantName, email, role, memberships, tenantId, stores, currentStore } =
+  const { tenantName, email, role, memberships, tenantId, userId, stores, currentStore } =
     await getServerSessionContext();
+
+  // Best-effort profile fetch so the header can show the user's avatar
+  // and persisted name. Swallow errors — a missing profile just falls
+  // back to the email-derived initial.
+  const profile = userId && tenantId
+    ? await getAccountProfile({ userId, tenantId, email }).catch(() => null)
+    : null;
 
   return (
     <Toaster>
       <AdminShell
         tenantName={tenantName}
         userEmail={email}
+        userName={profile?.name}
+        userAvatarUrl={profile?.avatar_url}
         role={role}
         memberships={memberships}
         currentTenantId={tenantId}

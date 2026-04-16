@@ -61,6 +61,8 @@ interface AdminShellProps {
   children: ReactNode;
   tenantName?: string;
   userEmail?: string;
+  userName?: string;
+  userAvatarUrl?: string;
   role?: TenantRole;
   memberships?: Membership[];
   currentTenantId?: string;
@@ -168,6 +170,8 @@ function AdminShellFrame({
   children,
   tenantName,
   userEmail,
+  userName,
+  userAvatarUrl,
   role,
   memberships,
   currentTenantId,
@@ -331,7 +335,11 @@ function AdminShellFrame({
               >
                 <Bell className="h-4 w-4" aria-hidden="true" />
               </button>
-              <UserMenu email={userEmail} />
+              <UserMenu
+                email={userEmail}
+                name={userName}
+                avatarUrl={userAvatarUrl}
+              />
             </div>
           </div>
         </header>

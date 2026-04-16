@@ -13,6 +13,7 @@ import {
   revokeSessionAction,
   deleteAccountAction,
 } from "@/app/(admin)/settings/actions";
+import { useToast } from "@/components/feedback/Toaster";
 
 interface AccountSettingsClientProps {
   profile: AccountProfile | null;
@@ -58,18 +59,14 @@ function ProfileSection({
   const [name, setName] = useState(profile?.name ?? "");
   const [phone, setPhone] = useState(profile?.phone ?? "");
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url ?? "");
-  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const email = profile?.email || sessionEmail || "";
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const router = useRouter();
+  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   function handleSave() {
-    setError(null);
-    setSuccess(false);
     startTransition(async () => {
       const result = await updateProfile({
         name: name.trim(),
@@ -77,22 +74,31 @@ function ProfileSection({
         avatar_url: avatarUrl.trim(),
       });
       if (!result.ok) {
-        setError(result.message);
+        toast.error("Couldn't save profile", result.message);
       } else {
-        setSuccess(true);
+        toast.success("Profile updated");
         router.refresh();
       }
     });
   }
 
+  async function persistAvatar(url: string) {
+    const result = await updateProfile({ avatar_url: url });
+    if (!result.ok) {
+      toast.error("Couldn't save picture", result.message);
+      return false;
+    }
+    router.refresh();
+    return true;
+  }
+
   async function handleAvatarFile(file: File) {
-    setAvatarError(null);
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-      setAvatarError("Please upload a PNG, JPEG, or WebP image.");
+      toast.error("Unsupported file type", "Use PNG, JPEG, or WebP.");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setAvatarError("Image must be under 5 MB.");
+      toast.error("Image too large", "Please upload an image under 5 MB.");
       return;
     }
     setAvatarUploading(true);
@@ -102,7 +108,7 @@ function ProfileSection({
         content_type: file.type,
       });
       if (!signed.ok) {
-        setAvatarError(signed.message);
+        toast.error("Couldn't prepare upload", signed.message);
         return;
       }
       const put = await fetch(signed.data.upload_url, {
@@ -111,16 +117,23 @@ function ProfileSection({
         body: file,
       });
       if (!put.ok) {
-        setAvatarError(`Upload failed (${put.status}).`);
+        toast.error("Upload failed", `Storage returned ${put.status}.`);
         return;
       }
       setAvatarUrl(signed.data.public_url);
-      setSuccess(false);
+      const saved = await persistAvatar(signed.data.public_url);
+      if (saved) toast.success("Profile picture updated");
     } catch (e) {
-      setAvatarError(e instanceof Error ? e.message : "Upload failed.");
+      toast.error("Upload failed", e instanceof Error ? e.message : "Please try again.");
     } finally {
       setAvatarUploading(false);
     }
+  }
+
+  async function handleRemoveAvatar() {
+    setAvatarUrl("");
+    const saved = await persistAvatar("");
+    if (saved) toast.success("Profile picture removed");
   }
 
   return (
@@ -179,7 +192,7 @@ function ProfileSection({
               {avatarUrl && (
                 <button
                   type="button"
-                  onClick={() => setAvatarUrl("")}
+                  onClick={() => void handleRemoveAvatar()}
                   disabled={avatarUploading || isPending}
                   className="text-xs font-medium text-foreground-secondary hover:text-foreground disabled:opacity-50"
                 >
@@ -187,11 +200,6 @@ function ProfileSection({
                 </button>
               )}
             </div>
-          )}
-          {avatarError && (
-            <p role="alert" className="text-xs text-[color:var(--signal)]">
-              {avatarError}
-            </p>
           )}
         </div>
       </div>
@@ -205,7 +213,7 @@ function ProfileSection({
             id="profile-name"
             type="text"
             value={name}
-            onChange={(e) => { setName(e.target.value); setSuccess(false); }}
+            onChange={(e) => setName(e.target.value)}
             disabled={!editable || isPending}
             className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             placeholder="Your name"
@@ -234,15 +242,13 @@ function ProfileSection({
             id="profile-phone"
             type="tel"
             value={phone}
-            onChange={(e) => { setPhone(e.target.value); setSuccess(false); }}
+            onChange={(e) => setPhone(e.target.value)}
             disabled={!editable || isPending}
             className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             placeholder="+1 555 123 4567"
           />
         </div>
       </div>
-      {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
-      {success && <p role="status" className="text-sm text-[color:var(--moss-700)]">Profile updated.</p>}
       {editable && (
         <button
           type="button"
@@ -268,20 +274,23 @@ function MFASection({
 }) {
   const [isPending, startTransition] = useTransition();
   const [qrUrl, setQrUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { toast } = useToast();
 
   function handleToggle() {
-    setError(null);
     setQrUrl(null);
     startTransition(async () => {
       const result = await toggleMFA(!mfaEnabled);
       if (!result.ok) {
-        setError(result.message);
+        toast.error(
+          mfaEnabled ? "Couldn't disable MFA" : "Couldn't enable MFA",
+          result.message,
+        );
       } else {
         if (result.data.qr_code_url) {
           setQrUrl(result.data.qr_code_url);
         }
+        toast.success(mfaEnabled ? "MFA disabled" : "MFA enabled");
         router.refresh();
       }
     });
@@ -309,7 +318,6 @@ function MFASection({
           {mfaEnabled ? "Enabled" : "Disabled"}
         </span>
       </div>
-      {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
       {qrUrl && (
         <div className="max-w-xs space-y-2">
           <p className="text-sm font-medium text-foreground">Scan this QR code with your authenticator app:</p>
@@ -343,16 +351,16 @@ function MFASection({
 
 function SessionsSection({ sessions }: { sessions: AccountSession[] }) {
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { toast } = useToast();
 
   function handleRevoke(sessionId: string) {
-    setError(null);
     startTransition(async () => {
       const result = await revokeSessionAction(sessionId);
       if (!result.ok) {
-        setError(result.message);
+        toast.error("Couldn't revoke session", result.message);
       } else {
+        toast.success("Session revoked");
         router.refresh();
       }
     });
@@ -371,7 +379,6 @@ function SessionsSection({ sessions }: { sessions: AccountSession[] }) {
           </p>
         </div>
       </div>
-      {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
       {sessions.length === 0 ? (
         <p className="text-sm text-foreground-secondary">No active sessions found.</p>
       ) : (
@@ -428,14 +435,13 @@ function DangerZone({ editable }: { editable: boolean }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   function handleDelete() {
-    setError(null);
     startTransition(async () => {
       const result = await deleteAccountAction(confirmation);
       if (!result.ok) {
-        setError(result.message);
+        toast.error("Couldn't delete account", result.message);
       } else {
         window.location.href = "/logout";
       }
@@ -480,7 +486,6 @@ function DangerZone({ editable }: { editable: boolean }) {
               className="h-10 w-full max-w-xs rounded-[6px] border border-[color:var(--danger)]/30 bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--danger)] focus:outline-none focus:ring-1 focus:ring-[color:var(--danger)] disabled:opacity-50"
               placeholder="delete my store"
             />
-            {error && <p role="alert" className="text-sm text-[color:var(--signal)]">{error}</p>}
             <div className="flex gap-3">
               <button
                 type="button"
@@ -495,7 +500,6 @@ function DangerZone({ editable }: { editable: boolean }) {
                 onClick={() => {
                   setShowConfirm(false);
                   setConfirmation("");
-                  setError(null);
                 }}
                 className="h-10 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)]"
               >

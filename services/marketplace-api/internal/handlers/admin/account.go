@@ -91,7 +91,7 @@ func (h *AccountHandler) SetUploader(u media.Uploader) { h.uploader = u }
 // can stay consistent with the rest of the admin API.
 func (h *AccountHandler) GetProfile(c *gin.Context) {
 	userID := c.GetString("user_id")
-	email := c.GetString("email")
+	email := c.GetString("user_email")
 	if userID == "" {
 		RespondErr(c, apperrors.ValidationFailed("user_id", "missing user context"), h.logger)
 		return
@@ -124,7 +124,7 @@ func (h *AccountHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	email := c.GetString("email")
+	email := c.GetString("user_email")
 	if userID == "" {
 		RespondErr(c, apperrors.ValidationFailed("user_id", "missing user context"), h.logger)
 		return
@@ -401,8 +401,15 @@ func (h *AccountHandler) proxyToAuthBFF(c *gin.Context, method, path string) {
 	// Forward email so auth-bff's MFA enrolment can label the QR with
 	// the account name the user expects to see in their authenticator
 	// app (e.g. "Mark8ly: alice@example.com") instead of falling back
-	// to the opaque GIP sub.
-	if email := c.GetString("email"); email != "" {
+	// to the opaque GIP sub. HeaderTrustAuth stores the email under
+	// "user_email" (not "email"), so read that key or fall back to the
+	// raw request header when it's set but the middleware didn't see
+	// fit to promote it (shouldn't happen in prod).
+	email := c.GetString("user_email")
+	if email == "" {
+		email = c.GetHeader("X-User-Email")
+	}
+	if email != "" {
 		req.Header.Set("X-User-Email", email)
 	}
 

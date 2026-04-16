@@ -446,6 +446,10 @@ export interface AuditLogEntry {
   id: string;
   timestamp: string;
   user_email: string;
+  /** "user" | "system" | "api" — drives the actor label in the UI when
+   *  user_email is empty (system events from storefront checkout, signup,
+   *  background jobs). */
+  actor_type: "user" | "system" | "api";
   action: string;
   resource_type: string;
   resource_id: string;

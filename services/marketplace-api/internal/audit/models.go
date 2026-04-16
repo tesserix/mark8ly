@@ -105,6 +105,7 @@ type Response struct {
 	ID           string         `json:"id"`
 	Timestamp    string         `json:"timestamp"`
 	UserEmail    string         `json:"user_email"`
+	ActorType    string         `json:"actor_type"` // "user" | "system" | "api" — UI labels system events
 	Action       string         `json:"action"`
 	ResourceType string         `json:"resource_type"`
 	ResourceID   string         `json:"resource_id"`
@@ -120,6 +121,7 @@ func (e Entry) ToResponse() Response {
 	r := Response{
 		ID:           e.ID.String(),
 		Timestamp:    e.CreatedAt.UTC().Format(time.RFC3339),
+		ActorType:    string(e.ActorType),
 		Action:       e.Action,
 		ResourceType: e.ResourceType,
 		Status:       string(e.Status),

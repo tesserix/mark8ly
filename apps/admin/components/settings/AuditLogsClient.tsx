@@ -270,7 +270,13 @@ function AuditLogRow({
         <td className="py-3 pr-4 text-foreground-secondary whitespace-nowrap">
           {formatDistanceToNow(new Date(entry.timestamp), { addSuffix: true })}
         </td>
-        <td className="py-3 pr-4 text-foreground">{entry.user_email}</td>
+        <td className="py-3 pr-4 text-foreground">
+          {entry.user_email
+            ? entry.user_email
+            : entry.actor_type === "api"
+              ? "API"
+              : "System"}
+        </td>
         <td className="py-3 pr-4 font-mono text-xs text-foreground">{entry.action}</td>
         <td className="py-3 pr-4 text-foreground-secondary">
           {entry.resource_type}

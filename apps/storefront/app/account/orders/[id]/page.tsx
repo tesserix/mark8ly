@@ -76,6 +76,12 @@ export default async function AccountOrderPage({ params }: PageProps) {
         <StatusBadge label="Payment" value={order.payment_status} />
       </div>
 
+      <CancelOrderButton
+        orderId={order.id}
+        orderStatus={order.status}
+        shipmentStatus={order.shipment?.status ?? null}
+      />
+
       <section>
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           Items
@@ -141,12 +147,6 @@ export default async function AccountOrderPage({ params }: PageProps) {
       <DocumentsSection
         orderId={order.id}
         orderNumber={order.order_number}
-        shipmentStatus={order.shipment?.status ?? null}
-      />
-
-      <CancelOrderButton
-        orderId={order.id}
-        orderStatus={order.status}
         shipmentStatus={order.shipment?.status ?? null}
       />
     </div>

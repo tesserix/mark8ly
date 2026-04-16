@@ -631,14 +631,30 @@ func (h *CheckoutExtHandler) calculateTax(
 
 	// Build taxable items from checkout items.
 	// H11 fix: propagate HSN code and GST rate from item data for India GST.
+	//
+	// When the storefront doesn't send a per-item gst_rate (the common case
+	// — the product model doesn't carry one yet), fall back to the country's
+	// default tax_rate from supported_countries.  For India this is typically
+	// 0.18 (18 % GST); for flat-rate countries it's whatever the admin set.
+	defaultGSTRate := decimal.Zero
+	if sc.TaxRate != nil && *sc.TaxRate > 0 {
+		// supported_countries stores the rate as a percentage (18.0) but the
+		// calculator expects a decimal fraction (0.18).
+		defaultGSTRate = decimal.NewFromFloat(*sc.TaxRate).Div(decimal.NewFromInt(100))
+	}
+
 	taxItems := make([]tax.TaxableItem, 0, len(req.Items))
 	for _, it := range req.Items {
+		rate := derefDecimal(it.GSTRate)
+		if rate.IsZero() && !defaultGSTRate.IsZero() {
+			rate = defaultGSTRate
+		}
 		ti := tax.TaxableItem{
 			SKU:      it.SKUSnapshot,
 			Amount:   it.UnitPrice,
 			Quantity: it.Quantity,
 			HSNCode:  derefString(it.HSNCode),
-			GSTRate:  derefDecimal(it.GSTRate),
+			GSTRate:  rate,
 			TaxCode:  derefString(it.TaxCode),
 		}
 		if it.ProductID != nil {

@@ -1,13 +1,10 @@
-// Customer-facing cancel control on /account/orders/[id].
+// Customer-facing cancel / return control on /account/orders/[id].
 //
-// Visible only when cancellation is plausible (order is pending/confirmed
-// AND no shipment has dispatched). The button still hits the backend on
-// click — the backend re-validates ownership + state-machine + shipment
-// guards — so the disabled UI here is purely an affordance hint.
-//
-// Two-step interaction (button → confirm with optional reason) so a
-// single accidental click can't take a customer's order out from under
-// them.
+// Shows contextual actions based on order + shipment state:
+//   • pending/confirmed + no shipment → cancel button (two-step confirm)
+//   • pending/confirmed + shipment exists → "shipped, can't cancel" info
+//   • delivered → return instructions with store contact info
+//   • cancelled/refunded → nothing (handled by status badge)
 
 "use client";
 
@@ -30,33 +27,59 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
   const [error, setError] = useState<string | null>(null);
 
   const orderCancellable = CANCELLABLE_ORDER_STATUSES.has(orderStatus);
-  // Once the merchant has cut a shipping label (any shipment row exists,
-  // regardless of its status) the order is in flight from the store's
-  // perspective — cancellation isn't safe and the customer needs to use
-  // the return path instead.
-  const shipmentBlocks = shipmentStatus !== null;
+  const shipmentExists = shipmentStatus !== null;
+  const isDelivered = shipmentStatus === "delivered";
+  const isCancelled = orderStatus === "cancelled";
 
-  if (!orderCancellable || step === "done") {
-    if (step === "done") {
-      return (
-        <section className="rounded-md border border-[color:var(--storefront-accent,var(--moss-700))]/20 bg-[color:var(--storefront-accent,var(--moss-700))]/5 px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]">
-          Your cancellation request has been received. The page will refresh with
-          the updated status shortly.
-        </section>
-      );
-    }
-    return null;
-  }
+  // Already cancelled — nothing to show
+  if (isCancelled) return null;
 
-  if (shipmentBlocks) {
+  // Done state after successful cancel
+  if (step === "done") {
     return (
-      <section className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))]/40 px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]/70">
-        Your order has been picked up for delivery — cancellation is no
-        longer available. To return it, reply to your order confirmation
-        email and we'll arrange a return + refund.
+      <section className="rounded-md border border-[color:var(--storefront-accent,var(--moss-700))]/20 bg-[color:var(--storefront-accent,var(--moss-700))]/5 px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]">
+        Your cancellation request has been received. The page will refresh with
+        the updated status shortly.
       </section>
     );
   }
+
+  // Delivered → show return instructions
+  if (isDelivered) {
+    return (
+      <section className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))]/40 px-4 py-4">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
+          Need to return this order?
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-[color:var(--storefront-text,var(--ink-900))]/70">
+          If you'd like to return this order, please reply to your order
+          confirmation email with the reason for return. We'll send you the
+          warehouse address and return instructions.
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-[color:var(--storefront-text,var(--ink-900))]/70">
+          Please ensure the item is in its original packaging with the invoice
+          included. Once we receive and inspect the returned item, a refund
+          will be initiated to your original payment method.
+        </p>
+      </section>
+    );
+  }
+
+  // Order in flight (shipment exists, not delivered) → can't cancel
+  if (shipmentExists) {
+    return (
+      <section className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))]/40 px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]/70">
+        Your order has been picked up for delivery — cancellation is no
+        longer available. Once delivered, you can request a return by
+        replying to your order confirmation email.
+      </section>
+    );
+  }
+
+  // Not cancellable status (fulfilled, etc.) and no shipment info → nothing
+  if (!orderCancellable) return null;
+
+  // --- Cancellable order (pending/confirmed, no shipment) ---
 
   function submit() {
     setError(null);
@@ -69,8 +92,6 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
         });
         if (resp.ok) {
           setStep("done");
-          // Pull the freshly-cancelled order so status badges + the
-          // disappearing button reflect the new state.
           router.refresh();
           return;
         }
@@ -89,7 +110,7 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
 
   if (step === "button") {
     return (
-      <section className="border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-4">
+      <section className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))]/40 px-4 py-4">
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
           Need to cancel?
         </h2>

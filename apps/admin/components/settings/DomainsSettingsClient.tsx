@@ -334,22 +334,40 @@ function DomainCard({
         </div>
       )}
 
-      {/* Manual DNS instructions */}
-      {d.dns_method === "manual" && d.cname_target && d.status !== "active" && (
+      {/* Manual DNS instructions — TWO CNAMEs required:
+          1. Main routing CNAME (points requests to our cluster)
+          2. ACME challenge CNAME (delegates SSL cert issuance to us) */}
+      {d.dns_method === "manual" && d.cname_target && (
         <div className="mt-4 rounded-md border border-border bg-background p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-foreground-secondary">
-            DNS setup required
+            DNS setup — add both records
           </p>
-          <p className="mt-2 text-sm text-foreground-secondary">
-            Add a <strong>CNAME</strong> record at your DNS provider:
-          </p>
-          <div className="mt-3 space-y-2">
+
+          {/* Record 1: routing */}
+          <div className="mt-3 space-y-2 border-l-2 border-[color:var(--moss-700)]/40 pl-3">
+            <p className="text-xs font-medium text-foreground">
+              1. Route traffic to your storefront
+            </p>
             <DnsRecord label="Type" value="CNAME" />
             <DnsRecord label="Name" value={d.domain} copyable />
             <DnsRecord label="Target" value={d.cname_target} copyable />
           </div>
-          <p className="mt-3 text-xs text-foreground-tertiary">
-            DNS changes can take up to 48 hours to propagate. Click &quot;Verify&quot; once you&apos;ve added the record.
+
+          {/* Record 2: ACME delegation */}
+          <div className="mt-4 space-y-2 border-l-2 border-[color:var(--moss-700)]/40 pl-3">
+            <p className="text-xs font-medium text-foreground">
+              2. Delegate SSL certificate issuance
+            </p>
+            <DnsRecord label="Type" value="CNAME" />
+            <DnsRecord label="Name" value={`_acme-challenge.${d.domain}`} copyable />
+            <DnsRecord label="Target" value={`_acme-challenge.${d.domain}.acme.mark8ly.com`} copyable />
+            <p className="text-xs text-foreground-tertiary">
+              This lets us issue a free Let&apos;s Encrypt SSL certificate for your domain without you sharing DNS credentials.
+            </p>
+          </div>
+
+          <p className="mt-4 text-xs text-foreground-tertiary">
+            DNS changes can take up to 48 hours to propagate. Click &quot;Verify&quot; once both records are live.
           </p>
           <p className="mt-2 text-xs text-foreground-tertiary">
             Tip: check propagation with{" "}
@@ -360,15 +378,15 @@ function DomainCard({
               className="underline underline-offset-2"
             >
               dnschecker.org
-            </a>{" "}
-            before clicking Verify.
+            </a>
+            .
           </p>
         </div>
       )}
 
       {d.dns_method === "manual" && d.status === "active" && (
         <p className="mt-3 text-xs text-[color:var(--moss-700)]">
-          CNAME verified and active. Your custom domain is live.
+          DNS verified. SSL certificate provisioning may take a few minutes — refresh to see status.
         </p>
       )}
 

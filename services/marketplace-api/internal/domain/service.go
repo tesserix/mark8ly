@@ -193,27 +193,69 @@ func (s *Service) verifyManual(ctx context.Context, d *CustomDomain) (*CustomDom
 	}
 
 	target := *d.CnameTarget
-	cname, err := net.DefaultResolver.LookupCNAME(ctx, d.Domain)
-	if err != nil {
-		s.logger.Info("manual domain CNAME lookup failed", "domain", d.Domain, "err", err)
-		d.Status = DomainStatusVerifying
-		errMsg := fmt.Sprintf("CNAME record not found. Point %s → %s", d.Domain, target)
-		d.ErrorMessage = &errMsg
-		d.UpdatedAt = time.Now()
-		_ = s.repo.Update(ctx, s.db, d)
-		return d, nil
-	}
-
+	cname, cnameErr := net.DefaultResolver.LookupCNAME(ctx, d.Domain)
 	cname = strings.TrimSuffix(cname, ".")
-	if !strings.EqualFold(cname, target) {
-		d.Status = DomainStatusVerifying
-		errMsg := fmt.Sprintf("CNAME points to %s, expected %s", cname, target)
-		d.ErrorMessage = &errMsg
-		d.UpdatedAt = time.Now()
-		_ = s.repo.Update(ctx, s.db, d)
-		return d, nil
+
+	// Happy path: a real CNAME that matches target (or resolves via a
+	// chain that ends at target). This handles non-apex subdomains and
+	// any registrar that serves a true CNAME.
+	if cnameErr == nil && strings.EqualFold(cname, target) {
+		return s.markVerified(ctx, d)
 	}
 
+	// ALIAS/ANAME fallback. Apex domains can't have CNAME per DNS spec,
+	// so registrars like Hostinger, Cloudflare (via flattening), DNSimple,
+	// and Netlify serve ALIAS/ANAME — which resolves to A records at
+	// lookup time. Compare A-record sets: if every IP that the merchant's
+	// domain resolves to is also an IP that the target resolves to,
+	// accept it. We also accept the reverse (target is a subset of
+	// merchant IPs) since CDN edges can return subsets over time.
+	merchantIPs, merchantErr := net.DefaultResolver.LookupHost(ctx, d.Domain)
+	targetIPs, targetErr := net.DefaultResolver.LookupHost(ctx, target)
+
+	if merchantErr == nil && targetErr == nil && len(merchantIPs) > 0 && len(targetIPs) > 0 {
+		if ipSetsOverlap(merchantIPs, targetIPs) {
+			return s.markVerified(ctx, d)
+		}
+	}
+
+	// Neither CNAME match nor A-record match — produce the most useful
+	// error we can, favouring the CNAME reason when present.
+	d.Status = DomainStatusVerifying
+	var errMsg string
+	switch {
+	case cnameErr != nil && merchantErr != nil:
+		errMsg = fmt.Sprintf("No DNS records found for %s. Add a CNAME (or ALIAS / ANAME if your provider supports it) pointing to %s.", d.Domain, target)
+	case cnameErr != nil && len(merchantIPs) > 0:
+		errMsg = fmt.Sprintf("%s resolves to %s but should resolve to %s. Update your DNS record to point to the correct target.", d.Domain, strings.Join(merchantIPs, ", "), target)
+	case cname != "" && !strings.EqualFold(cname, target):
+		errMsg = fmt.Sprintf("CNAME points to %s, expected %s", cname, target)
+	default:
+		errMsg = fmt.Sprintf("DNS not ready yet. Ensure %s points to %s.", d.Domain, target)
+	}
+	d.ErrorMessage = &errMsg
+	d.UpdatedAt = time.Now()
+	_ = s.repo.Update(ctx, s.db, d)
+	return d, nil
+}
+
+// ipSetsOverlap returns true when at least one IP appears in both sets.
+// Used to accept ALIAS records where both domains resolve to the same
+// CDN edge IPs.
+func ipSetsOverlap(a, b []string) bool {
+	set := make(map[string]struct{}, len(b))
+	for _, ip := range b {
+		set[ip] = struct{}{}
+	}
+	for _, ip := range a {
+		if _, ok := set[ip]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) markVerified(ctx context.Context, d *CustomDomain) (*CustomDomain, error) {
 	now := time.Now()
 	d.Status = DomainStatusActive
 	d.VerifiedAt = &now

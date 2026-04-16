@@ -2,6 +2,7 @@
 
 import type { HomepageSection } from "@/lib/api/marketplace-api";
 import { FieldLabel, TextInput } from "../BrandingSettingsClient";
+import { PageBodyEditor } from "../PageBodyEditor";
 
 type LetterSection = Extract<HomepageSection, { type: "letter" }>;
 
@@ -43,20 +44,12 @@ export function LetterSectionForm({ section, onChange, editable }: Props) {
         />
       </div>
       <div className="space-y-1.5">
-        <FieldLabel htmlFor="section_letter_body">Body (markdown)</FieldLabel>
-        <textarea
-          id="section_letter_body"
-          rows={6}
-          value={section.body}
-          onChange={(e) => patch({ body: e.target.value })}
-          disabled={!editable}
-          maxLength={MAX_BODY}
-          placeholder="A couple of paragraphs about your shop, your craft, or your story."
-          className="w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+        <FieldLabel htmlFor="section_letter_body">Body</FieldLabel>
+        <PageBodyEditor
+          markdown={section.body}
+          onChange={(md) => patch({ body: md })}
+          editable={editable}
         />
-        <p className="text-xs text-foreground-secondary">
-          Markdown supported (headings, lists, links, emphasis). HTML is stripped for safety.
-        </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">

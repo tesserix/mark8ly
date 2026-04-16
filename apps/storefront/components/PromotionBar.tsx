@@ -20,22 +20,23 @@ interface PromotionBarProps {
  * announcement bar. When neither is active, renders nothing.
  */
 export function PromotionBar({ promotion, announcement }: PromotionBarProps) {
-  // Campaign promotion takes priority over announcement bar.
-  if (promotion) {
-    return <CampaignStrip promotion={promotion} />;
-  }
+  const showCampaign = !!promotion;
+  const showAnnouncement = !!announcement?.active && !!announcement.text;
 
-  if (announcement?.active && announcement.text) {
-    return (
-      <AnnouncementStrip
-        text={announcement.text}
-        link={announcement.link}
-        bg={announcement.bg}
-      />
-    );
-  }
+  if (!showCampaign && !showAnnouncement) return null;
 
-  return null;
+  return (
+    <>
+      {showAnnouncement ? (
+        <AnnouncementStrip
+          text={announcement.text!}
+          link={announcement.link}
+          bg={announcement.bg}
+        />
+      ) : null}
+      {showCampaign ? <CampaignStrip promotion={promotion} /> : null}
+    </>
+  );
 }
 
 function CampaignStrip({ promotion }: { promotion: ActivePromotion }) {

@@ -10,6 +10,7 @@ import { OrderActionsBar } from "@/components/orders/OrderActionsBar";
 import { ShippingLabelPanel } from "@/components/orders/ShippingLabelPanel";
 import { OrderAddressCard } from "@/components/orders/OrderAddressCard";
 import { OrderDetailHeader } from "@/components/orders/OrderDetailHeader";
+import { OrderDocumentsPanel } from "@/components/orders/OrderDocumentsPanel";
 import { OrderItemsTable } from "@/components/orders/OrderItemsTable";
 import { OrderTotalsCard } from "@/components/orders/OrderTotalsCard";
 import { getOrder } from "@/lib/api/marketplace-api";
@@ -56,6 +57,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
               orderId={order.id}
               orderStatus={order.status}
             />
+            <OrderDocumentsPanel order={order} />
           </div>
         </div>
       </main>

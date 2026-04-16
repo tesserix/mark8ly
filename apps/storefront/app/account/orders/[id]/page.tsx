@@ -12,6 +12,7 @@ import { resolveStoreSlug } from "@/lib/slug";
 import { decodeSession } from "@/lib/session";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { OrderTimeline } from "@/components/OrderTimeline";
+import { invoiceNumberFromOrder, receiptNumberFromOrder } from "@/lib/invoices/numbering";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -127,7 +128,92 @@ export default async function AccountOrderPage({ params }: PageProps) {
           </div>
         </dl>
       </section>
+
+      <DocumentsSection
+        orderId={order.id}
+        orderNumber={order.order_number}
+        paymentStatus={order.payment_status}
+      />
     </div>
+  );
+}
+
+function DocumentsSection({
+  orderId,
+  orderNumber,
+  paymentStatus,
+}: {
+  orderId: string;
+  orderNumber: string;
+  paymentStatus: string;
+}) {
+  const invoiceNumber = invoiceNumberFromOrder(orderNumber);
+  const receiptNumber = receiptNumberFromOrder(orderNumber);
+  const receiptAvailable =
+    paymentStatus === "paid" ||
+    paymentStatus === "captured" ||
+    paymentStatus === "partially_refunded";
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60">
+        Documents
+      </h2>
+      <ul className="mt-3 divide-y divide-[color:var(--ink-900)]/10 border-t border-[color:var(--ink-900)]/10">
+        <li className="flex items-center justify-between gap-4 py-3">
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-[color:var(--ink-900)]">Invoice</span>
+            <span
+              className="text-xs text-[color:var(--ink-900)] opacity-60"
+              style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
+            >
+              {invoiceNumber}
+            </span>
+          </div>
+          <a
+            href={`/api/orders/${encodeURIComponent(orderId)}/invoice`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-3 py-1.5 text-xs font-medium text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)]"
+          >
+            Download PDF
+          </a>
+        </li>
+        <li className="flex items-center justify-between gap-4 py-3">
+          <div className="flex flex-col">
+            <span
+              className={`text-sm font-medium ${
+                receiptAvailable
+                  ? "text-[color:var(--ink-900)]"
+                  : "text-[color:var(--ink-900)] opacity-50"
+              }`}
+            >
+              Receipt
+            </span>
+            <span
+              className="text-xs text-[color:var(--ink-900)] opacity-60"
+              style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
+            >
+              {receiptAvailable ? receiptNumber : "Available after payment clears"}
+            </span>
+          </div>
+          {receiptAvailable ? (
+            <a
+              href={`/api/orders/${encodeURIComponent(orderId)}/receipt`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-3 py-1.5 text-xs font-medium text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)]"
+            >
+              Download PDF
+            </a>
+          ) : (
+            <span className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/15 px-3 py-1.5 text-xs text-[color:var(--ink-900)]/40">
+              Not yet available
+            </span>
+          )}
+        </li>
+      </ul>
+    </section>
   );
 }
 

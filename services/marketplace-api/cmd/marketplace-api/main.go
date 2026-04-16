@@ -206,6 +206,16 @@ func main() {
 		Logger: log,
 	})
 
+	// Dashboard D2 — Tickets. Hoisted for the same reason as the
+	// notification service: the storefront /support/tickets endpoint
+	// needs to create tickets via this service, and the admin dashboard
+	// reads them through the same service instance.
+	ticketSvc := ticket.NewService(ticket.ServiceConfig{
+		DB:     conn,
+		Repo:   ticket.NewRepository(),
+		Logger: log,
+	})
+
 	if m == mode.Admin || m == mode.Both {
 		productRepo := product.NewRepository(conn)
 		categoryRepo := category.NewRepository(conn)
@@ -421,13 +431,9 @@ func main() {
 		// Dashboard D1 wiring.
 		dashboardHandler := admin.NewDashboardHandler(conn, log)
 
-		// Tickets D2 wiring.
-		ticketRepo := ticket.NewRepository()
-		ticketSvc := ticket.NewService(ticket.ServiceConfig{
-			DB:     conn,
-			Repo:   ticketRepo,
-			Logger: log,
-		})
+		// Tickets D2 wiring — uses the shared ticketSvc hoisted above so
+		// the storefront /support/tickets endpoint and the admin dashboard
+		// read/write the same rows through the same service instance.
 		ticketsHandler := admin.NewTicketsHandler(ticketSvc, log)
 
 		// Settings S5 — Notifications handler uses the shared notificationSvc
@@ -658,6 +664,12 @@ func main() {
 
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log)
 
+		// Support tickets — public contact form endpoint. Shares the
+		// ticketSvc with admin so created rows surface on the admin
+		// dashboard immediately.
+		sfTicketsHandler := storefront.NewTicketsHandler(ticketSvc, log).
+			WithNotifier(notificationSvc)
+
 		storefrontDeps = storefront.Deps{
 			Handler:               storefrontHandler,
 			CheckoutHandler:       checkoutHandler,
@@ -685,6 +697,7 @@ func main() {
 			BrandingHandler:      sfBrandingHandler,
 			PagesHandler:         sfPagesHandler,
 			DomainResolveHandler: domainsHandler.ResolveDomain,
+			TicketsHandler:       sfTicketsHandler,
 			Logger:               log,
 		}
 	}

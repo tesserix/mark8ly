@@ -44,7 +44,9 @@ type Deps struct {
 	PagesHandler *PagesHandler
 	// Domain resolution (custom domains → store slug).
 	DomainResolveHandler gin.HandlerFunc
-	Logger               *slog.Logger
+	// Support tickets — public contact form.
+	TicketsHandler *TicketsHandler
+	Logger         *slog.Logger
 }
 
 // CountryLister is satisfied by country.Handler.ListSupported.
@@ -156,6 +158,15 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		if deps.PagesHandler != nil {
 			group.GET("/pages", deps.PagesHandler.List)
 			group.GET("/pages/:pageSlug", deps.PagesHandler.Get)
+		}
+
+		// Support tickets — public contact form.
+		// Rate-limited: 3 req/min per IP — ticket spam can be worse than
+		// order spam because tickets have no payment friction.
+		if deps.TicketsHandler != nil {
+			group.POST("/support/tickets",
+				ratelimit.PerIP(0.05, 3),
+				deps.TicketsHandler.Create)
 		}
 
 		// Loyalty — Marketing M3. Public endpoints, no auth.

@@ -33,7 +33,8 @@ export async function generateMetadata({
     slugFromQuery ||
     await resolveStoreSlug(host);
   const store = slug ? await fetchStoreBySlug(slug).catch(() => null) : null;
-  return makeTenantMetadata(store, slug);
+  const branding = slug ? await fetchBranding(slug).catch(() => null) : null;
+  return makeTenantMetadata(store, slug, branding?.branding ?? null);
 }
 
 export default async function StoreHomePage({ searchParams }: PageProps) {

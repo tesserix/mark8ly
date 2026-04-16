@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useTransition, useCallback, type ReactNode } from "react";
-import { Link2, Code, Image, Check, Home, Palette, FileText } from "lucide-react";
+import { Link2, Code, Image, Check, Home, Palette, FileText, Search } from "lucide-react";
 
 import type { StoreBranding, UpdateBrandingInput, AdminPage, AdminCategory } from "@/lib/api/marketplace-api";
 import { HomepageTab } from "./HomepageTab";
+import { SeoTab } from "./SeoTab";
 import type { StoreInfo } from "./HomepageTab.helpers";
 import { FooterSectionsEditor } from "./FooterSectionsEditor";
 import { ImageUploadInput } from "./ImageUploadInput";
@@ -31,7 +32,7 @@ interface BrandingSettingsClientProps {
   pagesContent?: ReactNode;
 }
 
-type Tab = "identity" | "theme" | "homepage" | "pages" | "footer" | "advanced";
+type Tab = "identity" | "theme" | "homepage" | "pages" | "footer" | "seo" | "advanced";
 
 const TABS: { key: Tab; label: string; icon: typeof Image }[] = [
   { key: "identity", label: "Identity", icon: Image },
@@ -39,6 +40,7 @@ const TABS: { key: Tab; label: string; icon: typeof Image }[] = [
   { key: "homepage", label: "Homepage", icon: Home },
   { key: "pages",    label: "Pages",    icon: FileText },
   { key: "footer",   label: "Footer",   icon: Link2 },
+  { key: "seo",      label: "SEO",      icon: Search },
   { key: "advanced", label: "Advanced", icon: Code },
 ];
 
@@ -152,6 +154,7 @@ export function BrandingSettingsClient({
         {tab === "homepage" && <HomepageTab form={form} patch={patch} editable={editable} pages={pages} categories={categories} store={store} onHeroValidityChange={setHeroValid} />}
         {tab === "pages" && pagesContent}
         {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} pages={pages} />}
+        {tab === "seo" && <SeoTab form={form} patch={patch} editable={editable} />}
         {tab === "advanced" && <AdvancedTab form={form} patch={patch} editable={editable} />}
 
         {/* Save bar — hidden on the Theme tab, which ships its own

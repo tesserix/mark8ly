@@ -40,6 +40,16 @@ type StoreBranding struct {
 	SocialYoutube    *string   `gorm:"column:social_youtube;type:varchar(300)"`
 	CustomCSS        *string   `gorm:"column:custom_css"`
 	ShowPoweredBy    bool      `gorm:"column:show_powered_by;not null;default:true"`
+	// SEO + AI SEO
+	SeoTitleTemplate      *string `gorm:"column:seo_title_template;type:varchar(200)"`
+	SeoDefaultDescription *string `gorm:"column:seo_default_description"`
+	SeoOgImageURL         *string `gorm:"column:seo_og_image_url"`
+	SeoTwitterHandle      *string `gorm:"column:seo_twitter_handle;type:varchar(100)"`
+	SeoGoogleVerification *string `gorm:"column:seo_google_verification;type:varchar(200)"`
+	SeoBingVerification   *string `gorm:"column:seo_bing_verification;type:varchar(200)"`
+	SeoJsonLd             *string `gorm:"column:seo_json_ld"`
+	SeoAiPolicy           string  `gorm:"column:seo_ai_policy;type:varchar(30);not null;default:'allow'"`
+	SeoLlmsTxt            *string `gorm:"column:seo_llms_txt"`
 	CreatedAt        time.Time `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt        time.Time `gorm:"column:updated_at;not null;default:now()"`
 }

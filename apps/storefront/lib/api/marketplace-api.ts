@@ -313,6 +313,17 @@ export interface StorefrontBranding {
   // merchant-injected CSS. Sanitized at render time.
   custom_css?: string | null;
 
+  // SEO + AI SEO
+  seo_title_template?: string | null;
+  seo_default_description?: string | null;
+  seo_og_image_url?: string | null;
+  seo_twitter_handle?: string | null;
+  seo_google_verification?: string | null;
+  seo_bing_verification?: string | null;
+  seo_json_ld?: string | null;
+  seo_ai_policy?: "allow" | "deny" | "training-only-denied";
+  seo_llms_txt?: string | null;
+
   // homepage content (hero + sections). Wire format is the raw JSONB
   // object; empty stores see `{}`.
   homepage_content?: HomepageContent;

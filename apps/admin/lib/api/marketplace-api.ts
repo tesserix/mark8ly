@@ -1882,6 +1882,16 @@ export interface StoreBranding {
   social_youtube: string | null;
   custom_css: string | null;
   show_powered_by: boolean;
+  // SEO + AI SEO
+  seo_title_template?: string | null;
+  seo_default_description?: string | null;
+  seo_og_image_url?: string | null;
+  seo_twitter_handle?: string | null;
+  seo_google_verification?: string | null;
+  seo_bing_verification?: string | null;
+  seo_json_ld?: string | null;
+  seo_ai_policy: "allow" | "deny" | "training-only-denied";
+  seo_llms_txt?: string | null;
   created_at: string;
   updated_at: string;
 }

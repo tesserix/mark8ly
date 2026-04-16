@@ -67,6 +67,16 @@ type PublicBrandingResponse struct {
 	SocialYoutube      *string `json:"social_youtube,omitempty"`
 	CustomCSS          *string         `json:"custom_css,omitempty"`
 	ShowPoweredBy      bool            `json:"show_powered_by"`
+	// SEO + AI SEO (public — storefront needs these for metadata emission).
+	SeoTitleTemplate      *string `json:"seo_title_template,omitempty"`
+	SeoDefaultDescription *string `json:"seo_default_description,omitempty"`
+	SeoOgImageURL         *string `json:"seo_og_image_url,omitempty"`
+	SeoTwitterHandle      *string `json:"seo_twitter_handle,omitempty"`
+	SeoGoogleVerification *string `json:"seo_google_verification,omitempty"`
+	SeoBingVerification   *string `json:"seo_bing_verification,omitempty"`
+	SeoJsonLd             *string `json:"seo_json_ld,omitempty"`
+	SeoAiPolicy           string  `json:"seo_ai_policy"`
+	SeoLlmsTxt            *string `json:"seo_llms_txt,omitempty"`
 	HomepageContent    json.RawMessage `json:"homepage_content"`
 }
 
@@ -97,6 +107,15 @@ func toPublicBrandingResponse(b branding.StoreBranding) PublicBrandingResponse {
 		SocialYoutube:      b.SocialYoutube,
 		CustomCSS:          b.CustomCSS,
 		ShowPoweredBy:      b.ShowPoweredBy,
+		SeoTitleTemplate:      b.SeoTitleTemplate,
+		SeoDefaultDescription: b.SeoDefaultDescription,
+		SeoOgImageURL:         b.SeoOgImageURL,
+		SeoTwitterHandle:      b.SeoTwitterHandle,
+		SeoGoogleVerification: b.SeoGoogleVerification,
+		SeoBingVerification:   b.SeoBingVerification,
+		SeoJsonLd:             b.SeoJsonLd,
+		SeoAiPolicy:           b.SeoAiPolicy,
+		SeoLlmsTxt:            b.SeoLlmsTxt,
 	}
 	if sections, err := branding.ParseFooterSections(b.FooterSections); err == nil {
 		resp.FooterSections = sections

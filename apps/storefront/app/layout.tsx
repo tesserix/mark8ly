@@ -183,8 +183,31 @@ export default async function RootLayout({ children }: RootLayoutProps) {
     ? (themeCssVariables(normalizedTheme) as Record<string, string>)
     : undefined;
 
+  const seo = brandingData?.branding;
+  const storeName = brandingData?.store?.name ?? store?.name ?? null;
+
   return (
     <html lang="en" className={fontVars}>
+      <head>
+        {seo?.seo_google_verification ? (
+          <meta name="google-site-verification" content={seo.seo_google_verification} />
+        ) : null}
+        {seo?.seo_bing_verification ? (
+          <meta name="msvalidate.01" content={seo.seo_bing_verification} />
+        ) : null}
+        {seo?.seo_og_image_url ? (
+          <meta property="og:image" content={seo.seo_og_image_url} />
+        ) : null}
+        {seo?.seo_twitter_handle ? (
+          <meta name="twitter:site" content={seo.seo_twitter_handle} />
+        ) : null}
+        {seo?.seo_ai_policy === "deny" ? (
+          <meta name="robots" content="noai, noimageai" />
+        ) : seo?.seo_ai_policy === "training-only-denied" ? (
+          <meta name="robots" content="noai-training" />
+        ) : null}
+        <JsonLd raw={seo?.seo_json_ld} />
+      </head>
       <body
         style={themeStyle}
         data-motion={normalizedTheme?.motion ?? "subtle"}
@@ -229,6 +252,25 @@ function MerchantCSS({ css }: { css?: string | null }) {
   const sanitized = sanitizeCss(css);
   if (!sanitized) return null;
   return <style dangerouslySetInnerHTML={{ __html: sanitized }} />;
+}
+
+/**
+ * Emit merchant-authored JSON-LD. Parses to validate — invalid JSON is
+ * silently dropped rather than producing broken markup.
+ */
+function JsonLd({ raw }: { raw?: string | null }) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return (
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(parsed) }}
+      />
+    );
+  } catch {
+    return null;
+  }
 }
 
 function sanitizeCss(raw: string): string {

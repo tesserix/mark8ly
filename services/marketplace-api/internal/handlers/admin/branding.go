@@ -65,6 +65,16 @@ type BrandingResponse struct {
 	SocialYoutube      *string                  `json:"social_youtube,omitempty"`
 	CustomCSS          *string                  `json:"custom_css,omitempty"`
 	ShowPoweredBy      bool                     `json:"show_powered_by"`
+	// SEO + AI SEO
+	SeoTitleTemplate      *string `json:"seo_title_template,omitempty"`
+	SeoDefaultDescription *string `json:"seo_default_description,omitempty"`
+	SeoOgImageURL         *string `json:"seo_og_image_url,omitempty"`
+	SeoTwitterHandle      *string `json:"seo_twitter_handle,omitempty"`
+	SeoGoogleVerification *string `json:"seo_google_verification,omitempty"`
+	SeoBingVerification   *string `json:"seo_bing_verification,omitempty"`
+	SeoJsonLd             *string `json:"seo_json_ld,omitempty"`
+	SeoAiPolicy           string  `json:"seo_ai_policy"`
+	SeoLlmsTxt            *string `json:"seo_llms_txt,omitempty"`
 	HomepageContent    json.RawMessage          `json:"homepage_content"`
 	CreatedAt          string                   `json:"created_at"`
 	UpdatedAt          string                   `json:"updated_at"`
@@ -99,6 +109,15 @@ func toBrandingResponse(b branding.StoreBranding) BrandingResponse {
 		SocialYoutube:      b.SocialYoutube,
 		CustomCSS:          b.CustomCSS,
 		ShowPoweredBy:      b.ShowPoweredBy,
+		SeoTitleTemplate:      b.SeoTitleTemplate,
+		SeoDefaultDescription: b.SeoDefaultDescription,
+		SeoOgImageURL:         b.SeoOgImageURL,
+		SeoTwitterHandle:      b.SeoTwitterHandle,
+		SeoGoogleVerification: b.SeoGoogleVerification,
+		SeoBingVerification:   b.SeoBingVerification,
+		SeoJsonLd:             b.SeoJsonLd,
+		SeoAiPolicy:           b.SeoAiPolicy,
+		SeoLlmsTxt:            b.SeoLlmsTxt,
 		CreatedAt:          b.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:          b.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
@@ -158,6 +177,15 @@ type UpdateBrandingRequest struct {
 	SocialYoutube      *string                   `json:"social_youtube"`
 	CustomCSS          *string                   `json:"custom_css"`
 	ShowPoweredBy      *bool                     `json:"show_powered_by"`
+	SeoTitleTemplate      *string `json:"seo_title_template"`
+	SeoDefaultDescription *string `json:"seo_default_description"`
+	SeoOgImageURL         *string `json:"seo_og_image_url"`
+	SeoTwitterHandle      *string `json:"seo_twitter_handle"`
+	SeoGoogleVerification *string `json:"seo_google_verification"`
+	SeoBingVerification   *string `json:"seo_bing_verification"`
+	SeoJsonLd             *string `json:"seo_json_ld"`
+	SeoAiPolicy           *string `json:"seo_ai_policy"`
+	SeoLlmsTxt            *string `json:"seo_llms_txt"`
 	HomepageContent    *json.RawMessage          `json:"homepage_content"`
 }
 
@@ -210,6 +238,15 @@ func (h *BrandingHandler) Update(c *gin.Context) {
 		SocialYoutube:      req.SocialYoutube,
 		CustomCSS:          req.CustomCSS,
 		ShowPoweredBy:      req.ShowPoweredBy,
+		SeoTitleTemplate:      req.SeoTitleTemplate,
+		SeoDefaultDescription: req.SeoDefaultDescription,
+		SeoOgImageURL:         req.SeoOgImageURL,
+		SeoTwitterHandle:      req.SeoTwitterHandle,
+		SeoGoogleVerification: req.SeoGoogleVerification,
+		SeoBingVerification:   req.SeoBingVerification,
+		SeoJsonLd:             req.SeoJsonLd,
+		SeoAiPolicy:           req.SeoAiPolicy,
+		SeoLlmsTxt:            req.SeoLlmsTxt,
 	})
 	if err != nil {
 		RespondErr(c, err, h.logger)

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import type { PublicStore } from "@/lib/api/platform-api";
+import type { StorefrontBranding } from "@/lib/api/marketplace-api";
 
 /**
  * Per-tenant metadata helper.
@@ -14,6 +15,7 @@ import type { PublicStore } from "@/lib/api/platform-api";
 export function makeTenantMetadata(
   store: PublicStore | null,
   slug: string,
+  branding?: StorefrontBranding | null,
 ): Metadata {
   if (!store) {
     return {
@@ -26,14 +28,26 @@ export function makeTenantMetadata(
 
   const canonical = canonicalUrl(store.slug);
   const description =
-    `Shop ${store.name} on Mark8ly. ${store.country_code} · ` +
-    `${store.currency_code}. Powered by Mark8ly.`;
+    branding?.seo_default_description?.trim() ||
+    `Shop ${store.name} on Mark8ly. ${store.country_code} · ${store.currency_code}.`;
+
+  // Merchant-provided title template takes precedence. The template
+  // must contain `%s` — that's where Next.js inserts the page title.
+  const customTemplate = branding?.seo_title_template?.trim();
+  const titleTemplate =
+    customTemplate && customTemplate.includes("%s")
+      ? customTemplate
+      : `%s · ${store.name}`;
+
+  const ogImage = branding?.seo_og_image_url?.trim() || undefined;
+  const twitterHandle = branding?.seo_twitter_handle?.trim() || undefined;
+  const aiPolicy = branding?.seo_ai_policy ?? "allow";
 
   return {
     metadataBase: new URL(canonical),
     title: {
       default: store.name,
-      template: `%s · ${store.name}`,
+      template: titleTemplate,
     },
     description,
     alternates: {
@@ -45,22 +59,24 @@ export function makeTenantMetadata(
       title: store.name,
       description,
       siteName: store.name,
+      ...(ogImage ? { images: [ogImage] } : {}),
     },
     twitter: {
       card: "summary_large_image",
       title: store.name,
       description,
+      ...(twitterHandle ? { site: twitterHandle, creator: twitterHandle } : {}),
+      ...(ogImage ? { images: [ogImage] } : {}),
     },
     robots: {
       index: true,
       follow: true,
+      ...(aiPolicy === "deny" && { nocache: true }),
     },
     other: {
       "store:slug": store.slug,
       "store:currency": store.currency_code,
       "store:country": store.country_code,
-      // JSON-LD Store schema is added inline by the page so the helper
-      // stays serializable. See app/page.tsx for the script tag.
     },
   };
 }

@@ -90,6 +90,15 @@ type UpdateInput struct {
 	SocialYoutube    *string
 	CustomCSS        *string
 	ShowPoweredBy    *bool
+	SeoTitleTemplate      *string
+	SeoDefaultDescription *string
+	SeoOgImageURL         *string
+	SeoTwitterHandle      *string
+	SeoGoogleVerification *string
+	SeoBingVerification   *string
+	SeoJsonLd             *string
+	SeoAiPolicy           *string
+	SeoLlmsTxt            *string
 }
 
 // Update validates and persists branding changes.
@@ -245,6 +254,40 @@ func (s *Service) Update(ctx context.Context, in UpdateInput) (*StoreBranding, e
 	}
 	if in.ShowPoweredBy != nil {
 		b.ShowPoweredBy = *in.ShowPoweredBy
+	}
+
+	// SEO + AI SEO fields.
+	if in.SeoTitleTemplate != nil {
+		b.SeoTitleTemplate = in.SeoTitleTemplate
+	}
+	if in.SeoDefaultDescription != nil {
+		b.SeoDefaultDescription = in.SeoDefaultDescription
+	}
+	if in.SeoOgImageURL != nil {
+		b.SeoOgImageURL = in.SeoOgImageURL
+	}
+	if in.SeoTwitterHandle != nil {
+		b.SeoTwitterHandle = in.SeoTwitterHandle
+	}
+	if in.SeoGoogleVerification != nil {
+		b.SeoGoogleVerification = in.SeoGoogleVerification
+	}
+	if in.SeoBingVerification != nil {
+		b.SeoBingVerification = in.SeoBingVerification
+	}
+	if in.SeoJsonLd != nil {
+		b.SeoJsonLd = in.SeoJsonLd
+	}
+	if in.SeoAiPolicy != nil {
+		switch *in.SeoAiPolicy {
+		case "allow", "deny", "training-only-denied":
+			b.SeoAiPolicy = *in.SeoAiPolicy
+		default:
+			return nil, apperrors.ValidationFailed("seo_ai_policy", "must be allow, deny, or training-only-denied")
+		}
+	}
+	if in.SeoLlmsTxt != nil {
+		b.SeoLlmsTxt = in.SeoLlmsTxt
 	}
 
 	// WCAG AA contrast validation.

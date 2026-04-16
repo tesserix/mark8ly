@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/review"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -14,12 +15,20 @@ import (
 // ReviewsHandler bundles dependencies for the admin review endpoints.
 type ReviewsHandler struct {
 	repo   review.Repository
+	audit  *audit.Emitter // optional — nil-safe
 	logger *slog.Logger
 }
 
 // NewReviewsHandler constructs a ReviewsHandler.
 func NewReviewsHandler(repo review.Repository, logger *slog.Logger) *ReviewsHandler {
 	return &ReviewsHandler{repo: repo, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so review moderation events show
+// up in Settings -> Audit Logs. Nil-safe.
+func (h *ReviewsHandler) WithAudit(e *audit.Emitter) *ReviewsHandler {
+	h.audit = e
+	return h
 }
 
 // List handles GET /admin/stores/:storeId/reviews.
@@ -109,6 +118,11 @@ func (h *ReviewsHandler) Approve(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "review.approved",
+		ResourceType: "review",
+		ResourceID:   reviewID,
+	})
 	c.JSON(http.StatusOK, toAdminReviewResponse(updated))
 }
 
@@ -138,6 +152,12 @@ func (h *ReviewsHandler) Reject(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "review.rejected",
+		ResourceType: "review",
+		ResourceID:   reviewID,
+		Severity:     audit.SeverityWarning,
+	})
 	c.JSON(http.StatusOK, toAdminReviewResponse(updated))
 }
 
@@ -167,6 +187,15 @@ func (h *ReviewsHandler) ToggleFeatured(c *gin.Context) {
 		return
 	}
 
+	action := "review.unfeatured"
+	if req.Featured {
+		action = "review.featured"
+	}
+	h.audit.Emit(c, audit.Event{
+		Action:       action,
+		ResourceType: "review",
+		ResourceID:   reviewID,
+	})
 	c.JSON(http.StatusOK, toAdminReviewResponse(updated))
 }
 
@@ -210,6 +239,11 @@ func (h *ReviewsHandler) Reply(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "review.replied",
+		ResourceType: "review",
+		ResourceID:   reviewID,
+	})
 	// Re-fetch to return the updated review with the new reply.
 	updated, err := h.repo.GetByID(c.Request.Context(), reviewID)
 	if err != nil {

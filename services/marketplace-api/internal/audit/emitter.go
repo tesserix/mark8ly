@@ -23,6 +23,19 @@ type Event struct {
 	Status       Status         // defaults to StatusSuccess
 	Severity     Severity       // defaults to SeverityInfo
 	Metadata     map[string]any // optional flat blob
+
+	// TenantID and StoreID are normally pulled from the gin context
+	// (set by HeaderTrustAuth + the :storeId path param). Storefront
+	// routes don't carry either — they use :storeSlug and resolve the
+	// store via middleware — so storefront callers populate these
+	// explicitly. When set, these win over context lookup.
+	TenantID uuid.UUID
+	StoreID  uuid.UUID
+
+	// ForceActorType overrides the actor classification. Storefront
+	// emitters pass ActorSystem here so audit rows for customer-driven
+	// actions (signup, checkout) don't get tagged as the merchant.
+	ForceActorType ActorType
 }
 
 // Emitter is an async, fire-and-forget audit log writer. Emit() is
@@ -165,15 +178,20 @@ func (e *Emitter) write(entry Entry) {
 // (with a logged warning) when the request is missing tenant/store —
 // audit must never write an unscoped row.
 func buildEntry(c *gin.Context, ev Event) *Entry {
-	tenantID, storeID, ok := scopeFromContext(c)
+	tenantID, storeID, ok := resolveScope(c, ev)
 	if !ok {
 		return nil
+	}
+
+	actorType := ActorSystem
+	if ev.ForceActorType != "" {
+		actorType = ev.ForceActorType
 	}
 
 	entry := &Entry{
 		TenantID:     tenantID,
 		StoreID:      storeID,
-		ActorType:    ActorSystem,
+		ActorType:    actorType,
 		Action:       ev.Action,
 		ResourceType: ev.ResourceType,
 		Status:       defaultStatus(ev.Status),
@@ -186,15 +204,20 @@ func buildEntry(c *gin.Context, ev Event) *Entry {
 	}
 
 	if c != nil {
-		if uid := strings.TrimSpace(c.GetString("user_id")); uid != "" {
-			if parsed, err := uuid.Parse(uid); err == nil {
-				entry.ActorUserID = &parsed
-				entry.ActorType = ActorUser
+		// Don't infer a user actor when the caller explicitly forced a
+		// system/api classification — storefront events should stay as
+		// system even though the request carries a customer session.
+		if ev.ForceActorType == "" {
+			if uid := strings.TrimSpace(c.GetString("user_id")); uid != "" {
+				if parsed, err := uuid.Parse(uid); err == nil {
+					entry.ActorUserID = &parsed
+					entry.ActorType = ActorUser
+				}
 			}
-		}
-		if email := strings.TrimSpace(c.GetString("user_email")); email != "" {
-			v := email
-			entry.ActorEmail = &v
+			if email := strings.TrimSpace(c.GetString("user_email")); email != "" {
+				v := email
+				entry.ActorEmail = &v
+			}
 		}
 		if ip := clientIP(c); ip != "" {
 			v := ip
@@ -209,21 +232,28 @@ func buildEntry(c *gin.Context, ev Event) *Entry {
 	return entry
 }
 
-// scopeFromContext pulls the tenant + store IDs that scope every audit
-// row. Both must parse as valid UUIDs or the event is dropped.
-func scopeFromContext(c *gin.Context) (tenantID, storeID uuid.UUID, ok bool) {
-	if c == nil {
+// resolveScope picks tenant + store IDs from the explicit Event fields
+// first, then falls back to the gin context. Both must end up non-zero
+// or the event is dropped.
+func resolveScope(c *gin.Context, ev Event) (tenantID, storeID uuid.UUID, ok bool) {
+	tenantID = ev.TenantID
+	storeID = ev.StoreID
+	if c != nil {
+		if tenantID == uuid.Nil {
+			if tid, err := uuid.Parse(c.GetString("tenant_id")); err == nil {
+				tenantID = tid
+			}
+		}
+		if storeID == uuid.Nil {
+			if sid, err := uuid.Parse(c.Param("storeId")); err == nil {
+				storeID = sid
+			}
+		}
+	}
+	if tenantID == uuid.Nil || storeID == uuid.Nil {
 		return uuid.Nil, uuid.Nil, false
 	}
-	tid, err := uuid.Parse(c.GetString("tenant_id"))
-	if err != nil {
-		return uuid.Nil, uuid.Nil, false
-	}
-	sid, err := uuid.Parse(c.Param("storeId"))
-	if err != nil {
-		return uuid.Nil, uuid.Nil, false
-	}
-	return tid, sid, true
+	return tenantID, storeID, true
 }
 
 func defaultStatus(s Status) Status {

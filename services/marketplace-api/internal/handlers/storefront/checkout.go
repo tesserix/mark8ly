@@ -16,6 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -28,12 +29,20 @@ type CheckoutHandler struct {
 	db       *gorm.DB
 	orderSvc *order.Service
 	orderRepo order.Repository
+	audit    *audit.Emitter // optional — nil-safe
 	logger   *slog.Logger
 }
 
 // NewCheckoutHandler constructs a CheckoutHandler.
 func NewCheckoutHandler(db *gorm.DB, orderSvc *order.Service, orderRepo order.Repository, logger *slog.Logger) *CheckoutHandler {
 	return &CheckoutHandler{db: db, orderSvc: orderSvc, orderRepo: orderRepo, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so storefront checkouts emit
+// order.created as system events. Nil-safe.
+func (h *CheckoutHandler) WithAudit(e *audit.Emitter) *CheckoutHandler {
+	h.audit = e
+	return h
 }
 
 // CheckoutItemRequest is one cart line in a CheckoutRequest.
@@ -205,6 +214,25 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 	if result.Reused {
 		status = http.StatusOK
 	}
+
+	if !result.Reused {
+		h.audit.Emit(c, audit.Event{
+			TenantID:       tenantID,
+			StoreID:        storeID,
+			ForceActorType: audit.ActorSystem,
+			Action:         "order.created",
+			ResourceType:   "order",
+			ResourceID:     result.Order.ID.String(),
+			Metadata: map[string]any{
+				"order_number":   result.Order.OrderNumber,
+				"grand_total":    result.Order.GrandTotal,
+				"currency":       result.Order.CurrencyCode,
+				"source":         "storefront",
+				"customer_email": req.CustomerEmail,
+			},
+		})
+	}
+
 	c.JSON(status, CheckoutResponse{
 		ID:            result.Order.ID.String(),
 		OrderNumber:   result.Order.OrderNumber,

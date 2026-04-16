@@ -235,7 +235,7 @@ func mobileCustomerProfileMW(customerSvc *customer.Service, logger *slog.Logger)
 			TenantID: tenantID,
 			GipUID:   gipUID,
 			Email:    email,
-		})
+		}, c)
 		if err != nil {
 			if logger != nil {
 				logger.Error("mobile: failed to ensure customer profile",

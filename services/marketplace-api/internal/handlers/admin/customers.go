@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -14,12 +15,20 @@ import (
 // CustomersHandler bundles dependencies for the admin customer endpoints.
 type CustomersHandler struct {
 	repo   customer.Repository
+	audit  *audit.Emitter // optional — nil-safe
 	logger *slog.Logger
 }
 
 // NewCustomersHandler constructs a CustomersHandler.
 func NewCustomersHandler(repo customer.Repository, logger *slog.Logger) *CustomersHandler {
 	return &CustomersHandler{repo: repo, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so customer admin actions show
+// up in Settings -> Audit Logs. Nil-safe.
+func (h *CustomersHandler) WithAudit(e *audit.Emitter) *CustomersHandler {
+	h.audit = e
+	return h
 }
 
 // List handles GET /admin/stores/:storeId/customers.
@@ -127,6 +136,12 @@ func (h *CustomersHandler) UpdateTags(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "customer.tags_updated",
+		ResourceType: "customer",
+		ResourceID:   customerID,
+		Metadata:     map[string]any{"tags": req.Tags},
+	})
 	c.JSON(http.StatusOK, toAdminCustomerProfileResponse(profile))
 }
 
@@ -152,6 +167,11 @@ func (h *CustomersHandler) UpdateNotes(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "customer.notes_updated",
+		ResourceType: "customer",
+		ResourceID:   customerID,
+	})
 	c.JSON(http.StatusOK, toAdminCustomerProfileResponse(profile))
 }
 
@@ -177,6 +197,13 @@ func (h *CustomersHandler) Block(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "customer.blocked",
+		ResourceType: "customer",
+		ResourceID:   customerID,
+		Severity:     audit.SeverityWarning,
+		Metadata:     map[string]any{"reason": req.Reason},
+	})
 	c.JSON(http.StatusOK, toAdminCustomerProfileResponse(profile))
 }
 
@@ -196,5 +223,10 @@ func (h *CustomersHandler) Unblock(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "customer.unblocked",
+		ResourceType: "customer",
+		ResourceID:   customerID,
+	})
 	c.JSON(http.StatusOK, toAdminCustomerProfileResponse(profile))
 }

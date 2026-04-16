@@ -185,7 +185,7 @@ func (h *CustomerAccountHandler) Register(c *gin.Context) {
 		Email:     email,
 		FirstName: firstName,
 		LastName:  lastName,
-	})
+	}, c)
 	if err != nil {
 		h.logger.Error("failed to register customer profile",
 			"error", err,

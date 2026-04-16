@@ -27,6 +27,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/tax"
@@ -41,12 +42,20 @@ type CheckoutExtHandler struct {
 	couponSvc   *coupon.Service
 	giftCardSvc *giftcard.Service // nil-safe: no-ops when nil
 	loyaltySvc  *loyalty.Service  // nil-safe: no-ops when nil
+	audit       *audit.Emitter    // optional — nil-safe
 	logger      *slog.Logger
 }
 
 // NewCheckoutExtHandler constructs a CheckoutExtHandler.
 func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coupon.Service, giftCardSvc *giftcard.Service, logger *slog.Logger) *CheckoutExtHandler {
 	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, couponSvc: couponSvc, giftCardSvc: giftCardSvc, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so extended storefront checkouts
+// emit order.created as system events. Nil-safe.
+func (h *CheckoutExtHandler) WithAudit(e *audit.Emitter) *CheckoutExtHandler {
+	h.audit = e
+	return h
 }
 
 // SetLoyaltyService wires the loyalty service for post-checkout point awards.
@@ -337,6 +346,24 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	if err != nil {
 		h.respondErr(c, err)
 		return
+	}
+
+	if !result.Reused {
+		h.audit.Emit(c, audit.Event{
+			TenantID:       tenantID,
+			StoreID:        storeID,
+			ForceActorType: audit.ActorSystem,
+			Action:         "order.created",
+			ResourceType:   "order",
+			ResourceID:     result.Order.ID.String(),
+			Metadata: map[string]any{
+				"order_number":   result.Order.OrderNumber,
+				"grand_total":    result.Order.GrandTotal,
+				"currency":       result.Order.CurrencyCode,
+				"source":         "storefront",
+				"customer_email": req.CustomerEmail,
+			},
+		})
 	}
 
 	// Persist the per-jurisdiction tax breakdown (CGST/SGST/IGST for

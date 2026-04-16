@@ -168,7 +168,7 @@ func OptionalCustomerAuth(secret string, customerSvc *customer.Service, logger *
 			Email:     claims.Email,
 			FirstName: claims.FirstName,
 			LastName:  claims.LastName,
-		})
+		}, c)
 		if err != nil {
 			logger.Error("failed to ensure customer profile",
 				"error", err,

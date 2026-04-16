@@ -397,6 +397,8 @@ func main() {
 		ordersHandler.WithAudit(auditEmitter)
 		productHandler.WithAudit(auditEmitter)
 		domainsHandler.WithAudit(auditEmitter)
+		customersHandler.WithAudit(auditEmitter)
+		reviewsHandler.WithAudit(auditEmitter)
 
 		// Dashboard D1 wiring.
 		dashboardHandler := admin.NewDashboardHandler(conn, log)
@@ -542,7 +544,7 @@ func main() {
 		orderRepoSF := order.NewRepository()
 		outboxRepoSF := outbox.NewRepository(conn)
 		orderSvcSF := order.NewService(conn, orderRepoSF, outboxRepoSF)
-		checkoutHandler := storefront.NewCheckoutHandler(conn, orderSvcSF, orderRepoSF, log)
+		checkoutHandler := storefront.NewCheckoutHandler(conn, orderSvcSF, orderRepoSF, log).WithAudit(auditEmitter)
 
 		countryRepo := country.NewRepository(conn)
 		countryHandler := country.NewHandler(countryRepo)
@@ -579,7 +581,7 @@ func main() {
 
 		// C1 — Customer profiles and account.
 		customerRepo := customer.NewRepository(conn)
-		customerSvc := customer.NewService(conn, customerRepo, log)
+		customerSvc := customer.NewService(conn, customerRepo, log).WithAudit(auditEmitter)
 		customerAccountHandler := storefront.NewCustomerAccountHandler(conn, customerRepo, customerSvc, log)
 
 		// C3 — Reviews.
@@ -606,7 +608,7 @@ func main() {
 		sfPagesHandler := storefront.NewPagesHandler(pageSvcSF, log)
 
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
-		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, log)
+		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, log).WithAudit(auditEmitter)
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)

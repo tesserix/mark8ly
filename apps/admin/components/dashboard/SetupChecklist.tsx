@@ -24,7 +24,7 @@ const items: ChecklistItem[] = [
   { key: "has_storefront_theme", label: "Customize your theme", href: "/settings/themes", phase: "Store foundation" },
   { key: "has_payment_provider", label: "Set up a payment gateway", href: "/settings/payments", phase: "Go live" },
   { key: "has_shipping_carrier", label: "Setup shipping integration", href: "/settings/shipping", phase: "Go live" },
-  { key: "has_return_policy", label: "Write a return policy", href: "/settings/policies", phase: "Go live" },
+  { key: "has_return_policy", label: "Write a return policy", href: "/settings/themes?tab=policies", phase: "Go live" },
   { key: "has_custom_domain", label: "Connect a custom domain", href: "/settings/domains", phase: "Go live" },
 ];
 

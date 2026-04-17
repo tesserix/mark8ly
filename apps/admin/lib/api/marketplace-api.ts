@@ -2072,6 +2072,7 @@ export interface StoreBranding {
   seo_json_ld?: string | null;
   seo_ai_policy: "allow" | "deny" | "training-only-denied";
   seo_llms_txt?: string | null;
+  return_policy?: string | null;
   created_at: string;
   updated_at: string;
 }

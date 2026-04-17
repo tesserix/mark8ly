@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition, useCallback, type ReactNode } from "react";
-import { Link2, Code, Image, Check, Home, Palette, FileText, Search } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Link2, Code, Image, Check, Home, Palette, FileText, Search, Scroll } from "lucide-react";
 
 import type { StoreBranding, UpdateBrandingInput, AdminPage, AdminCategory } from "@/lib/api/marketplace-api";
 import { HomepageTab } from "./HomepageTab";
@@ -32,7 +33,7 @@ interface BrandingSettingsClientProps {
   pagesContent?: ReactNode;
 }
 
-type Tab = "identity" | "theme" | "homepage" | "pages" | "footer" | "seo" | "advanced";
+type Tab = "identity" | "theme" | "homepage" | "pages" | "footer" | "seo" | "policies" | "advanced";
 
 const TABS: { key: Tab; label: string; icon: typeof Image }[] = [
   { key: "identity", label: "Identity", icon: Image },
@@ -41,6 +42,7 @@ const TABS: { key: Tab; label: string; icon: typeof Image }[] = [
   { key: "pages",    label: "Pages",    icon: FileText },
   { key: "footer",   label: "Footer",   icon: Link2 },
   { key: "seo",      label: "SEO",      icon: Search },
+  { key: "policies", label: "Policies", icon: Scroll },
   { key: "advanced", label: "Advanced", icon: Code },
 ];
 
@@ -64,8 +66,25 @@ export function BrandingSettingsClient({
   pagesContent,
 }: BrandingSettingsClientProps) {
   const { toast } = useToast();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState<StoreBranding>(initial);
-  const [tab, setTab] = useState<Tab>("identity");
+  // Deep-link via ?tab=policies so the setup checklist can jump straight
+  // to the relevant section.
+  const initialTab = ((): Tab => {
+    const param = searchParams.get("tab");
+    const valid: Tab[] = [
+      "identity",
+      "theme",
+      "homepage",
+      "pages",
+      "footer",
+      "seo",
+      "policies",
+      "advanced",
+    ];
+    return valid.includes(param as Tab) ? (param as Tab) : "identity";
+  })();
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "idle" | "saved" | "error"; message?: string }>({ type: "idle" });
   // heroValid tracks whether HeroEditor's aside-alt a11y constraint is satisfied.
@@ -155,6 +174,7 @@ export function BrandingSettingsClient({
         {tab === "pages" && pagesContent}
         {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} pages={pages} />}
         {tab === "seo" && <SeoTab form={form} patch={patch} editable={editable} />}
+        {tab === "policies" && <PoliciesTab form={form} patch={patch} editable={editable} />}
         {tab === "advanced" && <AdvancedTab form={form} patch={patch} editable={editable} />}
 
         {/* Save bar — hidden on the Theme tab, which ships its own
@@ -420,6 +440,43 @@ function FooterTab({ form, patch, editable, pages = [] }: TabProps) {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Policies Tab ───────────────────────────────────────────────────
+
+function PoliciesTab({ form, patch, editable }: TabProps) {
+  const charCount = form.return_policy?.length ?? 0;
+  return (
+    <div className="space-y-8">
+      <SectionHeader
+        title="Policies"
+        description="Customer-facing policies shown on your storefront. A clear return policy is required for most payment providers and signals trust to shoppers."
+      />
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <FieldLabel htmlFor="return_policy">Return policy</FieldLabel>
+          <span className="text-[11px] text-foreground-tertiary">
+            {charCount > 0 ? `${charCount.toLocaleString()} characters` : "Not set"}
+          </span>
+        </div>
+        <p className="text-xs text-foreground-secondary">
+          Describe your return window, eligibility, and how customers request
+          a return. Plain text — no HTML. Linked from the storefront footer
+          and shown on checkout for regulated regions.
+        </p>
+        <textarea
+          id="return_policy"
+          value={form.return_policy ?? ""}
+          onChange={(e) => patch({ return_policy: e.target.value || null })}
+          disabled={!editable}
+          rows={12}
+          maxLength={8000}
+          className="w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 text-sm leading-6 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+          placeholder={`Returns are accepted within 30 days of delivery for items in their original condition.\n\nTo initiate a return, email support@yourstore.com with your order number. We'll send a prepaid label within 2 business days.\n\nRefunds are issued to the original payment method within 5–7 business days of receiving your return.`}
+        />
       </div>
     </div>
   );

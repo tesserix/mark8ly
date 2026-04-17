@@ -84,6 +84,7 @@ type BrandingResponse struct {
 	SeoJsonLd             *string `json:"seo_json_ld,omitempty"`
 	SeoAiPolicy           string  `json:"seo_ai_policy"`
 	SeoLlmsTxt            *string `json:"seo_llms_txt,omitempty"`
+	ReturnPolicy          *string `json:"return_policy,omitempty"`
 	HomepageContent    json.RawMessage          `json:"homepage_content"`
 	CreatedAt          string                   `json:"created_at"`
 	UpdatedAt          string                   `json:"updated_at"`
@@ -127,6 +128,7 @@ func toBrandingResponse(b branding.StoreBranding) BrandingResponse {
 		SeoJsonLd:             b.SeoJsonLd,
 		SeoAiPolicy:           b.SeoAiPolicy,
 		SeoLlmsTxt:            b.SeoLlmsTxt,
+		ReturnPolicy:          b.ReturnPolicy,
 		CreatedAt:          b.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:          b.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
@@ -195,6 +197,7 @@ type UpdateBrandingRequest struct {
 	SeoJsonLd             *string `json:"seo_json_ld"`
 	SeoAiPolicy           *string `json:"seo_ai_policy"`
 	SeoLlmsTxt            *string `json:"seo_llms_txt"`
+	ReturnPolicy          *string `json:"return_policy"`
 	HomepageContent    *json.RawMessage          `json:"homepage_content"`
 }
 
@@ -256,6 +259,7 @@ func (h *BrandingHandler) Update(c *gin.Context) {
 		SeoJsonLd:             req.SeoJsonLd,
 		SeoAiPolicy:           req.SeoAiPolicy,
 		SeoLlmsTxt:            req.SeoLlmsTxt,
+		ReturnPolicy:          req.ReturnPolicy,
 	})
 	if err != nil {
 		RespondErr(c, err, h.logger)

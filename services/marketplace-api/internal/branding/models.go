@@ -50,6 +50,8 @@ type StoreBranding struct {
 	SeoJsonLd             *string `gorm:"column:seo_json_ld"`
 	SeoAiPolicy           string  `gorm:"column:seo_ai_policy;type:varchar(30);not null;default:'allow'"`
 	SeoLlmsTxt            *string `gorm:"column:seo_llms_txt"`
+	// Policies
+	ReturnPolicy     *string   `gorm:"column:return_policy"`
 	CreatedAt        time.Time `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt        time.Time `gorm:"column:updated_at;not null;default:now()"`
 }

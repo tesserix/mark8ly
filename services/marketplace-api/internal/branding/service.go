@@ -99,6 +99,7 @@ type UpdateInput struct {
 	SeoJsonLd             *string
 	SeoAiPolicy           *string
 	SeoLlmsTxt            *string
+	ReturnPolicy          *string
 }
 
 // Update validates and persists branding changes.
@@ -288,6 +289,16 @@ func (s *Service) Update(ctx context.Context, in UpdateInput) (*StoreBranding, e
 	}
 	if in.SeoLlmsTxt != nil {
 		b.SeoLlmsTxt = in.SeoLlmsTxt
+	}
+
+	// Policies.
+	if in.ReturnPolicy != nil {
+		trimmed := strings.TrimSpace(*in.ReturnPolicy)
+		if trimmed == "" {
+			b.ReturnPolicy = nil
+		} else {
+			b.ReturnPolicy = &trimmed
+		}
 	}
 
 	// WCAG AA contrast validation.

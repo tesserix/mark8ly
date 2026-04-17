@@ -67,3 +67,8 @@ apps/*/tests/e2e/.audit/
 
 # Git worktrees (superpowers)
 .worktrees/
+
+# Local AI tooling artifacts — never commit
+CLAUDE.md
+.claude/
+*.tsbuildinfo

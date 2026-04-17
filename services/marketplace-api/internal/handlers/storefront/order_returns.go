@@ -109,17 +109,16 @@ func (h *OrderDetailHandler) RequestReturn(c *gin.Context) {
 		return
 	}
 
-	// Shipment guard — the inverse of the cancel guard. For returns we
-	// REQUIRE a shipment to exist; you can't return an order that was
-	// never fulfilled.
-	var shipCount int64
-	if err := h.db.WithContext(c.Request.Context()).
-		Table("shipments").
-		Where("order_id = ?", orderID).
-		Count(&shipCount).Error; err == nil && shipCount == 0 {
+	// Order-state guard — returns only make sense on orders that have
+	// been confirmed (or further along). Pending / cancelled orders
+	// belong to the cancel flow.
+	switch o.Status {
+	case string(order.OrderStatusConfirmed), string(order.OrderStatusFulfilled):
+		// ok
+	default:
 		c.JSON(http.StatusConflict, gin.H{
-			"error":   "no_shipment",
-			"message": "This order hasn't been dispatched yet — cancel it instead.",
+			"error":   "not_returnable",
+			"message": "This order can't be returned in its current state.",
 		})
 		return
 	}

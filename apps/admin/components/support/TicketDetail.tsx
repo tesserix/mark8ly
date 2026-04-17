@@ -82,14 +82,15 @@ export function TicketDetail({ ticket }: TicketDetailProps) {
         </p>
       </div>
 
-      {/* Reply thread */}
-      {ticket.replies.length > 0 && (
+      {/* Reply thread — tolerate an undefined array so older backend
+          responses (pre-dto fix) don't crash the whole detail page. */}
+      {(ticket.replies?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <h3 className="text-sm font-semibold text-foreground-tertiary uppercase tracking-wide">
             Replies
           </h3>
           <ul className="space-y-4">
-            {ticket.replies.map((reply) => {
+            {(ticket.replies ?? []).map((reply) => {
               const isMerchant = reply.author_type === "merchant";
               return (
                 <li

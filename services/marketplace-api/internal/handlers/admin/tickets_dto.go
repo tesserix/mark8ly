@@ -34,7 +34,7 @@ type TicketResponse struct {
 	ResolvedAt       *string               `json:"resolved_at,omitempty"`
 	CreatedAt        string                `json:"created_at"`
 	UpdatedAt        string                `json:"updated_at"`
-	Replies          []TicketReplyResponse `json:"replies,omitempty"`
+	Replies          []TicketReplyResponse `json:"replies"`
 }
 
 // TicketReplyResponse is the wire DTO for a ticket reply.
@@ -64,11 +64,13 @@ func toTicketResponse(t ticket.Ticket) TicketResponse {
 		s := t.ResolvedAt.Format("2006-01-02T15:04:05Z")
 		resp.ResolvedAt = &s
 	}
-	if len(t.Replies) > 0 {
-		resp.Replies = make([]TicketReplyResponse, 0, len(t.Replies))
-		for _, r := range t.Replies {
-			resp.Replies = append(resp.Replies, toTicketReplyResponse(r))
-		}
+	// Always initialize to a non-nil slice so the JSON response emits
+	// an empty `[]` instead of omitting the key — otherwise the admin
+	// UI crashes on `ticket.replies.length` when a ticket has no
+	// replies yet.
+	resp.Replies = make([]TicketReplyResponse, 0, len(t.Replies))
+	for _, r := range t.Replies {
+		resp.Replies = append(resp.Replies, toTicketReplyResponse(r))
 	}
 	return resp
 }

@@ -64,15 +64,21 @@ async function resolveScopeFromHost(
       /* fall through */
     }
   }
-  // No subdomain slug — trust whatever the session cookie has set (canonical
-  // admin.mark8ly.com flow with explicit store picker).
+  // No subdomain slug — we're on the canonical admin.mark8ly.com host.
+  // Prefer the session's own store_id (set when the agent picks one via
+  // the store switcher); otherwise fall back to the first store under
+  // the session's tenant. Without this fallback an agent who signs in
+  // at admin.mark8ly.com (no tenant subdomain) gets a 400 on every otto
+  // call because their session cookie doesn't populate store_id.
   if (!slug) {
-    if (!sessionStoreId) return null;
-    return {
-      tenantId: sessionTenantId,
-      storeId: sessionStoreId,
-      slug: "",
-    };
+    if (sessionStoreId) {
+      return {
+        tenantId: sessionTenantId,
+        storeId: sessionStoreId,
+        slug: "",
+      };
+    }
+    return resolveTenantDefaultStore(sessionTenantId);
   }
   try {
     const res = await fetch(
@@ -88,6 +94,38 @@ async function resolveScopeFromHost(
       tenantId: body.data.tenant_id,
       storeId: body.data.id,
       slug: body.data.slug,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Picks the first store under a tenant. Used by the canonical-admin-host
+ * fallback path. Most v1 tenants have exactly one store so "first" is
+ * unambiguous; multi-store tenants get the first listed and can switch
+ * via the store switcher (which repopulates session.store_id and short-
+ * circuits this path on the next request).
+ */
+async function resolveTenantDefaultStore(
+  tenantId: string,
+): Promise<ResolvedScope | null> {
+  if (!tenantId) return null;
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/tenants/${encodeURIComponent(tenantId)}/stores`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      data?: Array<{ id: string; slug: string }>;
+    };
+    const first = body.data?.[0];
+    if (!first?.id) return null;
+    return {
+      tenantId,
+      storeId: first.id,
+      slug: first.slug ?? "",
     };
   } catch {
     return null;

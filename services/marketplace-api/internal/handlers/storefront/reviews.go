@@ -224,6 +224,91 @@ func (h *ReviewsHandler) SubmitReview(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"data": toStorefrontReviewResponse(result)})
 }
 
+// submitGuestReviewRequest — wire body for the public (unauthenticated)
+// review endpoint. Same fields as submitReviewRequest plus explicit
+// name + email, since there's no customer session to derive them from.
+type submitGuestReviewRequest struct {
+	Rating        int    `json:"rating"         binding:"required,min=1,max=5"`
+	Title         string `json:"title"          binding:"omitempty,max=300"`
+	Content       string `json:"content"        binding:"required,max=5000"`
+	CustomerName  string `json:"customer_name"  binding:"required,min=1,max=120"`
+	CustomerEmail string `json:"customer_email" binding:"required,email,max=320"`
+}
+
+// SubmitGuestReview handles POST /storefront/stores/:storeSlug/products/:handle/reviews-guest.
+// Anonymous (unauthenticated) customers can submit a review by
+// supplying name + email in the body. Same moderation gate as
+// authenticated submissions (status = pending → admin approves), and
+// the same UNIQUE(store, product, email) invariant prevents
+// double-submits.
+func (h *ReviewsHandler) SubmitGuestReview(c *gin.Context) {
+	store := c.MustGet("store").(*stores.Store)
+	handle := c.Param("handle")
+	if handle == "" {
+		respondNotFound(c)
+		return
+	}
+
+	agg, err := h.productRepo.GetPublishedByHandle(c.Request.Context(), store.ID, handle)
+	if err != nil {
+		respondNotFound(c)
+		return
+	}
+
+	var req submitGuestReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	result, err := h.reviewSvc.SubmitReview(c.Request.Context(), review.SubmitReviewInput{
+		TenantID:      store.TenantID,
+		StoreID:       store.ID,
+		ProductID:     agg.Product.ID,
+		CustomerName:  strings.TrimSpace(req.CustomerName),
+		CustomerEmail: strings.TrimSpace(req.CustomerEmail),
+		Rating:        req.Rating,
+		Title:         req.Title,
+		Content:       req.Content,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "already reviewed") {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "duplicate_review",
+				"message": "A review from this email already exists for this product.",
+			})
+			return
+		}
+		respondInternal(c, h.logger, err)
+		return
+	}
+
+	if tenantUUID, err1 := uuid.Parse(result.TenantID); err1 == nil {
+		if storeUUID, err2 := uuid.Parse(result.StoreID); err2 == nil {
+			reviewMsg := "A guest visitor submitted a product review."
+			reviewResource := "review"
+			var reviewID *uuid.UUID
+			if rid, err3 := uuid.Parse(result.ID); err3 == nil {
+				reviewID = &rid
+			}
+			notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
+				TenantID:     tenantUUID,
+				StoreID:      storeUUID,
+				Type:         notification.TypeReviewSubmitted,
+				Title:        "New product review (guest)",
+				Message:      &reviewMsg,
+				ResourceType: &reviewResource,
+				ResourceID:   reviewID,
+			})
+		}
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"data": toStorefrontReviewResponse(result)})
+}
+
 // addReactionRequest is the wire body for POST /reviews/:id/reactions.
 // The three values mirror the DB CHECK constraint added in migration 39
 // (helpful / not_helpful / useful); the UNIQUE(review_id,
@@ -368,6 +453,86 @@ func (h *ReviewsHandler) AddCustomerReply(c *gin.Context) {
 	})
 }
 
+// addGuestReplyRequest — anonymous comment body. Same fields as the
+// authenticated one plus name/email so we can attribute the comment
+// without a customer session.
+type addGuestReplyRequest struct {
+	Content       string  `json:"content"         binding:"required,min=1,max=5000"`
+	ParentReplyID *string `json:"parent_reply_id"`
+	CustomerName  string  `json:"customer_name"   binding:"required,min=1,max=120"`
+	CustomerEmail string  `json:"customer_email"  binding:"required,email,max=320"`
+}
+
+// AddGuestReply handles POST /storefront/stores/:storeSlug/reviews/:id/replies-guest.
+// Anonymous visitors can add a comment by supplying name + email.
+// Same rules as AddCustomerReply: review must be approved, nested
+// parent must belong to the review, trimmed content ≤ 5000 chars.
+func (h *ReviewsHandler) AddGuestReply(c *gin.Context) {
+	reviewID := c.Param("id")
+	if reviewID == "" {
+		respondNotFound(c)
+		return
+	}
+
+	var req addGuestReplyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	rev, err := h.reviewRepo.GetByID(c.Request.Context(), reviewID)
+	if err != nil {
+		respondNotFound(c)
+		return
+	}
+	if rev.Status != review.StatusApproved {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "not_commentable",
+			"message": "This review isn't open for comments yet.",
+		})
+		return
+	}
+
+	if req.ParentReplyID != nil && *req.ParentReplyID != "" {
+		if _, err := h.reviewRepo.GetReply(c.Request.Context(), *req.ParentReplyID, reviewID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_parent",
+				"message": "Reply parent does not belong to this review.",
+			})
+			return
+		}
+	}
+
+	email := strings.TrimSpace(req.CustomerEmail)
+	reply := &review.ReviewReply{
+		ReviewID:      reviewID,
+		ParentReplyID: req.ParentReplyID,
+		AuthorType:    review.AuthorTypeCustomer,
+		AuthorName:    strings.TrimSpace(req.CustomerName),
+		AuthorEmail:   &email,
+		Content:       strings.TrimSpace(req.Content),
+	}
+	if err := h.reviewRepo.AddReply(c.Request.Context(), reply); err != nil {
+		respondInternal(c, h.logger, err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"data": map[string]any{
+			"id":              reply.ID,
+			"review_id":       reply.ReviewID,
+			"parent_reply_id": reply.ParentReplyID,
+			"author_type":     reply.AuthorType,
+			"author_name":     reply.AuthorName,
+			"content":         reply.Content,
+			"created_at":      reply.CreatedAt,
+		},
+	})
+}
+
 // --- helpers ---
 
 func mustGetCustomerProfile(c *gin.Context) *customer.CustomerProfile {
@@ -491,11 +656,26 @@ func toStorefrontReviewResponse(r *review.Review) storefrontReviewResponse {
 			ID:            rp.ID,
 			ParentReplyID: rp.ParentReplyID,
 			AuthorType:    rp.AuthorType,
-			AuthorName:    rp.AuthorName,
-			Content:       rp.Content,
-			CreatedAt:     rp.CreatedAt.UTC().Format(time.RFC3339),
+			// PII guard — never leak real staff names to the public
+			// storefront. Admins have their real name preserved in the
+			// DB (and the admin-side DTO shows it), but shoppers see a
+			// generic "Store Team" label.
+			AuthorName: publicReplyName(rp.AuthorType, rp.AuthorName),
+			Content:    rp.Content,
+			CreatedAt:  rp.CreatedAt.UTC().Format(time.RFC3339),
 		})
 	}
 
 	return resp
+}
+
+// publicReplyName returns a safe author label for the storefront DTO.
+// Merchant replies always render as "Store Team" — staff PII never
+// leaves the admin boundary. Customer replies keep whatever the
+// customer supplied (their own name is not PII to themselves).
+func publicReplyName(authorType, authorName string) string {
+	if authorType == "merchant" {
+		return "Store Team"
+	}
+	return authorName
 }

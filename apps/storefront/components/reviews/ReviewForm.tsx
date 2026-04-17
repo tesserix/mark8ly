@@ -9,10 +9,42 @@ import { useCallback, useState, useTransition } from "react";
 
 interface ReviewFormProps {
   productHandle: string;
+  // When false, the form collects name + email and posts to the
+  // public `/guest` endpoint. When true it reuses the customer
+  // session and posts to the authenticated endpoint.
+  isAuthenticated: boolean;
 }
 
 const MAX_TITLE_LENGTH = 300;
 const MAX_CONTENT_LENGTH = 5000;
+const MAX_NAME_LENGTH = 120;
+const MAX_EMAIL_LENGTH = 320;
+
+const GUEST_IDENTITY_STORAGE_KEY = "mp_guest_identity";
+
+function loadGuestIdentity(): { name: string; email: string } {
+  if (typeof window === "undefined") return { name: "", email: "" };
+  try {
+    const raw = window.localStorage.getItem(GUEST_IDENTITY_STORAGE_KEY);
+    if (!raw) return { name: "", email: "" };
+    const parsed = JSON.parse(raw) as { name?: string; email?: string };
+    return { name: parsed.name ?? "", email: parsed.email ?? "" };
+  } catch {
+    return { name: "", email: "" };
+  }
+}
+
+function saveGuestIdentity(name: string, email: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      GUEST_IDENTITY_STORAGE_KEY,
+      JSON.stringify({ name, email }),
+    );
+  } catch {
+    /* ignore storage errors */
+  }
+}
 
 function StarIcon({ filled, half }: { filled: boolean; half?: boolean }) {
   return (
@@ -48,11 +80,17 @@ function StarIcon({ filled, half }: { filled: boolean; half?: boolean }) {
   );
 }
 
-export function ReviewForm({ productHandle }: ReviewFormProps) {
+export function ReviewForm({ productHandle, isAuthenticated }: ReviewFormProps) {
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [guestName, setGuestName] = useState(() =>
+    isAuthenticated ? "" : loadGuestIdentity().name,
+  );
+  const [guestEmail, setGuestEmail] = useState(() =>
+    isAuthenticated ? "" : loadGuestIdentity().email,
+  );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -70,21 +108,40 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
         setError("Please write a review.");
         return;
       }
+      if (!isAuthenticated) {
+        if (!guestName.trim()) {
+          setError("Please enter your name.");
+          return;
+        }
+        if (!guestEmail.trim()) {
+          setError("Please enter your email.");
+          return;
+        }
+      }
 
       startTransition(async () => {
         try {
-          const res = await fetch(
-            `/api/reviews/${encodeURIComponent(productHandle)}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
+          const endpoint = isAuthenticated
+            ? `/api/reviews/${encodeURIComponent(productHandle)}`
+            : `/api/reviews/${encodeURIComponent(productHandle)}/guest`;
+          const payload = isAuthenticated
+            ? {
                 rating,
                 title: title.trim() || undefined,
                 content: content.trim(),
-              }),
-            },
-          );
+              }
+            : {
+                rating,
+                title: title.trim() || undefined,
+                content: content.trim(),
+                customer_name: guestName.trim(),
+                customer_email: guestEmail.trim(),
+              };
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
 
           if (!res.ok) {
             const body = await res.json().catch(() => null);
@@ -93,6 +150,12 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
               "Something went wrong. Please try again.";
             setError(message);
             return;
+          }
+
+          // Remember the guest identity for the next comment/review
+          // on this browser so the visitor doesn't have to retype.
+          if (!isAuthenticated) {
+            saveGuestIdentity(guestName.trim(), guestEmail.trim());
           }
 
           setSuccess(true);
@@ -104,7 +167,15 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
         }
       });
     },
-    [rating, title, content, productHandle],
+    [
+      rating,
+      title,
+      content,
+      productHandle,
+      isAuthenticated,
+      guestName,
+      guestEmail,
+    ],
   );
 
   if (success) {
@@ -159,6 +230,44 @@ export function ReviewForm({ productHandle }: ReviewFormProps) {
           ))}
         </div>
       </fieldset>
+
+      {/* Guest identity — only shown when no customer session.
+          We need name + email to attribute the review and enforce
+          the UNIQUE(store, product, email) invariant on re-submit. */}
+      {!isAuthenticated && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
+              Name
+            </span>
+            <input
+              type="text"
+              value={guestName}
+              onChange={(e) => setGuestName(e.target.value)}
+              maxLength={MAX_NAME_LENGTH}
+              required
+              autoComplete="name"
+              placeholder="Your name"
+              className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
+              Email
+            </span>
+            <input
+              type="email"
+              value={guestEmail}
+              onChange={(e) => setGuestEmail(e.target.value)}
+              maxLength={MAX_EMAIL_LENGTH}
+              required
+              autoComplete="email"
+              placeholder="you@example.com"
+              className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+            />
+          </label>
+        </div>
+      )}
 
       {/* Title (optional) */}
       <label className="flex flex-col gap-1.5">

@@ -33,8 +33,13 @@ export async function GET(
     );
   }
 
+  // Forward the customer cookie even on the public GET so the backend's
+  // OptionalCustomerAuth can populate viewer_reaction on each review.
+  // Anonymous calls still work (no cookie → no viewer_reaction field).
+  const cookieHeader = req.headers.get("cookie") ?? "";
   return proxyJson(
     `${marketplaceStoreUrl(slug)}/products/${encodeURIComponent(handle)}/reviews`,
+    cookieHeader ? { headers: { Cookie: cookieHeader } } : {},
   );
 }
 

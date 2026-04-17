@@ -94,9 +94,29 @@ func (h *ReviewsHandler) ListProductReviews(c *gin.Context) {
 		return
 	}
 
+	// If the viewer is signed in, annotate each review with THEIR
+	// active reaction so the UI can highlight the selected button.
+	// Anonymous callers get empty viewer_reaction fields.
+	var viewerReactions map[string]string
+	if profileVal, ok := c.Get(CustomerProfileKey); ok {
+		if profile, ok := profileVal.(*customer.CustomerProfile); ok && profile != nil {
+			ids := make([]string, 0, len(reviews))
+			for i := range reviews {
+				ids = append(ids, reviews[i].ID)
+			}
+			if m, err := h.reviewRepo.ListViewerReactions(c.Request.Context(), profile.ID.String(), ids); err == nil {
+				viewerReactions = m
+			}
+		}
+	}
+
 	out := make([]storefrontReviewResponse, 0, len(reviews))
 	for i := range reviews {
-		out = append(out, toStorefrontReviewResponse(&reviews[i]))
+		resp := toStorefrontReviewResponse(&reviews[i])
+		if v, ok := viewerReactions[reviews[i].ID]; ok {
+			resp.ViewerReaction = v
+		}
+		out = append(out, resp)
 	}
 
 	totalPages := int64(0)
@@ -205,8 +225,13 @@ func (h *ReviewsHandler) SubmitReview(c *gin.Context) {
 }
 
 // addReactionRequest is the wire body for POST /reviews/:id/reactions.
+// The three values mirror the DB CHECK constraint added in migration 39
+// (helpful / not_helpful / useful); the UNIQUE(review_id,
+// customer_profile_id) invariant on review_reactions means switching
+// reaction type is a single UPSERT — the user's old reaction is
+// replaced, never stacked.
 type addReactionRequest struct {
-	Reaction string `json:"reaction" binding:"required,oneof=helpful not_helpful"`
+	Reaction string `json:"reaction" binding:"required,oneof=helpful not_helpful useful"`
 }
 
 // AddReaction handles POST /storefront/stores/:storeSlug/reviews/:id/reactions.
@@ -255,6 +280,92 @@ func (h *ReviewsHandler) AddReaction(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Reaction recorded"})
+}
+
+// addReplyRequest is the wire body for POST /reviews/:id/replies —
+// customer comment on a review. parent_reply_id is optional; when set,
+// the comment is nested under that reply. Must belong to the same
+// review (validated server-side).
+type addReplyRequest struct {
+	Content       string  `json:"content"         binding:"required,min=1,max=5000"`
+	ParentReplyID *string `json:"parent_reply_id"`
+}
+
+// AddCustomerReply handles POST /storefront/stores/:storeSlug/reviews/:id/replies.
+// Requires customer auth. Only approved reviews accept comments — the
+// storefront never surfaces pending/rejected reviews anyway but this
+// stops a client that remembered a pending id from writing under it.
+func (h *ReviewsHandler) AddCustomerReply(c *gin.Context) {
+	reviewID := c.Param("id")
+	if reviewID == "" {
+		respondNotFound(c)
+		return
+	}
+
+	profile := mustGetCustomerProfile(c)
+	if profile == nil {
+		return
+	}
+
+	var req addReplyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	rev, err := h.reviewRepo.GetByID(c.Request.Context(), reviewID)
+	if err != nil {
+		respondNotFound(c)
+		return
+	}
+	if rev.Status != review.StatusApproved {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "not_commentable",
+			"message": "This review isn't open for comments yet.",
+		})
+		return
+	}
+
+	// When parent_reply_id is provided, verify it belongs to THIS
+	// review. Otherwise a client could anchor comments onto threads
+	// from another review (or another store).
+	if req.ParentReplyID != nil && *req.ParentReplyID != "" {
+		if _, err := h.reviewRepo.GetReply(c.Request.Context(), *req.ParentReplyID, reviewID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_parent",
+				"message": "Reply parent does not belong to this review.",
+			})
+			return
+		}
+	}
+
+	reply := &review.ReviewReply{
+		ReviewID:      reviewID,
+		ParentReplyID: req.ParentReplyID,
+		AuthorType:    review.AuthorTypeCustomer,
+		AuthorName:    buildCustomerName(profile),
+		AuthorEmail:   &profile.Email,
+		Content:       strings.TrimSpace(req.Content),
+	}
+	if err := h.reviewRepo.AddReply(c.Request.Context(), reply); err != nil {
+		respondInternal(c, h.logger, err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"data": map[string]any{
+			"id":              reply.ID,
+			"review_id":       reply.ReviewID,
+			"parent_reply_id": reply.ParentReplyID,
+			"author_type":     reply.AuthorType,
+			"author_name":     reply.AuthorName,
+			"content":         reply.Content,
+			"created_at":      reply.CreatedAt,
+		},
+	})
 }
 
 // --- helpers ---
@@ -310,6 +421,12 @@ type storefrontReviewResponse struct {
 	Featured         bool                          `json:"featured"`
 	HelpfulCount     int                           `json:"helpful_count"`
 	NotHelpfulCount  int                           `json:"not_helpful_count"`
+	UsefulCount      int                           `json:"useful_count"`
+	// ViewerReaction: the reaction the caller themselves picked on this
+	// review ("" = none). Lets the UI highlight the active button
+	// without a separate round-trip. Only populated when we have a
+	// customer profile in context (authenticated path).
+	ViewerReaction   string                        `json:"viewer_reaction,omitempty"`
 	PublishedAt      string                        `json:"published_at,omitempty"`
 	CreatedAt        string                        `json:"created_at"`
 	Media            []storefrontReviewMediaDTO    `json:"media"`
@@ -325,10 +442,12 @@ type storefrontReviewMediaDTO struct {
 }
 
 type storefrontReviewReplyDTO struct {
-	AuthorType string `json:"author_type"`
-	AuthorName string `json:"author_name"`
-	Content    string `json:"content"`
-	CreatedAt  string `json:"created_at"`
+	ID            string  `json:"id"`
+	ParentReplyID *string `json:"parent_reply_id,omitempty"`
+	AuthorType    string  `json:"author_type"`
+	AuthorName    string  `json:"author_name"`
+	Content       string  `json:"content"`
+	CreatedAt     string  `json:"created_at"`
 }
 
 func toStorefrontReviewResponse(r *review.Review) storefrontReviewResponse {
@@ -341,6 +460,7 @@ func toStorefrontReviewResponse(r *review.Review) storefrontReviewResponse {
 		Featured:         r.Featured,
 		HelpfulCount:     r.HelpfulCount,
 		NotHelpfulCount:  r.NotHelpfulCount,
+		UsefulCount:      r.UsefulCount,
 		CreatedAt:        r.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if r.Title != nil {
@@ -368,10 +488,12 @@ func toStorefrontReviewResponse(r *review.Review) storefrontReviewResponse {
 	resp.Replies = make([]storefrontReviewReplyDTO, 0, len(r.Replies))
 	for _, rp := range r.Replies {
 		resp.Replies = append(resp.Replies, storefrontReviewReplyDTO{
-			AuthorType: rp.AuthorType,
-			AuthorName: rp.AuthorName,
-			Content:    rp.Content,
-			CreatedAt:  rp.CreatedAt.UTC().Format(time.RFC3339),
+			ID:            rp.ID,
+			ParentReplyID: rp.ParentReplyID,
+			AuthorType:    rp.AuthorType,
+			AuthorName:    rp.AuthorName,
+			Content:       rp.Content,
+			CreatedAt:     rp.CreatedAt.UTC().Format(time.RFC3339),
 		})
 	}
 

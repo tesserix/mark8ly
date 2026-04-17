@@ -13,10 +13,30 @@ const (
 	StatusRejected = "rejected"
 )
 
-// Reaction type constants.
+// Reaction type constants. Backed by a DB CHECK constraint added in
+// migration 39, so any new value added here must also land in the
+// constraint list or inserts will 23514.
 const (
 	ReactionHelpful    = "helpful"
 	ReactionNotHelpful = "not_helpful"
+	ReactionUseful     = "useful"
+)
+
+// IsValidReaction returns true iff the string is one of the three
+// allowed reaction values. Handler-layer validation before hitting the
+// repo — returns a clean 400 instead of a Postgres CHECK error.
+func IsValidReaction(s string) bool {
+	switch s {
+	case ReactionHelpful, ReactionNotHelpful, ReactionUseful:
+		return true
+	}
+	return false
+}
+
+// Reply author types.
+const (
+	AuthorTypeCustomer = "customer"
+	AuthorTypeMerchant = "merchant"
 )
 
 // Review maps to the reviews table.
@@ -36,6 +56,7 @@ type Review struct {
 	Featured          bool       `gorm:"column:featured;type:boolean;not null;default:false"`
 	HelpfulCount      int        `gorm:"column:helpful_count;type:int;not null;default:0"`
 	NotHelpfulCount   int        `gorm:"column:not_helpful_count;type:int;not null;default:0"`
+	UsefulCount       int        `gorm:"column:useful_count;type:int;not null;default:0"`
 	PublishedAt       *time.Time `gorm:"column:published_at"`
 	CreatedAt         time.Time  `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt         time.Time  `gorm:"column:updated_at;not null;default:now()"`
@@ -63,15 +84,19 @@ type ReviewMedia struct {
 
 func (ReviewMedia) TableName() string { return "review_media" }
 
-// ReviewReply maps to the review_replies table.
+// ReviewReply maps to the review_replies table. parent_reply_id is
+// nullable — null means the reply is anchored to the review itself
+// (a top-level comment). A non-null value means it's a nested reply
+// under another reply.
 type ReviewReply struct {
-	ID          string    `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	ReviewID    string    `gorm:"column:review_id;type:uuid;not null"`
-	AuthorType  string    `gorm:"column:author_type;type:varchar(20);not null"`
-	AuthorName  string    `gorm:"column:author_name;type:varchar(200);not null"`
-	AuthorEmail *string   `gorm:"column:author_email;type:varchar(300)"`
-	Content     string    `gorm:"column:content;type:text;not null"`
-	CreatedAt   time.Time `gorm:"column:created_at;not null;default:now()"`
+	ID            string    `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	ReviewID      string    `gorm:"column:review_id;type:uuid;not null"`
+	ParentReplyID *string   `gorm:"column:parent_reply_id;type:uuid"`
+	AuthorType    string    `gorm:"column:author_type;type:varchar(20);not null"`
+	AuthorName    string    `gorm:"column:author_name;type:varchar(200);not null"`
+	AuthorEmail   *string   `gorm:"column:author_email;type:varchar(300)"`
+	Content       string    `gorm:"column:content;type:text;not null"`
+	CreatedAt     time.Time `gorm:"column:created_at;not null;default:now()"`
 }
 
 func (ReviewReply) TableName() string { return "review_replies" }

@@ -23,9 +23,18 @@ type Repository interface {
 	UpdateStatus(ctx context.Context, reviewID, status string) (*Review, error)
 	SetFeatured(ctx context.Context, reviewID string, featured bool) (*Review, error)
 	AddReply(ctx context.Context, reply *ReviewReply) error
+	// GetReply fetches a single reply scoped to its review. Used before
+	// inserting a nested reply so a caller can't anchor a new reply to
+	// a parent from a different review (or store).
+	GetReply(ctx context.Context, replyID, reviewID string) (*ReviewReply, error)
 	AddMedia(ctx context.Context, media *ReviewMedia) error
 	AddReaction(ctx context.Context, reaction *ReviewReaction) error
 	RemoveReaction(ctx context.Context, reviewID, customerProfileID string) error
+	// ListViewerReactions returns a map of reviewID → reaction value for
+	// the given customer profile across the supplied review IDs. Used
+	// to annotate the public review list with the caller's own active
+	// reaction so the UI can highlight the selected button.
+	ListViewerReactions(ctx context.Context, customerProfileID string, reviewIDs []string) (map[string]string, error)
 	UpdateHelpfulCounts(ctx context.Context, reviewID string) error
 	GetAverageRating(ctx context.Context, productID string) (float64, int64, error)
 	HasReviewed(ctx context.Context, storeID, productID, customerEmail string) (bool, error)
@@ -181,6 +190,20 @@ func (r *gormRepo) AddReply(ctx context.Context, reply *ReviewReply) error {
 	return nil
 }
 
+func (r *gormRepo) GetReply(ctx context.Context, replyID, reviewID string) (*ReviewReply, error) {
+	var reply ReviewReply
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND review_id = ?", replyID, reviewID).
+		First(&reply).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("review: get reply: %w", err)
+	}
+	return &reply, nil
+}
+
 func (r *gormRepo) AddMedia(ctx context.Context, media *ReviewMedia) error {
 	if err := r.db.WithContext(ctx).Create(media).Error; err != nil {
 		return fmt.Errorf("review: add media: %w", err)
@@ -211,14 +234,32 @@ func (r *gormRepo) RemoveReaction(ctx context.Context, reviewID, customerProfile
 	return nil
 }
 
+func (r *gormRepo) ListViewerReactions(ctx context.Context, customerProfileID string, reviewIDs []string) (map[string]string, error) {
+	if customerProfileID == "" || len(reviewIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	var rows []ReviewReaction
+	if err := r.db.WithContext(ctx).
+		Where("customer_profile_id = ? AND review_id IN ?", customerProfileID, reviewIDs).
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("review: list viewer reactions: %w", err)
+	}
+	out := make(map[string]string, len(rows))
+	for _, row := range rows {
+		out[row.ReviewID] = row.Reaction
+	}
+	return out, nil
+}
+
 func (r *gormRepo) UpdateHelpfulCounts(ctx context.Context, reviewID string) error {
 	err := r.db.WithContext(ctx).Exec(`
 		UPDATE reviews SET
 			helpful_count     = (SELECT COUNT(*) FROM review_reactions WHERE review_id = ? AND reaction = 'helpful'),
 			not_helpful_count = (SELECT COUNT(*) FROM review_reactions WHERE review_id = ? AND reaction = 'not_helpful'),
+			useful_count      = (SELECT COUNT(*) FROM review_reactions WHERE review_id = ? AND reaction = 'useful'),
 			updated_at = now()
 		WHERE id = ?
-	`, reviewID, reviewID, reviewID).Error
+	`, reviewID, reviewID, reviewID, reviewID).Error
 	if err != nil {
 		return fmt.Errorf("review: update helpful counts: %w", err)
 	}

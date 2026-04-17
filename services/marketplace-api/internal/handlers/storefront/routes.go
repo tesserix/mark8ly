@@ -218,7 +218,7 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 				account.GET("/orders", deps.OrderDetailHandler.ListOrders)
 			}
 
-			// C3 — Reviews (authenticated: submit + react).
+			// C3 — Reviews (authenticated: submit + react + comment).
 			if deps.ReviewsHandler != nil {
 				account.POST("/products/:handle/reviews",
 					ratelimit.PerIP(0.167, 10), // ~10 req/min
@@ -226,6 +226,12 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 				account.POST("/reviews/:id/reactions",
 					ratelimit.PerIP(0.167, 10), // ~10 req/min
 					deps.ReviewsHandler.AddReaction)
+				// Nested thread of comments under an approved review.
+				// Body optionally carries parent_reply_id for replies-
+				// to-replies; missing = top-level comment on the review.
+				account.POST("/reviews/:id/replies",
+					ratelimit.PerIP(0.167, 10), // ~10 req/min
+					deps.ReviewsHandler.AddCustomerReply)
 			}
 
 			// C4 — Wishlists.

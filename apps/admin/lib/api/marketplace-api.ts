@@ -2140,6 +2140,7 @@ export interface AdminReviewMedia {
 
 export interface AdminReviewReply {
   id: string;
+  parent_reply_id?: string | null;
   author_type: string;
   author_name: string;
   author_email?: string;

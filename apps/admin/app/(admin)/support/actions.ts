@@ -9,18 +9,24 @@ import {
   updateTicketStatus,
   type TicketStatus,
 } from "@/lib/api/marketplace-api";
+import { resolveStoreId } from "@/lib/auth/serverSession";
 
+// resolveStoreId falls back to the tenant's first store when the
+// session cookie doesn't include a store id — without that fallback,
+// admin actions fail with "No store found" for any freshly-signed-in
+// user whose middleware hasn't populated x-session-store-id yet.
 async function getSessionFromHeaders(): Promise<{
   userId: string;
   tenantId: string;
   storeId: string;
 }> {
   const h = await headers();
-  return {
-    userId: h.get("x-session-user-id") ?? "",
-    tenantId: h.get("x-session-tenant-id") ?? "",
-    storeId: h.get("x-session-store-id") ?? "",
-  };
+  const [userId, tenantId, storeId] = [
+    h.get("x-session-user-id") ?? "",
+    h.get("x-session-tenant-id") ?? "",
+    await resolveStoreId(),
+  ];
+  return { userId, tenantId, storeId };
 }
 
 export async function createTicketAction(

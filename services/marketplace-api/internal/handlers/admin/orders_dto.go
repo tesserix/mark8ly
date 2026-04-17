@@ -250,10 +250,19 @@ type ReturnItemRequest struct {
 
 // CreateReturnRequest is the wire body for POST /admin/stores/:storeId/orders/:orderId/returns.
 type CreateReturnRequest struct {
+	// Type is "return" (refund only, default) or "replace" (exchange).
+	Type         string              `json:"type"`
 	Reason       *string             `json:"reason"`
 	Notes        *string             `json:"notes"`
 	Items        []ReturnItemRequest `json:"items"         binding:"required,min=1"`
 	CurrencyCode string              `json:"currency_code" binding:"required,len=3"`
+}
+
+// ApproveReturnRequest carries the pickup/logistics block the agent
+// promises the customer after approval. Optional — POST with an empty
+// body simply moves the status to approved without any pickup note.
+type ApproveReturnRequest struct {
+	PickupDetails string `json:"pickup_details"`
 }
 
 // RejectReturnRequest captures the rejection reason.
@@ -282,43 +291,53 @@ type AdminReturnItemResponse struct {
 
 // AdminReturnResponse is the canonical wire shape for a single return.
 type AdminReturnResponse struct {
-	ID           string                    `json:"id"`
-	TenantID     string                    `json:"tenant_id"`
-	StoreID      string                    `json:"store_id"`
-	OrderID      string                    `json:"order_id"`
-	ReturnNumber string                    `json:"return_number"`
-	Status       string                    `json:"status"`
-	Reason       *string                   `json:"reason,omitempty"`
-	Notes        *string                   `json:"notes,omitempty"`
-	RefundAmount *decimal.Decimal          `json:"refund_amount,omitempty"`
-	CurrencyCode string                    `json:"currency_code"`
-	Items        []AdminReturnItemResponse `json:"items"`
-	RequestedAt  time.Time                 `json:"requested_at"`
-	ReceivedAt   *time.Time                `json:"received_at,omitempty"`
-	RefundedAt   *time.Time                `json:"refunded_at,omitempty"`
-	CreatedAt    time.Time                 `json:"created_at"`
-	UpdatedAt    time.Time                 `json:"updated_at"`
+	ID            string                    `json:"id"`
+	TenantID      string                    `json:"tenant_id"`
+	StoreID       string                    `json:"store_id"`
+	OrderID       string                    `json:"order_id"`
+	ReturnNumber  string                    `json:"return_number"`
+	Type          string                    `json:"type"`
+	Status        string                    `json:"status"`
+	Reason        *string                   `json:"reason,omitempty"`
+	Notes         *string                   `json:"notes,omitempty"`
+	PickupDetails *string                   `json:"pickup_details,omitempty"`
+	RejectReason  *string                   `json:"reject_reason,omitempty"`
+	RefundAmount  *decimal.Decimal          `json:"refund_amount,omitempty"`
+	CurrencyCode  string                    `json:"currency_code"`
+	Items         []AdminReturnItemResponse `json:"items"`
+	RequestedAt   time.Time                 `json:"requested_at"`
+	ApprovedAt    *time.Time                `json:"approved_at,omitempty"`
+	RejectedAt    *time.Time                `json:"rejected_at,omitempty"`
+	ReceivedAt    *time.Time                `json:"received_at,omitempty"`
+	RefundedAt    *time.Time                `json:"refunded_at,omitempty"`
+	CreatedAt     time.Time                 `json:"created_at"`
+	UpdatedAt     time.Time                 `json:"updated_at"`
 }
 
 // ToAdminReturnResponse renders Return + items into the wire shape.
 func ToAdminReturnResponse(r *order.Return, items []order.ReturnItem) AdminReturnResponse {
 	out := AdminReturnResponse{
-		ID:           r.ID.String(),
-		TenantID:     r.TenantID.String(),
-		StoreID:      r.StoreID.String(),
-		OrderID:      r.OrderID.String(),
-		ReturnNumber: r.ReturnNumber,
-		Status:       r.Status,
-		Reason:       r.Reason,
-		Notes:        r.Notes,
-		RefundAmount: r.RefundAmount,
-		CurrencyCode: r.CurrencyCode,
-		Items:        make([]AdminReturnItemResponse, 0, len(items)),
-		RequestedAt:  r.RequestedAt,
-		ReceivedAt:   r.ReceivedAt,
-		RefundedAt:   r.RefundedAt,
-		CreatedAt:    r.CreatedAt,
-		UpdatedAt:    r.UpdatedAt,
+		ID:            r.ID.String(),
+		TenantID:      r.TenantID.String(),
+		StoreID:       r.StoreID.String(),
+		OrderID:       r.OrderID.String(),
+		ReturnNumber:  r.ReturnNumber,
+		Type:          r.Type,
+		Status:        r.Status,
+		Reason:        r.Reason,
+		Notes:         r.Notes,
+		PickupDetails: r.PickupDetails,
+		RejectReason:  r.RejectReason,
+		RefundAmount:  r.RefundAmount,
+		CurrencyCode:  r.CurrencyCode,
+		Items:         make([]AdminReturnItemResponse, 0, len(items)),
+		RequestedAt:   r.RequestedAt,
+		ApprovedAt:    r.ApprovedAt,
+		RejectedAt:    r.RejectedAt,
+		ReceivedAt:    r.ReceivedAt,
+		RefundedAt:    r.RefundedAt,
+		CreatedAt:     r.CreatedAt,
+		UpdatedAt:     r.UpdatedAt,
 	}
 	for _, it := range items {
 		out.Items = append(out.Items, AdminReturnItemResponse{

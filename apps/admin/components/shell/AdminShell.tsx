@@ -109,7 +109,10 @@ const navigation: NavSection[] = [
     key: "orders",
     label: "Orders",
     icon: ShoppingCart,
-    href: "/orders",
+    children: [
+      { label: "All Orders", href: "/orders" },
+      { label: "Returns & replacements", href: "/orders/returns" },
+    ],
   },
   {
     key: "customers",
@@ -581,6 +584,9 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/products")) {
     return { eyebrow: "Products", title: "Products" };
+  }
+  if (pathname.startsWith("/orders/returns")) {
+    return { eyebrow: "Operations", title: "Returns & replacements" };
   }
   if (pathname.startsWith("/orders")) {
     return { eyebrow: "Operations", title: "Orders" };

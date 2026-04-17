@@ -112,6 +112,11 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 			// Customer self-service cancel — gated server-side on
 			// order ownership + status machine + shipment guard.
 			group.POST("/orders/:id/cancel", deps.OrderDetailHandler.Cancel)
+			// Customer self-service return/replace. GET returns any open
+			// request so the order page can render a status banner; POST
+			// creates a new request (one open per order in v1).
+			group.GET("/orders/:id/returns", deps.OrderDetailHandler.ListReturnsForOrder)
+			group.POST("/orders/:id/returns", deps.OrderDetailHandler.RequestReturn)
 		}
 
 		// Razorpay client-side checkout callback. The widget on the order

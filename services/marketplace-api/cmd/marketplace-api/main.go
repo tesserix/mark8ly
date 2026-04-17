@@ -570,6 +570,12 @@ func main() {
 		orderRepoSF := order.NewRepository()
 		outboxRepoSF := outbox.NewRepository(conn)
 		orderSvcSF := order.NewService(conn, orderRepoSF, outboxRepoSF)
+		// Return service — also wired in storefront mode so the customer
+		// self-service "request a return/replace" endpoint can enqueue
+		// return_requested events (admin replica drains them into the
+		// notification hub).
+		returnRepoSF := order.NewReturnRepository()
+		returnSvcSF := order.NewReturnService(conn, returnRepoSF, orderRepoSF, orderSvcSF, outboxRepoSF)
 		checkoutHandler := storefront.NewCheckoutHandler(conn, orderSvcSF, orderRepoSF, log).
 			WithAudit(auditEmitter).
 			WithNotifier(notificationSvc)
@@ -663,7 +669,8 @@ func main() {
 		})
 		orderDocSvcSF := orderdoc.NewService(conn, orderDocMailerSF, orderRepoSF, orderDocBrandingSvcSF, cfg.StorefrontBaseURLTemplate)
 
-		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log)
+		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log).
+			WithReturns(returnSvcSF, returnRepoSF)
 
 		// Support tickets — public contact form endpoint. Shares the
 		// ticketSvc with admin so created rows surface on the admin

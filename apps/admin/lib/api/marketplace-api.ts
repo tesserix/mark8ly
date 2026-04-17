@@ -2318,3 +2318,129 @@ export async function replyToReview(
   }
   return { ok: true, data: (await res.json()) as AdminReview };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Returns — RMA inbox (M5 follow-on).
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AdminReturnItem {
+  id: string;
+  order_item_id: string;
+  quantity: number;
+  reason?: string;
+}
+
+export type AdminReturnStatus =
+  | "requested"
+  | "approved"
+  | "received"
+  | "refunded"
+  | "rejected";
+
+export type AdminReturnType = "return" | "replace";
+
+export interface AdminReturn {
+  id: string;
+  tenant_id: string;
+  store_id: string;
+  order_id: string;
+  return_number: string;
+  type: AdminReturnType;
+  status: AdminReturnStatus;
+  reason?: string;
+  notes?: string;
+  pickup_details?: string;
+  reject_reason?: string;
+  refund_amount?: string;
+  currency_code: string;
+  items: AdminReturnItem[];
+  requested_at: string;
+  approved_at?: string;
+  rejected_at?: string;
+  received_at?: string;
+  refunded_at?: string;
+}
+
+/** List all returns for a store. Backend returns the 100 most recent. */
+export async function listReturns(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<AdminReturn[] | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/returns`,
+    { cache: "no-store", headers: commonHeaders(session) },
+  );
+  if (!res.ok) return null;
+  const body = (await res.json()) as { data?: AdminReturn[] };
+  return body.data ?? [];
+}
+
+export async function getReturn(
+  storeId: string,
+  returnId: string,
+  session: SessionHeaders,
+): Promise<AdminReturn | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/returns/${returnId}`,
+    { cache: "no-store", headers: commonHeaders(session) },
+  );
+  if (!res.ok) return null;
+  return (await res.json()) as AdminReturn;
+}
+
+export async function approveReturn(
+  storeId: string,
+  returnId: string,
+  pickupDetails: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminReturn>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/returns/${returnId}/approve`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ pickup_details: pickupDetails }),
+    },
+  );
+  if (!res.ok) return { ok: false, error: await parseMutationError(res) };
+  return { ok: true, data: (await res.json()) as AdminReturn };
+}
+
+export async function rejectReturn(
+  storeId: string,
+  returnId: string,
+  reason: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminReturn>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/returns/${returnId}/reject`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ reason }),
+    },
+  );
+  if (!res.ok) return { ok: false, error: await parseMutationError(res) };
+  return { ok: true, data: (await res.json()) as AdminReturn };
+}
+
+export async function setReturnPickup(
+  storeId: string,
+  returnId: string,
+  pickupDetails: string,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminReturn>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/returns/${returnId}/pickup`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ pickup_details: pickupDetails }),
+    },
+  );
+  if (!res.ok) return { ok: false, error: await parseMutationError(res) };
+  return { ok: true, data: (await res.json()) as AdminReturn };
+}

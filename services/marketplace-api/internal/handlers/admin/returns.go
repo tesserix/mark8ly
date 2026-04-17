@@ -158,6 +158,7 @@ func (h *ReturnsHandler) Request(c *gin.Context) {
 		StorePrefix:  prefix,
 		ReturnSeq:    seq,
 		OrderID:      orderUUID,
+		Type:         req.Type,
 		Reason:       req.Reason,
 		Notes:        req.Notes,
 		Items:        items,
@@ -187,14 +188,47 @@ func (h *ReturnsHandler) Request(c *gin.Context) {
 	c.JSON(http.StatusCreated, ToAdminReturnResponse(full, fullItems))
 }
 
-// Approve handles POST /admin/stores/:storeId/returns/:id/approve.
+// Approve handles POST /admin/stores/:storeId/returns/:id/approve. The
+// body may carry an optional pickup_details free-text block that the
+// customer will see on their order page next to the "Request approved"
+// banner (carrier, pickup window, replacement tracking, etc.).
 func (h *ReturnsHandler) Approve(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
 		return
 	}
-	if err := h.svc.Approve(c.Request.Context(), id); err != nil {
+	var req ApproveReturnRequest
+	// Body is optional — empty POST keeps pickup_details unset.
+	_ = c.ShouldBindJSON(&req)
+	if err := h.svc.Approve(c.Request.Context(), id, req.PickupDetails); err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	r, items, err := h.repo.GetByID(c.Request.Context(), h.db, id)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, ToAdminReturnResponse(r, items))
+}
+
+// SetPickupDetails handles PATCH /admin/stores/:storeId/returns/:id/pickup.
+// Used to refine the logistics note after approval without re-approving —
+// the typical flow is: approve without details → couriers confirm slot →
+// PATCH with the slot.
+func (h *ReturnsHandler) SetPickupDetails(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	var req ApproveReturnRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+	if err := h.svc.SetPickupDetails(c.Request.Context(), id, req.PickupDetails); err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}

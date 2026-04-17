@@ -39,6 +39,10 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
   const [open, setOpen] = useState(false);
   const [selectedReason, setSelectedReason] = useState("");
   const [otherText, setOtherText] = useState("");
+  // Return flow only: "return" (refund only) vs "replace" (exchange).
+  // Defaulted to "return" so the button still works if the customer
+  // doesn't touch the toggle.
+  const [returnType, setReturnType] = useState<"return" | "replace">("return");
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -99,8 +103,25 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
             setError(body.message || "Could not cancel the order. Please try again.");
             return;
           }
+        } else {
+          // Return or Replace: persist a real request the admin will
+          // see in the RMA inbox. The body omits the items array so the
+          // backend defaults to requesting the full order (v1 UX; a
+          // future iteration adds per-item multi-select).
+          const resp = await fetch(`/api/orders/${encodeURIComponent(orderId)}/returns`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: returnType,
+              reason: finalReason,
+            }),
+          });
+          if (!resp.ok) {
+            const body = (await resp.json().catch(() => ({}))) as { message?: string };
+            setError(body.message || "Could not submit your request. Please try again.");
+            return;
+          }
         }
-        // For returns: just close the modal with a confirmation (no backend endpoint yet)
         setDone(true);
         setOpen(false);
         router.refresh();
@@ -138,13 +159,34 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
       >
         <div className="px-6 py-5">
           <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))]">
-            {mode === "cancel" ? "Why are you cancelling?" : "Why are you returning?"}
+            {mode === "cancel" ? "Why are you cancelling?" : "Return or replace?"}
           </h2>
           <p className="mt-1 text-xs text-[color:var(--storefront-text,var(--ink-900))]/50">
             {mode === "cancel"
               ? "Select a reason for cancellation"
-              : "Select a reason for your return"}
+              : "Tell us what you'd like and why — our team will review and reach out."}
           </p>
+
+          {mode === "return" && (
+            <div className="mt-4 flex gap-2" role="radiogroup" aria-label="Request type">
+              {(["return", "replace"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  aria-checked={returnType === t}
+                  onClick={() => setReturnType(t)}
+                  className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium capitalize transition-colors ${
+                    returnType === t
+                      ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/5 text-[color:var(--storefront-text,var(--ink-900))]"
+                      : "border-[color:var(--storefront-text,var(--ink-900))]/15 text-[color:var(--storefront-text,var(--ink-900))]/70 hover:border-[color:var(--storefront-text,var(--ink-900))]/30"
+                  }`}
+                >
+                  {t === "return" ? "Return for refund" : "Replace"}
+                </button>
+              ))}
+            </div>
+          )}
 
           <fieldset className="mt-4 space-y-2">
             {reasons.map((r) => (
@@ -213,7 +255,9 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
                 ? "Processing..."
                 : mode === "cancel"
                   ? "Confirm Cancellation"
-                  : "Submit Return Request"}
+                  : returnType === "replace"
+                    ? "Submit Replacement Request"
+                    : "Submit Return Request"}
             </button>
             <button
               type="button"

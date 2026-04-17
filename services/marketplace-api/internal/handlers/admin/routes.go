@@ -262,6 +262,12 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				returns.POST("/:id/approve",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
 					deps.ReturnsHandler.Approve)
+				// Pickup details can be edited after approval without
+				// changing status — typical when the courier only comes
+				// back with a time slot later.
+				returns.PATCH("/:id/pickup",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
+					deps.ReturnsHandler.SetPickupDetails)
 				returns.POST("/:id/reject",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
 					deps.ReturnsHandler.Reject)

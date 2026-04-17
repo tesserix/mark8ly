@@ -13,6 +13,7 @@ import { decodeSession } from "@/lib/session";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { OrderTimeline } from "@/components/OrderTimeline";
 import { CancelOrderButton } from "@/components/account/CancelOrderButton";
+import { ReturnStatusBanner } from "@/components/account/ReturnStatusBanner";
 import { invoiceNumberFromOrder, receiptNumberFromOrder } from "@/lib/invoices/numbering";
 
 export const dynamic = "force-dynamic";
@@ -80,6 +81,12 @@ export default async function AccountOrderPage({ params }: PageProps) {
           shipmentStatus={order.shipment?.status ?? null}
         />
       </div>
+
+      {/* Return/replace status banner — rendered when an open or recent
+          request exists. Fetches server-side so the banner is present on
+          first paint and the customer sees the current state immediately
+          after submitting. */}
+      <ReturnStatusBanner orderId={order.id} />
 
       <section>
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">

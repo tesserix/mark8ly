@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -143,16 +144,19 @@ func NewReturnService(db *gorm.DB, repo ReturnRepository, orderRepo Repository, 
 
 // RequestInput is the storefront-side payload that creates a return request.
 type RequestInput struct {
-	TenantID       uuid.UUID
-	StoreID        uuid.UUID
-	StorePrefix    string
-	ReturnSeq      int64 // from order.NextDocumentNumber(..., "return")
-	OrderID        uuid.UUID
-	Reason         *string
-	Notes          *string
-	Items          []ReturnItem // OrderItemID + Quantity (+ optional Reason) per line
-	CurrencyCode   string
-	RequestedAt    time.Time
+	TenantID    uuid.UUID
+	StoreID     uuid.UUID
+	StorePrefix string
+	ReturnSeq   int64 // from order.NextDocumentNumber(..., "return")
+	OrderID     uuid.UUID
+	// Type is "return" (refund only) or "replace" (exchange for another
+	// unit). Defaults to "return" when empty. See ReturnType* constants.
+	Type         string
+	Reason       *string
+	Notes        *string
+	Items        []ReturnItem // OrderItemID + Quantity (+ optional Reason) per line
+	CurrencyCode string
+	RequestedAt  time.Time
 }
 
 // Request creates a new return in 'requested' state. Validates that each
@@ -183,11 +187,19 @@ func (s *ReturnService) Request(ctx context.Context, in RequestInput) (*Return, 
 	}
 
 	number := FormatReturnNumber(in.StorePrefix, in.RequestedAt, in.ReturnSeq)
+	retType := in.Type
+	if retType == "" {
+		retType = ReturnTypeReturn
+	}
+	if retType != ReturnTypeReturn && retType != ReturnTypeReplace {
+		return nil, nil, apperrors.ValidationFailed("type", "must be 'return' or 'replace'")
+	}
 	r := &Return{
 		TenantID:     in.TenantID,
 		StoreID:      in.StoreID,
 		OrderID:      in.OrderID,
 		ReturnNumber: number,
+		Type:         retType,
 		Status:       string(ReturnStatusRequested),
 		Reason:       in.Reason,
 		Notes:        in.Notes,
@@ -218,8 +230,12 @@ func (s *ReturnService) Request(ctx context.Context, in RequestInput) (*Return, 
 	return created, createdItems, err
 }
 
-// Approve transitions a return from requested → approved.
-func (s *ReturnService) Approve(ctx context.Context, returnID uuid.UUID) error {
+// Approve transitions a return from requested → approved. The optional
+// pickupDetails string is the free-text block the agent uses to tell the
+// customer what to expect next (carrier, pickup window, replacement
+// tracking). It's persisted on the return and surfaced on the customer's
+// order page.
+func (s *ReturnService) Approve(ctx context.Context, returnID uuid.UUID, pickupDetails string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		r, _, err := s.repo.GetByID(ctx, tx, returnID)
 		if err != nil {
@@ -231,10 +247,39 @@ func (s *ReturnService) Approve(ctx context.Context, returnID uuid.UUID) error {
 		if err := s.repo.UpdateStatus(tx, returnID, ReturnStatusApproved); err != nil {
 			return err
 		}
+		now := time.Now().UTC()
+		patch := map[string]any{"approved_at": now, "updated_at": now}
+		if s := strings.TrimSpace(pickupDetails); s != "" {
+			patch["pickup_details"] = s
+		}
+		if err := tx.Model(&Return{}).Where("id = ?", returnID).Updates(patch).Error; err != nil {
+			return err
+		}
 		return s.orderSvc.RecordReturnEvent(ctx, tx, r.OrderID, EventKindReturnApproved, outbox.EventReturnApproved, ReturnEventPayload{
 			ReturnID:     r.ID.String(),
 			ReturnNumber: r.ReturnNumber,
 		})
+	})
+}
+
+// SetPickupDetails lets the agent refine the pickup/logistics note on an
+// already-approved return without re-approving. Useful when the carrier
+// comes back with a slot after the initial approval.
+func (s *ReturnService) SetPickupDetails(ctx context.Context, returnID uuid.UUID, pickupDetails string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now().UTC()
+		patch := map[string]any{
+			"pickup_details": strings.TrimSpace(pickupDetails),
+			"updated_at":     now,
+		}
+		res := tx.Model(&Return{}).Where("id = ?", returnID).Updates(patch)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apperrors.NotFound("return")
+		}
+		return nil
 	})
 }
 
@@ -295,7 +340,9 @@ func (s *ReturnService) MarkRefunded(ctx context.Context, returnID uuid.UUID, am
 	})
 }
 
-// Reject transitions requested → rejected.
+// Reject transitions requested → rejected. The reason is persisted on the
+// return (customer reads it on their order page) and also written to the
+// event payload for audit.
 func (s *ReturnService) Reject(ctx context.Context, returnID uuid.UUID, reason string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		r, _, err := s.repo.GetByID(ctx, tx, returnID)
@@ -306,6 +353,14 @@ func (s *ReturnService) Reject(ctx context.Context, returnID uuid.UUID, reason s
 			return apperrors.InvalidTransition("return", r.Status, string(ReturnStatusRejected))
 		}
 		if err := s.repo.UpdateStatus(tx, returnID, ReturnStatusRejected); err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		patch := map[string]any{"rejected_at": now, "updated_at": now}
+		if s := strings.TrimSpace(reason); s != "" {
+			patch["reject_reason"] = s
+		}
+		if err := tx.Model(&Return{}).Where("id = ?", returnID).Updates(patch).Error; err != nil {
 			return err
 		}
 		return s.orderSvc.RecordReturnEvent(ctx, tx, r.OrderID, EventKindReturnRejected, outbox.EventReturnRejected, ReturnEventPayload{

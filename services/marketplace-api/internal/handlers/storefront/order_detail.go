@@ -25,20 +25,30 @@ import (
 )
 
 // OrderDetailHandler serves the public order view for storefront
-// customers and exposes self-service actions (cancel).
+// customers and exposes self-service actions (cancel, request return).
 type OrderDetailHandler struct {
-	db        *gorm.DB
-	orderRepo order.Repository
-	orderSvc  *order.Service     // optional — when nil, /cancel returns 503
-	docMailer *orderdoc.Service  // optional — when nil, the cancel email is skipped
-	logger    *slog.Logger
+	db         *gorm.DB
+	orderRepo  order.Repository
+	orderSvc   *order.Service      // optional — when nil, /cancel returns 503
+	returnSvc  *order.ReturnService // optional — when nil, /returns returns 503
+	returnRepo order.ReturnRepository
+	docMailer  *orderdoc.Service   // optional — when nil, the cancel email is skipped
+	logger     *slog.Logger
 }
 
-// NewOrderDetailHandler constructs an OrderDetailHandler. orderSvc and
-// docMailer are optional dependencies — passing nil disables the
-// self-service cancel route and the cancellation email respectively.
+// NewOrderDetailHandler constructs an OrderDetailHandler. orderSvc,
+// returnSvc, returnRepo and docMailer are optional — passing nil disables
+// the relevant routes.
 func NewOrderDetailHandler(db *gorm.DB, orderRepo order.Repository, orderSvc *order.Service, docMailer *orderdoc.Service, logger *slog.Logger) *OrderDetailHandler {
 	return &OrderDetailHandler{db: db, orderRepo: orderRepo, orderSvc: orderSvc, docMailer: docMailer, logger: logger}
+}
+
+// WithReturns attaches the return service + repository so the
+// self-service return request route is enabled.
+func (h *OrderDetailHandler) WithReturns(svc *order.ReturnService, repo order.ReturnRepository) *OrderDetailHandler {
+	h.returnSvc = svc
+	h.returnRepo = repo
+	return h
 }
 
 // storefrontOrderResponse is the customer-facing DTO.

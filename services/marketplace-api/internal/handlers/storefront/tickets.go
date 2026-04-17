@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -34,6 +35,7 @@ var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
 type TicketsHandler struct {
 	svc    *ticket.Service
 	notify *notification.Service // optional — nil-safe; fires admin bell
+	audit  *audit.Emitter        // optional — nil-safe
 	logger *slog.Logger
 }
 
@@ -46,6 +48,13 @@ func NewTicketsHandler(svc *ticket.Service, logger *slog.Logger) *TicketsHandler
 // notification fires when a customer opens a ticket. Nil-safe.
 func (h *TicketsHandler) WithNotifier(n *notification.Service) *TicketsHandler {
 	h.notify = n
+	return h
+}
+
+// WithAudit attaches the audit emitter so storefront-originated ticket
+// events land in the admin Settings → Audit Logs view. Nil-safe.
+func (h *TicketsHandler) WithAudit(e *audit.Emitter) *TicketsHandler {
+	h.audit = e
 	return h
 }
 
@@ -153,6 +162,25 @@ func (h *TicketsHandler) Create(c *gin.Context) {
 		ResourceType: &resourceType,
 		ResourceID:   &t.ID,
 	})
+
+	if h.audit != nil {
+		h.audit.Emit(c, audit.Event{
+			TenantID:       tenantID,
+			StoreID:        storeID,
+			ForceActorType: audit.ActorSystem,
+			Action:         "ticket.created",
+			ResourceType:   "ticket",
+			ResourceID:     t.ID.String(),
+			Metadata: map[string]any{
+				"ticket_number":  t.TicketNumber,
+				"subject":        t.Subject,
+				"priority":       string(t.Priority),
+				"source":         "storefront",
+				"submitter_name": name,
+				"submitter_email": email,
+			},
+		})
+	}
 
 	c.JSON(http.StatusCreated, createTicketResponse{
 		TicketNumber: t.TicketNumber,
@@ -436,6 +464,23 @@ func (h *TicketsHandler) AddMyReply(c *gin.Context) {
 		ResourceType: &resourceType,
 		ResourceID:   &t.ID,
 	})
+
+	if h.audit != nil {
+		h.audit.Emit(c, audit.Event{
+			TenantID:       tenantID,
+			StoreID:        storeID,
+			ForceActorType: audit.ActorSystem,
+			Action:         "ticket.reply_added",
+			ResourceType:   "ticket",
+			ResourceID:     t.ID.String(),
+			Metadata: map[string]any{
+				"ticket_number": t.TicketNumber,
+				"author_type":   string(ticket.AuthorTypeCustomer),
+				"author_email":  profile.Email,
+				"source":        "storefront",
+			},
+		})
+	}
 
 	// Re-fetch the full thread so the client renders the new reply
 	// alongside any state transitions AddReply may have applied (e.g.

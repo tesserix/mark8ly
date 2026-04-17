@@ -435,6 +435,7 @@ func main() {
 		// the storefront /support/tickets endpoint and the admin dashboard
 		// read/write the same rows through the same service instance.
 		ticketsHandler := admin.NewTicketsHandler(ticketSvc, log)
+		ticketsHandler.WithAudit(auditEmitter)
 
 		// Settings S5 — Notifications handler uses the shared notificationSvc
 		// constructed above. Wire the notifier into lifecycle handlers so
@@ -668,7 +669,8 @@ func main() {
 		// ticketSvc with admin so created rows surface on the admin
 		// dashboard immediately.
 		sfTicketsHandler := storefront.NewTicketsHandler(ticketSvc, log).
-			WithNotifier(notificationSvc)
+			WithNotifier(notificationSvc).
+			WithAudit(auditEmitter)
 
 		storefrontDeps = storefront.Deps{
 			Handler:               storefrontHandler,

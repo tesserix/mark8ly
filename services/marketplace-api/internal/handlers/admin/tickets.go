@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -22,12 +23,20 @@ var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
 // TicketsHandler handles /admin/stores/:storeId/tickets endpoints.
 type TicketsHandler struct {
 	svc    *ticket.Service
+	audit  *audit.Emitter // optional — nil-safe
 	logger *slog.Logger
 }
 
 // NewTicketsHandler constructs a TicketsHandler.
 func NewTicketsHandler(svc *ticket.Service, logger *slog.Logger) *TicketsHandler {
 	return &TicketsHandler{svc: svc, logger: logger}
+}
+
+// WithAudit attaches an audit emitter so ticket lifecycle events land in
+// Settings → Audit Logs. Nil-safe.
+func (h *TicketsHandler) WithAudit(e *audit.Emitter) *TicketsHandler {
+	h.audit = e
+	return h
 }
 
 // List handles GET /admin/stores/:storeId/tickets.
@@ -128,6 +137,18 @@ func (h *TicketsHandler) Create(c *gin.Context) {
 		return
 	}
 
+	h.audit.Emit(c, audit.Event{
+		Action:       "ticket.created",
+		ResourceType: "ticket",
+		ResourceID:   t.ID.String(),
+		Metadata: map[string]any{
+			"ticket_number": t.TicketNumber,
+			"subject":       t.Subject,
+			"priority":      string(t.Priority),
+			"source":        "admin",
+		},
+	})
+
 	c.JSON(http.StatusCreated, toTicketResponse(*t))
 }
 
@@ -186,9 +207,24 @@ func (h *TicketsHandler) Reply(c *gin.Context) {
 	sanitized := htmlTagRe.ReplaceAllString(req.Content, "")
 	sanitized = strings.TrimSpace(sanitized)
 
+	// Identify the merchant author. middleware writes user_name /
+	// user_email onto the gin context when Bearer auth is used; admin
+	// server actions coming through X-User-Email don't always trigger
+	// that path, so fall back to the header directly — same pattern
+	// account.go uses.
+	userEmail := c.GetString("user_email")
+	if userEmail == "" {
+		userEmail = c.GetHeader("X-User-Email")
+	}
 	userName := c.GetString("user_name")
 	if userName == "" {
-		userName = c.GetString("user_email")
+		userName = c.GetHeader("X-User-Name")
+	}
+	if userName == "" {
+		userName = userEmail
+	}
+	if userName == "" {
+		userName = "Support"
 	}
 
 	r, err := h.svc.AddReply(c.Request.Context(), ticket.AddReplyInput{
@@ -197,13 +233,23 @@ func (h *TicketsHandler) Reply(c *gin.Context) {
 		TicketID:    ticketID,
 		AuthorType:  string(ticket.AuthorTypeMerchant),
 		AuthorName:  userName,
-		AuthorEmail: c.GetString("user_email"),
+		AuthorEmail: userEmail,
 		Content:     sanitized,
 	})
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
+
+	h.audit.Emit(c, audit.Event{
+		Action:       "ticket.reply_added",
+		ResourceType: "ticket",
+		ResourceID:   ticketID.String(),
+		Metadata: map[string]any{
+			"reply_id":    r.ID.String(),
+			"author_type": string(r.AuthorType),
+		},
+	})
 
 	c.JSON(http.StatusCreated, toTicketReplyResponse(*r))
 }
@@ -232,11 +278,30 @@ func (h *TicketsHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
+	// Peek at the current status so the audit event records the full
+	// transition ("from → to") instead of just the target. Failure
+	// here is non-fatal — we just skip the `from` metadata.
+	var priorStatus string
+	if prior, peekErr := h.svc.Get(c.Request.Context(), storeID, tenantID, id); peekErr == nil && prior != nil {
+		priorStatus = string(prior.Status)
+	}
+
 	t, err := h.svc.UpdateStatus(c.Request.Context(), storeID, tenantID, id, req.Status)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
+
+	h.audit.Emit(c, audit.Event{
+		Action:       "ticket.status_changed",
+		ResourceType: "ticket",
+		ResourceID:   t.ID.String(),
+		Metadata: map[string]any{
+			"ticket_number": t.TicketNumber,
+			"from":          priorStatus,
+			"to":            string(t.Status),
+		},
+	})
 
 	c.JSON(http.StatusOK, toTicketResponse(*t))
 }

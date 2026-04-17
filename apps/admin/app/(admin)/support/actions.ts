@@ -19,14 +19,16 @@ async function getSessionFromHeaders(): Promise<{
   userId: string;
   tenantId: string;
   storeId: string;
+  email: string;
 }> {
   const h = await headers();
-  const [userId, tenantId, storeId] = [
+  const [userId, tenantId, email, storeId] = [
     h.get("x-session-user-id") ?? "",
     h.get("x-session-tenant-id") ?? "",
+    h.get("x-session-email") ?? "",
     await resolveStoreId(),
   ];
-  return { userId, tenantId, storeId };
+  return { userId, tenantId, email, storeId };
 }
 
 export async function createTicketAction(
@@ -44,7 +46,7 @@ export async function createTicketAction(
     return { error: "Description must be at least 20 characters." };
   }
 
-  const { userId, tenantId, storeId } = await getSessionFromHeaders();
+  const { userId, tenantId, email, storeId } = await getSessionFromHeaders();
   if (!storeId) {
     return { error: "No store found. Please create a store first." };
   }
@@ -56,7 +58,7 @@ export async function createTicketAction(
       description,
       priority: priority as "low" | "medium" | "high",
     },
-    { userId, tenantId },
+    { userId, tenantId, email },
   );
 
   if (!result.ok) {
@@ -85,7 +87,7 @@ export async function replyToTicketAction(
     return { ok: false, error: "Reply cannot be empty." };
   }
 
-  const { userId, tenantId, storeId } = await getSessionFromHeaders();
+  const { userId, tenantId, email, storeId } = await getSessionFromHeaders();
   if (!storeId) {
     return { ok: false, error: "No store found." };
   }
@@ -94,7 +96,7 @@ export async function replyToTicketAction(
     storeId,
     ticketId,
     { content },
-    { userId, tenantId },
+    { userId, tenantId, email },
   );
 
   if (!result.ok) {
@@ -113,7 +115,7 @@ export async function updateTicketStatusAction(
   const ticketId = (formData.get("ticketId") as string) ?? "";
   const status = (formData.get("status") as string) ?? "";
 
-  const { userId, tenantId, storeId } = await getSessionFromHeaders();
+  const { userId, tenantId, email, storeId } = await getSessionFromHeaders();
   if (!storeId) {
     return { ok: false, error: "No store found." };
   }
@@ -122,7 +124,7 @@ export async function updateTicketStatusAction(
     storeId,
     ticketId,
     status as TicketStatus,
-    { userId, tenantId },
+    { userId, tenantId, email },
   );
 
   if (!result.ok) {

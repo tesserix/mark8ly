@@ -90,6 +90,13 @@ export function TicketDetail({ ticket }: TicketDetailProps) {
         </p>
       </div>
 
+      {/* Status stepper — interactive workflow indicator at the top so
+          merchants see (and can change) the ticket state before they
+          read the content. Tap a step to transition. */}
+      <div className="rounded-md border border-border-subtle bg-background-elevated px-5 py-4">
+        <TicketStatusStepper ticketId={ticket.id} status={ticket.status} />
+      </div>
+
       {/* Description */}
       <div className="border-b border-border-subtle pb-6">
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
@@ -140,12 +147,6 @@ export function TicketDetail({ ticket }: TicketDetailProps) {
           </ul>
         </div>
       )}
-
-      {/* Status stepper — interactive workflow indicator. Tap a step
-          to transition the ticket. Invalid targets are disabled. */}
-      <div className="rounded-md border border-border-subtle bg-background-elevated px-5 py-4">
-        <TicketStatusStepper ticketId={ticket.id} status={ticket.status} />
-      </div>
 
       {/* Reply form — only for non-closed tickets */}
       {ticket.status !== "closed" && (

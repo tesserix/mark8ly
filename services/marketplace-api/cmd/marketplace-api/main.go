@@ -670,7 +670,8 @@ func main() {
 		orderDocSvcSF := orderdoc.NewService(conn, orderDocMailerSF, orderRepoSF, orderDocBrandingSvcSF, cfg.StorefrontBaseURLTemplate)
 
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log).
-			WithReturns(returnSvcSF, returnRepoSF)
+			WithReturns(returnSvcSF, returnRepoSF).
+			WithNotifier(notificationSvc)
 
 		// Support tickets — public contact form endpoint. Shares the
 		// ticketSvc with admin so created rows surface on the admin

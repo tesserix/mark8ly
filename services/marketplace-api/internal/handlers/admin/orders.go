@@ -160,6 +160,17 @@ func (h *OrdersHandler) List(c *gin.Context) {
 	if q.PaymentStatus != "" {
 		tx = tx.Where("payment_status = ?", q.PaymentStatus)
 	}
+	if s := strings.TrimSpace(q.Search); s != "" {
+		// Partial-match across the columns an operator typically
+		// remembers. ILIKE means the query is case-insensitive and a
+		// few typed characters produce useful narrowing without
+		// requiring a specific format.
+		like := "%" + s + "%"
+		tx = tx.Where(
+			"order_number ILIKE ? OR customer_name ILIKE ? OR customer_email ILIKE ?",
+			like, like, like,
+		)
+	}
 
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {

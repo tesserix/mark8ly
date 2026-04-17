@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/customer"
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
@@ -209,6 +210,22 @@ func (h *OrderDetailHandler) RequestReturn(c *gin.Context) {
 		return
 	}
 
+	// Fire the in-app notification so the admin bell picks up the new
+	// request exactly like an admin-initiated one. Nil-safe helper — we
+	// skip silently if the notifier wasn't wired.
+	who := customerDisplayName(profile)
+	msg := who + " requested a " + retType + " on order " + o.OrderNumber + "."
+	resourceType := "return"
+	notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
+		TenantID:     o.TenantID,
+		StoreID:      o.StoreID,
+		Type:         notification.TypeReturnRequested,
+		Title:        "Return requested",
+		Message:      &msg,
+		ResourceType: &resourceType,
+		ResourceID:   &r.ID,
+	})
+
 	c.JSON(http.StatusCreated, gin.H{
 		"return": toStorefrontReturnResponse(r),
 	})
@@ -285,6 +302,32 @@ func toStorefrontReturnResponse(r *order.Return) StorefrontReturnResponse {
 		out.RejectedAt = &s
 	}
 	return out
+}
+
+// customerDisplayName returns a human-readable label for a profile,
+// preferring the full name, falling back to first name, then email, then
+// a generic placeholder.
+func customerDisplayName(p *customer.CustomerProfile) string {
+	if p == nil {
+		return "A customer"
+	}
+	first := ""
+	last := ""
+	if p.FirstName != nil {
+		first = strings.TrimSpace(*p.FirstName)
+	}
+	if p.LastName != nil {
+		last = strings.TrimSpace(*p.LastName)
+	}
+	switch {
+	case first != "" && last != "":
+		return first + " " + last
+	case first != "":
+		return first
+	case p.Email != "":
+		return p.Email
+	}
+	return "A customer"
 }
 
 // storePrefixFromStoreRow builds the RMA prefix from the store, matching

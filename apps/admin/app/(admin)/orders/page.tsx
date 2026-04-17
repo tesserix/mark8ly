@@ -43,13 +43,14 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
     total: 0,
     total_pages: 0,
   };
-  const hasActiveFilters = !!query.status || !!query.paymentStatus;
+  const hasActiveFilters = !!query.status || !!query.paymentStatus || !!query.search;
   const isEmpty = orders.length === 0;
 
   const buildHref = (page: number) => {
     const p = new URLSearchParams();
     if (query.status) p.set("status", query.status);
     if (query.paymentStatus) p.set("payment_status", query.paymentStatus);
+    if (query.search) p.set("search", query.search);
     if (query.pageSize) p.set("page_size", String(query.pageSize));
     if (page > 1) p.set("page", String(page));
     const qs = p.toString();
@@ -58,6 +59,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
 
   return (
     <AdminPage eyebrow="Operations" title="Orders" description={DESCRIPTION}>
+      <OrdersSearchBar defaultValue={query.search ?? ""} />
       {isEmpty ? (
         <OrdersListEmpty
           variant={hasActiveFilters ? "no-matches" : "no-orders"}
@@ -74,6 +76,43 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
         </>
       )}
     </AdminPage>
+  );
+}
+
+// Plain GET form so the search survives hard reload + deep-links. The
+// preserved inputs carry existing status/payment_status through so
+// searching inside a filtered view doesn't silently clear the filter.
+function OrdersSearchBar({ defaultValue }: { defaultValue: string }) {
+  return (
+    <form
+      action="/orders"
+      method="get"
+      className="mb-4 flex items-center gap-2"
+      role="search"
+      aria-label="Search orders"
+    >
+      <input
+        type="search"
+        name="search"
+        defaultValue={defaultValue}
+        placeholder="Search by order #, customer name or email"
+        className="w-full max-w-md rounded-md border border-border-subtle bg-background px-3 py-2 text-sm placeholder:text-foreground-tertiary focus:border-foreground focus:outline-none"
+      />
+      <button
+        type="submit"
+        className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"
+      >
+        Search
+      </button>
+      {defaultValue && (
+        <a
+          href="/orders"
+          className="text-xs text-foreground-tertiary hover:text-foreground"
+        >
+          Clear
+        </a>
+      )}
+    </form>
   );
 }
 
@@ -114,9 +153,11 @@ function parseSearchParams(
     ? (paymentStatus as PaymentStatus)
     : undefined;
 
+  const search = typeof raw.search === "string" ? raw.search.trim() : "";
   return {
     status: validStatus,
     paymentStatus: validPaymentStatus,
+    search: search || undefined,
     page: page && page > 0 ? page : undefined,
     pageSize:
       pageSize && pageSize > 0 && pageSize <= 200 ? pageSize : undefined,

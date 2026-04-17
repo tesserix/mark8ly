@@ -12,6 +12,8 @@
 import { cookies, headers } from "next/headers";
 import { resolveStoreSlug } from "@/lib/slug";
 
+import Link from "next/link";
+
 interface Props {
   orderId: string;
 }
@@ -76,10 +78,10 @@ export async function ReturnStatusBanner({ orderId }: Props) {
     returns.find((r) => r.status !== "refunded" && r.status !== "rejected") ??
     returns[0];
   if (!active) return null;
-  return <Banner r={active} />;
+  return <Banner r={active} orderId={orderId} />;
 }
 
-function Banner({ r }: { r: StorefrontReturn }) {
+function Banner({ r, orderId }: { r: StorefrontReturn; orderId: string }) {
   const typeLabel = r.type === "replace" ? "Replacement" : "Return";
   switch (r.status) {
     case "requested":
@@ -110,6 +112,14 @@ function Banner({ r }: { r: StorefrontReturn }) {
               details shortly.
             </BodyLine>
           )}
+          <div className="mt-1 flex flex-wrap items-center gap-3">
+            <Link
+              href={`/account/orders/${encodeURIComponent(orderId)}/returns/${encodeURIComponent(r.id)}/label`}
+              className="inline-flex items-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            >
+              Print return label
+            </Link>
+          </div>
         </ShellBanner>
       );
     case "received":

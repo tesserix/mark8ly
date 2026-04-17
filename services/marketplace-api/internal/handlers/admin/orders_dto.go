@@ -16,6 +16,11 @@ import (
 type ListOrdersQuery struct {
 	Status        string `form:"status"`         // optional filter; matches orders.status
 	PaymentStatus string `form:"payment_status"` // optional filter
+	// Search is a free-text query across order_number + customer_name +
+	// customer_email. ILIKE match inside the repo layer so partial typed
+	// input (first chars of an order number, a customer domain, etc.)
+	// produces useful matches without pressing Enter.
+	Search        string `form:"search"`
 	Page          int    `form:"page"`
 	PageSize      int    `form:"page_size"`
 }

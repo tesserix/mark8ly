@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/customer"
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -33,6 +34,10 @@ type OrderDetailHandler struct {
 	returnSvc  *order.ReturnService // optional — when nil, /returns returns 503
 	returnRepo order.ReturnRepository
 	docMailer  *orderdoc.Service   // optional — when nil, the cancel email is skipped
+	// notify is an optional notification service. When set, customer-
+	// initiated return requests emit notification.TypeReturnRequested so
+	// admins see them in their bell just like admin-initiated ones.
+	notify     *notification.Service
 	logger     *slog.Logger
 }
 
@@ -48,6 +53,14 @@ func NewOrderDetailHandler(db *gorm.DB, orderRepo order.Repository, orderSvc *or
 func (h *OrderDetailHandler) WithReturns(svc *order.ReturnService, repo order.ReturnRepository) *OrderDetailHandler {
 	h.returnSvc = svc
 	h.returnRepo = repo
+	return h
+}
+
+// WithNotifier attaches the notification service so customer-initiated
+// return requests fire admin bell entries (notification.TypeReturnRequested).
+// Nil-safe; passing nil simply suppresses notifications on this path.
+func (h *OrderDetailHandler) WithNotifier(n *notification.Service) *OrderDetailHandler {
+	h.notify = n
 	return h
 }
 

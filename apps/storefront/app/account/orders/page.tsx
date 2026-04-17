@@ -90,7 +90,13 @@ function formatCurrency(amount: string, currencyCode: string): string {
   }
 }
 
-export default async function OrdersPage() {
+interface OrdersPageProps {
+  searchParams: Promise<{ q?: string }>;
+}
+
+export default async function OrdersPage({ searchParams }: OrdersPageProps) {
+  const { q: searchRaw } = await searchParams;
+  const search = (searchRaw ?? "").trim().toLowerCase();
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
   const session = decodeSession(sessionCookie);
@@ -143,11 +149,59 @@ export default async function OrdersPage() {
     fetchError = true;
   }
 
+  // Customers typically have a short list, so filter client-side on the
+  // SSR render rather than adding a new backend search endpoint. Matches
+  // against order number, status label, and payment status — the fields
+  // a customer is likely to remember or type.
+  const visible = search
+    ? orders.filter((o) => {
+        const hay = [
+          o.order_number,
+          statusLabel(o.status),
+          o.payment_status,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(search);
+      })
+    : orders;
+
   return (
     <div className="space-y-6">
       <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
         Orders
       </h1>
+
+      <form
+        action="/account/orders"
+        method="get"
+        role="search"
+        aria-label="Search orders"
+        className="flex items-center gap-2"
+      >
+        <input
+          type="search"
+          name="q"
+          defaultValue={searchRaw ?? ""}
+          placeholder="Search by order #"
+          className="w-full max-w-sm rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-transparent px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--storefront-accent,var(--moss-700))]"
+        />
+        <button
+          type="submit"
+          className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/25 px-3 py-2 text-xs font-medium uppercase tracking-wider text-[color:var(--storefront-text,var(--ink-900))] hover:bg-[color:var(--storefront-text,var(--ink-900))]/5"
+        >
+          Search
+        </button>
+        {searchRaw && (
+          <a
+            href="/account/orders"
+            className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50 hover:opacity-100"
+          >
+            Clear
+          </a>
+        )}
+      </form>
 
       {fetchError && (
         <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
@@ -161,9 +215,15 @@ export default async function OrdersPage() {
         </p>
       )}
 
-      {orders.length > 0 && (
+      {orders.length > 0 && visible.length === 0 && (
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
+          No orders match &ldquo;{searchRaw}&rdquo;.
+        </p>
+      )}
+
+      {visible.length > 0 && (
         <ul className="divide-y divide-[color:var(--storefront-text,var(--ink-900))]/10 border-t border-[color:var(--storefront-text,var(--ink-900))]/10">
-          {orders.map((order) => (
+          {visible.map((order) => (
             <li key={order.id}>
               <Link
                 href={`/account/orders/${order.id}`}

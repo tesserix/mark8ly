@@ -1023,6 +1023,9 @@ export interface ListOrdersResponse {
 export interface ListOrdersQuery {
   status?: OrderStatus;
   paymentStatus?: PaymentStatus;
+  /** Free-text search (order number, customer name/email). Backend does
+   *  ILIKE matching across those columns. */
+  search?: string;
   page?: number;
   pageSize?: number;
 }
@@ -1040,6 +1043,7 @@ export async function listOrders(
   const params = new URLSearchParams();
   if (query.status) params.set("status", query.status);
   if (query.paymentStatus) params.set("payment_status", query.paymentStatus);
+  if (query.search) params.set("search", query.search);
   if (query.page) params.set("page", String(query.page));
   if (query.pageSize) params.set("page_size", String(query.pageSize));
   const qs = params.toString();

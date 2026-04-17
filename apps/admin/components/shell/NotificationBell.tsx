@@ -21,6 +21,38 @@ interface NotificationItem {
   message: string | null;
   is_read: boolean;
   created_at: string;
+  // resource_type + resource_id are set by the backend when a
+  // notification relates to a specific record. We derive the click
+  // target from this pair so clicking a "Return requested" entry lands
+  // on the RMA detail, "Order cancelled" on the order page, etc.
+  resource_type?: string | null;
+  resource_id?: string | null;
+}
+
+// Map a notification to the admin page it should open. Returns null when
+// the notification has no natural landing page.
+function hrefFor(n: NotificationItem): string | null {
+  const id = n.resource_id ?? "";
+  switch (n.type) {
+    case "new_order":
+    case "order_cancelled":
+    case "order_fulfilled":
+    case "payment_received":
+      if (!id) return "/orders";
+      return `/orders/${id}`;
+    case "return_requested":
+    case "return_approved":
+    case "return_rejected":
+      return id
+        ? `/orders/returns?highlight=${encodeURIComponent(id)}`
+        : "/orders/returns";
+    case "review_submitted":
+      return "/customers/reviews";
+    case "low_stock":
+      return id ? `/products/${id}` : "/products";
+    default:
+      return null;
+  }
 }
 
 interface NotificationBellProps {
@@ -179,11 +211,9 @@ export function NotificationBell({
             <ul className="divide-y divide-border">
               {notifications.map((n) => {
                 const Icon = TYPE_ICONS[n.type] ?? Bell;
-                return (
-                  <li
-                    key={n.id}
-                    className={`flex gap-3 px-4 py-3 ${!n.is_read ? "bg-[color:var(--paper-200)]/50" : ""}`}
-                  >
+                const href = hrefFor(n);
+                const rowContent = (
+                  <>
                     <Icon
                       className="mt-0.5 h-4 w-4 shrink-0 text-foreground-secondary"
                       aria-hidden="true"
@@ -206,6 +236,36 @@ export function NotificationBell({
                         {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
                       </p>
                     </div>
+                  </>
+                );
+                const rowClass = `flex gap-3 px-4 py-3 ${!n.is_read ? "bg-[color:var(--paper-200)]/50" : ""} ${
+                  href ? "cursor-pointer hover:bg-[color:var(--paper-100)] transition-colors" : ""
+                }`;
+                return (
+                  <li key={n.id}>
+                    {href ? (
+                      <Link
+                        href={href}
+                        onClick={() => {
+                          // Mark the one row as read locally so the dot
+                          // clears without re-fetching. The server-side
+                          // read state updates on next unread-count poll.
+                          setNotifications((prev) =>
+                            prev.map((item) =>
+                              item.id === n.id
+                                ? { ...item, is_read: true }
+                                : item,
+                            ),
+                          );
+                          setOpen(false);
+                        }}
+                        className={rowClass}
+                      >
+                        {rowContent}
+                      </Link>
+                    ) : (
+                      <div className={rowClass}>{rowContent}</div>
+                    )}
                   </li>
                 );
               })}

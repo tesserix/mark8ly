@@ -94,11 +94,13 @@ type cacheEntry struct {
 
 // ---------- Handler ----------
 
-// DashboardHandler serves the admin dashboard aggregation endpoint.
+// DashboardHandler serves the admin dashboard aggregation endpoint and the
+// range-scoped analytics endpoints defined in metrics.go.
 type DashboardHandler struct {
-	db     *gorm.DB
-	logger *slog.Logger
-	cache  sync.Map // key: "tenantID:storeID" → *cacheEntry
+	db           *gorm.DB
+	logger       *slog.Logger
+	cache        sync.Map // key: "tenantID:storeID" → *cacheEntry (60s TTL)
+	metricsCache sync.Map // key: "tab:tenantID:storeID:range" → *metricsCacheEntry (5m TTL)
 }
 
 // NewDashboardHandler constructs a DashboardHandler.

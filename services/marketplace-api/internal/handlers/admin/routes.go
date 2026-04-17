@@ -559,11 +559,17 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			}
 		}
 
-		// Dashboard — D1.
+		// Dashboard — D1 overview + range-scoped analytics tabs.
 		if deps.DashboardHandler != nil {
 			storeRoute.GET("/dashboard",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
 				deps.DashboardHandler.Get)
+			metrics := storeRoute.Group("/dashboard/metrics")
+			metrics.Use(deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff))
+			metrics.GET("/sales", deps.DashboardHandler.GetSalesMetrics)
+			metrics.GET("/orders", deps.DashboardHandler.GetOrdersMetrics)
+			metrics.GET("/customers", deps.DashboardHandler.GetCustomersMetrics)
+			metrics.GET("/reviews", deps.DashboardHandler.GetReviewsMetrics)
 		}
 
 		// Tickets — D2.

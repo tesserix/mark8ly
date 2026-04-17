@@ -18,17 +18,17 @@ interface ChecklistItem {
 }
 
 const items: ChecklistItem[] = [
-  { key: "has_store", label: "Configure store settings", href: "/settings/stores", phase: "Store Setup" },
-  { key: "has_product", label: "Add your first product", href: "/products", phase: "Store Setup" },
-  { key: "has_storefront_theme", label: "Customize your theme", href: "/settings/themes", phase: "Store Setup" },
-  { key: "has_payment_provider", label: "Set up a payment gateway", href: "/settings/payments", phase: "Payments & Shipping" },
-  { key: "has_shipping_carrier", label: "Configure shipping rates", href: "/settings/shipping", phase: "Payments & Shipping" },
-  { key: "has_tax_configured", label: "Set up tax rules", href: "/settings/payments", phase: "Payments & Shipping" },
-  { key: "has_custom_domain", label: "Connect a custom domain", href: "/settings/domains", phase: "Launch" },
-  { key: "has_test_order", label: "Place a test order", href: "/orders", phase: "Launch" },
+  { key: "has_store", label: "Configure store settings", href: "/settings/stores", phase: "Store foundation" },
+  { key: "has_brand_assets", label: "Add store logo", href: "/settings/themes", phase: "Store foundation" },
+  { key: "has_product", label: "Add your first product", href: "/products", phase: "Store foundation" },
+  { key: "has_storefront_theme", label: "Customize your theme", href: "/settings/themes", phase: "Store foundation" },
+  { key: "has_payment_provider", label: "Set up a payment gateway", href: "/settings/payments", phase: "Go live" },
+  { key: "has_shipping_carrier", label: "Setup shipping integration", href: "/settings/shipping", phase: "Go live" },
+  { key: "has_return_policy", label: "Write a return policy", href: "/settings/policies", phase: "Go live" },
+  { key: "has_custom_domain", label: "Connect a custom domain", href: "/settings/domains", phase: "Go live" },
 ];
 
-const phases = ["Store Setup", "Payments & Shipping", "Launch"] as const;
+const phases = ["Store foundation", "Go live"] as const;
 
 export function SetupChecklist({ checklist }: SetupChecklistProps) {
   const completedCount = items.filter((item) => checklist[item.key]).length;

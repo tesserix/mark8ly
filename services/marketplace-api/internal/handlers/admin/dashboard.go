@@ -62,16 +62,18 @@ type LowStockItem struct {
 	LowStockThreshold int   `json:"low_stock_threshold"`
 }
 
-// SetupChecklist tracks onboarding completion.
+// SetupChecklist tracks onboarding completion across 8 items split into
+// two phases: "Store foundation" (settings, brand assets, product, theme)
+// and "Go live" (payment, shipping, return policy, custom domain).
 type SetupChecklist struct {
 	HasStore           bool `json:"has_store"`
+	HasBrandAssets     bool `json:"has_brand_assets"`
 	HasProduct         bool `json:"has_product"`
+	HasStorefrontTheme bool `json:"has_storefront_theme"`
 	HasPaymentProvider bool `json:"has_payment_provider"`
 	HasShippingCarrier bool `json:"has_shipping_carrier"`
-	HasTaxConfigured   bool `json:"has_tax_configured"`
+	HasReturnPolicy    bool `json:"has_return_policy"`
 	HasCustomDomain    bool `json:"has_custom_domain"`
-	HasStorefrontTheme bool `json:"has_storefront_theme"`
-	HasTestOrder       bool `json:"has_test_order"`
 }
 
 // DashboardResponse is the top-level envelope returned by GET .../dashboard.
@@ -324,18 +326,22 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 
 	db.Raw(`SELECT EXISTS(SELECT 1 FROM products WHERE store_id = ? AND tenant_id = ?)`,
 		storeID, tenantID).Scan(&checklist.HasProduct)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM payment_settings WHERE store_id = ? AND tenant_id = ?)`,
+	db.Raw(`SELECT EXISTS(SELECT 1 FROM store_branding
+		WHERE store_id = ? AND tenant_id = ?
+		AND logo_url IS NOT NULL AND logo_url != '')`,
+		storeID, tenantID).Scan(&checklist.HasBrandAssets)
+	db.Raw(`SELECT EXISTS(SELECT 1 FROM payment_gateway_configs WHERE store_id = ? AND tenant_id = ?)`,
 		storeID, tenantID).Scan(&checklist.HasPaymentProvider)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM shipping_settings WHERE store_id = ? AND tenant_id = ?)`,
+	db.Raw(`SELECT EXISTS(SELECT 1 FROM shipping_carrier_configs WHERE store_id = ? AND tenant_id = ?)`,
 		storeID, tenantID).Scan(&checklist.HasShippingCarrier)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM tax_settings WHERE store_id = ? AND tenant_id = ?)`,
-		storeID, tenantID).Scan(&checklist.HasTaxConfigured)
+	db.Raw(`SELECT EXISTS(SELECT 1 FROM store_branding
+		WHERE store_id = ? AND tenant_id = ?
+		AND return_policy IS NOT NULL AND return_policy != '')`,
+		storeID, tenantID).Scan(&checklist.HasReturnPolicy)
 	db.Raw(`SELECT EXISTS(SELECT 1 FROM custom_domains WHERE store_id = ? AND tenant_id = ?)`,
 		storeID, tenantID).Scan(&checklist.HasCustomDomain)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM store_settings WHERE store_id = ? AND tenant_id = ? AND key = 'theme')`,
+	db.Raw(`SELECT EXISTS(SELECT 1 FROM store_branding WHERE store_id = ? AND tenant_id = ?)`,
 		storeID, tenantID).Scan(&checklist.HasStorefrontTheme)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM orders WHERE store_id = ? AND tenant_id = ?)`,
-		storeID, tenantID).Scan(&checklist.HasTestOrder)
 
 	resp := DashboardResponse{
 		Stats:          stats,

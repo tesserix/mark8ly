@@ -104,8 +104,7 @@ function DashboardContent({
 }) {
   const { stats, setup_checklist, recent_orders, top_products, low_stock } =
     dashboard;
-  const isNewStore =
-    !setup_checklist.has_test_order && !setup_checklist.has_product;
+  const isNewStore = !setup_checklist.has_product;
 
   return (
     <>
@@ -117,8 +116,8 @@ function DashboardContent({
             Complete your store setup to see your dashboard
           </h2>
           <p className="mt-3 max-w-md mx-auto text-sm text-foreground-secondary">
-            Add your first product and place a test order to unlock your stats,
-            recent orders, and product performance data.
+            Add your first product to unlock your stats, recent orders, and
+            product performance data.
           </p>
         </section>
       ) : (

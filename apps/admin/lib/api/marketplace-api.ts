@@ -1594,13 +1594,13 @@ export interface LowStockItem {
 
 export interface SetupChecklist {
   has_store: boolean;
+  has_brand_assets: boolean;
   has_product: boolean;
+  has_storefront_theme: boolean;
   has_payment_provider: boolean;
   has_shipping_carrier: boolean;
-  has_tax_configured: boolean;
+  has_return_policy: boolean;
   has_custom_domain: boolean;
-  has_storefront_theme: boolean;
-  has_test_order: boolean;
 }
 
 export interface DashboardResponse {

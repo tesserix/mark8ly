@@ -1,50 +1,40 @@
 "use client";
 
-// Inline support-ticket form for the signed-in customer. Renders in
-// both the header and footer slots of /account/layout.tsx. Name and
-// email come from the session on the server; only subject + priority +
-// message are captured here. On success the panel shows the new ticket
-// reference and a link to the thread page.
+// Collapsible "new ticket" form for the /account/tickets page. Shows
+// a single "New ticket" button in its collapsed state; expands to the
+// full form when clicked. On successful submission the form collapses
+// and the page refreshes so the new ticket appears in the list below.
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { submitSupportTicket } from "@/app/contact/actions";
 
-interface AccountSupportPanelProps {
+interface NewTicketToggleProps {
   storeSlug: string;
-  customerName: string;
   customerEmail: string;
-  variant: "header" | "footer";
+  customerName?: string;
 }
 
 type Status =
   | { kind: "idle" }
-  | { kind: "success"; ticketNumber: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "success"; ticketNumber: string };
 
-const HEADING: Record<AccountSupportPanelProps["variant"], string> = {
-  header: "Need a hand?",
-  footer: "Still have questions?",
-};
-
-const SUBHEADING: Record<AccountSupportPanelProps["variant"], string> = {
-  header:
-    "Send us a note and we'll get back to you at the email on your account.",
-  footer:
-    "If you need anything else, drop us a line — we typically respond within a business day.",
-};
-
-export function AccountSupportPanel({
+export function NewTicketToggle({
   storeSlug,
-  customerName,
   customerEmail,
-  variant,
-}: AccountSupportPanelProps) {
+  customerName,
+}: NewTicketToggleProps) {
+  const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+
+  function resetAndClose() {
+    setOpen(false);
+    setStatus({ kind: "idle" });
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -76,66 +66,69 @@ export function AccountSupportPanel({
       });
       if (result.ok) {
         setStatus({ kind: "success", ticketNumber: result.ticket_number });
-        // Refresh so /account/tickets list picks up the new row on
-        // the next navigation.
-        router.refresh();
+        // Pull fresh tickets into the list below. A short timeout keeps
+        // the success confirmation visible just long enough to register
+        // before the panel collapses.
+        setTimeout(() => {
+          setOpen(false);
+          setStatus({ kind: "idle" });
+          router.refresh();
+        }, 1200);
       } else {
         setStatus({ kind: "error", message: result.message });
       }
     });
   }
 
-  const panelId = `account-support-${variant}`;
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-sm font-medium text-[color:var(--storefront-accent,var(--moss-700))] hover:underline"
+      >
+        New ticket
+      </button>
+    );
+  }
 
   return (
-    <section
-      aria-labelledby={`${panelId}-heading`}
-      className="rounded-[6px] border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--background-elevated,#fff)] p-5 sm:p-6"
-    >
-      <div className="mb-4 space-y-1">
-        <h2
-          id={`${panelId}-heading`}
-          className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-xl font-medium text-[color:var(--storefront-text,var(--ink-900))]"
-        >
-          {HEADING[variant]}
+    <div className="w-full rounded-[6px] border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--background-elevated,#fff)] p-5">
+      <div className="mb-4 flex items-baseline justify-between gap-4">
+        <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+          New ticket
         </h2>
-        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
-          {SUBHEADING[variant]}
-        </p>
+        <button
+          type="button"
+          onClick={resetAndClose}
+          disabled={isPending}
+          className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-60 hover:opacity-100 disabled:opacity-40"
+        >
+          Cancel
+        </button>
       </div>
 
       {status.kind === "success" ? (
         <div
           role="status"
-          className="space-y-2 rounded-[6px] border border-[color:var(--storefront-accent,var(--moss-700))]/30 bg-[color:var(--storefront-accent,var(--moss-700))]/5 px-4 py-3"
+          className="rounded-[6px] border border-[color:var(--storefront-accent,var(--moss-700))]/30 bg-[color:var(--storefront-accent,var(--moss-700))]/5 px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]"
         >
-          <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))]">
-            Thanks — we&apos;ve got your message.
-          </p>
-          <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
-            Reference{" "}
-            <span className="font-medium">{status.ticketNumber}</span>.{" "}
-            <Link
-              href="/account/tickets"
-              className="font-medium text-[color:var(--storefront-accent,var(--moss-700))] hover:underline"
-            >
-              View your tickets
-            </Link>
-            .
-          </p>
+          Thanks — ticket{" "}
+          <span className="font-medium">{status.ticketNumber}</span> has been
+          created. Refreshing your list...
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
             <div className="space-y-1.5">
               <label
-                htmlFor={`${panelId}-subject`}
+                htmlFor="subject"
                 className="block text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]"
               >
                 Subject
               </label>
               <input
-                id={`${panelId}-subject`}
+                id="subject"
                 name="subject"
                 type="text"
                 required
@@ -146,13 +139,13 @@ export function AccountSupportPanel({
             </div>
             <div className="space-y-1.5">
               <label
-                htmlFor={`${panelId}-priority`}
+                htmlFor="priority"
                 className="block text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]"
               >
                 Priority
               </label>
               <select
-                id={`${panelId}-priority`}
+                id="priority"
                 name="priority"
                 defaultValue="medium"
                 disabled={isPending}
@@ -167,13 +160,13 @@ export function AccountSupportPanel({
 
           <div className="space-y-1.5">
             <label
-              htmlFor={`${panelId}-description`}
+              htmlFor="description"
               className="block text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]"
             >
               Message
             </label>
             <textarea
-              id={`${panelId}-description`}
+              id="description"
               name="description"
               required
               maxLength={5000}
@@ -204,6 +197,6 @@ export function AccountSupportPanel({
           </div>
         </form>
       )}
-    </section>
+    </div>
   );
 }

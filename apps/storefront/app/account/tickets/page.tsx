@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { decodeSession } from "@/lib/auth";
 import { resolveStoreSlug } from "@/lib/slug";
+import { NewTicketToggle } from "./NewTicketToggle";
 
 export const metadata = {
   title: "Support tickets",
@@ -117,12 +118,10 @@ export default async function TicketsPage() {
         <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
           Support
         </h1>
-        <Link
-          href="/contact"
-          className="text-sm font-medium text-[color:var(--storefront-accent,var(--moss-700))] hover:underline"
-        >
-          New ticket
-        </Link>
+        <NewTicketToggle
+          storeSlug={storeSlug}
+          customerEmail={session.email}
+        />
       </div>
 
       {fetchError && (
@@ -133,14 +132,9 @@ export default async function TicketsPage() {
 
       {!fetchError && tickets.length === 0 && (
         <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
-          You haven&apos;t opened any tickets yet.{" "}
-          <Link
-            href="/contact"
-            className="font-medium text-[color:var(--storefront-accent,var(--moss-700))] hover:underline"
-          >
-            Get in touch
-          </Link>
-          .
+          You haven&apos;t opened any tickets yet. Tap{" "}
+          <span className="font-medium">New ticket</span> above to get in
+          touch.
         </p>
       )}
 

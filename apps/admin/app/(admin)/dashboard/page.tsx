@@ -9,6 +9,7 @@ import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 import { RecentOrders } from "@/components/dashboard/RecentOrders";
 import { TopProducts } from "@/components/dashboard/TopProducts";
 import { LowStockAlerts } from "@/components/dashboard/LowStockAlerts";
+import { AnalyticsSection } from "@/components/dashboard/AnalyticsSection";
 
 /**
  * Dashboard — data-driven merchant home with stats, orders, products,
@@ -57,6 +58,7 @@ export default async function DashboardPage() {
           <DashboardContent
             dashboard={dashboard}
             currencyCode={currentStore.currency_code ?? "USD"}
+            storeId={currentStore.id}
           />
         )}
       </AdminPage>
@@ -98,9 +100,11 @@ function DashboardLoadError() {
 function DashboardContent({
   dashboard,
   currencyCode,
+  storeId,
 }: {
   dashboard: DashboardResponse;
   currencyCode: string;
+  storeId: string;
 }) {
   const { stats, setup_checklist, recent_orders, top_products, low_stock } =
     dashboard;
@@ -150,6 +154,9 @@ function DashboardContent({
               href="/customers/reviews?status=pending"
             />
           </div>
+
+          {/* Range-scoped analytics — Sales / Orders / Customers / Reviews */}
+          <AnalyticsSection storeId={storeId} currencyCode={currencyCode} />
 
           {/* Two-column: recent orders + top products */}
           <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">

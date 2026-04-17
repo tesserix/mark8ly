@@ -1638,6 +1638,164 @@ export async function fetchDashboard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// D1b: Dashboard Metrics (range-scoped analytics tabs)
+// ─────────────────────────────────────────────────────────────────────────
+
+export type AnalyticsRange = "7d" | "30d" | "90d";
+
+export interface TimeSeriesPoint {
+  date: string;
+  value: number;
+}
+
+export interface SalesMetricsResponse {
+  range: AnalyticsRange;
+  revenue_series: TimeSeriesPoint[];
+  net_revenue_series: TimeSeriesPoint[];
+  gross_revenue: number;
+  total_refunded: number;
+  net_revenue: number;
+  aov: number;
+  aov_prev: number;
+  aov_delta_pct: number | null;
+  coupon_redemptions: number;
+  coupon_discount_total: number;
+}
+
+export interface OrderStatusBreakdown {
+  pending: number;
+  confirmed: number;
+  in_progress: number;
+  fulfilled: number;
+  cancelled: number;
+  returned: number;
+  refunded: number;
+}
+
+export interface OrderStatusSeriesPoint {
+  date: string;
+  pending: number;
+  confirmed: number;
+  in_progress: number;
+  fulfilled: number;
+  cancelled: number;
+}
+
+export interface OrdersMetricsResponse {
+  range: AnalyticsRange;
+  orders_series: TimeSeriesPoint[];
+  status_series: OrderStatusSeriesPoint[];
+  status_totals: OrderStatusBreakdown;
+  avg_hours_to_fulfill: number | null;
+  fulfillment_rate: number;
+  cancel_rate: number;
+  total_orders: number;
+}
+
+export interface CustomerSegmentPoint {
+  date: string;
+  new: number;
+  returning: number;
+}
+
+export interface TopCustomer {
+  email: string;
+  spend: number;
+  order_count: number;
+}
+
+export interface CustomersMetricsResponse {
+  range: AnalyticsRange;
+  series: CustomerSegmentPoint[];
+  new_total: number;
+  returning_total: number;
+  unique_buyers: number;
+  top_customers: TopCustomer[];
+}
+
+export interface RatingDistribution {
+  r1: number;
+  r2: number;
+  r3: number;
+  r4: number;
+  r5: number;
+}
+
+export interface ReviewsMetricsResponse {
+  range: AnalyticsRange;
+  avg_rating: number;
+  total_reviews: number;
+  distribution: RatingDistribution;
+  series: TimeSeriesPoint[];
+}
+
+export type MetricsTab = "sales" | "orders" | "customers" | "reviews";
+
+async function fetchMetrics<T>(
+  tab: MetricsTab,
+  storeId: string,
+  range: AnalyticsRange,
+  session: SessionHeaders,
+): Promise<T | null> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/dashboard/metrics/${tab}?range=${range}`,
+    { cache: "no-store", headers: readHeaders(session) },
+  );
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(
+      `marketplace-api: fetch ${tab} metrics ${res.status}: ${errBody?.message ?? "unknown error"}`,
+    );
+  }
+  return (await res.json()) as T;
+}
+
+export function fetchSalesMetrics(
+  storeId: string,
+  range: AnalyticsRange,
+  session: SessionHeaders,
+): Promise<SalesMetricsResponse | null> {
+  return fetchMetrics<SalesMetricsResponse>("sales", storeId, range, session);
+}
+
+export function fetchOrdersMetrics(
+  storeId: string,
+  range: AnalyticsRange,
+  session: SessionHeaders,
+): Promise<OrdersMetricsResponse | null> {
+  return fetchMetrics<OrdersMetricsResponse>("orders", storeId, range, session);
+}
+
+export function fetchCustomersMetrics(
+  storeId: string,
+  range: AnalyticsRange,
+  session: SessionHeaders,
+): Promise<CustomersMetricsResponse | null> {
+  return fetchMetrics<CustomersMetricsResponse>(
+    "customers",
+    storeId,
+    range,
+    session,
+  );
+}
+
+export function fetchReviewsMetrics(
+  storeId: string,
+  range: AnalyticsRange,
+  session: SessionHeaders,
+): Promise<ReviewsMetricsResponse | null> {
+  return fetchMetrics<ReviewsMetricsResponse>(
+    "reviews",
+    storeId,
+    range,
+    session,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // D2: Support Tickets
 // ─────────────────────────────────────────────────────────────────────────
 

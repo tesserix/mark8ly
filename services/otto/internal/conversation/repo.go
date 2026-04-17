@@ -75,6 +75,29 @@ func (r *Repository) GetByID(ctx context.Context, tenantID, storeID, id string) 
 	return &c, nil
 }
 
+// LatestOpenForSession returns the most recently-updated non-closed
+// conversation belonging to a given customer session cookie. Used for the
+// widget's "resume on reload" path so a customer who refreshes the page
+// keeps their thread. Returns ErrNotFound if the session has no open
+// thread in this {tenant, store} scope.
+func (r *Repository) LatestOpenForSession(ctx context.Context, tenantID, storeID, sessionToken string) (*Conversation, error) {
+	filter := bson.M{
+		"tenant_id":              tenantID,
+		"store_id":               storeID,
+		"customer.session_token": sessionToken,
+		"status":                 bson.M{"$ne": StatusClosed},
+	}
+	opts := options.FindOne().SetSort(bson.D{{Key: "last_message_at", Value: -1}})
+	var c Conversation
+	if err := r.coll.FindOne(ctx, filter, opts).Decode(&c); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &c, nil
+}
+
 // GetForCustomer looks up a conversation a specific anonymous session is
 // allowed to see. The session_token match is the customer-side auth check —
 // without it, a malicious customer could poll arbitrary ids.

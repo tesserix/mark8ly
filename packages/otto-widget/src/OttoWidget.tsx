@@ -141,6 +141,28 @@ export function OttoWidget({
     onEvent: handleEvent,
   });
 
+  // Resume on mount — if the otto_session cookie points at an open
+  // thread, restore it so page reloads don't wipe the conversation.
+  // Silent failure is fine: a missing / expired cookie returns
+  // {conversation: null} and the widget keeps its default state.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.resume();
+        if (cancelled || !res.conversation) return;
+        setConversation(res.conversation);
+        setMessages(res.messages ?? []);
+        setPhase("chat");
+      } catch {
+        /* silent — widget falls back to the collect/chat phase defaults */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;

@@ -47,6 +47,14 @@ func NewStorefrontHandler(d StorefrontDeps) *StorefrontHandler {
 func (h *StorefrontHandler) Register(r *gin.RouterGroup) {
 	r.POST("/conversations", h.create)
 
+	// Resume — the widget calls this on every mount. If the browser has a
+	// valid otto_session cookie we return the open thread that session
+	// owns along with its messages, so the customer never loses context
+	// after a refresh. Runs without RequireCustomerSession so the endpoint
+	// soft-fails (returns conversation:null) when there's no cookie, no
+	// open thread, or the cookie is for a different store.
+	r.GET("/resume", h.resume)
+
 	// These require a valid otto_session cookie already.
 	withSession := r.Group("")
 	withSession.Use(auth.RequireCustomerSession(h.d.CookieName, h.d.Signer))
@@ -203,6 +211,58 @@ func (h *StorefrontHandler) create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"conversation":  conv,
 		"first_message": firstMsg,
+	})
+}
+
+// resume looks at the otto_session cookie on the inbound request (if any)
+// and returns the most recent open thread + its messages for that
+// session. The cookie is validated against the current tenant+store
+// scope — a cookie minted for another store can't re-use this endpoint.
+//
+// When there's no cookie, no open thread, or the cookie is for a
+// different scope, we return {conversation: null} with 200 so the widget
+// can cleanly fall through to its "start a fresh conversation" flow
+// without treating a missing thread as an error.
+func (h *StorefrontHandler) resume(c *gin.Context) {
+	tenantID := c.GetString(auth.CtxTenantID)
+	storeID := c.GetString(auth.CtxStoreID)
+
+	raw, err := c.Cookie(h.d.CookieName)
+	if err != nil || raw == "" {
+		raw = c.GetHeader("X-Otto-Session")
+	}
+	if raw == "" {
+		c.JSON(http.StatusOK, gin.H{"conversation": nil})
+		return
+	}
+	tok, err := h.d.Signer.Parse(raw, tenantID, storeID)
+	if err != nil {
+		// Expired / cross-scope / tampered cookie. Surface as "nothing to
+		// resume" — the widget will issue a fresh cookie on first message.
+		c.JSON(http.StatusOK, gin.H{"conversation": nil})
+		return
+	}
+	conv, err := h.d.Conversations.LatestOpenForSession(c.Request.Context(), tenantID, storeID, tok.ID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusOK, gin.H{"conversation": nil})
+			return
+		}
+		h.d.Logger.Error("otto: resume lookup", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "resume_failed"})
+		return
+	}
+	msgs, err := h.d.Messages.ListByConversation(c.Request.Context(), tenantID, storeID, conv.ID, 200)
+	if err != nil {
+		h.d.Logger.Error("otto: resume messages", "err", err)
+		msgs = nil
+	}
+	if msgs == nil {
+		msgs = []message.Message{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"conversation": conv,
+		"messages":     msgs,
 	})
 }
 

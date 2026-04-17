@@ -26,6 +26,13 @@ export interface OttoApi {
   sendMessage(id: string, body: string): Promise<{ message: Message }>;
   /** Close the conversation from the customer side. */
   closeConversation(id: string): Promise<{ conversation: Conversation }>;
+  /** Resume the customer's most recent open thread. Returns
+   *  `{ conversation: null }` (200) when there's nothing to resume —
+   *  the widget falls through to its start-fresh flow in that case. */
+  resume(): Promise<{
+    conversation: Conversation | null;
+    messages?: Message[];
+  }>;
 }
 
 /**
@@ -62,6 +69,7 @@ export function buildOttoApi(baseUrl: string): OttoApi {
       post(`/conversations/${encodeURIComponent(id)}/messages`, { body }),
     closeConversation: (id) =>
       post(`/conversations/${encodeURIComponent(id)}/close`, {}),
+    resume: () => get("/resume"),
   };
 }
 

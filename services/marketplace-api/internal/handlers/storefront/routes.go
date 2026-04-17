@@ -153,16 +153,12 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		if deps.ReviewsHandler != nil {
 			group.GET("/products/:handle/reviews", deps.ReviewsHandler.ListProductReviews)
 
-			// Guest (unauthenticated) submissions: review + comment.
-			// Tighter rate limits than the authenticated equivalents —
-			// a visitor without a session shouldn't be able to flood
-			// the moderation queue.
+			// Guest (unauthenticated) review submission. Comments
+			// stay gated behind sign-in. Anonymous reactions need
+			// migration 40 (cookie-keyed uniqueness) and ship next.
 			group.POST("/products/:handle/reviews-guest",
 				ratelimit.PerIP(0.083, 5), // ~5 req/min
 				deps.ReviewsHandler.SubmitGuestReview)
-			group.POST("/reviews/:id/replies-guest",
-				ratelimit.PerIP(0.083, 5),
-				deps.ReviewsHandler.AddGuestReply)
 		}
 
 		// Branding — B1. Public, cached, no auth.

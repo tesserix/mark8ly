@@ -453,85 +453,11 @@ func (h *ReviewsHandler) AddCustomerReply(c *gin.Context) {
 	})
 }
 
-// addGuestReplyRequest — anonymous comment body. Same fields as the
-// authenticated one plus name/email so we can attribute the comment
-// without a customer session.
-type addGuestReplyRequest struct {
-	Content       string  `json:"content"         binding:"required,min=1,max=5000"`
-	ParentReplyID *string `json:"parent_reply_id"`
-	CustomerName  string  `json:"customer_name"   binding:"required,min=1,max=120"`
-	CustomerEmail string  `json:"customer_email"  binding:"required,email,max=320"`
-}
-
-// AddGuestReply handles POST /storefront/stores/:storeSlug/reviews/:id/replies-guest.
-// Anonymous visitors can add a comment by supplying name + email.
-// Same rules as AddCustomerReply: review must be approved, nested
-// parent must belong to the review, trimmed content ≤ 5000 chars.
-func (h *ReviewsHandler) AddGuestReply(c *gin.Context) {
-	reviewID := c.Param("id")
-	if reviewID == "" {
-		respondNotFound(c)
-		return
-	}
-
-	var req addGuestReplyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "validation_error",
-			"message": err.Error(),
-		})
-		return
-	}
-
-	rev, err := h.reviewRepo.GetByID(c.Request.Context(), reviewID)
-	if err != nil {
-		respondNotFound(c)
-		return
-	}
-	if rev.Status != review.StatusApproved {
-		c.JSON(http.StatusConflict, gin.H{
-			"error":   "not_commentable",
-			"message": "This review isn't open for comments yet.",
-		})
-		return
-	}
-
-	if req.ParentReplyID != nil && *req.ParentReplyID != "" {
-		if _, err := h.reviewRepo.GetReply(c.Request.Context(), *req.ParentReplyID, reviewID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "invalid_parent",
-				"message": "Reply parent does not belong to this review.",
-			})
-			return
-		}
-	}
-
-	email := strings.TrimSpace(req.CustomerEmail)
-	reply := &review.ReviewReply{
-		ReviewID:      reviewID,
-		ParentReplyID: req.ParentReplyID,
-		AuthorType:    review.AuthorTypeCustomer,
-		AuthorName:    strings.TrimSpace(req.CustomerName),
-		AuthorEmail:   &email,
-		Content:       strings.TrimSpace(req.Content),
-	}
-	if err := h.reviewRepo.AddReply(c.Request.Context(), reply); err != nil {
-		respondInternal(c, h.logger, err)
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"data": map[string]any{
-			"id":              reply.ID,
-			"review_id":       reply.ReviewID,
-			"parent_reply_id": reply.ParentReplyID,
-			"author_type":     reply.AuthorType,
-			"author_name":     reply.AuthorName,
-			"content":         reply.Content,
-			"created_at":      reply.CreatedAt,
-		},
-	})
-}
+// Anonymous commenting was intentionally removed — replies stay
+// gated behind sign-in so every comment in a thread is attached to a
+// verifiable customer identity. Anonymous visitors can still submit
+// top-level reviews (via SubmitGuestReview) and, once migration 40
+// lands, record a cookie-keyed reaction per review.
 
 // --- helpers ---
 

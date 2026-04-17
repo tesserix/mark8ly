@@ -143,35 +143,15 @@ export function ProductReviews({
   );
 
   const onComment = useCallback(
-    async (
-      reviewId: string,
-      content: string,
-      parentReplyId?: string,
-      guest?: { name: string; email: string },
-    ) => {
-      if (!content.trim()) return;
-      // Route authenticated comments to the cookie-gated endpoint
-      // and anonymous ones to the public `/guest` endpoint. The
-      // storefront enforces name + email client-side before we get
-      // here; the backend validates again via `binding:"required,email"`.
-      const endpoint = isAuthenticated
-        ? `/api/reviews/${encodeURIComponent(productHandle)}/replies/${encodeURIComponent(reviewId)}`
-        : `/api/reviews/${encodeURIComponent(productHandle)}/replies/${encodeURIComponent(reviewId)}/guest`;
-      const payload = isAuthenticated
-        ? {
-            content: content.trim(),
-            parent_reply_id: parentReplyId ?? null,
-          }
-        : {
-            content: content.trim(),
-            parent_reply_id: parentReplyId ?? null,
-            customer_name: guest?.name.trim() ?? "",
-            customer_email: guest?.email.trim() ?? "",
-          };
-      const res = await fetch(endpoint, {
+    async (reviewId: string, content: string, parentReplyId?: string) => {
+      if (!isAuthenticated || !content.trim()) return;
+      const res = await fetch(`/api/reviews/${encodeURIComponent(productHandle)}/replies/${encodeURIComponent(reviewId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          content: content.trim(),
+          parent_reply_id: parentReplyId ?? null,
+        }),
       });
       if (!res.ok) {
         return { ok: false as const, error: "Couldn't post your comment." };
@@ -359,7 +339,6 @@ function CommentsThread({
     reviewId: string,
     content: string,
     parentReplyId?: string,
-    guest?: { name: string; email: string },
   ) => Promise<{ ok: boolean; error?: string } | void>;
 }) {
   const replies = review.replies ?? [];
@@ -369,33 +348,6 @@ function CommentsThread({
   const [replyBody, setReplyBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Guest identity persists in localStorage so a visitor only types
-  // their name + email once per browser. Prefill on open.
-  const [guestName, setGuestName] = useState<string>("");
-  const [guestEmail, setGuestEmail] = useState<string>("");
-  useEffect(() => {
-    if (isAuthenticated || typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem("mp_guest_identity");
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { name?: string; email?: string };
-      setGuestName(parsed.name ?? "");
-      setGuestEmail(parsed.email ?? "");
-    } catch {
-      /* ignore */
-    }
-  }, [isAuthenticated]);
-  const persistGuest = () => {
-    if (isAuthenticated || typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(
-        "mp_guest_identity",
-        JSON.stringify({ name: guestName.trim(), email: guestEmail.trim() }),
-      );
-    } catch {
-      /* ignore */
-    }
-  };
 
   // Build a top-level → children map keyed by parent_reply_id so the
   // render loop stays O(n) rather than nested filter calls.
@@ -419,58 +371,31 @@ function CommentsThread({
     return { topLevel: top, childrenByParent: byParent };
   }, [replies]);
 
-  function ensureGuestIdentity(): boolean {
-    if (isAuthenticated) return true;
-    if (!guestName.trim()) {
-      setError("Please enter your name.");
-      return false;
-    }
-    if (!guestEmail.trim()) {
-      setError("Please enter your email.");
-      return false;
-    }
-    return true;
-  }
-
   async function submitTopLevel() {
     const text = composer.trim();
     if (!text) return;
-    if (!ensureGuestIdentity()) return;
     setSubmitting(true);
     setError(null);
-    const r = await onComment(
-      review.id,
-      text,
-      undefined,
-      isAuthenticated ? undefined : { name: guestName, email: guestEmail },
-    );
+    const r = await onComment(review.id, text);
     setSubmitting(false);
     if (r && r.ok === false) {
       setError(r.error ?? "Couldn't post.");
       return;
     }
-    persistGuest();
     setComposer("");
   }
 
   async function submitNested(parentReplyId: string) {
     const text = replyBody.trim();
     if (!text) return;
-    if (!ensureGuestIdentity()) return;
     setSubmitting(true);
     setError(null);
-    const r = await onComment(
-      review.id,
-      text,
-      parentReplyId,
-      isAuthenticated ? undefined : { name: guestName, email: guestEmail },
-    );
+    const r = await onComment(review.id, text, parentReplyId);
     setSubmitting(false);
     if (r && r.ok === false) {
       setError(r.error ?? "Couldn't post.");
       return;
     }
-    persistGuest();
     setReplyBody("");
     setReplyingTo(null);
   }
@@ -521,7 +446,7 @@ function CommentsThread({
             />
           ))}
 
-          {replyingTo === null && (
+          {isAuthenticated && replyingTo === null && (
             <form
               className="flex flex-col gap-2 pt-2"
               onSubmit={(e) => {
@@ -529,30 +454,6 @@ function CommentsThread({
                 void submitTopLevel();
               }}
             >
-              {!isAuthenticated && (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <input
-                    type="text"
-                    value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
-                    maxLength={120}
-                    placeholder="Your name"
-                    autoComplete="name"
-                    className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-transparent px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--storefront-accent,var(--moss-700))]"
-                    disabled={submitting}
-                  />
-                  <input
-                    type="email"
-                    value={guestEmail}
-                    onChange={(e) => setGuestEmail(e.target.value)}
-                    maxLength={320}
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-transparent px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--storefront-accent,var(--moss-700))]"
-                    disabled={submitting}
-                  />
-                </div>
-              )}
               <textarea
                 value={composer}
                 onChange={(e) => setComposer(e.target.value)}
@@ -577,6 +478,18 @@ function CommentsThread({
                 </button>
               </div>
             </form>
+          )}
+
+          {!isAuthenticated && (
+            <p className="pt-2 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
+              <Link
+                href="/sign-in"
+                className="font-semibold text-[color:var(--storefront-accent,var(--moss-700))] underline underline-offset-2"
+              >
+                Sign in
+              </Link>{" "}
+              to join the discussion.
+            </p>
           )}
         </div>
       )}
@@ -628,7 +541,7 @@ function CommentNode({
         <p className="mt-1 text-sm leading-5 text-[color:var(--storefront-text,var(--ink-900))]/85 whitespace-pre-wrap">
           {reply.content}
         </p>
-        {!isReplying && (
+        {isAuthenticated && !isReplying && (
           <button
             type="button"
             onClick={onStartReply}

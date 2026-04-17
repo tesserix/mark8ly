@@ -30,7 +30,7 @@ export async function POST(
   }
   const body = await req.text();
   return proxyJson(
-    `${marketplaceStoreUrl(slug)}/reviews/${encodeURIComponent(id)}/replies`,
+    `${marketplaceStoreUrl(slug)}/account/reviews/${encodeURIComponent(id)}/replies`,
     {
       method: "POST",
       body,

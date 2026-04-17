@@ -124,6 +124,15 @@
   white-space: nowrap;
 }
 
+.otto-widget__case-id {
+  margin-top: 4px;
+  font-size: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  text-transform: uppercase;
+}
+
 .otto-widget__close {
   background: transparent;
   border: none;

@@ -15,16 +15,20 @@ import { useOttoChannel } from "./useOttoChannel";
 /**
  * OttoInbox — the staff-side real-time support console.
  *
- * Like OttoWidget, this is host-agnostic. It calls the host app's proxy
- * routes (default `/api/otto/admin/*`) and opens a WebSocket to receive
- * new conversations and messages in real time.
+ * Host-agnostic: drops into any admin dashboard. Calls the host's proxy
+ * routes (default `/api/admin/otto/*`) and opens a WebSocket (via a
+ * short-lived ticket it mints over REST) to receive new conversations
+ * and messages in real time.
  *
- * Designed to drop into any admin dashboard — the panel is a plain
- * two-pane layout and ships scoped CSS so the host app's stylesheet can't
- * conflict.
+ * UX features in this version:
+ *   - Pending tab is the landing tab (that's where new threads arrive)
+ *   - Audible chime + desktop notification on new pending threads
+ *   - Inline "CS-…" case id for every row
+ *   - Reopen action for closed threads
+ *   - Reply is structurally disabled when a thread is closed
  */
 export interface OttoInboxProps {
-  /** Base URL for the admin otto proxy (default "/api/otto/admin"). */
+  /** Base URL for the admin otto proxy (default "/api/admin/otto"). */
   apiBaseUrl?: string;
   /** Builds the inbox-level WS URL. */
   buildInboxWsUrl?: () => string;
@@ -40,18 +44,18 @@ export interface OttoInboxProps {
 const DEFAULT_INBOX_WS = () => {
   if (typeof window === "undefined") return "";
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}/api/otto/admin/ws`;
+  return `${proto}//${window.location.host}/api/v1/admin/otto/ws`;
 };
 const DEFAULT_CONVERSATION_WS = (id: string) => {
   if (typeof window === "undefined") return "";
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}/api/otto/admin/conversations/${encodeURIComponent(id)}/ws`;
+  return `${proto}//${window.location.host}/api/v1/admin/otto/conversations/${encodeURIComponent(id)}/ws`;
 };
 
 type InboxStatus = "pending" | "active" | "closed";
 
 export function OttoInbox({
-  apiBaseUrl = "/api/otto/admin",
+  apiBaseUrl = "/api/admin/otto",
   buildInboxWsUrl = DEFAULT_INBOX_WS,
   buildConversationWsUrl = DEFAULT_CONVERSATION_WS,
   currentUserId,
@@ -67,6 +71,31 @@ export function OttoInbox({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep the latest statusFilter/selectedId accessible inside websocket
+  // event callbacks without forcing the hook to re-subscribe on every
+  // tab click.
+  const statusFilterRef = useRef(statusFilter);
+  statusFilterRef.current = statusFilter;
+  const selectedIdRef = useRef<string | null>(selectedId);
+  selectedIdRef.current = selectedId;
+
+  // Alerting primitives: a short WebAudio chime synthesised on the fly
+  // (no external asset) and the browser's Notification API when granted.
+  const chimeCtxRef = useRef<AudioContext | null>(null);
+  const notifyPermRef = useRef<NotificationPermission>("default");
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    notifyPermRef.current = Notification.permission;
+    if (notifyPermRef.current === "default") {
+      // Request on first mount. Browsers now require this to be tied to
+      // a user gesture; if the silent request is rejected the inbox
+      // still works — just without desktop notifications.
+      void Notification.requestPermission().then((p) => {
+        notifyPermRef.current = p;
+      });
+    }
+  }, []);
 
   const selected =
     conversations.find((c) => c.id === selectedId) ?? null;
@@ -93,12 +122,26 @@ export function OttoInbox({
     void loadList(statusFilter);
   }, [loadList, statusFilter]);
 
-  // Inbox WS — new conversations + updates.
+  // Inbox WS — new conversations + updates. Ticket URL is the REST proxy
+  // that goes through the Next.js middleware (where session headers are
+  // injected); the WS itself is a same-origin /api/v1/admin/otto/ws with
+  // ?ticket= attached by useOttoChannel.
   const handleInboxEvent = useCallback(
     (env: WsEnvelope) => {
       if (env.type === "otto.conversation.created") {
         const payload = env.payload as { conversation: Conversation };
-        if (statusFilter === "pending") {
+        // Chime + desktop notification — only for genuinely new threads.
+        playChime(chimeCtxRef);
+        showDesktopNotification(
+          "New support chat",
+          `${
+            payload.conversation.customer.name ||
+            payload.conversation.customer.email ||
+            "Visitor"
+          } · ${payload.conversation.case_id ?? ""}`.trim(),
+          notifyPermRef.current,
+        );
+        if (statusFilterRef.current === "pending") {
           setConversations((prev) => {
             if (prev.some((c) => c.id === payload.conversation.id)) return prev;
             return [payload.conversation, ...prev];
@@ -119,16 +162,20 @@ export function OttoInbox({
             ),
           );
         } else if (payload.conversation_id) {
-          void loadList(statusFilter);
+          void loadList(statusFilterRef.current);
         }
       }
     },
-    [loadList, statusFilter],
+    [loadList],
   );
 
-  useOttoChannel({ url: buildInboxWsUrl(), onEvent: handleInboxEvent });
+  useOttoChannel({
+    url: buildInboxWsUrl(),
+    ticketUrl: `${base}/ws-ticket`,
+    onEvent: handleInboxEvent,
+  });
 
-  // Selection: load messages when we pick a thread + subscribe to its room.
+  // Selection: load messages when we pick a thread.
   useEffect(() => {
     if (!selectedId) {
       setMessages([]);
@@ -154,11 +201,20 @@ export function OttoInbox({
   }, [base, selectedId]);
 
   const convWsUrl = selectedId ? buildConversationWsUrl(selectedId) : null;
+  const convTicketUrl = selectedId
+    ? `${base}/conversations/${encodeURIComponent(selectedId)}/ws-ticket`
+    : null;
   useOttoChannel({
     url: convWsUrl,
+    ticketUrl: convTicketUrl,
     onEvent: (env) => {
       if (env.type === "otto.message.created") {
         const payload = env.payload as { message: Message };
+        // Only chime on an inbound (customer) message while the thread
+        // is open — staff's own posts echo back through the same room.
+        if (payload.message.sender_type === "customer") {
+          playChime(chimeCtxRef, 0.4);
+        }
         setMessages((prev) =>
           prev.some((m) => m.id === payload.message.id)
             ? prev
@@ -202,6 +258,8 @@ export function OttoInbox({
           prev.map((c) => (c.id === body.conversation.id ? body.conversation : c)),
         );
         setSelectedId(body.conversation.id);
+        // Jump to the Active tab so the agent sees their own claim land.
+        setStatusFilter("active");
       } catch (e) {
         setError((e as Error).message);
       } finally {
@@ -262,6 +320,27 @@ export function OttoInbox({
     }
   }, [base, selected]);
 
+  const reopen = useCallback(async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch(
+        `${base}/conversations/${encodeURIComponent(selected.id)}/reopen`,
+        { method: "POST", credentials: "include" },
+      );
+      if (!res.ok) throw new Error(`reopen failed (${res.status})`);
+      const body = (await res.json()) as { conversation: Conversation };
+      setConversations((prev) =>
+        prev.map((c) => (c.id === body.conversation.id ? body.conversation : c)),
+      );
+      setStatusFilter(body.conversation.status);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [base, selected]);
+
   const canReply =
     !!selected &&
     selected.status !== "closed" &&
@@ -283,7 +362,9 @@ export function OttoInbox({
           ))}
         </div>
         {conversations.length === 0 ? (
-          <div className="otto-inbox__empty">No conversations here yet.</div>
+          <div className="otto-inbox__empty">
+            {error ? `Could not load: ${error}` : "No conversations here yet."}
+          </div>
         ) : (
           conversations.map((c) => (
             <button
@@ -309,6 +390,9 @@ export function OttoInbox({
                 <span className={`otto-inbox__pill otto-inbox__pill--${c.status}`}>
                   {c.status}
                 </span>
+                {c.case_id && (
+                  <span className="otto-inbox__case-id">{c.case_id}</span>
+                )}
                 {c.unread_count_staff > 0 && (
                   <span className="otto-inbox__unread">
                     {c.unread_count_staff}
@@ -335,7 +419,18 @@ export function OttoInbox({
                     "Anonymous visitor"}
                 </strong>
                 <div className="otto-inbox__thread-subtitle">
-                  {selected.subject || "(no subject)"}
+                  {selected.case_id ? (
+                    <>
+                      <span className="otto-inbox__case-id">
+                        {selected.case_id}
+                      </span>
+                      {selected.subject && (
+                        <> · {selected.subject}</>
+                      )}
+                    </>
+                  ) : (
+                    selected.subject || "(no subject)"
+                  )}
                 </div>
               </div>
               <div className="otto-inbox__thread-actions">
@@ -357,6 +452,16 @@ export function OttoInbox({
                     disabled={busy}
                   >
                     Close
+                  </button>
+                )}
+                {selected.status === "closed" && (
+                  <button
+                    type="button"
+                    className="otto-inbox__btn otto-inbox__btn--primary"
+                    onClick={reopen}
+                    disabled={busy}
+                  >
+                    Reopen
                   </button>
                 )}
               </div>
@@ -388,7 +493,7 @@ export function OttoInbox({
                     : selected.status === "pending"
                       ? "Accept the conversation to start replying."
                       : selected.status === "closed"
-                        ? "This conversation is closed."
+                        ? "This conversation is closed. Reopen it to continue."
                         : "Only the assigned agent can reply."
                 }
                 disabled={!canReply || busy}
@@ -407,6 +512,58 @@ export function OttoInbox({
       </section>
     </div>
   );
+}
+
+/** Synthesises a brief two-note chime via WebAudio — no asset to host. */
+function playChime(
+  ctxRef: React.MutableRefObject<AudioContext | null>,
+  gainLevel = 0.6,
+) {
+  if (typeof window === "undefined") return;
+  try {
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!Ctx) return;
+    if (!ctxRef.current) ctxRef.current = new Ctx();
+    const ctx = ctxRef.current;
+    if (ctx.state === "suspended") void ctx.resume();
+    const now = ctx.currentTime;
+    const notes = [880, 1320]; // A5 -> E6
+    notes.forEach((freq, i) => {
+      const start = now + i * 0.12;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(gainLevel, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.3);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.35);
+    });
+  } catch {
+    /* chime is best-effort */
+  }
+}
+
+function showDesktopNotification(
+  title: string,
+  body: string,
+  permission: NotificationPermission,
+) {
+  if (typeof window === "undefined") return;
+  if (!("Notification" in window)) return;
+  if (permission !== "granted") return;
+  try {
+    // tag ensures multiple pings collapse rather than flooding the
+    // user's notification center.
+    new Notification(title, { body, tag: "otto-inbox" });
+  } catch {
+    /* some browsers throw if called from a non-secure context */
+  }
 }
 
 function formatTime(iso: string): string {

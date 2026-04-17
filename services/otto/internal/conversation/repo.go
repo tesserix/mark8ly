@@ -2,13 +2,33 @@ package conversation
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base32"
 	"errors"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+// GenerateCaseID returns a short human-readable reference like
+// CS-260417-A1B2. The date segment makes old cases sort naturally; the
+// random tail avoids collisions without requiring a DB lookup.
+func GenerateCaseID() (string, error) {
+	var buf [3]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	enc := strings.ToUpper(strings.TrimRight(base32.StdEncoding.EncodeToString(buf[:]), "="))
+	// First four chars of enc keeps us at CS-YYMMDD-XXXX — plenty of
+	// entropy (5^4 * 32^4-ish, collisions are very rare at v1 volume).
+	if len(enc) > 4 {
+		enc = enc[:4]
+	}
+	return "CS-" + time.Now().UTC().Format("060102") + "-" + enc, nil
+}
 
 // ErrNotFound is returned when a lookup has a valid scope but no row matches.
 var ErrNotFound = errors.New("conversation: not found")
@@ -147,6 +167,38 @@ func (r *Repository) Accept(ctx context.Context, tenantID, storeID, id string, a
 				return nil, getErr
 			}
 			return existing, nil
+		}
+		return nil, err
+	}
+	return &c, nil
+}
+
+// Reopen flips a closed conversation back to its last meaningful state.
+// We pick `active` when an assignee is still attached, otherwise `pending`
+// so it lands back in the new-threads queue for any staff to pick up.
+func (r *Repository) Reopen(ctx context.Context, tenantID, storeID, id string) (*Conversation, error) {
+	now := time.Now().UTC()
+	current, err := r.GetByID(ctx, tenantID, storeID, id)
+	if err != nil {
+		return nil, err
+	}
+	nextStatus := StatusPending
+	if current.Assignee != nil && current.Assignee.UserID != "" {
+		nextStatus = StatusActive
+	}
+	filter := bson.M{"_id": id, "tenant_id": tenantID, "store_id": storeID}
+	update := bson.M{
+		"$set": bson.M{
+			"status":     nextStatus,
+			"updated_at": now,
+		},
+		"$unset": bson.M{"closed_at": ""},
+	}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	var c Conversation
+	if err := r.coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&c); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrNotFound
 		}
 		return nil, err
 	}

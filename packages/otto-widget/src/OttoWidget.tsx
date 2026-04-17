@@ -24,8 +24,8 @@ export interface OttoWidgetProps {
   /** REST base for the otto proxy (default "/api/otto"). */
   apiBaseUrl?: string;
   /** Function returning the WebSocket URL for a given conversation id.
-   *  Default assumes the proxy exposes `/api/otto/conversations/:id/ws`
-   *  over the same origin with the appropriate protocol. */
+   *  Default opens wss://{host}/api/v1/storefront/otto/conversations/:id/ws
+   *  — routed directly to Otto by Istio, bypassing the Next.js proxy. */
   buildWsUrl?: (conversationId: string) => string;
   /** Displayed in the launcher pill. */
   launcherLabel?: string;
@@ -84,6 +84,13 @@ export function OttoWidget({
   theme,
 }: OttoWidgetProps) {
   const api = useMemo(() => buildOttoApi(apiBaseUrl), [apiBaseUrl]);
+  // The WS ticket endpoint is always the same-origin REST proxy, so the
+  // Next.js layer can attach our auth cookie + internal-auth header.
+  const ticketUrl = useMemo(() => {
+    const base = apiBaseUrl.replace(/\/+$/, "");
+    return (conversationId: string) =>
+      `${base}/conversations/${encodeURIComponent(conversationId)}/ws-ticket`;
+  }, [apiBaseUrl]);
 
   // Logged-in users (both name + email prefilled) skip verification.
   const isLoggedIn = Boolean(
@@ -127,7 +134,12 @@ export function OttoWidget({
     }
   }, []);
 
-  useOttoChannel({ url: wsUrl, onEvent: handleEvent });
+  const wsTicketUrl = conversation ? ticketUrl(conversation.id) : null;
+  useOttoChannel({
+    url: wsUrl,
+    ticketUrl: wsTicketUrl,
+    onEvent: handleEvent,
+  });
 
   useEffect(() => {
     const el = messagesRef.current;
@@ -321,6 +333,14 @@ export function OttoWidget({
               <span className="otto-widget__subtitle" title={subtitle}>
                 {subtitle}
               </span>
+              {conversation?.case_id && (
+                <span
+                  className="otto-widget__case-id"
+                  title="Quote this reference if you contact us again"
+                >
+                  Case {conversation.case_id}
+                </span>
+              )}
             </div>
             <button
               type="button"

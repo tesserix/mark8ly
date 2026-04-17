@@ -15,6 +15,7 @@ import (
 	"github.com/mark8ly/otto/internal/event"
 	"github.com/mark8ly/otto/internal/hub"
 	"github.com/mark8ly/otto/internal/message"
+	"github.com/mark8ly/otto/internal/session"
 )
 
 // AdminDeps is the dependency bag for the staff-side handler.
@@ -22,6 +23,7 @@ type AdminDeps struct {
 	Conversations *Repository
 	Messages      *message.Repository
 	Hub           *hub.Hub
+	Tickets       *session.TicketSigner
 	Logger        *slog.Logger
 }
 
@@ -30,8 +32,13 @@ type AdminHandler struct{ d AdminDeps }
 
 func NewAdminHandler(d AdminDeps) *AdminHandler { return &AdminHandler{d: d} }
 
-// Register mounts routes. The caller must apply auth.StaffAuth and
-// auth.StoreResolver so every route has tenant_id + store_id set.
+// Register mounts the REST routes. The caller must apply auth.StaffAuth
+// and auth.StoreResolver so every route has tenant_id + store_id set.
+//
+// WebSocket endpoints live in RegisterWS, which must be mounted on a
+// different group that DOES NOT run StaffAuth — the WS path is routed to
+// Otto directly by Istio, bypassing the admin Next.js proxy that normally
+// injects identity headers. Ticket auth handles that case instead.
 func (h *AdminHandler) Register(r *gin.RouterGroup) {
 	r.GET("/conversations", h.list)
 	r.GET("/conversations/:id", h.get)
@@ -39,6 +46,14 @@ func (h *AdminHandler) Register(r *gin.RouterGroup) {
 	r.POST("/conversations/:id/accept", h.accept)
 	r.POST("/conversations/:id/messages", h.postMessage)
 	r.POST("/conversations/:id/close", h.close)
+	r.POST("/conversations/:id/reopen", h.reopen)
+	r.POST("/ws-ticket", h.inboxWSTicket)
+	r.POST("/conversations/:id/ws-ticket", h.conversationWSTicket)
+}
+
+// RegisterWS mounts the actual WebSocket endpoints. Unlike Register this
+// group must NOT run StaffAuth — ticket auth is used instead.
+func (h *AdminHandler) RegisterWS(r *gin.RouterGroup) {
 	r.GET("/ws", h.inboxWebsocket)
 	r.GET("/conversations/:id/ws", h.conversationWebsocket)
 }
@@ -220,6 +235,27 @@ func (h *AdminHandler) postMessage(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": msg})
 }
 
+func (h *AdminHandler) reopen(c *gin.Context) {
+	conv, ok := h.loadForStaff(c)
+	if !ok {
+		return
+	}
+	updated, err := h.d.Conversations.Reopen(c.Request.Context(), conv.TenantID, conv.StoreID, conv.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "reopen_failed"})
+		return
+	}
+	h.d.Hub.Broadcast(hub.RoomConversation(conv.ID), hub.Envelope{
+		Type:    event.TypeConversationUpdated,
+		Payload: map[string]any{"conversation": updated},
+	})
+	h.d.Hub.Broadcast(hub.RoomInbox(conv.TenantID, conv.StoreID), hub.Envelope{
+		Type:    event.TypeConversationUpdated,
+		Payload: map[string]any{"conversation": updated},
+	})
+	c.JSON(http.StatusOK, gin.H{"conversation": updated})
+}
+
 func (h *AdminHandler) close(c *gin.Context) {
 	conv, ok := h.loadForStaff(c)
 	if !ok {
@@ -241,26 +277,88 @@ func (h *AdminHandler) close(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"conversation": updated})
 }
 
+// inboxWSTicket mints a ticket scoped to the staff's inbox (tenant+store
+// but no specific conversation).
+func (h *AdminHandler) inboxWSTicket(c *gin.Context) {
+	raw, _, err := h.d.Tickets.Issue(session.Ticket{
+		Audience:  session.TicketAudienceStaff,
+		TenantID:  c.GetString(auth.CtxTenantID),
+		StoreID:   c.GetString(auth.CtxStoreID),
+		UserID:    c.GetString(auth.CtxUserID),
+		UserName:  c.GetString(auth.CtxUserName),
+		UserEmail: c.GetString(auth.CtxUserEmail),
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ticket_mint_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ticket": raw})
+}
+
+// conversationWSTicket mints a ticket scoped to a specific thread.
+func (h *AdminHandler) conversationWSTicket(c *gin.Context) {
+	conv, ok := h.loadForStaff(c)
+	if !ok {
+		return
+	}
+	raw, _, err := h.d.Tickets.Issue(session.Ticket{
+		Audience:       session.TicketAudienceStaff,
+		TenantID:       conv.TenantID,
+		StoreID:        conv.StoreID,
+		UserID:         c.GetString(auth.CtxUserID),
+		UserName:       c.GetString(auth.CtxUserName),
+		UserEmail:      c.GetString(auth.CtxUserEmail),
+		ConversationID: conv.ID,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ticket_mint_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ticket": raw})
+}
+
+// inboxWebsocket accepts a staff-audience ticket (no conversation_id) and
+// subscribes to the tenant+store inbox room.
 func (h *AdminHandler) inboxWebsocket(c *gin.Context) {
-	tenantID := c.GetString(auth.CtxTenantID)
-	storeID := c.GetString(auth.CtxStoreID)
+	tok, err := h.d.Tickets.Parse(c.Query("ticket"))
+	if err != nil || tok.Audience != session.TicketAudienceStaff {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "bad_ticket"})
+		return
+	}
 	conn, err := websocketUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return
 	}
 	client := h.d.Hub.NewClient(conn, map[string]string{
 		"role":      "staff",
-		"user_id":   c.GetString(auth.CtxUserID),
-		"tenant_id": tenantID,
-		"store_id":  storeID,
+		"user_id":   tok.UserID,
+		"tenant_id": tok.TenantID,
+		"store_id":  tok.StoreID,
 	})
-	h.d.Hub.Subscribe(client, hub.RoomInbox(tenantID, storeID))
+	h.d.Hub.Subscribe(client, hub.RoomInbox(tok.TenantID, tok.StoreID))
 	client.Run(h.d.Hub)
 }
 
+// conversationWebsocket accepts a staff-audience ticket bound to a
+// specific conversation and subscribes the client to both the thread room
+// and the inbox room (so the agent keeps getting new-thread pings while
+// they're focused on one).
 func (h *AdminHandler) conversationWebsocket(c *gin.Context) {
-	conv, ok := h.loadForStaff(c)
-	if !ok {
+	tok, err := h.d.Tickets.Parse(c.Query("ticket"))
+	if err != nil || tok.Audience != session.TicketAudienceStaff {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "bad_ticket"})
+		return
+	}
+	convID := c.Param("id")
+	if tok.ConversationID != convID {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "ticket_conversation_mismatch"})
+		return
+	}
+	// Scope check — ticket could be forged for any conversation id, so
+	// verify the row actually exists within the ticket's tenant+store.
+	conv, err := h.d.Conversations.GetByID(c.Request.Context(), tok.TenantID, tok.StoreID, convID)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}
 	conn, err := websocketUpgrader.Upgrade(c.Writer, c.Request, nil)
@@ -269,7 +367,7 @@ func (h *AdminHandler) conversationWebsocket(c *gin.Context) {
 	}
 	client := h.d.Hub.NewClient(conn, map[string]string{
 		"role":            "staff",
-		"user_id":         c.GetString(auth.CtxUserID),
+		"user_id":         tok.UserID,
 		"conversation_id": conv.ID,
 		"tenant_id":       conv.TenantID,
 		"store_id":        conv.StoreID,

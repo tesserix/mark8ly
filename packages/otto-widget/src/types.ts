@@ -22,6 +22,7 @@ export interface Assignee {
 
 export interface Conversation {
   id: string;
+  case_id?: string;
   tenant_id: string;
   store_id: string;
   status: ConversationStatus;

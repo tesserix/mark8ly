@@ -6,8 +6,16 @@ import type { WsEnvelope } from "./types";
 export type ChannelState = "idle" | "connecting" | "open" | "closed" | "error";
 
 export interface UseOttoChannelOptions {
-  /** The full WebSocket URL (ws:// or wss://). Pass null/undefined to stay disconnected. */
+  /** The WebSocket URL (ws:// or wss://). Pass null/undefined to stay
+   *  disconnected. The hook appends `?ticket=` automatically once the
+   *  ticketUrl POST returns. */
   url: string | null | undefined;
+  /** REST endpoint that mints a short-lived signed ticket. The client
+   *  must call this BEFORE opening the socket — the WS path itself is
+   *  routed direct to Otto by Istio, bypassing the Next.js proxy, so the
+   *  usual header-based auth can't reach the service. A fresh ticket is
+   *  minted for every reconnect. */
+  ticketUrl: string | null | undefined;
   /** Called for every envelope the server sends. */
   onEvent?: (env: WsEnvelope) => void;
   /** Exponential backoff cap in milliseconds (default 10s). */
@@ -16,14 +24,12 @@ export interface UseOttoChannelOptions {
 
 /**
  * useOttoChannel opens a WebSocket to the otto service and auto-reconnects
- * with exponential backoff. All message fan-in goes through `onEvent`.
- *
- * Intentionally doesn't ship a send() method: v1 of otto is server-push
- * only. Customers and staff send messages over REST, which lets the server
- * persist before fanning out and keeps the WS protocol one-directional.
+ * with exponential backoff. Tickets are fetched fresh on every connect so
+ * a stale ticket (TTL = 2 min server-side) can't block reconnection.
  */
 export function useOttoChannel({
   url,
+  ticketUrl,
   onEvent,
   maxBackoffMs = 10_000,
 }: UseOttoChannelOptions) {
@@ -34,18 +40,43 @@ export function useOttoChannel({
   onEventRef.current = onEvent;
 
   useEffect(() => {
-    if (!url) {
+    if (!url || !ticketUrl) {
       setState("idle");
       return;
     }
     shouldRunRef.current = true;
     let attempt = 0;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let abort: AbortController | null = null;
 
-    const connect = () => {
+    const connect = async () => {
       if (!shouldRunRef.current) return;
       setState("connecting");
-      const ws = new WebSocket(url);
+      abort = new AbortController();
+      let ticket: string;
+      try {
+        const res = await fetch(ticketUrl, {
+          method: "POST",
+          credentials: "include",
+          signal: abort.signal,
+        });
+        if (!res.ok) throw new Error(`ticket ${res.status}`);
+        const body = (await res.json()) as { ticket: string };
+        ticket = body.ticket;
+      } catch {
+        setState("error");
+        if (!shouldRunRef.current) return;
+        attempt += 1;
+        const delay = Math.min(1000 * 2 ** Math.min(attempt, 4), maxBackoffMs);
+        retryTimer = setTimeout(() => {
+          void connect();
+        }, delay);
+        return;
+      }
+
+      const separator = url.includes("?") ? "&" : "?";
+      const wsUrl = `${url}${separator}ticket=${encodeURIComponent(ticket)}`;
+      const ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 
       ws.onopen = () => {
@@ -66,19 +97,22 @@ export function useOttoChannel({
         if (!shouldRunRef.current) return;
         attempt += 1;
         const delay = Math.min(1000 * 2 ** Math.min(attempt, 4), maxBackoffMs);
-        retryTimer = setTimeout(connect, delay);
+        retryTimer = setTimeout(() => {
+          void connect();
+        }, delay);
       };
     };
 
-    connect();
+    void connect();
 
     return () => {
       shouldRunRef.current = false;
       if (retryTimer) clearTimeout(retryTimer);
+      abort?.abort();
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [url, maxBackoffMs]);
+  }, [url, ticketUrl, maxBackoffMs]);
 
   return { state };
 }

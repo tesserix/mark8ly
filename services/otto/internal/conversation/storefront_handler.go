@@ -25,6 +25,7 @@ type StorefrontDeps struct {
 	Messages      *message.Repository
 	Hub           *hub.Hub
 	Signer        *session.Signer
+	Tickets       *session.TicketSigner
 	OTP           *otp.Service
 	CookieName    string
 	CookieDomain  string
@@ -53,7 +54,19 @@ func (h *StorefrontHandler) Register(r *gin.RouterGroup) {
 	withSession.GET("/conversations/:id/messages", h.listMessages)
 	withSession.POST("/conversations/:id/messages", h.postMessage)
 	withSession.POST("/conversations/:id/close", h.close)
-	withSession.GET("/conversations/:id/ws", h.websocket)
+	// Issuing a WebSocket ticket requires the caller to already own the
+	// conversation (standard cookie auth through the Next.js proxy). The
+	// ticket itself then travels via ?ticket= on the WS upgrade, which
+	// bypasses the proxy.
+	withSession.POST("/conversations/:id/ws-ticket", h.wsTicket)
+}
+
+// RegisterWS mounts the actual WebSocket upgrade endpoint on a group that
+// MUST NOT run CustomerContext — Istio routes /api/v1/.../ws to Otto
+// directly, so the auth headers the Next.js proxy would otherwise inject
+// never arrive. Ticket auth takes over; see wsTicket above.
+func (h *StorefrontHandler) RegisterWS(r *gin.RouterGroup) {
+	r.GET("/conversations/:id/ws", h.websocket)
 }
 
 type createRequest struct {
@@ -130,8 +143,14 @@ func (h *StorefrontHandler) create(c *gin.Context) {
 	}
 
 	now := time.Now().UTC()
+	caseID, err := GenerateCaseID()
+	if err != nil {
+		h.d.Logger.Error("otto: gen case id", "err", err)
+		caseID = "CS-" + time.Now().UTC().Format("060102") + "-0000"
+	}
 	conv := &Conversation{
 		ID:            uuid.NewString(),
+		CaseID:        caseID,
 		TenantID:      tenantID,
 		StoreID:       storeID,
 		Status:        StatusPending,
@@ -302,9 +321,53 @@ var websocketUpgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-func (h *StorefrontHandler) websocket(c *gin.Context) {
+// wsTicket mints a short-lived signed ticket the browser carries in the
+// WebSocket upgrade URL. Runs with full cookie + header auth applied — the
+// caller must already own the conversation.
+func (h *StorefrontHandler) wsTicket(c *gin.Context) {
 	conv, ok := h.loadForCustomer(c)
 	if !ok {
+		return
+	}
+	raw, _, err := h.d.Tickets.Issue(session.Ticket{
+		Audience:       session.TicketAudienceCustomer,
+		TenantID:       conv.TenantID,
+		StoreID:        conv.StoreID,
+		UserID:         conv.Customer.UserID,
+		UserEmail:      conv.Customer.Email,
+		UserName:       conv.Customer.Name,
+		ConversationID: conv.ID,
+		SessionToken:   c.GetString(auth.CtxSessionToken),
+	})
+	if err != nil {
+		h.d.Logger.Error("otto: mint customer ws ticket", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ticket_mint_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ticket": raw})
+}
+
+// websocket upgrades the connection. Auth comes from the ?ticket= query
+// parameter — the WS path is NOT behind the CustomerContext /
+// RequireCustomerSession middleware because Istio routes /api/v1/.../ws
+// traffic straight here without injecting the proxy headers.
+func (h *StorefrontHandler) websocket(c *gin.Context) {
+	raw := c.Query("ticket")
+	tok, err := h.d.Tickets.Parse(raw)
+	if err != nil || tok.Audience != session.TicketAudienceCustomer {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "bad_ticket"})
+		return
+	}
+	convID := c.Param("id")
+	if tok.ConversationID != convID {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "ticket_conversation_mismatch"})
+		return
+	}
+	// Defence in depth: look up the conversation and confirm the ticket's
+	// session token still owns it.
+	conv, err := h.d.Conversations.GetForCustomer(c.Request.Context(), tok.TenantID, tok.StoreID, convID, tok.SessionToken)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}
 	conn, err := websocketUpgrader.Upgrade(c.Writer, c.Request, nil)

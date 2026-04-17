@@ -173,6 +173,14 @@
   font-weight: 600;
 }
 
+.otto-inbox__case-id {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--otto-text-muted);
+  text-transform: uppercase;
+}
+
 .otto-inbox__thread {
   display: flex;
   flex-direction: column;

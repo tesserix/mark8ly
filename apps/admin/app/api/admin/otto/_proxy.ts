@@ -1,13 +1,98 @@
 // Server-side proxy for the Otto staff console. Reads the session headers
-// set by the admin middleware, forwards them to the otto service, and pipes
-// the response back. Session validation has already happened upstream — we
-// simply trust and forward.
+// set by the admin middleware + resolves the active store from the host
+// subdomain, then forwards them to the otto service.
+//
+// The store_id cannot be trusted from the session cookie alone — the
+// cookie is minted at login and may not mirror the {slug}-admin.mark8ly.com
+// subdomain the agent is currently viewing (multi-store support, store
+// switcher). Resolving from the Host header at request time mirrors the
+// storefront proxy pattern and guarantees staff see the correct tenant's
+// threads.
 
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 const OTTO_URL = process.env.OTTO_URL ?? "http://localhost:8089";
-const OTTO_INTERNAL_AUTH = process.env.OTTO_INTERNAL_AUTH ?? "";
+// Strip surrounding whitespace/newlines — GCP Secret Manager sometimes
+// persists random-base64 with a trailing \n, which HTTP strips in transit
+// and silently breaks the X-Internal-Auth equality check on otto's side.
+const OTTO_INTERNAL_AUTH = (process.env.OTTO_INTERNAL_AUTH ?? "").trim();
+const PLATFORM_API_URL =
+  process.env.PLATFORM_API_URL ?? "http://localhost:8086";
+const MARKETPLACE_API_URL =
+  process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
+
+interface ResolvedScope {
+  tenantId: string;
+  storeId: string;
+  slug: string;
+}
+
+/**
+ * Resolve {tenant_id, store_id} from the current admin subdomain.
+ *
+ * Host patterns we accept:
+ *   {slug}-admin.mark8ly.com     → strip -admin suffix, lookup by slug
+ *   admin.<merchant-domain>      → resolve via marketplace-api custom-domain
+ *   admin.mark8ly.com            → the canonical admin host; the agent must
+ *                                   have picked a specific store via the
+ *                                   switcher — we fall back to session's
+ *                                   store_id there.
+ */
+async function resolveScopeFromHost(
+  host: string | null,
+  sessionTenantId: string,
+  sessionStoreId: string,
+): Promise<ResolvedScope | null> {
+  if (!host) return null;
+  const mark8lyMatch = host.match(/^([^.]+)-admin\.mark8ly\.com$/);
+  let slug: string | null = null;
+  if (mark8lyMatch && mark8lyMatch[1]) {
+    slug = mark8lyMatch[1];
+  } else if (host.startsWith("admin.") && !host.endsWith(".mark8ly.com")) {
+    const customDomain = host.slice("admin.".length);
+    try {
+      const res = await fetch(
+        `${MARKETPLACE_API_URL}/api/v1/storefront/resolve-domain?domain=${encodeURIComponent(customDomain)}`,
+        { cache: "no-store" },
+      );
+      if (res.ok) {
+        const body = (await res.json()) as { slug?: string };
+        slug = body.slug ?? null;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  // No subdomain slug — trust whatever the session cookie has set (canonical
+  // admin.mark8ly.com flow with explicit store picker).
+  if (!slug) {
+    if (!sessionStoreId) return null;
+    return {
+      tenantId: sessionTenantId,
+      storeId: sessionStoreId,
+      slug: "",
+    };
+  }
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      data?: { id: string; tenant_id: string; slug: string };
+    };
+    if (!body.data?.id || !body.data?.tenant_id) return null;
+    return {
+      tenantId: body.data.tenant_id,
+      storeId: body.data.id,
+      slug: body.data.slug,
+    };
+  } catch {
+    return null;
+  }
+}
 
 interface ForwardInit {
   method?: string;
@@ -20,16 +105,20 @@ export async function forwardToOtto(
 ): Promise<Response> {
   const h = await headers();
   const userId = h.get("x-session-user-id") ?? "";
-  const tenantId = h.get("x-session-tenant-id") ?? "";
-  const storeId = h.get("x-session-store-id") ?? "";
+  const sessionTenantId = h.get("x-session-tenant-id") ?? "";
+  const sessionStoreId = h.get("x-session-store-id") ?? "";
   const email = h.get("x-session-email") ?? "";
+  const userName = h.get("x-session-user-name") ?? "";
+  const host = h.get("x-forwarded-host") ?? h.get("host");
 
-  if (!userId || !tenantId) {
+  if (!userId || !sessionTenantId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!storeId) {
+
+  const scope = await resolveScopeFromHost(host, sessionTenantId, sessionStoreId);
+  if (!scope) {
     return NextResponse.json(
-      { error: "no_active_store", message: "pick a store first" },
+      { error: "no_active_store", message: "unable to resolve store for this subdomain" },
       { status: 400 },
     );
   }
@@ -37,10 +126,11 @@ export async function forwardToOtto(
   const outgoing: Record<string, string> = {
     "Content-Type": "application/json",
     "X-User-Id": userId,
-    "X-Tenant-Id": tenantId,
-    "X-Store-Id": storeId,
+    "X-Tenant-Id": scope.tenantId,
+    "X-Store-Id": scope.storeId,
   };
   if (email) outgoing["X-User-Email"] = email;
+  if (userName) outgoing["X-User-Name"] = userName;
   if (OTTO_INTERNAL_AUTH) outgoing["X-Internal-Auth"] = OTTO_INTERNAL_AUTH;
 
   try {

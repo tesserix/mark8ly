@@ -35,6 +35,10 @@ type Assignee struct {
 // Conversation is a single support thread, fully scoped by tenant + store.
 type Conversation struct {
 	ID            string     `bson:"_id" json:"id"`
+	// CaseID is a human-readable reference (CS-YYMMDD-XXXX) both parties
+	// can quote when discussing the thread off-channel. The full uuid ID
+	// is still the database key; CaseID is purely for humans.
+	CaseID        string     `bson:"case_id" json:"case_id"`
 	TenantID      string     `bson:"tenant_id" json:"tenant_id"`
 	StoreID       string     `bson:"store_id" json:"store_id"`
 	Status        Status     `bson:"status" json:"status"`

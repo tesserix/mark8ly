@@ -70,38 +70,53 @@ func main() {
 	})
 
 	signer := session.NewSigner(cfg.CustomerSessionSecret, 30*24*time.Hour)
+	// Short TTL — the client opens the WS immediately after minting the
+	// ticket, so 2 minutes is plenty and keeps the replay window tight.
+	ticketSigner := session.NewTicketSigner(cfg.CustomerSessionSecret, 2*time.Minute)
 	h := hub.New(log)
 
 	// ── HTTP server ────────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log, cfg.CORSAllowedOrigins)
 
-	// Storefront (customer) group: tenant + store come from headers, the
-	// session cookie binds the caller to a specific thread.
+	// Storefront REST routes — all run the CustomerContext middleware so
+	// the Next.js proxy's tenant/store/internal-auth headers gate entry.
 	storefront := r.Group("/api/v1/storefront/otto")
 	storefront.Use(auth.CustomerContext(cfg.InternalAuthSecret))
-	conversation.NewStorefrontHandler(conversation.StorefrontDeps{
+	storefrontHandler := conversation.NewStorefrontHandler(conversation.StorefrontDeps{
 		Conversations: convRepo,
 		Messages:      msgRepo,
 		Hub:           h,
 		Signer:        signer,
+		Tickets:       ticketSigner,
 		OTP:           otpSvc,
 		CookieName:    cfg.CustomerSessionCookie,
 		CookieDomain:  cfg.CustomerCookieDomain,
 		CookieSecure:  cfg.CustomerCookieSecure,
 		Logger:        log,
-	}).Register(storefront)
+	})
+	storefrontHandler.Register(storefront)
 	otp.NewHandler(otpSvc, log).Register(storefront)
 
-	// Admin (staff) group: identity trusted from the proxy, store locked
-	// per request.
+	// Admin REST routes — StaffAuth + StoreResolver enforce identity and
+	// scope.
 	admin := r.Group("/api/v1/admin/otto")
 	admin.Use(auth.StaffAuth(cfg.InternalAuthSecret), auth.StoreResolver())
-	conversation.NewAdminHandler(conversation.AdminDeps{
+	adminHandler := conversation.NewAdminHandler(conversation.AdminDeps{
 		Conversations: convRepo,
 		Messages:      msgRepo,
 		Hub:           h,
+		Tickets:       ticketSigner,
 		Logger:        log,
-	}).Register(admin)
+	})
+	adminHandler.Register(admin)
+
+	// WebSocket routes are deliberately mounted on a no-middleware group:
+	// Istio routes /api/v1/otto/.../ws directly to Otto, bypassing the
+	// Next.js proxies that would otherwise inject our auth headers. Ticket
+	// auth takes over instead — see session.TicketSigner.
+	adminWS := r.Group("/api/v1/admin/otto")
+	adminHandler.RegisterWS(adminWS)
+	storefrontHandler.RegisterWS(r.Group("/api/v1/storefront/otto"))
 
 	if err := httpserver.Run(ctx, cfg.HTTPPort, r, log); err != nil {
 		log.Error("http", "err", err)

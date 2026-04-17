@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { decodeSession } from "@/lib/auth";
 import { resolveStoreSlug } from "@/lib/slug";
-import { NewTicketToggle } from "./NewTicketToggle";
+import { TicketsHeaderSection } from "./TicketsHeaderSection";
 
 export const metadata = {
   title: "Support tickets",
@@ -114,15 +114,10 @@ export default async function TicketsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between gap-4">
-        <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
-          Support
-        </h1>
-        <NewTicketToggle
-          storeSlug={storeSlug}
-          customerEmail={session.email}
-        />
-      </div>
+      <TicketsHeaderSection
+        storeSlug={storeSlug}
+        customerEmail={session.email}
+      />
 
       {fetchError && (
         <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-50">

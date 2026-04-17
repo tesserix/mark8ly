@@ -1,0 +1,35 @@
+"use client";
+
+import { OttoWidget } from "@repo/otto-widget";
+
+import "@repo/otto-widget/styles/otto.css";
+
+import { useCustomerAuth } from "@/components/CustomerAuthProvider";
+
+interface OttoSupportChatProps {
+  storeName?: string;
+}
+
+// Thin wrapper so the widget props (customer name/email prefill, store name)
+// can be sourced from the client auth context without leaking client hooks
+// into the shared package.
+export function OttoSupportChat({ storeName }: OttoSupportChatProps) {
+  const auth = useCustomerAuth();
+  return (
+    <OttoWidget
+      apiBaseUrl="/api/otto"
+      buildWsUrl={(id) => buildConversationWsUrl(id)}
+      productName={storeName ?? "Support"}
+      customerName={auth.displayName ?? undefined}
+      customerEmail={auth.email ?? undefined}
+    />
+  );
+}
+
+// The WebSocket path leaves the Next.js process and goes directly to the
+// otto service via the Istio gateway. Same host, different path prefix.
+function buildConversationWsUrl(id: string): string {
+  if (typeof window === "undefined") return "";
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/api/v1/storefront/otto/conversations/${encodeURIComponent(id)}/ws`;
+}

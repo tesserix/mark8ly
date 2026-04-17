@@ -20,6 +20,7 @@ import { CartProvider } from "@/components/CartProvider";
 import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
 import { Footer } from "@/components/Footer";
 import { PromotionBar } from "@/components/PromotionBar";
+import { OttoSupportChat } from "@/components/OttoSupportChat";
 import { Toaster } from "@/components/Toaster";
 import { resolveStoreSlug } from "@/lib/slug";
 import { buildLoginUrl, buildLogoutUrl, hasSessionCookie, decodeSession } from "@/lib/auth";
@@ -234,6 +235,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
             branding={brandingData?.branding ?? null}
             storeName={brandingData?.store?.name ?? null}
           />
+          <OttoSupportChat storeName={brandingData?.store?.name ?? undefined} />
         </CustomerAuthProvider>
         <Toaster />
         <MerchantCSS css={brandingData?.branding?.custom_css} />

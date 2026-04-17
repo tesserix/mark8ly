@@ -18,6 +18,7 @@ import {
 } from "@tesserix/web";
 
 import { submitSupportTicket } from "@/app/contact/actions";
+import { toast } from "@/lib/toast";
 
 type Priority = "low" | "medium" | "high";
 
@@ -82,6 +83,11 @@ export function TicketsHeaderSection({
       });
       if (result.ok) {
         setStatus({ kind: "success", ticketNumber: result.ticket_number });
+        toast({
+          title: "Ticket created",
+          description: `We'll get back to you at ${customerEmail}. Reference ${result.ticket_number}.`,
+          tone: "success",
+        });
         // Brief dwell on the success state, then collapse and pull a
         // fresh list so the new ticket appears at the top.
         setTimeout(() => {
@@ -90,6 +96,11 @@ export function TicketsHeaderSection({
         }, 1400);
       } else {
         setStatus({ kind: "error", message: result.message });
+        toast({
+          title: "Couldn't send your ticket",
+          description: result.message,
+          tone: "error",
+        });
       }
     });
   }

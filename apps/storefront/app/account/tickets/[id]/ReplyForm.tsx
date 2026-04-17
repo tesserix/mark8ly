@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { toast } from "@/lib/toast";
 import { replyToTicket } from "./actions";
 
 interface ReplyFormProps {
@@ -41,9 +42,15 @@ export function ReplyForm({
       const result = await replyToTicket(ticketId, value);
       if (!result.ok) {
         setError(result.message);
+        toast({
+          title: "Couldn't send reply",
+          description: result.message,
+          tone: "error",
+        });
         return;
       }
       setContent("");
+      toast({ title: "Reply sent", tone: "success" });
       router.refresh();
     });
   }

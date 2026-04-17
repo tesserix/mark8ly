@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import {
   createTicket,
   replyToTicket,
@@ -59,20 +60,28 @@ export async function createTicketAction(
   redirect(`/support/tickets/${result.data.id}`);
 }
 
+// Reply and status-change actions return a discriminated result so the
+// client can show a toast instead of redirecting. Both revalidate the
+// ticket page so the next render pulls the fresh thread + status from
+// marketplace-api.
+export type TicketActionResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
 export async function replyToTicketAction(
-  _prev: { error?: string } | null,
+  _prev: TicketActionResult | null,
   formData: FormData,
-): Promise<{ error?: string } | null> {
+): Promise<TicketActionResult> {
   const ticketId = (formData.get("ticketId") as string) ?? "";
   const content = (formData.get("body") as string)?.trim() ?? "";
 
   if (!content) {
-    return { error: "Reply cannot be empty." };
+    return { ok: false, error: "Reply cannot be empty." };
   }
 
   const { userId, tenantId, storeId } = await getSessionFromHeaders();
   if (!storeId) {
-    return { error: "No store found." };
+    return { ok: false, error: "No store found." };
   }
 
   const result = await replyToTicket(
@@ -83,22 +92,24 @@ export async function replyToTicketAction(
   );
 
   if (!result.ok) {
-    return { error: result.error.message };
+    return { ok: false, error: result.error.message };
   }
 
-  redirect(`/support/tickets/${ticketId}`);
+  revalidatePath(`/support/tickets/${ticketId}`);
+  revalidatePath(`/support/tickets`);
+  return { ok: true };
 }
 
 export async function updateTicketStatusAction(
-  _prev: { error?: string } | null,
+  _prev: TicketActionResult | null,
   formData: FormData,
-): Promise<{ error?: string } | null> {
+): Promise<TicketActionResult> {
   const ticketId = (formData.get("ticketId") as string) ?? "";
   const status = (formData.get("status") as string) ?? "";
 
   const { userId, tenantId, storeId } = await getSessionFromHeaders();
   if (!storeId) {
-    return { error: "No store found." };
+    return { ok: false, error: "No store found." };
   }
 
   const result = await updateTicketStatus(
@@ -109,8 +120,10 @@ export async function updateTicketStatusAction(
   );
 
   if (!result.ok) {
-    return { error: result.error.message };
+    return { ok: false, error: result.error.message };
   }
 
-  redirect(`/support/tickets/${ticketId}`);
+  revalidatePath(`/support/tickets/${ticketId}`);
+  revalidatePath(`/support/tickets`);
+  return { ok: true };
 }

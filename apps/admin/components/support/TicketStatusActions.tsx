@@ -1,7 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+
 import { updateTicketStatusAction } from "@/app/(admin)/support/actions";
+import { useToast } from "@/components/feedback/Toaster";
 import type { TicketStatus } from "@/lib/api/marketplace-api";
 
 interface TicketStatusActionsProps {
@@ -33,6 +36,13 @@ const ACTIONS: Record<TicketStatus, { target: TicketStatus; label: string }[]> =
   closed: [],
 };
 
+const STATUS_LABELS: Record<TicketStatus, string> = {
+  open: "Open",
+  in_progress: "In progress",
+  resolved: "Resolved",
+  closed: "Closed",
+};
+
 export function TicketStatusActions({
   ticketId,
   status,
@@ -41,12 +51,29 @@ export function TicketStatusActions({
     updateTicketStatusAction,
     null,
   );
+  const prevStateRef = useRef<typeof state>(null);
+  const router = useRouter();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!state || state === prevStateRef.current) return;
+    prevStateRef.current = state;
+
+    if (state.ok) {
+      toast.success("Ticket updated", "Status change saved.");
+      router.refresh();
+    } else {
+      toast.error("Couldn't update status", state.error);
+    }
+  }, [state, toast, router]);
 
   const actions = ACTIONS[status] ?? [];
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {state?.error && (
+      {/* Errors still render inline as a fallback for users with
+          reduced-motion or dismissed toasts. */}
+      {state && !state.ok && (
         <p role="alert" className="w-full text-sm text-[color:var(--signal)]">
           {state.error}
         </p>

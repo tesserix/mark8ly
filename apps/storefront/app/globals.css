@@ -12,6 +12,10 @@
    Tailwind tree-shaking. */
 @source "../../../packages/ui/src";
 
+/* Scan @tesserix/web dist so the Select/Input/Dialog utility classes
+   that ship inside the package are kept in the final CSS bundle. */
+@source "../../../node_modules/@tesserix/web/dist";
+
 /* ============================================================
    Storefront theme variables
    ------------------------------------------------------------
@@ -198,3 +202,42 @@ main#main .rounded-3xl { border-radius: calc(1.5rem  * var(--storefront-radius-s
 [data-motion="expressive"] .animate-marquee[data-speed="slow"]   { animation-duration: 84s; }
 [data-motion="expressive"] .animate-marquee[data-speed="normal"] { animation-duration: 42s; }
 [data-motion="expressive"] .animate-marquee[data-speed="fast"]   { animation-duration: 25s; }
+
+/* ============================================================
+   Radix Select popover — storefront overrides
+   ------------------------------------------------------------
+   @tesserix/web ships defaults tuned for the admin shell and
+   doesn't know about --storefront-* tokens, so the listbox
+   renders without a background in the storefront. Scope the
+   fix to the Radix portal so it only touches our Select
+   dropdowns, nothing else.
+   ============================================================ */
+
+[data-radix-popper-content-wrapper] [role="listbox"] {
+  background-color: var(--storefront-surface, #fff) !important;
+  border: 1px solid color-mix(in oklab, var(--storefront-text, #0e0e0c) 12%, transparent) !important;
+  border-radius: var(--storefront-radius, 6px) !important;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.18) !important;
+  color: var(--storefront-text, #0e0e0c) !important;
+  padding: 0.25rem !important;
+  min-width: var(--radix-select-trigger-width);
+  z-index: 50;
+}
+
+[data-radix-popper-content-wrapper] [role="option"] {
+  color: var(--storefront-text, #0e0e0c) !important;
+  border-radius: calc(var(--storefront-radius, 6px) * 0.75) !important;
+  padding: 0.5rem 0.75rem !important;
+  font-size: 0.875rem !important;
+  cursor: default;
+  outline: none;
+}
+
+[data-radix-popper-content-wrapper] [role="option"][data-highlighted] {
+  background-color: color-mix(in oklab, var(--storefront-accent, #2d4a2b) 8%, transparent) !important;
+  color: var(--storefront-text, #0e0e0c) !important;
+}
+
+[data-radix-popper-content-wrapper] [role="option"][data-state="checked"] {
+  font-weight: 600;
+}

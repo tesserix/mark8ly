@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
@@ -157,5 +158,302 @@ func (h *TicketsHandler) Create(c *gin.Context) {
 		TicketNumber: t.TicketNumber,
 		Status:       string(t.Status),
 		Subject:      t.Subject,
+	})
+}
+
+// customerTicketSummary is the trimmed projection for list views.
+type customerTicketSummary struct {
+	ID           string `json:"id"`
+	TicketNumber string `json:"ticket_number"`
+	Subject      string `json:"subject"`
+	Status       string `json:"status"`
+	Priority     string `json:"priority"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+// customerTicketReply is the reply projection for the detail view.
+// Merchant and platform replies are flattened to a single author_type
+// from the customer's perspective — the storefront UI shouldn't leak
+// internal merchant/platform distinctions to end users.
+type customerTicketReply struct {
+	ID         string `json:"id"`
+	AuthorType string `json:"author_type"`
+	AuthorName string `json:"author_name"`
+	Content    string `json:"content"`
+	CreatedAt  string `json:"created_at"`
+}
+
+// customerTicketDetail is the full detail projection with replies.
+type customerTicketDetail struct {
+	customerTicketSummary
+	Description string                `json:"description"`
+	Replies     []customerTicketReply `json:"replies"`
+}
+
+// resolveCustomer pulls the signed-in customer profile from the gin
+// context (set by OptionalCustomerAuth + gated by RequireCustomerAuth).
+// RequireCustomerAuth has already rejected the request if no profile is
+// attached, so nil here is an unexpected middleware regression.
+func resolveCustomer(c *gin.Context) *customer.CustomerProfile {
+	val, ok := c.Get(CustomerProfileKey)
+	if !ok {
+		return nil
+	}
+	p, ok := val.(*customer.CustomerProfile)
+	if !ok {
+		return nil
+	}
+	return p
+}
+
+func ticketReplyView(r ticket.TicketReply) customerTicketReply {
+	// Merchant and platform are both "support" from the shopper's view.
+	authorType := "support"
+	if r.AuthorType == ticket.AuthorTypeCustomer {
+		authorType = "customer"
+	}
+	return customerTicketReply{
+		ID:         r.ID.String(),
+		AuthorType: authorType,
+		AuthorName: r.AuthorName,
+		Content:    r.Content,
+		CreatedAt:  r.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+func ticketSummaryView(t ticket.Ticket) customerTicketSummary {
+	return customerTicketSummary{
+		ID:           t.ID.String(),
+		TicketNumber: t.TicketNumber,
+		Subject:      t.Subject,
+		Status:       string(t.Status),
+		Priority:     string(t.Priority),
+		CreatedAt:    t.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:    t.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+// ListMine handles GET /storefront/stores/:storeSlug/account/tickets.
+// Returns every ticket the signed-in customer has submitted for this
+// store, newest first. Gated by RequireCustomerAuth.
+func (h *TicketsHandler) ListMine(c *gin.Context) {
+	profile := resolveCustomer(c)
+	if profile == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	storeVal, ok := c.Get("store")
+	if !ok {
+		respondNotFound(c)
+		return
+	}
+	store, ok := storeVal.(*stores.Store)
+	if !ok || store == nil {
+		respondNotFound(c)
+		return
+	}
+	storeID, err := uuid.Parse(store.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid_store"})
+		return
+	}
+
+	tickets, err := h.svc.ListForCustomer(c.Request.Context(), storeID, profile.Email)
+	if err != nil {
+		respondInternal(c, h.logger, err)
+		return
+	}
+
+	out := make([]customerTicketSummary, 0, len(tickets))
+	for _, t := range tickets {
+		out = append(out, ticketSummaryView(t))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
+// GetMine handles GET /storefront/stores/:storeSlug/account/tickets/:id.
+func (h *TicketsHandler) GetMine(c *gin.Context) {
+	profile := resolveCustomer(c)
+	if profile == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	storeVal, ok := c.Get("store")
+	if !ok {
+		respondNotFound(c)
+		return
+	}
+	store, ok := storeVal.(*stores.Store)
+	if !ok || store == nil {
+		respondNotFound(c)
+		return
+	}
+	storeID, err := uuid.Parse(store.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid_store"})
+		return
+	}
+	ticketID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_ticket_id"})
+		return
+	}
+
+	t, err := h.svc.GetForCustomer(c.Request.Context(), storeID, ticketID, profile.Email)
+	if err != nil {
+		var ae *apperrors.Error
+		if errors.As(err, &ae) && ae.Code == apperrors.CodeNotFound {
+			respondNotFound(c)
+			return
+		}
+		respondInternal(c, h.logger, err)
+		return
+	}
+
+	replies := make([]customerTicketReply, 0, len(t.Replies))
+	for _, r := range t.Replies {
+		replies = append(replies, ticketReplyView(r))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": customerTicketDetail{
+			customerTicketSummary: ticketSummaryView(*t),
+			Description:           t.Description,
+			Replies:               replies,
+		},
+	})
+}
+
+// addMyReplyRequest is the customer-reply wire body.
+type addMyReplyRequest struct {
+	Content string `json:"content" binding:"required,max=5000"`
+}
+
+// AddMyReply handles POST /storefront/stores/:storeSlug/account/tickets/:id/reply.
+// The ticket must belong to the signed-in customer (by submitter email)
+// and must not be closed.
+func (h *TicketsHandler) AddMyReply(c *gin.Context) {
+	profile := resolveCustomer(c)
+	if profile == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	storeVal, ok := c.Get("store")
+	if !ok {
+		respondNotFound(c)
+		return
+	}
+	store, ok := storeVal.(*stores.Store)
+	if !ok || store == nil {
+		respondNotFound(c)
+		return
+	}
+	storeID, err := uuid.Parse(store.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid_store"})
+		return
+	}
+	tenantID, err := uuid.Parse(store.TenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid_tenant"})
+		return
+	}
+	ticketID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_ticket_id"})
+		return
+	}
+
+	// Ownership check first — we rely on GetForCustomer to 404 when the
+	// ticket belongs to a different shopper. Without this, a malicious
+	// customer could reply on another customer's ticket just because the
+	// admin-side AddReply does no ownership check.
+	t, err := h.svc.GetForCustomer(c.Request.Context(), storeID, ticketID, profile.Email)
+	if err != nil {
+		var ae *apperrors.Error
+		if errors.As(err, &ae) && ae.Code == apperrors.CodeNotFound {
+			respondNotFound(c)
+			return
+		}
+		respondInternal(c, h.logger, err)
+		return
+	}
+
+	var req addMyReplyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_error",
+			"message": err.Error(),
+		})
+		return
+	}
+	content := strings.TrimSpace(htmlTagRe.ReplaceAllString(req.Content, ""))
+	if content == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_error",
+			"message": "message cannot be empty",
+		})
+		return
+	}
+
+	authorName := strings.TrimSpace(t.SubmittedByName)
+	if authorName == "" {
+		authorName = profile.Email
+	}
+
+	_, err = h.svc.AddReply(c.Request.Context(), ticket.AddReplyInput{
+		StoreID:     storeID,
+		TenantID:    tenantID,
+		TicketID:    ticketID,
+		AuthorType:  string(ticket.AuthorTypeCustomer),
+		AuthorName:  authorName,
+		AuthorEmail: profile.Email,
+		Content:     content,
+	})
+	if err != nil {
+		var ae *apperrors.Error
+		if errors.As(err, &ae) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   string(ae.Code),
+				"message": ae.Message,
+			})
+			return
+		}
+		respondInternal(c, h.logger, err)
+		return
+	}
+
+	// Nudge the merchant bell so customer follow-ups surface alongside
+	// new tickets. Non-toggleable so the signal isn't silenced.
+	replyMsg := "Customer replied on ticket " + t.TicketNumber + "."
+	resourceType := "ticket"
+	notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
+		TenantID:     tenantID,
+		StoreID:      storeID,
+		Type:         notification.TypeSystemAlert,
+		Title:        "Ticket reply",
+		Message:      &replyMsg,
+		ResourceType: &resourceType,
+		ResourceID:   &t.ID,
+	})
+
+	// Re-fetch the full thread so the client renders the new reply
+	// alongside any state transitions AddReply may have applied (e.g.
+	// a resolved ticket flipping back to open).
+	fresh, err := h.svc.GetForCustomer(c.Request.Context(), storeID, ticketID, profile.Email)
+	if err != nil {
+		respondInternal(c, h.logger, err)
+		return
+	}
+	replies := make([]customerTicketReply, 0, len(fresh.Replies))
+	for _, r := range fresh.Replies {
+		replies = append(replies, ticketReplyView(r))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": customerTicketDetail{
+			customerTicketSummary: ticketSummaryView(*fresh),
+			Description:           fresh.Description,
+			Replies:               replies,
+		},
 	})
 }

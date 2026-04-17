@@ -35,6 +35,17 @@ type Repository interface {
 	// GetByID returns a single ticket by primary key, scoped to store and tenant.
 	GetByID(ctx context.Context, db *gorm.DB, storeID, tenantID, id uuid.UUID) (*Ticket, error)
 
+	// ListByCustomerEmail returns tickets submitted by a given email for a
+	// store, newest first. Scoped to store so cross-store leakage is not
+	// possible even if the same email is used on another storefront.
+	ListByCustomerEmail(ctx context.Context, db *gorm.DB, storeID uuid.UUID, email string) ([]Ticket, error)
+
+	// GetByIDForCustomerEmail returns a single ticket (with replies) owned
+	// by the given customer email, scoped to store. Returns NotFound if the
+	// ticket exists but was submitted by someone else — guards against
+	// enumeration attacks.
+	GetByIDForCustomerEmail(ctx context.Context, db *gorm.DB, storeID, id uuid.UUID, email string) (*Ticket, error)
+
 	// Create inserts a new ticket row.
 	Create(ctx context.Context, db *gorm.DB, t *Ticket) error
 
@@ -101,6 +112,42 @@ func (gormRepository) GetByID(ctx context.Context, db *gorm.DB, storeID, tenantI
 			return nil, apperrors.NotFound("ticket")
 		}
 		return nil, fmt.Errorf("ticket get by id: %w", err)
+	}
+	return &t, nil
+}
+
+func (gormRepository) ListByCustomerEmail(ctx context.Context, db *gorm.DB, storeID uuid.UUID, email string) ([]Ticket, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, apperrors.ValidationFailed("email", "email is required")
+	}
+	var tickets []Ticket
+	if err := db.WithContext(ctx).Model(&Ticket{}).
+		Where("store_id = ? AND LOWER(submitted_by_email) = ?", storeID, email).
+		Order("created_at DESC").
+		Limit(100).
+		Find(&tickets).Error; err != nil {
+		return nil, fmt.Errorf("ticket list by customer: %w", err)
+	}
+	return tickets, nil
+}
+
+func (gormRepository) GetByIDForCustomerEmail(ctx context.Context, db *gorm.DB, storeID, id uuid.UUID, email string) (*Ticket, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, apperrors.ValidationFailed("email", "email is required")
+	}
+	var t Ticket
+	if err := db.WithContext(ctx).
+		Preload("Replies", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at ASC")
+		}).
+		Where("store_id = ? AND id = ? AND LOWER(submitted_by_email) = ?", storeID, id, email).
+		First(&t).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperrors.NotFound("ticket")
+		}
+		return nil, fmt.Errorf("ticket get by id for customer: %w", err)
 	}
 	return &t, nil
 }

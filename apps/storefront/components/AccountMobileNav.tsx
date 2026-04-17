@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/account/loyalty", label: "Loyalty" },
   { href: "/account/gift-cards", label: "Gift cards" },
   { href: "/account/addresses", label: "Addresses" },
+  { href: "/account/tickets", label: "Support" },
 ] as const;
 
 export function AccountMobileNav() {

@@ -50,12 +50,13 @@ type AuthorType string
 const (
 	AuthorTypeMerchant AuthorType = "merchant"
 	AuthorTypePlatform AuthorType = "platform"
+	AuthorTypeCustomer AuthorType = "customer"
 )
 
 // ValidateAuthorType returns true if a is a valid author type.
 func ValidateAuthorType(a string) bool {
 	switch AuthorType(a) {
-	case AuthorTypeMerchant, AuthorTypePlatform:
+	case AuthorTypeMerchant, AuthorTypePlatform, AuthorTypeCustomer:
 		return true
 	}
 	return false

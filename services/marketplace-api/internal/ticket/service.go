@@ -159,12 +159,19 @@ func (s *Service) AddReply(ctx context.Context, in AddReplyInput) (*TicketReply,
 		return nil, apperrors.ValidationFailed("content", "content is required")
 	}
 	if !ValidateAuthorType(in.AuthorType) {
-		return nil, apperrors.ValidationFailed("author_type", "author_type must be merchant or platform")
+		return nil, apperrors.ValidationFailed("author_type", "author_type must be merchant, platform, or customer")
 	}
 
-	// Verify ticket exists and belongs to the store/tenant.
-	if _, err := s.repo.GetByID(ctx, s.db, in.StoreID, in.TenantID, in.TicketID); err != nil {
+	// Verify ticket exists and belongs to the store/tenant, and is open
+	// for new replies. Closed tickets are read-only; resolved tickets
+	// can still receive replies (customers often have follow-ups).
+	t, err := s.repo.GetByID(ctx, s.db, in.StoreID, in.TenantID, in.TicketID)
+	if err != nil {
 		return nil, err
+	}
+	if t.Status == TicketStatusClosed {
+		return nil, apperrors.New(apperrors.CodeInvalidTransition,
+			"cannot reply to a closed ticket")
 	}
 
 	var email *string
@@ -183,7 +190,32 @@ func (s *Service) AddReply(ctx context.Context, in AddReplyInput) (*TicketReply,
 	if err := s.repo.CreateReply(ctx, s.db, r); err != nil {
 		return nil, err
 	}
+
+	// A reply on a resolved ticket flips it back to open so the
+	// merchant's inbox shows the new activity. Best-effort — a
+	// transition failure must not swallow the successful reply write.
+	if t.Status == TicketStatusResolved {
+		t.Status = TicketStatusOpen
+		t.ResolvedAt = nil
+		t.UpdatedAt = time.Now()
+		_ = s.repo.UpdateStatus(ctx, s.db, t)
+	}
+
 	return r, nil
+}
+
+// ListForCustomer returns tickets submitted by a given customer email
+// for a store, newest first. Scoped to store to prevent cross-store
+// leakage even if the same email is used on another storefront.
+func (s *Service) ListForCustomer(ctx context.Context, storeID uuid.UUID, email string) ([]Ticket, error) {
+	return s.repo.ListByCustomerEmail(ctx, s.db, storeID, email)
+}
+
+// GetForCustomer returns a ticket owned by the given customer email
+// (with replies preloaded), scoped to store. Returns NotFound if the
+// ticket belongs to a different customer — enumeration guard.
+func (s *Service) GetForCustomer(ctx context.Context, storeID, id uuid.UUID, email string) (*Ticket, error) {
+	return s.repo.GetByIDForCustomerEmail(ctx, s.db, storeID, id, email)
 }
 
 // CountByStatus returns status counts for a store.

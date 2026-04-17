@@ -230,6 +230,23 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 				account.DELETE("/wishlist/:productId", deps.WishlistHandler.Remove)
 				account.GET("/wishlist/check/:productId", deps.WishlistHandler.Check)
 			}
+
+			// Support tickets — authenticated customer view. The public
+			// /support/tickets POST above creates tickets; this group
+			// lets the signed-in submitter read their own tickets and
+			// follow up. Scoping is by submitter email + store_id, so
+			// a customer can never see another customer's ticket.
+			if deps.TicketsHandler != nil {
+				account.GET("/tickets",
+					ratelimit.PerIP(0.167, 10),
+					deps.TicketsHandler.ListMine)
+				account.GET("/tickets/:id",
+					ratelimit.PerIP(0.167, 10),
+					deps.TicketsHandler.GetMine)
+				account.POST("/tickets/:id/reply",
+					ratelimit.PerIP(0.083, 5), // ~5 req/min — reply spam guard
+					deps.TicketsHandler.AddMyReply)
+			}
 		}
 	}
 

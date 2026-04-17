@@ -6,6 +6,7 @@ import { decodeSession } from "@/lib/auth";
 import { resolveStoreSlug } from "@/lib/slug";
 
 import { ReplyForm } from "./ReplyForm";
+import { TicketStatusStepper } from "./TicketStatusStepper";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -49,31 +50,6 @@ function formatDateTime(iso: string): string {
     });
   } catch {
     return iso;
-  }
-}
-
-function statusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    open: "Open",
-    in_progress: "In progress",
-    resolved: "Resolved",
-    closed: "Closed",
-  };
-  return labels[status] ?? status;
-}
-
-function statusClasses(status: string): string {
-  switch (status) {
-    case "open":
-      return "bg-emerald-50 text-emerald-800 border-emerald-200";
-    case "in_progress":
-      return "bg-amber-50 text-amber-800 border-amber-200";
-    case "resolved":
-      return "bg-blue-50 text-blue-800 border-blue-200";
-    case "closed":
-      return "bg-neutral-100 text-neutral-500 border-neutral-200";
-    default:
-      return "bg-neutral-100 text-neutral-600 border-neutral-200";
   }
 }
 
@@ -152,21 +128,18 @@ export default async function TicketDetailPage({
         >
           ← All tickets
         </Link>
-        <div className="flex items-baseline justify-between gap-4">
-          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
-            {ticket.subject}
-          </h1>
-          <span
-            className={`inline-block shrink-0 rounded-sm border px-2 py-0.5 text-xs font-medium leading-tight ${statusClasses(
-              ticket.status,
-            )}`}
-          >
-            {statusLabel(ticket.status)}
-          </span>
-        </div>
+        <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+          {ticket.subject}
+        </h1>
         <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
           {ticket.ticket_number} · opened {formatDateTime(ticket.created_at)}
         </p>
+      </div>
+
+      {/* Read-only status stepper so the shopper sees exactly where
+          their ticket is in the workflow, no ambiguity. */}
+      <div className="rounded-[var(--storefront-radius,6px)] border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface,white)] p-5">
+        <TicketStatusStepper status={ticket.status} />
       </div>
 
       <article className="space-y-2 border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6">

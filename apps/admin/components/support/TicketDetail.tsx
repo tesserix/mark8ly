@@ -6,7 +6,7 @@ import type {
   TicketPriority,
 } from "@/lib/api/marketplace-api";
 import { TicketReplyForm } from "./TicketReplyForm";
-import { TicketStatusActions } from "./TicketStatusActions";
+import { TicketStatusStepper } from "./TicketStatusStepper";
 
 interface TicketDetailProps {
   ticket: AdminTicket;
@@ -141,8 +141,11 @@ export function TicketDetail({ ticket }: TicketDetailProps) {
         </div>
       )}
 
-      {/* Status actions */}
-      <TicketStatusActions ticketId={ticket.id} status={ticket.status} />
+      {/* Status stepper — interactive workflow indicator. Tap a step
+          to transition the ticket. Invalid targets are disabled. */}
+      <div className="rounded-md border border-border-subtle bg-background-elevated px-5 py-4">
+        <TicketStatusStepper ticketId={ticket.id} status={ticket.status} />
+      </div>
 
       {/* Reply form — only for non-closed tickets */}
       {ticket.status !== "closed" && (

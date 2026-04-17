@@ -1,14 +1,12 @@
-// Customer-facing cancel / return control on /account/orders/[id].
+// Amazon-style Cancel / Return action on /account/orders/[id].
 //
-// Shows contextual actions based on order + shipment state:
-//   • pending/confirmed + no shipment → cancel button (two-step confirm)
-//   • pending/confirmed + shipment exists → "shipped, can't cancel" info
-//   • delivered → return instructions with store contact info
-//   • cancelled/refunded → nothing (handled by status badge)
+// Renders a single clean button ("Cancel Order" or "Return Order")
+// based on order + shipment state. On click opens a modal with
+// predefined reason radio buttons + an "Other" option with text field.
 
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 interface Props {
@@ -17,160 +15,217 @@ interface Props {
   shipmentStatus: string | null;
 }
 
-const CANCELLABLE_ORDER_STATUSES = new Set(["pending", "confirmed"]);
+const CANCELLABLE = new Set(["pending", "confirmed"]);
+
+const CANCEL_REASONS = [
+  "I placed the order by mistake",
+  "Item no longer needed",
+  "Found a better price elsewhere",
+  "Delivery time is too long",
+  "Wrong item ordered",
+];
+
+const RETURN_REASONS = [
+  "Item damaged on arrival",
+  "Item not as described",
+  "Wrong item received",
+  "Quality not as expected",
+  "Changed my mind",
+];
 
 export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [step, setStep] = useState<"button" | "confirm" | "done">("button");
-  const [reason, setReason] = useState("");
+  const [open, setOpen] = useState(false);
+  const [selectedReason, setSelectedReason] = useState("");
+  const [otherText, setOtherText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
-  const orderCancellable = CANCELLABLE_ORDER_STATUSES.has(orderStatus);
-  const shipmentExists = shipmentStatus !== null;
+  const canCancel = CANCELLABLE.has(orderStatus) && shipmentStatus === null;
   const isDelivered = shipmentStatus === "delivered";
+  const isInFlight = shipmentStatus !== null && shipmentStatus !== "delivered";
   const isCancelled = orderStatus === "cancelled";
 
-  // Already cancelled — nothing to show
-  if (isCancelled) return null;
+  // Sync dialog open/close with state
+  useEffect(() => {
+    if (open) {
+      dialogRef.current?.showModal();
+    } else {
+      dialogRef.current?.close();
+    }
+  }, [open]);
 
-  // Done state after successful cancel
-  if (step === "done") {
-    return (
-      <section className="rounded-md border border-[color:var(--storefront-accent,var(--moss-700))]/20 bg-[color:var(--storefront-accent,var(--moss-700))]/5 px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]">
-        Your cancellation request has been received. The page will refresh with
-        the updated status shortly.
-      </section>
-    );
-  }
+  if (isCancelled || done) return null;
 
-  // Delivered → show return instructions
-  if (isDelivered) {
-    return (
-      <section className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))]/40 px-4 py-4">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
-          Need to return this order?
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-[color:var(--storefront-text,var(--ink-900))]/70">
-          If you'd like to return this order, please reply to your order
-          confirmation email with the reason for return. We'll send you the
-          warehouse address and return instructions.
+  // Determine mode
+  const mode: "cancel" | "return" | null = canCancel
+    ? "cancel"
+    : isDelivered
+      ? "return"
+      : null;
+
+  if (!mode) {
+    if (isInFlight) {
+      return (
+        <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/50 italic">
+          This order is in transit — cancellation is no longer available.
         </p>
-        <p className="mt-2 text-sm leading-relaxed text-[color:var(--storefront-text,var(--ink-900))]/70">
-          Please ensure the item is in its original packaging with the invoice
-          included. Once we receive and inspect the returned item, a refund
-          will be initiated to your original payment method.
-        </p>
-      </section>
-    );
+      );
+    }
+    return null;
   }
 
-  // Order in flight (shipment exists, not delivered) → can't cancel
-  if (shipmentExists) {
-    return (
-      <section className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))]/40 px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]/70">
-        Your order has been picked up for delivery — cancellation is no
-        longer available. Once delivered, you can request a return by
-        replying to your order confirmation email.
-      </section>
-    );
-  }
+  const reasons = mode === "cancel" ? CANCEL_REASONS : RETURN_REASONS;
+  const finalReason = selectedReason === "Other" ? otherText.trim() : selectedReason;
 
-  // Not cancellable status (fulfilled, etc.) and no shipment info → nothing
-  if (!orderCancellable) return null;
-
-  // --- Cancellable order (pending/confirmed, no shipment) ---
-
-  function submit() {
+  function handleSubmit() {
+    if (!finalReason) {
+      setError("Please select a reason.");
+      return;
+    }
     setError(null);
     startTransition(async () => {
       try {
-        const resp = await fetch(`/api/orders/${encodeURIComponent(orderId)}/cancel`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: reason.trim() || "Cancelled by customer" }),
-        });
-        if (resp.ok) {
-          setStep("done");
-          router.refresh();
-          return;
+        if (mode === "cancel") {
+          const resp = await fetch(`/api/orders/${encodeURIComponent(orderId)}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: finalReason }),
+          });
+          if (!resp.ok) {
+            const body = (await resp.json().catch(() => ({}))) as { message?: string };
+            setError(body.message || "Could not cancel the order. Please try again.");
+            return;
+          }
         }
-        const body = (await resp.json().catch(() => ({}))) as { message?: string; error?: string };
-        setError(
-          body.message ??
-            (body.error === "shipment_in_flight"
-              ? "Your order has already shipped — contact support for a return."
-              : "Could not cancel the order. Please try again."),
-        );
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Network error.");
+        // For returns: just close the modal with a confirmation (no backend endpoint yet)
+        setDone(true);
+        setOpen(false);
+        router.refresh();
+      } catch {
+        setError("Network error. Please try again.");
       }
     });
   }
 
-  if (step === "button") {
-    return (
-      <section className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))]/40 px-4 py-4">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
-          Need to cancel?
-        </h2>
-        <p className="mt-2 text-sm text-[color:var(--storefront-text,var(--ink-900))]/70">
-          You can cancel this order while it's still being prepared. Once it
-          ships you'll need to reach out to support for a return.
-        </p>
-        <button
-          type="button"
-          onClick={() => setStep("confirm")}
-          className="mt-3 inline-flex items-center gap-2 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/30 px-4 py-2 text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))] transition-colors hover:border-[color:var(--storefront-accent,var(--moss-700))] hover:text-[color:var(--storefront-accent,var(--moss-700))]"
-        >
-          Request cancellation
-        </button>
-      </section>
-    );
+  function handleClose() {
+    if (pending) return;
+    setOpen(false);
+    setSelectedReason("");
+    setOtherText("");
+    setError(null);
   }
 
+  const label = mode === "cancel" ? "Cancel Order" : "Return or Replace";
+
   return (
-    <section className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-white px-4 py-4">
-      <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-base text-[color:var(--storefront-text,var(--ink-900))]">
-        Cancel this order
-      </h2>
-      <p className="mt-1 text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
-        We'll cancel the order and email you a confirmation. If a payment was
-        captured, the refund will follow shortly.
-      </p>
-      <label className="mt-3 block text-xs uppercase tracking-wider text-[color:var(--storefront-text,var(--ink-900))]/60">
-        Reason (optional)
-        <input
-          type="text"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="e.g. ordered the wrong size"
-          className="mt-1 w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
-        />
-      </label>
-      {error && (
-        <p role="alert" className="mt-3 text-xs text-[color:var(--danger,#5a1010)]">
-          {error}
-        </p>
-      )}
-      <div className="mt-3 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={pending}
-          className="inline-flex items-center gap-2 rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {pending ? "Cancelling…" : "Confirm cancellation"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setStep("button")}
-          disabled={pending}
-          className="text-sm text-[color:var(--storefront-text,var(--ink-900))]/70 underline-offset-4 hover:underline hover:text-[color:var(--storefront-text,var(--ink-900))] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Keep order
-        </button>
-      </div>
-    </section>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/25 px-4 py-2 text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))] transition-colors hover:border-[color:var(--storefront-accent,var(--moss-700))] hover:text-[color:var(--storefront-accent,var(--moss-700))]"
+      >
+        {label}
+      </button>
+
+      {/* Modal */}
+      <dialog
+        ref={dialogRef}
+        onClose={handleClose}
+        className="m-auto w-full max-w-md rounded-lg border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-white p-0 shadow-xl backdrop:bg-black/40"
+      >
+        <div className="px-6 py-5">
+          <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))]">
+            {mode === "cancel" ? "Why are you cancelling?" : "Why are you returning?"}
+          </h2>
+          <p className="mt-1 text-xs text-[color:var(--storefront-text,var(--ink-900))]/50">
+            {mode === "cancel"
+              ? "Select a reason for cancellation"
+              : "Select a reason for your return"}
+          </p>
+
+          <fieldset className="mt-4 space-y-2">
+            {reasons.map((r) => (
+              <label
+                key={r}
+                className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-colors ${
+                  selectedReason === r
+                    ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/5 text-[color:var(--storefront-text,var(--ink-900))]"
+                    : "border-[color:var(--storefront-text,var(--ink-900))]/10 text-[color:var(--storefront-text,var(--ink-900))]/80 hover:border-[color:var(--storefront-text,var(--ink-900))]/25"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="reason"
+                  value={r}
+                  checked={selectedReason === r}
+                  onChange={() => setSelectedReason(r)}
+                  className="accent-[color:var(--storefront-accent,var(--moss-700))]"
+                />
+                {r}
+              </label>
+            ))}
+            <label
+              className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-colors ${
+                selectedReason === "Other"
+                  ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/5 text-[color:var(--storefront-text,var(--ink-900))]"
+                  : "border-[color:var(--storefront-text,var(--ink-900))]/10 text-[color:var(--storefront-text,var(--ink-900))]/80 hover:border-[color:var(--storefront-text,var(--ink-900))]/25"
+              }`}
+            >
+              <input
+                type="radio"
+                name="reason"
+                value="Other"
+                checked={selectedReason === "Other"}
+                onChange={() => setSelectedReason("Other")}
+                className="accent-[color:var(--storefront-accent,var(--moss-700))]"
+              />
+              Other
+            </label>
+            {selectedReason === "Other" && (
+              <input
+                type="text"
+                value={otherText}
+                onChange={(e) => setOtherText(e.target.value)}
+                placeholder="Tell us more..."
+                autoFocus
+                className="mt-1 w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+              />
+            )}
+          </fieldset>
+
+          {error && (
+            <p role="alert" className="mt-3 text-xs text-red-600">
+              {error}
+            </p>
+          )}
+
+          <div className="mt-5 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={pending}
+              className="flex-1 rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {pending
+                ? "Processing..."
+                : mode === "cancel"
+                  ? "Confirm Cancellation"
+                  : "Submit Return Request"}
+            </button>
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={pending}
+              className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 px-4 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))]/70 transition-colors hover:border-[color:var(--storefront-text,var(--ink-900))]/40 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </dialog>
+    </>
   );
 }

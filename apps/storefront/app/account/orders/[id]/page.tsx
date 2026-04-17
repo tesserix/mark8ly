@@ -71,16 +71,15 @@ export default async function AccountOrderPage({ params }: PageProps) {
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <StatusBadge label="Order" value={order.status} />
         <StatusBadge label="Payment" value={order.payment_status} />
+        <CancelOrderButton
+          orderId={order.id}
+          orderStatus={order.status}
+          shipmentStatus={order.shipment?.status ?? null}
+        />
       </div>
-
-      <CancelOrderButton
-        orderId={order.id}
-        orderStatus={order.status}
-        shipmentStatus={order.shipment?.status ?? null}
-      />
 
       <section>
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">

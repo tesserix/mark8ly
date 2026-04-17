@@ -27,7 +27,7 @@ jobs:
       FAKE_GCS_IMAGE: fsouza/fake-gcs-server:1.49.3
     strategy:
       matrix:
-        service: [platform-api, auth-bff, marketplace-api]
+        service: [platform-api, auth-bff, marketplace-api, otto]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -54,7 +54,7 @@ jobs:
           node-version: "22"
           cache: "npm"
       - run: npm install --legacy-peer-deps
-      - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-admin' --filter='!@repo/mobile-shared'
+      - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-admin' --filter='!@repo/mobile-shared'
 
   # ─── Image build + push ────────────────────────────────────────────
   # Builds 5 immutable images tagged sha-<12-char-commit> and pushes
@@ -80,6 +80,10 @@ jobs:
             dockerfile: services/marketplace-api/Dockerfile
             context: services/marketplace-api
             target: runtime
+          - name: mark8ly-otto
+            dockerfile: services/otto/Dockerfile
+            context: services/otto
+            target: server
           - name: mark8ly-onboarding
             dockerfile: apps/onboarding/Dockerfile
             context: .
@@ -177,7 +181,7 @@ jobs:
           # means the loop is forward-compatible: when the values files
           # land in tesserix-k8s (M1 Tasks 10–13), this just starts
           # rolling out without another CI change.
-          for svc in platform-api auth-bff onboarding admin storefront marketplace-api-admin marketplace-api-storefront; do
+          for svc in platform-api auth-bff onboarding admin storefront marketplace-api-admin marketplace-api-storefront otto; do
             f="tesserix-k8s/charts/apps/mark8ly-$svc/values.yaml"
             if [ ! -f "$f" ]; then
               echo "WARN: $f does not exist — skipping"

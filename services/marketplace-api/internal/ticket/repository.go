@@ -180,14 +180,27 @@ func (gormRepository) CreateReply(ctx context.Context, db *gorm.DB, r *TicketRep
 }
 
 // NextTicketNumber returns the next ticket number formatted as "TKT-NNNNN".
-// Must be called inside a transaction for row-level locking safety.
+// Must be called inside a transaction — concurrent ticket creations for
+// the same store serialize on a per-store advisory lock so two requests
+// never pick the same number.
+//
+// Postgres rejects `FOR UPDATE` alongside aggregate functions like
+// MAX() (SQLSTATE 0A000), so instead of locking the rows we lock the
+// store using a transaction-scoped advisory lock keyed on the store's
+// UUID. The lock releases automatically at commit/rollback.
 func (gormRepository) NextTicketNumber(tx *gorm.DB, storeID uuid.UUID) (string, error) {
+	if err := tx.Exec(
+		`SELECT pg_advisory_xact_lock(hashtext(?))`,
+		storeID.String(),
+	).Error; err != nil {
+		return "", fmt.Errorf("ticket advisory lock: %w", err)
+	}
+
 	var next int
 	row := tx.Raw(`
 		SELECT COALESCE(MAX(CAST(SUBSTRING(ticket_number FROM 5) AS INT)), 0) + 1
 		FROM tickets
 		WHERE store_id = ?
-		FOR UPDATE
 	`, storeID).Row()
 	if err := row.Scan(&next); err != nil {
 		return "", fmt.Errorf("ticket next number: %w", err)

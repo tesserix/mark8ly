@@ -9,8 +9,23 @@
 
 import { useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import { submitSupportTicket } from "@/app/contact/actions";
+
+type Priority = "low" | "medium" | "high";
+
+const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
 
 interface TicketsHeaderSectionProps {
   storeSlug: string;
@@ -29,6 +44,7 @@ export function TicketsHeaderSection({
   customerName,
 }: TicketsHeaderSectionProps) {
   const [open, setOpen] = useState(false);
+  const [priority, setPriority] = useState<Priority>("medium");
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -36,6 +52,7 @@ export function TicketsHeaderSection({
 
   function closePanel() {
     setOpen(false);
+    setPriority("medium");
     setStatus({ kind: "idle" });
   }
 
@@ -44,10 +61,6 @@ export function TicketsHeaderSection({
     const form = new FormData(e.currentTarget);
     const subject = String(form.get("subject") ?? "").trim();
     const description = String(form.get("description") ?? "").trim();
-    const priority = String(form.get("priority") ?? "medium") as
-      | "low"
-      | "medium"
-      | "high";
 
     if (!subject || !description) {
       setStatus({
@@ -159,17 +172,26 @@ export function TicketsHeaderSection({
                     >
                       Priority
                     </label>
-                    <select
-                      id={`${panelId}-priority`}
-                      name="priority"
-                      defaultValue="medium"
+                    <Select
+                      value={priority}
+                      onValueChange={(v) => setPriority(v as Priority)}
                       disabled={isPending}
-                      className="h-10 w-full rounded-[var(--storefront-radius,6px)] border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))] px-3 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]/20 disabled:opacity-60"
                     >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                    </select>
+                      <SelectTrigger
+                        id={`${panelId}-priority`}
+                        aria-label="Priority"
+                        className="h-10 w-full rounded-[var(--storefront-radius,6px)] border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))] px-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PRIORITY_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 

@@ -14,6 +14,7 @@ const (
 	CollConversations = "conversations"
 	CollMessages      = "messages"
 	CollSessions      = "sessions"
+	CollOTP           = "otp_codes"
 )
 
 // Client wraps a mongo.Database for the otto service and provides typed
@@ -62,6 +63,7 @@ func (c *Client) DB() *mongo.Database { return c.db }
 func (c *Client) Conversations() *mongo.Collection { return c.db.Collection(CollConversations) }
 func (c *Client) Messages() *mongo.Collection      { return c.db.Collection(CollMessages) }
 func (c *Client) Sessions() *mongo.Collection      { return c.db.Collection(CollSessions) }
+func (c *Client) OTP() *mongo.Collection           { return c.db.Collection(CollOTP) }
 
 // EnsureIndexes creates the indexes the service relies on for tenant
 // isolation + fast inbox queries. Idempotent — safe to run every boot.

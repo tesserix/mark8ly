@@ -12,14 +12,20 @@
 
 import { cookies, headers } from "next/headers";
 
+import { decodeSession } from "@/lib/session";
 import { resolveStoreSlug } from "@/lib/slug";
 
 const OTTO_URL = process.env.OTTO_URL ?? "http://localhost:8089";
-const OTTO_INTERNAL_AUTH = process.env.OTTO_INTERNAL_AUTH ?? "";
+// Trim surrounding whitespace/newlines — the GCP secret-manager source
+// sometimes stores random-base64 values with a trailing \n, which would
+// otherwise be re-emitted into the X-Internal-Auth header and stripped
+// in transit, breaking the equality check on the otto side.
+const OTTO_INTERNAL_AUTH = (process.env.OTTO_INTERNAL_AUTH ?? "").trim();
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 const OTTO_SESSION_COOKIE =
   process.env.OTTO_SESSION_COOKIE ?? "otto_session";
+const CUSTOMER_SESSION_COOKIE = "mp_customer_session";
 
 interface OttoScope {
   tenantId: string;
@@ -80,6 +86,12 @@ export async function forwardToOtto(
 
   const c = await cookies();
   const session = c.get(OTTO_SESSION_COOKIE)?.value;
+  // Forward the storefront's logged-in customer identity when available so
+  // Otto can skip the anonymous OTP flow for already-verified users. The
+  // mp_customer_session cookie is HMAC-signed; decodeSession rejects any
+  // forgery, so we trust the fields it returns.
+  const customerCookie = c.get(CUSTOMER_SESSION_COOKIE)?.value;
+  const customer = customerCookie ? decodeSession(customerCookie) : null;
 
   const outgoing: Record<string, string> = {
     "Content-Type": "application/json",
@@ -87,8 +99,11 @@ export async function forwardToOtto(
     "X-Store-Id": scope.storeId,
   };
   if (OTTO_INTERNAL_AUTH) outgoing["X-Internal-Auth"] = OTTO_INTERNAL_AUTH;
-  // If the client presented a cookie we forward it as a header — works for
-  // WebSocket-preflight paths and gives the service a uniform input.
+  if (customer?.uid) outgoing["X-User-Id"] = customer.uid;
+  if (customer?.email) outgoing["X-User-Email"] = customer.email;
+  // If the client presented an otto_session cookie we forward it as a
+  // header — works for WebSocket-preflight paths and gives the service a
+  // uniform input.
   if (session) outgoing["Cookie"] = `${OTTO_SESSION_COOKIE}=${session}`;
 
   try {

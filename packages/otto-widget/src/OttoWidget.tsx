@@ -33,7 +33,9 @@ export interface OttoWidgetProps {
   productName?: string;
   /** Welcome copy shown before the customer sends their first message. */
   intro?: string;
-  /** Optional customer name prefill (for logged-in users). */
+  /** Optional customer name prefill (for logged-in users). When both
+   *  name and email are provided the OTP step is skipped entirely — the
+   *  host has already vouched for the identity. */
   customerName?: string;
   /** Optional customer email prefill. */
   customerEmail?: string;
@@ -55,6 +57,13 @@ const DEFAULT_BUILD_WS_URL = (conversationId: string) => {
   return `${proto}//${window.location.host}/api/otto/conversations/${encodeURIComponent(conversationId)}/ws`;
 };
 
+// The widget moves through three phases:
+//   collect    — customer enters name/email/message (anonymous only)
+//   verify     — customer enters the 6-digit code we just emailed
+//   chat       — thread is live; WebSocket is open
+// Logged-in customers skip "collect" and "verify" entirely.
+type Phase = "collect" | "verify" | "chat";
+
 /**
  * OttoWidget — the customer-facing floating support chat.
  *
@@ -68,7 +77,7 @@ export function OttoWidget({
   buildWsUrl = DEFAULT_BUILD_WS_URL,
   launcherLabel = "Chat with support",
   productName = "Support",
-  intro = "Hey! Leave a message and someone from our team will be with you shortly. You'll see their reply here in real time.",
+  intro = "Leave a message and someone from our team will be with you shortly. You'll see their reply here in real time.",
   customerName,
   customerEmail,
   style,
@@ -76,15 +85,28 @@ export function OttoWidget({
 }: OttoWidgetProps) {
   const api = useMemo(() => buildOttoApi(apiBaseUrl), [apiBaseUrl]);
 
+  // Logged-in users (both name + email prefilled) skip verification.
+  const isLoggedIn = Boolean(
+    customerName?.trim() && customerEmail?.trim(),
+  );
+  const initialPhase: Phase = isLoggedIn ? "chat" : "collect";
+
   const [open, setOpen] = useState(false);
+  const [phase, setPhase] = useState<Phase>(initialPhase);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
   const [name, setName] = useState(customerName ?? "");
   const [email, setEmail] = useState(customerEmail ?? "");
+  const [pendingMessage, setPendingMessage] = useState("");
+  const [chatDraft, setChatDraft] = useState("");
+  const [otpDigits, setOtpDigits] = useState<string[]>(() =>
+    new Array(6).fill(""),
+  );
+  const [maskedEmail, setMaskedEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
+  const otpInputsRef = useRef<HTMLInputElement[]>([]);
 
   const wsUrl = conversation ? buildWsUrl(conversation.id) : null;
 
@@ -111,41 +133,151 @@ export function OttoWidget({
     const el = messagesRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages.length, open]);
+  }, [messages.length, open, phase]);
+
+  // Auto-focus the first OTP input when we transition to the verify phase.
+  useEffect(() => {
+    if (phase === "verify") {
+      otpInputsRef.current[0]?.focus();
+    }
+  }, [phase]);
 
   const resetError = () => setError(null);
 
-  const submit = useCallback(
+  const otpValue = useMemo(() => otpDigits.join(""), [otpDigits]);
+  const otpComplete = otpValue.length === 6 && /^\d{6}$/.test(otpValue);
+
+  // ── Phase 1: collect ─────────────────────────────────────────────────
+  const submitCollect = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
       if (busy) return;
-      const text = input.trim();
+      const trimmedEmail = email.trim();
+      const msg = pendingMessage.trim();
+      if (!trimmedEmail || !msg) {
+        setError("Email and message are both required.");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        if (isLoggedIn) {
+          // This branch is only reachable when props change mid-session,
+          // but handle it for safety.
+          await startConversationNow({ otpCode: undefined, message: msg });
+          return;
+        }
+        const res = await api.requestOtp({
+          email: trimmedEmail,
+          name: name.trim() || undefined,
+          store_name: productName,
+        });
+        setMaskedEmail(res.masked_to);
+        setOtpDigits(new Array(6).fill(""));
+        setPhase("verify");
+      } catch (err) {
+        setError((err as Error).message || "Could not send the code, try again.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [api, busy, email, isLoggedIn, name, pendingMessage, productName],
+  );
+
+  // ── Phase 2: verify ──────────────────────────────────────────────────
+  const submitVerify = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      if (busy || !otpComplete) return;
+      setBusy(true);
+      setError(null);
+      try {
+        await startConversationNow({
+          otpCode: otpValue,
+          message: pendingMessage.trim(),
+        });
+      } catch (err) {
+        setError((err as Error).message || "Could not verify that code.");
+        // Blank the OTP so the customer can retype cleanly.
+        setOtpDigits(new Array(6).fill(""));
+        otpInputsRef.current[0]?.focus();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, otpComplete, otpValue, pendingMessage],
+  );
+
+  // Re-request a fresh OTP (new challenge, reset cooldown).
+  const resendOtp = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.requestOtp({
+        email: email.trim(),
+        name: name.trim() || undefined,
+        store_name: productName,
+      });
+      setMaskedEmail(res.masked_to);
+      setOtpDigits(new Array(6).fill(""));
+      otpInputsRef.current[0]?.focus();
+    } catch (err) {
+      setError((err as Error).message || "Could not resend the code.");
+    } finally {
+      setBusy(false);
+    }
+  }, [api, busy, email, name, productName]);
+
+  const startConversationNow = useCallback(
+    async (input: { otpCode: string | undefined; message: string }) => {
+      const res = await api.startConversation({
+        message: input.message,
+        otp_code: input.otpCode,
+        name: name.trim() || undefined,
+        email: email.trim() || undefined,
+      });
+      setConversation(res.conversation);
+      setMessages([res.first_message]);
+      setPendingMessage("");
+      setChatDraft("");
+      setPhase("chat");
+    },
+    [api, email, name],
+  );
+
+  // ── Phase 3: chat ────────────────────────────────────────────────────
+  // Logged-in users: submitting from the chat phase (their first message
+  // is entered here too) must call startConversation directly if they
+  // haven't opened a thread yet.
+  const submitChat = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      if (busy) return;
+      const text = chatDraft.trim();
       if (!text) return;
       setBusy(true);
       setError(null);
       try {
         if (!conversation) {
-          const res = await api.startConversation({
-            message: text,
-            name: name || undefined,
-            email: email || undefined,
-          });
-          setConversation(res.conversation);
-          setMessages([res.first_message]);
+          // Logged-in path — no OTP.
+          await startConversationNow({ otpCode: undefined, message: text });
         } else {
           const res = await api.sendMessage(conversation.id, text);
           setMessages((prev) =>
-            prev.some((m) => m.id === res.message.id) ? prev : [...prev, res.message],
+            prev.some((m) => m.id === res.message.id)
+              ? prev
+              : [...prev, res.message],
           );
+          setChatDraft("");
         }
-        setInput("");
       } catch (err) {
-        setError((err as Error).message || "Something went wrong, try again.");
+        setError((err as Error).message || "Message did not send.");
       } finally {
         setBusy(false);
       }
     },
-    [api, busy, conversation, email, input, name],
+    [api, busy, chatDraft, conversation, startConversationNow],
   );
 
   const themedStyle = useMemo<CSSProperties>(() => {
@@ -158,7 +290,9 @@ export function OttoWidget({
 
   const subtitle = conversation
     ? statusSubtitle(conversation)
-    : "Usually replies within a few minutes";
+    : isLoggedIn
+      ? `Hi ${firstWord(customerName)} — we reply within a few minutes`
+      : "Usually replies within a few minutes";
 
   return (
     <div className="otto-widget" style={themedStyle}>
@@ -203,73 +337,201 @@ export function OttoWidget({
             </div>
           )}
 
-          {!conversation && (
-            <div className="otto-widget__intro">
-              <strong>Start a conversation</strong>
-              <p style={{ marginTop: 6, marginBottom: 0 }}>{intro}</p>
-            </div>
+          {/* COLLECT */}
+          {phase === "collect" && (
+            <>
+              <div className="otto-widget__intro">
+                <strong>Start a conversation</strong>
+                <p style={{ marginTop: 6, marginBottom: 0 }}>{intro}</p>
+              </div>
+              <form className="otto-widget__form" onSubmit={submitCollect}>
+                <div className="otto-widget__row">
+                  <input
+                    className="otto-widget__input"
+                    placeholder="Your name (optional)"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    disabled={busy}
+                    aria-label="Your name"
+                  />
+                  <input
+                    className="otto-widget__input"
+                    placeholder="Email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={busy}
+                    aria-label="Your email"
+                  />
+                </div>
+                <textarea
+                  className="otto-widget__textarea"
+                  placeholder="Type your message..."
+                  value={pendingMessage}
+                  onChange={(e) => setPendingMessage(e.target.value)}
+                  disabled={busy}
+                  aria-label="Message"
+                />
+                {error && <div className="otto-widget__error">{error}</div>}
+                <button
+                  type="submit"
+                  className="otto-widget__submit"
+                  disabled={busy || !email.trim() || !pendingMessage.trim()}
+                >
+                  {busy ? "Sending code..." : "Continue"}
+                </button>
+                <p className="otto-widget__fineprint">
+                  We'll email you a 6-digit code to confirm it's really you.
+                </p>
+              </form>
+            </>
           )}
 
-          <div className="otto-widget__messages" ref={messagesRef}>
-            {messages.length === 0 && !conversation && (
-              <p className="otto-widget__empty">
-                Your messages will appear here.
-              </p>
-            )}
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
-            ))}
-          </div>
-
-          <form className="otto-widget__form" onSubmit={submit}>
-            {!conversation && (
-              <div className="otto-widget__row">
-                <input
-                  className="otto-widget__input"
-                  placeholder="Your name (optional)"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={busy}
-                  aria-label="Your name"
-                />
-                <input
-                  className="otto-widget__input"
-                  placeholder="Email (optional)"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={busy}
-                  aria-label="Your email"
-                  type="email"
-                />
+          {/* VERIFY */}
+          {phase === "verify" && (
+            <>
+              <div className="otto-widget__intro">
+                <strong>Check your inbox</strong>
+                <p style={{ marginTop: 6, marginBottom: 0 }}>
+                  We sent a 6-digit code to <strong>{maskedEmail || email}</strong>.
+                  Enter it below to continue.
+                </p>
               </div>
-            )}
-            <textarea
-              className="otto-widget__textarea"
-              placeholder={
-                conversation?.status === "closed"
-                  ? "This conversation is closed."
-                  : "Type your message..."
-              }
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              disabled={busy || conversation?.status === "closed"}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void submit(e as unknown as FormEvent);
-                }
-              }}
-              aria-label="Message"
-            />
-            {error && <div className="otto-widget__error">{error}</div>}
-            <button
-              type="submit"
-              className="otto-widget__submit"
-              disabled={busy || !input.trim() || conversation?.status === "closed"}
-            >
-              {busy ? "Sending..." : conversation ? "Send" : "Start chat"}
-            </button>
-          </form>
+              <form className="otto-widget__form" onSubmit={submitVerify}>
+                <div
+                  className="otto-widget__otp-row"
+                  role="group"
+                  aria-label="6-digit verification code"
+                >
+                  {otpDigits.map((digit, idx) => (
+                    <input
+                      key={idx}
+                      ref={(el) => {
+                        if (el) otpInputsRef.current[idx] = el;
+                      }}
+                      className="otto-widget__otp-cell"
+                      inputMode="numeric"
+                      autoComplete={idx === 0 ? "one-time-code" : "off"}
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/\D/g, "").slice(0, 1);
+                        setOtpDigits((prev) => {
+                          const next = [...prev];
+                          next[idx] = v;
+                          return next;
+                        });
+                        if (v && idx < 5) otpInputsRef.current[idx + 1]?.focus();
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Backspace" && !otpDigits[idx] && idx > 0) {
+                          otpInputsRef.current[idx - 1]?.focus();
+                        }
+                      }}
+                      onPaste={(e) => {
+                        const pasted = e.clipboardData
+                          .getData("text")
+                          .replace(/\D/g, "")
+                          .slice(0, 6);
+                        if (pasted.length === 0) return;
+                        e.preventDefault();
+                        const next = new Array(6).fill("");
+                        for (let i = 0; i < pasted.length; i++) {
+                          next[i] = pasted[i];
+                        }
+                        setOtpDigits(next);
+                        const nextIdx = Math.min(pasted.length, 5);
+                        otpInputsRef.current[nextIdx]?.focus();
+                      }}
+                      disabled={busy}
+                      aria-label={`Digit ${idx + 1}`}
+                    />
+                  ))}
+                </div>
+                {error && <div className="otto-widget__error">{error}</div>}
+                <button
+                  type="submit"
+                  className="otto-widget__submit"
+                  disabled={busy || !otpComplete}
+                >
+                  {busy ? "Verifying..." : "Start chat"}
+                </button>
+                <div className="otto-widget__verify-actions">
+                  <button
+                    type="button"
+                    className="otto-widget__link"
+                    onClick={resendOtp}
+                    disabled={busy}
+                  >
+                    Resend code
+                  </button>
+                  <button
+                    type="button"
+                    className="otto-widget__link"
+                    onClick={() => {
+                      setPhase("collect");
+                      setOtpDigits(new Array(6).fill(""));
+                      resetError();
+                    }}
+                    disabled={busy}
+                  >
+                    Edit email
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
+
+          {/* CHAT */}
+          {phase === "chat" && (
+            <>
+              <div className="otto-widget__messages" ref={messagesRef}>
+                {messages.length === 0 && !conversation && (
+                  <p className="otto-widget__empty">
+                    {isLoggedIn
+                      ? "Your messages will appear here."
+                      : "Your messages will appear here."}
+                  </p>
+                )}
+                {messages.map((m) => (
+                  <MessageBubble key={m.id} message={m} />
+                ))}
+              </div>
+              <form className="otto-widget__form" onSubmit={submitChat}>
+                <textarea
+                  className="otto-widget__textarea"
+                  placeholder={
+                    conversation?.status === "closed"
+                      ? "This conversation is closed."
+                      : "Type your message..."
+                  }
+                  value={chatDraft}
+                  onChange={(e) => setChatDraft(e.target.value)}
+                  disabled={busy || conversation?.status === "closed"}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void submitChat(e as unknown as FormEvent);
+                    }
+                  }}
+                  aria-label="Message"
+                />
+                {error && <div className="otto-widget__error">{error}</div>}
+                <button
+                  type="submit"
+                  className="otto-widget__submit"
+                  disabled={
+                    busy ||
+                    !chatDraft.trim() ||
+                    conversation?.status === "closed"
+                  }
+                >
+                  {busy ? "Sending..." : conversation ? "Send" : "Start chat"}
+                </button>
+              </form>
+            </>
+          )}
         </section>
       )}
     </div>
@@ -307,6 +569,11 @@ function statusSubtitle(c: Conversation): string {
   if (c.status === "closed") return "Closed";
   if (c.status === "pending") return "Queued — we'll be right with you";
   return c.assignee?.name ?? c.assignee?.email ?? "Agent connected";
+}
+
+function firstWord(name: string | undefined): string {
+  if (!name) return "there";
+  return name.trim().split(/\s+/)[0] || "there";
 }
 
 function formatTime(iso: string): string {

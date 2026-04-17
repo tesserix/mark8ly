@@ -1,13 +1,23 @@
 import type { Conversation, Message } from "./types";
 
 export interface OttoApi {
-  /** Start a new thread. Returns conversation + opening message. */
+  /** Start a new thread. Returns conversation + opening message. The
+   *  `otp_code` field is required for anonymous callers — logged-in users
+   *  (whose identity the storefront proxy forwards server-side) can omit
+   *  it and are accepted on their existing session. */
   startConversation(input: {
     subject?: string;
     name?: string;
     email?: string;
     message: string;
+    otp_code?: string;
   }): Promise<{ conversation: Conversation; first_message: Message }>;
+  /** Request a 6-digit verification code be emailed to the given address. */
+  requestOtp(input: {
+    email: string;
+    name?: string;
+    store_name?: string;
+  }): Promise<{ sent: boolean; masked_to: string }>;
   /** Fetch the conversation the caller is currently bound to. */
   getConversation(id: string): Promise<{ conversation: Conversation }>;
   /** Fetch full message history for a thread. */
@@ -44,6 +54,7 @@ export function buildOttoApi(baseUrl: string): OttoApi {
 
   return {
     startConversation: (input) => post("/conversations", input),
+    requestOtp: (input) => post("/verify/start", input),
     getConversation: (id) => get(`/conversations/${encodeURIComponent(id)}`),
     listMessages: (id) =>
       get(`/conversations/${encodeURIComponent(id)}/messages`),

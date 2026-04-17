@@ -12,8 +12,10 @@ import (
 	"github.com/mark8ly/otto/internal/httpserver"
 	"github.com/mark8ly/otto/internal/hub"
 	"github.com/mark8ly/otto/internal/logger"
+	"github.com/mark8ly/otto/internal/mailer"
 	"github.com/mark8ly/otto/internal/message"
 	ottomongo "github.com/mark8ly/otto/internal/mongo"
+	"github.com/mark8ly/otto/internal/otp"
 	"github.com/mark8ly/otto/internal/session"
 )
 
@@ -47,6 +49,26 @@ func main() {
 	convRepo := conversation.NewRepository(mongoClient.Conversations())
 	msgRepo := message.NewRepository(mongoClient.Messages())
 
+	// OTP: repo + mailer + service. When SENDGRID_API_KEY is unset we
+	// fall back to a stdout log mailer so the service remains bootable.
+	otpRepo, err := otp.NewRepository(ctx, mongoClient.OTP())
+	if err != nil {
+		log.Error("otp: repo", "err", err)
+		panic(err)
+	}
+	var mail mailer.Mailer
+	if cfg.SendgridAPIKey != "" {
+		mail = mailer.NewSendgridMailer(cfg.SendgridAPIKey, cfg.OTPFromEmail, cfg.OTPFromName)
+	} else {
+		log.Warn("otp: SENDGRID_API_KEY not set — falling back to stdout log mailer (codes will not reach real inboxes)")
+		mail = &mailer.LogMailer{Logger: log}
+	}
+	otpSvc := otp.NewService(otpRepo, mail, otp.Config{
+		TTL:            time.Duration(cfg.OTPCodeTTL) * time.Second,
+		MaxAttempts:    cfg.OTPMaxAttempts,
+		ResendCooldown: time.Duration(cfg.OTPResendCooldown) * time.Second,
+	})
+
 	signer := session.NewSigner(cfg.CustomerSessionSecret, 30*24*time.Hour)
 	h := hub.New(log)
 
@@ -62,11 +84,13 @@ func main() {
 		Messages:      msgRepo,
 		Hub:           h,
 		Signer:        signer,
+		OTP:           otpSvc,
 		CookieName:    cfg.CustomerSessionCookie,
 		CookieDomain:  cfg.CustomerCookieDomain,
 		CookieSecure:  cfg.CustomerCookieSecure,
 		Logger:        log,
 	}).Register(storefront)
+	otp.NewHandler(otpSvc, log).Register(storefront)
 
 	// Admin (staff) group: identity trusted from the proxy, store locked
 	// per request.

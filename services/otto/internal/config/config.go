@@ -1,6 +1,8 @@
 package config
 
 import (
+	"strings"
+
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 )
@@ -32,6 +34,17 @@ type Config struct {
 	// directly (the WebSocket upgrade needs this; REST calls go through the
 	// Next.js proxy and do not).
 	CORSAllowedOrigins string `envconfig:"CORS_ALLOWED_ORIGINS" default:""`
+
+	// Outbound email for anonymous OTP verification. When SendgridAPIKey is
+	// empty the service falls back to a stdout log mailer — useful for dev
+	// and for keeping the service bootable before the provider secret has
+	// been provisioned.
+	SendgridAPIKey string `envconfig:"SENDGRID_API_KEY" default:""`
+	OTPFromEmail   string `envconfig:"OTP_FROM_EMAIL" default:"noreply@mark8ly.com"`
+	OTPFromName    string `envconfig:"OTP_FROM_NAME" default:"Otto Support"`
+	OTPCodeTTL     int    `envconfig:"OTP_CODE_TTL_SECONDS" default:"600"`
+	OTPMaxAttempts int    `envconfig:"OTP_MAX_ATTEMPTS" default:"5"`
+	OTPResendCooldown int `envconfig:"OTP_RESEND_COOLDOWN_SECONDS" default:"45"`
 }
 
 // Load reads .env (best-effort) then populates a Config from env vars.
@@ -42,5 +55,13 @@ func Load() (*Config, error) {
 	if err := envconfig.Process("", &cfg); err != nil {
 		return nil, err
 	}
+	// GCP Secret Manager sometimes stores random-base64 secrets with a
+	// trailing newline. Strip whitespace so it doesn't poison the HMAC
+	// comparison on the X-Internal-Auth check (HTTP strips trailing LF
+	// from header values in transit — the mismatch would silently 401
+	// every request).
+	cfg.CustomerSessionSecret = strings.TrimSpace(cfg.CustomerSessionSecret)
+	cfg.InternalAuthSecret = strings.TrimSpace(cfg.InternalAuthSecret)
+	cfg.SendgridAPIKey = strings.TrimSpace(cfg.SendgridAPIKey)
 	return &cfg, nil
 }

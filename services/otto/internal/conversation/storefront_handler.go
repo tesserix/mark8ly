@@ -15,6 +15,7 @@ import (
 	"github.com/mark8ly/otto/internal/event"
 	"github.com/mark8ly/otto/internal/hub"
 	"github.com/mark8ly/otto/internal/message"
+	"github.com/mark8ly/otto/internal/otp"
 	"github.com/mark8ly/otto/internal/session"
 )
 
@@ -24,6 +25,7 @@ type StorefrontDeps struct {
 	Messages      *message.Repository
 	Hub           *hub.Hub
 	Signer        *session.Signer
+	OTP           *otp.Service
 	CookieName    string
 	CookieDomain  string
 	CookieSecure  bool
@@ -59,6 +61,10 @@ type createRequest struct {
 	Name    string `json:"name"`
 	Email   string `json:"email"`
 	Message string `json:"message"`
+	// OTPCode is required for anonymous callers. When the storefront
+	// proxy forwards a logged-in user's identity via X-User-Id /
+	// X-User-Email headers the OTP step is skipped entirely.
+	OTPCode string `json:"otp_code"`
 }
 
 func (h *StorefrontHandler) create(c *gin.Context) {
@@ -82,6 +88,41 @@ func (h *StorefrontHandler) create(c *gin.Context) {
 		return
 	}
 
+	// Authorisation: either the caller is a logged-in customer (identity
+	// forwarded by the storefront proxy) or they completed the OTP flow.
+	//
+	// Logged-in users are already email-verified by the storefront's sign-in
+	// path, so we accept them without a second factor. For everyone else a
+	// valid OTP prevents trivial bot/spam creation of threads.
+	verifiedUserID := c.GetString(auth.CtxUserID)
+	verifiedEmail := c.GetString(auth.CtxUserEmail)
+	if verifiedUserID == "" {
+		// Anonymous — must bring an OTP.
+		if body.Email == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email_required"})
+			return
+		}
+		if h.d.OTP == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "otp_not_configured"})
+			return
+		}
+		if err := h.d.OTP.Verify(c.Request.Context(), otp.VerifyInput{
+			TenantID: tenantID,
+			StoreID:  storeID,
+			Email:    body.Email,
+			Code:     body.OTPCode,
+		}); err != nil {
+			mapOTPErrorToResponse(c, err)
+			return
+		}
+		// Anonymous caller: prefer the email they typed.
+		verifiedEmail = body.Email
+	} else if body.Email == "" {
+		// Logged-in user — fall back to the email the proxy forwarded when
+		// the client didn't echo it (typical for the auto-start path).
+		body.Email = verifiedEmail
+	}
+
 	raw, tok, err := h.d.Signer.Issue(tenantID, storeID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "issue_session"})
@@ -97,7 +138,7 @@ func (h *StorefrontHandler) create(c *gin.Context) {
 		Subject:       body.Subject,
 		Customer: Customer{
 			SessionToken: tok.ID,
-			UserID:       c.GetString(auth.CtxUserID),
+			UserID:       verifiedUserID,
 			Name:         body.Name,
 			Email:        body.Email,
 		},
@@ -321,4 +362,29 @@ func displayName(name, email, fallback string) string {
 		return email
 	}
 	return fallback
+}
+
+// mapOTPErrorToResponse translates an OTP verification error into the
+// JSON/status the widget understands. Keeping this in one place means
+// the error contract between Go and TS stays consistent.
+func mapOTPErrorToResponse(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, otp.ErrInvalidCode):
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "otp_invalid",
+			"message": "that code didn't match — double-check and try again",
+		})
+	case errors.Is(err, otp.ErrExpired):
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "otp_expired",
+			"message": "that code has expired — request a new one",
+		})
+	case errors.Is(err, otp.ErrTooManyAttempts):
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":   "otp_too_many_attempts",
+			"message": "too many attempts — request a new code",
+		})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "otp_verify_failed"})
+	}
 }

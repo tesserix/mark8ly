@@ -1,0 +1,340 @@
+/* Otto admin inbox — scoped styles. Mirrors the widget stylesheet pattern
+ * so the component drops into any admin dashboard. */
+
+.otto-inbox {
+  --otto-primary: #111827;
+  --otto-primary-fg: #ffffff;
+  --otto-accent: #2563eb;
+  --otto-surface: #ffffff;
+  --otto-surface-muted: #f9fafb;
+  --otto-border: #e5e7eb;
+  --otto-text: #111827;
+  --otto-text-muted: #6b7280;
+  --otto-bubble-staff: #eef2ff;
+  --otto-bubble-customer: #f3f4f6;
+  --otto-pill-pending: #fde68a;
+  --otto-pill-active: #bbf7d0;
+  --otto-pill-closed: #e5e7eb;
+
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  height: calc(100vh - 180px);
+  min-height: 520px;
+  background: var(--otto-surface);
+  border: 1px solid var(--otto-border);
+  border-radius: 14px;
+  overflow: hidden;
+  color: var(--otto-text);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+.otto-inbox *,
+.otto-inbox *::before,
+.otto-inbox *::after {
+  box-sizing: border-box;
+}
+
+.otto-inbox__list {
+  border-right: 1px solid var(--otto-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--otto-surface-muted);
+}
+
+.otto-inbox__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px;
+  border-bottom: 1px solid var(--otto-border);
+  background: var(--otto-surface);
+}
+
+.otto-inbox__tab {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--otto-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.otto-inbox__tab.is-active {
+  background: var(--otto-surface-muted);
+  color: var(--otto-text);
+  border-color: var(--otto-border);
+}
+
+.otto-inbox__empty {
+  padding: 24px;
+  color: var(--otto-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.otto-inbox__row {
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-bottom: 1px solid var(--otto-border);
+  padding: 12px 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: inherit;
+  transition: background 120ms ease;
+}
+
+.otto-inbox__row:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.otto-inbox__row.is-active {
+  background: var(--otto-surface);
+  border-left: 3px solid var(--otto-accent);
+  padding-left: 11px;
+}
+
+.otto-inbox__row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.otto-inbox__row-head strong {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.otto-inbox__row-time {
+  color: var(--otto-text-muted);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.otto-inbox__row-sub {
+  font-size: 12px;
+  color: var(--otto-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.otto-inbox__row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.otto-inbox__pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+  background: var(--otto-pill-closed);
+  color: var(--otto-text);
+}
+
+.otto-inbox__pill--pending {
+  background: var(--otto-pill-pending);
+  color: #78350f;
+}
+
+.otto-inbox__pill--active {
+  background: var(--otto-pill-active);
+  color: #065f46;
+}
+
+.otto-inbox__unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--otto-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.otto-inbox__thread {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--otto-surface);
+}
+
+.otto-inbox__placeholder {
+  margin: auto;
+  color: var(--otto-text-muted);
+  font-size: 14px;
+  max-width: 320px;
+  text-align: center;
+  padding: 24px;
+}
+
+.otto-inbox__thread-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--otto-border);
+  background: var(--otto-surface);
+  gap: 16px;
+}
+
+.otto-inbox__thread-head strong {
+  font-size: 15px;
+}
+
+.otto-inbox__thread-subtitle {
+  font-size: 12px;
+  color: var(--otto-text-muted);
+  margin-top: 2px;
+}
+
+.otto-inbox__thread-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.otto-inbox__btn {
+  border: 1px solid var(--otto-border);
+  background: var(--otto-surface);
+  color: var(--otto-text);
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.otto-inbox__btn:hover {
+  background: var(--otto-surface-muted);
+}
+
+.otto-inbox__btn--primary {
+  background: var(--otto-primary);
+  color: var(--otto-primary-fg);
+  border-color: transparent;
+}
+
+.otto-inbox__btn--primary:hover {
+  background: #000;
+}
+
+.otto-inbox__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.otto-inbox__messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--otto-surface-muted);
+}
+
+.otto-inbox__bubble {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  background: var(--otto-surface);
+  border: 1px solid var(--otto-border);
+}
+
+.otto-inbox__bubble--customer {
+  align-self: flex-start;
+  background: var(--otto-bubble-customer);
+  border-bottom-left-radius: 4px;
+}
+
+.otto-inbox__bubble--staff {
+  align-self: flex-end;
+  background: var(--otto-bubble-staff);
+  border-color: #c7d2fe;
+  color: #1e1b4b;
+  border-bottom-right-radius: 4px;
+}
+
+.otto-inbox__bubble--system {
+  align-self: center;
+  background: transparent;
+  border: none;
+  color: var(--otto-text-muted);
+  font-size: 12px;
+  font-style: italic;
+  max-width: 80%;
+  text-align: center;
+}
+
+.otto-inbox__bubble-body {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.otto-inbox__bubble-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--otto-text-muted);
+}
+
+.otto-inbox__composer {
+  border-top: 1px solid var(--otto-border);
+  padding: 14px 20px;
+  background: var(--otto-surface);
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.otto-inbox__textarea {
+  flex: 1;
+  min-height: 44px;
+  max-height: 140px;
+  resize: vertical;
+  border: 1px solid var(--otto-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: inherit;
+  background: var(--otto-surface);
+}
+
+.otto-inbox__textarea:focus {
+  outline: 2px solid var(--otto-accent);
+  outline-offset: 1px;
+}
+
+.otto-inbox__textarea:disabled {
+  background: var(--otto-surface-muted);
+  color: var(--otto-text-muted);
+}
+
+.otto-inbox__error {
+  color: #b91c1c;
+  font-size: 12px;
+  align-self: center;
+}

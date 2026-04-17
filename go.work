@@ -3,5 +3,6 @@ go 1.26
 use (
 	./services/auth-bff
 	./services/marketplace-api
+	./services/otto
 	./services/platform-api
 )

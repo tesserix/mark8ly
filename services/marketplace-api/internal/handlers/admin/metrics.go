@@ -543,8 +543,10 @@ func (h *DashboardHandler) GetCustomersMetrics(c *gin.Context) {
 			AND placed_at >= ? AND placed_at < ?
 	`, storeID, tenantID, win.start, win.end).Scan(&resp.UniqueBuyers)
 
-	// Top customers by spend in the range.
-	var tops []TopCustomer
+	// Top customers by spend in the range. Initialized as an empty (not
+	// nil) slice so the JSON response is `[]` rather than `null` when no
+	// customers match — the frontend relies on `.length`.
+	tops := []TopCustomer{}
 	db.Raw(`
 		SELECT customer_email AS email,
 			COALESCE(SUM(grand_total - refunded_amount), 0) AS spend,

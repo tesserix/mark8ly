@@ -257,7 +257,7 @@ function SalesTab({
           }
         />
       </div>
-      <RevenueAreaChart data={data.revenue_series} currency={currency} />
+      <RevenueAreaChart data={data.revenue_series ?? []} currency={currency} />
     </div>
   );
 }
@@ -294,13 +294,13 @@ function OrdersTab({ data }: { data: OrdersMetricsResponse }) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
             Orders by status
           </p>
-          <OrdersStatusChart data={data.status_series} />
+          <OrdersStatusChart data={data.status_series ?? []} />
         </div>
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
             Orders over time
           </p>
-          <OrdersLineChart data={data.orders_series} />
+          <OrdersLineChart data={data.orders_series ?? []} />
         </div>
       </div>
     </div>
@@ -333,15 +333,15 @@ function CustomersTab({
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
           New vs returning
         </p>
-        <CustomersSegmentChart data={data.series} />
+        <CustomersSegmentChart data={data.series ?? []} />
       </div>
-      {data.top_customers.length > 0 && (
+      {(data.top_customers?.length ?? 0) > 0 && (
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
             Top customers
           </p>
           <ul className="mt-3 divide-y divide-border-subtle border border-border-subtle">
-            {data.top_customers.map((c) => (
+            {(data.top_customers ?? []).map((c) => (
               <li
                 key={c.email}
                 className="flex items-center justify-between px-5 py-3 text-sm"
@@ -392,7 +392,7 @@ function ReviewsTab({ data }: { data: ReviewsMetricsResponse }) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
             Reviews over time
           </p>
-          <ReviewsLineChart data={data.series} />
+          <ReviewsLineChart data={data.series ?? []} />
         </div>
       </div>
     </div>

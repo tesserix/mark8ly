@@ -64,9 +64,9 @@ export async function replyToTicketAction(
   formData: FormData,
 ): Promise<{ error?: string } | null> {
   const ticketId = (formData.get("ticketId") as string) ?? "";
-  const body = (formData.get("body") as string)?.trim() ?? "";
+  const content = (formData.get("body") as string)?.trim() ?? "";
 
-  if (!body) {
+  if (!content) {
     return { error: "Reply cannot be empty." };
   }
 
@@ -78,7 +78,7 @@ export async function replyToTicketAction(
   const result = await replyToTicket(
     storeId,
     ticketId,
-    { body },
+    { content },
     { userId, tenantId },
   );
 

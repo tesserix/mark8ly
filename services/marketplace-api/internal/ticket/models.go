@@ -12,15 +12,27 @@ import (
 type TicketStatus string
 
 const (
-	TicketStatusOpen     TicketStatus = "open"
+	// TicketStatusOpen is the initial state — the merchant hasn't
+	// started working on the ticket yet.
+	TicketStatusOpen TicketStatus = "open"
+	// TicketStatusInProgress signals the merchant has picked up the
+	// ticket and is actively working on it. Visible to the customer
+	// so they know they're not being ignored.
+	TicketStatusInProgress TicketStatus = "in_progress"
+	// TicketStatusResolved means the merchant believes they've
+	// answered the question. A new customer reply auto-reopens the
+	// ticket to `open` so follow-ups aren't lost.
 	TicketStatusResolved TicketStatus = "resolved"
-	TicketStatusClosed   TicketStatus = "closed"
+	// TicketStatusClosed is terminal — no more replies accepted.
+	// Use for archived conversations that don't need any follow-up.
+	TicketStatusClosed TicketStatus = "closed"
 )
 
 // ValidateStatus returns true if s is a valid ticket status.
 func ValidateStatus(s string) bool {
 	switch TicketStatus(s) {
-	case TicketStatusOpen, TicketStatusResolved, TicketStatusClosed:
+	case TicketStatusOpen, TicketStatusInProgress,
+		TicketStatusResolved, TicketStatusClosed:
 		return true
 	}
 	return false
@@ -85,13 +97,25 @@ type Ticket struct {
 func (Ticket) TableName() string { return "tickets" }
 
 // CanTransitionTo returns true if moving from the ticket's current status
-// to the target status is a valid transition.
+// to the target status is a valid transition. Same target (noop) is
+// always rejected so the UI doesn't accidentally churn updated_at.
 func (t *Ticket) CanTransitionTo(target TicketStatus) bool {
+	if target == t.Status {
+		return false
+	}
 	switch t.Status {
 	case TicketStatusOpen:
-		return target == TicketStatusResolved || target == TicketStatusClosed
+		return target == TicketStatusInProgress ||
+			target == TicketStatusResolved ||
+			target == TicketStatusClosed
+	case TicketStatusInProgress:
+		return target == TicketStatusOpen ||
+			target == TicketStatusResolved ||
+			target == TicketStatusClosed
 	case TicketStatusResolved:
-		return target == TicketStatusOpen || target == TicketStatusClosed
+		return target == TicketStatusOpen ||
+			target == TicketStatusInProgress ||
+			target == TicketStatusClosed
 	case TicketStatusClosed:
 		return false // terminal
 	}

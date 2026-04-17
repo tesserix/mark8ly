@@ -114,7 +114,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Ticket, error) {
 // UpdateStatus validates the status transition and persists it.
 func (s *Service) UpdateStatus(ctx context.Context, storeID, tenantID, id uuid.UUID, newStatus string) (*Ticket, error) {
 	if !ValidateStatus(newStatus) {
-		return nil, apperrors.ValidationFailed("status", "status must be open, resolved, or closed")
+		return nil, apperrors.ValidationFailed("status", "status must be open, in_progress, resolved, or closed")
 	}
 
 	t, err := s.repo.GetByID(ctx, s.db, storeID, tenantID, id)
@@ -132,8 +132,14 @@ func (s *Service) UpdateStatus(ctx context.Context, storeID, tenantID, id uuid.U
 	t.Status = target
 	t.UpdatedAt = now
 
-	if target == TicketStatusResolved {
+	switch target {
+	case TicketStatusResolved:
 		t.ResolvedAt = &now
+	case TicketStatusOpen, TicketStatusInProgress:
+		// Any non-terminal reopen clears the resolved stamp so the UI
+		// doesn't misleadingly show "resolved at ..." on an active
+		// ticket.
+		t.ResolvedAt = nil
 	}
 
 	if err := s.repo.UpdateStatus(ctx, s.db, t); err != nil {

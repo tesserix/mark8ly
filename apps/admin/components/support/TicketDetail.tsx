@@ -16,10 +16,25 @@ function statusBadgeClass(status: TicketStatus): string {
   switch (status) {
     case "open":
       return "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]";
+    case "in_progress":
+      return "bg-amber-100 text-amber-900";
     case "resolved":
       return "bg-[color:var(--moss-700)] text-white";
     case "closed":
       return "bg-[color:var(--ink-900)]/10 text-[color:var(--ink-900)]/60";
+  }
+}
+
+function statusLabel(status: TicketStatus): string {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "in_progress":
+      return "In progress";
+    case "resolved":
+      return "Resolved";
+    case "closed":
+      return "Closed";
   }
 }
 
@@ -59,7 +74,7 @@ export function TicketDetail({ ticket }: TicketDetailProps) {
           <span
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(ticket.status)}`}
           >
-            {ticket.status}
+            {statusLabel(ticket.status)}
           </span>
           <span
             className={`text-xs font-medium uppercase ${priorityBadgeClass(ticket.priority)}`}
@@ -92,6 +107,8 @@ export function TicketDetail({ ticket }: TicketDetailProps) {
           <ul className="space-y-4">
             {(ticket.replies ?? []).map((reply) => {
               const isMerchant = reply.author_type === "merchant";
+              const isCustomer = reply.author_type === "customer";
+              const badge = isCustomer ? "Customer" : isMerchant ? null : "Support";
               return (
                 <li
                   key={reply.id}
@@ -103,10 +120,10 @@ export function TicketDetail({ ticket }: TicketDetailProps) {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-medium text-foreground-secondary">
-                      {reply.author_email}
-                      {!isMerchant && (
+                      {reply.author_name || reply.author_email || "Unknown"}
+                      {badge && (
                         <span className="ml-2 text-[color:var(--moss-700)]">
-                          Support
+                          {badge}
                         </span>
                       )}
                     </p>
@@ -115,7 +132,7 @@ export function TicketDetail({ ticket }: TicketDetailProps) {
                     </time>
                   </div>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                    {reply.body}
+                    {reply.content}
                   </p>
                 </li>
               );

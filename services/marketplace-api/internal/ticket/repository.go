@@ -223,9 +223,10 @@ func (gormRepository) CountByStatus(ctx context.Context, db *gorm.DB, storeID, t
 	}
 
 	counts := map[string]int64{
-		string(TicketStatusOpen):     0,
-		string(TicketStatusResolved): 0,
-		string(TicketStatusClosed):   0,
+		string(TicketStatusOpen):       0,
+		string(TicketStatusInProgress): 0,
+		string(TicketStatusResolved):   0,
+		string(TicketStatusClosed):     0,
 	}
 	for _, r := range rows {
 		counts[r.Status] = r.Count

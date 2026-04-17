@@ -1641,15 +1641,15 @@ export async function fetchDashboard(
 // D2: Support Tickets
 // ─────────────────────────────────────────────────────────────────────────
 
-export type TicketStatus = "open" | "resolved" | "closed";
+export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
 export type TicketPriority = "low" | "medium" | "high";
 
 export interface AdminTicketReply {
   id: string;
-  ticket_id: string;
-  author_email: string;
-  author_type: "merchant" | "platform";
-  body: string;
+  author_type: "merchant" | "platform" | "customer";
+  author_name: string;
+  author_email?: string;
+  content: string;
   created_at: string;
 }
 
@@ -1687,7 +1687,7 @@ export interface CreateTicketInput {
 }
 
 export interface TicketReplyInput {
-  body: string;
+  content: string;
 }
 
 /**
@@ -1781,7 +1781,7 @@ export async function replyToTicket(
   session: SessionHeaders,
 ): Promise<MutationResult<AdminTicketReply>> {
   const res = await fetch(
-    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets/${ticketId}/replies`,
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets/${ticketId}/reply`,
     {
       method: "POST",
       cache: "no-store",
@@ -1805,7 +1805,7 @@ export async function updateTicketStatus(
   session: SessionHeaders,
 ): Promise<MutationResult<AdminTicket>> {
   const res = await fetch(
-    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets/${ticketId}/status`,
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/tickets/${ticketId}`,
     {
       method: "PATCH",
       cache: "no-store",

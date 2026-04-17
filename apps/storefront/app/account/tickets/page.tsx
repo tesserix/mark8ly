@@ -33,6 +33,7 @@ const STOREFRONT_KEY = process.env.MARKETPLACE_STOREFRONT_KEY ?? "";
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
     open: "Open",
+    in_progress: "In progress",
     resolved: "Resolved",
     closed: "Closed",
   };
@@ -43,6 +44,8 @@ function statusClasses(status: string): string {
   switch (status) {
     case "open":
       return "bg-emerald-50 text-emerald-800 border-emerald-200";
+    case "in_progress":
+      return "bg-amber-50 text-amber-800 border-amber-200";
     case "resolved":
       return "bg-blue-50 text-blue-800 border-blue-200";
     case "closed":

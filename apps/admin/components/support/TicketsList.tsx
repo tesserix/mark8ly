@@ -13,12 +13,13 @@ import type {
 
 interface TicketsListProps {
   tickets: AdminTicket[];
-  counts: { open: number; resolved: number; closed: number };
+  counts: { open: number; in_progress?: number; resolved: number; closed: number };
   activeStatus: TicketStatus;
 }
 
 const tabs: { status: TicketStatus; label: string }[] = [
   { status: "open", label: "Open" },
+  { status: "in_progress", label: "In progress" },
   { status: "resolved", label: "Resolved" },
   { status: "closed", label: "Closed" },
 ];
@@ -27,10 +28,25 @@ function statusBadgeClass(status: TicketStatus): string {
   switch (status) {
     case "open":
       return "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]";
+    case "in_progress":
+      return "bg-amber-100 text-amber-900";
     case "resolved":
       return "bg-[color:var(--moss-700)] text-white";
     case "closed":
       return "bg-[color:var(--ink-900)]/10 text-[color:var(--ink-900)]/60";
+  }
+}
+
+function statusLabel(status: TicketStatus): string {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "in_progress":
+      return "In progress";
+    case "resolved":
+      return "Resolved";
+    case "closed":
+      return "Closed";
   }
 }
 
@@ -106,7 +122,7 @@ export function TicketsList({
       {/* Tabs */}
       <div className="flex items-center gap-6 border-b border-border-subtle">
         {tabs.map((tab) => {
-          const count = counts[tab.status];
+          const count = counts[tab.status] ?? 0;
           const isActive = tab.status === activeStatus;
           return (
             <button
@@ -172,7 +188,7 @@ export function TicketsList({
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(ticket.status)}`}
                     >
-                      {ticket.status}
+                      {statusLabel(ticket.status)}
                     </span>
                     <span
                       className={`text-[11px] font-medium uppercase ${priorityBadgeClass(ticket.priority)}`}

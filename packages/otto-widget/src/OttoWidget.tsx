@@ -147,6 +147,27 @@ export function OttoWidget({
   const otpValue = useMemo(() => otpDigits.join(""), [otpDigits]);
   const otpComplete = otpValue.length === 6 && /^\d{6}$/.test(otpValue);
 
+  // startConversationNow is declared first because both the collect and
+  // verify submit handlers below need it in their useCallback deps —
+  // referencing a later const would trip the temporal dead zone at
+  // render time.
+  const startConversationNow = useCallback(
+    async (input: { otpCode: string | undefined; message: string }) => {
+      const res = await api.startConversation({
+        message: input.message,
+        otp_code: input.otpCode,
+        name: name.trim() || undefined,
+        email: email.trim() || undefined,
+      });
+      setConversation(res.conversation);
+      setMessages([res.first_message]);
+      setPendingMessage("");
+      setChatDraft("");
+      setPhase("chat");
+    },
+    [api, email, name],
+  );
+
   // ── Phase 1: collect ─────────────────────────────────────────────────
   const submitCollect = useCallback(
     async (e: FormEvent) => {
@@ -181,7 +202,7 @@ export function OttoWidget({
         setBusy(false);
       }
     },
-    [api, busy, email, isLoggedIn, name, pendingMessage, productName],
+    [api, busy, email, isLoggedIn, name, pendingMessage, productName, startConversationNow],
   );
 
   // ── Phase 2: verify ──────────────────────────────────────────────────
@@ -205,7 +226,7 @@ export function OttoWidget({
         setBusy(false);
       }
     },
-    [busy, otpComplete, otpValue, pendingMessage],
+    [busy, otpComplete, otpValue, pendingMessage, startConversationNow],
   );
 
   // Re-request a fresh OTP (new challenge, reset cooldown).
@@ -228,23 +249,6 @@ export function OttoWidget({
       setBusy(false);
     }
   }, [api, busy, email, name, productName]);
-
-  const startConversationNow = useCallback(
-    async (input: { otpCode: string | undefined; message: string }) => {
-      const res = await api.startConversation({
-        message: input.message,
-        otp_code: input.otpCode,
-        name: name.trim() || undefined,
-        email: email.trim() || undefined,
-      });
-      setConversation(res.conversation);
-      setMessages([res.first_message]);
-      setPendingMessage("");
-      setChatDraft("");
-      setPhase("chat");
-    },
-    [api, email, name],
-  );
 
   // ── Phase 3: chat ────────────────────────────────────────────────────
   // Logged-in users: submitting from the chat phase (their first message
@@ -382,7 +386,7 @@ export function OttoWidget({
                   {busy ? "Sending code..." : "Continue"}
                 </button>
                 <p className="otto-widget__fineprint">
-                  We'll email you a 6-digit code to confirm it's really you.
+                  We&apos;ll email you a 6-digit code to confirm it&apos;s really you.
                 </p>
               </form>
             </>

@@ -85,10 +85,10 @@ func IsValidTransition(from, to subscription.SubscriptionStatus) bool {
 	return ok
 }
 
-// Transition is a concrete (from, to, meta) triple for diagnostic tools and
-// documentation generation. The entry-point function that enforces transitions
-// lives in machine.go (Task 2).
-type Transition struct {
+// TransitionRecord is a concrete (from, to, meta) triple for diagnostic tools
+// and documentation generation. The entry-point function that enforces
+// transitions at the DB layer lives in machine.go.
+type TransitionRecord struct {
 	From subscription.SubscriptionStatus
 	To   subscription.SubscriptionStatus
 	Meta transitionMeta
@@ -96,11 +96,11 @@ type Transition struct {
 
 // AllValidTransitions returns every (from, to) pair defined by §17.2.
 // Use for tests and documentation; not intended for hot paths.
-func AllValidTransitions() []Transition {
-	out := make([]Transition, 0, 32)
+func AllValidTransitions() []TransitionRecord {
+	out := make([]TransitionRecord, 0, 32)
 	for from, tos := range transitionTable {
 		for to, meta := range tos {
-			out = append(out, Transition{From: from, To: to, Meta: meta})
+			out = append(out, TransitionRecord{From: from, To: to, Meta: meta})
 		}
 	}
 	return out

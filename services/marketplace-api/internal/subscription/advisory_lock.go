@@ -1,8 +1,3 @@
-// WithAdvisoryLock wraps every subscription-mutating database operation in a
-// transaction-scoped pg_advisory_xact_lock keyed on the store's UUID, as
-// required by §17.4. Consumers in plangate, state-machine, downgrade-block,
-// and webhook dispatch rely on this to serialize concurrent state transitions
-// for a single store.
 package subscription
 
 import (

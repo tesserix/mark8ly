@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -27,10 +26,7 @@ func TestEmitStateTransition_WritesCanonicalEvent(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 
-	c, _ := gin.CreateTestContext(nil)
-	c.Set("tenant_id", tenantID.String())
-
-	em.EmitStateTransition(c, audit.StateTransition{
+	em.EmitStateTransition(nil, audit.StateTransition{
 		StoreID:  storeID,
 		TenantID: tenantID,
 		From:     "trialing",
@@ -73,10 +69,7 @@ func TestEmitStateTransition_TerminalStatesGetWarning(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 
-	c, _ := gin.CreateTestContext(nil)
-	c.Set("tenant_id", tenantID.String())
-
-	em.EmitStateTransition(c, audit.StateTransition{
+	em.EmitStateTransition(nil, audit.StateTransition{
 		StoreID:  storeID,
 		TenantID: tenantID,
 		From:     "active",

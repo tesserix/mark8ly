@@ -38,12 +38,12 @@ type SendPaymentActionReminders struct {
 	emailCl email.Client
 	logger  *slog.Logger
 	clock   func() time.Time
-	counter counterVecIncrementer
+	counter CounterVecIncrementer
 }
 
 // NewSendPaymentActionReminders constructs a SendPaymentActionReminders cron.
 // All parameters except db and emailCl default safely.
-func NewSendPaymentActionReminders(db *gorm.DB, em email.Client, logger *slog.Logger, counter counterVecIncrementer, clock func() time.Time) *SendPaymentActionReminders {
+func NewSendPaymentActionReminders(db *gorm.DB, em email.Client, logger *slog.Logger, counter CounterVecIncrementer, clock func() time.Time) *SendPaymentActionReminders {
 	if logger == nil {
 		logger = slog.Default()
 	}

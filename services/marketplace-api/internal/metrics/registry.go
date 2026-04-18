@@ -70,6 +70,35 @@ var (
 		Name: "mark8ly_trial_activation_day30_total",
 		Help: "Count of trialing stores that reached day 30 with at least one product.",
 	})
+
+	// DunningEmailsSentTotal counts dunning nudge emails sent, labeled by day
+	// (day_5, day_7). P6 dunning metrics.
+	DunningEmailsSentTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_subscription_dunning_emails_sent_total",
+			Help: "Count of dunning nudge emails sent, labeled by day (5, 7).",
+		},
+		[]string{"day"},
+	)
+
+	// PaymentActionRemindersSentTotal counts SCA reminders sent, labeled by
+	// offset (t_minus_14, t_minus_7, t_minus_1). P6 dunning metrics.
+	PaymentActionRemindersSentTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_subscription_payment_action_reminders_sent_total",
+			Help: "Count of SCA reminders sent, labeled by offset (t_minus_14, t_minus_7, t_minus_1).",
+		},
+		[]string{"offset"},
+	)
+
+	// DunningSuppressedRefundWindowTotal counts past_due→expired ladder steps
+	// skipped due to the 14-day refund window (§16.5). P6 dunning metrics.
+	DunningSuppressedRefundWindowTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "mark8ly_subscription_dunning_suppressed_refund_window_total",
+			Help: "Count of past_due→expired ladder steps skipped due to the 14-day refund window (§16.5).",
+		},
+	)
 )
 
 func init() {
@@ -82,5 +111,8 @@ func init() {
 		OutboxEventsPublishedTotal,
 		TrialSignupAnomalyAlertsTotal,
 		TrialActivationDay30Total,
+		DunningEmailsSentTotal,
+		PaymentActionRemindersSentTotal,
+		DunningSuppressedRefundWindowTotal,
 	)
 }

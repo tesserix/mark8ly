@@ -26,9 +26,9 @@ const (
 // swallowed.
 const LadderSpec = "0 * * * *"
 
-// counterIncrementer is a narrow interface so the ladder can be constructed
+// CounterIncrementer is a narrow interface so the ladder can be constructed
 // with a Prometheus counter OR a no-op for tests.
-type counterIncrementer interface {
+type CounterIncrementer interface {
 	Inc()
 }
 
@@ -84,13 +84,13 @@ type StepDailyLadder struct {
 	emitter           *audit.Emitter
 	logger            *slog.Logger
 	clock             func() time.Time
-	suppressedCounter counterIncrementer
+	suppressedCounter CounterIncrementer
 }
 
 // NewStepDailyLadder constructs a StepDailyLadder. All parameters are
 // optional with safe defaults: logger defaults to slog.Default(), clock to
 // time.Now().UTC(), suppressed to a no-op counter.
-func NewStepDailyLadder(db *gorm.DB, em *audit.Emitter, logger *slog.Logger, suppressed counterIncrementer, clock func() time.Time) *StepDailyLadder {
+func NewStepDailyLadder(db *gorm.DB, em *audit.Emitter, logger *slog.Logger, suppressed CounterIncrementer, clock func() time.Time) *StepDailyLadder {
 	if logger == nil {
 		logger = slog.Default()
 	}

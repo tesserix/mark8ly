@@ -16,11 +16,11 @@ import (
 // at 09:05 UTC daily.
 const DunningEmailsSpec = "5 9 * * *"
 
-// counterVecIncrementer is a narrow interface for a labeled counter so the
+// CounterVecIncrementer is a narrow interface for a labeled counter so the
 // cron can be constructed with a Prometheus CounterVec OR a stub for tests.
 // The label is a day string ("day_5", "day_7", etc.).
-type counterVecIncrementer interface {
-	WithDay(day string) counterIncrementer
+type CounterVecIncrementer interface {
+	WithDay(day string) CounterIncrementer
 }
 
 // dunningEmailTarget pairs a day-since-past-due offset with the template to
@@ -50,13 +50,13 @@ type SendDunningEmails struct {
 	emailCl email.Client
 	logger  *slog.Logger
 	clock   func() time.Time
-	counter counterVecIncrementer
+	counter CounterVecIncrementer
 }
 
 // NewSendDunningEmails constructs a SendDunningEmails cron. All parameters
 // except db and emailCl default safely: nil logger → slog.Default(), nil
 // clock → time.Now().UTC(), nil counter → increments are no-ops.
-func NewSendDunningEmails(db *gorm.DB, em email.Client, logger *slog.Logger, counter counterVecIncrementer, clock func() time.Time) *SendDunningEmails {
+func NewSendDunningEmails(db *gorm.DB, em email.Client, logger *slog.Logger, counter CounterVecIncrementer, clock func() time.Time) *SendDunningEmails {
 	if logger == nil {
 		logger = slog.Default()
 	}

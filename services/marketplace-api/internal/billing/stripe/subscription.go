@@ -7,7 +7,8 @@ import (
 )
 
 type SubscriptionItem struct {
-	Price Price `json:"price"`
+	ID    string `json:"id"`
+	Price Price  `json:"price"`
 }
 
 type Subscription struct {
@@ -60,7 +61,7 @@ func mapSubscription(s *sdk.Subscription) *Subscription {
 				out.CurrentPeriodStart = item.CurrentPeriodStart
 				out.CurrentPeriodEnd = item.CurrentPeriodEnd
 			}
-			si := SubscriptionItem{}
+			si := SubscriptionItem{ID: item.ID}
 			if item.Price != nil {
 				si.Price = *mapPrice(item.Price)
 			}

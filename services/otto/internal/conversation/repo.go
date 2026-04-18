@@ -289,3 +289,102 @@ func (r *Repository) ClearUnread(ctx context.Context, tenantID, storeID, id stri
 	_, err := r.coll.UpdateOne(ctx, filter, bson.M{"$set": bson.M{field: 0}})
 	return err
 }
+
+// QueueSnapshot answers the widget's "connecting…" screen: how many
+// pending threads sit ahead of this one, and how many are pending in
+// total. Position is 1-indexed ("you are #3") so position == 1 means
+// they're next. A position of 0 means this conversation is already
+// active / closed and shouldn't be rendering the queue UI.
+type QueueSnapshot struct {
+	Position      int `json:"position"`
+	TotalPending  int `json:"total_pending"`
+	EstimatedWait int `json:"estimated_wait_seconds"`
+}
+
+// QueuePosition computes where a given conversation sits in the FIFO
+// pending queue, and the estimated wait based on a rough constant
+// per-case handle time. Phase 1 uses a fixed 180s/case; phase 2 will
+// plug in rolling-average handle time once staff availability ships.
+func (r *Repository) QueuePosition(ctx context.Context, tenantID, storeID, id string) (QueueSnapshot, error) {
+	self, err := r.GetByID(ctx, tenantID, storeID, id)
+	if err != nil {
+		return QueueSnapshot{}, err
+	}
+	if self.Status != StatusPending {
+		return QueueSnapshot{Position: 0, TotalPending: 0, EstimatedWait: 0}, nil
+	}
+	base := bson.M{
+		"tenant_id": tenantID,
+		"store_id":  storeID,
+		"status":    StatusPending,
+	}
+	total, err := r.coll.CountDocuments(ctx, base)
+	if err != nil {
+		return QueueSnapshot{}, err
+	}
+	ahead, err := r.coll.CountDocuments(ctx, bson.M{
+		"tenant_id":  tenantID,
+		"store_id":   storeID,
+		"status":     StatusPending,
+		"created_at": bson.M{"$lt": self.CreatedAt},
+	})
+	if err != nil {
+		return QueueSnapshot{}, err
+	}
+	const avgHandleSeconds = 180
+	return QueueSnapshot{
+		Position:      int(ahead) + 1,
+		TotalPending:  int(total),
+		EstimatedWait: int(ahead) * avgHandleSeconds,
+	}, nil
+}
+
+// SubmitFeedback attaches the post-case survey. Only closed
+// conversations accept feedback, and only once — we no-op on a second
+// submission rather than overwriting the customer's first answer.
+func (r *Repository) SubmitFeedback(ctx context.Context, tenantID, storeID, id string, fb Feedback) (*Conversation, error) {
+	now := time.Now().UTC()
+	if fb.SubmittedAt.IsZero() {
+		fb.SubmittedAt = now
+	}
+	filter := bson.M{
+		"_id":       id,
+		"tenant_id": tenantID,
+		"store_id":  storeID,
+		"status":    StatusClosed,
+		"feedback":  bson.M{"$exists": false},
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"feedback":   fb,
+			"updated_at": now,
+		},
+	}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	var c Conversation
+	if err := r.coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&c); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			// Either not-closed, or already has feedback. Return the
+			// current state so the handler can decide which is which.
+			existing, getErr := r.GetByID(ctx, tenantID, storeID, id)
+			if getErr != nil {
+				return nil, getErr
+			}
+			return existing, nil
+		}
+		return nil, err
+	}
+	return &c, nil
+}
+
+// BumpCustomerActivity records the last time the customer pressed
+// send, separate from UpdatedAt which bumps on any action. The
+// phase-2 inactivity sweeper watches this field only; staff messages
+// don't count because the point is to close cases where the customer
+// walked away.
+func (r *Repository) BumpCustomerActivity(ctx context.Context, tenantID, storeID, id string, at time.Time) error {
+	filter := bson.M{"_id": id, "tenant_id": tenantID, "store_id": storeID}
+	update := bson.M{"$set": bson.M{"last_customer_message_at": at}}
+	_, err := r.coll.UpdateOne(ctx, filter, update)
+	return err
+}

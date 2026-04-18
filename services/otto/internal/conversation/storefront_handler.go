@@ -62,6 +62,11 @@ func (h *StorefrontHandler) Register(r *gin.RouterGroup) {
 	withSession.GET("/conversations/:id/messages", h.listMessages)
 	withSession.POST("/conversations/:id/messages", h.postMessage)
 	withSession.POST("/conversations/:id/close", h.close)
+	// Queue position for the "connecting…" screen. Cheap read — the
+	// widget polls this every few seconds until status flips to active.
+	withSession.GET("/conversations/:id/queue", h.queue)
+	// Post-case survey. Only usable once the thread is closed.
+	withSession.POST("/conversations/:id/feedback", h.feedback)
 	// Issuing a WebSocket ticket requires the caller to already own the
 	// conversation (standard cookie auth through the Next.js proxy). The
 	// ticket itself then travels via ?ticket= on the WS upgrade, which
@@ -86,6 +91,14 @@ type createRequest struct {
 	// proxy forwards a logged-in user's identity via X-User-Id /
 	// X-User-Email headers the OTP step is skipped entirely.
 	OTPCode string `json:"otp_code"`
+	// Intake form — the widget collects these BEFORE the first message
+	// so staff opens the case with context already populated.
+	Reason string `json:"reason"`
+	// StatusInfo is the free-text "what's going on" field. Named with
+	// an `_info` suffix on the wire so it doesn't collide with the
+	// conversation lifecycle Status enum.
+	StatusInfo string `json:"status_info"`
+	DOB        string `json:"dob"`
 }
 
 func (h *StorefrontHandler) create(c *gin.Context) {
@@ -101,11 +114,34 @@ func (h *StorefrontHandler) create(c *gin.Context) {
 	body.Message = strings.TrimSpace(body.Message)
 	body.Name = strings.TrimSpace(body.Name)
 	body.Email = strings.TrimSpace(body.Email)
+	body.Reason = strings.TrimSpace(body.Reason)
+	body.StatusInfo = strings.TrimSpace(body.StatusInfo)
+	body.DOB = strings.TrimSpace(body.DOB)
 
 	// A new thread must have something to say — an empty opener would leave
 	// staff with nothing to accept.
 	if body.Message == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty_message"})
+		return
+	}
+
+	// Intake is mandatory: every new case carries a reason + status so
+	// the case lands in the inbox with context. DOB is only required
+	// when the reason implies an order/account lookup — product
+	// questions shouldn't demand PII.
+	if body.Reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "reason_required"})
+		return
+	}
+	if body.StatusInfo == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status_required"})
+		return
+	}
+	if DOBRequiredFor(body.Reason) && body.DOB == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "dob_required",
+			"message": "Date of birth is required for order-related cases.",
+		})
 		return
 	}
 
@@ -169,10 +205,17 @@ func (h *StorefrontHandler) create(c *gin.Context) {
 			Name:         body.Name,
 			Email:        body.Email,
 		},
-		CreatedAt:     now,
-		UpdatedAt:     now,
-		LastMessageAt: now,
-		MessageCount:  1,
+		Intake: &IntakeForm{
+			Reason:      body.Reason,
+			Status:      body.StatusInfo,
+			DOB:         body.DOB,
+			SubmittedAt: now,
+		},
+		CreatedAt:             now,
+		UpdatedAt:             now,
+		LastMessageAt:         now,
+		LastCustomerMessageAt: now,
+		MessageCount:          1,
 		// The new message counts as unread for staff since no one has seen it.
 		UnreadCountStaff: 1,
 	}
@@ -337,6 +380,12 @@ func (h *StorefrontHandler) postMessage(c *gin.Context) {
 	if err := h.d.Conversations.BumpOnMessage(c.Request.Context(), conv.TenantID, conv.StoreID, conv.ID, AudienceStaff, now); err != nil {
 		h.d.Logger.Warn("otto: bump conversation", "err", err)
 	}
+	// Track last-customer-activity so the inactivity sweeper can
+	// distinguish "customer typed recently" from "staff sent a reply
+	// but the customer walked away".
+	if err := h.d.Conversations.BumpCustomerActivity(c.Request.Context(), conv.TenantID, conv.StoreID, conv.ID, now); err != nil {
+		h.d.Logger.Warn("otto: bump customer activity", "err", err)
+	}
 
 	// Fan out to whoever is watching.
 	h.d.Hub.Broadcast(hub.RoomConversation(conv.ID), hub.Envelope{
@@ -349,6 +398,79 @@ func (h *StorefrontHandler) postMessage(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusCreated, gin.H{"message": msg})
+}
+
+func (h *StorefrontHandler) queue(c *gin.Context) {
+	conv, ok := h.loadForCustomer(c)
+	if !ok {
+		return
+	}
+	snap, err := h.d.Conversations.QueuePosition(c.Request.Context(), conv.TenantID, conv.StoreID, conv.ID)
+	if err != nil {
+		h.d.Logger.Error("otto: queue position", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "queue_lookup_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":                 conv.Status,
+		"position":               snap.Position,
+		"total_pending":          snap.TotalPending,
+		"estimated_wait_seconds": snap.EstimatedWait,
+	})
+}
+
+type feedbackRequest struct {
+	CallRating    int    `json:"call_rating"`
+	QueryResolved bool   `json:"query_resolved"`
+	StaffRating   int    `json:"staff_rating"`
+	Comments      string `json:"comments"`
+}
+
+func (h *StorefrontHandler) feedback(c *gin.Context) {
+	conv, ok := h.loadForCustomer(c)
+	if !ok {
+		return
+	}
+	if conv.Status != StatusClosed {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "not_closed",
+			"message": "Feedback can only be submitted after the case is closed.",
+		})
+		return
+	}
+	if conv.Feedback != nil {
+		// Idempotent — treat a repeated submit as a no-op so a
+		// double-tap on the submit button doesn't error.
+		c.JSON(http.StatusOK, gin.H{"conversation": conv})
+		return
+	}
+	var body feedbackRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
+	}
+	if body.CallRating < 0 || body.CallRating > 5 || body.StaffRating < 0 || body.StaffRating > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rating_out_of_range"})
+		return
+	}
+	fb := Feedback{
+		CallRating:    body.CallRating,
+		QueryResolved: body.QueryResolved,
+		StaffRating:   body.StaffRating,
+		Comments:      strings.TrimSpace(body.Comments),
+	}
+	updated, err := h.d.Conversations.SubmitFeedback(c.Request.Context(), conv.TenantID, conv.StoreID, conv.ID, fb)
+	if err != nil {
+		h.d.Logger.Error("otto: submit feedback", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "feedback_failed"})
+		return
+	}
+	// Let any admin watching see the feedback come in live.
+	h.d.Hub.Broadcast(hub.RoomInbox(conv.TenantID, conv.StoreID), hub.Envelope{
+		Type:    event.TypeConversationUpdated,
+		Payload: map[string]any{"conversation": updated},
+	})
+	c.JSON(http.StatusOK, gin.H{"conversation": updated})
 }
 
 func (h *StorefrontHandler) close(c *gin.Context) {

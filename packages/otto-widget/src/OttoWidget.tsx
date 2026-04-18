@@ -13,9 +13,27 @@ import { buildOttoApi } from "./api";
 import type {
   Conversation,
   Message,
+  QueueSnapshot,
   WsEnvelope,
 } from "./types";
 import { useOttoChannel } from "./useOttoChannel";
+
+// Fixed set of intake reasons. Must match
+// services/otto/internal/conversation/model.go — the backend rejects
+// anything outside this list (via DOBRequiredFor and friends).
+const REASON_OPTIONS = [
+  { value: "order_issue", label: "Order issue", requiresDob: true },
+  { value: "return", label: "Return / refund", requiresDob: true },
+  { value: "payment", label: "Payment problem", requiresDob: true },
+  { value: "product_question", label: "Product question", requiresDob: false },
+  { value: "other", label: "Something else", requiresDob: false },
+] as const;
+
+type ReasonValue = (typeof REASON_OPTIONS)[number]["value"];
+
+function reasonRequiresDob(reason: string): boolean {
+  return REASON_OPTIONS.some((r) => r.value === reason && r.requiresDob);
+}
 
 // The widget talks to the host app over /api/otto (REST) and /api/otto/ws
 // (WebSocket). Hosts configure both paths via props so they can mount the
@@ -57,12 +75,16 @@ const DEFAULT_BUILD_WS_URL = (conversationId: string) => {
   return `${proto}//${window.location.host}/api/otto/conversations/${encodeURIComponent(conversationId)}/ws`;
 };
 
-// The widget moves through three phases:
-//   collect    — customer enters name/email/message (anonymous only)
+// The widget moves through four phases:
+//   collect    — customer enters name/email/message + intake (anonymous)
+//                OR just the intake + message (logged-in; initial phase
+//                flips to collect so the intake form can render).
 //   verify     — customer enters the 6-digit code we just emailed
-//   chat       — thread is live; WebSocket is open
-// Logged-in customers skip "collect" and "verify" entirely.
-type Phase = "collect" | "verify" | "chat";
+//   chat       — thread is live; WebSocket is open. While the case is
+//                still pending, a queue overlay sits on top showing
+//                position + estimated wait.
+//   feedback   — case closed; 3-question survey.
+type Phase = "collect" | "verify" | "chat" | "feedback";
 
 /**
  * OttoWidget — the customer-facing floating support chat.
@@ -92,26 +114,42 @@ export function OttoWidget({
       `${base}/conversations/${encodeURIComponent(conversationId)}/ws-ticket`;
   }, [apiBaseUrl]);
 
-  // Logged-in users (both name + email prefilled) skip verification.
+  // Logged-in users (both name + email prefilled) skip OTP verification
+  // but still walk through the intake form (reason + status + dob for
+  // order-linked cases). So everyone starts on "collect"; logged-in
+  // users just see the intake-only variant of the form.
   const isLoggedIn = Boolean(
     customerName?.trim() && customerEmail?.trim(),
   );
-  const initialPhase: Phase = isLoggedIn ? "chat" : "collect";
 
   const [open, setOpen] = useState(false);
-  const [phase, setPhase] = useState<Phase>(initialPhase);
+  const [phase, setPhase] = useState<Phase>("collect");
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [name, setName] = useState(customerName ?? "");
   const [email, setEmail] = useState(customerEmail ?? "");
   const [pendingMessage, setPendingMessage] = useState("");
   const [chatDraft, setChatDraft] = useState("");
+  // Intake form — collected on the first screen, sent with the
+  // startConversation call. The backend validates reason + status
+  // are non-empty and dob is present when the reason demands it.
+  const [reason, setReason] = useState<ReasonValue | "">("");
+  const [statusInfo, setStatusInfo] = useState("");
+  const [dob, setDob] = useState("");
   const [otpDigits, setOtpDigits] = useState<string[]>(() =>
     new Array(6).fill(""),
   );
   const [maskedEmail, setMaskedEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Live queue snapshot while the case is in "pending" status.
+  const [queue, setQueue] = useState<QueueSnapshot | null>(null);
+  // Feedback form state — populated on the feedback phase.
+  const [fbCall, setFbCall] = useState(0);
+  const [fbResolved, setFbResolved] = useState<boolean | null>(null);
+  const [fbStaff, setFbStaff] = useState(0);
+  const [fbComments, setFbComments] = useState("");
+  const [fbSubmitted, setFbSubmitted] = useState(false);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const otpInputsRef = useRef<HTMLInputElement[]>([]);
 
@@ -153,7 +191,14 @@ export function OttoWidget({
         if (cancelled || !res.conversation) return;
         setConversation(res.conversation);
         setMessages(res.messages ?? []);
-        setPhase("chat");
+        setPhase(
+          res.conversation.status === "closed" && !res.conversation.feedback
+            ? "feedback"
+            : "chat",
+        );
+        if (res.conversation.feedback) {
+          setFbSubmitted(true);
+        }
       } catch {
         /* silent — widget falls back to the collect/chat phase defaults */
       }
@@ -162,6 +207,43 @@ export function OttoWidget({
       cancelled = true;
     };
   }, [api]);
+
+  // Poll the queue endpoint while the case is pending. This is cheap
+  // and gives the customer a live position/wait estimate even if the
+  // WebSocket connection is flaky — once status flips to active the
+  // server broadcasts a `conversation.updated` event, we stop polling.
+  useEffect(() => {
+    if (!conversation || conversation.status !== "pending") {
+      setQueue(null);
+      return;
+    }
+    let cancelled = false;
+    const id = conversation.id;
+    const tick = async () => {
+      try {
+        const snap = await api.queueStatus(id);
+        if (!cancelled) setQueue(snap);
+      } catch {
+        /* transient error — keep previous snapshot */
+      }
+    };
+    void tick();
+    const handle = window.setInterval(tick, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(handle);
+    };
+  }, [api, conversation]);
+
+  // If the conversation transitions to closed while we're in the chat
+  // phase, surface the feedback survey (unless the customer has
+  // already submitted it on a prior session).
+  useEffect(() => {
+    if (!conversation) return;
+    if (conversation.status === "closed" && !conversation.feedback && !fbSubmitted) {
+      setPhase("feedback");
+    }
+  }, [conversation, fbSubmitted]);
 
   useEffect(() => {
     const el = messagesRef.current;
@@ -187,11 +269,21 @@ export function OttoWidget({
   // render time.
   const startConversationNow = useCallback(
     async (input: { otpCode: string | undefined; message: string }) => {
+      if (!reason) throw new Error("Please select a reason.");
+      if (!statusInfo.trim()) {
+        throw new Error("Please describe the issue.");
+      }
+      if (reasonRequiresDob(reason) && !dob.trim()) {
+        throw new Error("Date of birth is required for this type of case.");
+      }
       const res = await api.startConversation({
         message: input.message,
         otp_code: input.otpCode,
         name: name.trim() || undefined,
         email: email.trim() || undefined,
+        reason,
+        status_info: statusInfo.trim(),
+        dob: reasonRequiresDob(reason) ? dob.trim() : undefined,
       });
       setConversation(res.conversation);
       setMessages([res.first_message]);
@@ -199,7 +291,7 @@ export function OttoWidget({
       setChatDraft("");
       setPhase("chat");
     },
-    [api, email, name],
+    [api, email, name, reason, statusInfo, dob],
   );
 
   // ── Phase 1: collect ─────────────────────────────────────────────────
@@ -209,16 +301,35 @@ export function OttoWidget({
       if (busy) return;
       const trimmedEmail = email.trim();
       const msg = pendingMessage.trim();
-      if (!trimmedEmail || !msg) {
-        setError("Email and message are both required.");
+      if (!isLoggedIn && !trimmedEmail) {
+        setError("Email is required.");
+        return;
+      }
+      if (!msg) {
+        setError("Please describe what you need help with in the message box.");
+        return;
+      }
+      // Intake gates — same rules the backend enforces, surfaced
+      // inline so the customer doesn't round-trip to find out.
+      if (!reason) {
+        setError("Please pick a reason so we can route your case.");
+        return;
+      }
+      if (!statusInfo.trim()) {
+        setError("A one-liner on the current status helps staff come up to speed.");
+        return;
+      }
+      if (reasonRequiresDob(reason) && !dob.trim()) {
+        setError(
+          "Date of birth is required for order-related cases so staff can verify identity before sharing details.",
+        );
         return;
       }
       setBusy(true);
       setError(null);
       try {
         if (isLoggedIn) {
-          // This branch is only reachable when props change mid-session,
-          // but handle it for safety.
+          // Signed-in: skip OTP and go straight to creating the case.
           await startConversationNow({ otpCode: undefined, message: msg });
           return;
         }
@@ -236,7 +347,19 @@ export function OttoWidget({
         setBusy(false);
       }
     },
-    [api, busy, email, isLoggedIn, name, pendingMessage, productName, startConversationNow],
+    [
+      api,
+      busy,
+      email,
+      isLoggedIn,
+      name,
+      pendingMessage,
+      productName,
+      startConversationNow,
+      reason,
+      statusInfo,
+      dob,
+    ],
   );
 
   // ── Phase 2: verify ──────────────────────────────────────────────────
@@ -318,6 +441,34 @@ export function OttoWidget({
     [api, busy, chatDraft, conversation, startConversationNow],
   );
 
+  // ── Phase 4: feedback ───────────────────────────────────────────────
+  const submitFeedbackNow = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      if (busy || !conversation) return;
+      if (fbResolved === null) {
+        setError("Let us know whether your query was resolved.");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        await api.submitFeedback(conversation.id, {
+          call_rating: fbCall,
+          query_resolved: fbResolved,
+          staff_rating: fbStaff,
+          comments: fbComments.trim() || undefined,
+        });
+        setFbSubmitted(true);
+      } catch (err) {
+        setError((err as Error).message || "Could not submit feedback.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [api, busy, conversation, fbCall, fbResolved, fbStaff, fbComments],
+  );
+
   const themedStyle = useMemo<CSSProperties>(() => {
     const vars: Record<string, string> = {};
     if (theme?.primary) vars["--otto-primary"] = theme.primary;
@@ -391,27 +542,101 @@ export function OttoWidget({
                 <p style={{ marginTop: 6, marginBottom: 0 }}>{intro}</p>
               </div>
               <form className="otto-widget__form" onSubmit={submitCollect}>
-                <div className="otto-widget__row">
-                  <input
-                    className="otto-widget__input"
-                    placeholder="Your name (optional)"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    disabled={busy}
-                    aria-label="Your name"
-                  />
-                  <input
-                    className="otto-widget__input"
-                    placeholder="Email"
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={busy}
-                    aria-label="Your email"
-                  />
-                </div>
+                {!isLoggedIn && (
+                  <div className="otto-widget__row">
+                    <input
+                      className="otto-widget__input"
+                      placeholder="Your name (optional)"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      disabled={busy}
+                      aria-label="Your name"
+                    />
+                    <input
+                      className="otto-widget__input"
+                      placeholder="Email"
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      disabled={busy}
+                      aria-label="Your email"
+                    />
+                  </div>
+                )}
+
+                {/* Intake — reason routes the case, status is the
+                    short "what's happening" summary, dob is only asked
+                    when the reason implies an account/order lookup. */}
+                <label
+                  className="otto-widget__field-label"
+                  htmlFor="otto-reason"
+                >
+                  What can we help with?
+                </label>
+                <select
+                  id="otto-reason"
+                  className="otto-widget__input"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value as ReasonValue | "")}
+                  disabled={busy}
+                  required
+                  aria-label="Reason"
+                >
+                  <option value="">Select a reason…</option>
+                  {REASON_OPTIONS.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+
+                <label
+                  className="otto-widget__field-label"
+                  htmlFor="otto-status"
+                >
+                  Current status / one-line summary
+                </label>
+                <input
+                  id="otto-status"
+                  className="otto-widget__input"
+                  placeholder="e.g. Order #2041 arrived damaged"
+                  value={statusInfo}
+                  onChange={(e) => setStatusInfo(e.target.value)}
+                  disabled={busy}
+                  required
+                  aria-label="Status summary"
+                />
+
+                {reason && reasonRequiresDob(reason) && (
+                  <>
+                    <label
+                      className="otto-widget__field-label"
+                      htmlFor="otto-dob"
+                    >
+                      Date of birth <span style={{ opacity: 0.6 }}>(for verification)</span>
+                    </label>
+                    <input
+                      id="otto-dob"
+                      className="otto-widget__input"
+                      type="date"
+                      value={dob}
+                      onChange={(e) => setDob(e.target.value)}
+                      disabled={busy}
+                      required
+                      aria-label="Date of birth"
+                    />
+                  </>
+                )}
+
+                <label
+                  className="otto-widget__field-label"
+                  htmlFor="otto-message"
+                >
+                  Your message
+                </label>
                 <textarea
+                  id="otto-message"
                   className="otto-widget__textarea"
                   placeholder="Type your message..."
                   value={pendingMessage}
@@ -423,13 +648,28 @@ export function OttoWidget({
                 <button
                   type="submit"
                   className="otto-widget__submit"
-                  disabled={busy || !email.trim() || !pendingMessage.trim()}
+                  disabled={
+                    busy ||
+                    (!isLoggedIn && !email.trim()) ||
+                    !pendingMessage.trim() ||
+                    !reason ||
+                    !statusInfo.trim() ||
+                    (reasonRequiresDob(reason || "") && !dob.trim())
+                  }
                 >
-                  {busy ? "Sending code..." : "Continue"}
+                  {busy
+                    ? isLoggedIn
+                      ? "Starting…"
+                      : "Sending code..."
+                    : isLoggedIn
+                      ? "Start chat"
+                      : "Continue"}
                 </button>
-                <p className="otto-widget__fineprint">
-                  We&apos;ll email you a 6-digit code to confirm it&apos;s really you.
-                </p>
+                {!isLoggedIn && (
+                  <p className="otto-widget__fineprint">
+                    We&apos;ll email you a 6-digit code to confirm it&apos;s really you.
+                  </p>
+                )}
               </form>
             </>
           )}
@@ -532,6 +772,41 @@ export function OttoWidget({
           {/* CHAT */}
           {phase === "chat" && (
             <>
+              {/* Queue overlay — sits above the messages while the
+                  case is pending. Position polls every 5s. Once a
+                  staff member accepts, status flips to "active" and
+                  this block disappears. */}
+              {conversation?.status === "pending" && (
+                <div
+                  className="otto-widget__queue"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div className="otto-widget__queue-spinner" aria-hidden="true" />
+                  <div>
+                    <strong>Connecting to support…</strong>
+                    {queue && queue.position > 0 && (
+                      <p className="otto-widget__queue-line">
+                        You are <strong>#{queue.position}</strong> in the queue.
+                        {queue.estimated_wait_seconds > 0 && (
+                          <>
+                            {" "}Approx wait{" "}
+                            <strong>
+                              {formatWait(queue.estimated_wait_seconds)}
+                            </strong>.
+                          </>
+                        )}
+                      </p>
+                    )}
+                    {queue && queue.position === 1 && queue.total_pending > 0 && (
+                      <p className="otto-widget__queue-line">
+                        You&apos;re next — holding for the first available
+                        team member.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="otto-widget__messages" ref={messagesRef}>
                 {messages.length === 0 && !conversation && (
                   <p className="otto-widget__empty">
@@ -578,10 +853,154 @@ export function OttoWidget({
               </form>
             </>
           )}
+
+          {/* FEEDBACK */}
+          {phase === "feedback" && (
+            <div className="otto-widget__feedback">
+              {fbSubmitted ? (
+                <div className="otto-widget__intro">
+                  <strong>Thanks for the feedback.</strong>
+                  <p style={{ marginTop: 6, marginBottom: 0 }}>
+                    It goes straight to the team so we can keep
+                    improving.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="otto-widget__intro">
+                    <strong>How did we do?</strong>
+                    <p style={{ marginTop: 6, marginBottom: 0 }}>
+                      Your case has been closed. Three quick questions
+                      to help us get better.
+                    </p>
+                  </div>
+                  <form
+                    className="otto-widget__form"
+                    onSubmit={submitFeedbackNow}
+                  >
+                    <FeedbackStars
+                      label="How was the support experience overall?"
+                      value={fbCall}
+                      onChange={setFbCall}
+                      disabled={busy}
+                    />
+
+                    <fieldset className="otto-widget__resolved-row">
+                      <legend className="otto-widget__field-label">
+                        Was your query resolved?
+                      </legend>
+                      <label className="otto-widget__radio">
+                        <input
+                          type="radio"
+                          name="fb-resolved"
+                          checked={fbResolved === true}
+                          onChange={() => setFbResolved(true)}
+                          disabled={busy}
+                        />
+                        Yes
+                      </label>
+                      <label className="otto-widget__radio">
+                        <input
+                          type="radio"
+                          name="fb-resolved"
+                          checked={fbResolved === false}
+                          onChange={() => setFbResolved(false)}
+                          disabled={busy}
+                        />
+                        No
+                      </label>
+                    </fieldset>
+
+                    <FeedbackStars
+                      label={
+                        conversation?.assignee?.name
+                          ? `How was ${conversation.assignee.name}?`
+                          : "How was the team member who helped you?"
+                      }
+                      value={fbStaff}
+                      onChange={setFbStaff}
+                      disabled={busy}
+                    />
+
+                    <label
+                      className="otto-widget__field-label"
+                      htmlFor="otto-fb-comments"
+                    >
+                      Anything else?{" "}
+                      <span style={{ opacity: 0.6 }}>(optional)</span>
+                    </label>
+                    <textarea
+                      id="otto-fb-comments"
+                      className="otto-widget__textarea"
+                      value={fbComments}
+                      onChange={(e) => setFbComments(e.target.value)}
+                      disabled={busy}
+                      placeholder="Share anything that stood out — good or bad"
+                      aria-label="Additional comments"
+                    />
+                    {error && <div className="otto-widget__error">{error}</div>}
+                    <button
+                      type="submit"
+                      className="otto-widget__submit"
+                      disabled={busy || fbResolved === null}
+                    >
+                      {busy ? "Submitting…" : "Submit feedback"}
+                    </button>
+                  </form>
+                </>
+              )}
+            </div>
+          )}
         </section>
       )}
     </div>
   );
+}
+
+// FeedbackStars renders a 1-5 star picker for a single survey
+// question. We store 0 as "not answered" so the backend can
+// distinguish a skipped question from a one-star rating.
+function FeedbackStars({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <div className="otto-widget__field-label">{label}</div>
+      <div className="otto-widget__stars" role="radiogroup" aria-label={label}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            className={`otto-widget__star${n <= value ? " otto-widget__star--on" : ""}`}
+            onClick={() => onChange(n)}
+            disabled={disabled}
+            role="radio"
+            aria-checked={n === value}
+            aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          >
+            ★
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// formatWait turns "180" into "3 min" and "45" into "<1 min". Keeps
+// the customer-facing copy tight.
+function formatWait(seconds: number): string {
+  if (seconds <= 0) return "";
+  const mins = Math.round(seconds / 60);
+  if (mins <= 1) return "<1 min";
+  return `${mins} min`;
 }
 
 function MessageBubble({ message }: { message: Message }) {

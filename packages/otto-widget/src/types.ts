@@ -20,6 +20,28 @@ export interface Assignee {
   assigned_at: string;
 }
 
+export interface IntakeForm {
+  reason: string;
+  status: string;
+  dob?: string;
+  submitted_at: string;
+}
+
+export interface Feedback {
+  call_rating: number;
+  query_resolved: boolean;
+  staff_rating: number;
+  comments?: string;
+  submitted_at: string;
+}
+
+export interface QueueSnapshot {
+  status: ConversationStatus;
+  position: number;
+  total_pending: number;
+  estimated_wait_seconds: number;
+}
+
 export interface Conversation {
   id: string;
   case_id?: string;
@@ -29,9 +51,13 @@ export interface Conversation {
   subject?: string;
   customer: Customer;
   assignee?: Assignee;
+  intake?: IntakeForm;
+  feedback?: Feedback;
   created_at: string;
   updated_at: string;
   last_message_at: string;
+  last_customer_message_at?: string;
+  inactivity_closed_at?: string;
   closed_at?: string;
   message_count: number;
   unread_count_customer: number;

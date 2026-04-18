@@ -1,16 +1,25 @@
-import type { Conversation, Message } from "./types";
+import type { Conversation, Message, QueueSnapshot } from "./types";
 
 export interface OttoApi {
   /** Start a new thread. Returns conversation + opening message. The
    *  `otp_code` field is required for anonymous callers — logged-in users
    *  (whose identity the storefront proxy forwards server-side) can omit
-   *  it and are accepted on their existing session. */
+   *  it and are accepted on their existing session.
+   *
+   *  Intake fields (`reason`, `status_info`, optional `dob`) are
+   *  required per backend policy — `reason` and `status_info` are
+   *  always required; `dob` is required when reason ∈ {order_issue,
+   *  return, payment}. The widget collects them on a dedicated screen
+   *  before this call fires. */
   startConversation(input: {
     subject?: string;
     name?: string;
     email?: string;
     message: string;
     otp_code?: string;
+    reason: string;
+    status_info: string;
+    dob?: string;
   }): Promise<{ conversation: Conversation; first_message: Message }>;
   /** Request a 6-digit verification code be emailed to the given address. */
   requestOtp(input: {
@@ -33,6 +42,18 @@ export interface OttoApi {
     conversation: Conversation | null;
     messages?: Message[];
   }>;
+  /** Poll the queue position + estimated wait while status is pending. */
+  queueStatus(id: string): Promise<QueueSnapshot>;
+  /** Submit post-case feedback. Returns the updated conversation. */
+  submitFeedback(
+    id: string,
+    input: {
+      call_rating: number;
+      query_resolved: boolean;
+      staff_rating: number;
+      comments?: string;
+    },
+  ): Promise<{ conversation: Conversation }>;
 }
 
 /**
@@ -70,6 +91,9 @@ export function buildOttoApi(baseUrl: string): OttoApi {
     closeConversation: (id) =>
       post(`/conversations/${encodeURIComponent(id)}/close`, {}),
     resume: () => get("/resume"),
+    queueStatus: (id) => get(`/conversations/${encodeURIComponent(id)}/queue`),
+    submitFeedback: (id, input) =>
+      post(`/conversations/${encodeURIComponent(id)}/feedback`, input),
   };
 }
 

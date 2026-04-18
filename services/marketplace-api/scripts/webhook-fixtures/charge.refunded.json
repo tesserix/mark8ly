@@ -1,0 +1,1 @@
+{"id":"evt_fx_8","type":"charge.refunded","data":{"object":{"id":"ch_fx","customer":"cus_fixture","amount_refunded":1900}}}

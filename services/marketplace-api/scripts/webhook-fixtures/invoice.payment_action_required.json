@@ -1,0 +1,1 @@
+{"id":"evt_fx_6","type":"invoice.payment_action_required","data":{"object":{"id":"in_fx","customer":"cus_fixture","hosted_invoice_url":"https://inv.stripe/x"}}}

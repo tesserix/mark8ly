@@ -1,0 +1,1 @@
+{"id":"evt_fx_5","type":"invoice.payment_failed","data":{"object":{"id":"in_fx","customer":"cus_fixture","status":"open"}}}

@@ -1,0 +1,1 @@
+{"id":"evt_fx_3","type":"customer.subscription.deleted","data":{"object":{"id":"sub_fx","customer":"cus_fixture"}}}

@@ -1,0 +1,1 @@
+{"id":"evt_fx_9","type":"payment_method.attached","data":{"object":{"id":"pm_fx","customer":"cus_fixture","type":"card"}}}

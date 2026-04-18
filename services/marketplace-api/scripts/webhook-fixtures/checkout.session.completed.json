@@ -1,0 +1,1 @@
+{"id":"evt_fx_1","type":"checkout.session.completed","data":{"object":{"id":"cs_fx","customer":"cus_fixture","mode":"subscription","subscription":"sub_fx","currency":"usd","metadata":{"plan":"starter","period":"monthly"}}}}

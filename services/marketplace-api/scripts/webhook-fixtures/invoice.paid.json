@@ -1,0 +1,1 @@
+{"id":"evt_fx_4","type":"invoice.paid","data":{"object":{"id":"in_fx","customer":"cus_fixture","status":"paid","amount_paid":1900}}}

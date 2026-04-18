@@ -1,0 +1,1 @@
+{"id":"evt_fx_2","type":"customer.subscription.updated","data":{"object":{"id":"sub_fx","customer":"cus_fixture","current_period_start":1710000000,"current_period_end":1712678400,"cancel_at_period_end":false}}}

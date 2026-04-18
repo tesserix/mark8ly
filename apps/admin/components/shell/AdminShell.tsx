@@ -157,8 +157,12 @@ const navigation: NavSection[] = [
     label: "Support",
     icon: HelpCircle,
     children: [
-      { label: "Live chat", href: "/support/live-chat" },
-      { label: "Audit log", href: "/support/audit-log" },
+      // Otto Live chat + Audit log are temporarily hidden from the
+      // nav until product launch. The routes + components remain in
+      // the tree so re-enabling is a matter of uncommenting these
+      // entries. See docs/otto-disabled.md for the full checklist.
+      // { label: "Live chat", href: "/support/live-chat" },
+      // { label: "Audit log", href: "/support/audit-log" },
       { label: "Tickets", href: "/support/tickets" },
       { label: "Help Center", href: "/support/help" },
     ],

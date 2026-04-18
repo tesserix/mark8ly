@@ -20,7 +20,12 @@ import { CartProvider } from "@/components/CartProvider";
 import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
 import { Footer } from "@/components/Footer";
 import { PromotionBar } from "@/components/PromotionBar";
-import { OttoSupportChat } from "@/components/OttoSupportChat";
+// Otto support chat is temporarily disabled — not shipping to end
+// users yet. The widget component is still in the tree (imported
+// by `components/OttoSupportChat.tsx`) so re-enabling is a
+// single-line change below. See docs/otto-disabled.md for the
+// full re-enable checklist.
+// import { OttoSupportChat } from "@/components/OttoSupportChat";
 import { Toaster } from "@/components/Toaster";
 import { resolveStoreSlug } from "@/lib/slug";
 import { buildLoginUrl, buildLogoutUrl, hasSessionCookie, decodeSession } from "@/lib/auth";
@@ -235,7 +240,9 @@ export default async function RootLayout({ children }: RootLayoutProps) {
             branding={brandingData?.branding ?? null}
             storeName={brandingData?.store?.name ?? null}
           />
-          <OttoSupportChat storeName={brandingData?.store?.name ?? undefined} />
+          {/* Otto support chat disabled until product launch —
+              see docs/otto-disabled.md to re-enable. */}
+          {/* <OttoSupportChat storeName={brandingData?.store?.name ?? undefined} /> */}
         </CustomerAuthProvider>
         <Toaster />
         <MerchantCSS css={brandingData?.branding?.custom_css} />

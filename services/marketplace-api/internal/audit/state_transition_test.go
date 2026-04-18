@@ -87,6 +87,79 @@ func TestEmitStateTransition_TerminalStatesGetWarning(t *testing.T) {
 	require.Equal(t, audit.SeverityWarning, entry.Severity)
 }
 
+func TestEmitPlanChange_WritesCanonicalEvent(t *testing.T) {
+	db := testdb.NewDB(t, "audit_logs")
+	em := audit.NewEmitter(audit.EmitterConfig{
+		DB:     db,
+		Repo:   audit.NewRepository(),
+		Logger: testLogger(t),
+	})
+
+	tenantID := uuid.New()
+	storeID := uuid.New()
+
+	em.EmitPlanChange(nil, audit.PlanChange{
+		TenantID:    tenantID,
+		StoreID:     storeID,
+		FromPlan:    "starter",
+		ToPlan:      "studio",
+		FromPeriod:  "monthly",
+		ToPeriod:    "monthly",
+		Subaction:   "upgrade_committed",
+		Actor:       "user:" + uuid.NewString(),
+		Reason:      "merchant_upgrade",
+		EffectiveAt: time.Now(),
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	em.Stop(ctx)
+
+	var entry audit.Entry
+	require.NoError(t, db.Where("tenant_id = ? AND store_id = ?", tenantID, storeID).First(&entry).Error)
+	require.Equal(t, "subscription.plan_changed", entry.Action)
+	require.Equal(t, "subscription", entry.ResourceType)
+	require.Equal(t, audit.ActorUser, entry.ActorType)
+	md := entry.Metadata
+	require.Equal(t, "starter", md["from_plan"])
+	require.Equal(t, "studio", md["to_plan"])
+	require.Equal(t, "upgrade_committed", md["subaction"])
+	require.Equal(t, "merchant_upgrade", md["reason"])
+}
+
+func TestEmitPlanChange_BlockedOverQuota_SeverityWarning(t *testing.T) {
+	db := testdb.NewDB(t, "audit_logs")
+	em := audit.NewEmitter(audit.EmitterConfig{
+		DB:     db,
+		Repo:   audit.NewRepository(),
+		Logger: testLogger(t),
+	})
+
+	tenantID := uuid.New()
+	storeID := uuid.New()
+
+	em.EmitPlanChange(nil, audit.PlanChange{
+		TenantID:   tenantID,
+		StoreID:    storeID,
+		FromPlan:   "studio",
+		ToPlan:     "starter",
+		FromPeriod: "monthly",
+		ToPeriod:   "monthly",
+		Subaction:  "downgrade_blocked_over_quota",
+		Actor:      "system:cron:downgrade_recheck",
+		Reason:     "store_count=3 > starter_limit=2",
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	em.Stop(ctx)
+
+	var entry audit.Entry
+	require.NoError(t, db.Where("tenant_id = ? AND store_id = ?", tenantID, storeID).First(&entry).Error)
+	require.Equal(t, audit.SeverityWarning, entry.Severity)
+	require.Equal(t, audit.ActorSystem, entry.ActorType)
+}
+
 func testLogger(t *testing.T) *slog.Logger {
 	return slog.New(slog.NewTextHandler(&testWriter{t: t}, nil))
 }

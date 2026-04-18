@@ -346,3 +346,56 @@ func classifyActor(actor string) ActorType {
 	}
 	return ActorUser
 }
+
+// PlanChange records a subscription plan and/or billing-period change for the
+// audit trail. Populate Actor with either a user UUID ("user:<uuid>") for
+// merchant-initiated changes or a system sentinel (e.g. "system:cron:downgrade_recheck").
+type PlanChange struct {
+	TenantID    uuid.UUID
+	StoreID     uuid.UUID
+	FromPlan    string
+	ToPlan      string
+	FromPeriod  string
+	ToPeriod    string
+	Subaction   string // "upgrade_committed" | "downgrade_scheduled" | "downgrade_committed" | "downgrade_blocked_over_quota" | "period_switch_committed"
+	Actor       string
+	Reason      string
+	EffectiveAt time.Time
+}
+
+// EmitPlanChange is the canonical hook for merchant-initiated plan changes and
+// cron-driven downgrade commits/blocks (§4.5). It wraps EmitStateTransition
+// with a dedicated action constant and carries the v2.3 subaction + period
+// fields in metadata.
+func (e *Emitter) EmitPlanChange(c *gin.Context, p PlanChange) {
+	md := map[string]any{
+		"from_plan":   p.FromPlan,
+		"to_plan":     p.ToPlan,
+		"from_period": p.FromPeriod,
+		"to_period":   p.ToPeriod,
+		"subaction":   p.Subaction,
+		"actor":       p.Actor,
+	}
+	if p.Reason != "" {
+		md["reason"] = p.Reason
+	}
+	if !p.EffectiveAt.IsZero() {
+		md["effective_at"] = p.EffectiveAt.UTC().Format(time.RFC3339)
+	}
+
+	severity := SeverityInfo
+	if p.Subaction == "downgrade_blocked_over_quota" {
+		severity = SeverityWarning
+	}
+
+	e.Emit(c, Event{
+		Action:         "subscription.plan_changed",
+		ResourceType:   "subscription",
+		ResourceID:     p.StoreID.String(),
+		Severity:       severity,
+		Metadata:       md,
+		TenantID:       p.TenantID,
+		StoreID:        p.StoreID,
+		ForceActorType: classifyActor(p.Actor),
+	})
+}

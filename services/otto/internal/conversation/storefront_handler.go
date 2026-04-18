@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/mark8ly/otto/internal/auth"
 	"github.com/mark8ly/otto/internal/event"
@@ -26,6 +27,7 @@ type StorefrontDeps struct {
 	// annotate queue status with an "all agents busy" flag and to
 	// release staff when the customer closes the case themselves.
 	Availability *AvailabilityRepository
+	Audit        *AuditRepository
 	Messages     *message.Repository
 	Hub          *hub.Hub
 	Signer       *session.Signer
@@ -35,6 +37,34 @@ type StorefrontDeps struct {
 	CookieDomain string
 	CookieSecure bool
 	Logger       *slog.Logger
+}
+
+// emitCustomerAudit is the customer-side equivalent of the admin
+// emitter — Actor.Type is "customer" and ID/Name/Email come from the
+// conversation's Customer record, not the gin context.
+func (h *StorefrontHandler) emitCustomerAudit(c *gin.Context, conv *Conversation, action AuditAction, meta map[string]any) {
+	if h.d.Audit == nil || conv == nil {
+		return
+	}
+	ev := AuditEvent{
+		TenantID:       conv.TenantID,
+		StoreID:        conv.StoreID,
+		ConversationID: conv.ID,
+		CaseID:         conv.CaseID,
+		Action:         action,
+		Actor: Actor{
+			Type:  "customer",
+			ID:    conv.Customer.UserID,
+			Name:  conv.Customer.Name,
+			Email: conv.Customer.Email,
+		},
+	}
+	if meta != nil {
+		ev.Meta = bson.M(meta)
+	}
+	if err := h.d.Audit.Emit(c.Request.Context(), ev); err != nil {
+		h.d.Logger.Warn("otto: audit emit failed (customer)", "err", err, "action", action)
+	}
 }
 
 // StorefrontHandler exposes the /api/v1/storefront/otto/* endpoints.
@@ -253,6 +283,10 @@ func (h *StorefrontHandler) create(c *gin.Context) {
 	h.d.Hub.Broadcast(hub.RoomInbox(tenantID, storeID), hub.Envelope{
 		Type:    event.TypeConversationCreated,
 		Payload: map[string]any{"conversation": conv, "first_message": firstMsg},
+	})
+
+	h.emitCustomerAudit(c, conv, AuditCaseCreated, map[string]any{
+		"reason": body.Reason,
 	})
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -484,6 +518,11 @@ func (h *StorefrontHandler) feedback(c *gin.Context) {
 		Type:    event.TypeConversationUpdated,
 		Payload: map[string]any{"conversation": updated},
 	})
+	h.emitCustomerAudit(c, updated, AuditFeedbackSubmitted, map[string]any{
+		"call_rating":    fb.CallRating,
+		"query_resolved": fb.QueryResolved,
+		"staff_rating":   fb.StaffRating,
+	})
 	c.JSON(http.StatusOK, gin.H{"conversation": updated})
 }
 
@@ -497,6 +536,13 @@ func (h *StorefrontHandler) close(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "close_failed"})
 		return
 	}
+	// Release the staff back to the pool on customer-initiated close,
+	// matching what the admin close path does.
+	if h.d.Availability != nil && updated.Assignee != nil {
+		if releaseErr := h.d.Availability.ReleaseCase(c.Request.Context(), updated.TenantID, updated.StoreID, updated.Assignee.UserID); releaseErr != nil {
+			h.d.Logger.Warn("otto: release availability on customer close", "err", releaseErr)
+		}
+	}
 	h.d.Hub.Broadcast(hub.RoomConversation(conv.ID), hub.Envelope{
 		Type:    event.TypeConversationClosed,
 		Payload: map[string]any{"conversation": updated},
@@ -505,6 +551,7 @@ func (h *StorefrontHandler) close(c *gin.Context) {
 		Type:    event.TypeConversationClosed,
 		Payload: map[string]any{"conversation": updated},
 	})
+	h.emitCustomerAudit(c, updated, AuditCaseClosedByCust, nil)
 	c.JSON(http.StatusOK, gin.H{"conversation": updated})
 }
 

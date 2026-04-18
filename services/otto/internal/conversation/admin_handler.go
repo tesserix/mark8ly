@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/mark8ly/otto/internal/auth"
 	"github.com/mark8ly/otto/internal/event"
@@ -22,10 +23,39 @@ import (
 type AdminDeps struct {
 	Conversations *Repository
 	Availability  *AvailabilityRepository
+	Audit         *AuditRepository
 	Messages      *message.Repository
 	Hub           *hub.Hub
 	Tickets       *session.TicketSigner
 	Logger        *slog.Logger
+}
+
+// emitAudit fires an audit event and swallows errors — the primary
+// action must never fail because the audit write did. We log the
+// failure so an ops/SRE can detect systematic drops.
+func (h *AdminHandler) emitAudit(c *gin.Context, conv *Conversation, action AuditAction, meta map[string]any) {
+	if h.d.Audit == nil || conv == nil {
+		return
+	}
+	ev := AuditEvent{
+		TenantID:       conv.TenantID,
+		StoreID:        conv.StoreID,
+		ConversationID: conv.ID,
+		CaseID:         conv.CaseID,
+		Action:         action,
+		Actor: Actor{
+			Type:  "staff",
+			ID:    c.GetString(auth.CtxUserID),
+			Name:  c.GetString(auth.CtxUserName),
+			Email: c.GetString(auth.CtxUserEmail),
+		},
+	}
+	if meta != nil {
+		ev.Meta = bson.M(meta)
+	}
+	if err := h.d.Audit.Emit(c.Request.Context(), ev); err != nil {
+		h.d.Logger.Warn("otto: audit emit failed", "err", err, "action", action)
+	}
 }
 
 // AdminHandler exposes the /api/v1/admin/otto/* endpoints.
@@ -55,6 +85,57 @@ func (h *AdminHandler) Register(r *gin.RouterGroup) {
 	r.GET("/me/availability", h.getAvailability)
 	r.POST("/me/availability", h.setAvailability)
 	r.POST("/accept-next", h.acceptNext)
+
+	// Audit trail — per-case timeline + store-wide tail.
+	r.GET("/conversations/:id/audit", h.listAudit)
+	r.GET("/audit", h.listAuditRecent)
+}
+
+// listAudit returns the timeline for a single case. Staff only; the
+// loadForStaff check restricts to the caller's store scope.
+func (h *AdminHandler) listAudit(c *gin.Context) {
+	conv, ok := h.loadForStaff(c)
+	if !ok {
+		return
+	}
+	if h.d.Audit == nil {
+		c.JSON(http.StatusOK, gin.H{"events": []AuditEvent{}})
+		return
+	}
+	events, err := h.d.Audit.ListByConversation(c.Request.Context(), conv.TenantID, conv.StoreID, conv.ID, 500)
+	if err != nil {
+		h.d.Logger.Error("otto: list audit", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "audit_list_failed"})
+		return
+	}
+	if events == nil {
+		events = []AuditEvent{}
+	}
+	c.JSON(http.StatusOK, gin.H{"events": events})
+}
+
+// listAuditRecent returns the latest N events across the store, for a
+// future "support audit log" admin page. Scoped to tenant+store.
+func (h *AdminHandler) listAuditRecent(c *gin.Context) {
+	if h.d.Audit == nil {
+		c.JSON(http.StatusOK, gin.H{"events": []AuditEvent{}})
+		return
+	}
+	events, err := h.d.Audit.ListRecent(
+		c.Request.Context(),
+		c.GetString(auth.CtxTenantID),
+		c.GetString(auth.CtxStoreID),
+		100,
+	)
+	if err != nil {
+		h.d.Logger.Error("otto: list audit recent", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "audit_list_failed"})
+		return
+	}
+	if events == nil {
+		events = []AuditEvent{}
+	}
+	c.JSON(http.StatusOK, gin.H{"events": events})
 }
 
 // RegisterWS mounts the actual WebSocket endpoints. Unlike Register this
@@ -173,6 +254,9 @@ func (h *AdminHandler) accept(c *gin.Context) {
 		Type:    event.TypeConversationUpdated,
 		Payload: map[string]any{"conversation": updated},
 	})
+	h.emitAudit(c, updated, AuditCaseAccepted, map[string]any{
+		"path": "manual",
+	})
 	c.JSON(http.StatusOK, gin.H{"conversation": updated})
 }
 
@@ -259,6 +343,7 @@ func (h *AdminHandler) reopen(c *gin.Context) {
 		Type:    event.TypeConversationUpdated,
 		Payload: map[string]any{"conversation": updated},
 	})
+	h.emitAudit(c, updated, AuditCaseReopened, nil)
 	c.JSON(http.StatusOK, gin.H{"conversation": updated})
 }
 
@@ -288,6 +373,7 @@ func (h *AdminHandler) close(c *gin.Context) {
 		Type:    event.TypeConversationClosed,
 		Payload: map[string]any{"conversation": updated},
 	})
+	h.emitAudit(c, updated, AuditCaseClosed, nil)
 	c.JSON(http.StatusOK, gin.H{"conversation": updated})
 }
 
@@ -345,6 +431,29 @@ func (h *AdminHandler) setAvailability(c *gin.Context) {
 		h.d.Logger.Error("otto: set availability", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "availability_write_failed"})
 		return
+	}
+	// Availability toggles are not tied to a specific case, but we
+	// still want the trail for staff-behaviour audits. conversation_id
+	// is empty on these rows; the timeline UI filters them out per
+	// case, and the "recent" tail shows them alongside case actions.
+	if h.d.Audit != nil {
+		action := AuditStaffAvailable
+		if !body.Available {
+			action = AuditStaffPaused
+		}
+		if err := h.d.Audit.Emit(c.Request.Context(), AuditEvent{
+			TenantID: c.GetString(auth.CtxTenantID),
+			StoreID:  c.GetString(auth.CtxStoreID),
+			Action:   action,
+			Actor: Actor{
+				Type:  "staff",
+				ID:    c.GetString(auth.CtxUserID),
+				Name:  c.GetString(auth.CtxUserName),
+				Email: c.GetString(auth.CtxUserEmail),
+			},
+		}); err != nil {
+			h.d.Logger.Warn("otto: audit availability", "err", err)
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"availability": row})
 }
@@ -434,6 +543,9 @@ func (h *AdminHandler) acceptNext(c *gin.Context) {
 	h.d.Hub.Broadcast(hub.RoomInbox(updated.TenantID, updated.StoreID), hub.Envelope{
 		Type:    event.TypeConversationUpdated,
 		Payload: map[string]any{"conversation": updated},
+	})
+	h.emitAudit(c, updated, AuditCaseAcceptedNext, map[string]any{
+		"path": "fifo",
 	})
 	c.JSON(http.StatusOK, gin.H{"conversation": updated})
 }

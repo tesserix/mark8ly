@@ -19,6 +19,7 @@ import (
 type InactivitySweeper struct {
 	Conversations    *Repository
 	Availability     *AvailabilityRepository
+	Audit            *AuditRepository
 	Messages         *message.Repository
 	Hub              *hub.Hub
 	Logger           *slog.Logger
@@ -111,6 +112,18 @@ func (s *InactivitySweeper) tick(ctx context.Context, now time.Time, window time
 			Type:    event.TypeConversationClosed,
 			Payload: map[string]any{"conversation": updated},
 		})
+		if s.Audit != nil {
+			if auditErr := s.Audit.Emit(ctx, AuditEvent{
+				TenantID:       updated.TenantID,
+				StoreID:        updated.StoreID,
+				ConversationID: updated.ID,
+				CaseID:         updated.CaseID,
+				Action:         AuditCaseClosedInactive,
+				Actor:          Actor{Type: "system", Name: "Otto sweeper"},
+			}); auditErr != nil {
+				s.Logger.Warn("otto: audit sweeper close", "err", auditErr)
+			}
+		}
 	}
 	if len(convos) > 0 {
 		s.Logger.Info("otto: inactivity sweep",

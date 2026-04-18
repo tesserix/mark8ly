@@ -11,11 +11,12 @@ import (
 )
 
 const (
-	CollConversations       = "conversations"
-	CollMessages            = "messages"
-	CollSessions            = "sessions"
-	CollOTP                 = "otp_codes"
-	CollStaffAvailability   = "staff_availability"
+	CollConversations     = "conversations"
+	CollMessages          = "messages"
+	CollSessions          = "sessions"
+	CollOTP               = "otp_codes"
+	CollStaffAvailability = "staff_availability"
+	CollAudit             = "otto_audit"
 )
 
 // Client wraps a mongo.Database for the otto service and provides typed
@@ -66,6 +67,7 @@ func (c *Client) Messages() *mongo.Collection          { return c.db.Collection(
 func (c *Client) Sessions() *mongo.Collection          { return c.db.Collection(CollSessions) }
 func (c *Client) OTP() *mongo.Collection               { return c.db.Collection(CollOTP) }
 func (c *Client) StaffAvailability() *mongo.Collection { return c.db.Collection(CollStaffAvailability) }
+func (c *Client) Audit() *mongo.Collection             { return c.db.Collection(CollAudit) }
 
 // EnsureIndexes creates the indexes the service relies on for tenant
 // isolation + fast inbox queries. Idempotent — safe to run every boot.
@@ -135,6 +137,31 @@ func (c *Client) EnsureIndexes(ctx context.Context) error {
 	}
 	if _, err := c.StaffAvailability().Indexes().CreateMany(ctx, availIdx); err != nil {
 		return fmt.Errorf("indexes: staff_availability: %w", err)
+	}
+
+	// otto_audit — two queries: timeline for a single case
+	// (conversation_id sort by at asc), and recent-tail for a store.
+	auditIdx := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "store_id", Value: 1},
+				{Key: "conversation_id", Value: 1},
+				{Key: "at", Value: 1},
+			},
+			Options: options.Index().SetName("tenant_store_conv_at"),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "store_id", Value: 1},
+				{Key: "at", Value: -1},
+			},
+			Options: options.Index().SetName("tenant_store_at"),
+		},
+	}
+	if _, err := c.Audit().Indexes().CreateMany(ctx, auditIdx); err != nil {
+		return fmt.Errorf("indexes: otto_audit: %w", err)
 	}
 
 	msgIdx := []mongo.IndexModel{

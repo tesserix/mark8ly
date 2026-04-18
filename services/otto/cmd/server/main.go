@@ -49,6 +49,7 @@ func main() {
 	convRepo := conversation.NewRepository(mongoClient.Conversations())
 	msgRepo := message.NewRepository(mongoClient.Messages())
 	availRepo := conversation.NewAvailabilityRepository(mongoClient.StaffAvailability())
+	auditRepo := conversation.NewAuditRepository(mongoClient.Audit())
 
 	// OTP: repo + mailer + service. When SENDGRID_API_KEY is unset we
 	// fall back to a stdout log mailer so the service remains bootable.
@@ -86,6 +87,7 @@ func main() {
 	storefrontHandler := conversation.NewStorefrontHandler(conversation.StorefrontDeps{
 		Conversations: convRepo,
 		Availability:  availRepo,
+		Audit:         auditRepo,
 		Messages:      msgRepo,
 		Hub:           h,
 		Signer:        signer,
@@ -106,6 +108,7 @@ func main() {
 	adminHandler := conversation.NewAdminHandler(conversation.AdminDeps{
 		Conversations: convRepo,
 		Availability:  availRepo,
+		Audit:         auditRepo,
 		Messages:      msgRepo,
 		Hub:           h,
 		Tickets:       ticketSigner,
@@ -120,6 +123,7 @@ func main() {
 	sweeper := &conversation.InactivitySweeper{
 		Conversations:    convRepo,
 		Availability:     availRepo,
+		Audit:            auditRepo,
 		Messages:         msgRepo,
 		Hub:              h,
 		Logger:           log,

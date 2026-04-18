@@ -158,6 +158,7 @@ const navigation: NavSection[] = [
     icon: HelpCircle,
     children: [
       { label: "Live chat", href: "/support/live-chat" },
+      { label: "Audit log", href: "/support/audit-log" },
       { label: "Tickets", href: "/support/tickets" },
       { label: "Help Center", href: "/support/help" },
     ],
@@ -644,6 +645,9 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/support/live-chat")) {
     return { eyebrow: "Support", title: "Live chat" };
+  }
+  if (pathname.startsWith("/support/audit-log")) {
+    return { eyebrow: "Support", title: "Audit log" };
   }
   if (pathname.startsWith("/support/tickets")) {
     return { eyebrow: "Support", title: "Tickets" };

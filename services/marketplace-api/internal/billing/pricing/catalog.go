@@ -7,7 +7,10 @@
 // Spec reference: docs/superpowers/specs/2026-04-17-subscription-model-design.md §4.1 and §4.1.1.
 package pricing
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // Plan identifies a billing plan.
 type Plan string
@@ -268,7 +271,23 @@ func init() {
 	}
 
 	// PPP descriptors: one descriptor per (plan, period, currency).
-	for k, amt := range pppAmounts {
+	// Collect keys first so iteration order is deterministic.
+	pppKeys := make([]pppKey, 0, len(pppAmounts))
+	for k := range pppAmounts {
+		pppKeys = append(pppKeys, k)
+	}
+	sort.SliceStable(pppKeys, func(i, j int) bool {
+		a, b := pppKeys[i], pppKeys[j]
+		if a.plan != b.plan {
+			return a.plan < b.plan
+		}
+		if a.period != b.period {
+			return a.period < b.period
+		}
+		return a.currency < b.currency
+	})
+	for _, k := range pppKeys {
+		amt := pppAmounts[k]
 		opts := map[string]Amount{k.currency: amt}
 		allDescriptors = append(allDescriptors, PriceDescriptor{
 			Plan:      k.plan,
@@ -280,6 +299,21 @@ func init() {
 			LookupKey: pppLookupKey(k.plan, k.period, k.currency),
 		})
 	}
+
+	// Sort all descriptors by (Plan, Period, Tier, Currency) for stable output.
+	sort.SliceStable(allDescriptors, func(i, j int) bool {
+		a, b := allDescriptors[i], allDescriptors[j]
+		if a.Plan != b.Plan {
+			return a.Plan < b.Plan
+		}
+		if a.Period != b.Period {
+			return a.Period < b.Period
+		}
+		if a.Tier != b.Tier {
+			return a.Tier < b.Tier
+		}
+		return a.Currency < b.Currency
+	})
 }
 
 // ---------------------------------------------------------------------------

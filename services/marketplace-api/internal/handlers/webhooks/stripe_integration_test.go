@@ -56,7 +56,7 @@ func TestFullWebhookFlow_AllAllowlistedEvents(t *testing.T) {
 		Status:           subscription.StatusSignup,
 	}).Error)
 
-	dispatcher := dispatch.New()
+	dispatcher := dispatch.New(nil)
 	allowed := map[string]bool{
 		"checkout.session.completed":      true,
 		"customer.subscription.updated":   true,

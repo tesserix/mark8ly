@@ -36,7 +36,7 @@ func TestDispatch_CheckoutSessionCompleted_BindsBillingCurrency(t *testing.T) {
         }}
     }`)
 
-	d := dispatch.New()
+	d := dispatch.New(nil)
 	err := d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
 		EventID: "evt_1", EventType: "checkout.session.completed", Payload: payload,
 	})
@@ -53,7 +53,7 @@ func TestDispatch_CheckoutSessionCompleted_BindsBillingCurrency(t *testing.T) {
 
 func TestDispatch_UnknownEventType_ReturnsError(t *testing.T) {
 	db := testdb.NewDB(t, "stripe_webhook_events")
-	d := dispatch.New()
+	d := dispatch.New(nil)
 	err := d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
 		EventID: "evt_x", EventType: "unknown", Payload: []byte(`{}`),
 	})
@@ -61,6 +61,11 @@ func TestDispatch_UnknownEventType_ReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "no handler")
 }
 
+// TestDispatch_SubscriptionDeleted_StatusExpired seeds the subscription in
+// past_due (a valid From per §17.2 past_due → expired) and expects the
+// handler to advance status to expired via statemachine.Transition.
+// Note: active → expired is NOT a valid §17.2 transition, so the old seed
+// of StatusActive has been changed to StatusPastDue.
 func TestDispatch_SubscriptionDeleted_StatusExpired(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
@@ -70,11 +75,11 @@ func TestDispatch_SubscriptionDeleted_StatusExpired(t *testing.T) {
 		StoreID:          storeID,
 		StripeCustomerID: "cus_del",
 		Plan:             subscription.PlanStarter,
-		Status:           subscription.StatusActive,
+		Status:           subscription.StatusPastDue, // was StatusActive; active→expired is not a valid move
 	}).Error)
 
 	payload := []byte(`{"id":"evt_d","type":"customer.subscription.deleted","data":{"object":{"customer":"cus_del"}}}`)
-	d := dispatch.New()
+	d := dispatch.New(nil)
 	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
 		EventID: "evt_d", EventType: "customer.subscription.deleted", Payload: payload,
 	}))
@@ -82,6 +87,33 @@ func TestDispatch_SubscriptionDeleted_StatusExpired(t *testing.T) {
 	var sub subscription.StoreSubscription
 	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
 	require.Equal(t, subscription.StatusExpired, sub.Status)
+}
+
+// TestDispatch_SubscriptionDeleted_ActiveIsNoOp verifies that a
+// customer.subscription.deleted event arriving while the subscription is still
+// active is treated as a benign no-op (active → expired is not in §17.2).
+func TestDispatch_SubscriptionDeleted_ActiveIsNoOp(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_del_active",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+	}).Error)
+
+	payload := []byte(`{"id":"evt_d2","type":"customer.subscription.deleted","data":{"object":{"customer":"cus_del_active"}}}`)
+	d := dispatch.New(nil)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_d2", EventType: "customer.subscription.deleted", Payload: payload,
+	}))
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	// Status must remain active — no direct active→expired transition.
+	require.Equal(t, subscription.StatusActive, sub.Status)
 }
 
 func TestDispatch_InvoicePaymentActionRequired_StatusUpdated(t *testing.T) {
@@ -97,7 +129,7 @@ func TestDispatch_InvoicePaymentActionRequired_StatusUpdated(t *testing.T) {
 	}).Error)
 
 	payload := []byte(`{"id":"evt_par","type":"invoice.payment_action_required","data":{"object":{"customer":"cus_par"}}}`)
-	d := dispatch.New()
+	d := dispatch.New(nil)
 	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
 		EventID: "evt_par", EventType: "invoice.payment_action_required", Payload: payload,
 	}))
@@ -105,6 +137,31 @@ func TestDispatch_InvoicePaymentActionRequired_StatusUpdated(t *testing.T) {
 	var sub subscription.StoreSubscription
 	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
 	require.Equal(t, subscription.StatusPaymentActionRequired, sub.Status)
+}
+
+// TestDispatch_InvoicePaymentFailed_ActiveToPastDue verifies that
+// invoice.payment_failed on an active subscription advances it to past_due.
+func TestDispatch_InvoicePaymentFailed_ActiveToPastDue(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_pf",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+	}).Error)
+
+	payload := []byte(`{"id":"evt_pf","type":"invoice.payment_failed","data":{"object":{"customer":"cus_pf"}}}`)
+	d := dispatch.New(nil)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pf", EventType: "invoice.payment_failed", Payload: payload,
+	}))
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.Equal(t, subscription.StatusPastDue, sub.Status)
 }
 
 func TestHandleCheckoutSessionCompleted_BillingCurrencyLockedAfterFirstBind(t *testing.T) {

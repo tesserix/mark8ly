@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
 
 // handleCheckoutSessionCompleted binds billing_currency (first-write wins via
@@ -109,14 +112,48 @@ func handleSubscriptionUpdated(ctx context.Context, tx *gorm.DB, raw []byte) err
 	return nil
 }
 
-// handleSubscriptionDeleted marks status=expired.
-// TODO(P3): richer state transitions (e.g. store_closed grace period).
-func handleSubscriptionDeleted(ctx context.Context, tx *gorm.DB, raw []byte) error {
+// handleSubscriptionDeleted routes customer.subscription.deleted through the
+// state machine. Valid From states per §17.2: past_due, cancel_scheduled,
+// trialing. Active → expired is not a direct allowed move; if a subscription
+// is deleted while still active Stripe will have already surfaced an
+// invoice.payment_failed first, moving it to past_due. Any other current
+// status (e.g. already expired, store_closed) is a benign no-op.
+func (d *Dispatcher) handleSubscriptionDeleted(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	customer, err := extractCustomerID(raw)
 	if err != nil {
 		return err
 	}
-	return simpleStatusUpdate(ctx, tx, customer, "expired")
+
+	var sub subscription.StoreSubscription
+	if err := tx.WithContext(ctx).Where("stripe_customer_id = ?", customer).First(&sub).Error; err != nil {
+		return fmt.Errorf("dispatch: lookup subscription for %s: %w", customer, err)
+	}
+
+	validFrom := map[subscription.SubscriptionStatus]bool{
+		subscription.StatusPastDue:         true,
+		subscription.StatusCancelScheduled: true,
+		subscription.StatusTrialing:        true,
+	}
+	if !validFrom[sub.Status] {
+		// Current status cannot transition directly to expired — benign no-op
+		// (e.g. already expired, store_closed, or active before dunning ran).
+		return nil
+	}
+
+	err = statemachine.Transition(ctx, statemachine.TransitionInput{
+		DB:       tx,
+		Emitter:  d.emitter,
+		TenantID: sub.TenantID,
+		StoreID:  sub.StoreID,
+		From:     sub.Status,
+		To:       subscription.StatusExpired,
+		Actor:    "system:webhook:stripe",
+		Reason:   "customer.subscription.deleted",
+	})
+	if errors.Is(err, statemachine.ErrCASConflict) {
+		return nil
+	}
+	return err
 }
 
 // handleInvoicePaid is audit-only in P2; P3 handles trial → active transition.
@@ -126,27 +163,75 @@ func handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	return nil
 }
 
-// handleInvoicePaymentFailed marks the subscription as past_due.
-//
-// TODO(P3): emit notification event for merchant dunning flow.
-func handleInvoicePaymentFailed(ctx context.Context, tx *gorm.DB, raw []byte) error {
+// handleInvoicePaymentFailed routes invoice.payment_failed through the state
+// machine. Valid From states per §17.2: active, payment_action_required.
+// Idempotent replays where the status has already advanced are silently
+// dropped via ErrCASConflict.
+func (d *Dispatcher) handleInvoicePaymentFailed(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	customer, err := extractCustomerID(raw)
 	if err != nil {
 		return err
 	}
-	return simpleStatusUpdate(ctx, tx, customer, "past_due")
+
+	var sub subscription.StoreSubscription
+	if err := tx.WithContext(ctx).Where("stripe_customer_id = ?", customer).First(&sub).Error; err != nil {
+		return fmt.Errorf("dispatch: lookup subscription for %s: %w", customer, err)
+	}
+
+	if sub.Status != subscription.StatusActive && sub.Status != subscription.StatusPaymentActionRequired {
+		// Already past_due or beyond — idempotent replay, no-op.
+		return nil
+	}
+
+	err = statemachine.Transition(ctx, statemachine.TransitionInput{
+		DB:       tx,
+		Emitter:  d.emitter,
+		TenantID: sub.TenantID,
+		StoreID:  sub.StoreID,
+		From:     sub.Status,
+		To:       subscription.StatusPastDue,
+		Actor:    "system:webhook:stripe",
+		Reason:   "invoice.payment_failed",
+	})
+	if errors.Is(err, statemachine.ErrCASConflict) {
+		return nil
+	}
+	return err
 }
 
-// handleInvoicePaymentActionRequired marks the subscription as
-// payment_action_required so the merchant is prompted to complete 3DS.
-//
-// TODO(P3): emit notification event for merchant action prompt.
-func handleInvoicePaymentActionRequired(ctx context.Context, tx *gorm.DB, raw []byte) error {
+// handleInvoicePaymentActionRequired routes invoice.payment_action_required
+// through the state machine. Valid From state per §17.2: active only.
+// Idempotent replays are silently dropped via ErrCASConflict.
+func (d *Dispatcher) handleInvoicePaymentActionRequired(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	customer, err := extractCustomerID(raw)
 	if err != nil {
 		return err
 	}
-	return simpleStatusUpdate(ctx, tx, customer, "payment_action_required")
+
+	var sub subscription.StoreSubscription
+	if err := tx.WithContext(ctx).Where("stripe_customer_id = ?", customer).First(&sub).Error; err != nil {
+		return fmt.Errorf("dispatch: lookup subscription for %s: %w", customer, err)
+	}
+
+	if sub.Status != subscription.StatusActive {
+		// Already payment_action_required, past_due, or beyond — no-op.
+		return nil
+	}
+
+	err = statemachine.Transition(ctx, statemachine.TransitionInput{
+		DB:       tx,
+		Emitter:  d.emitter,
+		TenantID: sub.TenantID,
+		StoreID:  sub.StoreID,
+		From:     subscription.StatusActive,
+		To:       subscription.StatusPaymentActionRequired,
+		Actor:    "system:webhook:stripe",
+		Reason:   "invoice.payment_action_required",
+	})
+	if errors.Is(err, statemachine.ErrCASConflict) {
+		return nil
+	}
+	return err
 }
 
 // handleCustomerUpdated is audit-only in P2.
@@ -188,18 +273,3 @@ func extractCustomerID(raw []byte) (string, error) {
 	return e.Data.Object.Customer, nil
 }
 
-// simpleStatusUpdate sets the status column on the row matching the given
-// Stripe customer ID. A zero RowsAffected is not treated as an error here
-// because some events may arrive for stores that have already been cleaned up.
-func simpleStatusUpdate(ctx context.Context, tx *gorm.DB, customer, newStatus string) error {
-	res := tx.WithContext(ctx).Exec(
-		`UPDATE store_subscriptions
-         SET status = ?, updated_at = ?
-         WHERE stripe_customer_id = ?`,
-		newStatus, time.Now(), customer,
-	)
-	if res.Error != nil {
-		return fmt.Errorf("dispatch: status update: %w", res.Error)
-	}
-	return nil
-}

@@ -927,7 +927,7 @@ func main() {
 		for _, t := range cfg.StripeAllowedEventTypes {
 			allowed[t] = true
 		}
-		dispatcher := dispatch.New()
+		dispatcher := dispatch.New(auditEmitter)
 		webhookH := webhooks.NewStripeHandler(webhooks.StripeHandlerConfig{
 			DB:     conn,
 			Secret: cfg.StripeBillingWebhookSecret,

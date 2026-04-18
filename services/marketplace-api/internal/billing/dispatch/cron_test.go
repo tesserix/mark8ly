@@ -36,7 +36,7 @@ func TestCron_PagerDutyOnUnresolved1h(t *testing.T) {
 
 	pd := &fakePagerDuty{}
 	c := dispatch.NewCron(dispatch.CronConfig{
-		DB: db, Repo: webhookevents.NewRepository(), Dispatcher: dispatch.New(),
+		DB: db, Repo: webhookevents.NewRepository(), Dispatcher: dispatch.New(nil),
 		PagerDuty: pd, StaleThreshold: time.Hour,
 	})
 	require.NoError(t, c.RunOnce(context.Background()))
@@ -55,7 +55,7 @@ func TestCron_FreshEventDoesNotPage(t *testing.T) {
 
 	pd := &fakePagerDuty{}
 	c := dispatch.NewCron(dispatch.CronConfig{
-		DB: db, Repo: webhookevents.NewRepository(), Dispatcher: dispatch.New(),
+		DB: db, Repo: webhookevents.NewRepository(), Dispatcher: dispatch.New(nil),
 		PagerDuty: pd, StaleThreshold: time.Hour,
 	})
 	require.NoError(t, c.RunOnce(context.Background()))

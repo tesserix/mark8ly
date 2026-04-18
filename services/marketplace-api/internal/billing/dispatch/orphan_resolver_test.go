@@ -36,7 +36,7 @@ func TestOrphanResolver_ResolvesStoreIDAndDispatches(t *testing.T) {
 	require.True(t, inserted)
 
 	resolver := dispatch.NewOrphanResolver(dispatch.OrphanConfig{
-		DB: db, Repo: repo, Dispatcher: dispatch.New(), MaxRetries: 6,
+		DB: db, Repo: repo, Dispatcher: dispatch.New(nil), MaxRetries: 6,
 	})
 	require.NoError(t, resolver.RunOnce(context.Background()))
 
@@ -61,7 +61,7 @@ func TestOrphanResolver_HitsRetryCap_FlagsManualReview(t *testing.T) {
 	require.NoError(t, err)
 
 	resolver := dispatch.NewOrphanResolver(dispatch.OrphanConfig{
-		DB: db, Repo: repo, Dispatcher: dispatch.New(), MaxRetries: 3,
+		DB: db, Repo: repo, Dispatcher: dispatch.New(nil), MaxRetries: 3,
 	})
 
 	for i := 0; i < 3; i++ {

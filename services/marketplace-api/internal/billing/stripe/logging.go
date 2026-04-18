@@ -2,6 +2,7 @@ package stripe
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -52,4 +53,18 @@ func ExtractSafeFields(rawEvent []byte) (SafeWebhookFields, error) {
 		return SafeWebhookFields{}, err
 	}
 	return SafeWebhookFields{EventID: e.ID, EventType: e.Type}, nil
+}
+
+// SanitizeForLog returns a log-safe string for any error. For APIError it
+// returns the sanitized form (no body). For non-API errors it returns
+// "internal error" to avoid leaking anything sensitive.
+func SanitizeForLog(err error) string {
+	if err == nil {
+		return ""
+	}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Error()
+	}
+	return "internal error"
 }

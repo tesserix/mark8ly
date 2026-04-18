@@ -430,3 +430,39 @@
   border-color: rgba(47, 162, 79, 0.3);
   background: rgba(47, 162, 79, 0.05);
 }
+
+/* ── Toast (Accept Next confirmation, errors) ──────────────────────── */
+.otto-inbox__toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 100;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.3;
+  max-width: 320px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  animation: otto-toast-in 180ms ease-out;
+}
+
+.otto-inbox__toast--info {
+  background: var(--otto-inbox-accent, #2fa24f);
+  color: #fff;
+}
+
+.otto-inbox__toast--error {
+  background: #8e1a1a;
+  color: #fff;
+}
+
+@keyframes otto-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

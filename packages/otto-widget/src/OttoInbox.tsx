@@ -66,6 +66,12 @@ export function OttoInbox({
   const [statusFilter, setStatusFilter] = useState<InboxStatus>("pending");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // selectedConv mirrors selectedId but is stored independently of
+  // the list so a loadList refresh never blanks the thread pane. The
+  // previous design computed `selected` from `conversations.find()`,
+  // which broke on accept-next when the loadList refetch briefly
+  // overwrote the list.
+  const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
@@ -75,7 +81,22 @@ export function OttoInbox({
   // should be enabled (one case at a time per staff).
   const [available, setAvailable] = useState(false);
   const [currentCaseID, setCurrentCaseID] = useState<string>("");
+  // Lightweight toast — staff's confirmation that the Accept Next
+  // landed and which customer they just picked up.
+  const [toast, setToast] = useState<{ tone: "info" | "error"; msg: string } | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
+
+  // Fire a self-dismissing toast. Auto-clears after 4s so stale
+  // confirmations don't pile up during a busy shift.
+  const showToast = useCallback(
+    (tone: "info" | "error", msg: string) => {
+      setToast({ tone, msg });
+      window.setTimeout(() => {
+        setToast((prev) => (prev?.msg === msg ? null : prev));
+      }, 4000);
+    },
+    [],
+  );
 
   // Keep the latest statusFilter/selectedId accessible inside websocket
   // event callbacks without forcing the hook to re-subscribe on every
@@ -102,8 +123,11 @@ export function OttoInbox({
     }
   }, []);
 
+  // Prefer the canonical row from the list when present (so status
+  // pill / unread counts update in sync), but fall back to the cached
+  // selectedConv so the thread pane survives a loadList refresh.
   const selected =
-    conversations.find((c) => c.id === selectedId) ?? null;
+    conversations.find((c) => c.id === selectedId) ?? selectedConv ?? null;
 
   const loadList = useCallback(
     async (next: InboxStatus) => {
@@ -165,6 +189,13 @@ export function OttoInbox({
             prev.map((c) =>
               c.id === payload.conversation!.id ? payload.conversation! : c,
             ),
+          );
+          // Keep the pinned thread-pane copy fresh too — feedback
+          // submissions and status flips should reflect immediately.
+          setSelectedConv((prev) =>
+            prev && prev.id === payload.conversation!.id
+              ? payload.conversation!
+              : prev,
           );
         } else if (payload.conversation_id) {
           void loadList(statusFilterRef.current);
@@ -325,15 +356,28 @@ export function OttoInbox({
           ? prev.map((c) => (c.id === body.conversation!.id ? body.conversation! : c))
           : [body.conversation!, ...prev];
       });
+      // Set the conv state AND the id together so the thread pane
+      // opens immediately — previously we relied on the list refresh
+      // including the conv, which had a race under quick clicks.
+      setSelectedConv(body.conversation);
       setSelectedId(body.conversation.id);
       setCurrentCaseID(body.conversation.id);
       setStatusFilter("active");
+      const who =
+        body.conversation.customer.name ||
+        body.conversation.customer.email ||
+        "Customer";
+      showToast(
+        "info",
+        `Accepted ${body.conversation.case_id ?? "case"} — ${who}`,
+      );
     } catch (e) {
       setError((e as Error).message);
+      showToast("error", (e as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [base]);
+  }, [base, showToast]);
 
   const accept = useCallback(
     async (id: string) => {
@@ -349,16 +393,28 @@ export function OttoInbox({
         setConversations((prev) =>
           prev.map((c) => (c.id === body.conversation.id ? body.conversation : c)),
         );
+        // Mirror the accept-next flow: keep the conv pinned in state
+        // so the thread pane renders even if loadList races.
+        setSelectedConv(body.conversation);
         setSelectedId(body.conversation.id);
         // Jump to the Active tab so the agent sees their own claim land.
         setStatusFilter("active");
+        const who =
+          body.conversation.customer.name ||
+          body.conversation.customer.email ||
+          "Customer";
+        showToast(
+          "info",
+          `Accepted ${body.conversation.case_id ?? "case"} — ${who}`,
+        );
       } catch (e) {
         setError((e as Error).message);
+        showToast("error", (e as Error).message);
       } finally {
         setBusy(false);
       }
     },
-    [base],
+    [base, showToast],
   );
 
   const send = useCallback(
@@ -443,6 +499,15 @@ export function OttoInbox({
 
   return (
     <div className={`otto-inbox ${className ?? ""}`} style={style}>
+      {toast && (
+        <div
+          className={`otto-inbox__toast otto-inbox__toast--${toast.tone}`}
+          role="status"
+          aria-live="polite"
+        >
+          {toast.msg}
+        </div>
+      )}
       <aside className="otto-inbox__list">
         {/* Availability pool controls — staff must mark themselves
             available before Accept Next will pop a case to them. The
@@ -501,7 +566,10 @@ export function OttoInbox({
               key={c.id}
               type="button"
               className={`otto-inbox__row ${c.id === selectedId ? "is-active" : ""}`}
-              onClick={() => setSelectedId(c.id)}
+              onClick={() => {
+                setSelectedId(c.id);
+                setSelectedConv(c);
+              }}
             >
               <div className="otto-inbox__row-head">
                 <strong>

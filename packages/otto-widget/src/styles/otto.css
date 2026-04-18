@@ -475,3 +475,48 @@
   gap: 6px;
   font-size: 13px;
 }
+
+/* ── Closed case summary (shown after feedback submit) ──────────────── */
+.otto-widget__summary {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.otto-widget__summary-list {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--otto-border, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.otto-widget__summary-list > div {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.otto-widget__summary-list dt {
+  margin: 0;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: var(--otto-text-muted, #6c6c6c);
+  min-width: 70px;
+}
+
+.otto-widget__summary-list dd {
+  margin: 0;
+}
+
+.otto-widget__summary-hint {
+  color: var(--otto-text-muted, #6c6c6c);
+  font-size: 11px;
+}

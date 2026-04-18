@@ -858,13 +858,29 @@ export function OttoWidget({
           {phase === "feedback" && (
             <div className="otto-widget__feedback">
               {fbSubmitted ? (
-                <div className="otto-widget__intro">
-                  <strong>Thanks for the feedback.</strong>
-                  <p style={{ marginTop: 6, marginBottom: 0 }}>
-                    It goes straight to the team so we can keep
-                    improving.
-                  </p>
-                </div>
+                <ClosedCaseSummary
+                  conversation={conversation}
+                  onStartNew={() => {
+                    // Start fresh — new intake, new case, new
+                    // position in the queue. Closed cases cannot be
+                    // resumed by the customer from this side, so we
+                    // deliberately clear everything.
+                    setConversation(null);
+                    setMessages([]);
+                    setFbSubmitted(false);
+                    setFbCall(0);
+                    setFbStaff(0);
+                    setFbResolved(null);
+                    setFbComments("");
+                    setReason("");
+                    setStatusInfo("");
+                    setDob("");
+                    setPendingMessage("");
+                    setChatDraft("");
+                    setError(null);
+                    setPhase("collect");
+                  }}
+                />
               ) : (
                 <>
                   <div className="otto-widget__intro">
@@ -956,6 +972,105 @@ export function OttoWidget({
     </div>
   );
 }
+
+// ClosedCaseSummary is the final screen a customer sees after they
+// submit feedback on a closed case. Shows the case reference, the
+// reason they originally gave, when it closed, and whether the
+// automation closed it (inactivity) vs. staff closed it. Ends with a
+// "Start a new chat" action — the closed case is intentionally NOT
+// resumable from here, so starting a new conversation means a fresh
+// case id and a fresh position in the queue.
+function ClosedCaseSummary({
+  conversation,
+  onStartNew,
+}: {
+  conversation: Conversation | null;
+  onStartNew: () => void;
+}) {
+  if (!conversation) {
+    return (
+      <div className="otto-widget__intro">
+        <strong>Thanks for the feedback.</strong>
+        <p style={{ marginTop: 6, marginBottom: 0 }}>
+          It goes straight to the team.
+        </p>
+      </div>
+    );
+  }
+  const closedByInactivity = Boolean(conversation.inactivity_closed_at);
+  const closedAt = conversation.closed_at ?? conversation.inactivity_closed_at;
+  const reasonLabel = conversation.intake
+    ? REASON_LABEL[conversation.intake.reason] ?? conversation.intake.reason
+    : null;
+  return (
+    <div className="otto-widget__summary">
+      <div className="otto-widget__intro">
+        <strong>Thanks — your feedback is in.</strong>
+        <p style={{ marginTop: 6, marginBottom: 0 }}>
+          Here&apos;s a record of this case for your reference. You
+          can&apos;t reopen this case, but you&apos;re welcome to
+          start a new chat anytime.
+        </p>
+      </div>
+      <dl className="otto-widget__summary-list">
+        {conversation.case_id && (
+          <div>
+            <dt>Case</dt>
+            <dd>{conversation.case_id}</dd>
+          </div>
+        )}
+        {reasonLabel && (
+          <div>
+            <dt>Reason</dt>
+            <dd>{reasonLabel}</dd>
+          </div>
+        )}
+        {conversation.intake?.status && (
+          <div>
+            <dt>Summary</dt>
+            <dd>{conversation.intake.status}</dd>
+          </div>
+        )}
+        {conversation.assignee?.name && (
+          <div>
+            <dt>Handled by</dt>
+            <dd>{conversation.assignee.name}</dd>
+          </div>
+        )}
+        {closedAt && (
+          <div>
+            <dt>Closed</dt>
+            <dd>
+              {new Date(closedAt).toLocaleString()}
+              {closedByInactivity && (
+                <span className="otto-widget__summary-hint">
+                  {" "}· auto-closed after 15 min of no reply
+                </span>
+              )}
+            </dd>
+          </div>
+        )}
+      </dl>
+      <button
+        type="button"
+        className="otto-widget__submit"
+        onClick={onStartNew}
+      >
+        Start a new chat
+      </button>
+    </div>
+  );
+}
+
+// REASON_LABEL mirrors REASON_OPTIONS above — kept as a lookup so the
+// summary screen doesn't pull in the full options array.
+const REASON_LABEL: Record<string, string> = {
+  order_issue: "Order issue",
+  return: "Return / refund",
+  payment: "Payment problem",
+  product_question: "Product question",
+  other: "Something else",
+};
 
 // FeedbackStars renders a 1-5 star picker for a single survey
 // question. We store 0 as "not answered" so the backend can

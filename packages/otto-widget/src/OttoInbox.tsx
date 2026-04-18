@@ -39,6 +39,18 @@ export interface OttoInboxProps {
   /** Optional style/classname passthrough for the outer wrapper. */
   style?: CSSProperties;
   className?: string;
+  /**
+   * Optional toast bridge. When the host app has its own toaster
+   * (the admin uses `useToast()` from components/feedback/Toaster),
+   * pass a handler so confirmations render in the host's consistent
+   * style. Without this prop the widget falls back to an internal
+   * floating toast so it still works as a drop-in standalone.
+   */
+  onToast?: (
+    tone: "success" | "error" | "info",
+    title: string,
+    description?: string,
+  ) => void;
 }
 
 const DEFAULT_INBOX_WS = () => {
@@ -61,6 +73,7 @@ export function OttoInbox({
   currentUserId,
   style,
   className,
+  onToast,
 }: OttoInboxProps) {
   const base = useMemo(() => apiBaseUrl.replace(/\/+$/, ""), [apiBaseUrl]);
   const [statusFilter, setStatusFilter] = useState<InboxStatus>("pending");
@@ -81,21 +94,27 @@ export function OttoInbox({
   // should be enabled (one case at a time per staff).
   const [available, setAvailable] = useState(false);
   const [currentCaseID, setCurrentCaseID] = useState<string>("");
-  // Lightweight toast — staff's confirmation that the Accept Next
-  // landed and which customer they just picked up.
-  const [toast, setToast] = useState<{ tone: "info" | "error"; msg: string } | null>(null);
+  // Inline fallback when no host toast bridge is provided — keeps
+  // the widget functional in a standalone / dev context.
+  const [toast, setToast] = useState<{ tone: "success" | "error" | "info"; title: string; description?: string } | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
 
-  // Fire a self-dismissing toast. Auto-clears after 4s so stale
-  // confirmations don't pile up during a busy shift.
+  // Unified toast entry point. Delegates to the host's toaster when
+  // one is wired (so admin tab feedback stays visually consistent
+  // with the rest of the app), and falls back to the internal
+  // floating toast otherwise.
   const showToast = useCallback(
-    (tone: "info" | "error", msg: string) => {
-      setToast({ tone, msg });
+    (tone: "success" | "error" | "info", title: string, description?: string) => {
+      if (onToast) {
+        onToast(tone, title, description);
+        return;
+      }
+      setToast({ tone, title, description });
       window.setTimeout(() => {
-        setToast((prev) => (prev?.msg === msg ? null : prev));
+        setToast((prev) => (prev?.title === title ? null : prev));
       }, 4000);
     },
-    [],
+    [onToast],
   );
 
   // Keep the latest statusFilter/selectedId accessible inside websocket
@@ -322,13 +341,21 @@ export function OttoInbox({
         const a = body.availability;
         setAvailable(Boolean(a?.available));
         setCurrentCaseID(a?.current_case_id ?? "");
+        showToast(
+          "success",
+          next ? "You're available" : "You're paused",
+          next
+            ? "New customers can be routed to you from the queue."
+            : "You won't be offered new customers until you go available.",
+        );
       } catch (e) {
         setError((e as Error).message);
+        showToast("error", "Couldn't update availability", (e as Error).message);
       } finally {
         setBusy(false);
       }
     },
-    [base],
+    [base, showToast],
   );
 
   const acceptNext = useCallback(async () => {
@@ -368,12 +395,13 @@ export function OttoInbox({
         body.conversation.customer.email ||
         "Customer";
       showToast(
-        "info",
-        `Accepted ${body.conversation.case_id ?? "case"} — ${who}`,
+        "success",
+        "Case accepted",
+        `${body.conversation.case_id ?? "Case"} · ${who}`,
       );
     } catch (e) {
       setError((e as Error).message);
-      showToast("error", (e as Error).message);
+      showToast("error", "Couldn't accept case", (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -404,12 +432,13 @@ export function OttoInbox({
           body.conversation.customer.email ||
           "Customer";
         showToast(
-          "info",
-          `Accepted ${body.conversation.case_id ?? "case"} — ${who}`,
+          "success",
+          "Case accepted",
+          `${body.conversation.case_id ?? "Case"} · ${who}`,
         );
       } catch (e) {
         setError((e as Error).message);
-        showToast("error", (e as Error).message);
+        showToast("error", "Couldn't accept case", (e as Error).message);
       } finally {
         setBusy(false);
       }
@@ -445,11 +474,12 @@ export function OttoInbox({
         setReply("");
       } catch (err) {
         setError((err as Error).message);
+        showToast("error", "Message didn't send", (err as Error).message);
       } finally {
         setBusy(false);
       }
     },
-    [base, busy, reply, selected],
+    [base, busy, reply, selected, showToast],
   );
 
   const close = useCallback(async () => {
@@ -464,12 +494,20 @@ export function OttoInbox({
       // Server releases the staff's current_case_id — mirror that
       // locally so Accept Next lights up again immediately.
       setCurrentCaseID("");
+      showToast(
+        "success",
+        "Case closed",
+        selected.case_id
+          ? `${selected.case_id} · customer will be asked for feedback.`
+          : "Customer will be asked for feedback.",
+      );
     } catch (e) {
       setError((e as Error).message);
+      showToast("error", "Couldn't close case", (e as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [base, selected]);
+  }, [base, selected, showToast]);
 
   const reopen = useCallback(async () => {
     if (!selected) return;
@@ -484,13 +522,20 @@ export function OttoInbox({
       setConversations((prev) =>
         prev.map((c) => (c.id === body.conversation.id ? body.conversation : c)),
       );
+      setSelectedConv(body.conversation);
       setStatusFilter(body.conversation.status);
+      showToast(
+        "success",
+        "Case reopened",
+        body.conversation.case_id ?? undefined,
+      );
     } catch (e) {
       setError((e as Error).message);
+      showToast("error", "Couldn't reopen case", (e as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [base, selected]);
+  }, [base, selected, showToast]);
 
   const canReply =
     !!selected &&
@@ -505,7 +550,10 @@ export function OttoInbox({
           role="status"
           aria-live="polite"
         >
-          {toast.msg}
+          <strong>{toast.title}</strong>
+          {toast.description && (
+            <div className="otto-inbox__toast-desc">{toast.description}</div>
+          )}
         </div>
       )}
       <aside className="otto-inbox__list">

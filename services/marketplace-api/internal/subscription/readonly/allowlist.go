@@ -20,4 +20,7 @@ var DefaultAllowlist = []AllowedRoute{
 	{http.MethodGet, "/admin/stores/:storeId/orders/export/*path"},
 	{http.MethodPost, "/admin/auth/*path"},
 	{http.MethodGet, "/admin/stores/:storeId/migration-fast-path/*path"},
+	// §4.7: merchants in any terminal state must be able to reach the Stripe
+	// hosted invoice page to pay and recover their subscription.
+	{http.MethodGet, "/admin/stores/:storeId/subscription/complete-action"},
 }

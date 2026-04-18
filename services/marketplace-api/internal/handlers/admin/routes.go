@@ -41,6 +41,7 @@ type Deps struct {
 	DomainsHandler           *DomainsHandler
 	SubscriptionHandler      *SubscriptionHandler
 	ChangePlanHandler        *ChangePlanHandler
+	CompleteActionHandler    *CompleteActionHandler
 	TrialBillingHandler        *TrialBillingHandler
 	MigrationFastPathHandler   *migration.Handler
 	AuditLogsHandler         *AuditLogsHandler
@@ -565,6 +566,12 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					sub.GET("/change-plan/preflight",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionViewRole),
 						deps.ChangePlanHandler.ChangePlanPreflight)
+				}
+
+				if deps.CompleteActionHandler != nil {
+					sub.GET("/complete-action",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionViewRole),
+						deps.CompleteActionHandler.Redirect)
 				}
 			}
 		}

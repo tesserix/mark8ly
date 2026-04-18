@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )

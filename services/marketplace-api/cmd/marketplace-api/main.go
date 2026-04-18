@@ -25,11 +25,15 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/sync/singleflight"
+	"gorm.io/gorm"
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
+	"github.com/mark8ly/marketplace-api/internal/billing/pricing"
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/category"
@@ -44,6 +48,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
 	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
 	"github.com/mark8ly/marketplace-api/internal/handlers/testroutes"
+	"github.com/mark8ly/marketplace-api/internal/handlers/webhooks"
 	"github.com/mark8ly/marketplace-api/internal/health"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/media"
@@ -62,6 +67,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
+	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 	"github.com/mark8ly/marketplace-api/internal/wishlist"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
@@ -69,6 +75,61 @@ import (
 	"github.com/mark8ly/marketplace-api/pkg/logger"
 	"github.com/mark8ly/marketplace-api/pkg/migrate"
 )
+
+// stripeClientAdapter wraps the package-level billingstripe helpers into the
+// subscription.StripeClient interface. It exists only to avoid refactoring
+// the subscription.Service signature as part of P2 wiring.
+type stripeClientAdapter struct {
+	c *billingstripe.Client
+}
+
+func (a *stripeClientAdapter) CreateCustomer(ctx context.Context, email, name string) (string, error) {
+	cu, err := billingstripe.CreateCustomer(ctx, a.c, billingstripe.CreateCustomerInput{
+		// StoreID/TenantID are not in the legacy StripeClient interface; passed
+		// as empty strings here. TODO(P3): rewire to pass them from CheckoutInput.
+		Email: email,
+		Name:  name,
+	})
+	if err != nil {
+		return "", err
+	}
+	return cu.ID, nil
+}
+
+func (a *stripeClientAdapter) CreateCheckoutSession(ctx context.Context, customerID string, plan subscription.SubscriptionPlan, successURL, cancelURL string) (string, error) {
+	// The legacy interface carries no PriceID or Currency. Use the Developed
+	// monthly descriptor to supply a sensible currency default.
+	// TODO(P3): pass PriceID + Currency from a richer CheckoutInput so the
+	// correct price object is selected per store locale.
+	desc := pricing.MustGetDescriptor(pricing.Plan(plan), pricing.PeriodMonthly, pricing.TierDeveloped)
+	sess, err := billingstripe.CreateCheckoutSession(ctx, a.c, billingstripe.CheckoutInput{
+		CustomerID: customerID,
+		PriceID:    "", // placeholder — real price ID populated after billing-bootstrap; 400s here are pre-existing (nil client = always broken)
+		Currency:   desc.Baseline.Currency,
+		Plan:       string(plan),
+		Period:     string(pricing.PeriodMonthly),
+		SuccessURL: successURL,
+		CancelURL:  cancelURL,
+	})
+	if err != nil {
+		return "", err
+	}
+	return sess.URL, nil
+}
+
+func (a *stripeClientAdapter) CreatePortalSession(ctx context.Context, customerID, returnURL string) (string, error) {
+	// The legacy interface has no StoreID; use customerID as the idempotency
+	// bucket key — safe because Stripe portal sessions are customer-scoped.
+	ps, err := billingstripe.CreatePortalSession(ctx, a.c, billingstripe.PortalInput{
+		StoreID:    customerID,
+		CustomerID: customerID,
+		ReturnURL:  returnURL,
+	})
+	if err != nil {
+		return "", err
+	}
+	return ps.URL, nil
+}
 
 // stubPlatformClient is a placeholder stores.Client that always returns
 // ErrPlatformUnavailable. M5a tests pre-seed the stores projection via
@@ -403,13 +464,19 @@ func main() {
 
 		// Settings S3 — Subscription/Billing.
 		subscriptionRepo := subscription.NewRepository()
+		var stripeAdapter subscription.StripeClient
+		if cfg.StripeBillingSecretKey != "" {
+			stripeAdapter = &stripeClientAdapter{c: billingstripe.New(cfg.StripeBillingSecretKey)}
+		} else {
+			log.Warn("STRIPE_BILLING_SECRET_KEY not set — subscription checkout/portal will fail")
+		}
 		subscriptionSvc := subscription.NewService(subscription.ServiceConfig{
 			DB:     conn,
 			Repo:   subscriptionRepo,
-			Stripe: nil, // Stub — real Stripe client wired in production config
+			Stripe: stripeAdapter,
 			Logger: log,
 		})
-		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, cfg.StripeBillingWebhookSecret, log)
+		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, log)
 
 		// Settings S4 — Audit Logs read endpoint (admin-only). The
 		// emitter + repo are initialised unconditionally above so the
@@ -851,6 +918,49 @@ func main() {
 		vendorHandler = vendor.NewHandler(vendorSvc)
 	}
 
+	// Stripe billing webhook handler + orphan cron — mounted outside the admin
+	// auth middleware so Stripe can POST without X-Internal-Auth. Only active
+	// when STRIPE_BILLING_WEBHOOK_SECRET is set.
+	var stripeBillingWebhookHandler gin.HandlerFunc
+	if cfg.StripeBillingWebhookSecret != "" {
+		allowed := make(map[string]bool, len(cfg.StripeAllowedEventTypes))
+		for _, t := range cfg.StripeAllowedEventTypes {
+			allowed[t] = true
+		}
+		dispatcher := dispatch.New()
+		webhookH := webhooks.NewStripeHandler(webhooks.StripeHandlerConfig{
+			DB:     conn,
+			Secret: cfg.StripeBillingWebhookSecret,
+			Repo:   webhookevents.NewRepository(),
+			Dispatch: func(ctx context.Context, tx *gorm.DB, e webhookevents.StripeWebhookEvent) error {
+				return dispatcher.Dispatch(ctx, tx, e)
+			},
+			AllowedTypes: allowed,
+			MaxBodyBytes: cfg.WebhookMaxBodyBytes,
+			Logger:       log,
+		})
+		stripeBillingWebhookHandler = webhookH.Handle
+
+		// Orphan cron — retries unprocessed webhook events on a fixed interval.
+		orphanCron := dispatch.NewCron(dispatch.CronConfig{
+			DB:             conn,
+			Repo:           webhookevents.NewRepository(),
+			Dispatcher:     dispatcher,
+			PagerDuty:      &dispatch.HTTPPagerDuty{URL: cfg.PagerDutyWebhookURL},
+			StaleThreshold: cfg.OrphanStaleThreshold,
+			Interval:       cfg.OrphanRetryInterval,
+			MaxRetries:     cfg.OrphanRetryMaxCount,
+		})
+		if err := orphanCron.Start(workerCtx); err != nil {
+			log.Error("orphan cron failed to start", "err", err)
+		} else {
+			defer orphanCron.Stop()
+			log.Info("stripe billing: orphan cron started", "interval", cfg.OrphanRetryInterval)
+		}
+	} else {
+		log.Warn("STRIPE_BILLING_WEBHOOK_SECRET not set — /webhooks/stripe-billing not mounted")
+	}
+
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)
 
@@ -880,6 +990,9 @@ func main() {
 		// existing /internal namespace gated by X-Internal-Auth.
 		internalsvc.NewAuditIngestHandler(auditEmitter, domainStoresRepo, log).
 			Register(r.Group("/internal"), cfg.AuditIngestSecret)
+		if stripeBillingWebhookHandler != nil {
+			r.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
+		}
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
 			Handler: r,
@@ -910,6 +1023,9 @@ func main() {
 			// storefront engine's surface area small.
 			internalsvc.NewAuditIngestHandler(auditEmitter, domainStoresRepo, log).
 				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
+			if stripeBillingWebhookHandler != nil {
+				engine.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
+			}
 		}
 		if m == mode.Storefront {
 			storefront.RegisterStorefront(engine.Group("/api/v1"), storefrontDeps)

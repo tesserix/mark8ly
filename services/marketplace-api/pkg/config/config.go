@@ -2,6 +2,8 @@
 package config
 
 import (
+	"time"
+
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 )
@@ -69,9 +71,15 @@ type Config struct {
 
 	// S1 — auth-bff URL for MFA/session proxying.
 	AuthBFFURL string `envconfig:"AUTH_BFF_URL" default:""`
-	// S3 — Stripe Billing keys.
-	StripeBillingSecretKey     string `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
-	StripeBillingWebhookSecret string `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
+	// S3 — Stripe Billing keys + webhook / orphan cron config.
+	StripeBillingSecretKey      string        `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
+	StripeBillingWebhookSecret  string        `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
+	StripeAllowedEventTypes     []string      `envconfig:"STRIPE_ALLOWED_EVENT_TYPES" default:"checkout.session.completed,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed,invoice.payment_action_required,customer.updated,charge.refunded,payment_method.attached,payment_method.detached,radar.early_fraud_warning"`
+	WebhookMaxBodyBytes         int64         `envconfig:"WEBHOOK_MAX_BODY_BYTES" default:"524288"`
+	OrphanRetryMaxCount         int           `envconfig:"ORPHAN_RETRY_MAX_COUNT" default:"6"`
+	OrphanRetryInterval         time.Duration `envconfig:"ORPHAN_RETRY_INTERVAL" default:"5m"`
+	OrphanStaleThreshold        time.Duration `envconfig:"ORPHAN_STALE_THRESHOLD" default:"1h"`
+	PagerDutyWebhookURL         string        `envconfig:"PAGERDUTY_WEBHOOK_URL" default:""`
 
 	// AUDIT — shared secret gating /internal/audit-events. When empty,
 	// the endpoint is permissive (dev convenience). Set to the SAME

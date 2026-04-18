@@ -107,11 +107,6 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		}
 	}
 
-	// Stripe billing webhook — outside auth chain, signature verified inside handler.
-	if deps.SubscriptionHandler != nil {
-		router.POST("/webhooks/stripe-billing", deps.SubscriptionHandler.HandleWebhook)
-	}
-
 	storeRoute := router.Group("/admin/stores/:storeId", authMW, deps.StoresMiddleware)
 	{
 		products := storeRoute.Group("/products")

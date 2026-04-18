@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
+	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
@@ -81,6 +83,14 @@ func (r *fakeRepo) Upsert(_ context.Context, s *stores.Store) error {
 	r.byKey[s.TenantID+"|"+s.ID] = &cp
 	r.upserts++
 	return nil
+}
+
+func (r *fakeRepo) CountActiveOrSoftDeletedRestorable(_ context.Context, _ uuid.UUID) (int, error) {
+	return 0, nil
+}
+
+func (r *fakeRepo) CountActiveOrSoftDeletedRestorableTx(_ context.Context, _ *gorm.DB, _ uuid.UUID) (int, error) {
+	return 0, nil
 }
 
 func (r *fakeRepo) preload(s *stores.Store) {

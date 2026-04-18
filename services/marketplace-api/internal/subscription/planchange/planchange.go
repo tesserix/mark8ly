@@ -294,8 +294,3 @@ func (o *Orchestrator) executeUpgrade(ctx context.Context, tx *gorm.DB, in Input
 	}, nil
 }
 
-// executeDowngradeSchedule is implemented in downgrade.go (Task 7).
-// It parks a pending downgrade at period-end after a store-count preflight check.
-func (o *Orchestrator) executeDowngradeSchedule(ctx context.Context, tx *gorm.DB, in Input, sub *subscription.StoreSubscription) (Output, error) {
-	return Output{}, errors.New("planchange: downgrade path not yet implemented")
-}

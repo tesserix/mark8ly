@@ -229,3 +229,58 @@ func TestIntegration_Repository_IsStale_Boundary(t *testing.T) {
 		t.Errorf("IsStale(nil) = false, want true")
 	}
 }
+
+func TestIntegration_CountActiveOrSoftDeletedRestorable_CountsByTenant(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := stores.NewRepository(tx)
+	ctx := context.Background()
+
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+
+	// Insert 3 stores for tenantA and 1 for tenantB.
+	for i := 0; i < 3; i++ {
+		if err := repo.Upsert(ctx, newStore(tenantA.String())); err != nil {
+			t.Fatalf("upsert tenantA store %d: %v", i, err)
+		}
+	}
+	if err := repo.Upsert(ctx, newStore(tenantB.String())); err != nil {
+		t.Fatalf("upsert tenantB store: %v", err)
+	}
+
+	count, err := repo.CountActiveOrSoftDeletedRestorable(ctx, tenantA)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("count = %d, want 3", count)
+	}
+
+	countB, err := repo.CountActiveOrSoftDeletedRestorable(ctx, tenantB)
+	if err != nil {
+		t.Fatalf("count tenantB: %v", err)
+	}
+	if countB != 1 {
+		t.Errorf("countB = %d, want 1", countB)
+	}
+}
+
+func TestIntegration_CountActiveOrSoftDeletedRestorableTx_UsesPassedTx(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := stores.NewRepository(tx)
+	ctx := context.Background()
+
+	tenantID := uuid.New()
+	if err := repo.Upsert(ctx, newStore(tenantID.String())); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	// CountActiveOrSoftDeletedRestorableTx must see the uncommitted row inside tx.
+	count, err := repo.CountActiveOrSoftDeletedRestorableTx(ctx, tx, tenantID)
+	if err != nil {
+		t.Fatalf("count tx: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1", count)
+	}
+}

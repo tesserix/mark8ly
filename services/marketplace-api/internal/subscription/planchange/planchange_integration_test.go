@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
@@ -27,6 +28,23 @@ func fakeStripeOK() *fakeStripe {
 	}
 }
 
+// seedStores inserts n active stores for the given tenant into the stores
+// table. Used by downgrade preflight tests to set up over/under quota scenarios.
+func seedStores(t *testing.T, db *gorm.DB, tenantID uuid.UUID, count int) {
+	t.Helper()
+	for i := 0; i < count; i++ {
+		storeID := uuid.New()
+		slug := "test-store-" + uuid.NewString()[:8]
+		if err := db.Exec(
+			`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
+			 VALUES (?, ?, ?, 'Test Store', 'US', 'USD', 'UTC', 'active', now())`,
+			storeID, tenantID, slug,
+		).Error; err != nil {
+			t.Fatalf("seedStores: insert %d: %v", i, err)
+		}
+	}
+}
+
 func TestExecute_Upgrade_StarterToStudio_CommitsImmediately(t *testing.T) {
 	db := testdb.NewDB(t, "subscription_plan_change_audit", "store_subscriptions")
 	ctx := context.Background()
@@ -36,23 +54,22 @@ func TestExecute_Upgrade_StarterToStudio_CommitsImmediately(t *testing.T) {
 	subID := "sub_upgrade_test"
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
-		TenantID:           tenantID,
-		StoreID:            storeID,
-		StripeCustomerID:   "cus_test",
+		TenantID:             tenantID,
+		StoreID:              storeID,
+		StripeCustomerID:     "cus_test",
 		StripeSubscriptionID: &subID,
-		Plan:               subscription.PlanStarter,
-		Status:             subscription.StatusActive,
-		SubscriptionPeriod: subscription.PeriodMonthly,
-		PriceTier:          subscription.PriceTierDeveloped,
-		BillingCurrency:    strPtr("USD"),
+		Plan:                 subscription.PlanStarter,
+		Status:               subscription.StatusActive,
+		SubscriptionPeriod:   subscription.PeriodMonthly,
+		PriceTier:            subscription.PriceTierDeveloped,
+		BillingCurrency:      strPtr("USD"),
 	}).Error)
 
 	subRepo := subscription.NewRepository()
-	stripe := fakeStripeOK()
 
 	o := planchange.NewOrchestrator(planchange.Deps{
 		DB:               db,
-		Stripe:           stripe,
+		Stripe:           fakeStripeOK(),
 		SubscriptionRepo: subRepo,
 		Clock:            fixedClock{t: time.Now()},
 	})
@@ -71,12 +88,10 @@ func TestExecute_Upgrade_StarterToStudio_CommitsImmediately(t *testing.T) {
 	require.Equal(t, planchange.ResultUpgradeCommitted, out.Result)
 	require.True(t, out.StripeUpdated)
 
-	// Verify the subscription row was updated.
 	got, err := subRepo.GetByStoreID(ctx, db, tenantID, storeID)
 	require.NoError(t, err)
 	require.Equal(t, subscription.PlanStudio, got.Plan)
 
-	// Verify audit row was written.
 	var count int64
 	require.NoError(t, db.Table("subscription_plan_change_audit").
 		Where("store_id = ? AND action = ?", storeID, "upgrade_committed").
@@ -156,6 +171,115 @@ func TestExecute_RejectsCurrencyChange(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, planchange.ErrCurrencyLocked)
+}
+
+func TestExecute_Downgrade_StudioToStarter_ParksPending(t *testing.T) {
+	db := testdb.NewDB(t, "subscription_plan_change_audit", "store_subscriptions", "stores")
+	ctx := context.Background()
+
+	tenantID := uuid.New()
+	storeID := uuid.New()
+	subID := "sub_downgrade_test"
+	periodEnd := time.Now().Add(15 * 24 * time.Hour)
+
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:             tenantID,
+		StoreID:              storeID,
+		StripeCustomerID:     "cus_studio",
+		StripeSubscriptionID: &subID,
+		Plan:                 subscription.PlanStudio,
+		Status:               subscription.StatusActive,
+		SubscriptionPeriod:   subscription.PeriodMonthly,
+		PriceTier:            subscription.PriceTierDeveloped,
+		BillingCurrency:      strPtr("USD"),
+		CurrentPeriodEnd:     &periodEnd,
+	}).Error)
+
+	// Seed 1 store — within the Starter limit of 2.
+	seedStores(t, db, tenantID, 1)
+
+	subRepo := subscription.NewRepository()
+	o := planchange.NewOrchestrator(planchange.Deps{
+		DB:               db,
+		Stripe:           fakeStripeOK(),
+		SubscriptionRepo: subRepo,
+		Clock:            fixedClock{t: time.Now()},
+	})
+
+	out, err := o.Execute(ctx, planchange.Input{
+		TenantID:     tenantID,
+		StoreID:      storeID,
+		TargetPlan:   subscription.PlanStarter,
+		TargetPeriod: subscription.PeriodMonthly,
+		Actor:        "user:test",
+		Reason:       "merchant_requested",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, planchange.ResultDowngradeScheduled, out.Result)
+	require.False(t, out.StripeUpdated)
+	require.True(t, out.EffectiveAt.After(time.Now()), "effective_at should be in the future")
+
+	got, err := subRepo.GetByStoreID(ctx, db, tenantID, storeID)
+	require.NoError(t, err)
+	require.NotNil(t, got.PendingDowngradePlan)
+	require.Equal(t, subscription.PlanStarter, *got.PendingDowngradePlan)
+
+	var count int64
+	require.NoError(t, db.Table("subscription_plan_change_audit").
+		Where("store_id = ? AND action = ?", storeID, "downgrade_scheduled").
+		Count(&count).Error)
+	require.Equal(t, int64(1), count)
+}
+
+func TestExecute_Downgrade_StudioToStarter_OverQuota_Rejected(t *testing.T) {
+	db := testdb.NewDB(t, "subscription_plan_change_audit", "store_subscriptions", "stores")
+	ctx := context.Background()
+
+	tenantID := uuid.New()
+	storeID := uuid.New()
+	subID := "sub_overquota_test"
+	periodEnd := time.Now().Add(15 * 24 * time.Hour)
+
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:             tenantID,
+		StoreID:              storeID,
+		StripeCustomerID:     "cus_overquota",
+		StripeSubscriptionID: &subID,
+		Plan:                 subscription.PlanStudio,
+		Status:               subscription.StatusActive,
+		SubscriptionPeriod:   subscription.PeriodMonthly,
+		PriceTier:            subscription.PriceTierDeveloped,
+		BillingCurrency:      strPtr("USD"),
+		CurrentPeriodEnd:     &periodEnd,
+	}).Error)
+
+	// Seed 3 stores — exceeds the Starter limit of 2.
+	seedStores(t, db, tenantID, 3)
+
+	o := planchange.NewOrchestrator(planchange.Deps{
+		DB:               db,
+		Stripe:           fakeStripeOK(),
+		SubscriptionRepo: subscription.NewRepository(),
+		Clock:            fixedClock{t: time.Now()},
+	})
+
+	_, err := o.Execute(ctx, planchange.Input{
+		TenantID:     tenantID,
+		StoreID:      storeID,
+		TargetPlan:   subscription.PlanStarter,
+		TargetPeriod: subscription.PeriodMonthly,
+		Actor:        "user:test",
+		Reason:       "merchant_requested",
+	})
+
+	require.ErrorIs(t, err, planchange.ErrStoreCountOverQuota)
+
+	var count int64
+	require.NoError(t, db.Table("subscription_plan_change_audit").
+		Where("store_id = ? AND action = ?", storeID, "downgrade_blocked_over_quota").
+		Count(&count).Error)
+	require.Equal(t, int64(1), count)
 }
 
 func strPtr(s string) *string { return &s }

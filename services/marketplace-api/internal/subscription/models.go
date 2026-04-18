@@ -8,11 +8,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// WhiteLabelAppStatus: temporary stub so Task 4 compiles independently.
-// Task 11 moves this type (and its constants) into internal/subscription/app_lifecycle.go
-// and expands it with the 6-value enum from §13.5. Do NOT add constants here.
-type WhiteLabelAppStatus string
-
 // SubscriptionPlan enumerates the available billing plans (v2.3).
 type SubscriptionPlan string
 

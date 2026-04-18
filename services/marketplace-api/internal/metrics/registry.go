@@ -63,6 +63,13 @@ var (
 		Name: "mark8ly_trial_signup_anomaly_alerts_total",
 		Help: "Count of days where yesterday's signup count exceeded the anomaly threshold.",
 	})
+
+	// TrialActivationDay30Total counts trialing stores that reached day 30 with
+	// at least one product.
+	TrialActivationDay30Total = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "mark8ly_trial_activation_day30_total",
+		Help: "Count of trialing stores that reached day 30 with at least one product.",
+	})
 )
 
 func init() {
@@ -74,5 +81,6 @@ func init() {
 		OutboxEventsPending,
 		OutboxEventsPublishedTotal,
 		TrialSignupAnomalyAlertsTotal,
+		TrialActivationDay30Total,
 	)
 }

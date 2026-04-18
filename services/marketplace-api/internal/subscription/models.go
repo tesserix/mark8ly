@@ -108,6 +108,9 @@ type StoreSubscription struct {
 	LastPlanChangeAt            *time.Time          `gorm:"column:last_plan_change_at"`
 	LastPlanChangeReason        *string             `gorm:"column:last_plan_change_reason;type:varchar(64)"`
 
+	// P5 Task 14 — day-30 activation idempotency marker (migration 055).
+	TrialActivationMarkedAt *time.Time `gorm:"column:trial_activation_marked_at"`
+
 	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:now()"`
 }

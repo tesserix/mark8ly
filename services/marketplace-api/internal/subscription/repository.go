@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -40,6 +41,39 @@ type Repository interface {
 	// tenant-facing API — the webhook signature is the only trust boundary
 	// that justifies skipping tenant scoping here.
 	GetByStripeCustomerID(ctx context.Context, db *gorm.DB, customerID string) (*StoreSubscription, error)
+
+	// SetPendingDowngrade stores the target plan/period and effective_at on the
+	// subscription row. Idempotent — overwriting a prior pending downgrade is
+	// intentional (merchant can change their mind; last write wins).
+	// MUST be called from inside WithAdvisoryLock.
+	SetPendingDowngrade(ctx context.Context, db *gorm.DB, tenantID, storeID uuid.UUID,
+		targetPlan SubscriptionPlan, targetPeriod SubscriptionPeriod,
+		effectiveAt time.Time, reason string) error
+
+	// ClearPendingDowngrade unsets the trio. Idempotent.
+	// MUST be called from inside WithAdvisoryLock.
+	ClearPendingDowngrade(ctx context.Context, db *gorm.DB, tenantID, storeID uuid.UUID) error
+
+	// CommitDowngrade swaps plan + subscription_period AND clears pending trio.
+	// Used by the cron once all preconditions pass.
+	// MUST be called from inside WithAdvisoryLock.
+	CommitDowngrade(ctx context.Context, db *gorm.DB, tenantID, storeID uuid.UUID,
+		newPlan SubscriptionPlan, newPeriod SubscriptionPeriod) error
+
+	// CommitUpgrade mirrors CommitDowngrade for immediate upgrades.
+	// MUST be called from inside WithAdvisoryLock.
+	CommitUpgrade(ctx context.Context, db *gorm.DB, tenantID, storeID uuid.UUID,
+		newPlan SubscriptionPlan, newPeriod SubscriptionPeriod, reason string) error
+
+	// FindPendingDowngradesReady returns rows whose effective_at has passed.
+	// Used by DowngradeRecheckCron. Callers process each row under WithAdvisoryLock.
+	FindPendingDowngradesReady(ctx context.Context, db *gorm.DB, now time.Time) ([]StoreSubscription, error)
+
+	// CountStoresForPlanSlot counts active stores belonging to the tenant. Used by
+	// the Studio→Starter downgrade-block preflight and the cron re-check (§4.5.1).
+	// Caller scopes to tenant only — plan slots are tenant-wide. Soft-deleted
+	// stores within the 60-day restorable grace window also count toward the slot.
+	CountStoresForPlanSlot(ctx context.Context, db *gorm.DB, tenantID uuid.UUID) (int, error)
 }
 
 type gormRepository struct{}
@@ -100,4 +134,117 @@ func (gormRepository) GetByStripeCustomerID(ctx context.Context, db *gorm.DB, cu
 		return nil, fmt.Errorf("subscription get by stripe customer: %w", err)
 	}
 	return &s, nil
+}
+
+func (gormRepository) SetPendingDowngrade(ctx context.Context, db *gorm.DB, tenantID, storeID uuid.UUID,
+	targetPlan SubscriptionPlan, targetPeriod SubscriptionPeriod,
+	effectiveAt time.Time, reason string) error {
+	res := db.WithContext(ctx).Exec(`
+		UPDATE store_subscriptions
+		SET pending_downgrade_plan         = ?,
+		    pending_downgrade_period       = ?,
+		    pending_downgrade_effective_at = ?,
+		    last_plan_change_at            = now(),
+		    last_plan_change_reason        = ?,
+		    updated_at                     = now()
+		WHERE tenant_id = ? AND store_id = ?`,
+		targetPlan, targetPeriod, effectiveAt, reason, tenantID, storeID,
+	)
+	if res.Error != nil {
+		return fmt.Errorf("subscription: set pending downgrade: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("subscription")
+	}
+	return nil
+}
+
+func (gormRepository) ClearPendingDowngrade(ctx context.Context, db *gorm.DB, tenantID, storeID uuid.UUID) error {
+	res := db.WithContext(ctx).Exec(`
+		UPDATE store_subscriptions
+		SET pending_downgrade_plan         = NULL,
+		    pending_downgrade_period       = NULL,
+		    pending_downgrade_effective_at = NULL,
+		    updated_at                     = now()
+		WHERE tenant_id = ? AND store_id = ?`,
+		tenantID, storeID,
+	)
+	if res.Error != nil {
+		return fmt.Errorf("subscription: clear pending downgrade: %w", res.Error)
+	}
+	return nil
+}
+
+func (gormRepository) CommitDowngrade(ctx context.Context, db *gorm.DB, tenantID, storeID uuid.UUID,
+	newPlan SubscriptionPlan, newPeriod SubscriptionPeriod) error {
+	res := db.WithContext(ctx).Exec(`
+		UPDATE store_subscriptions
+		SET plan                           = ?,
+		    subscription_period            = ?,
+		    pending_downgrade_plan         = NULL,
+		    pending_downgrade_period       = NULL,
+		    pending_downgrade_effective_at = NULL,
+		    last_plan_change_at            = now(),
+		    last_plan_change_reason        = 'downgrade_committed',
+		    updated_at                     = now()
+		WHERE tenant_id = ? AND store_id = ?`,
+		newPlan, newPeriod, tenantID, storeID,
+	)
+	if res.Error != nil {
+		return fmt.Errorf("subscription: commit downgrade: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("subscription")
+	}
+	return nil
+}
+
+func (gormRepository) CommitUpgrade(ctx context.Context, db *gorm.DB, tenantID, storeID uuid.UUID,
+	newPlan SubscriptionPlan, newPeriod SubscriptionPeriod, reason string) error {
+	res := db.WithContext(ctx).Exec(`
+		UPDATE store_subscriptions
+		SET plan                           = ?,
+		    subscription_period            = ?,
+		    pending_downgrade_plan         = NULL,
+		    pending_downgrade_period       = NULL,
+		    pending_downgrade_effective_at = NULL,
+		    last_plan_change_at            = now(),
+		    last_plan_change_reason        = ?,
+		    updated_at                     = now()
+		WHERE tenant_id = ? AND store_id = ?`,
+		newPlan, newPeriod, reason, tenantID, storeID,
+	)
+	if res.Error != nil {
+		return fmt.Errorf("subscription: commit upgrade: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("subscription")
+	}
+	return nil
+}
+
+func (gormRepository) FindPendingDowngradesReady(ctx context.Context, db *gorm.DB, now time.Time) ([]StoreSubscription, error) {
+	var out []StoreSubscription
+	err := db.WithContext(ctx).
+		Where("pending_downgrade_effective_at IS NOT NULL AND pending_downgrade_effective_at <= ?", now).
+		Find(&out).Error
+	if err != nil {
+		return nil, fmt.Errorf("subscription: find pending downgrades: %w", err)
+	}
+	return out, nil
+}
+
+func (gormRepository) CountStoresForPlanSlot(ctx context.Context, db *gorm.DB, tenantID uuid.UUID) (int, error) {
+	var count int64
+	// Count active stores for the tenant. Soft-deleted-but-restorable rows
+	// within the 60-day grace window also count toward the slot; callers can
+	// extend the WHERE clause for that once the stores table is projected here.
+	err := db.WithContext(ctx).
+		Table("stores").
+		Where("tenant_id = ?", tenantID).
+		Count(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("subscription: count stores for plan slot: %w", err)
+	}
+	return int(count), nil
 }

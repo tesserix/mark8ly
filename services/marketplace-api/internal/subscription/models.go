@@ -62,6 +62,14 @@ const (
 	TaxIDNameMatchNotChecked TaxIDNameMatch = "not_checked"
 )
 
+// SubscriptionPeriod is the recurring billing interval.
+type SubscriptionPeriod string
+
+const (
+	PeriodMonthly SubscriptionPeriod = "monthly"
+	PeriodAnnual  SubscriptionPeriod = "annual"
+)
+
 // StoreSubscription is the GORM model for the store_subscriptions table.
 // Column definitions must stay aligned with migrations 036-040.
 type StoreSubscription struct {
@@ -91,6 +99,14 @@ type StoreSubscription struct {
 	HasWhiteLabelAppAddOn bool                 `gorm:"column:has_white_label_app_add_on;not null;default:false"`
 	ArbitrageFlag         bool                 `gorm:"column:arbitrage_flag;not null;default:false"`
 	AppLifecycleStatus    *WhiteLabelAppStatus `gorm:"column:app_lifecycle_status;type:varchar(30)"`
+
+	// v2.3 P4 — billing period + pending-downgrade orchestration (§4.4, §4.5, §4.5.1).
+	SubscriptionPeriod          SubscriptionPeriod  `gorm:"column:subscription_period;type:varchar(10);not null;default:monthly"`
+	PendingDowngradePlan        *SubscriptionPlan   `gorm:"column:pending_downgrade_plan;type:varchar(30)"`
+	PendingDowngradePeriod      *SubscriptionPeriod `gorm:"column:pending_downgrade_period;type:varchar(10)"`
+	PendingDowngradeEffectiveAt *time.Time          `gorm:"column:pending_downgrade_effective_at"`
+	LastPlanChangeAt            *time.Time          `gorm:"column:last_plan_change_at"`
+	LastPlanChangeReason        *string             `gorm:"column:last_plan_change_reason;type:varchar(64)"`
 
 	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:now()"`

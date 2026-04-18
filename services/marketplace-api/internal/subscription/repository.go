@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -51,7 +52,7 @@ func (gormRepository) GetByStoreID(ctx context.Context, db *gorm.DB, tenantID, s
 	if err := db.WithContext(ctx).
 		Where("tenant_id = ? AND store_id = ?", tenantID, storeID).
 		First(&s).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperrors.NotFound("subscription")
 		}
 		return nil, fmt.Errorf("subscription get by store: %w", err)
@@ -79,7 +80,8 @@ func (gormRepository) Update(ctx context.Context, db *gorm.DB, s *StoreSubscript
 	res := db.WithContext(ctx).
 		Model(&StoreSubscription{}).
 		Where("tenant_id = ? AND store_id = ?", s.TenantID, s.StoreID).
-		Save(s)
+		Select("*").
+		Updates(s)
 	if res.Error != nil {
 		return fmt.Errorf("subscription update: %w", res.Error)
 	}
@@ -92,7 +94,7 @@ func (gormRepository) Update(ctx context.Context, db *gorm.DB, s *StoreSubscript
 func (gormRepository) GetByStripeCustomerID(ctx context.Context, db *gorm.DB, customerID string) (*StoreSubscription, error) {
 	var s StoreSubscription
 	if err := db.WithContext(ctx).Where("stripe_customer_id = ?", customerID).First(&s).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperrors.NotFound("subscription")
 		}
 		return nil, fmt.Errorf("subscription get by stripe customer: %w", err)

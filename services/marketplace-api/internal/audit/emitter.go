@@ -288,3 +288,61 @@ func clientIP(c *gin.Context) string {
 	}
 	return raw
 }
+
+// StateTransition records a subscription state move for the audit trail.
+// Populate Actor with either a user UUID string (merchant-driven) or a
+// sentinel like "system:webhook:stripe" / "system:cron:trial_expiry"
+// for automated transitions.
+type StateTransition struct {
+	StoreID       uuid.UUID
+	TenantID      uuid.UUID // optional; pulled from gin ctx when zero
+	From          string
+	To            string
+	Plan          string // current plan snapshot; aids cross-state dashboards
+	Actor         string // "system:webhook:stripe" | "user:<uuid>" | ...
+	Reason        string // "invoice.paid" | "merchant_cancelled" | ...
+	StripeEventID string
+}
+
+// EmitStateTransition is the canonical hook for every subscription state
+// change (§23.1). It builds a standard Event and delegates to Emit.
+func (e *Emitter) EmitStateTransition(c *gin.Context, t StateTransition) {
+	md := map[string]any{
+		"from_status": t.From,
+		"to_status":   t.To,
+		"actor":       t.Actor,
+	}
+	if t.Plan != "" {
+		md["plan"] = t.Plan
+	}
+	if t.Reason != "" {
+		md["reason"] = t.Reason
+	}
+	if t.StripeEventID != "" {
+		md["stripe_event_id"] = t.StripeEventID
+	}
+
+	severity := SeverityInfo
+	switch t.To {
+	case "expired", "store_closed", "pending_hard_delete", "hard_deleted", "payment_action_required":
+		severity = SeverityWarning
+	}
+
+	e.Emit(c, Event{
+		Action:         "subscription.state_transition",
+		ResourceType:   "subscription",
+		ResourceID:     t.StoreID.String(),
+		Severity:       severity,
+		Metadata:       md,
+		TenantID:       t.TenantID,
+		StoreID:        t.StoreID,
+		ForceActorType: classifyActor(t.Actor),
+	})
+}
+
+func classifyActor(actor string) ActorType {
+	if strings.HasPrefix(actor, "system:") {
+		return ActorSystem
+	}
+	return ActorUser
+}

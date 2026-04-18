@@ -71,3 +71,32 @@ func TestMatrix_AuditRetention(t *testing.T) {
 	require.Equal(t, 365, plangate.Limit(subscription.PlanStudio, plangate.FeatureAuditRetentionDays))
 	require.Equal(t, plangate.Unlimited, plangate.Limit(subscription.PlanPro, plangate.FeatureAuditRetentionDays))
 }
+
+// TestAllFeatureLimits_EveryFeaturePresentForEveryPlan guards the contract
+// that AllFeatureLimits emits one key per Feature, for every customer-
+// facing plan. Frontends iterate AllFeatures() and look up values — a
+// missing key would surface as a silent "disabled" render.
+func TestAllFeatureLimits_EveryFeaturePresentForEveryPlan(t *testing.T) {
+	for _, p := range []subscription.SubscriptionPlan{
+		subscription.PlanTrial,
+		subscription.PlanStarter,
+		subscription.PlanStudio,
+		subscription.PlanPro,
+	} {
+		t.Run(string(p), func(t *testing.T) {
+			m := plangate.AllFeatureLimits(p)
+			for _, f := range plangate.AllFeatures() {
+				_, ok := m[string(f)]
+				require.True(t, ok, "feature %s missing from AllFeatureLimits for %s", f, p)
+			}
+		})
+	}
+}
+
+// TestAllFeatures_IncludesAllConstants sanity-checks that the canonical
+// feature list stays aligned with the spec §9 count. Bumping the count
+// should be deliberate — update this assertion when a new Feature lands.
+func TestAllFeatures_IncludesAllConstants(t *testing.T) {
+	require.Equal(t, 25, len(plangate.AllFeatures()),
+		"expected 25 feature constants per §9 — update this count if new ones are added")
+}

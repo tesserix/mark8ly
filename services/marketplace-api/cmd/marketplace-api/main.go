@@ -65,6 +65,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/internal/subscription/planchange"
 	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
@@ -244,6 +245,10 @@ func main() {
 	// brandingSeeder is non-nil only when MARKETPLACE_API_ENABLE_TEST_ROUTES=true.
 	// Declared at func scope so the later route-mount block can see it.
 	var brandingSeeder *testroutes.BrandingSeeder
+	// downgradeCron is non-nil only when STRIPE_BILLING_SECRET_KEY is set.
+	// Declared at func scope so the cron-start block below the admin-mode
+	// block can reference it.
+	var downgradeCron *planchange.DowngradeRecheckCron
 
 	// auditEmitter is the async audit-log writer. Init runs unconditionally
 	// because both admin AND storefront emit (e.g. storefront checkout
@@ -465,9 +470,11 @@ func main() {
 
 		// Settings S3 — Subscription/Billing.
 		subscriptionRepo := subscription.NewRepository()
+		var billingStripeClient *billingstripe.Client
 		var stripeAdapter subscription.StripeClient
 		if cfg.StripeBillingSecretKey != "" {
-			stripeAdapter = &stripeClientAdapter{c: billingstripe.New(cfg.StripeBillingSecretKey)}
+			billingStripeClient = billingstripe.New(cfg.StripeBillingSecretKey)
+			stripeAdapter = &stripeClientAdapter{c: billingStripeClient}
 		} else {
 			log.Warn("STRIPE_BILLING_SECRET_KEY not set — subscription checkout/portal will fail")
 		}
@@ -478,6 +485,33 @@ func main() {
 			Logger: log,
 		})
 		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, log)
+
+		// P4 Subscription plan change (upgrade/downgrade) — requires Stripe + stores repo.
+		var changePlanHandler *admin.ChangePlanHandler
+		if billingStripeClient != nil {
+			planchangeStripe := &planchange.StripeClientAdapter{C: billingStripeClient}
+			planChangeOrch := planchange.NewOrchestrator(planchange.Deps{
+				DB:               conn,
+				Stripe:           planchangeStripe,
+				Emitter:          auditEmitter,
+				SubscriptionRepo: subscriptionRepo,
+				StoreRepo:        storesRepo,
+			})
+			changePlanHandler = admin.NewChangePlanHandler(planChangeOrch, log)
+
+			downgradeCron = planchange.NewDowngradeRecheckCron(planchange.CronDeps{
+				DB:               conn,
+				SubscriptionRepo: subscriptionRepo,
+				StoreRepo:        storesRepo,
+				Stripe:           planchangeStripe,
+				Emitter:          auditEmitter,
+				Logger:           log,
+				// Interval defaults to 1h inside NewDowngradeRecheckCron.
+				// Notifier: nil for now — email template lands in a later phase.
+			})
+		} else {
+			log.Warn("STRIPE_BILLING_SECRET_KEY not set — /subscription/change-plan + downgrade cron disabled")
+		}
 
 		// Settings S4 — Audit Logs read endpoint (admin-only). The
 		// emitter + repo are initialised unconditionally above so the
@@ -569,6 +603,7 @@ func main() {
 			AccountHandler:         accountHandler,
 			DomainsHandler:         domainsHandler,
 			SubscriptionHandler:    subscriptionHandler,
+			ChangePlanHandler:      changePlanHandler,
 			AuditLogsHandler:       auditLogsHandler,
 			NotificationsHandler:   notificationsHandler,
 			DashboardHandler:       dashboardHandler,
@@ -962,6 +997,15 @@ func main() {
 		}
 	} else {
 		log.Warn("STRIPE_BILLING_WEBHOOK_SECRET not set — /webhooks/stripe-billing not mounted")
+	}
+
+	if downgradeCron != nil {
+		if err := downgradeCron.Start(workerCtx); err != nil {
+			log.Error("downgrade-recheck cron failed to start", "err", err)
+		} else {
+			defer downgradeCron.Stop()
+			log.Info("planchange: downgrade-recheck cron started")
+		}
 	}
 
 	// Construct Gin engine(s) per MODE.

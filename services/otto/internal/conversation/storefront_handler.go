@@ -22,15 +22,19 @@ import (
 // StorefrontDeps is the dependency bag for the customer-side handler.
 type StorefrontDeps struct {
 	Conversations *Repository
-	Messages      *message.Repository
-	Hub           *hub.Hub
-	Signer        *session.Signer
-	Tickets       *session.TicketSigner
-	OTP           *otp.Service
-	CookieName    string
-	CookieDomain  string
-	CookieSecure  bool
-	Logger        *slog.Logger
+	// Availability is optional — when present, it's consulted to
+	// annotate queue status with an "all agents busy" flag and to
+	// release staff when the customer closes the case themselves.
+	Availability *AvailabilityRepository
+	Messages     *message.Repository
+	Hub          *hub.Hub
+	Signer       *session.Signer
+	Tickets      *session.TicketSigner
+	OTP          *otp.Service
+	CookieName   string
+	CookieDomain string
+	CookieSecure bool
+	Logger       *slog.Logger
 }
 
 // StorefrontHandler exposes the /api/v1/storefront/otto/* endpoints.
@@ -411,11 +415,21 @@ func (h *StorefrontHandler) queue(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "queue_lookup_failed"})
 		return
 	}
+	// "All agents busy" — set when there's no staff currently free
+	// to accept. Used by the widget to swap the "position X" copy
+	// for a clearer "every agent is with another customer" state.
+	allBusy := false
+	if h.d.Availability != nil {
+		if avail, err := h.d.Availability.CountAvailable(c.Request.Context(), conv.TenantID, conv.StoreID); err == nil {
+			allBusy = avail == 0
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"status":                 conv.Status,
 		"position":               snap.Position,
 		"total_pending":          snap.TotalPending,
 		"estimated_wait_seconds": snap.EstimatedWait,
+		"all_busy":               allBusy,
 	})
 }
 

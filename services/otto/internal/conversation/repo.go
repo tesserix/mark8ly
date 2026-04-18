@@ -388,3 +388,103 @@ func (r *Repository) BumpCustomerActivity(ctx context.Context, tenantID, storeID
 	_, err := r.coll.UpdateOne(ctx, filter, update)
 	return err
 }
+
+// PopNextPending atomically grabs the oldest pending conversation
+// and assigns it to the given staff member. Used by the
+// accept-next endpoint — gated on status=pending so two concurrent
+// "Accept Next" clicks can never land on the same case (Mongo's
+// findOneAndUpdate is atomic per-document, which is exactly what
+// FIFO needs).
+//
+// Returns ErrNotFound when there are no pending cases to pop.
+func (r *Repository) PopNextPending(ctx context.Context, tenantID, storeID string, assignee Assignee) (*Conversation, error) {
+	now := time.Now().UTC()
+	if assignee.AssignedAt.IsZero() {
+		assignee.AssignedAt = now
+	}
+	filter := bson.M{
+		"tenant_id": tenantID,
+		"store_id":  storeID,
+		"status":    StatusPending,
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"status":     StatusActive,
+			"assignee":   assignee,
+			"updated_at": now,
+		},
+	}
+	opts := options.FindOneAndUpdate().
+		SetSort(bson.D{{Key: "created_at", Value: 1}}).
+		SetReturnDocument(options.After)
+	var c Conversation
+	if err := r.coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&c); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &c, nil
+}
+
+// ListInactive returns active conversations whose last customer
+// message is older than `cutoff`. Used by the inactivity sweeper to
+// batch-close abandoned cases. Scoping is deliberately global — the
+// sweeper runs once per service and processes every tenant.
+func (r *Repository) ListInactive(ctx context.Context, cutoff time.Time, limit int64) ([]Conversation, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	filter := bson.M{
+		"status": StatusActive,
+		"last_customer_message_at": bson.M{
+			"$lt":     cutoff,
+			"$exists": true,
+		},
+	}
+	opts := options.Find().
+		SetSort(bson.D{{Key: "last_customer_message_at", Value: 1}}).
+		SetLimit(limit)
+	cur, err := r.coll.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []Conversation
+	if err := cur.All(ctx, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CloseForInactivity flips the conversation to closed and stamps
+// InactivityClosedAt so the customer sees a slightly different closed
+// banner ("Case auto-closed — no reply for 15 min"). Gated on
+// status=active so a staff-initiated close + sweeper race still
+// produces one close, not two.
+func (r *Repository) CloseForInactivity(ctx context.Context, tenantID, storeID, id string) (*Conversation, error) {
+	now := time.Now().UTC()
+	filter := bson.M{
+		"_id":       id,
+		"tenant_id": tenantID,
+		"store_id":  storeID,
+		"status":    StatusActive,
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"status":               StatusClosed,
+			"closed_at":            now,
+			"updated_at":           now,
+			"inactivity_closed_at": now,
+		},
+	}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	var c Conversation
+	if err := r.coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&c); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &c, nil
+}

@@ -346,3 +346,87 @@
   font-size: 12px;
   align-self: center;
 }
+
+/* ── Availability pool controls (phase 2) ──────────────────────────── */
+.otto-inbox__pool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--otto-inbox-border, rgba(0, 0, 0, 0.08));
+  background: var(--otto-inbox-panel-alt, rgba(0, 0, 0, 0.02));
+}
+
+.otto-inbox__pool-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.otto-inbox__pool-toggle input {
+  /* The dot is the visual affordance, the checkbox is only the state. */
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.otto-inbox__pool-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #c6c6c6;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.otto-inbox__pool-dot.is-on {
+  background: #2fa24f;
+  box-shadow: 0 0 0 3px rgba(47, 162, 79, 0.18);
+}
+
+.otto-inbox__accept-next {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+/* ── Intake & feedback summary in the thread header ───────────────── */
+.otto-inbox__intake {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 18px;
+  margin: 8px 0 0 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--otto-inbox-border, rgba(0, 0, 0, 0.12));
+  border-radius: 6px;
+  background: var(--otto-inbox-panel-alt, rgba(0, 0, 0, 0.02));
+  font-size: 12px;
+}
+
+.otto-inbox__intake > div {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.otto-inbox__intake dt {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: var(--otto-inbox-text-muted, #6c6c6c);
+  margin: 0;
+}
+
+.otto-inbox__intake dd {
+  margin: 0;
+}
+
+.otto-inbox__intake--feedback {
+  border-style: solid;
+  border-color: rgba(47, 162, 79, 0.3);
+  background: rgba(47, 162, 79, 0.05);
+}

@@ -48,6 +48,7 @@ func main() {
 	// ── Core services ──────────────────────────────────────────────────
 	convRepo := conversation.NewRepository(mongoClient.Conversations())
 	msgRepo := message.NewRepository(mongoClient.Messages())
+	availRepo := conversation.NewAvailabilityRepository(mongoClient.StaffAvailability())
 
 	// OTP: repo + mailer + service. When SENDGRID_API_KEY is unset we
 	// fall back to a stdout log mailer so the service remains bootable.
@@ -84,6 +85,7 @@ func main() {
 	storefront.Use(auth.CustomerContext(cfg.InternalAuthSecret))
 	storefrontHandler := conversation.NewStorefrontHandler(conversation.StorefrontDeps{
 		Conversations: convRepo,
+		Availability:  availRepo,
 		Messages:      msgRepo,
 		Hub:           h,
 		Signer:        signer,
@@ -103,12 +105,28 @@ func main() {
 	admin.Use(auth.StaffAuth(cfg.InternalAuthSecret), auth.StoreResolver())
 	adminHandler := conversation.NewAdminHandler(conversation.AdminDeps{
 		Conversations: convRepo,
+		Availability:  availRepo,
 		Messages:      msgRepo,
 		Hub:           h,
 		Tickets:       ticketSigner,
 		Logger:        log,
 	})
 	adminHandler.Register(admin)
+
+	// Inactivity sweeper — closes active conversations the customer
+	// has gone quiet on for 15 min. One goroutine per process; no
+	// leader election needed at v1 volume, the CloseForInactivity
+	// CAS handles multi-pod races.
+	sweeper := &conversation.InactivitySweeper{
+		Conversations:    convRepo,
+		Availability:     availRepo,
+		Messages:         msgRepo,
+		Hub:              h,
+		Logger:           log,
+		InactivityWindow: 15 * time.Minute,
+		SweepInterval:    60 * time.Second,
+	}
+	go sweeper.Run(ctx)
 
 	// WebSocket routes are deliberately mounted on a no-middleware group:
 	// Istio routes /api/v1/otto/.../ws directly to Otto, bypassing the

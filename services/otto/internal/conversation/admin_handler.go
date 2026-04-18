@@ -21,6 +21,7 @@ import (
 // AdminDeps is the dependency bag for the staff-side handler.
 type AdminDeps struct {
 	Conversations *Repository
+	Availability  *AvailabilityRepository
 	Messages      *message.Repository
 	Hub           *hub.Hub
 	Tickets       *session.TicketSigner
@@ -49,6 +50,11 @@ func (h *AdminHandler) Register(r *gin.RouterGroup) {
 	r.POST("/conversations/:id/reopen", h.reopen)
 	r.POST("/ws-ticket", h.inboxWSTicket)
 	r.POST("/conversations/:id/ws-ticket", h.conversationWSTicket)
+
+	// Phase 2 — staff availability pool.
+	r.GET("/me/availability", h.getAvailability)
+	r.POST("/me/availability", h.setAvailability)
+	r.POST("/accept-next", h.acceptNext)
 }
 
 // RegisterWS mounts the actual WebSocket endpoints. Unlike Register this
@@ -266,12 +272,167 @@ func (h *AdminHandler) close(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "close_failed"})
 		return
 	}
+	// Free the staff back into the pool — they stay available but
+	// their current_case_id is cleared so the next Accept Next click
+	// can land them on a new customer.
+	if h.d.Availability != nil && updated.Assignee != nil {
+		if releaseErr := h.d.Availability.ReleaseCase(c.Request.Context(), updated.TenantID, updated.StoreID, updated.Assignee.UserID); releaseErr != nil {
+			h.d.Logger.Warn("otto: release availability on close", "err", releaseErr)
+		}
+	}
 	h.d.Hub.Broadcast(hub.RoomConversation(conv.ID), hub.Envelope{
 		Type:    event.TypeConversationClosed,
 		Payload: map[string]any{"conversation": updated},
 	})
 	h.d.Hub.Broadcast(hub.RoomInbox(conv.TenantID, conv.StoreID), hub.Envelope{
 		Type:    event.TypeConversationClosed,
+		Payload: map[string]any{"conversation": updated},
+	})
+	c.JSON(http.StatusOK, gin.H{"conversation": updated})
+}
+
+// ── Availability pool (phase 2) ─────────────────────────────────────
+
+// getAvailability returns the current pool state for the caller. If
+// the staff has never toggled, we return a zero-value row so the UI
+// can render the "Paused" default without needing a separate code
+// path.
+func (h *AdminHandler) getAvailability(c *gin.Context) {
+	if h.d.Availability == nil {
+		c.JSON(http.StatusOK, gin.H{"available": false})
+		return
+	}
+	tenantID := c.GetString(auth.CtxTenantID)
+	storeID := c.GetString(auth.CtxStoreID)
+	userID := c.GetString(auth.CtxUserID)
+	row, err := h.d.Availability.Get(c.Request.Context(), tenantID, storeID, userID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusOK, gin.H{"available": false})
+			return
+		}
+		h.d.Logger.Error("otto: get availability", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "availability_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"availability": row})
+}
+
+type setAvailabilityRequest struct {
+	Available bool `json:"available"`
+}
+
+func (h *AdminHandler) setAvailability(c *gin.Context) {
+	if h.d.Availability == nil {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "availability_not_enabled"})
+		return
+	}
+	var body setAvailabilityRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
+	}
+	row, err := h.d.Availability.SetAvailable(
+		c.Request.Context(),
+		c.GetString(auth.CtxTenantID),
+		c.GetString(auth.CtxStoreID),
+		c.GetString(auth.CtxUserID),
+		c.GetString(auth.CtxUserName),
+		c.GetString(auth.CtxUserEmail),
+		body.Available,
+	)
+	if err != nil {
+		h.d.Logger.Error("otto: set availability", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "availability_write_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"availability": row})
+}
+
+// acceptNext pops the oldest pending conversation (FIFO) and assigns
+// it to the caller. Gates:
+//   - staff must be marked available
+//   - staff must have no case in flight (CurrentCaseID empty)
+//   - a pending case must exist
+// We reserve the slot on the staff row first, then do the
+// findOneAndUpdate on the conversation. If the second step fails we
+// roll back the staff row so we never lock a staff to a non-existent
+// case.
+func (h *AdminHandler) acceptNext(c *gin.Context) {
+	if h.d.Availability == nil {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "availability_not_enabled"})
+		return
+	}
+	tenantID := c.GetString(auth.CtxTenantID)
+	storeID := c.GetString(auth.CtxStoreID)
+	userID := c.GetString(auth.CtxUserID)
+	userName := c.GetString(auth.CtxUserName)
+	userEmail := c.GetString(auth.CtxUserEmail)
+
+	// Two-phase claim: pop the case first, then record it on the
+	// staff row. Reversing the order risks locking a staff slot with
+	// no case to show for it. If the staff-row update fails we free
+	// the case by reopening it — the case is back in the pool on the
+	// next click.
+	updated, err := h.d.Conversations.PopNextPending(c.Request.Context(), tenantID, storeID, Assignee{
+		UserID: userID,
+		Name:   userName,
+		Email:  userEmail,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusOK, gin.H{"conversation": nil})
+			return
+		}
+		h.d.Logger.Error("otto: accept-next pop", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "accept_failed"})
+		return
+	}
+	if err := h.d.Availability.ClaimCase(c.Request.Context(), tenantID, storeID, userID, updated.ID); err != nil {
+		// Either not available or already on a case — roll the case
+		// back to pending so the next click can pick it up.
+		if _, reopenErr := h.d.Conversations.Reopen(c.Request.Context(), tenantID, storeID, updated.ID); reopenErr != nil {
+			h.d.Logger.Error("otto: accept-next rollback", "err", reopenErr)
+		}
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "not_available",
+				"message": "You need to be available and have no case in progress to accept the next customer.",
+			})
+			return
+		}
+		h.d.Logger.Error("otto: accept-next claim", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "accept_failed"})
+		return
+	}
+
+	// Reuse the "someone joined" system message the manual accept
+	// path posts — better UX than a silent state flip.
+	if updated.Assignee != nil {
+		now := time.Now().UTC()
+		sys := &message.Message{
+			ID:             uuid.NewString(),
+			ConversationID: updated.ID,
+			TenantID:       updated.TenantID,
+			StoreID:        updated.StoreID,
+			SenderType:     message.SenderSystem,
+			SenderName:     "Otto",
+			Body:           systemJoinBody(updated.Assignee.Name, updated.Assignee.Email),
+			CreatedAt:      now,
+		}
+		_ = h.d.Messages.Insert(c.Request.Context(), sys)
+		_ = h.d.Conversations.BumpOnMessage(c.Request.Context(), updated.TenantID, updated.StoreID, updated.ID, AudienceCustomer, now)
+		h.d.Hub.Broadcast(hub.RoomConversation(updated.ID), hub.Envelope{
+			Type:    event.TypeMessageCreated,
+			Payload: map[string]any{"message": sys},
+		})
+	}
+	h.d.Hub.Broadcast(hub.RoomConversation(updated.ID), hub.Envelope{
+		Type:    event.TypeConversationUpdated,
+		Payload: map[string]any{"conversation": updated},
+	})
+	h.d.Hub.Broadcast(hub.RoomInbox(updated.TenantID, updated.StoreID), hub.Envelope{
+		Type:    event.TypeConversationUpdated,
 		Payload: map[string]any{"conversation": updated},
 	})
 	c.JSON(http.StatusOK, gin.H{"conversation": updated})

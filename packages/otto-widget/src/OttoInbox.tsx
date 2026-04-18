@@ -70,6 +70,11 @@ export function OttoInbox({
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Phase 2 — staff availability pool state. `available` is the live
+  // toggle; `hasActiveCase` is derived so we know whether Accept Next
+  // should be enabled (one case at a time per staff).
+  const [available, setAvailable] = useState(false);
+  const [currentCaseID, setCurrentCaseID] = useState<string>("");
   const messagesRef = useRef<HTMLDivElement | null>(null);
 
   // Keep the latest statusFilter/selectedId accessible inside websocket
@@ -243,6 +248,93 @@ export function OttoInbox({
     el.scrollTop = el.scrollHeight;
   }, [messages.length, selectedId]);
 
+  // Phase 2 — availability on mount. If the server hasn't seen this
+  // staff before we get {available:false} back, matching our default
+  // state. Errors are silent: the pool is an enhancement, the inbox
+  // is still functional without it.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${base}/me/availability`, { credentials: "include" });
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          available?: boolean;
+          availability?: {
+            available?: boolean;
+            current_case_id?: string;
+          };
+        };
+        const a = body.availability ?? { available: body.available };
+        setAvailable(Boolean(a?.available));
+        setCurrentCaseID(a?.current_case_id ?? "");
+      } catch {
+        /* silent */
+      }
+    })();
+  }, [base]);
+
+  const toggleAvailable = useCallback(
+    async (next: boolean) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await fetch(`${base}/me/availability`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ available: next }),
+        });
+        if (!res.ok) throw new Error(`availability failed (${res.status})`);
+        const body = (await res.json()) as {
+          availability?: { available?: boolean; current_case_id?: string };
+        };
+        const a = body.availability;
+        setAvailable(Boolean(a?.available));
+        setCurrentCaseID(a?.current_case_id ?? "");
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [base],
+  );
+
+  const acceptNext = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${base}/accept-next`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as {
+          message?: string;
+        };
+        throw new Error(err.message || `accept-next failed (${res.status})`);
+      }
+      const body = (await res.json()) as { conversation: Conversation | null };
+      if (!body.conversation) {
+        setError("No customers waiting right now.");
+        return;
+      }
+      setConversations((prev) => {
+        const exists = prev.some((c) => c.id === body.conversation!.id);
+        return exists
+          ? prev.map((c) => (c.id === body.conversation!.id ? body.conversation! : c))
+          : [body.conversation!, ...prev];
+      });
+      setSelectedId(body.conversation.id);
+      setCurrentCaseID(body.conversation.id);
+      setStatusFilter("active");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [base]);
+
   const accept = useCallback(
     async (id: string) => {
       setBusy(true);
@@ -313,6 +405,9 @@ export function OttoInbox({
         { method: "POST", credentials: "include" },
       );
       if (!res.ok) throw new Error(`close failed (${res.status})`);
+      // Server releases the staff's current_case_id — mirror that
+      // locally so Accept Next lights up again immediately.
+      setCurrentCaseID("");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -349,6 +444,41 @@ export function OttoInbox({
   return (
     <div className={`otto-inbox ${className ?? ""}`} style={style}>
       <aside className="otto-inbox__list">
+        {/* Availability pool controls — staff must mark themselves
+            available before Accept Next will pop a case to them. The
+            button is disabled while a case is already in flight so
+            we preserve the 1-case-per-staff invariant. */}
+        <div className="otto-inbox__pool">
+          <label className="otto-inbox__pool-toggle">
+            <input
+              type="checkbox"
+              checked={available}
+              onChange={(e) => void toggleAvailable(e.target.checked)}
+              disabled={busy}
+              aria-label="Mark yourself available"
+            />
+            <span
+              className={`otto-inbox__pool-dot ${available ? "is-on" : ""}`}
+              aria-hidden="true"
+            />
+            {available ? "Available" : "Paused"}
+          </label>
+          <button
+            type="button"
+            className="otto-inbox__btn otto-inbox__btn--primary otto-inbox__accept-next"
+            onClick={() => void acceptNext()}
+            disabled={busy || !available || Boolean(currentCaseID)}
+            title={
+              !available
+                ? "Mark yourself available to pick up the next customer"
+                : currentCaseID
+                  ? "Close your current case before accepting the next one"
+                  : "Accept the oldest pending customer"
+            }
+          >
+            Accept next
+          </button>
+        </div>
         <div className="otto-inbox__tabs">
           {(["pending", "active", "closed"] as InboxStatus[]).map((s) => (
             <button
@@ -432,6 +562,53 @@ export function OttoInbox({
                     selected.subject || "(no subject)"
                   )}
                 </div>
+                {/* Intake context — shown at a glance so staff
+                    open the case with the reason + status already
+                    visible. DOB is gated behind a "Verify"
+                    disclosure so it doesn't leak onto screenshots
+                    unnecessarily. */}
+                {selected.intake && (
+                  <dl className="otto-inbox__intake">
+                    <div>
+                      <dt>Reason</dt>
+                      <dd>{prettyReason(selected.intake.reason)}</dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>{selected.intake.status}</dd>
+                    </div>
+                    {selected.intake.dob && (
+                      <div>
+                        <dt>DOB</dt>
+                        <dd>{selected.intake.dob}</dd>
+                      </div>
+                    )}
+                  </dl>
+                )}
+                {/* Feedback summary shows once the customer
+                    completes the post-case survey. */}
+                {selected.feedback && (
+                  <dl className="otto-inbox__intake otto-inbox__intake--feedback">
+                    <div>
+                      <dt>Overall</dt>
+                      <dd>{"★".repeat(selected.feedback.call_rating)}{"☆".repeat(Math.max(0, 5 - selected.feedback.call_rating))}</dd>
+                    </div>
+                    <div>
+                      <dt>Resolved</dt>
+                      <dd>{selected.feedback.query_resolved ? "Yes" : "No"}</dd>
+                    </div>
+                    <div>
+                      <dt>Staff</dt>
+                      <dd>{"★".repeat(selected.feedback.staff_rating)}{"☆".repeat(Math.max(0, 5 - selected.feedback.staff_rating))}</dd>
+                    </div>
+                    {selected.feedback.comments && (
+                      <div>
+                        <dt>Notes</dt>
+                        <dd>{selected.feedback.comments}</dd>
+                      </div>
+                    )}
+                  </dl>
+                )}
               </div>
               <div className="otto-inbox__thread-actions">
                 {selected.status === "pending" && (
@@ -564,6 +741,25 @@ function showDesktopNotification(
   } catch {
     /* some browsers throw if called from a non-secure context */
   }
+}
+
+// prettyReason maps the enum values the widget sends into the
+// moderator-friendly labels — keeps the admin view readable when the
+// storefront grows new reasons.
+function prettyReason(reason: string): string {
+  switch (reason) {
+    case "order_issue":
+      return "Order issue";
+    case "return":
+      return "Return / refund";
+    case "payment":
+      return "Payment problem";
+    case "product_question":
+      return "Product question";
+    case "other":
+      return "Something else";
+  }
+  return reason;
 }
 
 function formatTime(iso: string): string {

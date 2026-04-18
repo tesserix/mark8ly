@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	CollConversations = "conversations"
-	CollMessages      = "messages"
-	CollSessions      = "sessions"
-	CollOTP           = "otp_codes"
+	CollConversations       = "conversations"
+	CollMessages            = "messages"
+	CollSessions            = "sessions"
+	CollOTP                 = "otp_codes"
+	CollStaffAvailability   = "staff_availability"
 )
 
 // Client wraps a mongo.Database for the otto service and provides typed
@@ -60,10 +61,11 @@ func (c *Client) Close(ctx context.Context) error {
 // DB returns the raw *mongo.Database so repos can resolve collections.
 func (c *Client) DB() *mongo.Database { return c.db }
 
-func (c *Client) Conversations() *mongo.Collection { return c.db.Collection(CollConversations) }
-func (c *Client) Messages() *mongo.Collection      { return c.db.Collection(CollMessages) }
-func (c *Client) Sessions() *mongo.Collection      { return c.db.Collection(CollSessions) }
-func (c *Client) OTP() *mongo.Collection           { return c.db.Collection(CollOTP) }
+func (c *Client) Conversations() *mongo.Collection     { return c.db.Collection(CollConversations) }
+func (c *Client) Messages() *mongo.Collection          { return c.db.Collection(CollMessages) }
+func (c *Client) Sessions() *mongo.Collection          { return c.db.Collection(CollSessions) }
+func (c *Client) OTP() *mongo.Collection               { return c.db.Collection(CollOTP) }
+func (c *Client) StaffAvailability() *mongo.Collection { return c.db.Collection(CollStaffAvailability) }
 
 // EnsureIndexes creates the indexes the service relies on for tenant
 // isolation + fast inbox queries. Idempotent — safe to run every boot.
@@ -96,9 +98,43 @@ func (c *Client) EnsureIndexes(ctx context.Context) error {
 			},
 			Options: options.Index().SetName("tenant_assignee_status"),
 		},
+		{
+			// Inactivity sweeper — scan active convs sorted by the
+			// customer's last message. Small index, hit every 60s.
+			Keys: bson.D{
+				{Key: "status", Value: 1},
+				{Key: "last_customer_message_at", Value: 1},
+			},
+			Options: options.Index().SetName("status_last_customer_msg"),
+		},
 	}
 	if _, err := c.Conversations().Indexes().CreateMany(ctx, convIdx); err != nil {
 		return fmt.Errorf("indexes: conversations: %w", err)
+	}
+
+	// staff_availability — queried by (tenant, store, staff) for
+	// upsert/fetch and by (tenant, store, available, current_case_id)
+	// for the count.
+	availIdx := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "store_id", Value: 1},
+				{Key: "staff_id", Value: 1},
+			},
+			Options: options.Index().SetName("tenant_store_staff").SetUnique(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "store_id", Value: 1},
+				{Key: "available", Value: 1},
+			},
+			Options: options.Index().SetName("tenant_store_available"),
+		},
+	}
+	if _, err := c.StaffAvailability().Indexes().CreateMany(ctx, availIdx); err != nil {
+		return fmt.Errorf("indexes: staff_availability: %w", err)
 	}
 
 	msgIdx := []mongo.IndexModel{

@@ -14,12 +14,19 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
 
-// handleCheckoutSessionCompleted binds billing_currency (first-write wins via
-// COALESCE), stores stripe_subscription_id, and advances status from signup →
-// trialing.
+// handleCheckoutSessionCompleted routes checkout.session.completed through
+// two stages:
+//  1. Raw UPDATE of NON-status columns (stripe_subscription_id,
+//     billing_currency) — safe to write directly because billing_currency is
+//     guarded by COALESCE (first-write wins, §4.2.1 currency lock).
+//  2. statemachine.Transition(signup → trialing) — routes status through the
+//     same CAS+audit path every other status mutation uses. Replay-safe:
+//     ErrCASConflict and ErrInvalidTransition are swallowed as no-ops.
 //
-// TODO(P3): emit audit event on successful bind.
-func handleCheckoutSessionCompleted(ctx context.Context, tx *gorm.DB, raw []byte) error {
+// This is the method form (receiver on *Dispatcher) so the transition can
+// call d.emitter. The old raw status UPDATE that P2 landed and P3 deferred to
+// P5 is retired here.
+func (d *Dispatcher) handleCheckoutSessionCompleted(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	var e struct {
 		Data struct {
 			Object struct {
@@ -41,11 +48,13 @@ func handleCheckoutSessionCompleted(ctx context.Context, tx *gorm.DB, raw []byte
 		return errors.New("dispatch: checkout.session.completed missing customer/currency")
 	}
 	currency := strings.ToUpper(obj.Currency)
+
+	// Stage 1: non-status columns. Raw UPDATE is safe — billing_currency is
+	// locked first-write-wins via COALESCE; stripe_subscription_id is set.
 	res := tx.WithContext(ctx).Exec(
 		`UPDATE store_subscriptions
          SET stripe_subscription_id = ?,
              billing_currency       = COALESCE(billing_currency, ?),
-             status                 = CASE status WHEN 'signup' THEN 'trialing' ELSE status END,
              updated_at             = ?
          WHERE stripe_customer_id = ?`,
 		obj.Subscription, currency, time.Now(), obj.Customer,
@@ -56,14 +65,42 @@ func handleCheckoutSessionCompleted(ctx context.Context, tx *gorm.DB, raw []byte
 	if res.RowsAffected == 0 {
 		return errors.New("dispatch: no subscription for customer")
 	}
-	return nil
+
+	// Stage 2: status transition via state machine. Load the row back to get
+	// tenant/store ids and current status.
+	var sub subscription.StoreSubscription
+	if err := tx.WithContext(ctx).Where("stripe_customer_id = ?", obj.Customer).First(&sub).Error; err != nil {
+		return fmt.Errorf("dispatch: reload after update: %w", err)
+	}
+	if sub.Status != subscription.StatusSignup {
+		// Already past signup (replay or out-of-order event). No transition needed.
+		return nil
+	}
+
+	err := statemachine.Transition(ctx, statemachine.TransitionInput{
+		DB:       tx,
+		Emitter:  d.emitter,
+		TenantID: sub.TenantID,
+		StoreID:  sub.StoreID,
+		From:     subscription.StatusSignup,
+		To:       subscription.StatusTrialing,
+		Actor:    "system:webhook:stripe",
+		Reason:   "checkout.session.completed",
+	})
+	if errors.Is(err, statemachine.ErrCASConflict) || errors.Is(err, statemachine.ErrInvalidTransition) {
+		return nil
+	}
+	return err
 }
 
 // HandleCheckoutSessionCompletedForTesting exposes the checkout handler
-// directly so Task 12 tests can exercise the COALESCE lock-in path in
-// isolation, without needing a full Dispatcher and StripeWebhookEvent.
+// directly so tests can exercise the COALESCE lock-in path in isolation,
+// without needing a full Dispatcher and StripeWebhookEvent. Constructs a
+// nil-emitter dispatcher internally (statemachine and emitter are both
+// nil-safe).
 func HandleCheckoutSessionCompletedForTesting(ctx context.Context, tx *gorm.DB, raw []byte) error {
-	return handleCheckoutSessionCompleted(ctx, tx, raw)
+	d := &Dispatcher{emitter: nil}
+	return d.handleCheckoutSessionCompleted(ctx, tx, raw)
 }
 
 // handleSubscriptionUpdated refreshes period boundaries and cancel_at_period_end.

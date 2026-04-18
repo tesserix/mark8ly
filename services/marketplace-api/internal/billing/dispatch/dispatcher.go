@@ -27,8 +27,7 @@ type Dispatcher struct {
 // no-op on a nil receiver.
 func New(em *audit.Emitter) *Dispatcher {
 	d := &Dispatcher{emitter: em, handlers: map[string]Handler{}}
-	// Free functions — unchanged from P2.
-	d.handlers["checkout.session.completed"] = handleCheckoutSessionCompleted
+	// Free functions — side-effect-only handlers that don't advance status.
 	d.handlers["customer.subscription.updated"] = handleSubscriptionUpdated
 	d.handlers["invoice.paid"] = handleInvoicePaid
 	d.handlers["customer.updated"] = handleCustomerUpdated
@@ -37,6 +36,7 @@ func New(em *audit.Emitter) *Dispatcher {
 	d.handlers["payment_method.detached"] = handlePaymentMethodDetached
 	d.handlers["radar.early_fraud_warning"] = handleFraudWarning
 	// Methods — state mutations routed through statemachine.Transition.
+	d.handlers["checkout.session.completed"] = d.handleCheckoutSessionCompleted
 	d.handlers["customer.subscription.deleted"] = d.handleSubscriptionDeleted
 	d.handlers["invoice.payment_failed"] = d.handleInvoicePaymentFailed
 	d.handlers["invoice.payment_action_required"] = d.handleInvoicePaymentActionRequired

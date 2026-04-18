@@ -16,24 +16,21 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
-// Plan is a subscription tier.
-type Plan string
-
-const (
-	PlanFree       Plan = "free"
-	PlanStarter    Plan = "starter"
-	PlanPro        Plan = "pro"
-	PlanEnterprise Plan = "enterprise"
-	PlanMarketplace Plan = "marketplace"
-)
+// Plan is a subscription tier. It aliases subscription.SubscriptionPlan so the
+// canonical plan identity lives in one place (the data-model package). The
+// type alias — not a defined type — keeps conversions transparent for
+// callers that pass values across the package boundary.
+type Plan = subscription.SubscriptionPlan
 
 // planOrder defines the hierarchy for >= comparisons.
+// Marketplace is a hidden internal tier; it ranks above Pro so platform-owned
+// stores implicitly pass every RequirePlan check.
 var planOrder = map[Plan]int{
-	PlanFree:        0,
-	PlanStarter:     1,
-	PlanPro:         2,
-	PlanEnterprise:  3,
-	PlanMarketplace: 4,
+	subscription.PlanTrial:       0,
+	subscription.PlanStarter:     1,
+	subscription.PlanStudio:      2,
+	subscription.PlanPro:         3,
+	subscription.PlanMarketplace: 4,
 }
 
 // Feature is an enumerated feature key.
@@ -58,16 +55,16 @@ const (
 	FeatureCustomDomain     Feature = "custom_domain"
 
 	// Marketing.
-	FeatureActiveCoupons    Feature = "active_coupons"
-	FeatureGiftCards        Feature = "gift_cards"
-	FeatureLoyalty          Feature = "loyalty"
+	FeatureActiveCoupons     Feature = "active_coupons"
+	FeatureGiftCards         Feature = "gift_cards"
+	FeatureLoyalty           Feature = "loyalty"
 	FeatureCampaignsPerMonth Feature = "campaigns_per_month"
 
 	// Customers.
 	FeatureReviews Feature = "reviews"
 
 	// Support.
-	FeatureTickets        Feature = "tickets"
+	FeatureTickets         Feature = "tickets"
 	FeaturePrioritySupport Feature = "priority_support"
 
 	// Analytics.
@@ -89,29 +86,34 @@ const Unlimited = -1
 // featureMatrix defines the complete plan × feature matrix.
 // Boolean features: 0 = disabled, 1 = enabled, -1 = unlimited.
 // Numeric features: the limit value, -1 = unlimited.
+//
+// NOTE: The numbers below are v1 carry-overs rethreaded onto the v2.3 tier
+// names (trial / starter / studio / pro / marketplace). They are intentionally
+// placeholders — the real v2.3 feature matrix rewrite lands in P3 Task 2.
+// Don't tune individual cells here; wait for the P3 pass.
 var featureMatrix = map[Feature]map[Plan]int{
-	FeatureProducts:          {PlanFree: 25, PlanStarter: 500, PlanPro: Unlimited, PlanEnterprise: Unlimited, PlanMarketplace: Unlimited},
-	FeatureCategories:        {PlanFree: 5, PlanStarter: 25, PlanPro: Unlimited, PlanEnterprise: Unlimited, PlanMarketplace: Unlimited},
-	FeatureStaff:             {PlanFree: 1, PlanStarter: 3, PlanPro: 10, PlanEnterprise: Unlimited, PlanMarketplace: Unlimited},
-	FeatureStores:            {PlanFree: 1, PlanStarter: 1, PlanPro: 3, PlanEnterprise: 10, PlanMarketplace: 10},
-	FeatureOrdersPerMonth:    {PlanFree: 50, PlanStarter: 500, PlanPro: Unlimited, PlanEnterprise: Unlimited, PlanMarketplace: Unlimited},
-	FeatureReturns:           {PlanFree: 0, PlanStarter: 1, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureFullColorPalette:  {PlanFree: 0, PlanStarter: 1, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureAnnouncementBar:   {PlanFree: 0, PlanStarter: 1, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureRemovePoweredBy:   {PlanFree: 0, PlanStarter: 0, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureCustomCSS:         {PlanFree: 0, PlanStarter: 0, PlanPro: 0, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureCustomDomain:      {PlanFree: 0, PlanStarter: 0, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureActiveCoupons:     {PlanFree: 5, PlanStarter: 50, PlanPro: Unlimited, PlanEnterprise: Unlimited, PlanMarketplace: Unlimited},
-	FeatureGiftCards:         {PlanFree: 0, PlanStarter: 1, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureLoyalty:           {PlanFree: 0, PlanStarter: 0, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureCampaignsPerMonth: {PlanFree: 0, PlanStarter: 5, PlanPro: 50, PlanEnterprise: Unlimited, PlanMarketplace: Unlimited},
-	FeatureReviews:           {PlanFree: 0, PlanStarter: 1, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureTickets:           {PlanFree: 0, PlanStarter: 1, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeaturePrioritySupport:   {PlanFree: 0, PlanStarter: 0, PlanPro: 0, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureAuditLogs:         {PlanFree: 0, PlanStarter: 0, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureMobileApp:         {PlanFree: 0, PlanStarter: 0, PlanPro: 0, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureCSVImportExport:   {PlanFree: 0, PlanStarter: 1, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
-	FeatureShippingLabels:    {PlanFree: 0, PlanStarter: 1, PlanPro: 1, PlanEnterprise: 1, PlanMarketplace: 1},
+	FeatureProducts:          {subscription.PlanTrial: 25, subscription.PlanStarter: 500, subscription.PlanStudio: Unlimited, subscription.PlanPro: Unlimited, subscription.PlanMarketplace: Unlimited},
+	FeatureCategories:        {subscription.PlanTrial: 5, subscription.PlanStarter: 25, subscription.PlanStudio: Unlimited, subscription.PlanPro: Unlimited, subscription.PlanMarketplace: Unlimited},
+	FeatureStaff:             {subscription.PlanTrial: 1, subscription.PlanStarter: 3, subscription.PlanStudio: 10, subscription.PlanPro: 10, subscription.PlanMarketplace: Unlimited},
+	FeatureStores:            {subscription.PlanTrial: 1, subscription.PlanStarter: 1, subscription.PlanStudio: 3, subscription.PlanPro: 3, subscription.PlanMarketplace: 10},
+	FeatureOrdersPerMonth:    {subscription.PlanTrial: 50, subscription.PlanStarter: 500, subscription.PlanStudio: Unlimited, subscription.PlanPro: Unlimited, subscription.PlanMarketplace: Unlimited},
+	FeatureReturns:           {subscription.PlanTrial: 0, subscription.PlanStarter: 1, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureFullColorPalette:  {subscription.PlanTrial: 0, subscription.PlanStarter: 1, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureAnnouncementBar:   {subscription.PlanTrial: 0, subscription.PlanStarter: 1, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureRemovePoweredBy:   {subscription.PlanTrial: 0, subscription.PlanStarter: 0, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureCustomCSS:         {subscription.PlanTrial: 0, subscription.PlanStarter: 0, subscription.PlanStudio: 0, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureCustomDomain:      {subscription.PlanTrial: 0, subscription.PlanStarter: 0, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureActiveCoupons:     {subscription.PlanTrial: 5, subscription.PlanStarter: 50, subscription.PlanStudio: Unlimited, subscription.PlanPro: Unlimited, subscription.PlanMarketplace: Unlimited},
+	FeatureGiftCards:         {subscription.PlanTrial: 0, subscription.PlanStarter: 1, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureLoyalty:           {subscription.PlanTrial: 0, subscription.PlanStarter: 0, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureCampaignsPerMonth: {subscription.PlanTrial: 0, subscription.PlanStarter: 5, subscription.PlanStudio: 50, subscription.PlanPro: Unlimited, subscription.PlanMarketplace: Unlimited},
+	FeatureReviews:           {subscription.PlanTrial: 0, subscription.PlanStarter: 1, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureTickets:           {subscription.PlanTrial: 0, subscription.PlanStarter: 1, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeaturePrioritySupport:   {subscription.PlanTrial: 0, subscription.PlanStarter: 0, subscription.PlanStudio: 0, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureAuditLogs:         {subscription.PlanTrial: 0, subscription.PlanStarter: 0, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureMobileApp:         {subscription.PlanTrial: 0, subscription.PlanStarter: 0, subscription.PlanStudio: 0, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureCSVImportExport:   {subscription.PlanTrial: 0, subscription.PlanStarter: 1, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
+	FeatureShippingLabels:    {subscription.PlanTrial: 0, subscription.PlanStarter: 1, subscription.PlanStudio: 1, subscription.PlanPro: 1, subscription.PlanMarketplace: 1},
 }
 
 // IsAllowed checks if a boolean feature is available on the given plan.
@@ -157,15 +159,15 @@ func NewPlanResolver(db *gorm.DB, repo subscription.Repository) *PlanResolver {
 	return &PlanResolver{db: db, repo: repo}
 }
 
-// Resolve returns the current plan for a store, defaulting to free.
+// Resolve returns the current plan for a store, defaulting to trial.
 func (r *PlanResolver) Resolve(ctx context.Context, storeID uuid.UUID) Plan {
 	sub, err := r.repo.GetByStoreID(ctx, r.db, storeID)
 	if err != nil {
-		return PlanFree
+		return subscription.PlanTrial
 	}
-	p := Plan(sub.Plan)
+	p := sub.Plan
 	if _, ok := planOrder[p]; !ok {
-		return PlanFree
+		return subscription.PlanTrial
 	}
 	return p
 }
@@ -234,14 +236,20 @@ func RequirePlan(resolver *PlanResolver, minPlan Plan, logger *slog.Logger) gin.
 func minPlanForFeature(feature Feature) Plan {
 	limits, ok := featureMatrix[feature]
 	if !ok {
-		return PlanEnterprise
+		return subscription.PlanPro
 	}
-	for _, p := range []Plan{PlanFree, PlanStarter, PlanPro, PlanEnterprise, PlanMarketplace} {
+	for _, p := range []Plan{
+		subscription.PlanTrial,
+		subscription.PlanStarter,
+		subscription.PlanStudio,
+		subscription.PlanPro,
+		subscription.PlanMarketplace,
+	} {
 		if v, ok := limits[p]; ok && v != 0 {
 			return p
 		}
 	}
-	return PlanEnterprise
+	return subscription.PlanPro
 }
 
 // AllFeatureLimits returns the full feature matrix for a given plan,

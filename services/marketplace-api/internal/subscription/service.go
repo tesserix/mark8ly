@@ -75,7 +75,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, in CheckoutInput) (
 
 	plan := SubscriptionPlan(in.Plan)
 	if !isValidPlan(plan) {
-		return "", apperrors.ValidationFailed("plan", "plan must be free, starter, pro, or enterprise")
+		return "", apperrors.ValidationFailed("plan", "plan must be trial, starter, studio, or pro")
 	}
 	if in.SuccessURL == "" || in.CancelURL == "" {
 		return "", apperrors.ValidationFailed("urls", "success_url and cancel_url are required")
@@ -160,7 +160,7 @@ func (s *Service) HandleWebhookEvent(ctx context.Context, evt WebhookEvent) erro
 
 func isValidPlan(p SubscriptionPlan) bool {
 	switch p {
-	case PlanFree, PlanStarter, PlanPro, PlanEnterprise:
+	case PlanTrial, PlanStarter, PlanStudio, PlanPro:
 		return true
 	}
 	return false

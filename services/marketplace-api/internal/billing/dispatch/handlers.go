@@ -193,10 +193,28 @@ func (d *Dispatcher) handleSubscriptionDeleted(ctx context.Context, tx *gorm.DB,
 	return err
 }
 
-// handleInvoicePaid is audit-only in P2; P3 handles trial → active transition.
-//
-// TODO(P3): advance status trialing → active on first paid invoice.
+// handleInvoicePaid stamps first_charge_at (COALESCE — only the first paid
+// invoice wins) and clears hosted_invoice_url now that the SCA challenge is
+// resolved. No status transition is needed: staying active is correct; if the
+// sub was in payment_action_required, P3's customer.subscription.updated path
+// handles that move.
 func handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []byte) error {
+	customer, err := extractCustomerID(raw)
+	if err != nil {
+		// Pre-P6 replays may omit customer — treat as no-op for safety.
+		return nil
+	}
+	res := tx.WithContext(ctx).Exec(`
+		UPDATE store_subscriptions
+		SET first_charge_at    = COALESCE(first_charge_at, now()),
+		    hosted_invoice_url = NULL,
+		    updated_at         = now()
+		WHERE stripe_customer_id = ?`,
+		customer,
+	)
+	if res.Error != nil {
+		return fmt.Errorf("dispatch: invoice.paid update: %w", res.Error)
+	}
 	return nil
 }
 
@@ -239,10 +257,40 @@ func (d *Dispatcher) handleInvoicePaymentFailed(ctx context.Context, tx *gorm.DB
 // handleInvoicePaymentActionRequired routes invoice.payment_action_required
 // through the state machine. Valid From state per §17.2: active only.
 // Idempotent replays are silently dropped via ErrCASConflict.
+//
+// §4.7: hosted_invoice_url is persisted unconditionally BEFORE the transition
+// so it is available to merchants even if the transition is a no-op (replay,
+// already in payment_action_required, etc.).
 func (d *Dispatcher) handleInvoicePaymentActionRequired(ctx context.Context, tx *gorm.DB, raw []byte) error {
-	customer, err := extractCustomerID(raw)
-	if err != nil {
-		return err
+	var e struct {
+		Data struct {
+			Object struct {
+				Customer         string `json:"customer"`
+				HostedInvoiceURL string `json:"hosted_invoice_url"`
+			} `json:"object"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return fmt.Errorf("dispatch: unmarshal payment_action_required: %w", err)
+	}
+	customer := e.Data.Object.Customer
+	if customer == "" {
+		return errors.New("dispatch: invoice.payment_action_required missing customer")
+	}
+
+	// Persist hosted_invoice_url unconditionally so the merchant can always
+	// reach the Stripe-hosted payment page, even on event replay.
+	if e.Data.Object.HostedInvoiceURL != "" {
+		res := tx.WithContext(ctx).Exec(`
+			UPDATE store_subscriptions
+			SET hosted_invoice_url = ?,
+			    updated_at         = now()
+			WHERE stripe_customer_id = ?`,
+			e.Data.Object.HostedInvoiceURL, customer,
+		)
+		if res.Error != nil {
+			return fmt.Errorf("dispatch: persist hosted_invoice_url: %w", res.Error)
+		}
 	}
 
 	var sub subscription.StoreSubscription
@@ -255,7 +303,7 @@ func (d *Dispatcher) handleInvoicePaymentActionRequired(ctx context.Context, tx 
 		return nil
 	}
 
-	err = statemachine.Transition(ctx, statemachine.TransitionInput{
+	err := statemachine.Transition(ctx, statemachine.TransitionInput{
 		DB:       tx,
 		Emitter:  d.emitter,
 		TenantID: sub.TenantID,

@@ -65,6 +65,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
@@ -575,9 +576,11 @@ func main() {
 			BrandingHandler:        brandingHandler,
 			PagesHandler:           pagesHandler,
 			PlanResolver:           planResolver,
-			StoresMiddleware:        storeMW,
-			AuthzMiddleware:         authzMW,
-			InternalSecret:          cfg.InternalAuthSecret,
+			StoresMiddleware:         storeMW,
+			SubscriptionStatusLoader: readonly.LoadStatus(readonly.StatusLoaderConfig{DB: conn, Repo: subscriptionRepo, Logger: log}),
+			SubscriptionReadOnlyGate: readonly.RequireActive(readonly.Config{}),
+			AuthzMiddleware:          authzMW,
+			InternalSecret:           cfg.InternalAuthSecret,
 		}
 	}
 

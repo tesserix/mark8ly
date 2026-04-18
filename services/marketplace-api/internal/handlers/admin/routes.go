@@ -48,6 +48,8 @@ type Deps struct {
 	PagesHandler             *PagesHandler
 	PlanResolver             *plangate.PlanResolver
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
+	SubscriptionStatusLoader gin.HandlerFunc // optional; runs after StoresMiddleware
+	SubscriptionReadOnlyGate gin.HandlerFunc // optional; runs after StatusLoader — returns 402 on read-only states
 	AuthzMiddleware          *authz.Middleware
 	InternalSecret           string
 }
@@ -107,7 +109,14 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		}
 	}
 
-	storeRoute := router.Group("/admin/stores/:storeId", authMW, deps.StoresMiddleware)
+	storeMW := []gin.HandlerFunc{authMW, deps.StoresMiddleware}
+	if deps.SubscriptionStatusLoader != nil {
+		storeMW = append(storeMW, deps.SubscriptionStatusLoader)
+	}
+	if deps.SubscriptionReadOnlyGate != nil {
+		storeMW = append(storeMW, deps.SubscriptionReadOnlyGate)
+	}
+	storeRoute := router.Group("/admin/stores/:storeId", storeMW...)
 	{
 		products := storeRoute.Group("/products")
 		{

@@ -37,6 +37,20 @@ type Repository interface {
 	// WithAdvisoryLock so the count is consistent with the uncommitted
 	// subscription mutation in the same transaction.
 	CountActiveOrSoftDeletedRestorableTx(ctx context.Context, tx *gorm.DB, tenantID uuid.UUID) (int, error)
+
+	// ListActiveOrSoftDeletedRestorable returns the full Store rows for a
+	// tenant. The local stores projection does not carry deleted_at (that
+	// column lives in platform-api's authoritative table), so this lists all
+	// rows by tenant_id as a conservative set. Used by the downgrade preflight
+	// to surface individual store details in the UI before the merchant commits.
+	ListActiveOrSoftDeletedRestorable(ctx context.Context, tenantID uuid.UUID) ([]Store, error)
+
+	// InFlightOrderCount returns the number of orders for a store that are
+	// neither fulfilled nor cancelled (i.e. Pending or Confirmed). Used by the
+	// downgrade preflight so merchants can see pending orders per store before
+	// downgrading. Update the terminal set here if a new terminal status is added
+	// to order.OrderStatus.
+	InFlightOrderCount(ctx context.Context, storeID uuid.UUID) (int, error)
 }
 
 // WatermarkReader is the narrow read-only contract consumed by the M6
@@ -153,6 +167,35 @@ func (r *gormRepository) CountActiveOrSoftDeletedRestorable(ctx context.Context,
 // gormRepository holds no state beyond the *gorm.DB handle.
 func (r *gormRepository) CountActiveOrSoftDeletedRestorableTx(ctx context.Context, tx *gorm.DB, tenantID uuid.UUID) (int, error) {
 	return countStoresByTenant(ctx, tx, tenantID)
+}
+
+// ListActiveOrSoftDeletedRestorable returns all Store rows for a tenant.
+// Soft-delete filtering lives in platform-api; we list all rows by tenant_id
+// as a conservative upper bound for the preflight store-detail surface.
+func (r *gormRepository) ListActiveOrSoftDeletedRestorable(ctx context.Context, tenantID uuid.UUID) ([]Store, error) {
+	var ss []Store
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID.String()).
+		Find(&ss).Error
+	if err != nil {
+		return nil, fmt.Errorf("stores: list active or restorable: %w", err)
+	}
+	return ss, nil
+}
+
+// InFlightOrderCount returns the number of orders for storeID that are not
+// yet in a terminal state. In-flight = NOT (fulfilled OR cancelled). Update
+// the terminal set here if a new terminal OrderStatus is added.
+func (r *gormRepository) InFlightOrderCount(ctx context.Context, storeID uuid.UUID) (int, error) {
+	var n int64
+	err := r.db.WithContext(ctx).
+		Table("orders").
+		Where("store_id = ? AND status NOT IN ?", storeID.String(), []string{"fulfilled", "cancelled"}).
+		Count(&n).Error
+	if err != nil {
+		return 0, fmt.Errorf("stores: in-flight order count: %w", err)
+	}
+	return int(n), nil
 }
 
 // countStoresByTenant is the shared implementation for both count methods.

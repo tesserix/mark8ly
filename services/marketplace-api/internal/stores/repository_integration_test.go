@@ -265,6 +265,70 @@ func TestIntegration_CountActiveOrSoftDeletedRestorable_CountsByTenant(t *testin
 	}
 }
 
+func TestIntegration_ListActiveOrSoftDeletedRestorable_ReturnsTenantRows(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := stores.NewRepository(tx)
+	ctx := context.Background()
+
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+
+	for i := 0; i < 2; i++ {
+		if err := repo.Upsert(ctx, newStore(tenantA.String())); err != nil {
+			t.Fatalf("upsert tenantA store %d: %v", i, err)
+		}
+	}
+	if err := repo.Upsert(ctx, newStore(tenantB.String())); err != nil {
+		t.Fatalf("upsert tenantB store: %v", err)
+	}
+
+	rows, err := repo.ListActiveOrSoftDeletedRestorable(ctx, tenantA)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Errorf("len = %d, want 2", len(rows))
+	}
+	for _, s := range rows {
+		if s.TenantID != tenantA.String() {
+			t.Errorf("unexpected tenant_id %q in result", s.TenantID)
+		}
+	}
+}
+
+func TestIntegration_InFlightOrderCount_CountsNonTerminalOrders(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := stores.NewRepository(tx)
+	ctx := context.Background()
+
+	storeID := uuid.New()
+
+	// Insert two in-flight orders (pending, confirmed) and one terminal (fulfilled).
+	for _, status := range []string{"pending", "confirmed", "fulfilled"} {
+		if err := tx.Exec(
+			`INSERT INTO orders
+				(id, tenant_id, store_id, order_number, idempotency_key,
+				 customer_email, status, payment_status, fulfillment_status,
+				 subtotal, shipping_total, tax_total, discount_total,
+				 grand_total, refunded_amount, currency_code)
+			 VALUES (gen_random_uuid(), gen_random_uuid(), ?, ?, ?,
+				 'test@example.com', ?, 'pending', 'unfulfilled',
+				 0, 0, 0, 0, 0, 0, 'USD')`,
+			storeID, "ORD-"+status, "idem-"+status, status,
+		).Error; err != nil {
+			t.Fatalf("insert order %s: %v", status, err)
+		}
+	}
+
+	count, err := repo.InFlightOrderCount(ctx, storeID)
+	if err != nil {
+		t.Fatalf("in-flight count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("count = %d, want 2 (pending + confirmed)", count)
+	}
+}
+
 func TestIntegration_CountActiveOrSoftDeletedRestorableTx_UsesPassedTx(t *testing.T) {
 	tx := testdb.NewTx(t)
 	repo := stores.NewRepository(tx)

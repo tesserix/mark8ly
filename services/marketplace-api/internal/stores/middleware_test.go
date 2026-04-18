@@ -93,6 +93,14 @@ func (r *fakeRepo) CountActiveOrSoftDeletedRestorableTx(_ context.Context, _ *go
 	return 0, nil
 }
 
+func (r *fakeRepo) ListActiveOrSoftDeletedRestorable(_ context.Context, _ uuid.UUID) ([]stores.Store, error) {
+	return nil, nil
+}
+
+func (r *fakeRepo) InFlightOrderCount(_ context.Context, _ uuid.UUID) (int, error) {
+	return 0, nil
+}
+
 func (r *fakeRepo) preload(s *stores.Store) {
 	_ = r.Upsert(context.Background(), s)
 	r.mu.Lock()

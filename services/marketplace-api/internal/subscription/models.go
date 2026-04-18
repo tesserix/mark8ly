@@ -111,6 +111,14 @@ type StoreSubscription struct {
 	// P5 Task 14 — day-30 activation idempotency marker (migration 055).
 	TrialActivationMarkedAt *time.Time `gorm:"column:trial_activation_marked_at"`
 
+	// v2.3 P6 — SCA fallback + dunning refund-window guard (§4.7, §16.5).
+	// HostedInvoiceURL is populated by invoice.payment_action_required and
+	// cleared on invoice.paid. FirstChargeAt is stamped once on the first
+	// successful invoice.paid and never updated thereafter — it anchors the
+	// 14-day refund window that blocks ladder-driven expiry.
+	HostedInvoiceURL *string    `gorm:"column:hosted_invoice_url"`
+	FirstChargeAt    *time.Time `gorm:"column:first_charge_at"`
+
 	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:now()"`
 }

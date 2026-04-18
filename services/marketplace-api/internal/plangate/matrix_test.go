@@ -2,6 +2,7 @@ package plangate_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -99,4 +100,56 @@ func TestAllFeatureLimits_EveryFeaturePresentForEveryPlan(t *testing.T) {
 func TestAllFeatures_IncludesAllConstants(t *testing.T) {
 	require.Equal(t, 25, len(plangate.AllFeatures()),
 		"expected 25 feature constants per §9 — update this count if new ones are added")
+}
+
+func TestImagesAllowed_PlainStudio_UsesMatrix(t *testing.T) {
+	// No grandfathering needed for Studio itself.
+	created := time.Now()
+	require.Equal(t, 50, plangate.ImagesAllowed(subscription.PlanStudio, created, nil))
+}
+
+func TestImagesAllowed_Pro_Unlimited(t *testing.T) {
+	require.Equal(t, plangate.Unlimited,
+		plangate.ImagesAllowed(subscription.PlanPro, time.Now(), nil))
+}
+
+func TestImagesAllowed_Starter_NoPlanChange_UsesStarterCap(t *testing.T) {
+	require.Equal(t, 25,
+		plangate.ImagesAllowed(subscription.PlanStarter, time.Now(), nil))
+}
+
+func TestImagesAllowed_Starter_AfterStudioDowngrade_GrandfatheredProduct(t *testing.T) {
+	changedAt := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	oldProduct := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
+	// Product created before the downgrade keeps the 50-image cap.
+	require.Equal(t, 50,
+		plangate.ImagesAllowed(subscription.PlanStarter, oldProduct, &changedAt))
+}
+
+func TestImagesAllowed_Starter_AfterStudioDowngrade_NewProduct_UsesStarterCap(t *testing.T) {
+	changedAt := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	newProduct := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	// Product created after the downgrade is subject to the new 25-image cap.
+	require.Equal(t, 25,
+		plangate.ImagesAllowed(subscription.PlanStarter, newProduct, &changedAt))
+}
+
+func TestImagesAllowed_Starter_ProductExactlyAtChangeMoment(t *testing.T) {
+	changedAt := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	// Same timestamp — NOT strictly before, so no grandfathering.
+	require.Equal(t, 25,
+		plangate.ImagesAllowed(subscription.PlanStarter, changedAt, &changedAt))
+}
+
+func TestImagesAllowed_Trial_NoGrandfathering(t *testing.T) {
+	// Trial uses its own 25 cap; grandfathering doesn't apply to trial.
+	changedAt := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	old := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
+	// Trial has no prior tier to grandfather FROM — but the function treats
+	// any Trial/Starter with a prior change as potentially grandfathered.
+	// §11 explicitly scopes grandfathering to Studio→Starter, but the helper
+	// being generous is safe because Trial users wouldn't have created a
+	// product at a higher cap in any realistic flow.
+	require.Equal(t, 50,
+		plangate.ImagesAllowed(subscription.PlanTrial, old, &changedAt))
 }

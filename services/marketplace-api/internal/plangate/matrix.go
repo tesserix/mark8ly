@@ -4,6 +4,8 @@
 package plangate
 
 import (
+	"time"
+
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
@@ -295,4 +297,32 @@ func MinPlanForFeature(f Feature) subscription.SubscriptionPlan {
 		}
 	}
 	return subscription.PlanPro
+}
+
+// ImagesAllowed returns the image-per-product cap for a product, applying the
+// Studio→Starter grandfathering rule from §11. Products created before a
+// Studio→Starter change keep the Studio cap (50); products created on or
+// after the change date use the Starter cap (25).
+//
+// Semantics:
+//   - If plan is Studio or higher, or Pro: returns the matrix limit for plan (no grandfathering).
+//   - If plan is Starter/Trial and lastPlanChangeAt is non-nil and productCreatedAt is
+//     strictly before the change timestamp: returns 50 (grandfathered Studio cap).
+//   - Otherwise: returns the matrix limit for plan (Starter=25, Trial=25).
+//
+// lastPlanChangeAt is the subscription.LastPlanChangeAt field, which records
+// the most recent plan change. This is the single grandfathering anchor —
+// products older than it inherit the previous tier's cap.
+func ImagesAllowed(plan subscription.SubscriptionPlan, productCreatedAt time.Time, lastPlanChangeAt *time.Time) int {
+	// Non-downgraded plans: straightforward matrix lookup.
+	if plan == subscription.PlanStudio || plan == subscription.PlanPro {
+		return Limit(plan, FeatureImagesPerProduct)
+	}
+
+	// On Starter/Trial, check whether the product predates the plan change.
+	if lastPlanChangeAt != nil && productCreatedAt.Before(*lastPlanChangeAt) {
+		// Grandfathered at the previous tier's Studio cap.
+		return Limit(subscription.PlanStudio, FeatureImagesPerProduct)
+	}
+	return Limit(plan, FeatureImagesPerProduct)
 }

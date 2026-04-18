@@ -7,7 +7,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = await req.text();
+  // forwardToOtto JSON.stringify's the body internally — pass a
+  // parsed object, not a raw text string (doing both double-wraps
+  // the payload and Gin rejects it as an invalid body).
+  const body = await req.json().catch(() => ({}));
   return forwardToOtto(`/api/v1/admin/otto/me/availability`, {
     method: "POST",
     body,

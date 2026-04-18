@@ -8,7 +8,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const body = await req.text();
+  // forwardToOtto JSON.stringify's the body — pass a parsed object,
+  // not req.text() (which would get wrapped in another layer of
+  // quotes and fail Gin's binding).
+  const body = await req.json().catch(() => ({}));
   return forwardToOtto(
     `/api/v1/storefront/otto/conversations/${encodeURIComponent(id)}/feedback`,
     { method: "POST", body },

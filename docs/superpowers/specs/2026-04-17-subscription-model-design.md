@@ -1,23 +1,23 @@
 # Mark8ly Subscription Model — Design
 
-**Status:** v2 — incorporates architect, BA, solution-architect, and security reviews
-**Date:** 2026-04-17
+**Status:** v2.1 — addresses round-2 reviewer MEDIUMs, Pro restructure, PPP pricing
+**Date:** 2026-04-17 (revised 2026-04-18)
 **Scope:** Final pricing, plans, trial mechanics, billing infrastructure, feature matrix, tax model, and enforcement rules. Includes state machine, concurrency controls, security requirements, observability, and DR. Implementation-ready.
 
 ---
 
 ## 1. Summary
 
-Mark8ly ships a **B2B-only** subscription model across 18 countries:
+Mark8ly ships a **B2B-only** subscription model across 18 countries with PPP-adjusted pricing for emerging markets:
 
 - **Trial** — 3 months free, no card, email-verified + reCAPTCHA gated, default on signup
-- **Starter** — $19/mo ($182/yr annual, 20% off), self-serve, 2 stores
-- **Studio** — $49/mo ($470/yr annual), self-serve, 5 stores, custom CSS, 50k emails, 12-month audit retention, read-only API
-- **Pro** — starts at $149/mo + $2,000 one-time setup (non-refundable), contact sales, 10 stores, SSO, SLA, named CSM, full API, custom code injection, unlimited
-- **White-label mobile app add-on** — $199/mo + $2,000 non-refundable setup, Pro-only add-on, iOS + Android branded apps under tenant's developer accounts
+- **Starter** — from $19/mo (developed markets) / ₹999 (India PPP-adjusted), self-serve, 2 stores
+- **Studio** — from $49/mo / ₹2,499 (India), self-serve, 5 stores, custom CSS, 50k emails, 12-month audit retention, read-only API
+- **Pro** — **from $99/mo** / ₹5,499 (India), contact-sales with **visible "Starts at" floor**, 10 stores, SSO, full read/write API, custom code injection, priority support, unlimited
+- **White-label mobile app add-on** — **$199/mo + $2,000 non-refundable setup**, Pro-only, bundles named CSM + SLA + onboarding concierge + branded iOS/Android apps under tenant's developer accounts
 - **Marketplace** — placeholder in code, hidden from UI (future)
 
-Mark8ly charges zero transaction fees on merchant GMV — merchants bring their own payment gateway keys (Stripe, Razorpay, PayPal) for *their* storefront checkout. Mark8ly's own billing runs through a single Stripe Australia account serving all 18 countries with geo-localized rounded prices.
+Mark8ly charges zero transaction fees on merchant GMV — merchants bring their own payment gateway keys (Stripe, Razorpay, PayPal) for *their* storefront checkout. Mark8ly's own billing runs through a single Stripe Australia account serving all 18 countries. Prices are geo-localized in round native numbers; 12 developed markets priced at USD parity, 6 emerging markets (IN, MY, TH, PH, ID, VN) get ~33% PPP discount.
 
 Because every merchant is a business entity, Mark8ly operates under the **B2B reverse-charge tax model** (EU/UK/SEA/India) — merchants self-account for VAT/GST. Mark8ly validates tax IDs at onboarding (VIES for EU, HMRC for UK, GSTN for India, local validators for SEA) and issues reverse-charge-compliant invoices. No consumer signups permitted.
 
@@ -30,9 +30,9 @@ Substantial scaffolding exists already: `plangate` (Go package with feature-gati
 | Artifact | Location | Status | Gap |
 |---|---|---|---|
 | Feature matrix | `services/marketplace-api/internal/plangate/gate.go` | 22 features × 5 plans (Free/Starter/Pro/Enterprise/Marketplace) | Rewrite to 4 plans (Trial/Starter/Studio/Pro) + Marketplace hidden; update all limits to match §9 |
-| Subscription model | `services/marketplace-api/internal/subscription/models.go` | `StoreSubscription` struct + `SubscriptionPlan` enum (4 values, missing `marketplace`) | Update plan enum; add `ReverseChargeTaxID`, `TaxIDCountry`, `TaxIDValidated`, `TaxIDValidatedAt` fields |
+| Subscription model | `services/marketplace-api/internal/subscription/models.go` | `StoreSubscription` struct + `SubscriptionPlan` enum (4 values, missing `marketplace`) | Update plan enum; add `ReverseChargeTaxID`, `TaxIDCountry`, `TaxIDValidated`, `TaxIDValidatedAt`, `HasWhiteLabelAppAddOn` fields |
 | Subscription repository | `services/marketplace-api/internal/subscription/repository.go` | `GetByStoreID(ctx, db, storeID)` | **SECURITY BLOCKER: `tenant_id` missing from WHERE clause.** Change signature to `GetByStoreID(ctx, db, tenantID, storeID)`. Audit all call sites. |
-| Migration | `services/marketplace-api/migrations/000015_subscriptions.up.sql` | `store_subscriptions` table with Stripe IDs, period windows, plan, status, unique `(store_id)` | Add new migration: tax ID fields, plan enum rename (free→trial; starter/pro collapse → starter/studio/pro), soft-delete tracking |
+| Migration | `services/marketplace-api/migrations/000015_subscriptions.up.sql` | `store_subscriptions` table with Stripe IDs, period windows, plan, status, unique `(store_id)` | Add new migration: tax ID fields, plan enum rename (free→trial; starter/pro collapse → starter/studio/pro), add-on tracking, soft-delete tracking |
 | Stripe client | `services/marketplace-api/internal/payment/stripe.go` | Partial — used for merchant storefront checkout only; signature verification exists; idempotency keys missing; error-body logging leaks PII | Add Stripe Billing subscription flow, Checkout sessions, Customer Portal, webhook dispatcher; fix log sanitization; add idempotency keys |
 | Admin subscription handler | `services/marketplace-api/internal/handlers/admin/subscription.go` | Exists | Update DTOs to new plan lineup; add plan-switch, upgrade, cancel endpoints; enforce `RequireActive` middleware |
 | Shipping carriers | `services/marketplace-api/internal/shipping/{shipengine,delhivery,ninjavan}.go` | 15 countries hardcoded in `SupportedCountries()` | Add IE, NZ to ShipEngine list; add VN to NinjaVan list; defer AE (Aramex) to post-v1 |
@@ -46,89 +46,111 @@ Substantial scaffolding exists already: `plangate` (Go package with feature-gati
 
 ### 3.1 Tiers
 
-| Plan | Visibility | Pricing | Billing | Audience |
+| Plan | Visibility | Pricing (developed markets) | Billing | Audience |
 |---|---|---|---|---|
 | **Trial** | Default on signup, email-verified + reCAPTCHA | $0 for 90 days | N/A | Everyone B2B |
 | **Starter** | Pricing page, self-serve | $19/mo or $182/yr (20% off) | Monthly or annual | Single-brand merchants, up to 2 stores |
 | **Studio** | Pricing page, self-serve | $49/mo or $470/yr (20% off) | Monthly or annual | Growing merchants, custom CSS, larger marketing volume, up to 5 stores |
-| **Pro** | "Contact sales" on pricing page, no price shown | Starts at $149/mo + $2,000 one-time setup (non-refundable) | Annual only; quarterly invoicing available for enterprise procurement | Multi-store, SSO, SLA, named CSM, custom code injection, up to 10 stores |
-| **White-label mobile app add-on** | Pro-only add-on, sales-quoted | $199/mo + $2,000 non-refundable setup | Annual only, renews with Pro subscription | Pro tenants who want branded iOS + Android apps |
+| **Pro** | Pricing page with **visible "Starts at $99/mo"** floor, "Contact sales" CTA | From $99/mo + optional $2,000 setup if add-on | Annual only (monthly available on request); quarterly invoicing for enterprise procurement | Mid-market brands, SSO, multi-store, full API, custom code injection — up to 10 stores |
+| **Pro + White-label mobile app add-on** | Pro-only add-on, sales-quoted | +$199/mo + **$2,000 non-refundable setup** | Annual only, renews with Pro subscription | Brands wanting branded iOS + Android apps, includes named CSM + SLA + onboarding concierge |
 | **Marketplace** | *Hidden in UI, placeholder in code* | TBD (future phase) | TBD | Future multi-operator marketplace |
 
 ### 3.2 Pricing ladder rationale
 
+Developed-market ladder:
+
 ```
-$19  →  $49  →  $149  →  $348 (Pro + app)
-      2.6×      3.0×      2.3×
+$19  →  $49  →  $99  →  $298 (Pro + App)
+      2.6×      2.0×    3.0×
 ```
 
-- **2.6×** Starter→Studio: real feature + limit upgrade (custom CSS, 3× emails, 2.5× stores)
-- **3.0×** Studio→Pro: features serious brands need (SSO, SLA, CSM, multi-store to 10)
-- **2.3×** Pro→Pro+App: the white-label app as a real-revenue add-on, not a tier jump
+- **2.6×** Starter → Studio: real feature + limit upgrade (custom CSS, 3× emails, 2.5× stores)
+- **2.0×** Studio → Pro: features serious brands need (SSO, multi-store, full API, custom code injection, priority support)
+- **3.0×** Pro → Pro + App: the white-label app plus CSM/SLA bundle — aligned with real ongoing cost (app maintenance + dedicated human success contact)
 
 No price cliffs. Each transition has a clear upgrade driver and a proportional price step.
 
-### 3.3 Pro "contact sales" behavior
+### 3.3 Pro "contact sales" with visible floor
 
-Pro is not self-serve. The pricing page Pro card displays:
+Pro is contact-sales-led **but with a published floor price**. The pricing page Pro card displays:
 
-- Feature list (SSO, SLA, CSM, multi-store, etc.)
-- "Starts at $149/mo annual + $2,000 setup"
+- Feature list (SSO, multi-store, full API, custom code injection, priority support)
+- **"Starts at $99/mo"** — visible floor, localized per country
 - Primary CTA: "Contact sales"
-- Secondary CTA: "Download Pro brief" (PDF one-pager with features, procurement expectations)
+- Secondary CTA: "Download Pro brief" (PDF one-pager)
+
+Rationale for visible floor rather than pure "Contact sales":
+- Self-qualifies leads — prospects who balk at $99 filter themselves out pre-discovery-call
+- Easier competitive comparison for prospects evaluating mark8ly vs Tapcart / Vajro / Shopify Plus
+- Retains SEO ranking on "[tool] pricing" queries
+- Preserves full negotiation ceiling upward (price floor, not ceiling)
 
 Contact form captures: business name, tax ID, country, annual GMV range, intended store count, timeline, need for white-label app (yes/no). Submissions auto-create a Notion record in `Sales Pipeline` and Slack notification to `#sales-inbox`. Response SLA 24h business hours.
 
 ### 3.4 White-label mobile app add-on
 
-Sold only as an add-on to Pro. Cannot be purchased on Starter or Studio. The $199/mo + $2,000 setup fee covers:
+Sold only as an add-on to Pro. Cannot be purchased on Starter or Studio. The **$199/mo + $2,000 non-refundable setup** covers:
 
 - Apple Developer + Google Play Console setup guidance (tenant owns the accounts; see §13 for Apple app-factory policy context)
 - Branded iOS + Android app build (tenant's icon, splash, colors, deep links into storefront)
 - First submission to both stores (5–10 business days typical)
-- Firebase push notification infrastructure
+- Firebase push notification infrastructure per tenant
+- **Named Customer Success Manager** (CSM — 1h/month dedicated account management)
+- **Uptime SLA (99.9%)** with service credits
+- **Onboarding concierge**
 - 60 days post-launch issue support
 - Ongoing per-major-OS update maintenance (2×/year)
+
+**Why CSM + SLA are bundled with the app add-on (not Pro base):** the customer investing in a branded mobile app is the one who genuinely needs dedicated human support (Apple submission coordination, OS update windows, push campaign strategy). Pro-without-app customers are typically mid-market teams with internal ops — they prefer fast priority email support over scheduled check-ins. Aligning the CSM cost with the customer who values it keeps Pro base accessible at $99.
 
 ---
 
 ## 4. Pricing — localized for 18 countries
 
-### 4.1 Prices
+### 4.1 Developed markets — USD parity
 
-Geo-detected on the pricing page from billing address or IP. Charged in USD by Stripe AU; card network handles FX at the consumer's end. Localized prices are **round native numbers, not FX conversions** — Mark8ly absorbs modest FX margin to keep native-feeling prices.
+12 countries priced at USD-equivalent local numbers. Geo-detected on the pricing page from billing address or IP. Charged in USD by Stripe AU; card network handles FX at the consumer's end.
 
-| Country | Shipping carrier | Starter monthly | Starter annual | Studio monthly | Studio annual | Pro floor |
+| Country | Shipping carrier | Starter monthly | Starter annual | Studio monthly | Studio annual | Pro from |
 |---|---|---|---|---|---|---|
-| US, CA | ShipEngine | $19 | $182 | $49 | $470 | $149 |
-| UK (GB) | ShipEngine | £15 | £144 | £39 | £375 | £119 |
-| Ireland (IE) *new carrier config* | ShipEngine | €17 | €163 | €45 | €432 | €135 |
-| EU (DE, FR, IT, ES, NL) | ShipEngine | €17 | €163 | €45 | €432 | €135 |
-| Australia | ShipEngine | A$29 | A$278 | A$75 | A$719 | A$229 |
-| New Zealand *new carrier config* | ShipEngine | NZ$29 | NZ$278 | NZ$75 | NZ$719 | NZ$229 |
-| India | Delhivery | ₹1,499 | ₹14,399 | ₹3,999 | ₹38,399 | ₹11,999 |
-| Singapore | NinjaVan | S$25 | S$239 | S$65 | S$623 | S$199 |
-| Malaysia | NinjaVan | RM 89 | RM 859 | RM 229 | RM 2,199 | RM 679 |
-| Thailand | NinjaVan | ฿699 | ฿6,699 | ฿1,799 | ฿17,269 | ฿5,399 |
-| Philippines | NinjaVan | ₱1,099 | ₱10,559 | ₱2,799 | ₱26,869 | ₱8,499 |
-| Indonesia | NinjaVan | Rp 299,000 | Rp 2,879,000 | Rp 769,000 | Rp 7,382,000 | Rp 2,299,000 |
-| Vietnam *new NinjaVan country* | NinjaVan | ₫479,000 | ₫4,599,000 | ₫1,229,000 | ₫11,798,000 | ₫3,699,000 |
+| US, CA | ShipEngine | $19 | $182 | $49 | $470 | $99 |
+| UK (GB) | ShipEngine | £15 | £144 | £39 | £375 | £79 |
+| Ireland (IE) *new carrier config* | ShipEngine | €17 | €163 | €45 | €432 | €89 |
+| EU (DE, FR, IT, ES, NL) | ShipEngine | €17 | €163 | €45 | €432 | €89 |
+| Australia | ShipEngine | A$29 | A$278 | A$75 | A$719 | A$149 |
+| New Zealand *new carrier config* | ShipEngine | NZ$29 | NZ$278 | NZ$75 | NZ$719 | NZ$149 |
+| Singapore | NinjaVan | S$25 | S$239 | S$65 | S$623 | S$129 |
+
+### 4.1.1 Emerging markets — PPP-adjusted (~33% off USD parity)
+
+6 countries priced ~33% below USD parity to reflect purchasing-power differences. This is industry standard (Figma, Notion, Canva, Spotify, Netflix all do this). Without PPP adjustment, Starter at ₹1,499/mo would represent 3% of revenue for a typical indie Indian DTC brand doing ₹50k/mo GMV — an accessibility problem that excludes the long-tail merchant segment Mark8ly wants to serve.
+
+| Country | Shipping carrier | Starter monthly | Starter annual | Studio monthly | Studio annual | Pro from |
+|---|---|---|---|---|---|---|
+| India | Delhivery | ₹999 | ₹9,599 | ₹2,499 | ₹23,999 | ₹5,499 |
+| Malaysia | NinjaVan | RM 59 | RM 569 | RM 149 | RM 1,429 | RM 299 |
+| Thailand | NinjaVan | ฿499 | ฿4,799 | ฿1,199 | ฿11,519 | ฿2,399 |
+| Philippines | NinjaVan | ₱749 | ₱7,199 | ₱1,899 | ₱18,239 | ₱3,799 |
+| Indonesia | NinjaVan | Rp 199,000 | Rp 1,919,000 | Rp 499,000 | Rp 4,799,000 | Rp 999,000 |
+| Vietnam *new NinjaVan country* | NinjaVan | ₫329,000 | ₫3,169,000 | ₫799,000 | ₫7,699,000 | ₫1,649,000 |
+
+### 4.1.2 Add-on — white-label mobile app
+
+Priced **globally in USD, no localization: $199/mo + $2,000 non-refundable setup.** Reason: underlying cost base (Apple Developer fee, Firebase, build/submission labor) is USD-denominated; local-currency discounting would break unit economics.
 
 **Deferred to v2:** UAE (AE) — requires Aramex carrier integration (~1 week build). Launch Mark8ly waitlist for AE now; enable in follow-up milestone.
-
-**White-label mobile app add-on** priced at $199/mo USD globally (no localization — the underlying cost base is USD-denominated Apple/Google/Firebase, not local-currency).
 
 ### 4.2 FX handling
 
 - Merchant sees localized price on pricing page and admin
 - Stripe charges the merchant's card in USD (cross-border transaction)
 - Stripe AU settles to Mark8ly in AUD after FX at Stripe's ~1.5% spread
-- Card network handles FX at consumer end
+- Card network handles FX at consumer end (merchant's bank statement shows their local currency)
 - Mark8ly bears USD→AUD exposure on received revenue
 
 ### 4.3 Price-table review cadence
 
-Every 6 months. Hard-update any currency row if USD has moved >10% against that currency since last review.
+Every 6 months. Hard-update any currency row if USD has moved >10% against that currency since last review. PPP discounts re-evaluated annually (not every 6 months) — emerging-market currencies are more volatile, rapid re-pricing hurts trust.
 
 ### 4.4 Billing period changes
 
@@ -138,10 +160,13 @@ A merchant can change their billing period at any time via admin → Subscriptio
 - **Annual → Monthly:** takes effect **at end of current annual period, not immediately**. Merchant retains annual price through the full 12 months. On renewal, subscription switches to monthly at current monthly price.
 - Switching tier (Starter→Studio, Studio→Pro) is governed by §4.5, not this section.
 
-### 4.5 Plan upgrades and downgrades (Starter ↔ Studio only; Studio → Pro is sales-led)
+### 4.5 Plan upgrades and downgrades
 
 - **Upgrade immediately, prorate.** Starter→Studio charges `studio_remaining_days_price − starter_remaining_days_credit` on the spot. Upgrade effective instantly, all Studio features unlock.
-- **Downgrade at end of period.** Studio→Starter is accepted but doesn't take effect until current period ends. Merchant keeps Studio features until then. Warning banner appears to clarify data implications (loss of Custom CSS, cap changes).
+- **Downgrade at end of period** (with prerequisite check for excess resources).
+  - **Studio → Starter blocked if merchant has more than 2 stores.** Admin displays blocking dialog: "You have 5 stores. Starter allows 2. Choose which stores to close or delete before downgrading." No auto-suspension, no silent data loss — merchant explicitly selects.
+  - If resources fit the target tier: downgrade scheduled for end of period. Merchant keeps current tier features until then.
+  - Downgrade reversal allowed anytime before period end.
 - **Studio → Pro is always sales-led** via the contact form. There is no self-serve "upgrade to Pro" button. This is intentional: Pro requires tax docs, setup call, and is annual-only.
 
 ### 4.6 Country change mid-subscription
@@ -151,14 +176,16 @@ Merchant relocates or updates billing address to a different country:
 - Billing-country change takes effect at **next renewal**, never mid-period
 - Merchant receives email 14 days before renewal: "Your billing country is changing to X. Your next invoice will be [localized_price_for_X]"
 - If new country is India + billing period is annual: re-evaluate RBI e-mandate applicability (§4.7)
+- If new country moves merchant from emerging-market PPP zone to developed-market zone (or vice versa): price change applies at next renewal per §4.1/§4.1.1
 - If new country is not yet supported (e.g. AE pre-v2): block the change and offer migration path (wait or cancel)
 
 ### 4.7 RBI e-mandate fallback for Indian annual subscribers
 
-Annual charges for Indian subscribers (₹14,399+) near the ₹15,000 international-card recurring threshold. Operational rules:
+Annual charges for Indian subscribers (₹9,599 and above — Studio and Pro) near the ₹15,000 international-card recurring threshold. Starter annual at ₹9,599 sits safely below; Studio annual at ₹23,999 and Pro floor ₹5,499×12 = ₹65,988/yr exceed the threshold.
 
-- Indian merchants on **monthly billing** (~₹1,499–₹3,999 range): safe, standard Stripe recurring flow
-- Indian merchants on **annual billing**: automatic switch to `billing_cycle_mode = "invoice_based"`:
+Operational rules:
+- Indian merchants on **monthly billing** (all plans): safe, standard Stripe recurring flow
+- Indian merchants on **annual billing** AND charge >₹15,000: automatic switch to `billing_cycle_mode = "invoice_based"`:
   1. 14 days before renewal, create a Stripe Invoice (not Subscription charge)
   2. Email merchant with hosted invoice URL + enabled local payment methods (UPI, NetBanking)
   3. Reminder emails at T-14, T-7, T-1
@@ -172,37 +199,45 @@ Annual charges for Indian subscribers (₹14,399+) near the ₹15,000 internatio
 
 ### 5.1 Signup gates (v1 launch)
 
-The 3-month no-card trial needs hard gates against abuse (bot-created stores consume infrastructure; SendGrid path is an email-relay attack vector):
+The 3-month no-card trial needs hard gates against abuse:
 
 - **Email verification** required before storefront publishes. Merchant can set up admin, design themes, add products during verification pending; storefront remains unpublished (returns store-closed page to public).
 - **reCAPTCHA Enterprise** on the signup form at Cloudflare Worker edge layer. Free-tier scoring; block scores <0.5.
 - **Rate-limit signup endpoint**: 3 signups per IP per 24h; 1 signup per email (case-insensitive, stripped of `+` aliases).
 - **Disposable email blocklist**: reject known disposable domains (use `disposable-email-domains` upstream list, refreshed weekly).
-- **First 7 days of trial**: campaign email sending is **disabled** (warming period). Transactional emails work. This eliminates email-relay abuse motivation while low-friction for legitimate merchants who typically aren't running campaigns in their first week.
-- **Signup volume alert**: Cloud Monitoring alert when trial signups exceed 50/day. Manual review triggered.
+- **First 7 days of trial**: campaign email sending is **disabled** (warming period). Transactional emails work. This eliminates email-relay abuse motivation while low-friction for legitimate merchants.
+- **Signup volume alert**: Cloud Monitoring alert when trial signups exceed 50/day.
 
-### 5.2 Tax ID validation at signup
+### 5.2 Tax ID validation at signup — hard 14-day window
 
-Because Mark8ly is B2B-only (§19), signup requires a valid tax ID for the merchant's business entity:
+Mark8ly is B2B-only (§19). Signup requires a valid tax ID for the merchant's business entity:
 
 - Form asks: business name, country, tax ID (format validated client-side per country)
 - Server-side validation against country-specific registry:
-  - EU: VIES API (free, asynchronous — return immediate "pending" if VIES is slow, accept provisionally with 48h re-check)
-  - UK: HMRC VAT API (free)
+  - EU: VIES API (free, asynchronous — return immediate "pending" if VIES is slow, accept provisionally)
+  - UK: HMRC VAT API
   - India: GSTN lookup API (requires Mark8ly registration + API key)
-  - SEA (TH, ID, PH, VN, MY): local registry APIs; some (e.g. TH's RD API) are public, others require enrollment
-  - AU: ABN Lookup API (free, public)
-  - US, CA, NZ: no federal tax ID validation at signup (EIN format check only)
-- If validation fails: signup completes but store is marked `tax_id_pending`. Storefront publishes; however admin banner appears and billing is disallowed at day 90 until validated.
-- If validation passes: `tax_id_validated_at` timestamped; quarterly revalidation cron re-checks.
+  - SEA (TH, ID, PH, VN, MY): local registry APIs; §19.3 specifies fallback for unavailable APIs
+  - AU: ABN Lookup API
+  - US, CA: format check + legally-binding business-entity checkbox (§19.3)
+  - NZ: IRD lookup API
+- **If validation fails or is pending**: signup completes but store is marked `tax_id_pending`. Admin unlocks for setup; **storefront does NOT publish until validated.**
+- **Hard 14-day deadline for first-time validation.** If tax ID not validated within 14 days of signup:
+  - Day 7: reminder email
+  - Day 12: escalation email
+  - Day 14: admin locked to read-only + billing actions only; store remains unpublished
+  - Day 30: signup cancelled, data purged (60-day soft-delete per §5.3)
+- Tightened from the earlier 90-day window to close the "live storefront on fake tax ID" attack surface.
+- If validation passes: `tax_id_validated_at` timestamped; quarterly revalidation cron re-checks (§19.5).
 
 ### 5.3 Timeline
 
 | Day | Event | Admin | Storefront |
 |---|---|---|---|
-| 0 | Signup, email verification complete, reCAPTCHA pass, tax ID submitted | Full access | Published (if email verified) |
-| 0–6 | Normal use | Full access except campaign send | Full |
-| 7 | Campaign send unlocked | Full access | Full |
+| 0 | Signup, email verification complete, reCAPTCHA pass, tax ID submitted | Full access | **Unpublished** until tax ID validated |
+| 0–14 | Tax ID validation window | Full access except campaign send | Publishes once tax ID validated |
+| 0–6 | Normal use | Full access except campaign send | Full (if tax ID validated) |
+| 7 | Campaign send unlocked (if tax ID validated) | Full access | Full |
 | 0–59 | Normal use | Full access | Full |
 | 60 | Banner appears | "Add a card before day 90. Tax ID status: verified" | Full |
 | 75 | Banner escalates | Amber accent, email reminder | Full |
@@ -219,7 +254,7 @@ Serving rule: expired subscription → Cloudflare Worker serves a **branded, edi
 Implementation:
 - `tenant-router-service` exposes `GET /status/:storeSlug → {status, store_name, logo_url}` (cached 60s at Worker)
 - Worker checks this status before routing to storefront origin
-- If `status = closed`: Worker serves `/assets/closed.html` with merchant's logo + name interpolated, 307 SEO-safe status code
+- If `status = closed` or `status = unpublished`: Worker serves `/assets/closed.html` with merchant's logo + name interpolated, 307 SEO-safe status code
 - Cache invalidation via POST from marketplace-api when subscription status changes
 
 ---
@@ -249,7 +284,7 @@ Pricing page copy: **"Your store, your payments, no middleman fees."** This is a
 
 - **Post-trial monthly discount** — e.g. `FOUNDER50`: first 3 months after trial at 50% off, then snap to full price
 - **Annual upfront discount** — e.g. `FOUNDER20`: 20% off year-1 annual
-- **Grandfathered launch rate** — at launch campaign only, specific slots ("first 100 Starter signups: $14/mo forever"). Implemented as `grandfathered_price` override on `store_subscriptions`, NOT via promo code table. Segment strategy, one-shot, close permanently.
+- **Grandfathered launch rate** — at launch campaign only, specific slots. Implemented as `grandfathered_price` override on `store_subscriptions`, NOT via promo code table. One-shot, closed permanently.
 
 ### 7.3 Abuse prevention
 
@@ -257,9 +292,9 @@ Pricing page copy: **"Your store, your payments, no middleman fees."** This is a
 - Promo codes have explicit `starts_at` and `expires_at`
 - All redemptions logged to `promo_redemptions` table for audit
 - **Rate limit on promo validation**: 5 attempts per IP per hour; 10 per email per 24h
-- **Response is timing-safe**: both "code not found" and "code expired" return the same generic `promo_code_invalid` error message and identical response time (no enumeration signal)
+- **Response is timing-safe**: both "code not found" and "code expired" return the same generic `promo_code_invalid` error message with identical response time (no enumeration signal)
 - **Minimum code length**: 12 characters mixed-case alphanumeric, avoiding visually ambiguous characters (no `0/O`, `1/l/I`)
-- Codes are stored as Stripe Coupon IDs as the canonical backend — Stripe's native redemption tracking provides a second enforcement layer
+- Codes stored as Stripe Coupon IDs as the canonical backend
 
 ---
 
@@ -269,15 +304,14 @@ Pricing page copy: **"Your store, your payments, no middleman fees."** This is a
 
 - **14-day cooling-off from first charge after trial** → full refund, no questions. Compliant with EU CRD Article 9, UK Consumer Contracts Regulations, AU ACL.
 - **After 14 days** → cancel anytime, access retained until end of paid period, no pro-rated refund
-- **Pro setup fee ($2,000)** → never refundable
-- **White-label app setup fee ($2,000)** → never refundable
+- **Pro setup fee ($2,000 USD)** → never refundable (applies only when Pro + White-label add-on is purchased)
 - **Chargebacks via card network** → Mark8ly contests based on access logs + refund policy in TOS
 
 ### 8.2 Refund fraud prevention
 
-- **Card fingerprint tracking**: Stripe returns `fingerprint` on every PaymentMethod (stable per physical card across customers). Stored on `store_subscriptions`.
+- **Card fingerprint tracking**: Stripe returns `fingerprint` on every PaymentMethod. Stored on `store_subscriptions`.
 - **One refund per card fingerprint, lifetime.** Second refund attempt from same fingerprint requires manual CSM approval.
-- **Device fingerprint logged** at card-add time (IP, user-agent hash, ASN) for correlation against known refund-abusers.
+- **Device fingerprint logged** at card-add time (IP, user-agent hash, ASN) for correlation.
 
 ### 8.3 Refund flow (v1)
 
@@ -287,7 +321,7 @@ Minimal viable: Mark8ly staff processes refund directly in Stripe Dashboard, log
 
 Terms of Service must clearly state:
 - 14-day window and its precise start point (first charge after trial, not signup)
-- Non-refundability of Pro setup and mobile-app setup fees
+- Non-refundability of Pro + White-label app add-on setup fee
 - How to request a refund (email to support with order + card last-4)
 - Legal-review required before launch
 
@@ -314,7 +348,7 @@ Terms of Service must clearly state:
 | Remove "Powered by Mark8ly" | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Custom CSS + fonts** | — | — | **✓** | ✓ | ✓ |
 | Custom code injection (JS/HTML) | — | — | — | ✓ | ✓ |
-| **White-label iOS + Android app** | — | — | — | **(Available as add-on)** | **✓** |
+| **White-label iOS + Android app** | — | — | — | — | **✓** |
 | **Platform** | | | | | |
 | CSV import/export | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Shipping labels | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -325,17 +359,17 @@ Terms of Service must clearly state:
 | Read-only API + webhooks (rate-limited) | — | — | **✓** | ✓ | ✓ |
 | Full read/write API | — | — | — | ✓ | ✓ |
 | SSO (SAML / OIDC via GIP) | — | — | — | ✓ | ✓ |
-| Uptime SLA | — | — | — | ✓ (99.9%) | ✓ (99.9%) |
+| **Uptime SLA (99.9%)** | — | — | — | — | **✓** |
 | **Support** | | | | | |
-| Standard email support (24h response) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Priority support + named CSM | — | — | — | ✓ | ✓ |
-| Onboarding concierge | — | — | — | ✓ | ✓ |
+| Standard email support (24h response) | ✓ | ✓ | ✓ | — | — |
+| **Priority email support (4h response)** | — | — | — | **✓** | ✓ |
+| **Named CSM + onboarding concierge** | — | — | — | — | **✓** |
 
 ### 9.1 Features NOT in the matrix (disclose in pricing-page FAQ)
 
 - **Multi-language storefronts** — future phase, not in v1
 - **Multi-currency storefronts** (customer-side) — future phase, not in v1
-- **Inventory transfer between Paid stores** — in Studio and Pro; not applicable to Starter (1 store)
+- **Inventory transfer between Paid stores** — available in Studio and Pro; not applicable to Starter (1 store)
 - **Analytics data retention** — Starter: 12 months; Studio: 24 months; Pro: forever
 - **Staff permission granularity** — role-based (admin, staff, read-only); no custom role editor in v1
 
@@ -376,16 +410,16 @@ No race is possible: PostgreSQL's per-row locking serializes concurrent UPDATEs.
 - Budget row key: `(store_id, first_of_utc_month)`
 - On month roll (UTC midnight on day 1): scheduled job creates new row with `remaining = limit_set` per plan
 - No rollover
-- Limit updates on plan change: handled via scheduled job on `customer.subscription.updated` webhook
+- Limit updates on plan change: plan-change webhook handler recomputes `limit_set` and `remaining` inside the transaction that writes the subscription change
 - Merchant-visible counter in admin: "X of Y emails used this month" (reads `limit_set - remaining`)
 
 ### 10.3 Per-store concurrent send limit
 
-To bound blast radius on email-relay abuse: max **3 concurrent** campaign sends per store. Enforced via Redis INCR + TTL or PostgreSQL advisory lock on `store_id`.
+Max **3 concurrent** campaign sends per store. Enforced via Redis INCR + TTL or PostgreSQL advisory lock on `store_id`.
 
 ### 10.4 Transactional email handling
 
-Transactional emails (order confirmations, shipping updates, password resets) go through a separate SendGrid template pipeline. These are **not metered** against plan caps. Platform-wide fair-use of **100,000 transactional emails/store/month** exists for abuse detection; triggers investigation, not automatic block.
+Transactional emails (order confirmations, shipping updates, password resets) go through a separate SendGrid template pipeline. **Not metered** against plan caps. Platform-wide fair-use of **100,000 transactional emails/store/month** exists for abuse detection.
 
 ### 10.5 SendGrid cost posture
 
@@ -420,7 +454,7 @@ if limit != plangate.Unlimited && count >= limit {
 
 ---
 
-## 12. SSO (Pro only)
+## 12. SSO (Pro and Pro + App)
 
 ### 12.1 Protocols
 
@@ -431,7 +465,7 @@ Both leverage existing Google Identity Platform federation — not building an I
 
 ### 12.2 Per-tenant config
 
-New `tenant_sso_configs` table stores: `tenant_id PK`, `provider_type`, `metadata_url`, `issuer`, `client_id`, `client_secret_ref` (GCP Secret Manager path). Enterprise admin pastes their IdP metadata via admin UI.
+New `tenant_sso_configs` table stores: `tenant_id PK`, `provider_type`, `metadata_url`, `issuer`, `client_id`, `client_secret_ref` (GCP Secret Manager path). Pro admin pastes their IdP metadata via admin UI.
 
 ### 12.3 Just-in-time provisioning
 
@@ -443,10 +477,10 @@ Each Pro tenant has **exactly one** non-SSO Mark8ly-native admin account for eme
 
 - Password: machine-generated, **20 characters minimum**, from CSPRNG. Never user-chosen.
 - Stored in GCP Secret Manager under `projects/tesserix-prod/secrets/break-glass-{tenant_id}`.
-- **MFA: TOTP mandatory** (Google Authenticator or equivalent). No SMS (SIM-swap risk).
+- **MFA: TOTP mandatory** (Google Authenticator or equivalent). No SMS.
 - **Rotation: 90 days** OR immediately after use.
 - **Use triggers immediate alert** to `#security-alerts` Slack channel + log to audit service.
-- Access to the GCP Secret Manager path requires a specific IAM role held by ≤2 Mark8ly staff at any time.
+- Access to GCP Secret Manager requires IAM role held by ≤2 Mark8ly staff at any time.
 
 ---
 
@@ -454,7 +488,7 @@ Each Pro tenant has **exactly one** non-SSO Mark8ly-native admin account for eme
 
 ### 13.1 Apple "app factory" policy
 
-Apple rejects batch-submitted apps from a single publisher. Industry workaround used by Tapcart, Vajro, Appy Pie:
+Apple rejects batch-submitted apps from a single publisher. Industry workaround:
 
 - Apps submitted under the **tenant's own Apple Developer account** ($99/yr per account, tenant-owned)
 - Apps submitted under the **tenant's own Google Play Console** ($25 one-time, tenant-owned)
@@ -467,11 +501,13 @@ Apple rejects batch-submitted apps from a single publisher. Industry workaround 
 - Branded iOS + Android build (tenant icon, splash, colors, deep links)
 - First submission to both stores
 - Firebase push notification project per tenant
-- 60 days post-launch issue support
-- Onboarding call with named CSM
+- Named CSM onboarding + 60 days post-launch issue support
 
 ### 13.3 Ongoing (included in $199/mo add-on)
 
+- **Named Customer Success Manager (CSM)** — 1 hour/month of dedicated account management (renewal conversations, strategic guidance, app campaign help, escalation path)
+- **Uptime SLA 99.9%** — service credits on breach per TOS
+- **Onboarding concierge** — guided first-90-days program for app go-live
 - OS-release-driven app updates (iOS/Android 2×/year)
 - Push notification infrastructure
 - Crash monitoring + incident response
@@ -484,26 +520,43 @@ Three options to evaluate during first deal:
 - **React Native** (best UX, biggest investment)
 - **Native Swift + Kotlin** (premium UX, highest maintenance)
 
-**Automation threshold:** before signing the **second** Pro+App deal, build a per-tenant build automation pipeline (bundle ID parameterization, Firebase provisioning automation, credential vault per tenant). Without this, each tenant is a week of DevOps work, not the 3 days the marketing suggests.
+**Automation threshold:** before signing the **second** Pro+App deal, build a per-tenant build automation pipeline (bundle ID parameterization, Firebase provisioning automation, credential vault per tenant).
 
 ---
 
 ## 14. Pro onboarding process
 
+### 14.1 Pro base (no white-label app)
+
+Lighter-touch sales process since there's no CSM commitment:
+
 | Stage | Owner | Duration target | Deliverable |
 |---|---|---|---|
-| Contact form submitted | Marketing form → Notion | Immediate | Sales record created, #sales-inbox notified |
+| Contact form submitted | Marketing form → Notion | Immediate | Sales record, #sales-inbox notified |
+| Sales-qualification email reply | Sales | 24h | Pricing confirmation, requirements check |
+| Self-serve annual checkout link sent | Sales | 1 day | Stripe Checkout URL for Pro annual at quoted price |
+| Tenant provisioned | Engineering | 2 business days post-payment | Pro plan active, SSO skeleton ready |
+| Setup call (optional) | Sales/Support | On request | 30-min orientation |
+| Time-to-value: store live on Pro | Buyer | Target 30 days from contact form | Merchant operating on Pro |
+
+### 14.2 Pro + White-label App add-on — full concierge
+
+Higher-touch because of app submission + CSM commitment:
+
+| Stage | Owner | Duration target | Deliverable |
+|---|---|---|---|
+| Contact form submitted | Marketing form → Notion | Immediate | Sales record, #sales-inbox notified |
 | Discovery call | Sales | 3 days to schedule | 45-min call; requirements captured |
 | Quote issued | Sales | 2 business days post-call | Signed PDF with price, scope, setup fee, SLA, MSA link |
 | MSA + DPA signed | Buyer + Sales | 2 weeks typical | DocuSign completed |
 | Setup fee invoice | Finance | 1 business day | Invoice via Stripe; NET-15 terms |
 | Setup fee paid | Buyer | 15 business days max | Stripe confirmation |
-| Tenant provisioned | Engineering | 2 business days post-payment | Pro plan active, SSO skeleton ready |
-| Onboarding call | CSM | 1 week post-provisioning | Goals set, success criteria documented |
-| White-label app build (if add-on) | Engineering | 4–6 weeks | App live in both stores |
+| Tenant provisioned | Engineering | 2 business days post-payment | Pro + App plan active |
+| Onboarding call with CSM | CSM | 1 week post-provisioning | Goals set, success criteria documented |
+| White-label app build | Engineering | 4–6 weeks | App live in both stores |
 | Time-to-value: store configured + first order | Buyer + CSM | Target 60 days from contact form | Merchant live |
 
-### 14.1 Procurement prerequisites (before launch)
+### 14.3 Procurement prerequisites (before launch)
 
 - **MSA (Master Services Agreement) template** — drafted, legally reviewed, versioned
 - **DPA (Data Processing Agreement) template** — GDPR Article 28 compliant, lists subprocessors
@@ -522,9 +575,9 @@ Three options to evaluate during first deal:
   - Radio options: *Too expensive*, *Missing features*, *Taking a break*, *Switched to competitor*, *Closed my business*, *Other*
   - Optional free-text comment
   - Submits to `cancellation_surveys` table for retention analysis
-- **Save offer** (shown after survey, Stripe promo code if it matches price-sensitive churn):
+- **Save offer** (shown after survey):
   - If reason = "Too expensive" and plan ∈ {Starter, Studio}: offer 50% off for next 3 months (one-time, tracked in `promo_redemptions`)
-  - If accepted: cancellation reversed, promo applied
+  - If accepted: cancellation reversed (state transition `cancel_scheduled → active` per §17.2), promo applied
   - If declined: proceed to cancellation
 - **Final state**: `subscription_status = cancel_scheduled` with `cancels_at = current_period_end`. Storefront remains live. Admin remains editable until `cancels_at`.
 
@@ -543,8 +596,6 @@ At day 30 post-cancellation (still in grace window): send one win-back email wit
 ---
 
 ## 16. Failed payment / dunning flow
-
-This is the #1 driver of involuntary churn in SaaS. Behavior:
 
 ### 16.1 Trigger
 
@@ -566,9 +617,13 @@ Adding a valid card at any point before day 90 restores subscription immediately
 
 ### 16.4 Dunning copy tone
 
-Editorial/calm — not urgent/threatening. Branded with Mark8ly hairline rules, not "ALERT! YOUR PAYMENT FAILED!!!" Template tone:
+Editorial/calm — not urgent/threatening. Branded with Mark8ly hairline rules. Example template:
 
 > "Hi [first_name], your last payment didn't go through — likely an expired card. We'll retry in a few days. If you'd like to update your card now, [link]. — The Mark8ly team"
+
+### 16.5 14-day dunning vs 14-day refund window
+
+A merchant who's just charged (triggering the 14-day cooling-off refund window per §8.1) and then experiences a payment failure sits at an edge: their account can be both "in cooling-off window" and "in dunning." Resolution: **refund window always dominates.** A merchant in their first 14 days can request a refund regardless of dunning state; dunning is only material for charges outside the cooling-off window.
 
 ---
 
@@ -602,9 +657,11 @@ active → past_due (invoice.payment_failed)
 active → cancel_scheduled (merchant-initiated cancel)
 past_due → active (payment retry succeeds)
 past_due → expired (day 8 of dunning, final retry failed)
+cancel_scheduled → active (merchant reverses cancellation via save offer or add-card, §15.1)
 cancel_scheduled → expired (current_period_end reached)
 expired → active (card re-added during grace window)
 expired → store_closed (day 14 post-expiry)
+expired → pending_hard_delete (hard-delete scheduler fires direct from expired if storefront dark window already passed)
 store_closed → active (card re-added during grace window)
 store_closed → pending_hard_delete (day 90 post-expiry)
 pending_hard_delete → hard_deleted (deletion job run)
@@ -614,7 +671,7 @@ No other transitions are allowed. Any other state change is a bug.
 
 ### 17.3 Read-only mode — admin allowlist
 
-When `subscription_status ∈ {expired, store_closed}`, admin routes are blocked by a new middleware `subscription.RequireActive()` EXCEPT for these allowlisted routes:
+When `subscription_status ∈ {expired, store_closed}`, admin routes are blocked by a new middleware `subscription.RequireActive()` EXCEPT for:
 
 - `GET /admin/**` (view-only)
 - `POST /admin/stores/:storeId/billing/*` (add card, manage payment method)
@@ -624,7 +681,7 @@ When `subscription_status ∈ {expired, store_closed}`, admin routes are blocked
 
 Middleware ordering: `IstioAuth → TenantMiddleware → RequireActive → RequireFeature → handler`.
 
-Returns HTTP **402 Payment Required** (not 403) with body: `{"error":"subscription_inactive","current_status":"expired","restore_url":"/admin/billing"}`.
+Returns HTTP **402 Payment Required** with body: `{"error":"subscription_inactive","current_status":"expired","restore_url":"/admin/billing"}`.
 
 ### 17.4 Concurrency controls
 
@@ -634,13 +691,9 @@ Every write to `store_subscriptions` must:
 3. Execute update with CAS guard: `UPDATE ... WHERE status = :expected_status AND updated_at = :expected_updated_at` — if 0 rows affected, loudly fail and retry from step 2
 4. Log state transition to `subscription_state_log` with actor (system | webhook_event_id | admin_user_id)
 
-This prevents the race: *webhook says "card added, activate"* while *cron is flipping "day 90, no card → expired"*.
-
 ### 17.5 Cron must be idempotent
 
 The daily trial-expiry and dunning-advance crons must be pure functions of time + subscription row. Re-running any cron job must produce identical state. No imperative step-through that can half-complete on pod restart.
-
-Example: *flip-to-expired-at-day-90* must compute `expected_state = (plan, period_end, has_card, now)` and conditionally apply, not step through multiple intermediate writes.
 
 ### 17.6 Stripe webhook event catalog
 
@@ -649,17 +702,16 @@ Example: *flip-to-expired-at-day-90* must compute `expected_state = (plan, perio
 | Event | Purpose |
 |---|---|
 | `checkout.session.completed` | New subscription created via Stripe Checkout |
-| `customer.subscription.created` | Subscription record created (webhook confirmation) |
+| `customer.subscription.created` | Subscription record created |
 | `customer.subscription.updated` | Plan change, cancel-at-period-end toggle, discount application |
 | `customer.subscription.deleted` | Final cancel (period end reached on `cancel_scheduled`) |
-| `customer.subscription.paused` / `.resumed` | Future — pause not in v1 product |
 | `customer.updated` | Billing address change → may trigger §4.6 re-evaluation |
 | `invoice.created` | Upcoming renewal, India annual workflow |
 | `invoice.finalized` | Invoice finalized, about to auto-charge |
 | `invoice.paid` | Renewal success, extend period |
-| `invoice.payment_failed` | Dunning start → trigger §16 |
+| `invoice.payment_failed` | Dunning start → §16 |
 | `invoice.payment_action_required` | 3DS / SCA challenge |
-| `charge.refunded` | Refund confirmation from refund flow |
+| `charge.refunded` | Refund confirmation |
 | `payment_method.attached` | Card added → possibly exit past_due |
 | `payment_method.detached` | Card removed → update UI |
 | `radar.early_fraud_warning` | Fraud alert — flag subscription for review |
@@ -670,8 +722,8 @@ Every inbound webhook:
 1. Verify signature (existing `verifyStripeSignature`, raw body read before Gin JSON binding)
 2. Reject with 400 if signature invalid
 3. Extract `event.id`
-4. Upsert into `stripe_webhook_events` with `event_id` as UNIQUE. If already present with `processed_at IS NOT NULL`, return 200 without re-processing (Stripe retry).
-5. Process event within advisory-locked transaction on the relevant `store_id`
+4. `INSERT INTO stripe_webhook_events (event_id, ...) ON CONFLICT (event_id) DO NOTHING` — if conflict, load existing row; if `processed_at IS NOT NULL`, return 200 (replay)
+5. Process event within advisory-locked transaction on the relevant `store_id` (or advisory lock on `event_id` if store unresolvable yet)
 6. Update `stripe_webhook_events.processed_at = now()` in same transaction
 7. Return 200
 
@@ -688,17 +740,19 @@ CREATE TABLE stripe_webhook_events (
 );
 ```
 
+Orphan-handling for nullable `store_id`: unlinked events must be linked within one processing attempt. Any event unlinked after processing is flagged for manual review. Advisory lock taken on `event_id` in orphan cases to prevent replay.
+
 ### 17.8 Idempotency keys on outbound Stripe calls
 
 Every Stripe mutating call passes `Idempotency-Key`:
 
 - Create customer: `customer:{store_id}`
-- Create checkout session: `checkout:{store_id}:{plan}:{period}:{day_bucket}` (day_bucket prevents retry-explosion but allows legitimate retries same day)
+- Create checkout session: `checkout:{store_id}:{plan}:{period}:{day_bucket}`
 - Create subscription: `subscription:{store_id}:{plan}:{billing_period}`
 - Create portal session: `portal:{store_id}:{hour_bucket}`
 - Create refund: `refund:{invoice_id}`
 
-Keys are server-generated (never caller-supplied) to prevent malicious double-charge induction.
+Keys are server-generated (never caller-supplied).
 
 ---
 
@@ -735,7 +789,7 @@ Call sites that extract `tenant_id` from `AuthContext` must pass both. Handler-l
 | Stripe webhook endpoint secret (live) | `/projects/tesserix-prod/secrets/stripe-au-webhook-secret-live` | Rotate whenever webhook URL changes |
 | Merchant-provided Stripe/Razorpay keys (BYO gateway) | `/projects/tesserix-prod/secrets/merchant/{tenant_id}/{provider}-secret` | Merchant-controlled; deleted on hard-delete |
 
-Access pattern:
+Access:
 - Workload Identity Federation (WIF) only — no service account JSON keys on pods
 - GCP Secret Manager audit log monitored; alert on unexpected `accessSecretVersion` calls
 - Access to GCP Secret Manager requires named IAM role held by ≤3 Mark8ly staff
@@ -743,19 +797,19 @@ Access pattern:
 ### 18.4 Enterprise API key security (Pro only)
 
 - Keys: 32 bytes of entropy, base64url encoded, prefixed `mk8_live_` (prod) or `mk8_test_`
-- Storage: bcrypt or argon2 hash of full key; prefix-only stored plaintext for UI display
+- Storage: bcrypt or argon2 hash; prefix-only stored plaintext for UI display
 - Shown exactly once at creation
-- **Per-key scopes**: `read:orders`, `write:orders`, `read:products`, `write:products`, etc. No blanket admin access.
+- **Per-key scopes**: `read:orders`, `write:orders`, `read:products`, `write:products`, etc.
 - **Per-key rate limit**: default 1,000 req/min per key; configurable per contract
-- **Tenant binding**: each key is bound to `(tenant_id, store_id)`. The `go-shared/authz` middleware pattern applies.
-- **Revocation**: immediate, via admin UI. No grace period. Leaked keys rotated in seconds.
-- **Key rotation**: merchant can rotate anytime; old key works for 24h for zero-downtime rotation, then invalidated.
+- **Tenant binding**: each key is bound to `(tenant_id, store_id)`
+- **Revocation**: immediate, via admin UI
+- **Key rotation**: merchant can rotate anytime; old key works for 24h for zero-downtime rotation, then invalidated
 
 ### 18.5 Webhook endpoint hardening
 
 - **Rate limit at Istio VirtualService**: 100 req/min per source IP on the webhook path
-- **Body size cap**: `http.MaxBytesReader` at 512 KB (Stripe webhooks are always <<5 KB)
-- **Event type allowlist**: after signature verification, `event.type` validated against §17.6 allowlist; unknown types logged + 200-accepted (don't 500 on future Stripe events)
+- **Body size cap**: `http.MaxBytesReader` at 512 KB
+- **Event type allowlist**: after signature verification, `event.type` validated against §17.6 allowlist; unknown types logged + 200-accepted
 - **No body logged in full** at any error level
 
 ### 18.6 Log sanitization
@@ -769,6 +823,19 @@ Access pattern:
 - Self-service card-add during grace window: allowed
 - Post-hard-delete recovery: requires email verification + director-level approval ticket
 - Support staff cannot restore hard-deleted tenants without two-person approval
+
+### 18.8 Geo-pricing anti-arbitrage (VPN mitigation)
+
+Because emerging-market pricing is ~33% below developed-market pricing, the price gap creates a VPN-based arbitrage vector (merchant spoofs IP/billing to get India pricing while actually located in the US).
+
+**Mitigation triangulation at subscription creation:**
+
+1. **Card-country check** — Stripe returns `card.country` on every PaymentMethod. If card was issued in a developed market but billing address is in an emerging market, apply **developed-market pricing** (upgrade price) unless merchant manually requests review.
+2. **IP + billing + card triangulation** — all three logged at subscription creation. Mismatch does NOT auto-block (legitimate cross-border cases: diaspora merchants, expats, holding companies); mismatch IS flagged for audit review in `subscription_arbitrage_audit` table.
+3. **Quarterly anti-arbitrage audit** — internal report on price-tier vs card-country mismatches; spot-check flagged accounts.
+4. **Edge case handling** — if card-country and billing-country disagree, billing-country wins for pricing BUT `subscription_arbitrage_flag = true` is set for later review. Blatant fraud (e.g., prepaid EUR card + IN billing + US IP) gets manual escalation.
+
+Adds ~2 days to implementation plan. Acceptable cost.
 
 ---
 
@@ -795,26 +862,42 @@ This permits the **reverse-charge mechanism** in EU, UK, India, and most of SEA 
 
 | Country | Tax type | Validator | Reverse charge | Fallback if validation fails |
 |---|---|---|---|---|
-| US, CA | None federal; state nexus eventually | EIN format check | N/A | Accept, flag |
+| US | None federal; state nexus eventually | EIN format check + **legally-binding business-entity checkbox** (§19.3.1) | N/A | Accept if checkbox signed |
+| CA | GST/HST 5-15% | Business Number format check + **legally-binding business-entity checkbox** | Yes for registered GST/HST | Accept if checkbox signed |
 | UK | VAT 20% | HMRC VAT API | Yes for B2B | Provisional 48h revalidation |
 | Ireland + EU (DE/FR/IT/ES/NL) | VAT 19-25% | VIES | Yes for B2B | Provisional revalidation |
 | Australia | GST 10% — Mark8ly AU entity must charge | ABN Lookup | N/A (domestic) | Strict, block |
-| NZ | GST 15% | IRD lookup | Yes for B2B | Provisional |
+| NZ | GST 15% | IRD lookup | Yes for B2B *if counsel confirms pre-launch* | Provisional |
 | India | GST 18% under OIDAR | GSTN API | Yes for B2B | Provisional; RBI mandate rules §4.7 |
 | Singapore | GST 9% | ACRA check | Yes for B2B | Provisional |
-| Malaysia | SST 8% | MOF SST registry | Partial — monitor | Provisional |
-| Thailand | VAT 7% | RD API | Yes for B2B | Provisional |
-| Philippines | VAT 12% | BIR lookup | Yes for B2B | Provisional |
-| Indonesia | VAT 11% | DJP NPWP | Yes for B2B | Provisional |
-| Vietnam | VAT 10% | GDT lookup | Yes for B2B | Provisional |
+| Malaysia | SST 8% | MOF SST registry | Partial — monitor | Provisional; **5-biz-day manual-review fallback** if API unavailable |
+| Thailand | VAT 7% | RD API | Yes for B2B | Provisional; **5-biz-day manual-review fallback** if API enrollment blocked |
+| Philippines | VAT 12% | BIR lookup | Yes for B2B | Provisional; **5-biz-day manual-review fallback** if API enrollment blocked |
+| Indonesia | VAT 11% | DJP NPWP | Yes for B2B | Provisional; **5-biz-day manual-review fallback** if API enrollment blocked |
+| Vietnam | VAT 10% | GDT lookup | Yes for B2B | Provisional; **5-biz-day manual-review fallback** if API unavailable |
+
+### 19.3.1 US/CA legally-binding business-entity checkbox
+
+Since US has no federal tax-ID validator and CA's Business Number lookup is not authoritative for B2B status, the signup form for these countries must include a **legally-binding checkbox**:
+
+> "☐ I confirm that the purchase is being made by a registered business entity (not an individual consumer) and I have the authority to enter into this agreement on behalf of the business. I understand this affirmation is legally binding and used by Mark8ly for tax-reporting purposes."
+
+This checkbox is archived with the signup record and referenced in invoices. Legal review confirms this meets reverse-charge B2B declaration requirements in US/CA.
 
 ### 19.4 Australia-specific (Mark8ly Pty Ltd is AU entity)
 
-For Australian merchants, reverse charge does NOT apply — Mark8ly charges 10% GST and remits to ATO. AU GST is a domestic obligation regardless of B2B status.
+For Australian merchants, reverse charge does NOT apply — Mark8ly charges 10% GST and remits to ATO. AU GST is a domestic obligation regardless of B2B status. Pricing page for AU shows **GST-exclusive** with "Plus GST" shown below the price card; invoice breaks out GST separately.
 
 ### 19.5 Quarterly revalidation
 
 Scheduled job re-checks tax IDs against registries quarterly. If invalid → email merchant, allow 14 days to update; if not updated → subscription pauses billing until resolved.
+
+### 19.6 Pre-launch tax counsel confirmation
+
+Required before launch per §20:
+- EU/UK/India reverse-charge applicability for B2B SaaS
+- NZ specifically — reverse-charge applicability under IRD guidance (flagged by solution architect as non-obvious)
+- AU GST registration status confirmed
 
 ---
 
@@ -823,18 +906,20 @@ Scheduled job re-checks tax IDs against registries quarterly. If invalid → ema
 ### 20.1 TOS must include
 
 - 14-day cooling-off refund terms with precise start-point
-- Non-refundability of Pro and app-add-on setup fees
+- Non-refundability of Pro + White-label app add-on setup fee
 - Jurisdictional notices for all 18 countries
 - Subprocessor list (Stripe, SendGrid, GCP, Firebase, Cloudflare, OpenFGA if external)
 - GDPR Articles 13/14 disclosure (Mark8ly as processor + controller dual role)
 - India DPDP Act: grievance officer designation, consent-based processing statement
-- Right-to-erasure exemption for billing records (legal basis: legal obligation under AU Income Tax Assessment Act s 382-5 — 5-year retention; EU VAT Article 242 — 10-year retention)
-- Uptime SLA definition for Pro (99.9% measured over calendar month; service credits on breach)
-- Acceptable Use Policy (prohibit spam, prohibit illegal goods, prohibit regulated goods where not permitted, prohibit copyright infringement)
+- Right-to-erasure exemption for billing records (legal basis: AU Income Tax Assessment Act s 382-5 — 5-year retention; EU VAT Article 242 — 10-year retention)
+- Uptime SLA definition for Pro + White-label App (99.9% measured over calendar month; service credits on breach)
+- Acceptable Use Policy (prohibit spam, illegal goods, copyright infringement)
+- Legally-binding business-entity attestation for US/CA reverse-charge basis (§19.3.1)
+- AU GST inclusivity disclosure for AU merchants
 
-### 20.2 DPA template (Pro)
+### 20.2 DPA template (Pro + App)
 
-GDPR Article 28 compliant. Pro customers sign DPA as part of MSA. Template drafted separately, legally reviewed.
+GDPR Article 28 compliant. Pro + App customers sign DPA as part of MSA. Template drafted separately, legally reviewed.
 
 ### 20.3 Pre-launch legal checklist
 
@@ -842,8 +927,10 @@ GDPR Article 28 compliant. Pro customers sign DPA as part of MSA. Template draft
 - [ ] DPA template drafted
 - [ ] Cookie policy + GDPR consent banner for pricing page
 - [ ] Privacy Policy aligned with DPDP Act + GDPR
-- [ ] MSA template drafted for Pro
+- [ ] MSA template drafted for Pro + App
 - [ ] Cyber liability insurance $1M minimum procured
+- [ ] NZ tax counsel confirmation on reverse-charge applicability
+- [ ] EU/UK/India tax counsel confirmation on reverse-charge registration thresholds
 
 ### 20.4 Post-launch legal work (not blockers)
 
@@ -861,6 +948,7 @@ GDPR Article 28 compliant. Pro customers sign DPA as part of MSA. Template draft
 - `subscription.mrr_usd` — gauge, computed from active subscriptions with USD normalization
 - `subscription.trial.expired_today` — counter
 - `subscription.payment_failed` — counter
+- `subscription.arbitrage_flagged` — counter (§18.8)
 - `campaign.email.sent{store_id}` — counter (for fair-use detection)
 - `webhook.processed{event_type}` — counter
 - `webhook.failed{event_type, reason}` — counter
@@ -885,11 +973,12 @@ Every subscription state transition logs:
 ### 21.3 Alerts (Cloud Monitoring)
 
 - **Trial scheduler dead-man's-switch**: page if trial-expiry cron has not run in 25 hours
-- **Failed payment spike**: alert if `invoice.payment_failed` volume > 5% of active subscriptions in 24h window (indicates systematic billing issue, not normal churn)
+- **Failed payment spike**: alert if `invoice.payment_failed` volume > 5% of active subscriptions in 24h window
 - **Webhook processing latency**: alert if P95 > 5s
 - **Webhook failure rate**: alert if >1% failures in 1h window
-- **Trial signup anomaly**: alert if >50 trial signups/day (abuse investigation)
+- **Trial signup anomaly**: alert if >50 trial signups/day
 - **Break-glass admin use**: immediate Slack alert to `#security-alerts`
+- **Arbitrage flag spike**: alert if `subscription_arbitrage_flag` increments >5× baseline
 
 ### 21.4 Dashboards
 
@@ -906,26 +995,31 @@ Cloud Monitoring dashboard "Subscription Health":
 
 ### 22.1 CNPG (Cloud Native Postgres)
 
-Mark8ly runs CNPG in `mark8ly-postgres` namespace (not Cloud SQL). Backup posture:
+Mark8ly runs CNPG in `mark8ly-postgres` namespace. Backup posture:
 
 - **Point-in-time recovery (PITR)**: enabled on `mark8ly-postgres` cluster. 7-day window.
 - **Daily snapshots**: to GCS bucket `tesserix-mark8ly-backups` via CNPG `backup` resource. 30-day retention.
 - **Subscription-critical tables exported daily**: `store_subscriptions`, `stripe_webhook_events`, `promo_redemptions`, `billing_archive` via Cloud Scheduler → `pg_dump` → GCS. 90-day retention.
-- **No cross-region replica in v1** (cost-prohibitive at current budget). Revisit at $1M ARR.
+- **No cross-region replica in v1** (cost-prohibitive). Revisit at $1M ARR.
 
 ### 22.2 Recovery scenarios
 
 | Scenario | RTO | RPO | Mechanism |
 |---|---|---|---|
 | Single pod restart | 30s | 0 | Knative auto-restart |
-| CNPG primary failure | 2 min | 0 | CNPG failover to standby |
+| CNPG primary failure (w/ standby, ≥2k merchants) | 2 min | 0 | CNPG failover |
+| CNPG primary failure (<2k merchants, no standby) | 4h | 24h | GCS snapshot restore |
 | Accidental table drop | 1h | 5 min | PITR restore |
 | Full cluster loss | 4h | 24h | GCS snapshot restore |
 | Data-center loss | 24h+ | 24h | GCS snapshot → new cluster in new region |
 
+RTO at the sub-2000-merchant tier assumes single-instance CNPG. Adding a read standby at 100 merchants (see §24) brings RTO down to ~2 min.
+
 ### 22.3 Stripe as reconciliation source
 
-If `store_subscriptions` is fully lost and GCS backups corrupted, Stripe subscription + customer objects can reconstruct most state. `stripe_subscription_id` + `stripe_customer_id` on the subscription row are the reconciliation keys. Documented in runbook.
+If `store_subscriptions` is fully lost, Stripe subscription + customer objects can reconstruct most state. `stripe_subscription_id` + `stripe_customer_id` are reconciliation keys.
+
+**Important: `promo_redemptions` and `refund_audit` are NOT reconstructible from Stripe alone** (internal Mark8ly data). GCS backups are the only recovery path for those. Documented in runbook.
 
 ---
 
@@ -942,7 +1036,8 @@ Every write to `store_subscriptions` emits a structured event to the existing `a
 - Refund issued
 - Promo code applied
 - Hard-delete scheduled
-- SSO config changed (Pro)
+- SSO config changed (Pro / Pro + App)
+- White-label App add-on purchased or cancelled
 
 ### 23.2 Billing archive — 7-year retention
 
@@ -958,22 +1053,19 @@ CREATE TABLE billing_archive (
     tax_id_country       CHAR(2),
     billing_country      CHAR(2),
     stripe_customer_id   VARCHAR(100) NOT NULL,
-    all_invoices         JSONB NOT NULL,  -- array of {invoice_id, amount_usd, amount_settled_aud, fx_rate, date}
+    all_invoices         JSONB NOT NULL,
     total_revenue_usd    NUMERIC(12,2),
     hard_deleted_at      TIMESTAMPTZ NOT NULL,
-    archive_expires_at   TIMESTAMPTZ NOT NULL  -- hard_deleted_at + 7 years
+    archive_expires_at   TIMESTAMPTZ NOT NULL
 );
 ```
 
-On hard-delete, a record is written to `billing_archive` before the `store_subscriptions` row is purged. This archive satisfies AU Income Tax Assessment Act + EU VAT Directive retention.
-
 ### 23.3 GDPR erasure reconciliation
 
-When a merchant requests right-to-erasure:
-- All PII in live tables (customer data, products, orders) is purged per standard soft/hard-delete flow
-- `billing_archive` PII (business_name, tax_id) is retained with legal-basis annotation (legal obligation under tax law)
-- Stripe customer object is deleted via `DELETE /v1/customers/:id` API (not kept under Mark8ly's account indefinitely)
-- Merchant is notified in writing which data was retained under which legal basis
+- Live-table PII purged per standard delete flow
+- `billing_archive` PII retained under legal-obligation basis (tax law)
+- Stripe customer deleted via `DELETE /v1/customers/:id`
+- Merchant notified in writing which data was retained under which legal basis
 
 ---
 
@@ -981,20 +1073,19 @@ When a merchant requests right-to-erasure:
 
 `mark8ly-postgres` CNPG cluster resource profile by merchant count:
 
-| Merchant count | CPU request | Memory request | Storage | Notes |
-|---|---|---|---|---|
-| 0–100 | 0.5 CPU | 2 GiB | 50 GiB | Current v1 sizing |
-| 100–500 | 1 CPU | 4 GiB | 200 GiB | PgBouncer connection pool added |
-| 500–2,000 | 2 CPU | 8 GiB | 500 GiB | Read replica added for analytics queries |
-| 2,000–10,000 | 4 CPU | 16 GiB | 1 TiB | Standby read replica for failover; WAL archiving tuned |
-| 10,000+ | Evaluate horizontal partitioning | 32+ GiB | 2+ TiB | Multi-tenant sharding or Cloud Spanner evaluation |
+| Merchant count | CPU request | Memory request | Storage | Standby | Notes |
+|---|---|---|---|---|---|
+| 0–100 | 0.5 CPU | 2 GiB | 50 GiB | No | Current v1 sizing; single instance (4h RTO) |
+| 100–500 | 1 CPU | 4 GiB | 200 GiB | No | PgBouncer connection pool added |
+| 500–2,000 | 2 CPU | 8 GiB | 500 GiB | **Yes (sync standby)** | RTO drops to 2 min with standby |
+| 2,000–10,000 | 4 CPU | 16 GiB | 1 TiB | Yes | WAL archiving tuned |
+| 10,000+ | Evaluate horizontal partitioning | 32+ GiB | 2+ TiB | Yes + async replica | Multi-tenant sharding or Cloud Spanner evaluation |
 
 **Upgrade triggers:**
 - >80% CPU utilization sustained 1 hour
 - >80% memory utilization sustained 1 hour
 - Query latency P95 > 500ms
-
-**Not a hard blocker for v1** — current CNPG config supports initial launch. Add upgrade trigger alerts to Cloud Monitoring at launch.
+- Approaching 80% of storage
 
 ---
 
@@ -1003,13 +1094,13 @@ When a merchant requests right-to-erasure:
 | Area | Rough effort |
 |---|---|
 | **Backend — plans & billing** | |
-| Update `plangate.go` to 4-plan matrix (Trial/Starter/Studio/Pro) per §9 | 1 day |
-| Add new migration: tax ID fields, enum rename | 1 day |
+| Update `plangate.go` to 4-plan matrix per §9 | 1 day |
+| Add new migration: tax ID fields, enum rename, add-on tracking | 1 day |
 | Fix `GetByStoreID` to require `tenant_id`; audit all call sites | 2 days |
 | Stripe Billing subscription flow (Checkout + Customer Portal) | 1 week |
 | Stripe webhook dispatcher (§17.6, §17.7) | 1 week |
 | State machine + advisory locking + idempotency keys | 4 days |
-| Plan upgrade/downgrade endpoints + Stripe proration | 3 days |
+| Plan upgrade/downgrade endpoints + Stripe proration + excess-store downgrade block | 4 days |
 | Campaign email budget pattern + atomic decrement (§10.1) | 3 days |
 | Read-only middleware + allowlisted routes (§17.3) | 2 days |
 | Trial expiry + dunning crons (idempotent, §16, §17.5) | 1 week |
@@ -1018,20 +1109,24 @@ When a merchant requests right-to-erasure:
 | Refund flow (v1: manual via Stripe Dashboard + `refund_audit` table) | 2 days |
 | Store-closed page at Cloudflare Worker layer (§5.4) | 3 days |
 | Tax ID validation per country (12 validators, §19.3) | 2 weeks |
+| US/CA legally-binding business-entity checkbox (§19.3.1) | 1 day |
 | Reverse-charge invoice template + logic (§19) | 1 week |
 | Billing archive table + hard-delete hook (§23.2) | 2 days |
+| Geo-pricing anti-arbitrage triangulation (§18.8) | 2 days |
+| White-label App add-on handling (purchase flow, CSM assignment) | 3 days |
 | **Backend — shipping** | |
 | Add IE, NZ to `ShipEngineCarrier.SupportedCountries()` | 1 day |
 | Add VN to `NinjaVanCarrier.SupportedCountries()` | 1 day |
 | AE / Aramex new carrier (deferred to post-v1) | 1 week |
 | **Frontend — admin** | |
-| Pricing page (geo-localized, 18 countries) | 1 week |
+| Pricing page (geo-localized, 18 countries with PPP + visible Pro floor) | 1 week |
 | Plan management UI (upgrade/downgrade, billing period switch) | 1 week |
 | Cancellation flow with survey + save offer | 3 days |
 | Email usage counter in campaigns UI | 1 day |
-| Tax ID field in onboarding wizard | 2 days |
+| Tax ID field in onboarding wizard + 14-day reminder banners | 3 days |
 | Failed-payment banner + add-card flow | 2 days |
 | Contact-sales form for Pro (Notion integration + Slack notification) | 2 days |
+| White-label App add-on purchase flow (Pro-only) | 2 days |
 | **Security + compliance** | |
 | PCI-A forbidden-pattern code audit | 2 days |
 | GCP Secret Manager paths + WIF wiring | 2 days |
@@ -1042,14 +1137,12 @@ When a merchant requests right-to-erasure:
 | Subscription state custom metrics | 2 days |
 | Cloud Monitoring dashboard | 1 day |
 | Alerts wiring (§21.3) | 2 days |
-| **SSO (Pro)** | 2-3 weeks |
+| **SSO (Pro / Pro + App)** | 2-3 weeks |
 | **White-label mobile app (first deal)** | 4-6 weeks |
 
-**Core Starter + Studio + Trial self-serve:** ~6 weeks back-end + ~2.5 weeks front-end = **~8–10 engineer-weeks for v1 self-serve launch**.
+**Core Starter + Studio + Trial self-serve + Pro contact-sales (no app):** ~6 weeks back-end + ~2.5 weeks front-end = **~8–10 engineer-weeks for v1 self-serve launch**.
 
-**Pro + SSO:** adds ~3-4 weeks (deferred to v1.5).
-
-**White-label app:** adds 4–8 weeks for first deal, then improves.
+**Pro + App add-on:** adds ~4-6 weeks for first deal (with SSO and app build).
 
 ---
 
@@ -1059,21 +1152,23 @@ When a merchant requests right-to-erasure:
 
 1. **Legal review of TOS, Privacy, DPA** — required in AU, UK, EU, IN. Estimated $15–30k or equivalent staff lawyer time.
 2. **Stripe India RBI e-mandate** for annual Indian subscribers (§4.7) — validate flow pre-launch with a test Indian card.
-3. **Tax ID validators for 12 countries** — build per §19.3. If any validator is unavailable, plan fallback (accept + manual review).
-4. **Cyber liability insurance** — $1M minimum policy required before first Pro deal.
+3. **Tax ID validators for 12 countries** — build per §19.3. SEA validator APIs may require enrollment with finite lead times.
+4. **Cyber liability insurance** — $1M minimum policy required before first Pro + App deal.
+5. **NZ reverse-charge tax counsel opinion** — specific ambiguity in NZ GST for cross-border B2B SaaS.
 
 ### 26.2 Strategic risks
 
-1. **SendGrid cost at 500+ merchants** (§10.5) — SES migration evaluated before this scale trigger.
-2. **Stripe AU acquiring-rate gap for US/UK cards** — 1-3% lower authorization rate than native US acquirer. Revisit Delaware C-corp + Stripe US at $500k ARR if merchant mix skews US/UK.
-3. **White-label mobile app build automation** — critical before second Pro+App deal. Budget 4–6 weeks.
-4. **Apple app-factory policy tightening** — if Apple rejects current workaround, fallback is a single "Mark8ly Storefront" master app with tenant switching. Loses the white-label value prop.
-5. **Trial abuse despite gates** — if v1 gates (reCAPTCHA + email verification + campaign lockout + rate limits) prove insufficient, add card-bin-level or KYC-lite verification.
+1. **SendGrid cost at 500+ merchants** — SES migration evaluated before this scale trigger.
+2. **Stripe AU acquiring-rate gap for US/UK cards** — 1-3% lower authorization rate. Revisit at $500k ARR if merchant mix skews US/UK.
+3. **White-label mobile app build automation** — critical before second Pro+App deal.
+4. **Apple app-factory policy tightening** — if Apple rejects current workaround, fallback is a master Mark8ly Merchant app with tenant switching.
+5. **Trial abuse despite gates** — add card-bin verification if v1 gates prove insufficient.
+6. **Geo-pricing arbitrage** — §18.8 triangulation catches most, but diaspora/expat cases will require manual review. Accept as operational overhead.
 
 ### 26.3 Open questions
 
 1. **SOC 2 posture timing** — budget for Type I audit ($25–50k) trigger on first $100k deal or 18 months whichever first?
-2. **Pro tier discovery-call tooling** — Calendly + Notion + Zoom is the default. Confirm vs alternatives.
+2. **Pro tier discovery-call tooling** — Calendly + Notion + Zoom as the default.
 3. **Grandfathered launch rate** — running this campaign at v1 launch? If yes, how many slots?
 
 ### 26.4 Out of scope
@@ -1095,28 +1190,31 @@ When a merchant requests right-to-erasure:
 | 3-month trial (not 14 or 30) | Merchants take real time to launch. Generous trial attracts serious merchants; conversion quality > rate. |
 | No card at signup | Editorial/calm positioning, low funnel friction, trusts product to earn the card by day 60. |
 | B2B-only, reverse-charge tax model | Eliminates Mark8ly VAT/GST registration burden in 12+ jurisdictions while remaining fully compliant. Matches reality (merchants are businesses). |
-| 4-tier pricing (not 3 or 5) | Trial + Starter + Studio + Pro covers indie → growing → mid-market. Studio solves the $19→$299 cliff BA flagged. |
-| $19 Starter (not $14 or $29) | Cheapest *legit* commerce SaaS price while margin-positive. Below Shopify but not cheapened. |
-| $49 Studio (not $29 or $79) | 2.6× Starter, 3.0× to Pro — clean step ratios. Undercuts Shopify Advanced by 40%. |
-| $149 Pro base (not $299) | White-label app extracted to add-on. Pro core accessible for mid-market; white-label price anchored to its real cost. |
-| $199/mo white-label add-on | Matches industry ($200 Tapcart). Accounts for Apple dev fee, Firebase, update cadence, named CSM. |
-| Geo-localized round prices | Better non-US conversion; FX absorbed by Mark8ly is worthwhile acquisition cost. |
+| 4-tier pricing (not 3 or 5) | Trial + Starter + Studio + Pro covers indie → growing → mid-market. Studio solves the $19→$299 cliff flagged in round 1 review. |
+| $99 Pro base (not $149 or $299) | CSM + SLA moved to add-on (where they belong with the white-label app customer); Pro base accessible for mid-market brands wanting features without full enterprise treatment. Unit economics remain positive at $99. |
+| Pro visible price floor ($99) | Self-qualifies prospects pre-discovery call; preserves negotiation ceiling; matches Tapcart / Shopify Plus transparency norms. |
+| White-label App add-on bundles CSM + SLA | Aligns dedicated human cost with the customer who needs and values it (app submission coordination, OS update windows, push campaign strategy). |
+| PPP discount (~33%) for IN / MY / TH / PH / ID / VN | Accessibility to emerging-market merchants. Industry standard (Figma, Notion, Canva, Spotify). Without PPP, Starter was 3% of revenue for typical indie Indian DTC brand — unaffordable. |
+| USD parity for US / CA / UK / IE / EU / AU / NZ / SG | Developed-market willingness-to-pay supports USD parity; PPP discount would leave revenue on the table. |
 | Zero transaction fee | Genuinely differentiated from Shopify. BYO gateway matches "your store, your money" brand. |
-| Flat monthly model | Matches editorial positioning; no per-transaction drip. |
+| Flat monthly model | Matches editorial positioning; no per-transaction drip. Rejected GMV-tier model on brand grounds (v2.1 conversation). |
 | 14-day cooling-off refund | Legally bulletproof in 18 countries; practically irrelevant post-90-day trial; simple accounting. |
-| Pro contact-sales (not self-serve) | Pro requires tax docs + setup call + annual contract. Human conversation fits. |
-| Pro setup fee $2,000 non-refundable | Covers real work; self-qualifies leads; signals seriousness. |
-| White-label app via tenant-owned dev accounts | Apple's app-factory policy. Industry standard. |
+| Pro contact-sales with visible floor | Best-of-both: self-qualification + flexibility. |
+| White-label App setup fee $2,000 non-refundable | Covers real work (Apple + Google submission labor); self-qualifies serious buyers. |
+| Mobile app via tenant-owned dev accounts | Apple's app-factory policy. Industry standard. |
 | 25 images/product Starter, 50 Studio, ∞ Pro | Per-product cap merchant-intuitive, upgrade nudge at high-intent moment. |
-| 2 stores Starter, 5 Studio, 10 Pro | Meaningful multi-store on Studio; Pro genuinely for multi-brand operators. |
+| 2 stores Starter, 5 Studio, 10 Pro | Meaningful multi-store on Studio; Pro genuinely for multi-brand operators. Excess-store downgrade blocked (not auto-suspended). |
 | Unlimited staff on all plans | Mark8ly is not Slack. Staff scale ≠ value signal. |
 | 5k/15k/50k campaign email caps | Tight enough for margin; realistic at typical utilization; splits marketing from transactional. |
 | Custom CSS in Studio+ (not Starter) | Real support burden; genuinely higher-value request. |
 | SSO in Pro only | Gate criterion for enterprise procurement. |
-| Monthly→annual immediate prorate; annual→monthly at renewal | Standard SaaS pattern; Stripe supports both natively. |
+| Monthly→annual immediate prorate; annual→monthly at renewal | Standard SaaS pattern; Stripe supports natively. |
 | Country change at next renewal (not immediate) | Avoids mid-period repricing confusion. |
-| Cancellation survey + save offer | Retention lever + product signal, costs negligible to implement. |
-| Grace period 14 days after dunning final fail (not 0 or 30) | Balances brand protection with margin; most genuine merchants recover within 7-14 days. |
+| Cancellation survey + save offer | Retention lever + product signal. |
+| 14-day tax-ID validation hard deadline | Closes attack surface where unvalidated stores run live for 90 days on fake tax IDs. |
+| US/CA legally-binding business-entity checkbox | Closes B2B enforcement gap where no federal validator exists. |
+| 5-biz-day manual-review fallback for SEA validators | Handles API enrollment delays without indefinite provisional state. |
+| Geo-pricing anti-arbitrage via card-country triangulation | Prevents exploitation of the ~33% PPP gap without blocking legitimate expats/diaspora. |
 | Single Stripe AU account for all 18 countries | Operational simplicity; revisit at $500k ARR if US/UK mix >40%. |
 
 ---
@@ -1129,25 +1227,29 @@ When a merchant requests right-to-erasure:
 | 2 | Trial merchant on day 91 without card: admin read-only, storefront "closed" page | Integration (time-mocked) |
 | 3 | Trial merchant on day 91 adds card: subscription `active`, admin + storefront fully restored | Integration |
 | 4 | Merchant upgrades Starter → Studio mid-month: immediate prorate, Studio features active | Integration |
-| 5 | Merchant cancels annual in month 7: access until month 12, no refund, cancellation survey captured | Integration |
-| 6 | Pro contact form submission → Notion record + Slack notification within 60s | Integration |
-| 7 | First payment fails: `past_due`, 3 Stripe retries, 3 email reminders, day 8 read-only | Integration |
-| 8 | Campaign send at 14,001 emails in month: blocked with upgrade message | Integration |
-| 9 | Create 11th product media on Starter: blocked with upgrade message | Integration (boundary) |
-| 10 | Tenant A cannot read Tenant B's subscription via URL manipulation | **Security test (required)** |
-| 11 | Stripe webhook replay: idempotent, no double-processing | **Security test** |
-| 12 | 14-day cooling-off refund: Stripe Dashboard refund + `refund_audit` row created | Manual UAT |
-| 13 | Indian annual subscriber: invoice-based flow with UPI/NetBanking link | Manual UAT (requires Indian test card) |
-| 14 | Break-glass admin login: TOTP required, alert fires to #security-alerts | Integration |
-| 15 | Pricing page displays localized prices for all 18 countries | Manual UAT |
-| 16 | Support team can issue refund via Stripe Dashboard with eligibility check | Operational runbook |
-| 17 | MRR metric updates within 60s of subscription state change | Integration |
-| 18 | Trial scheduler dead-man's-switch fires if cron skipped | Chaos/SRE test |
-| 19 | B2B-only enforced: consumer signup rejected at tax ID step | Integration |
-| 20 | Hard-delete → `billing_archive` row persisted with 7-year retention | Integration |
+| 5 | Merchant downgrades Studio → Starter with 5 stores: blocking dialog appears, downgrade prevented until resolved | Integration |
+| 6 | Merchant cancels annual in month 7: access until month 12, no refund, cancellation survey captured | Integration |
+| 7 | Pro contact form submission → Notion record + Slack notification within 60s | Integration |
+| 8 | First payment fails: `past_due`, 3 Stripe retries, 3 email reminders, day 8 read-only | Integration |
+| 9 | Campaign send at 14,001 emails on Starter in month: blocked with upgrade message | Integration |
+| 10 | Create 11th product media on Starter: blocked with upgrade message | Integration (boundary) |
+| 11 | Tenant A cannot read Tenant B's subscription via URL manipulation | **Security test (required)** |
+| 12 | Stripe webhook replay: idempotent, no double-processing | **Security test** |
+| 13 | 14-day cooling-off refund: Stripe Dashboard refund + `refund_audit` row created | Manual UAT |
+| 14 | Indian annual subscriber: invoice-based flow with UPI/NetBanking link | Manual UAT (requires Indian test card) |
+| 15 | Break-glass admin login: TOTP required, alert fires to #security-alerts | Integration |
+| 16 | Pricing page displays localized prices for all 18 countries with PPP correct | Manual UAT |
+| 17 | Support team can issue refund via Stripe Dashboard with eligibility check | Operational runbook |
+| 18 | MRR metric updates within 60s of subscription state change | Integration |
+| 19 | Trial scheduler dead-man's-switch fires if cron skipped | Chaos/SRE test |
+| 20 | B2B-only enforced: US/CA signup rejected without business-entity checkbox | Integration |
+| 21 | Hard-delete → `billing_archive` row persisted with 7-year retention | Integration |
+| 22 | Tax-ID unvalidated at day 14: admin read-only, storefront unpublished | Integration (time-mocked) |
+| 23 | India merchant with card issued in US: pricing resolves to developed-market tier + arbitrage flag set | Integration |
+| 24 | Merchant reverses cancellation via save offer: state transitions cancel_scheduled → active | Integration |
 
 ---
 
 ## 29. Next step
 
-After user + reviewer approval of this spec, proceed to **implementation plan** via `writing-plans` skill. The plan will decompose §25's gap list into atomic, sequenced tasks with tests-first structure and atomic commit boundaries, targeting ~8–10 engineer-weeks for v1 Starter + Studio + Trial self-serve launch.
+After user approval of this spec, proceed to **implementation plan** via `writing-plans` skill. The plan will decompose §25's gap list into atomic, sequenced tasks with tests-first structure and atomic commit boundaries, targeting ~8–10 engineer-weeks for v1 Starter + Studio + Trial self-serve launch, plus ~4–6 weeks for the first Pro + App customer.

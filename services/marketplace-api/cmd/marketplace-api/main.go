@@ -38,8 +38,10 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/billing/migration"
 	"github.com/mark8ly/marketplace-api/internal/billing/pricing"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
+	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/signup"
+	"github.com/mark8ly/marketplace-api/internal/subscription/dunning"
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/category"
@@ -1070,6 +1072,46 @@ func main() {
 	trialScheduler.Start()
 	defer trialScheduler.Stop()
 	log.Info("P5 crons started", "count", 4)
+
+	// P6 dunning + SCA recovery crons. Emails route through the NoOpClient
+	// until a real adapter is wired (email columns on StoreSubscription are
+	// deferred). All state mutations go through statemachine.Transition.
+	dunningEmailClient := email.NoOpClient{Logger: log}
+
+	ladderCron := dunning.NewStepDailyLadder(conn, auditEmitter, log,
+		dunning.WrapPrometheusCounter(metrics.DunningSuppressedRefundWindowTotal),
+		nil)
+	if _, err := trialScheduler.AddFunc(dunning.LadderSpec, func() {
+		if err := ladderCron.Run(workerCtx); err != nil {
+			log.Error("dunning ladder cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register dunning ladder cron", "err", err)
+	}
+
+	dunningEmailsCron := dunning.NewSendDunningEmails(conn, dunningEmailClient, log,
+		dunning.WrapPrometheusCounterVec(metrics.DunningEmailsSentTotal),
+		nil)
+	if _, err := trialScheduler.AddFunc(dunning.DunningEmailsSpec, func() {
+		if err := dunningEmailsCron.Run(workerCtx); err != nil {
+			log.Error("dunning emails cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register dunning emails cron", "err", err)
+	}
+
+	scaRemindersCron := dunning.NewSendPaymentActionReminders(conn, dunningEmailClient, log,
+		dunning.WrapPrometheusCounterVec(metrics.PaymentActionRemindersSentTotal),
+		nil)
+	if _, err := trialScheduler.AddFunc(dunning.PaymentActionRemindersSpec, func() {
+		if err := scaRemindersCron.Run(workerCtx); err != nil {
+			log.Error("SCA reminders cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register SCA reminders cron", "err", err)
+	}
+
+	log.Info("P6 dunning crons registered", "count", 3)
 
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)

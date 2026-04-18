@@ -8,8 +8,6 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/dunning"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 var now = time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
 
 func TestIsInRefundWindow_NilFirstCharge_ReturnsFalse(t *testing.T) {

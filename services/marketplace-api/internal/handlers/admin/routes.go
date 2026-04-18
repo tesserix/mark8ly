@@ -39,6 +39,7 @@ type Deps struct {
 	AccountHandler           *AccountHandler
 	DomainsHandler           *DomainsHandler
 	SubscriptionHandler      *SubscriptionHandler
+	ChangePlanHandler        *ChangePlanHandler
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
 	DashboardHandler         *DashboardHandler
@@ -553,6 +554,15 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				sub.POST("/portal",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
 					deps.SubscriptionHandler.CreatePortal)
+
+				if deps.ChangePlanHandler != nil {
+					sub.POST("/change-plan",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+						deps.ChangePlanHandler.ChangePlan)
+					sub.GET("/change-plan/preflight",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionViewRole),
+						deps.ChangePlanHandler.ChangePlanPreflight)
+				}
 			}
 		}
 

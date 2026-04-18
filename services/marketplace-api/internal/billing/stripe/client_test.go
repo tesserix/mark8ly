@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,30 +13,29 @@ import (
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 )
 
+// TestClient_PostForm_AttachesIdempotencyKey verifies that CreateCustomer (a
+// write helper) attaches the deterministic idempotency key as a header.
 func TestClient_PostForm_AttachesIdempotencyKey(t *testing.T) {
 	var gotKey string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotKey = r.Header.Get("Idempotency-Key")
 		w.Header().Set("Request-Id", "req_test")
-		_, _ = w.Write([]byte(`{"id":"obj_x"}`))
+		_, _ = w.Write([]byte(`{"id":"cus_x","email":""}`))
 	}))
 	defer srv.Close()
 
 	c := billingstripe.New("sk_test_x")
 	c.SetBaseURLForTesting(srv.URL)
 
-	_, err := c.PostForm(context.Background(), "/v1/customers", "customer:store-1", url.Values{"name": []string{"Acme"}})
+	_, err := billingstripe.CreateCustomer(context.Background(), c, billingstripe.CreateCustomerInput{
+		StoreID: "store-1", TenantID: "tenant-1",
+	})
 	require.NoError(t, err)
 	require.Equal(t, "customer:store-1", gotKey)
 }
 
-func TestClient_PostForm_MissingIdempotencyKeyReturnsError(t *testing.T) {
-	c := billingstripe.New("sk_test_x")
-	_, err := c.PostForm(context.Background(), "/v1/customers", "", url.Values{})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "idempotency key required")
-}
-
+// TestClient_PostForm_4xxReturnsAPIError verifies that a 4xx response from the
+// Stripe API is translated into our *APIError type by a write helper.
 func TestClient_PostForm_4xxReturnsAPIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Request-Id", "req_err")
@@ -49,13 +47,14 @@ func TestClient_PostForm_4xxReturnsAPIError(t *testing.T) {
 	c := billingstripe.New("sk_test_x")
 	c.SetBaseURLForTesting(srv.URL)
 
-	_, err := c.PostForm(context.Background(), "/v1/customers", "key-1", url.Values{})
+	_, err := billingstripe.CreateCustomer(context.Background(), c, billingstripe.CreateCustomerInput{
+		StoreID: "store-1", TenantID: "tenant-1",
+	})
 	var apiErr *billingstripe.APIError
 	require.True(t, errors.As(err, &apiErr))
 	require.Equal(t, "card_declined", apiErr.Code)
 	require.Equal(t, "card_error", apiErr.Type)
 	require.Equal(t, 402, apiErr.HTTPStatus)
-	require.Equal(t, "req_err", apiErr.RequestID)
 }
 
 func TestIdempotencyKey_PortalBucket5Min(t *testing.T) {

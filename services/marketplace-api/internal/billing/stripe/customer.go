@@ -2,8 +2,8 @@ package stripe
 
 import (
 	"context"
-	"encoding/json"
-	"net/url"
+
+	sdk "github.com/stripe/stripe-go/v82"
 )
 
 type Customer struct {
@@ -21,26 +21,28 @@ type CreateCustomerInput struct {
 }
 
 func CreateCustomer(ctx context.Context, c *Client, in CreateCustomerInput) (*Customer, error) {
-	v := url.Values{}
+	params := &sdk.CustomerCreateParams{}
+	params.Context = ctx
+	params.IdempotencyKey = sdk.String(CustomerIdempotencyKey(in.StoreID))
 	if in.Email != "" {
-		v.Set("email", in.Email)
+		params.Email = sdk.String(in.Email)
 	}
 	if in.Name != "" {
-		v.Set("name", in.Name)
+		params.Name = sdk.String(in.Name)
 	}
-	v.Set("metadata[store_id]", in.StoreID)
-	v.Set("metadata[tenant_id]", in.TenantID)
 	if in.Country != "" {
-		v.Set("address[country]", in.Country)
+		params.Address = &sdk.AddressParams{Country: sdk.String(in.Country)}
 	}
+	params.AddMetadata("store_id", in.StoreID)
+	params.AddMetadata("tenant_id", in.TenantID)
 
-	body, err := c.PostForm(ctx, "/v1/customers", CustomerIdempotencyKey(in.StoreID), v)
+	cu, err := c.sdk.V1Customers.Create(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, toAPIError(err)
 	}
-	var cu Customer
-	if err := json.Unmarshal(body, &cu); err != nil {
-		return nil, err
-	}
-	return &cu, nil
+	return &Customer{
+		ID:       cu.ID,
+		Email:    cu.Email,
+		Metadata: cu.Metadata,
+	}, nil
 }

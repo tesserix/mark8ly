@@ -2,9 +2,9 @@ package stripe
 
 import (
 	"context"
-	"encoding/json"
-	"net/url"
 	"time"
+
+	sdk "github.com/stripe/stripe-go/v82"
 )
 
 type PortalSession struct {
@@ -24,19 +24,21 @@ func CreatePortalSession(ctx context.Context, c *Client, in PortalInput) (*Porta
 	if in.Now.IsZero() {
 		in.Now = time.Now()
 	}
-	v := url.Values{}
-	v.Set("customer", in.CustomerID)
-	v.Set("return_url", in.ReturnURL)
-
 	key := PortalIdempotencyKey(in.StoreID, in.Now.Unix())
-	body, err := c.PostForm(ctx, "/v1/billing_portal/sessions", key, v)
+
+	params := &sdk.BillingPortalSessionCreateParams{}
+	params.Context = ctx
+	params.IdempotencyKey = sdk.String(key)
+	params.Customer = sdk.String(in.CustomerID)
+	params.ReturnURL = sdk.String(in.ReturnURL)
+
+	ps, err := c.sdk.V1BillingPortalSessions.Create(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, toAPIError(err)
 	}
-	var ps PortalSession
-	if err := json.Unmarshal(body, &ps); err != nil {
-		return nil, err
-	}
-	ps.IdempotencyKey = key
-	return &ps, nil
+	return &PortalSession{
+		ID:             ps.ID,
+		URL:            ps.URL,
+		IdempotencyKey: key,
+	}, nil
 }

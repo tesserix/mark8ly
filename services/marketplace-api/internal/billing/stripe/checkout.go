@@ -2,10 +2,10 @@ package stripe
 
 import (
 	"context"
-	"encoding/json"
-	"net/url"
 	"strings"
 	"time"
+
+	sdk "github.com/stripe/stripe-go/v82"
 )
 
 type CheckoutSession struct {
@@ -32,33 +32,42 @@ func CreateCheckoutSession(ctx context.Context, c *Client, in CheckoutInput) (*C
 	if in.Now.IsZero() {
 		in.Now = time.Now()
 	}
-	v := url.Values{}
-	v.Set("mode", "subscription")
-	v.Set("customer", in.CustomerID)
-	v.Set("line_items[0][price]", in.PriceID)
-	v.Set("line_items[0][quantity]", "1")
-	v.Set("currency", strings.ToLower(in.Currency))
-	v.Set("success_url", in.SuccessURL)
-	v.Set("cancel_url", in.CancelURL)
-	if in.Locale != "" {
-		v.Set("locale", in.Locale)
-	}
-	v.Set("metadata[store_id]", in.StoreID)
-	v.Set("metadata[tenant_id]", in.TenantID)
-	v.Set("metadata[plan]", in.Plan)
-	v.Set("metadata[period]", in.Period)
-	v.Set("subscription_data[metadata][store_id]", in.StoreID)
-	v.Set("subscription_data[metadata][tenant_id]", in.TenantID)
-
 	key := CheckoutIdempotencyKey(in.StoreID, in.Plan, in.Period, in.Now.Unix())
-	body, err := c.PostForm(ctx, "/v1/checkout/sessions", key, v)
+
+	params := &sdk.CheckoutSessionCreateParams{}
+	params.Context = ctx
+	params.IdempotencyKey = sdk.String(key)
+	params.Mode = sdk.String("subscription")
+	params.Customer = sdk.String(in.CustomerID)
+	params.Currency = sdk.String(strings.ToLower(in.Currency))
+	params.SuccessURL = sdk.String(in.SuccessURL)
+	params.CancelURL = sdk.String(in.CancelURL)
+	if in.Locale != "" {
+		params.Locale = sdk.String(in.Locale)
+	}
+	params.LineItems = []*sdk.CheckoutSessionCreateLineItemParams{
+		{Price: sdk.String(in.PriceID), Quantity: sdk.Int64(1)},
+	}
+	params.Metadata = map[string]string{
+		"store_id":  in.StoreID,
+		"tenant_id": in.TenantID,
+		"plan":      in.Plan,
+		"period":    in.Period,
+	}
+	params.SubscriptionData = &sdk.CheckoutSessionCreateSubscriptionDataParams{
+		Metadata: map[string]string{
+			"store_id":  in.StoreID,
+			"tenant_id": in.TenantID,
+		},
+	}
+
+	sess, err := c.sdk.V1CheckoutSessions.Create(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, toAPIError(err)
 	}
-	var sess CheckoutSession
-	if err := json.Unmarshal(body, &sess); err != nil {
-		return nil, err
-	}
-	sess.IdempotencyKey = key
-	return &sess, nil
+	return &CheckoutSession{
+		ID:             sess.ID,
+		URL:            sess.URL,
+		IdempotencyKey: key,
+	}, nil
 }

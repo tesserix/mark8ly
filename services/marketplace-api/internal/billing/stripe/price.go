@@ -2,10 +2,8 @@ package stripe
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/url"
-	"strconv"
+
+	sdk "github.com/stripe/stripe-go/v82"
 
 	"github.com/mark8ly/marketplace-api/internal/billing/pricing"
 )
@@ -30,56 +28,71 @@ type Price struct {
 // CreatePrice on ErrNotFound (see cmd/billing-bootstrap). The Idempotency-Key
 // header here protects against same-process retries only.
 func CreatePrice(ctx context.Context, c *Client, productID string, desc pricing.PriceDescriptor) (*Price, error) {
-	v := url.Values{}
-	v.Set("product", productID)
-	v.Set("currency", desc.Baseline.Currency)
-	v.Set("unit_amount", strconv.FormatInt(desc.Baseline.UnitAmountMinor, 10))
-	v.Set("lookup_key", desc.LookupKey)
-	v.Set("metadata[plan]", string(desc.Plan))
-	v.Set("metadata[period]", string(desc.Period))
-	v.Set("metadata[tier]", string(desc.Tier))
-
 	interval := "month"
 	if desc.Period == pricing.PeriodAnnual {
 		interval = "year"
 	}
-	v.Set("recurring[interval]", interval)
+
+	params := &sdk.PriceCreateParams{}
+	params.Context = ctx
+	params.IdempotencyKey = sdk.String("price:" + desc.LookupKey)
+	params.Product = sdk.String(productID)
+	params.Currency = sdk.String(desc.Baseline.Currency)
+	params.UnitAmount = sdk.Int64(desc.Baseline.UnitAmountMinor)
+	params.LookupKey = sdk.String(desc.LookupKey)
+	params.Recurring = &sdk.PriceCreateRecurringParams{
+		Interval: sdk.String(interval),
+	}
+	params.AddMetadata("plan", string(desc.Plan))
+	params.AddMetadata("period", string(desc.Period))
+	params.AddMetadata("tier", string(desc.Tier))
 
 	// Developed tier: emit currency_options. PPP tier: skip (single-currency Price).
 	if desc.Tier == pricing.TierDeveloped {
+		params.CurrencyOptions = make(map[string]*sdk.PriceCreateCurrencyOptionsParams, len(desc.Options))
 		for cur, amt := range desc.Options {
-			v.Set(fmt.Sprintf("currency_options[%s][unit_amount]", cur), strconv.FormatInt(amt.UnitAmountMinor, 10))
-			if amt.TaxBehavior != "" {
-				v.Set(fmt.Sprintf("currency_options[%s][tax_behavior]", cur), amt.TaxBehavior)
+			opt := &sdk.PriceCreateCurrencyOptionsParams{
+				UnitAmount: sdk.Int64(amt.UnitAmountMinor),
 			}
+			if amt.TaxBehavior != "" {
+				opt.TaxBehavior = sdk.String(amt.TaxBehavior)
+			}
+			params.CurrencyOptions[cur] = opt
 		}
 	}
 
-	body, err := c.PostForm(ctx, "/v1/prices", "price:"+desc.LookupKey, v)
+	p, err := c.sdk.V1Prices.Create(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, toAPIError(err)
 	}
-	var p Price
-	if err := json.Unmarshal(body, &p); err != nil {
-		return nil, err
-	}
-	return &p, nil
+	return mapPrice(p), nil
 }
 
 // FindPriceByLookupKey returns the active Price matching lookupKey, or ErrNotFound.
 func FindPriceByLookupKey(ctx context.Context, c *Client, lookupKey string) (*Price, error) {
-	body, err := c.Get(ctx, "/v1/prices?lookup_keys[]="+url.QueryEscape(lookupKey)+"&active=true")
-	if err != nil {
-		return nil, err
+	listParams := &sdk.PriceListParams{
+		LookupKeys: sdk.StringSlice([]string{lookupKey}),
+		Active:     sdk.Bool(true),
 	}
-	var page struct {
-		Data []Price `json:"data"`
+
+	for p, err := range c.sdk.V1Prices.List(ctx, listParams) {
+		if err != nil {
+			return nil, toAPIError(err)
+		}
+		return mapPrice(p), nil
 	}
-	if err := json.Unmarshal(body, &page); err != nil {
-		return nil, err
+	return nil, ErrNotFound
+}
+
+func mapPrice(p *sdk.Price) *Price {
+	return &Price{
+		ID:          p.ID,
+		Object:      p.Object,
+		Currency:    string(p.Currency),
+		UnitAmount:  p.UnitAmount,
+		LookupKey:   p.LookupKey,
+		Metadata:    p.Metadata,
+		Active:      p.Active,
+		TaxBehavior: string(p.TaxBehavior),
 	}
-	if len(page.Data) == 0 {
-		return nil, ErrNotFound
-	}
-	return &page.Data[0], nil
 }

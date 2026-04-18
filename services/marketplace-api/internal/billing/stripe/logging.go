@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	sdk "github.com/stripe/stripe-go/v82"
 )
 
 // APIError is the sanitized, log-safe representation of a Stripe API error.
@@ -35,6 +37,24 @@ func ParseAPIError(status int, body, requestID string) error {
 		Code:       parsed.Error.Code,
 		RequestID:  requestID,
 	}
+}
+
+// toAPIError translates a stripe SDK error into our sanitized *APIError.
+// Non-SDK errors are passed through unchanged.
+func toAPIError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var se *sdk.Error
+	if errors.As(err, &se) {
+		return &APIError{
+			HTTPStatus: se.HTTPStatusCode,
+			Type:       string(se.Type),
+			Code:       string(se.Code),
+			RequestID:  se.RequestID,
+		}
+	}
+	return err
 }
 
 // SafeWebhookFields extracts only event.id + event.type for structured logging.

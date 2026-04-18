@@ -82,7 +82,11 @@ func (m *stripeMock) handler() http.Handler {
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/prices"):
 			q := r.URL.Query()
 			lookup := ""
-			if lookups, ok := q["lookup_keys[]"]; ok && len(lookups) > 0 {
+			// stripe-go SDK v82 serializes []*string slices with indexed brackets
+			// (lookup_keys[0]=), unlike the previous raw-HTTP form (lookup_keys[]=).
+			if lookups, ok := q["lookup_keys[0]"]; ok && len(lookups) > 0 {
+				lookup = lookups[0]
+			} else if lookups, ok := q["lookup_keys[]"]; ok && len(lookups) > 0 {
 				lookup = lookups[0]
 			}
 			var list []map[string]any

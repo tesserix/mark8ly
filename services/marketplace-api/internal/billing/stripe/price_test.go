@@ -122,6 +122,7 @@ func TestFindPriceByLookupKey_EscapesQueryParam(t *testing.T) {
 	p, err := billingstripe.FindPriceByLookupKey(context.Background(), c, "k/with space")
 	require.NoError(t, err)
 	require.Equal(t, "price_ok", p.ID)
-	// Go's http.Client sends the path with [] unencoded; the value is percent-encoded.
-	require.Contains(t, seenPath, "lookup_keys[]=k%2Fwith+space")
+	// The stripe-go SDK serializes []*string slices with indexed brackets:
+	// lookup_keys[0]=<value>. The value is percent-encoded.
+	require.Contains(t, seenPath, "lookup_keys[0]=k%2Fwith+space")
 }

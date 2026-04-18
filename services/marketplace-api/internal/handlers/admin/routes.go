@@ -9,6 +9,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/billing/migration"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 )
 
@@ -40,7 +41,8 @@ type Deps struct {
 	DomainsHandler           *DomainsHandler
 	SubscriptionHandler      *SubscriptionHandler
 	ChangePlanHandler        *ChangePlanHandler
-	TrialBillingHandler      *TrialBillingHandler
+	TrialBillingHandler        *TrialBillingHandler
+	MigrationFastPathHandler   *migration.Handler
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
 	DashboardHandler         *DashboardHandler
@@ -572,6 +574,15 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			storeRoute.POST("/billing/subscription",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
 				deps.TrialBillingHandler.Subscribe)
+		}
+
+		// Migration fast-path — P5 merchant-initiated platform migration submit.
+		// TODO: /internal/csm/migration-fast-path/:id/review wiring deferred —
+		// the /internal/ group and HeaderTrustAuth chain are not mounted here.
+		if deps.MigrationFastPathHandler != nil {
+			storeRoute.POST("/migration-fast-path/submit",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+				deps.MigrationFastPathHandler.Submit)
 		}
 
 		// Audit logs — Settings S4.

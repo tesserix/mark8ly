@@ -19,4 +19,5 @@ var DefaultAllowlist = []AllowedRoute{
 	{http.MethodPost, "/admin/stores/:storeId/billing/*path"},
 	{http.MethodGet, "/admin/stores/:storeId/orders/export/*path"},
 	{http.MethodPost, "/admin/auth/*path"},
+	{http.MethodGet, "/admin/stores/:storeId/migration-fast-path/*path"},
 }

@@ -27,13 +27,19 @@ import (
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
+	"github.com/robfig/cron/v3"
+
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
+	"github.com/mark8ly/marketplace-api/internal/billing/migration"
 	"github.com/mark8ly/marketplace-api/internal/billing/pricing"
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
+	"github.com/mark8ly/marketplace-api/internal/signup"
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/category"
@@ -577,6 +583,17 @@ func main() {
 		// B2 — Plan gate resolver (shared between admin and storefront).
 		planResolver := plangate.NewPlanResolver(conn, subscriptionRepo)
 
+		// P5 — Trial billing subscribe handler (deferred-charge card-add §5.3).
+		var trialBillingHandler *admin.TrialBillingHandler
+		if billingStripeClient != nil {
+			trialSubscriber := trial.NewSubscriber(conn, &trial.StripeAdapter{C: billingStripeClient}, nil)
+			trialBillingHandler = admin.NewTrialBillingHandler(trialSubscriber, log)
+		}
+
+		// P5 — Migration fast-path submit handler.
+		migrationRepo := migration.NewRepository(conn)
+		migrationHandler := migration.NewHandler(migrationRepo, migration.NoOpValidator{}, log)
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -603,8 +620,10 @@ func main() {
 			AccountHandler:         accountHandler,
 			DomainsHandler:         domainsHandler,
 			SubscriptionHandler:    subscriptionHandler,
-			ChangePlanHandler:      changePlanHandler,
-			AuditLogsHandler:       auditLogsHandler,
+			ChangePlanHandler:          changePlanHandler,
+			TrialBillingHandler:        trialBillingHandler,
+			MigrationFastPathHandler:   migrationHandler,
+			AuditLogsHandler:           auditLogsHandler,
 			NotificationsHandler:   notificationsHandler,
 			DashboardHandler:       dashboardHandler,
 			TicketsHandler:         ticketsHandler,
@@ -1007,6 +1026,50 @@ func main() {
 			log.Info("planchange: downgrade-recheck cron started")
 		}
 	}
+
+	// P5 trial + anomaly crons — daily lifecycle work routed through the shared
+	// scheduler pattern the orphan cron established.
+	trialScheduler := cron.New()
+
+	bannerCron := trial.NewBannerCron(conn, log, nil)
+	if _, err := trialScheduler.AddFunc(trial.BannerSpec, func() {
+		if err := bannerCron.Run(workerCtx); err != nil {
+			log.Error("trial banner cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register trial banner cron", "err", err)
+	}
+
+	expiryCron := trial.NewExpiryCron(conn, auditEmitter, log, nil)
+	if _, err := trialScheduler.AddFunc(trial.ExpirySpec, func() {
+		if err := expiryCron.Run(workerCtx); err != nil {
+			log.Error("trial expiry cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register trial expiry cron", "err", err)
+	}
+
+	activationCron := trial.NewActivationCron(conn, metrics.TrialActivationDay30Total, log, nil)
+	if _, err := trialScheduler.AddFunc(trial.ActivationSpec, func() {
+		if err := activationCron.Run(workerCtx); err != nil {
+			log.Error("trial activation cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register trial activation cron", "err", err)
+	}
+
+	anomalyCron := signup.NewAnomalyCron(conn, signup.NoOpSlack{}, metrics.TrialSignupAnomalyAlertsTotal, log, nil)
+	if _, err := trialScheduler.AddFunc(signup.AnomalySpec, func() {
+		if err := anomalyCron.Run(workerCtx); err != nil {
+			log.Error("signup anomaly cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register signup anomaly cron", "err", err)
+	}
+
+	trialScheduler.Start()
+	defer trialScheduler.Stop()
+	log.Info("P5 crons started", "count", 4)
 
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)

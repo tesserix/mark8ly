@@ -56,6 +56,13 @@ var (
 			Help: "Total outbox events published.",
 		},
 	)
+
+	// TrialSignupAnomalyAlertsTotal counts days where yesterday's signup count
+	// exceeded the anomaly threshold.
+	TrialSignupAnomalyAlertsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "mark8ly_trial_signup_anomaly_alerts_total",
+		Help: "Count of days where yesterday's signup count exceeded the anomaly threshold.",
+	})
 )
 
 func init() {
@@ -66,5 +73,6 @@ func init() {
 		WebhookReceivedTotal,
 		OutboxEventsPending,
 		OutboxEventsPublishedTotal,
+		TrialSignupAnomalyAlertsTotal,
 	)
 }

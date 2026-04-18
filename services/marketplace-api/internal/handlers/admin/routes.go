@@ -40,6 +40,7 @@ type Deps struct {
 	DomainsHandler           *DomainsHandler
 	SubscriptionHandler      *SubscriptionHandler
 	ChangePlanHandler        *ChangePlanHandler
+	TrialBillingHandler      *TrialBillingHandler
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
 	DashboardHandler         *DashboardHandler
@@ -564,6 +565,13 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 						deps.ChangePlanHandler.ChangePlanPreflight)
 				}
 			}
+		}
+
+		// Trial billing — P5 deferred-charge card-add (§5.3).
+		if deps.TrialBillingHandler != nil {
+			storeRoute.POST("/billing/subscription",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+				deps.TrialBillingHandler.Subscribe)
 		}
 
 		// Audit logs — Settings S4.

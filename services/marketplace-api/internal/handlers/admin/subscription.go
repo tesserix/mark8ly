@@ -83,8 +83,13 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
 		return
 	}
+	tenantID, err := uuid.Parse(c.GetString("tenant_id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("tenant_id", "invalid uuid"), h.logger)
+		return
+	}
 
-	sub, err := h.svc.GetSubscription(c.Request.Context(), storeID)
+	sub, err := h.svc.GetSubscription(c.Request.Context(), tenantID, storeID)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return
@@ -154,6 +159,11 @@ func (h *SubscriptionHandler) CreatePortal(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
 		return
 	}
+	tenantID, err := uuid.Parse(c.GetString("tenant_id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("tenant_id", "invalid uuid"), h.logger)
+		return
+	}
 
 	var req CreatePortalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -161,7 +171,7 @@ func (h *SubscriptionHandler) CreatePortal(c *gin.Context) {
 		return
 	}
 
-	url, err := h.svc.CreatePortalSession(c.Request.Context(), storeID, req.ReturnURL)
+	url, err := h.svc.CreatePortalSession(c.Request.Context(), tenantID, storeID, req.ReturnURL)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return

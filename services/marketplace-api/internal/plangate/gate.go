@@ -159,9 +159,11 @@ func NewPlanResolver(db *gorm.DB, repo subscription.Repository) *PlanResolver {
 	return &PlanResolver{db: db, repo: repo}
 }
 
-// Resolve returns the current plan for a store, defaulting to trial.
-func (r *PlanResolver) Resolve(ctx context.Context, storeID uuid.UUID) Plan {
-	sub, err := r.repo.GetByStoreID(ctx, r.db, storeID)
+// Resolve returns the current plan for a (tenant, store) pair, defaulting
+// to trial. tenantID is mandatory — passing a mismatched tenant falls back
+// to trial (fail-closed) rather than leaking another tenant's plan.
+func (r *PlanResolver) Resolve(ctx context.Context, tenantID, storeID uuid.UUID) Plan {
+	sub, err := r.repo.GetByStoreID(ctx, r.db, tenantID, storeID)
 	if err != nil {
 		return subscription.PlanTrial
 	}
@@ -176,8 +178,17 @@ func (r *PlanResolver) Resolve(ctx context.Context, storeID uuid.UUID) Plan {
 
 // RequireFeature returns middleware that checks a boolean feature is enabled
 // on the store's current plan. Responds 403 with upgrade message if not.
+// Requires the upstream auth middleware to have set "tenant_id" on the Gin
+// context — otherwise the request is rejected 401 rather than falling back
+// to trial-plan behavior (fail-closed).
 func RequireFeature(resolver *PlanResolver, feature Feature, logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		tenantID, err := uuid.Parse(c.GetString("tenant_id"))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized", "message": "missing tenant_id"})
+			c.Abort()
+			return
+		}
 		storeID, err := uuid.Parse(c.Param("storeId"))
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "bad_request", "message": "invalid store id"})
@@ -185,7 +196,7 @@ func RequireFeature(resolver *PlanResolver, feature Feature, logger *slog.Logger
 			return
 		}
 
-		plan := resolver.Resolve(c.Request.Context(), storeID)
+		plan := resolver.Resolve(c.Request.Context(), tenantID, storeID)
 		if !IsAllowed(plan, feature) {
 			minPlan := minPlanForFeature(feature)
 			c.JSON(http.StatusForbidden, gin.H{
@@ -205,9 +216,16 @@ func RequireFeature(resolver *PlanResolver, feature Feature, logger *slog.Logger
 }
 
 // RequirePlan returns middleware that checks the store is on at least the
-// given minimum plan.
+// given minimum plan. Requires upstream auth middleware to have set
+// "tenant_id" on the Gin context.
 func RequirePlan(resolver *PlanResolver, minPlan Plan, logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		tenantID, err := uuid.Parse(c.GetString("tenant_id"))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized", "message": "missing tenant_id"})
+			c.Abort()
+			return
+		}
 		storeID, err := uuid.Parse(c.Param("storeId"))
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "bad_request", "message": "invalid store id"})
@@ -215,7 +233,7 @@ func RequirePlan(resolver *PlanResolver, minPlan Plan, logger *slog.Logger) gin.
 			return
 		}
 
-		plan := resolver.Resolve(c.Request.Context(), storeID)
+		plan := resolver.Resolve(c.Request.Context(), tenantID, storeID)
 		if !PlanAtLeast(plan, minPlan) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":    "plan_required",

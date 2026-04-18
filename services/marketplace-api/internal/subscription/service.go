@@ -52,9 +52,11 @@ func NewService(cfg ServiceConfig) *Service {
 	}
 }
 
-// GetSubscription returns the subscription for a store.
-func (s *Service) GetSubscription(ctx context.Context, storeID uuid.UUID) (*StoreSubscription, error) {
-	return s.repo.GetByStoreID(ctx, s.db, storeID)
+// GetSubscription returns the subscription for a (tenant, store) pair.
+// tenantID is mandatory: the repo filters by both columns so a foreign
+// tenant cannot read another tenant's subscription by guessing its store_id.
+func (s *Service) GetSubscription(ctx context.Context, tenantID, storeID uuid.UUID) (*StoreSubscription, error) {
+	return s.repo.GetByStoreID(ctx, s.db, tenantID, storeID)
 }
 
 // CheckoutInput holds the parameters for creating a checkout session.
@@ -82,7 +84,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, in CheckoutInput) (
 	}
 
 	// Get or create subscription record with Stripe customer.
-	sub, err := s.repo.GetByStoreID(ctx, s.db, in.StoreID)
+	sub, err := s.repo.GetByStoreID(ctx, s.db, in.TenantID, in.StoreID)
 	if err != nil {
 		// If no subscription exists yet, we need the caller to create
 		// a Stripe customer first — handled in the handler layer.
@@ -96,8 +98,10 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, in CheckoutInput) (
 	return url, nil
 }
 
-// CreatePortalSession returns a Stripe Billing Portal URL for the store.
-func (s *Service) CreatePortalSession(ctx context.Context, storeID uuid.UUID, returnURL string) (string, error) {
+// CreatePortalSession returns a Stripe Billing Portal URL for the (tenant,
+// store) pair. tenantID is mandatory — the repo filters by both columns so
+// a foreign tenant cannot open another tenant's billing portal.
+func (s *Service) CreatePortalSession(ctx context.Context, tenantID, storeID uuid.UUID, returnURL string) (string, error) {
 	if s.stripe == nil {
 		return "", fmt.Errorf("stripe client not configured")
 	}
@@ -105,7 +109,7 @@ func (s *Service) CreatePortalSession(ctx context.Context, storeID uuid.UUID, re
 		return "", apperrors.ValidationFailed("return_url", "return_url is required")
 	}
 
-	sub, err := s.repo.GetByStoreID(ctx, s.db, storeID)
+	sub, err := s.repo.GetByStoreID(ctx, s.db, tenantID, storeID)
 	if err != nil {
 		return "", err
 	}

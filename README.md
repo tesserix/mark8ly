@@ -1,79 +1,90 @@
 # Mark8ly
 
-Multi-tenant commerce platform — clean rebuild focused on the onboarding
-slice. This repo is the result of Phases A–G of the plan in
-[`docs/planning/06-onboarding-phase-plan.md`](./docs/planning/06-onboarding-phase-plan.md):
-a working marketing site, a single-page onboarding form with magic-link
-verification, a small Go control plane, a GIP + OpenFGA security
-boundary, and an end-to-end test suite that proves it all hangs
-together.
+[![CI](https://github.com/tesserix/mark8ly/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tesserix/mark8ly/actions/workflows/ci.yml)
+[![Dashboard validation](https://github.com/tesserix/mark8ly/actions/workflows/dashboard-validation.yml/badge.svg?branch=main)](https://github.com/tesserix/mark8ly/actions/workflows/dashboard-validation.yml)
+[![Logging smoke](https://github.com/tesserix/mark8ly/actions/workflows/logging-smoke.yml/badge.svg?branch=main)](https://github.com/tesserix/mark8ly/actions/workflows/logging-smoke.yml)
+[![PII leak guard](https://github.com/tesserix/mark8ly/actions/workflows/pii-leak-guard.yml/badge.svg?branch=main)](https://github.com/tesserix/mark8ly/actions/workflows/pii-leak-guard.yml)
 
-> **Status:** v0.1.0 — onboarding slice complete. See
-> [`docs/planning/`](./docs/planning) for the architectural decisions and
-> the why behind every constraint.
+Multi-tenant commerce platform — the consolidated monorepo carrying
+every mark8ly frontend app, Go service, and shared package. Each tenant
+gets `{slug}-admin.mark8ly.com` (admin) and `{slug}.mark8ly.com`
+(storefront); onboarding happens via a magic-link flow at
+`mark8ly.com/onboarding`.
 
-## Layout
+> **Status:** production on `mark8ly.com`. The CI workflow gates every
+> merge with `npm audit`, `govulncheck` (per Go service), and a Trivy
+> scan; security failures email the distribution list
+> (see [Security](#security)).
+
+---
+
+## Repo layout
 
 ```
 mark8ly/
 ├── apps/
-│   └── onboarding/        Next.js 16 marketing site + single-page onboarding form
+│   ├── admin/               Next.js 16 tenant admin dashboard (port 4202)
+│   ├── storefront/          Next.js 16 customer storefront (port 4203)
+│   ├── onboarding/          Next.js 16 marketing + onboarding wizard (port 4201)
+│   ├── mobile-admin/        (stub) future Expo admin
+│   └── storefront-mobile/   (stub) future Expo storefront
 ├── services/
-│   ├── platform-api/      Go control plane — locations, tenants, sessions, verification, outbox
-│   └── auth-bff/          Go security boundary — GIP token verification + encrypted session cookies
+│   ├── auth-bff/            Go — HttpOnly session cookies, CSRF, WS tickets
+│   ├── platform-api/        Go — tenants, users, onboarding, settings, FGA bootstrap
+│   ├── marketplace-api/     Go — catalog, orders, checkout, billing, white-label app creds
+│   ├── otto/                Go — real-time support chat (MongoDB + WebSocket)
+│   ├── products/            Go — product catalog
+│   ├── categories/          Go — category taxonomy
+│   ├── customers/           Go — customer profiles
+│   ├── coupons/             Go — discount codes
+│   ├── payment/             Go — Stripe + Razorpay gateways
+│   └── tax/                 Go — tax engine
 ├── packages/
-│   ├── ui/                Shared React compositions (primitives stay in @tesserix/web)
+│   ├── ui/                  Shared React compositions
+│   ├── otto-widget/         Reusable support-chat widget + admin inbox
 │   ├── eslint-config/
 │   └── typescript-config/
-├── infra/
-│   ├── dev/               docker-compose.yml + seed scripts + load-secrets.sh
-│   └── openfga/           Authorization model (model.fga)
-├── docs/
-│   ├── architecture.md    One-page system overview (read this second)
-│   ├── migrations.md      How to add, roll back, and test migrations
-│   └── planning/          Phase plans, ADRs, auth bug postmortem
-├── go.work                Go workspace spans services/*
-├── turbo.json             Turborepo task pipelines (build / test / lint / check-types)
-├── Makefile               Entry point for everything: dev, test, migrate, e2e
-└── package.json           npm workspaces (apps/*, packages/*)
+├── infra/                   docker-compose dev stack, OpenFGA model, seed scripts
+├── docs/                    Architecture, migrations, planning, postmortems
+└── .github/workflows/       CI + security + base-image-refresh
 ```
+
+Every Go service owns its own `go.mod` (no Go workspace, keeps services
+independently releasable). Frontends share a single `package.json` via
+npm workspaces.
+
+---
 
 ## Quick start
 
-Bring up the full stack in one command:
-
 ```bash
-# 1. Install JS deps (npm workspaces, Go uses go.work automatically)
-npm install
+# 1. Install JS deps (npm workspaces)
+npm install --legacy-peer-deps
 
-# 2. Pull local secrets and bring up the local stack
-#    — Postgres, OpenFGA, Firebase Auth emulator, platform-api,
-#      auth-bff, onboarding.
+# 2. Pull local secrets + bring up the local stack
+#    Postgres, OpenFGA, Firebase Auth emulator, platform-api,
+#    auth-bff, marketplace-api, onboarding, admin, storefront.
 make dev
 
-# 3. Marketing site + onboarding form
-open http://localhost:4201
+# 3. Visit
+open http://localhost:4201    # onboarding
+open http://localhost:4202    # admin (once a tenant exists)
+open http://localhost:4203    # storefront
 ```
 
-`make dev` runs `dev-secrets` first to populate `infra/dev/.env.local`
-from GCP Secret Manager (`gcloud auth application-default login` if this
-is your first time). If you don't have GCP access, drop a hand-written
-`.env.local` into `infra/dev/` with the GIP project fields and
-`make dev` will pick it up.
-
-**Exit check:** once everything is green, visit
-`http://localhost:4201/onboarding`, submit the form with a throwaway
-email, grab the verification link from the platform-api container logs
-(the `LogSender` prints the full email body), paste it into the browser,
-and you should land on `/welcome`.
+`make dev` shells out to `make dev-secrets` first, which populates
+`infra/dev/.env.local` from GCP Secret Manager. Run
+`gcloud auth application-default login` once if this is your first
+time. Without GCP access, drop a hand-written `.env.local` in
+`infra/dev/` with your GIP/OpenFGA values and `make dev` will use it.
 
 ## Common commands
 
 ```bash
-make help                                # list every target with descriptions
+make help                                # every target with a one-line description
 make dev                                 # full local stack
 make dev-down                            # stop the stack
-make dev-clean                           # stop and wipe Postgres data
+make dev-clean                           # stop + wipe Postgres volume
 make dev-logs                            # tail container logs
 
 make build                               # turbo build every workspace
@@ -93,73 +104,129 @@ make go-build                            # go build every Go service
 make go-tidy                             # go mod tidy every Go service
 ```
 
-## Testing
+---
 
-Three layers, each independent:
+## Architecture (one page)
 
-1. **Unit tests** — `make test-unit`. Pure Go and TS tests, no external
-   services. Fast; run on every save.
-2. **Integration tests** — `make test-int`. Go tests gated by the
-   `integration` build tag; they assume `make dev` is up and the shared
-   Postgres is reachable. Covers the tenant tuple-write race
-   ([auth-bug #2](./docs/planning/auth-bugs.md)), outbox recovery,
-   migration up/down/idempotency, and verification token replay.
-3. **End-to-end tests** — `make e2e`. Playwright against the running
-   stack. Covers the golden path, slug collision, invalid-token error
-   UI, form validation, and the browser-close-and-resume scenario.
+- **Hostname-based tenant isolation** — Next.js middleware resolves
+  subdomain → tenant via `platform-api`, then pins `x-tenant-id` on
+  every downstream request. That header always overrides JWT claims to
+  avoid cross-tenant smear.
+- **BFF auth** — `auth-bff` owns the HttpOnly session cookie; the
+  admin/storefront never see a raw JWT. `/bff/login` → Keycloak →
+  callback → session.
+- **OpenFGA** — role chain is `owner` → `admin` → `manager` → `staff`
+  → `viewer`. Derived permissions (`can_manage_settings`,
+  `can_read_settings`, …) come from the model. Staff bootstrap writes
+  FGA tuples in the same DB transaction as the tenant row, via an
+  outbox.
+- **Istio wildcard routing** — `*-admin.mark8ly.com` → admin,
+  `*.mark8ly.com` → storefront. Custom domains are provisioned by
+  `tenant-router-service` (clones the wildcard VS templates).
+- **Pub/Sub events** — every write emits a domain event on
+  `mp-<domain>-events`; `notification-hub` fans them out as in-app
+  notifications and email/SMS.
+- **Knative + ArgoCD** — every service/app ships as a Knative ksvc in
+  the `marketplace` namespace; Helm charts live in `tesserix-k8s`.
 
-See [`docs/planning/08-testing-strategy.md`](./docs/planning/08-testing-strategy.md)
-for the why behind each layer.
+Deep dive in [`docs/architecture.md`](./docs/architecture.md).
 
-## Architecture summary
+---
 
-- **Two Go services** — `platform-api` owns the domain (locations,
-  tenants, onboarding sessions, verification, outbox); `auth-bff` is the
-  security boundary for every token that touches GIP. Notification and
-  storage are inlined into `platform-api` during this slice and will
-  split out only if a second consumer appears.
-- **One frontend** — `apps/onboarding` is the marketing site and the
-  single-page form, ported from the legacy 5-step wizard. Next.js 16 +
-  React 19 + `@tesserix/web` design system.
-- **Magic-link verification** — no OTP, no password. Form submit sends a
-  clickable link; clicking it completes tenant provisioning and mints
-  the session cookie in a single round-trip.
-- **GIP + OpenFGA from day one** — both run locally via docker-compose
-  (Firebase Auth emulator, bundled `openfga` container). The verifier
-  explicitly compares the `firebase.tenant` claim to prevent cross-pool
-  login ([auth-bug #5](./docs/planning/auth-bugs.md)).
-- **Outbox pattern** — tenant row + FGA write tuple commit in the same
-  DB transaction via an outbox table. A drainer ships tuples to OpenFGA
-  after the commit; the auth-bff does check-with-retry to close the
-  tuple-visibility race window.
-- **Schema safety** — golang-migrate with two binaries per service
-  (`cmd/server`, `cmd/migrate`). `cmd/server` refuses to start on schema
-  mismatch via `AssertVersion`. No GORM AutoMigrate anywhere.
+## Security
 
-One-page deep dive: [`docs/architecture.md`](./docs/architecture.md).
+CI runs a reusable security workflow per change:
+
+| Check            | Scope                                                            |
+|------------------|------------------------------------------------------------------|
+| `npm audit`      | HIGH+ on the production workspaces (`admin`, `storefront`, `onboarding`, `@repo/ui`, `@repo/otto-widget`). |
+| `govulncheck`    | Per Go service (`platform-api`, `auth-bff`, `marketplace-api`, `otto`). Reachability-narrowed CVEs. |
+| `Trivy` (image)  | CRITICAL + HIGH on every published image, `ignore-unfixed: true`. |
+
+All three fail the build on finding. On failure, the
+`notify-security-failure` job in
+[`.github/workflows/reusable-security.yml`](./.github/workflows/reusable-security.yml)
+emails the distribution list (`samyak.rout@gmail.com`,
+`mahesh.sangawar@gmail.com`, `unidevidp@gmail.com`) via Gmail SMTP.
+Requires `SMTP_USERNAME` and `SMTP_PASSWORD` repo secrets.
+
+`.github/workflows/base-image-refresh.yml` listens for the weekly
+`tesserix-base-images-updated` event from
+[`tesserix/base-docker-images`](https://github.com/tesserix/base-docker-images)
+and dispatches `ci.yml` on `main`, so base-image CVE fixes propagate
+without a manual trigger.
+
+---
+
+## Deploy
+
+- **Images** — `ghcr.io/tesserix/mark8ly-<app|service>` built by
+  `ci.yml` on every push to `main`. Base images are
+  `ghcr.io/tesserix/base-*:latest` (weekly Trivy-gated rebuilds).
+- **Knative** — `kubectl patch ksvc <name> -n marketplace` with a
+  fresh timestamp annotation rolls the service after a successful
+  build.
+- **ArgoCD** — Helm values, External Secrets, VirtualServices, and the
+  DB schema bootstrap cronjob all live in `tesserix-k8s`. ArgoCD
+  auto-syncs with `prune: true` + `selfHeal: true`. Never
+  `kubectl apply` directly.
+
+## Knative ksvc names
+
+| App / service     | Image                         | ksvc                     |
+|-------------------|-------------------------------|--------------------------|
+| admin             | `mark8ly-admin`               | `marketplace-admin`      |
+| storefront        | `mark8ly-storefront`          | `mp-storefront`          |
+| onboarding        | `mark8ly-onboarding`          | `marketplace-onboarding` |
+| auth-bff          | `mark8ly-auth-bff`            | `mp-auth-bff`            |
+| platform-api      | `mark8ly-platform-api`        | `mp-platform-api`        |
+| marketplace-api   | `mark8ly-marketplace-api`     | `mp-marketplace-api`     |
+| otto              | `mark8ly-otto`                | `mp-otto`                |
+| products          | `mark8ly-products`            | `mp-products`            |
+| categories        | `mark8ly-categories`          | `mp-categories`          |
+| customers         | `mark8ly-customers`           | `mp-customers`           |
+| coupons           | `mark8ly-coupons`             | `mp-coupons`             |
+| payment           | `mark8ly-payment`             | `mp-payment`             |
+| tax               | `mark8ly-tax`                 | `mp-tax`                 |
+
+---
+
+## Required repo secrets
+
+| Secret              | Used by                                              |
+|---------------------|------------------------------------------------------|
+| `PKG_READ_TOKEN`    | Installing `@tesserix/web` from GHCR in every Next app |
+| `GO_PRIVATE_TOKEN`  | `GOPRIVATE=github.com/tesserix/*` for `go-shared`    |
+| `SMTP_USERNAME`     | `reusable-security.yml` notify job                   |
+| `SMTP_PASSWORD`     | `reusable-security.yml` notify job (Gmail app password) |
+
+WIF provider + CI service account are repo variables.
+
+---
 
 ## Environment files
 
-Every service has a `.env.example` listing every variable it reads. Copy
-it to `.env` (or let `make dev` inject values via docker-compose) and
-fill in secrets.
+Every app and service ships a `.env.example` listing every variable it
+reads. `make dev-secrets` injects values from GCP Secret Manager into
+the compose stack so secrets never land in the repo.
 
 ```
-apps/onboarding/.env.example        # Next.js — browser + server actions
-services/platform-api/.env.example  # Go control plane
-services/auth-bff/.env.example      # Go security boundary
+apps/admin/.env.example
+apps/storefront/.env.example
+apps/onboarding/.env.example
+services/platform-api/.env.example
+services/auth-bff/.env.example
+services/marketplace-api/.env.example
+# (and one per service)
 ```
 
-`make dev-secrets` populates the GIP/OAuth bits from GCP Secret Manager
-so you never check them into the repo.
+---
 
 ## Further reading
 
-Read in this order for a green-field contributor:
-
-1. [`README.md`](./README.md) — you're here
-2. [`docs/architecture.md`](./docs/architecture.md) — one-page diagram + why
-3. [`docs/migrations.md`](./docs/migrations.md) — how to add and test schema changes
-4. [`docs/planning/00-overview.md`](./docs/planning/00-overview.md) — the kill-list
-5. [`docs/planning/06-onboarding-phase-plan.md`](./docs/planning/06-onboarding-phase-plan.md) — what shipped in each phase
-6. [`docs/planning/auth-bugs.md`](./docs/planning/auth-bugs.md) — the bugs the rebuild exists to fix
+1. [`docs/architecture.md`](./docs/architecture.md) — one-page
+   diagram + why
+2. [`docs/migrations.md`](./docs/migrations.md) — adding and testing
+   schema changes
+3. [`docs/planning/`](./docs/planning) — phase plans, ADRs,
+   postmortems

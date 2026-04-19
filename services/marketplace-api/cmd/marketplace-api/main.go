@@ -24,6 +24,7 @@ import (
 	"cloud.google.com/go/storage"
 	firebase "firebase.google.com/go/v4"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
@@ -1209,6 +1210,15 @@ func main() {
 		log.Error("register billing archive sweeper cron", "err", err)
 	}
 	log.Info("P10 billing archive sweeper registered")
+
+	// P17 — MRR USD rollup collector. Registered with the default Prometheus
+	// registry so it is scraped automatically via the existing /metrics handler.
+	// The FXRepository reads from the fx_rates table populated by the
+	// cmd/fx-rate-refresh CronJob (migration 063).
+	fxRepo := metrics.NewFXRepository(conn)
+	mrrCollector := metrics.NewMRRRollup(conn, fxRepo, log)
+	prometheus.MustRegister(mrrCollector)
+	log.Info("P17 MRR rollup collector registered")
 
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)

@@ -218,10 +218,10 @@ export const subscriptionCopy = {
       `The ${target} plan includes ${limit} stores — you have ${overBy} over your cap. Choose what happens to each. Your plan won't change until you resolve every over-cap store.`,
     closeLabel: 'Close',
     closeHelp:
-      'Freezes the storefront behind a closed page. Keeps your slot — reopen anytime by upgrading.',
+      'Freezes the storefront and shows a closed page to visitors. Your store slot is preserved — reopen it at any time by upgrading your plan.',
     deleteLabel: 'Delete',
     deleteHelp:
-      'Removes the store and frees the slot. 60-day soft-delete grace — restore from support during that window.',
+      'Permanently removes the store and frees the slot on your plan. Your data is kept for 60 days — contact support to restore within that window.',
     inFlightOrdersTemplate: (n: number) =>
       n === 0
         ? 'No in-flight orders.'
@@ -321,6 +321,183 @@ export const subscriptionCopy = {
       `You signed this attestation on ${acceptedAt}. Contact support to update or revoke.`,
     supportHint:
       'To update or revoke this attestation, contact our support team.',
+  },
+
+  /**
+   * Dunning email preview — CSM-only internal tool.
+   *
+   * T+1 / T+3 / T+7 / T+14 templates. Voice: editorial, calm, factual.
+   * Never urgency language, no exclamation marks, no emoji.
+   */
+  dunningPreview: {
+    subjectLabel: 'Subject',
+    t1: {
+      subject: 'A note about your payment',
+      body: (retryDate: string) =>
+        `Your most recent payment did not go through. We will retry your card on ${retryDate}.\n\nIf you would prefer to use a different card, you can add a new one from your billing settings. No action is needed if you would like to wait for the retry.\n\nThank you for being a Mark8ly merchant.`,
+    },
+    t3: {
+      subject: 'Your most recent payment',
+      body: (retryDate: string) =>
+        `We have been unable to collect payment for your subscription. Our next retry is scheduled for ${retryDate}.\n\nTo avoid any interruption to your store, we recommend adding a new card from your billing settings before that date.\n\nIf you have already updated your payment method, no further action is needed.`,
+    },
+    t7: {
+      subject: 'Your account is on pause',
+      body: (retryDate: string) =>
+        `Your subscription is currently on hold following several unsuccessful payment attempts. Your store is not visible to customers at this time.\n\nWe will retry your card on ${retryDate}. Adding a new payment method before that date will restore access promptly.\n\nIf you believe this is an error, please contact our support team.`,
+    },
+    t14: {
+      subject: 'Final notice before your account moves to read-only',
+      body: (retryDate: string) =>
+        `This is a final notice regarding your unpaid subscription balance.\n\nIf we are unable to collect payment on or before ${retryDate}, your account will move to read-only status. You will retain access to your data, but your storefront will remain closed to customers until the balance is settled.\n\nTo restore full access, please add a new payment method from your billing settings or contact us directly.`,
+    },
+  },
+
+  /**
+   * White-label app lifecycle widget copy.
+   *
+   * Voice: calm, editorial, factual. State labels and CTAs only.
+   */
+  appLifecycle: {
+    heading: 'App build status',
+    platformApple: 'App Store (iOS)',
+    platformGoogle: 'Google Play (Android)',
+    states: {
+      pending_credentials: 'Awaiting credentials',
+      building: 'Building',
+      submitted_apple: 'Submitted for review',
+      submitted_google: 'Submitted for review',
+      live_apple: 'Live',
+      live_google: 'Live',
+      live_both: 'Live',
+      update_needed: 'Update needed',
+      paused: 'Paused',
+    } as Record<string, string>,
+    ctaUploadCredentials: 'Upload credentials',
+    ctaBuildNewVersion: 'Build new version',
+    lastUpdatedLabel: 'Last updated',
+    noAddon: null,
+    updateNeededNote:
+      'A new build is required. Submit updated credentials to continue.',
+  },
+
+  /**
+   * Pro contact-sales form — /admin/settings/billing/pro-contact
+   *
+   * Voice: calm, editorial, confident. Never urgency language.
+   * Correct: "Built for teams scaling past $10k orders a month. Start a conversation."
+   * Wrong:   "Unlock unlimited power! Book a demo!"
+   *
+   * See plan §B (Editorial copy voice) for the full correct/wrong examples table.
+   */
+  proContact: {
+    heading: 'Start a Pro conversation',
+    intro:
+      'Pro is built for teams scaling past $10k orders a month. Tell us a bit about your store and we\'ll get back to you within 1 business day.',
+    labels: {
+      companyName: 'Company name',
+      contactName: 'Your name',
+      contactEmail: 'Work email',
+      phone: 'Phone (optional)',
+      monthlyOrders: 'Monthly orders',
+      currentPlatform: 'Current platform (optional)',
+      migrationTimeline: 'When are you looking to move?',
+      notes: 'Anything else we should know? (optional)',
+    },
+    monthlyOrdersHelp:
+      'Approximate orders across all stores in a typical month.',
+    timelineOptions: [
+      { value: 'this_quarter' as const, label: 'This quarter' },
+      { value: 'next_quarter' as const, label: 'Next quarter' },
+      { value: 'h2' as const, label: 'Second half of the year' },
+      { value: 'exploring' as const, label: 'Still exploring' },
+    ],
+    submitCta: 'Start a conversation',
+    submittingCta: 'Sending\u2026',
+    toastSuccess:
+      "Thanks \u2014 we'll get back to you within 1 business day.",
+    toastMailtoFallback:
+      "We'll open your email client so you can send us a message directly.",
+    toastError:
+      "Couldn't send right now. Please email pro-sales@mark8ly.com.",
+    salesEmail: 'pro-sales@mark8ly.com',
+  },
+
+  /**
+   * Pro+App purchase flow — /settings/billing/pro-app-purchase
+   *
+   * Voice: confident, editorial. The add-on is a positive step.
+   * Explain the Apple 4.2.6 attestation factually — not alarmingly.
+   */
+  proApp: {
+    purchase: {
+      heading: 'Add the White-label App',
+      intro:
+        'Publish a branded iOS and Android app for your storefront. You\u2019ll provide Apple and Google credentials in the next step.',
+      /**
+       * Apple App Store guideline 4.2.6 acknowledgement label.
+       * Shown as a checkbox the merchant must tick before submitting.
+       */
+      apple426Label:
+        'I acknowledge that my app will be built on Mark8ly\u2019s native technology and listed under my own App Store Connect account, in accordance with Apple App Store guideline 4.2.6.',
+      /** Attestation text sent verbatim to the backend `attestation_text` field. */
+      apple426AttestationText:
+        'Merchant acknowledged Apple App Store guideline 4.2.6 at purchase time.',
+      prorationNote: (today: string, renewal: string) =>
+        `${today} today, pro-rated to co-terminate with your annual Pro renewal on ${renewal}.`,
+      nextRenewalNote: (amount: string, date: string) =>
+        `Next full-year charge: ${amount} on ${date}.`,
+      submitCta: 'Add to plan',
+      toastPurchased: 'Welcome to Mark8ly White-label App.',
+      /**
+       * Shown when Stripe returns a hosted invoice URL for SCA/3DS.
+       * The URL is opened in a new tab.
+       */
+      toastPaymentAction:
+        'Complete payment authentication in your bank, then upload credentials.',
+      toastError: "Couldn\u2019t complete the purchase. Please try again.",
+      alreadyActiveHeading: 'White-label App is active on your plan',
+      alreadyActiveBody:
+        'Your add-on is live \u2014 upload or update your Apple and Google credentials to publish updates.',
+      alreadyActiveCta: 'Manage credentials',
+      needsProHeading: 'Upgrade to Pro to add the White-label App',
+      needsProBody:
+        'The White-label App is a Pro-plan add-on. Upgrade to Pro to continue.',
+      needsProCta: 'View plans',
+    },
+  },
+
+  /**
+   * App credential upload — /settings/billing/pro-app-purchase/credentials
+   *
+   * Voice: editorial, calm, factual. Security information is stated
+   * matter-of-factly — never alarming or defensive.
+   */
+  appCredentials: {
+    heading: 'App Store credentials',
+    intro:
+      'Both sets of credentials are required before your app can be published. They\u2019re stored encrypted in Google Secret Manager and never leave your browser as plaintext after upload.',
+    apple: {
+      heading: 'Apple App Store Connect',
+      help: "You\u2019ll need an App Store Connect API key. See the setup guide for step-by-step instructions.",
+      keyIdLabel: 'Key ID',
+      issuerIdLabel: 'Issuer ID',
+      p8FileLabel: 'Private key (.p8 file)',
+      submitCta: 'Save Apple credentials',
+      uploadedTemplate: (at: string) => `Uploaded ${at}`,
+      replaceCta: 'Replace',
+    },
+    google: {
+      heading: 'Google Play Console',
+      help: 'Upload your Google Cloud service account JSON with Play Console access.',
+      serviceAccountLabel: 'Service account JSON file',
+      submitCta: 'Save Google credentials',
+      invalidJsonError: "That doesn\u2019t look like a valid service account JSON.",
+    },
+    toastUploaded: 'Credentials saved.',
+    toastError: "Couldn\u2019t save credentials. Please check the file and try again.",
+    supportHint: 'Having trouble?',
+    supportCta: 'Contact support',
   },
 } as const
 

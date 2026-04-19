@@ -25,6 +25,7 @@ WS-C        [Email templates + legal templates + FAQ copy ───────�
 WS-D                           [E2E + load + chaos ─────────────┤
 WS-E                                   [On-call + runbooks ─────┤
 WS-F   [Product decisions ─┤
+WS-H        [CVE triage ──┤[critical + high remediation ─────┤
                                                         SOFT LAUNCH ✓
 ```
 
@@ -46,6 +47,9 @@ WS-F   [Product decisions ─┤
 | WS-D1 (Full E2E) | Go/no-go signal |
 | WS-D2 (CNPG chaos drill) | Validates §22 RTO/RPO claims |
 | WS-F1 (SOC 2 timing decision) | Insurance requirements, procurement deals |
+| WS-H1 (CVE triage baseline) | Categorizes 24 dependabot alerts by severity × load-bearing |
+| WS-H2 (Critical CVE remediation) | Launch gate — no open critical vulns |
+| WS-H3 (High CVE remediation) | Launch gate — no open high vulns without documented waiver |
 
 ---
 
@@ -428,6 +432,82 @@ Write a single E2E test (Playwright + backend) covering the complete merchant li
 
 ---
 
+## Workstream H — Dependency + vulnerability cleanup
+
+**Owner:** Platform engineering. Budget: engineering time + possibly minor version bumps causing test churn.
+
+**Context:** As of 2026-04-19 push, GitHub dependabot reports **24 vulnerabilities on `main`** — 3 critical, 13 high, 7 moderate, 1 low. Report at https://github.com/tesserix/mark8ly/security/dependabot.
+
+### H1. Triage baseline audit
+
+- [ ] **H1.1** Export full dependabot alert list:
+  ```
+  gh api repos/tesserix/mark8ly/dependabot/alerts --paginate \
+    | jq -r '.[] | [.number, .security_advisory.severity, .dependency.package.ecosystem, .dependency.package.name, .security_advisory.cve_id, .dependency.manifest_path] | @tsv' \
+    > docs/security/2026-04-19-dependabot-baseline.tsv
+  ```
+- [ ] **H1.2** Categorize each alert across two axes:
+  - **Severity:** critical / high / moderate / low (GitHub's classification)
+  - **Load-bearing:** yes = code path touches user input, crypto, auth, network I/O, or parses untrusted data; no = build-time, dev-only, or unreachable path
+- [ ] **H1.3** Special attention to alerts under:
+  - `services/marketplace-api/` (Go modules — most important given subscription work)
+  - `apps/admin/` + `apps/onboarding/` + `apps/storefront/` (npm packages — XSS/prototype-pollution risk)
+  - `cmd/billing-bootstrap/` + P2 Stripe client deps (billing surface)
+- [ ] **H1.4** Output: `docs/security/2026-04-19-cve-triage.md` — table with (alert#, severity, package, advisory, our assessment, action: fix/waive/monitor)
+- **Owner:** Platform
+- **Duration:** 1-2 days
+- **Acceptance:** Every one of 24 alerts has a documented action
+
+### H2. Critical CVE remediation (3 alerts) — LAUNCH GATE
+
+- [ ] **H2.1** For each critical: bump to patched version; run full integration test suite (`go test -tags=integration ./...` + admin Playwright)
+- [ ] **H2.2** If no patched version available: assess viable mitigations (code-level workaround, disable affected feature, fork dependency with patch)
+- [ ] **H2.3** If critical sits in a transitive dep: add direct pin via `go mod edit -require` or npm `overrides`
+- [ ] **H2.4** Document each remediation commit's CVE number in commit message
+- **Owner:** Platform
+- **Duration:** 3-5 days (depends on breaking changes)
+- **Acceptance:** `gh api repos/tesserix/mark8ly/dependabot/alerts --jq '[.[] | select(.state=="open" and .security_advisory.severity=="critical")] | length'` returns `0`
+
+### H3. High CVE remediation (13 alerts) — LAUNCH GATE
+
+- [ ] **H3.1** Remediate in batches — critical-path packages first (Stripe client deps, auth libs, JSON parsers, HTML sanitizers)
+- [ ] **H3.2** Each remediation: bump → `go build ./...` + `npm run build` → unit tests → integration tests → commit separately per package for traceability
+- [ ] **H3.3** Any high-severity alert marked `fix = waive` in triage MUST have a written justification in `docs/security/waivers/YYYY-MM-DD-<package>.md`. Waivers require CEO + platform-lead sign-off.
+- [ ] **H3.4** Common high-severity Go dep suspects (from industry pattern — verify against actual list): `golang.org/x/net`, `golang.org/x/crypto`, `gopkg.in/yaml.v3`, TLS-related libs. npm side: `next`, `react`, `@types/*` aren't usually load-bearing but `dompurify`, `axios`, `zod` can be.
+- **Owner:** Platform
+- **Duration:** 1 week
+- **Acceptance:** Zero open high-severity alerts OR every open alert has a filed waiver
+
+### H4. Moderate + Low (8 alerts total) — target but not blocking
+
+- [ ] **H4.1** Fix trivial moderate/low CVEs opportunistically during H2/H3 work (often a single `go mod tidy` clears several)
+- [ ] **H4.2** Remaining moderate/low schedule to post-launch backlog with a 30-day SLA
+- **Owner:** Platform
+- **Duration:** ongoing
+- **Acceptance:** Moderate alerts <5 at launch; all with post-launch SLA dates
+
+### H5. Continuous dependency hygiene (ongoing)
+
+- [ ] **H5.1** Enable dependabot version-update PRs on `main` (Go modules + npm workspaces); group minor+patch into weekly batches to reduce noise
+- [ ] **H5.2** `.github/dependabot.yml` configuration committed to repo with:
+  - Daily security updates (auto-open PR)
+  - Weekly version updates (auto-open PR, grouped)
+  - Ignore major-version bumps (require human review)
+- [ ] **H5.3** Add CI job: `go list -json -m all | nancy sleuth` OR `osv-scanner --lockfile=go.sum` on every PR; same for npm via `npm audit --audit-level=high` — fail the build on new high/critical
+- [ ] **H5.4** Renovate alternative considered and rejected/accepted — document decision
+- **Owner:** Platform
+- **Duration:** 3-5 days setup; ongoing maintenance
+- **Acceptance:** CI blocks PRs introducing new high/critical; dependabot PRs auto-opened on schedule
+
+### H6. Launch gate on zero criticals/highs
+
+- [ ] **H6.1** Day-of-launch: verify dependabot badge shows 0 critical, 0 high on main
+- [ ] **H6.2** Record snapshot in `docs/security/launch-day-cve-snapshot.md`
+- **Owner:** Platform + CEO sign-off
+- **Duration:** 30 min on launch day
+
+---
+
 ## Workstream G — Post-launch calendar items
 
 Not blocking; track via Google Calendar reminders or Linear recurring tasks.
@@ -501,6 +581,12 @@ Check these the day of public launch. Any `✗` = no-go, investigate.
 - [ ] No open `manual_review_required` webhook events
 - [ ] D1 test-coverage gaps closed
 
+**Security (CVE)**
+- [ ] Dependabot: 0 critical alerts on main
+- [ ] Dependabot: 0 high alerts on main (or waivers filed for each)
+- [ ] H5 continuous hygiene wired — CI fails PRs introducing new high/critical
+- [ ] Launch-day CVE snapshot recorded at `docs/security/launch-day-cve-snapshot.md`
+
 ---
 
 ## First-7-days post-launch monitoring plan
@@ -523,7 +609,7 @@ Calendar reminders:
 
 ## Summary
 
-**Blocker count at start state (2026-04-19):** 8 hard blockers, 4 code gaps, ~31 content items, ~8 testing items.
+**Blocker count at start state (2026-04-19):** 8 hard blockers, 4 code gaps, ~31 content items, ~8 testing items, 24 dependabot alerts (3 critical + 13 high on launch gate).
 
 **Optimistic launch:** 6 weeks from today if NZ counsel says reverse-charge sufficient.
 **Realistic launch:** 8 weeks — assumes NZ registration required + normal 4-8 week processing.

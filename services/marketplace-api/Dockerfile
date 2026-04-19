@@ -15,7 +15,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
 # ─── migrate ────────────────────────────────────────────────────────────
-FROM alpine:3.19 AS migrate
+FROM alpine:3.22 AS migrate
 RUN apk add --no-cache ca-certificates \
     && addgroup -g 10001 -S app \
     && adduser  -u 10001 -S app -G app
@@ -30,7 +30,7 @@ ENTRYPOINT ["/usr/local/bin/migrate"]
 # Mirrors platform-api's pattern of one image, two binaries. Runs as an
 # unprivileged user (uid 10001) so an RCE can't write root-owned paths
 # or escalate via setuid-capable syscalls.
-FROM alpine:3.19 AS runtime
+FROM alpine:3.22 AS runtime
 RUN apk add --no-cache ca-certificates wget \
     && addgroup -g 10001 -S app \
     && adduser  -u 10001 -S app -G app

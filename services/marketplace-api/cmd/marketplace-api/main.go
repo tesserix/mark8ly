@@ -54,6 +54,9 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/lifecycle"
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
+	"github.com/mark8ly/marketplace-api/internal/campaignbudget"
+	campaignbudgetcron "github.com/mark8ly/marketplace-api/internal/campaignbudget/cron"
+	"github.com/mark8ly/marketplace-api/internal/campaignbudget/concurrency"
 	"github.com/mark8ly/marketplace-api/internal/category"
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
@@ -472,7 +475,13 @@ func main() {
 			SegmentEngine: segmentEngine,
 			Logger:        log,
 		})
-		campaignHandler := admin.NewCampaignHandler(campaignSvc, campaignRepo, log)
+		// P9 — campaign budget gate + concurrency slot.
+		// Redis is optional: if REDIS_URL is unset, advisory-lock fallback is used.
+		campaignBudgetSvc := campaignbudget.NewService(conn)
+		campaignbudget.MustRegisterMetrics(prometheus.DefaultRegisterer)
+		campaignSlotAcquirer := concurrency.Select(nil, conn) // nil = no Redis → advisory-lock
+		campaignHandler := admin.NewCampaignHandler(campaignSvc, campaignRepo, log).
+			WithBudgetGate(campaignBudgetSvc, campaignSlotAcquirer)
 		segmentHandler := admin.NewSegmentHandler(campaignSvc, log)
 
 		// Customers C2 wiring.
@@ -1238,6 +1247,16 @@ func main() {
 		log.Error("register billing archive sweeper cron", "err", err)
 	}
 	log.Info("P10 billing archive sweeper registered")
+
+	// P9 — campaign budget crons: trial ramp (00:00 UTC daily) + monthly reset (00:05 UTC on 1st).
+	// Both registered on the shared trialScheduler alongside P5/P6/P11 crons.
+	if _, err := campaignbudgetcron.RegisterTrialRampJob(trialScheduler, conn); err != nil {
+		log.Error("register campaign trial ramp cron", "err", err)
+	}
+	if _, err := campaignbudgetcron.RegisterMonthlyResetJob(trialScheduler, conn); err != nil {
+		log.Error("register campaign monthly reset cron", "err", err)
+	}
+	log.Info("P9 campaign budget crons registered", "count", 2)
 
 	// P17 — MRR USD rollup collector. Registered with the default Prometheus
 	// registry so it is scraped automatically via the existing /metrics handler.

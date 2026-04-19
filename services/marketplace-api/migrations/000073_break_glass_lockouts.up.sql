@@ -12,7 +12,11 @@ CREATE TABLE break_glass_lockouts (
     PRIMARY KEY (ip_hash, locked_until)
 );
 
-CREATE INDEX idx_break_glass_lockouts_active ON break_glass_lockouts(locked_until)
-    WHERE locked_until > now();
+-- Note: a WHERE predicate using now() is illegal here (partial-index
+-- predicates must be IMMUTABLE). A full index on locked_until is fine —
+-- the table is small (at most a few rows per locked IP) and lookups
+-- always filter by locked_until>now() in the query layer.
+CREATE INDEX idx_break_glass_lockouts_locked_until
+    ON break_glass_lockouts(locked_until);
 
 COMMENT ON TABLE break_glass_lockouts IS '3-strike rate-limit lockouts for /admin/break-glass/login. §12.4.';

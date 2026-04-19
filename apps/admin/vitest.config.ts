@@ -37,6 +37,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
+      // @repo/ui sub-path exports — vitest needs explicit aliases because
+      // it does not process package.json "exports" maps at test time.
+      "@repo/ui/subscription": path.resolve(__dirname, "../../packages/ui/src/subscription/index.ts"),
+      "@repo/ui/role-badge": path.resolve(__dirname, "../../packages/ui/src/role-badge.tsx"),
+      "@repo/ui": path.resolve(__dirname, "../../packages/ui/src/index.ts"),
       react: path.resolve(__dirname, "../../node_modules/react"),
       "react-dom": path.resolve(__dirname, "../../node_modules/react-dom"),
       "react/jsx-runtime": path.resolve(__dirname, "../../node_modules/react/jsx-runtime.js"),

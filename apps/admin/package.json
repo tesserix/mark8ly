@@ -22,6 +22,7 @@
     "@repo/ui": "*",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/typography": "^0.5.19",
+    "@tanstack/react-query": "^5.99.1",
     "@tesserix/web": "^1.7.1",
     "@tiptap/extension-link": "^3.22.3",
     "@tiptap/extension-underline": "^3.22.3",

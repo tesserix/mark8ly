@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { Source_Sans_3, Source_Serif_4 } from "next/font/google";
 import { SkipLink } from "@repo/ui/skip-link";
+import { QueryProvider } from "@/lib/query/QueryProvider";
 
 import "./globals.css";
 
@@ -52,7 +53,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
     >
       <body>
         <SkipLink />
-        {children}
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   );

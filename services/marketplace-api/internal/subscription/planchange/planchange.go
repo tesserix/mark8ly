@@ -86,6 +86,19 @@ type realClock struct{}
 
 func (realClock) Now() time.Time { return time.Now() }
 
+// BudgetRecomputer is implemented by campaignbudget.Service. The interface
+// lives here so the planchange package does not import campaignbudget directly
+// (avoiding a circular dependency). P9 wires the concrete implementation in
+// main.go via Deps.BudgetRecomputer.
+//
+// RecomputeLimitForPlan is called inside the advisory-locked transaction that
+// commits a plan upgrade so the budget limit_set and plan row always commit
+// atomically. A nil BudgetRecomputer is a no-op — existing P4 tests remain
+// green without any change.
+type BudgetRecomputer interface {
+	RecomputeLimitForPlan(ctx context.Context, tx *gorm.DB, storeID uuid.UUID, plan string) error
+}
+
 // Deps groups Orchestrator dependencies.
 type Deps struct {
 	DB               *gorm.DB
@@ -94,6 +107,10 @@ type Deps struct {
 	SubscriptionRepo subscription.Repository
 	StoreRepo        stores.Repository
 	Clock            Clock
+	// BudgetRecomputer is optional (P9). When non-nil, RecomputeLimitForPlan
+	// is called inside the upgrade/downgrade-commit transaction so that plan
+	// and budget rows always commit atomically.
+	BudgetRecomputer BudgetRecomputer
 }
 
 // Orchestrator runs the plan-change workflow under an advisory lock.
@@ -235,6 +252,15 @@ func (o *Orchestrator) executeUpgrade(ctx context.Context, tx *gorm.DB, in Input
 	if err := o.deps.SubscriptionRepo.CommitUpgrade(ctx, tx, in.TenantID, in.StoreID,
 		in.TargetPlan, in.TargetPeriod, action); err != nil {
 		return Output{}, fmt.Errorf("planchange: commit upgrade: %w", err)
+	}
+
+	// P9 — recompute campaign email budget limit inside the same transaction
+	// so plan row and budget row always commit atomically. Nil-safe: existing
+	// callers that don't inject BudgetRecomputer are unaffected.
+	if o.deps.BudgetRecomputer != nil {
+		if err := o.deps.BudgetRecomputer.RecomputeLimitForPlan(ctx, tx, in.StoreID, string(in.TargetPlan)); err != nil {
+			return Output{}, fmt.Errorf("planchange: recompute budget limit: %w", err)
+		}
 	}
 
 	// BillingCurrency is stored upper-cased to satisfy the CHAR(3) NOT NULL

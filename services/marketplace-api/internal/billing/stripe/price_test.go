@@ -38,8 +38,11 @@ func TestCreatePrice_EmitsCurrencyOptionsWithAUExclusive(t *testing.T) {
 
 	require.Equal(t, "exclusive", seen.Get("currency_options[aud][tax_behavior]"))
 	require.Equal(t, "2900", seen.Get("currency_options[aud][unit_amount]"))
-	require.Empty(t, seen.Get("currency_options[usd][tax_behavior]"))
-	require.Equal(t, "1900", seen.Get("currency_options[usd][unit_amount]"))
+	// Baseline currency (usd) is set as top-level Currency/UnitAmount on the
+	// Price object — Stripe rejects a currency_options entry for the baseline.
+	require.Empty(t, seen.Get("currency_options[usd][unit_amount]"))
+	require.Equal(t, "1900", seen.Get("unit_amount"))
+	require.Equal(t, "usd", seen.Get("currency"))
 	require.Equal(t, "month", seen.Get("recurring[interval]"))
 	require.Equal(t, "starter", seen.Get("metadata[plan]"))
 	require.Equal(t, "monthly", seen.Get("metadata[period]"))

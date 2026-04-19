@@ -26,6 +26,13 @@ export const nextJsConfig = [
     "next-env.d.ts",
   ]),
   {
+    // Scope React plugin to JSX/TSX files only. eslint-plugin-react
+    // v7.37.x's rule loader calls `context.getFilename()` during
+    // resolveBasedir; when applied to non-JSX `.ts` files under flat
+    // config + typescript-eslint v8, the context object can surface
+    // without that method and throw `contextOrFilename.getFilename
+    // is not a function`. Narrowing to *.jsx/tsx avoids the path.
+    files: ["**/*.{jsx,tsx}"],
     ...pluginReact.configs.flat.recommended,
     languageOptions: {
       ...pluginReact.configs.flat.recommended.languageOptions,
@@ -44,6 +51,7 @@ export const nextJsConfig = [
     },
   },
   {
+    files: ["**/*.{jsx,tsx}"],
     plugins: {
       "react-hooks": pluginReactHooks,
     },

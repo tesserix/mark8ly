@@ -73,3 +73,40 @@ jobs:
         # it, which dramatically cuts false positives vs plain
         # `go list -m -u`. Non-zero exit = reachable vuln.
         run: govulncheck ./...
+
+  notify-security-failure:
+    # Fires when *any* of the gated scans above came back red. The scans
+    # already fail the workflow on their own — this job is just the
+    # fan-out to the security distribution list so a red main branch
+    # doesn't sit unnoticed until someone opens the Actions tab.
+    name: Notify — security gate failed
+    needs: [npm-audit, govulncheck]
+    if: ${{ always() && (needs.npm-audit.result == 'failure' || needs.govulncheck.result == 'failure') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send email alert
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "[SECURITY] ${{ github.repository }} — scan failed on ${{ github.ref_name }}"
+          from: "Tesserix Security <${{ secrets.SMTP_USERNAME }}>"
+          to: samyak.rout@gmail.com, mahesh.sangawar@gmail.com, unidevidp@gmail.com
+          body: |
+            A security scan failed in ${{ github.repository }}.
+
+            Results:
+              npm audit    : ${{ needs.npm-audit.result }}
+              govulncheck  : ${{ needs.govulncheck.result }}
+
+            Workflow : ${{ github.workflow }}
+            Run      : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Branch   : ${{ github.ref_name }}
+            Commit   : ${{ github.sha }}
+            Actor    : ${{ github.actor }}
+
+            Check the failing step output for the CVE list.
+            Do not merge or deploy until resolved.

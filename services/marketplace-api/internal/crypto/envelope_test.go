@@ -219,8 +219,17 @@ func TestAESEncryptor_DecryptCorrupted(t *testing.T) {
 		t.Fatalf("Encrypt() error = %v", err)
 	}
 
-	// Corrupt by flipping bits in the ciphertext portion.
-	corrupted := ciphertext[:len("aes:")+5] + "X" + ciphertext[len("aes:")+6:]
+	// Corrupt by replacing a base64 char with one that's guaranteed to
+	// differ. Picking a fixed substitute (e.g. always "X") flakes when
+	// the original char happens to equal the substitute (~1/64 chance
+	// since base64 has 64 chars), turning the "corruption" into a no-op.
+	pos := len("aes:") + 5
+	orig := ciphertext[pos]
+	sub := byte('X')
+	if orig == sub {
+		sub = 'Y'
+	}
+	corrupted := ciphertext[:pos] + string(sub) + ciphertext[pos+1:]
 
 	_, err = enc.Decrypt(corrupted)
 	if err == nil {

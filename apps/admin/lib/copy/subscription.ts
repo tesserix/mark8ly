@@ -153,6 +153,86 @@ export const subscriptionCopy = {
     loadingAriaLabel: 'Loading billing information',
   },
 
+  /**
+   * Trial banners + email ramp visualizer (§5, §5.3).
+   *
+   * Voice: calm, editorial. Trials are a positive state — never urgency.
+   * No "!", no "Hurry", no "Don't lose access".
+   * Correct: "Your trial ends 18 April. Add a payment method to continue."
+   * Wrong:   "Trial ending soon! Don't lose access!"
+   */
+  trial: {
+    banner: {
+      day60Heading: '30 days left in your trial',
+      day60BodyTemplate: (endsAt: string) =>
+        `Your trial ends ${endsAt}. Add a payment method to keep your store running without interruption.`,
+      day75Heading: '2 weeks left in your trial',
+      day75BodyTemplate: (endsAt: string) =>
+        `Your trial ends ${endsAt}. Add a payment method to continue without interruption.`,
+      day85Heading: '5 days left in your trial',
+      day85BodyTemplate: (endsAt: string) =>
+        `Your trial ends ${endsAt}. Add a payment method today to avoid losing access.`,
+      cta: 'Add a payment method',
+    },
+    /**
+     * Email ramp timeline visualizer (§5.3).
+     *
+     * Spec §5.3 defines the operational ramp (Days 1–3: 500/day, Days 4–7:
+     * 2,000/day, Days 8+: full allowance). The visualizer surfaces this as
+     * four UI milestones grouped by meaningful trial phases, using broader
+     * daysFromSignup thresholds (0, 14, 30, 60) for clear visual progression.
+     * The limit text references the spec-defined caps.
+     *
+     * daysFromSignup marks the inclusive start of each window and is used by
+     * EmailRampVisualizer to determine which milestone is current.
+     */
+    emailRamp: {
+      heading: 'Email sending limits during your trial',
+      intro:
+        'We raise your sending limit as you progress through the trial. This protects your domain reputation and our deliverability.',
+      milestones: [
+        { daysFromSignup: 0, label: 'Days 1\u201314', limit: '100 outbound/day' },
+        { daysFromSignup: 14, label: 'Days 15\u201330', limit: '500 outbound/day' },
+        { daysFromSignup: 30, label: 'Days 31\u201360', limit: '2,000 outbound/day' },
+        {
+          daysFromSignup: 60,
+          label: 'Days 61\u201390',
+          limit: 'Unlimited (subject to abuse review)',
+        },
+      ] as const,
+      currentBadge: 'Currently',
+      footnote:
+        'After signup, sending limits take effect within 24 hours of each milestone. Upgraded plans lift limits immediately.',
+    },
+  },
+
+  /**
+   * Store-close-before-downgrade flow — /admin/stores/close-before-downgrade
+   *
+   * Voice: editorial, calm, matter-of-fact. Frame as a choice, not an alarm.
+   * Never: "URGENT", "WARNING", exclamation marks, or urgency language.
+   */
+  storeDowngrade: {
+    heading: 'Choose what happens to your over-cap stores',
+    introTemplate: (target: string, limit: number, overBy: number) =>
+      `The ${target} plan includes ${limit} stores — you have ${overBy} over your cap. Choose what happens to each. Your plan won't change until you resolve every over-cap store.`,
+    closeLabel: 'Close',
+    closeHelp:
+      'Freezes the storefront behind a closed page. Keeps your slot — reopen anytime by upgrading.',
+    deleteLabel: 'Delete',
+    deleteHelp:
+      'Removes the store and frees the slot. 60-day soft-delete grace — restore from support during that window.',
+    inFlightOrdersTemplate: (n: number) =>
+      n === 0
+        ? 'No in-flight orders.'
+        : `${n} order${n === 1 ? '' : 's'} in flight — export before closing or deleting.`,
+    exportCsvCta: 'Export orders CSV',
+    confirmHeading: 'Confirm your choices',
+    confirmCta: 'Apply changes and downgrade',
+    toastSuccess: 'Stores updated. Downgrade scheduled.',
+    toastError: "Couldn't apply your choices. Try each store individually.",
+  },
+
   arbitrage: {
     banner: {
       heading: "We've noted a discrepancy",
@@ -186,6 +266,61 @@ export const subscriptionCopy = {
       uploadFileTooLarge: 'File must be under 5 MB.',
       uploadInvalidType: 'Only PDF or PNG files are accepted.',
     },
+  },
+
+  taxId: {
+    heading: 'Tax registration',
+    intro:
+      'We verify your tax ID with the registry of your business country. Verified stores get proper tax treatment on invoices.',
+    businessNameLabel: 'Legal business name',
+    countryLabel: 'Country of registration',
+    taxIdLabel: 'Tax ID',
+    taxIdHelp:
+      'Format depends on your country \u2014 for the UK this is your VRN; for India it\u2019s your GSTIN.',
+    billingAddressLabel: 'Billing address (optional)',
+    billingAddressHelp:
+      'Some registries require an address match. Leave blank if unsure.',
+    submitCta: 'Submit for verification',
+    updateCta: 'Update tax ID',
+    toastSubmitted: 'Tax ID submitted for verification.',
+    toastError: "Couldn\u2019t submit. Check the format and try again.",
+    status: {
+      validatedHeading: 'Tax ID verified',
+      validatedBody:
+        'Your tax ID is verified and will appear on customer invoices.',
+      pausedRegistryHeading: 'Verification paused \u2014 registry unavailable',
+      pausedRegistryBody:
+        "The registry for your country isn\u2019t responding right now. We\u2019ll retry automatically; your 90-day clock is paused during this time.",
+      pausedSeaHeading: 'Under manual review',
+      pausedSeaBody:
+        'Your submission is in our manual review queue. Most cases clear within 2 business days. Your clock is paused during review.',
+      rejectedHeading: 'Verification failed',
+      rejectedBodyTemplate: (code: string) =>
+        `We couldn\u2019t verify your tax ID (${code}). Check the format and resubmit.`,
+    },
+  },
+
+  attestation: {
+    heading: 'Business entity attestation',
+    intro:
+      'Sole proprietors and individuals selling in the US or Canada must attest that their store is operated by a registered business entity before we can process customer payments for tangible goods over certain thresholds.',
+    countryLabel: 'Jurisdiction',
+    checkboxLabel:
+      'I attest that this store is operated by a registered business entity in my selected jurisdiction.',
+    /**
+     * checkbox_version token sent to the backend. Increment when the
+     * checkboxLabel copy changes so audit rows can be traced to the exact
+     * wording the merchant acknowledged.
+     */
+    checkboxVersion: 'v1' as const,
+    submitCta: 'Sign attestation',
+    toastSigned: 'Attestation signed.',
+    toastError: "Couldn\u2019t save your attestation. Try again.",
+    signedHeading: 'Attestation on file',
+    signedBodyTemplate: (acceptedAt: string) =>
+      `You signed this attestation on ${acceptedAt}. Contact support to update or revoke.`,
+    supportHint:
+      'To update or revoke this attestation, contact our support team.',
   },
 } as const
 

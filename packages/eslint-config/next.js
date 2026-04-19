@@ -26,12 +26,12 @@ export const nextJsConfig = [
     "next-env.d.ts",
   ]),
   {
-    // Scope React plugin to JSX/TSX files only. eslint-plugin-react
-    // v7.37.x's rule loader calls `context.getFilename()` during
-    // resolveBasedir; when applied to non-JSX `.ts` files under flat
-    // config + typescript-eslint v8, the context object can surface
-    // without that method and throw `contextOrFilename.getFilename
-    // is not a function`. Narrowing to *.jsx/tsx avoids the path.
+    // Scope React plugin to JSX/TSX files only + pin React version
+    // explicitly so eslint-plugin-react's detectReactVersion doesn't
+    // walk the filesystem. Under flat config + typescript-eslint v8
+    // the `resolveBasedir` path throws `contextOrFilename.getFilename
+    // is not a function`. Pinning the version short-circuits that
+    // code path before it runs.
     files: ["**/*.{jsx,tsx}"],
     ...pluginReact.configs.flat.recommended,
     languageOptions: {
@@ -39,6 +39,10 @@ export const nextJsConfig = [
       globals: {
         ...globals.serviceworker,
       },
+    },
+    settings: {
+      ...(pluginReact.configs.flat.recommended.settings ?? {}),
+      react: { version: "19.2" },
     },
   },
   {
@@ -55,7 +59,7 @@ export const nextJsConfig = [
     plugins: {
       "react-hooks": pluginReactHooks,
     },
-    settings: { react: { version: "detect" } },
+    settings: { react: { version: "19.2" } },
     rules: {
       ...pluginReactHooks.configs.recommended.rules,
       // React scope no longer necessary with new JSX transform.

@@ -3,9 +3,11 @@
 import Link from 'next/link'
 import type { CurrentPlan } from '@/lib/api/subscription/schemas/billing'
 import { subscriptionCopy } from '@/lib/copy/subscription'
+import { WhiteLabelAppLifecycleWidget } from '@/components/settings/billing/WhiteLabelAppLifecycleWidget'
 
 interface WhiteLabelAppCardProps {
   plan: CurrentPlan
+  storeId: string
 }
 
 const copy = subscriptionCopy.billing
@@ -20,7 +22,7 @@ const copy = subscriptionCopy.billing
  *
  * Design: hairline at bottom only, Source Serif 4 H2.
  */
-export function WhiteLabelAppCard({ plan }: WhiteLabelAppCardProps) {
+export function WhiteLabelAppCard({ plan, storeId }: WhiteLabelAppCardProps) {
   if (plan.plan !== 'pro') {
     return null
   }
@@ -60,6 +62,9 @@ export function WhiteLabelAppCard({ plan }: WhiteLabelAppCardProps) {
           </Link>
         )}
       </div>
+
+      {/* Lifecycle widget — shown below purchase/status lines when add-on is active */}
+      {hasAddon && <WhiteLabelAppLifecycleWidget storeId={storeId} />}
     </section>
   )
 }

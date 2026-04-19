@@ -1,0 +1,53 @@
+name: Dashboard Validation
+
+# =============================================================================
+# Validates Grafana dashboard JSON + PromQL metric references.
+# Runs on any PR that touches the validator / dashboards; also on push to main
+# so drift caused by direct commits surfaces immediately.
+#
+# Dashboards live in the sibling tesserix-k8s repo; we check it out into
+# ./tesserix-k8s so the script finds the expected relative path.
+# =============================================================================
+on:
+  pull_request:
+    paths:
+      - "scripts/ci/verify-dashboard-queries.sh"
+      - ".github/workflows/dashboard-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/ci/verify-dashboard-queries.sh"
+      - ".github/workflows/dashboard-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate dashboards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout mark8ly
+        uses: actions/checkout@v5
+        with:
+          path: mark8ly
+
+      - name: Checkout tesserix-k8s
+        uses: actions/checkout@v5
+        with:
+          repository: tesserix/tesserix-k8s
+          token: ${{ secrets.TESSERIX_K8S_BOT }}
+          path: tesserix-k8s
+          ref: main
+
+      - name: Install jq
+        run: sudo apt-get update -y && sudo apt-get install -y jq
+
+      - name: Validate dashboards
+        working-directory: mark8ly
+        run: bash scripts/ci/verify-dashboard-queries.sh

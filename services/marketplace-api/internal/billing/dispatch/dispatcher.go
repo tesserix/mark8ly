@@ -12,6 +12,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
@@ -21,6 +22,20 @@ import (
 // Handler is a function that processes a single Stripe webhook event type.
 // It receives the locked transaction handle and the raw JSON payload.
 type Handler func(ctx context.Context, tx *gorm.DB, raw []byte) error
+
+// chain runs handlers in order inside the same transaction. Bails on
+// first error — used by invoice.paid to sequence the generic handler
+// ahead of the P15 sub-handler.
+func chain(handlers ...Handler) Handler {
+	return func(ctx context.Context, tx *gorm.DB, raw []byte) error {
+		for _, h := range handlers {
+			if err := h(ctx, tx, raw); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
 
 // Dispatcher routes incoming webhook events to registered per-type handlers.
 type Dispatcher struct {
@@ -36,7 +51,11 @@ func New(em *audit.Emitter) *Dispatcher {
 	d := &Dispatcher{emitter: em, handlers: map[string]Handler{}}
 	// Free functions — side-effect-only handlers that don't advance status.
 	d.handlers["customer.subscription.updated"] = handleSubscriptionUpdated
-	d.handlers["invoice.paid"] = handleInvoicePaid
+	// invoice.paid runs a chain: the generic handler first (stamps
+	// first_charge_at, clears hosted_invoice_url), then the P15
+	// white-label app sub-handler that flips has_white_label_app_add_on
+	// when metadata.kind matches. Errors in either stage bail the chain.
+	d.handlers["invoice.paid"] = chain(handleInvoicePaid, appaddon.HandleInvoicePaidForAppAddOn)
 	d.handlers["customer.updated"] = handleCustomerUpdated
 	d.handlers["charge.refunded"] = handleChargeRefunded
 	d.handlers["payment_method.attached"] = handlePaymentMethodAttached

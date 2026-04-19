@@ -42,6 +42,9 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/signup"
 	"github.com/mark8ly/marketplace-api/internal/customerportal"
+	"github.com/mark8ly/marketplace-api/internal/billingarchive"
+	"github.com/mark8ly/marketplace-api/internal/promo"
+	"github.com/mark8ly/marketplace-api/internal/refund"
 	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
 	"github.com/mark8ly/marketplace-api/internal/subscription/dunning"
 	"github.com/mark8ly/marketplace-api/internal/subscription/harddelete"
@@ -601,6 +604,16 @@ func main() {
 			trialBillingHandler = admin.NewTrialBillingHandler(trialSubscriber, log)
 		}
 
+		// P10 — Promo-code engine (§7).
+		promoRepo := promo.NewRepository()
+		promoSvc := promo.NewService(conn, promoRepo, billingStripeClient, log)
+		promoHandler := admin.NewPromoHandler(conn, promoSvc, subscriptionRepo, log).WithAudit(auditEmitter)
+
+		// P10 — 14-day cooling-off refund (§8).
+		refundRepo := refund.NewRepository()
+		refundSvc := refund.NewService(conn, refundRepo, subscriptionRepo, billingStripeClient, log)
+		refundHandler := admin.NewRefundHandler(conn, refundSvc, log).WithAudit(auditEmitter)
+
 		// P11 — Cancel handler (merchant-initiated cancellation + save-offer §15).
 		cancelSvc := cancel.NewService(conn, subscriptionRepo, auditEmitter, log)
 		cancelHandler := cancel.NewHandler(cancelSvc, log)
@@ -635,6 +648,8 @@ func main() {
 			AccountHandler:         accountHandler,
 			DomainsHandler:         domainsHandler,
 			SubscriptionHandler:    subscriptionHandler,
+			PromoHandler:               promoHandler,
+			RefundHandler:              refundHandler,
 			ChangePlanHandler:          changePlanHandler,
 			CancelHandler:              cancelHandler,
 			TrialBillingHandler:        trialBillingHandler,
@@ -1183,6 +1198,17 @@ func main() {
 	}
 
 	log.Info("P11 lifecycle crons registered", "count", 5)
+
+	// P10 — billing archive expiry sweeper (§23.2 7-year retention).
+	archiveSweeper := billingarchive.NewSweeper(conn, log)
+	if _, err := trialScheduler.AddFunc("@daily", func() {
+		if _, err := archiveSweeper.RunOnce(workerCtx); err != nil {
+			log.Error("billing archive sweeper failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register billing archive sweeper cron", "err", err)
+	}
+	log.Info("P10 billing archive sweeper registered")
 
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)

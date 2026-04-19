@@ -132,7 +132,7 @@ export function SetPasswordForm({ sessionId, email }: Props) {
       // Persist slug from completion response so WelcomeCta builds
       // the correct per-tenant admin URL.
       if (r.data.slug) {
-        setSubmitted({ email, sessionId, businessName: "", slug: r.data.slug, countryCode: "", currencyCode: "", timezone: "" });
+        setSubmitted({ email, sessionId, businessName: "", slug: r.data.slug, countryCode: "", currencyCode: "", timezone: "", taxId: "", migrationType: "new", whoisUrl: "", screenshotUrl: "" });
       }
       router.push("/welcome");
     });
@@ -164,7 +164,7 @@ export function SetPasswordForm({ sessionId, email }: Props) {
         return;
       }
       if (r.data.slug) {
-        setSubmitted({ email, sessionId, businessName: "", slug: r.data.slug, countryCode: "", currencyCode: "", timezone: "" });
+        setSubmitted({ email, sessionId, businessName: "", slug: r.data.slug, countryCode: "", currencyCode: "", timezone: "", taxId: "", migrationType: "new", whoisUrl: "", screenshotUrl: "" });
       }
       router.push("/welcome");
     } catch (err) {

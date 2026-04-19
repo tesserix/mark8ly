@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,6 +18,7 @@ import {
 import type { Country, Currency, Timezone } from "@/lib/types";
 import { useOnboardingStore } from "@/lib/store/onboarding-store";
 import { checkSlug, submitOnboarding } from "@/app/onboarding/actions";
+import { signupCopy } from "@/lib/copy/signup";
 
 interface Props {
   countries: Country[];
@@ -27,38 +28,55 @@ interface Props {
 
 /* ============================================================
    Validation schema
-   ------------------------------------------------------------
-   Single source of truth for client-side validation. Runs on
-   blur the first time a field is touched, then on every change
-   until the field is valid (mode: "onTouched" + reValidateMode).
    ============================================================ */
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
 
-const schema = z.object({
-  email: z
-    .string()
-    .min(1, "Email is required")
-    .email("Enter a valid email address"),
-  businessName: z
-    .string()
-    .min(1, "Business name is required")
-    .min(2, "Business name is too short")
-    .max(80, "Business name is too long"),
-  slug: z
-    .string()
-    .min(3, "3-63 characters, lowercase letters, numbers, and hyphens")
-    .max(63, "Must be 63 characters or fewer")
-    .regex(SLUG_PATTERN, "Lowercase letters, numbers, and hyphens only"),
-  countryCode: z.string().min(1, "Please select a country"),
-  currencyCode: z.string().min(1, "Please select a currency"),
-});
+// §5.1.1: when migration_type === "migrating", at least one of
+// whois_url or screenshot_file must be present.
+const schema = z
+  .object({
+    email: z
+      .string()
+      .min(1, "Email is required")
+      .email("Enter a valid email address"),
+    businessName: z
+      .string()
+      .min(1, "Business name is required")
+      .min(2, "Business name is too short")
+      .max(80, "Business name is too long"),
+    slug: z
+      .string()
+      .min(3, "3-63 characters, lowercase letters, numbers, and hyphens")
+      .max(63, "Must be 63 characters or fewer")
+      .regex(SLUG_PATTERN, "Lowercase letters, numbers, and hyphens only"),
+    countryCode: z.string().min(1, "Please select a country"),
+    currencyCode: z.string().min(1, "Please select a currency"),
+    taxId: z.string().optional(),
+    migrationType: z.enum(["new", "migrating"]),
+    whoisUrl: z.string().optional(),
+    // screenshotFile is handled outside RHF via a ref; its upload
+    // result (a URL string) is stored in screenshotUrl.
+    screenshotUrl: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.migrationType === "migrating") {
+      const hasWhois = Boolean(data.whoisUrl?.trim());
+      const hasScreenshot = Boolean(data.screenshotUrl?.trim());
+      if (!hasWhois && !hasScreenshot) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: signupCopy.migrationRequiredError,
+          path: ["whoisUrl"],
+        });
+      }
+    }
+  });
 
 type FormValues = z.infer<typeof schema>;
 
 /* ============================================================
-   Async slug availability — runs alongside RHF validation.
-   The schema enforces format; this hook enforces uniqueness.
+   Async slug availability
    ============================================================ */
 
 type SlugAvailability =
@@ -68,13 +86,27 @@ type SlugAvailability =
   | { state: "taken" }
   | { state: "invalid"; message: string };
 
+/* ============================================================
+   Screenshot upload stub
+   ============================================================
+   The onboarding app does not yet have its own GCS upload helper.
+   TODO: once apps/onboarding gains a /api/upload route backed by
+   @google-cloud/storage (mirror of apps/admin/lib/brandingUpload.ts),
+   replace uploadScreenshot below with the real implementation.
+   ============================================================ */
+
+async function uploadScreenshot(_file: File): Promise<string> {
+  // TODO: implement GCS upload for onboarding app.
+  // Expected shape: POST /api/upload/screenshot → { url: string }
+  // For now, return a placeholder so the form can still be submitted
+  // and the backend receives a non-empty marker.
+  return `pending:${_file.name}`;
+}
+
 /**
- * OnboardingForm — single-page signup using react-hook-form + zod
- * for client validation, with inline field-level errors.
- *
- * Phase M: collects business details + email, sends a magic link,
- * and hands off to /onboarding/check-inbox. The credential step
- * runs on /onboarding/set-password after the link is clicked.
+ * OnboardingForm — single-page signup form extended with:
+ *   - optional tax ID field with country-aware help text (§5.2)
+ *   - migration fast-path evidence: WHOIS URL or screenshot upload (§5.1.1)
  */
 export function OnboardingForm({ countries, currencies, timezones }: Props) {
   const router = useRouter();
@@ -86,6 +118,11 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     state: "idle",
   });
   const [slugTouched, setSlugTouched] = useState(false);
+  const [screenshotUploading, setScreenshotUploading] = useState(false);
+  const [screenshotFileName, setScreenshotFileName] = useState<string | null>(
+    null,
+  );
+  const screenshotInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -97,20 +134,26 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     formState: { errors, touchedFields },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    mode: "onTouched", // validate on blur first
-    reValidateMode: "onChange", // then on every change until valid
+    mode: "onTouched",
+    reValidateMode: "onChange",
     defaultValues: {
       email: "",
       businessName: "",
       slug: "",
       countryCode: "",
       currencyCode: "",
+      taxId: "",
+      migrationType: "new",
+      whoisUrl: "",
+      screenshotUrl: "",
     },
   });
 
   const watchedBusinessName = watch("businessName");
   const watchedSlug = watch("slug");
   const watchedCountry = watch("countryCode");
+  const watchedMigrationType = watch("migrationType");
+  const isMigrating = watchedMigrationType === "migrating";
 
   // Browser timezone, auto-detected once on mount.
   const browserTimezone = useMemo(() => {
@@ -124,6 +167,15 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     const exact = timezones.find((tz) => tz.id === browserTimezone);
     return exact?.id ?? timezones[0]?.id ?? "UTC";
   }, [browserTimezone, timezones]);
+
+  // Country-aware tax ID help text.
+  const taxIdHelp = useMemo(() => {
+    if (!watchedCountry) return signupCopy.taxIdHelpFallback;
+    return (
+      signupCopy.taxIdHelpByCountry[watchedCountry] ??
+      signupCopy.taxIdHelpFallback
+    );
+  }, [watchedCountry]);
 
   // Auto-suggest slug from business name until the user touches the slug field.
   useEffect(() => {
@@ -166,12 +218,35 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     return () => clearTimeout(handle);
   }, [watchedSlug]);
 
-  const canSubmit = slugAvailability.state === "available" && !pending;
+  // Clear migration evidence when switching back to "new store".
+  useEffect(() => {
+    if (!isMigrating) {
+      setValue("whoisUrl", "");
+      setValue("screenshotUrl", "");
+      setScreenshotFileName(null);
+    }
+  }, [isMigrating, setValue]);
+
+  async function handleScreenshotChange(
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setScreenshotUploading(true);
+    try {
+      const url = await uploadScreenshot(file);
+      setValue("screenshotUrl", url, { shouldValidate: true });
+      setScreenshotFileName(file.name);
+    } finally {
+      setScreenshotUploading(false);
+    }
+  }
+
+  const canSubmit = slugAvailability.state === "available" && !pending && !screenshotUploading;
 
   function onValid(values: FormValues) {
     setSubmitError(null);
 
-    // Final guard: schema passed but slug isn't marked available yet.
     if (slugAvailability.state !== "available") {
       setSubmitError("Please pick an available store URL.");
       return;
@@ -184,14 +259,21 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
       countryCode: values.countryCode,
       currencyCode: values.currencyCode,
       timezone: resolvedTimezone,
+      taxId: values.taxId?.trim() || undefined,
+      migrationType: values.migrationType,
+      whoisUrl:
+        values.migrationType === "migrating"
+          ? values.whoisUrl?.trim() || undefined
+          : undefined,
+      screenshotUrl:
+        values.migrationType === "migrating"
+          ? values.screenshotUrl?.trim() || undefined
+          : undefined,
     };
 
     startTransition(async () => {
       const r = await submitOnboarding(payload);
       if (!r.ok) {
-        // Route field-specific server errors to the matching field
-        // so they render inline beside the input that caused them.
-        // Fall back to a top-level banner for everything else.
         const routed = routeServerError(r.message);
         if (routed) {
           setFieldError(routed.field, {
@@ -211,6 +293,10 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
         countryCode: payload.countryCode,
         currencyCode: payload.currencyCode,
         timezone: resolvedTimezone,
+        taxId: payload.taxId ?? "",
+        migrationType: payload.migrationType,
+        whoisUrl: payload.whoisUrl ?? "",
+        screenshotUrl: payload.screenshotUrl ?? "",
       });
       router.push("/onboarding/check-inbox");
     });
@@ -260,7 +346,7 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           />
         </Field>
 
-        {/* Slug — format via zod, availability via async check */}
+        {/* Slug */}
         <Field
           id="slug"
           label="Store URL"
@@ -356,7 +442,146 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           </Field>
         </div>
 
-        {/* Server-level submit error (network, slug collision race, etc.) */}
+        {/* ── Tax ID (§5.2) ─────────────────────────────────── */}
+        <div className="border-t border-border-subtle pt-5">
+          <Field
+            id="taxId"
+            label={signupCopy.taxIdLabel}
+            hint={taxIdHelp}
+            hintState="default"
+            error={errors.taxId?.message}
+          >
+            <Input
+              id="taxId"
+              type="text"
+              placeholder="e.g. GB123456789"
+              autoComplete="off"
+              spellCheck={false}
+              aria-invalid={errors.taxId ? true : undefined}
+              aria-describedby={
+                errors.taxId ? "taxId-error" : "taxId-hint"
+              }
+              {...register("taxId")}
+            />
+          </Field>
+        </div>
+
+        {/* ── Migration fast-path (§5.1.1) ──────────────────── */}
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium text-foreground">
+            {signupCopy.migrationHeading}
+          </legend>
+
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="radio"
+              value="new"
+              className="mt-0.5 h-4 w-4 shrink-0 accent-moss-700"
+              aria-label={signupCopy.migrationNewOption}
+              {...register("migrationType")}
+            />
+            <span className="text-sm text-foreground">
+              {signupCopy.migrationNewOption}
+            </span>
+          </label>
+
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="radio"
+              value="migrating"
+              className="mt-0.5 h-4 w-4 shrink-0 accent-moss-700"
+              aria-label={signupCopy.migrationMigratingOption}
+              {...register("migrationType")}
+            />
+            <span className="text-sm text-foreground">
+              {signupCopy.migrationMigratingOption}
+            </span>
+          </label>
+
+          {isMigrating && (
+            <div
+              className="mt-3 space-y-4 border-l-2 border-moss-200 pl-4"
+              data-testid="migration-evidence-panel"
+            >
+              {/* WHOIS URL */}
+              <Field
+                id="whoisUrl"
+                label={signupCopy.migrationWhoisLabel}
+                hint={signupCopy.migrationWhoisHelp}
+                hintState="default"
+                error={errors.whoisUrl?.message}
+              >
+                <Input
+                  id="whoisUrl"
+                  type="url"
+                  placeholder="https://yourstore.com"
+                  autoComplete="url"
+                  spellCheck={false}
+                  aria-invalid={errors.whoisUrl ? true : undefined}
+                  aria-describedby={
+                    errors.whoisUrl ? "whoisUrl-error" : "whoisUrl-hint"
+                  }
+                  {...register("whoisUrl")}
+                />
+              </Field>
+
+              {/* Screenshot upload */}
+              <div className="space-y-1.5">
+                <Label htmlFor="screenshotFile" className="text-foreground">
+                  {signupCopy.migrationScreenshotLabel}
+                </Label>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => screenshotInputRef.current?.click()}
+                    disabled={screenshotUploading}
+                    className="inline-flex h-9 items-center rounded-md border border-border bg-background-elevated px-4 text-sm font-medium text-foreground hover:bg-paper-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {screenshotUploading ? "Uploading…" : "Choose file"}
+                  </button>
+                  {screenshotFileName && (
+                    <span className="truncate text-sm text-foreground-secondary">
+                      {screenshotFileName}
+                    </span>
+                  )}
+                </div>
+
+                {/* Hidden file input — controlled via ref */}
+                <input
+                  ref={screenshotInputRef}
+                  id="screenshotFile"
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  aria-label={signupCopy.migrationScreenshotLabel}
+                  onChange={handleScreenshotChange}
+                />
+
+                <p
+                  id="screenshotFile-hint"
+                  className="text-xs text-foreground-tertiary"
+                >
+                  {signupCopy.migrationScreenshotHelp}
+                </p>
+              </div>
+
+              {/* Cross-field validation: no evidence provided */}
+              {errors.whoisUrl?.type === "custom" && (
+                <p
+                  role="alert"
+                  aria-live="polite"
+                  className="text-xs text-danger"
+                  data-testid="migration-required-error"
+                >
+                  {errors.whoisUrl.message}
+                </p>
+              )}
+            </div>
+          )}
+        </fieldset>
+
+        {/* Server-level submit error */}
         {submitError && (
           <p
             role="alert"
@@ -410,11 +635,6 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
 
 /* ============================================================
    Field — label + control + reserved-space error row
-   ------------------------------------------------------------
-   The error <p> always renders (with empty content when there
-   is no error) so the form never jitters when an error appears
-   or disappears. `hint` is an optional helper line used only
-   by the slug field for the live "available/checking" status.
    ============================================================ */
 
 interface FieldProps {
@@ -465,8 +685,7 @@ function Field({ id, label, error, hint, hintState, children }: FieldProps) {
 }
 
 /* ============================================================
-   Slug helpers — translate SlugAvailability into the bits
-   needed by the Field component.
+   Slug helpers
    ============================================================ */
 
 function slugError(status: SlugAvailability): string | null {
@@ -479,7 +698,6 @@ function slugHint(
   status: SlugAvailability,
   schemaError: string | undefined,
 ): string | undefined {
-  // When the schema has a format error, don't compete with it.
   if (schemaError) return undefined;
   if (status.state === "idle") {
     return "3-63 characters · lowercase letters, numbers, and hyphens";
@@ -498,10 +716,7 @@ function slugHintState(
 }
 
 /* ============================================================
-   routeServerError — translate a server-side error message into
-   a field-level error when we can recognise it, or return null
-   to fall back to the top-level banner. Heuristic-only; safe to
-   extend as the platform-api error codes stabilise.
+   routeServerError
    ============================================================ */
 
 function routeServerError(
@@ -524,12 +739,15 @@ function routeServerError(
   if (/currency/.test(m)) {
     return { field: "currencyCode", message };
   }
+  if (/tax.?id|vat|gstin|ein/.test(m)) {
+    return { field: "taxId", message };
+  }
 
   return null;
 }
 
 /* ============================================================
-   slugify — mirrors the legacy auto-suggest behavior.
+   slugify
    ============================================================ */
 
 function slugify(input: string): string {

@@ -36,12 +36,20 @@ export interface Timezone {
   utc_offset: string;
 }
 
+export type MigrationEvidenceType = "new" | "migrating";
+
 export interface OnboardingDraft {
   business_name?: string;
   slug?: string;
   country_code?: string;
   currency_code?: string;
   timezone?: string;
+  // §5.1.1 — optional tax-ID and migration fast-path evidence
+  tax_id?: string;
+  migration_type?: MigrationEvidenceType;
+  // Only present when migration_type === "migrating"
+  whois_url?: string;
+  screenshot_url?: string;
 }
 
 export interface OnboardingSession {

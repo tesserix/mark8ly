@@ -17,6 +17,11 @@ export interface OnboardingFields {
   countryCode: string;
   currencyCode: string;
   timezone: string;
+  // §5.1.1 — tax ID + migration fast-path evidence (optional)
+  taxId: string;
+  migrationType: "new" | "migrating";
+  whoisUrl: string;
+  screenshotUrl: string;
 }
 
 interface OnboardingState extends OnboardingFields {
@@ -32,6 +37,10 @@ const initial: OnboardingFields = {
   countryCode: "",
   currencyCode: "",
   timezone: "",
+  taxId: "",
+  migrationType: "new",
+  whoisUrl: "",
+  screenshotUrl: "",
 };
 
 export const useOnboardingStore = create<OnboardingState>()(

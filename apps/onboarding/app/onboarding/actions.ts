@@ -59,6 +59,14 @@ interface SubmitInput {
   countryCode: string;
   currencyCode: string;
   timezone: string;
+  // §5.1.1 — optional; persisted to draft so completeOnboarding can
+  // forward them to the backend tax-ID endpoint once the store exists.
+  taxId?: string;
+  migrationType?: "new" | "migrating";
+  whoisUrl?: string;
+  // screenshot_url is the GCS URL returned by the upload helper; the
+  // raw File object never reaches the server action.
+  screenshotUrl?: string;
 }
 
 export async function submitOnboarding(
@@ -70,13 +78,23 @@ export async function submitOnboarding(
     // Persist the business fields into the session draft so the
     // /onboarding/set-password page (reached after the magic link click)
     // can read them server-side without depending on per-tab state.
-    await onboarding.saveDraft(sess.id, {
+    // §5.1.1: include migration fast-path evidence in the draft so
+    // completeOnboarding can forward them to the tax-ID endpoint once
+    // the store row has been created.  Fields absent when "new store"
+    // is selected are simply omitted — the backend ignores them.
+    const draft: Record<string, unknown> = {
       business_name: input.businessName,
       slug: input.slug,
       country_code: input.countryCode,
       currency_code: input.currencyCode,
       timezone: input.timezone,
-    });
+    };
+    if (input.taxId) draft.tax_id = input.taxId;
+    if (input.migrationType) draft.migration_type = input.migrationType;
+    if (input.whoisUrl) draft.whois_url = input.whoisUrl;
+    if (input.screenshotUrl) draft.screenshot_url = input.screenshotUrl;
+
+    await onboarding.saveDraft(sess.id, draft);
 
     await onboarding.sendVerification(sess.id, input.businessName);
 

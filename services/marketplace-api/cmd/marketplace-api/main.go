@@ -937,6 +937,7 @@ func main() {
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, apiKeyEncryptor, log)
 		shippingOptionsHandler := storefront.NewShippingOptionsHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
+			WithEncryptor(apiKeyEncryptor).
 			WithGiftCardService(giftCardSvcSF).
 			WithLoyaltyService(loyaltySvcSF).
 			WithNotifier(notificationSvc)

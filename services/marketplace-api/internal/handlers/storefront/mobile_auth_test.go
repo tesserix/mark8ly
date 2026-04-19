@@ -47,9 +47,15 @@ func TestGIPBearerAuth_EmptyBearer_Returns401(t *testing.T) {
 	assert.Equal(t, 401, w.Code)
 }
 
-func TestGIPBearerAuth_DevMode_ValidToken_SetsContext(t *testing.T) {
+// GIPBearerAuth is a scaffold guard — it no longer exposes a devMode
+// accept-any-token shortcut (previously: any non-empty Bearer token was
+// accepted when devMode=true, which would be catastrophic if the flag
+// leaked into production). Callers must chain a real verifier
+// (MobileCustomerAuth) after this middleware; the test suite validates
+// that contract below.
+func TestGIPBearerAuth_DevMode_DoesNotSetIdentityWithoutVerifier(t *testing.T) {
 	r := gin.New()
-	r.Use(storefront.GIPBearerAuth(true))
+	r.Use(storefront.GIPBearerAuth(true)) // devMode param now ignored
 	r.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"gip_uid": c.GetString("customer_gip_uid"),
@@ -59,24 +65,26 @@ func TestGIPBearerAuth_DevMode_ValidToken_SetsContext(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/test", nil)
-	req.Header.Set("Authorization", "Bearer some-dev-token")
+	req.Header.Set("Authorization", "Bearer some-token")
 	r.ServeHTTP(w, req)
 
+	// No verifier chained → no identity leaked into context. Reaching the
+	// handler must not expose any dev-* placeholder values.
 	assert.Equal(t, 200, w.Code)
-	assert.Contains(t, w.Body.String(), "dev-uid")
-	assert.Contains(t, w.Body.String(), "dev@example.com")
+	assert.NotContains(t, w.Body.String(), "dev-uid")
+	assert.NotContains(t, w.Body.String(), "dev@example.com")
 }
 
-func TestGIPBearerAuth_ProdMode_NoVerifier_Returns401(t *testing.T) {
+func TestGIPBearerAuth_MissingBearer_Returns401(t *testing.T) {
 	r := gin.New()
-	r.Use(storefront.GIPBearerAuth(false)) // prod mode, no verifier
+	r.Use(storefront.GIPBearerAuth(false))
 	r.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{"ok": true})
 	})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/test", nil)
-	req.Header.Set("Authorization", "Bearer some-token")
+	// No Authorization header at all.
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, 401, w.Code)
@@ -100,9 +108,12 @@ func TestOptionalGIPBearerAuth_MissingToken_ContinuesAsGuest(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"has_auth":false`)
 }
 
-func TestOptionalGIPBearerAuth_DevMode_ValidToken_SetsContext(t *testing.T) {
+// OptionalGIPBearerAuth no longer populates the context from a raw bearer
+// token — that was the accept-any-token pattern. Identity must come from a
+// verifier-backed middleware (MobileCustomerAuth) chained after this one.
+func TestOptionalGIPBearerAuth_DevMode_DoesNotSetIdentityWithoutVerifier(t *testing.T) {
 	r := gin.New()
-	r.Use(storefront.OptionalGIPBearerAuth(true))
+	r.Use(storefront.OptionalGIPBearerAuth(true)) // devMode param now ignored
 	r.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"gip_uid": c.GetString("customer_gip_uid"),
@@ -111,11 +122,11 @@ func TestOptionalGIPBearerAuth_DevMode_ValidToken_SetsContext(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/test", nil)
-	req.Header.Set("Authorization", "Bearer some-dev-token")
+	req.Header.Set("Authorization", "Bearer some-token")
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, 200, w.Code)
-	assert.Contains(t, w.Body.String(), "dev-uid")
+	assert.NotContains(t, w.Body.String(), "dev-uid")
 }
 
 // --- MobileCustomerAuth tests ---

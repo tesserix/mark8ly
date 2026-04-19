@@ -66,7 +66,16 @@ func (h *WebhookHandler) HandleVerifyPayment(c *gin.Context) {
 	}
 
 	// Razorpay's checkout signature: HMAC-SHA256(order|payment, secret).
-	mac := hmac.New(sha256.New, []byte(cfg.SecretKeyEncrypted))
+	// The stored secret is envelope-encrypted (admin/settings.go writes via
+	// crypto.Encryptor.Encrypt); unwrap it before feeding into hmac.New or
+	// every genuine callback would fail with a signature mismatch.
+	secretKey, err := h.resolveWebhookSecret(cfg.SecretKeyEncrypted)
+	if err != nil {
+		h.logError("verify-payment: decrypt secret_key failed", "err", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "gateway not configured"})
+		return
+	}
+	mac := hmac.New(sha256.New, []byte(secretKey))
 	mac.Write([]byte(body.RazorpayOrderID + "|" + body.RazorpayPaymentID))
 	expected := hex.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(body.RazorpaySignature), []byte(expected)) {

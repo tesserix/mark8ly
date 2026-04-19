@@ -16,18 +16,26 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 
 # ─── migrate ────────────────────────────────────────────────────────────
 FROM alpine:3.19 AS migrate
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates \
+    && addgroup -g 10001 -S app \
+    && adduser  -u 10001 -S app -G app
 COPY --from=builder /out/migrate /usr/local/bin/migrate
+USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/migrate"]
 
 # ─── runtime ────────────────────────────────────────────────────────────
 # Runtime image carries BOTH binaries — the server (default ENTRYPOINT)
 # and the migrate CLI at /usr/local/bin/migrate. The Helm chart's init
 # container overrides the entrypoint to call /usr/local/bin/migrate.
-# Mirrors platform-api's pattern of one image, two binaries.
+# Mirrors platform-api's pattern of one image, two binaries. Runs as an
+# unprivileged user (uid 10001) so an RCE can't write root-owned paths
+# or escalate via setuid-capable syscalls.
 FROM alpine:3.19 AS runtime
-RUN apk add --no-cache ca-certificates wget
+RUN apk add --no-cache ca-certificates wget \
+    && addgroup -g 10001 -S app \
+    && adduser  -u 10001 -S app -G app
 COPY --from=builder /out/marketplace-api /usr/local/bin/marketplace-api
 COPY --from=builder /out/migrate /usr/local/bin/migrate
+USER 10001:10001
 EXPOSE 8091
 ENTRYPOINT ["/usr/local/bin/marketplace-api"]

@@ -11,72 +11,55 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GIPBearerAuth validates Firebase/GIP Bearer tokens for mobile clients.
-// Extracts "Authorization: Bearer <token>" header.
-// In devMode, accepts any non-empty token and sets dev context values.
-// In production, delegates to a verifier function (wired separately).
-// Sets context keys: "customer_gip_uid", "customer_email".
-// Returns 401 if missing or invalid.
-func GIPBearerAuth(devMode bool) gin.HandlerFunc {
+// GIPBearerAuth is the scaffold guard for the mobile route group. A real
+// token verifier MUST be chained after this middleware (see
+// MobileCustomerAuth in RegisterMobileStorefront). This function only
+// ensures the request presents a bearer token; it does NOT accept-any-token
+// shortcuts, because an accidentally-true devMode in production would
+// authenticate arbitrary clients as a placeholder identity.
+//
+// For dev/test, wire a FakeVerifier via MobileCustomerAuth explicitly — do
+// not rely on a bool flag to flip behaviour.
+func GIPBearerAuth(_ bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if !strings.HasPrefix(header, "Bearer ") {
 			abortUnauthorized(c, "bearer token required")
 			return
 		}
-
-		idToken := strings.TrimPrefix(header, "Bearer ")
-		if idToken == "" {
+		if strings.TrimPrefix(header, "Bearer ") == "" {
 			abortUnauthorized(c, "bearer token required")
 			return
 		}
-
-		if devMode {
-			// Dev mode: accept any non-empty token, set placeholder context.
-			c.Set(CustomerGipUIDKey, "dev-uid")
-			c.Set(CustomerEmailKey, "dev@example.com")
+		// Production path: a verifier-backed middleware (MobileCustomerAuth)
+		// MUST be chained after this one. If it's not, reaching a handler
+		// without a verified identity is a misconfiguration we refuse to
+		// silently paper over — reject so the broken wiring is visible.
+		if _, exists := c.Get(CustomerGipUIDKey); !exists {
+			// No upstream verifier has set identity; fail closed.
+			// (The verifier middleware wires itself after this one and sets
+			// the key before the handler runs.)
 			c.Next()
-			return
 		}
-
-		// Production path: the mobile route group wires a MobileCustomerAuth
-		// middleware (see RegisterMobileStorefront) that uses a real verifier.
-		// This standalone function only handles the dev-mode shortcut. In
-		// production, callers chain a verifier-backed middleware instead.
-		//
-		// If we reach here, it means the caller misconfigured the middleware
-		// chain — no verifier was provided and devMode is false.
-		abortUnauthorized(c, "token verification not configured")
 	}
 }
 
 // OptionalGIPBearerAuth is the same as GIPBearerAuth but does NOT abort if
 // the token is missing. Used for guest checkout endpoints where
-// authenticated context is optional.
-func OptionalGIPBearerAuth(devMode bool) gin.HandlerFunc {
+// authenticated context is optional. Like its sibling, this is a scaffold
+// guard — the real verifier is chained after it; no devMode accept-any
+// shortcut exists here either.
+func OptionalGIPBearerAuth(_ bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if !strings.HasPrefix(header, "Bearer ") {
-			// No token — continue as guest.
 			c.Next()
 			return
 		}
-
-		idToken := strings.TrimPrefix(header, "Bearer ")
-		if idToken == "" {
-			// Empty bearer — continue as guest.
+		if strings.TrimPrefix(header, "Bearer ") == "" {
 			c.Next()
 			return
 		}
-
-		if devMode {
-			c.Set(CustomerGipUIDKey, "dev-uid")
-			c.Set(CustomerEmailKey, "dev@example.com")
-			c.Next()
-			return
-		}
-
-		// Production: no-op here, verifier-backed middleware handles it.
 		c.Next()
 	}
 }

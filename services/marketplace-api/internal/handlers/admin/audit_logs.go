@@ -107,14 +107,40 @@ func (h *AuditLogsHandler) ExportCSV(c *gin.Context) {
 	streamErr := h.repo.Stream(c.Request.Context(), h.db, filter, func(e *audit.Entry) error {
 		r := e.ToResponse()
 		return w.Write([]string{
-			r.ID, r.Timestamp, r.UserEmail, r.Action, r.ResourceType,
-			r.ResourceID, r.Status, r.Severity, r.IPAddress, r.UserAgent,
+			escapeCSVCell(r.ID),
+			escapeCSVCell(r.Timestamp),
+			escapeCSVCell(r.UserEmail),
+			escapeCSVCell(r.Action),
+			escapeCSVCell(r.ResourceType),
+			escapeCSVCell(r.ResourceID),
+			escapeCSVCell(r.Status),
+			escapeCSVCell(r.Severity),
+			escapeCSVCell(r.IPAddress),
+			escapeCSVCell(r.UserAgent),
 		})
 	})
 	if streamErr != nil {
 		// Headers already sent; just log so the operator can see it.
 		h.logger.Error("audit export: stream", "err", streamErr)
 	}
+}
+
+// escapeCSVCell defuses CSV formula-injection when the exported file is
+// opened in Excel/LibreOffice/Sheets: cells beginning with '=', '+', '-',
+// '@' or a tab are interpreted as a formula and can call out to external
+// resources (DDE, WEBSERVICE, HYPERLINK). Prefixing with a single-quote
+// ties the cell to plain-text rendering. Applied to every column in the
+// export since any user-supplied field (email local-part, user-agent,
+// action descriptor) can land here.
+func escapeCSVCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t':
+		return "'" + s
+	}
+	return s
 }
 
 // parseFilter pulls tenant + store from gin context and the rest from
@@ -166,8 +192,12 @@ func (h *AuditLogsHandler) parseFilter(c *gin.Context) (audit.ListFilter, error)
 	}
 	if v := c.Query("page_size"); v != "" {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			return audit.ListFilter{}, apperrors.ValidationFailed("page_size", "invalid")
+		// Fail fast on a clearly-abusive page size rather than silently
+		// capping it in the repository. Upper-bound matches the repo's
+		// internal clamp (audit/repository.go) so the contract is visible
+		// in the handler.
+		if err != nil || n < 1 || n > 100 {
+			return audit.ListFilter{}, apperrors.ValidationFailed("page_size", "must be between 1 and 100")
 		}
 		f.PageSize = n
 	} else {

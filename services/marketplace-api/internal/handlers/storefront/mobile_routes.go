@@ -129,7 +129,9 @@ func RegisterMobileStorefront(router *gin.RouterGroup, deps MobileDeps) {
 			// Customer account.
 			if deps.CustomerAccountHandler != nil {
 				authed.POST("/account/register", deps.CustomerAccountHandler.Register)
-				authed.GET("/account/check-email", deps.CustomerAccountHandler.CheckEmail)
+				// check-email is POST (not GET) so the email PII doesn't land
+				// in query-string access logs. See mobile_stubs.go for body shape.
+				authed.POST("/account/check-email", deps.CustomerAccountHandler.CheckEmail)
 				authed.GET("/account", deps.CustomerAccountHandler.GetProfile)
 				authed.PATCH("/account", deps.CustomerAccountHandler.UpdateProfile)
 				authed.GET("/account/addresses", deps.CustomerAccountHandler.ListAddresses)

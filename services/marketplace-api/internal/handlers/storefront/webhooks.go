@@ -18,6 +18,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/notification"
@@ -44,12 +45,35 @@ type WebhookHandler struct {
 	giftCardSvc *giftcard.Service     // optional — when set, gift card checkout events activate cards
 	loyaltySvc  *loyalty.Service      // optional — when set, awards points after payment success
 	notify      *notification.Service // optional — nil-safe; emits payment_received on success
+	encryptor   crypto.Encryptor      // optional — decrypts payment gateway secret_key_encrypted
 	logger      *slog.Logger
 }
 
 // NewWebhookHandler constructs a WebhookHandler.
 func NewWebhookHandler(db *gorm.DB, orderSvc *order.Service, logger *slog.Logger) *WebhookHandler {
 	return &WebhookHandler{db: db, orderSvc: orderSvc, logger: logger}
+}
+
+// WithEncryptor attaches the envelope-encryption decoder used to unwrap
+// payment-gateway secret keys before HMAC signature verification. The column
+// `payment_gateway_configs.secret_key_encrypted` is written via
+// crypto.Encryptor.Encrypt in admin/settings, so webhook verification must
+// decrypt before feeding the secret into hmac.New. Without this, signatures
+// are computed against the CIPHERTEXT and every real provider webhook 401s.
+func (h *WebhookHandler) WithEncryptor(enc crypto.Encryptor) *WebhookHandler {
+	h.encryptor = enc
+	return h
+}
+
+// resolveWebhookSecret decrypts the stored secret key when an encryptor is
+// wired. If no encryptor is configured the value is returned verbatim, which
+// covers legacy/local dev that stores plaintext. Exposed as a method so
+// storefront-adjacent handlers (payment_verify) share the same unwrap path.
+func (h *WebhookHandler) resolveWebhookSecret(stored string) (string, error) {
+	if h.encryptor == nil || stored == "" {
+		return stored, nil
+	}
+	return h.encryptor.Decrypt(stored)
 }
 
 // WithNotifier attaches the notification service so payment-succeeded
@@ -110,8 +134,27 @@ func (h *WebhookHandler) HandleWebhook(c *gin.Context) {
 		return
 	}
 
+	// Decrypt api_key + secret_key before handing them to the gateway — the
+	// DB columns are encrypted at write time (admin/settings.go). Passing
+	// ciphertext to the gateway would make every signature check 401 and
+	// silently drop real provider callbacks.
+	apiKey, err := h.resolveWebhookSecret(cfg.APIKey)
+	if err != nil {
+		h.logError("webhook: api_key decrypt failed",
+			"provider", provider, "err", err)
+		c.JSON(http.StatusOK, gin.H{"status": "error"})
+		return
+	}
+	secretKey, err := h.resolveWebhookSecret(cfg.SecretKeyEncrypted)
+	if err != nil {
+		h.logError("webhook: secret_key decrypt failed",
+			"provider", provider, "err", err)
+		c.JSON(http.StatusOK, gin.H{"status": "error"})
+		return
+	}
+
 	// Instantiate the gateway for verification.
-	gateway, err := payment.NewGateway(provider, cfg.APIKey, cfg.SecretKeyEncrypted, cfg.Mode)
+	gateway, err := payment.NewGateway(provider, apiKey, secretKey, cfg.Mode)
 	if err != nil {
 		h.logError("webhook: gateway instantiation failed",
 			"provider", provider, "err", err)

@@ -15,6 +15,27 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
+// maskEmailForLog returns a domain-masked form of an email safe to emit in
+// structured logs. "alice.smith@example.com" -> "a***@example.com". Empty
+// input round-trips to empty; strings without '@' are treated as opaque and
+// fully redacted. This keeps incident triage usable (domain + prefix initial)
+// while honouring PII-minimisation.
+func maskEmailForLog(email string) string {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return ""
+	}
+	at := strings.LastIndexByte(email, '@')
+	if at <= 0 || at == len(email)-1 {
+		return "***"
+	}
+	local := email[:at]
+	if len(local) <= 1 {
+		return "*@" + email[at+1:]
+	}
+	return string(local[0]) + "***@" + email[at+1:]
+}
+
 // --- OrderDetailHandler.ListOrders ---
 
 // listOrdersQuery holds the pagination parameters for listing orders.
@@ -189,7 +210,7 @@ func (h *CustomerAccountHandler) Register(c *gin.Context) {
 	if err != nil {
 		h.logger.Error("failed to register customer profile",
 			"error", err,
-			"email", email,
+			"email_masked", maskEmailForLog(email),
 			"store_id", store.ID,
 		)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -204,15 +225,30 @@ func (h *CustomerAccountHandler) Register(c *gin.Context) {
 
 // --- CustomerAccountHandler.CheckEmail ---
 
-// CheckEmail handles GET /mobile/storefront/stores/:storeSlug/account/check-email?email=...
-// Checks if a customer profile exists for this store with the given email.
-// Returns 200 if found, 404 if not.
+// checkEmailRequest is the body for the customer-existence probe. Email is
+// accepted in a POST body rather than a GET query string so it does not land
+// in HTTP access logs / CDN logs / referrer headers.
+type checkEmailRequest struct {
+	Email string `json:"email" binding:"required,email,max=320"`
+}
+
+// CheckEmail handles POST /mobile/storefront/stores/:storeSlug/account/check-email
+// with {"email": "..."}. Returns 200 if a profile exists for the given store,
+// 404 otherwise. POST-with-body (not GET-with-query) because the email is PII.
 func (h *CustomerAccountHandler) CheckEmail(c *gin.Context) {
-	email := strings.TrimSpace(strings.ToLower(c.Query("email")))
+	var req checkEmailRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_error",
+			"message": "email is required in request body",
+		})
+		return
+	}
+	email := strings.TrimSpace(strings.ToLower(req.Email))
 	if email == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "validation_error",
-			"message": "email query parameter is required",
+			"message": "email is required",
 		})
 		return
 	}

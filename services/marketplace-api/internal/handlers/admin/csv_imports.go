@@ -164,14 +164,18 @@ func (h *CSVImportsHandler) Export(c *gin.Context) {
 		if row.Description != nil {
 			desc = *row.Description
 		}
+		// Escape every user-supplied text column to defuse spreadsheet
+		// formula injection (=cmd|, @SUM, +HYPERLINK, ...). See
+		// audit_logs.go:escapeCSVCell for rationale. Numeric columns are
+		// safe because fmt.Sprintf cannot introduce a leading formula char.
 		if writeErr := writer.Write([]string{
-			row.ID,
-			row.Handle,
-			row.Title,
-			desc,
-			row.Status,
-			row.SKU,
-			row.Price,
+			escapeCSVCell(row.ID),
+			escapeCSVCell(row.Handle),
+			escapeCSVCell(row.Title),
+			escapeCSVCell(desc),
+			escapeCSVCell(row.Status),
+			escapeCSVCell(row.SKU),
+			escapeCSVCell(row.Price),
 			fmt.Sprintf("%d", row.Stock),
 		}); writeErr != nil {
 			return writeErr

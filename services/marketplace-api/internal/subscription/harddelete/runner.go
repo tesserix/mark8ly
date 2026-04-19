@@ -5,19 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/billingarchive"
+	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
 
 // Runner executes the full hard-delete pipeline for a single store:
 //
-//  1. (P10 deferred) Build billing archive snapshot.
+//  1. Build billing archive snapshot (P10 — persists invoice summary for §23.2 7-year retention).
 //  2. Delete Stripe customer (idempotent — 404 treated as success).
 //  3. Sweep all tenant-scoped tables inside a transaction.
 //  4. Transition pending_hard_delete → hard_deleted via statemachine.Transition.
@@ -25,19 +27,28 @@ import (
 //
 // All steps run under WithAdvisoryLock on storeID to prevent concurrent runs.
 type Runner struct {
-	db            *gorm.DB
-	stripeClient  *billingstripe.Client
-	emitter       *audit.Emitter
-	logger        *slog.Logger
+	db             *gorm.DB
+	stripeClient   *billingstripe.Client
+	emitter        *audit.Emitter
+	logger         *slog.Logger
+	archiveBuilder *billingarchive.Builder
 }
 
 // NewRunner constructs a Runner. stripeClient may be nil (Stripe delete is skipped
-// with a warning in that case — local dev / test environments).
+// with a warning in that case — local dev / test environments). An archive Builder
+// is constructed from the same (db, stripe, logger) deps so §23.2 retention is
+// enforced before the row data is swept.
 func NewRunner(db *gorm.DB, stripe *billingstripe.Client, emitter *audit.Emitter, logger *slog.Logger) *Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Runner{db: db, stripeClient: stripe, emitter: emitter, logger: logger}
+	return &Runner{
+		db:             db,
+		stripeClient:   stripe,
+		emitter:        emitter,
+		logger:         logger,
+		archiveBuilder: billingarchive.NewBuilder(db, stripe, logger),
+	}
 }
 
 // Run executes the full hard-delete pipeline for the given subscription row.
@@ -56,11 +67,25 @@ func (r *Runner) runLocked(ctx context.Context, tx *gorm.DB, row *subscription.S
 	storeID := row.StoreID
 	tenantID := row.TenantID
 
-	// Step 1: Billing archive (P10 deferred).
-	// P10's billingarchive.Builder.Build(ctx, storeID) will be wired here when P10 lands.
-	// Until then, log intent so the audit trail shows the intended pipeline.
-	r.logger.Info("harddelete: billing archive step deferred (P10 not yet wired)",
-		"store_id", storeID, "tenant_id", tenantID)
+	// Step 1: Billing archive — persist invoice history for §23.2 7-year retention.
+	// Runs against the session DB (not the locked tx) so an orphan archive row on
+	// a subsequent sweep failure is an acceptable audit artifact rather than data
+	// loss. Build is best-effort: a Stripe or DB error is logged and the pipeline
+	// continues — we cannot block hard-delete on archival (archive can be
+	// reconstructed from Stripe later; the store rows cannot).
+	if r.archiveBuilder != nil {
+		if _, err := r.archiveBuilder.BuildAndPersist(ctx, billingarchive.BuildInput{
+			TenantID:      tenantID,
+			StoreID:       storeID,
+			HardDeletedAt: time.Now().UTC(),
+		}); err != nil {
+			r.logger.Error("harddelete: billing archive build failed — continuing",
+				"store_id", storeID, "tenant_id", tenantID, "err", err)
+		} else {
+			r.logger.Info("harddelete: billing archive persisted",
+				"store_id", storeID, "tenant_id", tenantID)
+		}
+	}
 
 	// Step 2: Delete Stripe customer — idempotent (404 = already deleted = success).
 	if r.stripeClient != nil && row.StripeCustomerID != "" {

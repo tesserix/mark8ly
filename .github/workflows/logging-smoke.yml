@@ -24,6 +24,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Centralised CVE / vulnerability gate — see
+  # .github/workflows/reusable-security.yml. Every workflow pulls this in
+  # so a new HIGH/CRITICAL CVE blocks merges even when the
+  # workflow-specific path filter skipped the main CI build.
+  security:
+    uses: ./.github/workflows/reusable-security.yml
+
   logging-smoke:
     name: Log-shipping smoke guard
     runs-on: ubuntu-latest

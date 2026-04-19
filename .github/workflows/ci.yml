@@ -88,64 +88,12 @@ jobs:
       - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-admin' --filter='!@repo/mobile-shared'
 
   # ─── Security scans ────────────────────────────────────────────────
-  # Runs in parallel with Go + Node builds so failures surface early.
-  # Gated at HIGH so a new CVE (critical or high) lands as a CI failure
-  # rather than a silent dependabot alert that nobody reads. Moderate and
-  # below stay informational — they clutter the gate and mostly live in
-  # dev-only tooling.
-  security-npm:
-    name: Security — npm audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: "npm"
-      - name: Install (with dev — audit must see full tree)
-        run: npm install --legacy-peer-deps
-      - name: npm audit (fail on high+)
-        # Scoped to workspaces that actually ship to production. Mobile
-        # expo apps and tests-only tooling are excluded because their
-        # transitive dev-time graph churns often and is not on the runtime
-        # ship path. To expand coverage, drop the --workspace filters.
-        run: |
-          set -eo pipefail
-          echo "::group::Full tree audit (informational)"
-          npm audit --audit-level=moderate || true
-          echo "::endgroup::"
-          echo "::group::Production-workspace audit (gated)"
-          npm audit \
-            --audit-level=high \
-            --workspace=@mark8ly/admin \
-            --workspace=@mark8ly/storefront \
-            --workspace=@mark8ly/onboarding \
-            --workspace=@repo/ui \
-            --workspace=@repo/otto-widget
-          echo "::endgroup::"
-
-  security-go:
-    name: Security — govulncheck (${{ matrix.service }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [platform-api, auth-bff, marketplace-api, otto]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.26"
-          cache-dependency-path: services/${{ matrix.service }}/go.sum
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Scan
-        working-directory: services/${{ matrix.service }}
-        # govulncheck narrows the result to CVEs that are actually
-        # reachable from the compiled binary — imports alone don't trip
-        # it, which dramatically cuts false positives vs plain
-        # `go list -m -u`. Non-zero exit = reachable vuln.
-        run: govulncheck ./...
+  # CVE / vulnerability gating is centralised in reusable-security.yml
+  # so every workflow — present and future — picks up the same bar.
+  # The image matrix below `needs: [security]` to ensure a new CRITICAL
+  # or HIGH finding halts the deploy.
+  security:
+    uses: ./.github/workflows/reusable-security.yml
 
   # ─── Image build + push ────────────────────────────────────────────
   # Builds 5 immutable images tagged sha-<12-char-commit> and pushes
@@ -153,7 +101,7 @@ jobs:
   images:
     name: Build & push (${{ matrix.image.name }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [go, node, security-npm, security-go]
+    needs: [go, node, security]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

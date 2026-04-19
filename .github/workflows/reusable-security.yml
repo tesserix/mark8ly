@@ -1,0 +1,75 @@
+name: Reusable — security scans
+
+# Single source of truth for CVE / vulnerability scanning. Any workflow
+# that runs on pull_request or push-to-main should `uses:` this so we
+# can't merge code that pulls in a new HIGH/CRITICAL CVE — on the node
+# side OR the Go side — just because the workflow that triggered the
+# build didn't happen to run npm audit.
+#
+# How to call from another workflow:
+#
+#   jobs:
+#     security:
+#       uses: ./.github/workflows/reusable-security.yml
+#
+# The jobs below are deliberately ungated (no `needs:`) so they run in
+# parallel with whatever build the caller is performing, and the caller
+# can `needs: [security]` on its own deploy/image jobs if it wants a
+# hard gate.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    name: Security — npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+      - name: Install (full tree — audit must see every workspace)
+        run: npm install --legacy-peer-deps
+      - name: npm audit (fail on high+)
+        run: |
+          set -eo pipefail
+          echo "::group::Full tree audit (informational)"
+          npm audit --audit-level=moderate || true
+          echo "::endgroup::"
+          echo "::group::Production-workspace audit (gated)"
+          npm audit \
+            --audit-level=high \
+            --workspace=@mark8ly/admin \
+            --workspace=@mark8ly/storefront \
+            --workspace=@mark8ly/onboarding \
+            --workspace=@repo/ui \
+            --workspace=@repo/otto-widget
+          echo "::endgroup::"
+
+  govulncheck:
+    name: Security — govulncheck (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [platform-api, auth-bff, marketplace-api, otto]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: services/${{ matrix.service }}/go.sum
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Scan
+        working-directory: services/${{ matrix.service }}
+        # govulncheck narrows the result to CVEs that are actually
+        # reachable from the compiled binary — imports alone don't trip
+        # it, which dramatically cuts false positives vs plain
+        # `go list -m -u`. Non-zero exit = reachable vuln.
+        run: govulncheck ./...

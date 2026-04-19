@@ -150,7 +150,6 @@ const navigation: NavSection[] = [
       { group: "Team & access", label: "Audit Logs", href: "/settings/audit-logs" },
       { group: "Account", label: "Account", href: "/settings/account" },
       { group: "Account", label: "Notifications", href: "/settings/notifications" },
-      { group: "Account", label: "Subscription", href: "/settings/subscription" },
       { group: "Account", label: "Billing", href: "/settings/billing" },
     ],
   },

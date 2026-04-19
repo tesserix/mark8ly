@@ -21,6 +21,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/discount"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
@@ -40,15 +41,16 @@ type CheckoutExtHandler struct {
 	db          *gorm.DB
 	orderSvc    *order.Service
 	couponSvc   *coupon.Service
-	giftCardSvc *giftcard.Service // nil-safe: no-ops when nil
-	loyaltySvc  *loyalty.Service  // nil-safe: no-ops when nil
-	audit       *audit.Emitter    // optional — nil-safe
+	giftCardSvc *giftcard.Service  // nil-safe: no-ops when nil
+	loyaltySvc  *loyalty.Service   // nil-safe: no-ops when nil
+	audit       *audit.Emitter     // optional — nil-safe
+	encryptor   crypto.Encryptor   // decrypts API keys for payment/tax/shipping
 	logger      *slog.Logger
 }
 
 // NewCheckoutExtHandler constructs a CheckoutExtHandler.
-func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coupon.Service, giftCardSvc *giftcard.Service, logger *slog.Logger) *CheckoutExtHandler {
-	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, couponSvc: couponSvc, giftCardSvc: giftCardSvc, logger: logger}
+func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coupon.Service, giftCardSvc *giftcard.Service, enc crypto.Encryptor, logger *slog.Logger) *CheckoutExtHandler {
+	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, couponSvc: couponSvc, giftCardSvc: giftCardSvc, encryptor: enc, logger: logger}
 }
 
 // WithAudit attaches an audit emitter so extended storefront checkouts
@@ -536,7 +538,20 @@ func (h *CheckoutExtHandler) calculateShipping(
 		return decimal.Zero, fmt.Errorf("no active carrier config: %w", err)
 	}
 
-	carrier, err := shipping.NewCarrier(cfg.Provider, cfg.APIKey, cfg.SecretKey, cfg.Mode)
+	// Decrypt API keys before passing to carrier.
+	apiKey, err := h.encryptor.Decrypt(cfg.APIKey)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("decrypt carrier api_key: %w", err)
+	}
+	var secretKey string
+	if cfg.SecretKey != "" {
+		secretKey, err = h.encryptor.Decrypt(cfg.SecretKey)
+		if err != nil {
+			return decimal.Zero, fmt.Errorf("decrypt carrier secret_key: %w", err)
+		}
+	}
+
+	carrier, err := shipping.NewCarrier(cfg.Provider, apiKey, secretKey, cfg.Mode)
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("carrier init: %w", err)
 	}
@@ -612,7 +627,12 @@ func (h *CheckoutExtHandler) calculateTax(
 		if err == nil {
 			taxRepo := tax.NewRepository()
 			if cfg, err := taxRepo.GetProviderConfig(ctx, h.db, storeUUID); err == nil {
-				taxjarAPIKey = cfg.APIKeyEncrypted
+				// Decrypt the API key before use.
+				decryptedKey, decErr := h.encryptor.Decrypt(cfg.APIKeyEncrypted)
+				if decErr != nil {
+					return nil, fmt.Errorf("decrypt taxjar api_key: %w", decErr)
+				}
+				taxjarAPIKey = decryptedKey
 				taxjarMode = cfg.Mode
 			}
 		}
@@ -719,7 +739,20 @@ func (h *CheckoutExtHandler) createPaymentIntent(
 		return "", fmt.Errorf("no active payment config for %s: %w", providerName, err)
 	}
 
-	gateway, err := payment.NewGateway(providerName, cfg.APIKey, cfg.SecretKey, cfg.Mode)
+	// Decrypt API keys before passing to gateway.
+	apiKey, err := h.encryptor.Decrypt(cfg.APIKey)
+	if err != nil {
+		return "", fmt.Errorf("decrypt payment api_key: %w", err)
+	}
+	var secretKey string
+	if cfg.SecretKey != "" {
+		secretKey, err = h.encryptor.Decrypt(cfg.SecretKey)
+		if err != nil {
+			return "", fmt.Errorf("decrypt payment secret_key: %w", err)
+		}
+	}
+
+	gateway, err := payment.NewGateway(providerName, apiKey, secretKey, cfg.Mode)
 	if err != nil {
 		return "", fmt.Errorf("gateway init: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/country"
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
@@ -29,13 +30,14 @@ func (paymentGatewayConfig) TableName() string { return "payment_gateway_configs
 
 // PaymentMethodsHandler serves available payment methods for a store.
 type PaymentMethodsHandler struct {
-	db     *gorm.DB
-	logger *slog.Logger
+	db        *gorm.DB
+	encryptor crypto.Encryptor
+	logger    *slog.Logger
 }
 
 // NewPaymentMethodsHandler constructs a PaymentMethodsHandler.
-func NewPaymentMethodsHandler(db *gorm.DB, logger *slog.Logger) *PaymentMethodsHandler {
-	return &PaymentMethodsHandler{db: db, logger: logger}
+func NewPaymentMethodsHandler(db *gorm.DB, enc crypto.Encryptor, logger *slog.Logger) *PaymentMethodsHandler {
+	return &PaymentMethodsHandler{db: db, encryptor: enc, logger: logger}
 }
 
 // paymentMethodResponse is a single provider entry in the response.
@@ -101,10 +103,16 @@ func (h *PaymentMethodsHandler) ListPaymentMethods(c *gin.Context) {
 	// Provider-specific methods can be expanded later.
 	result := make([]paymentMethodResponse, 0, len(configs))
 	for _, cfg := range configs {
+		// Decrypt the public key before exposing to the client.
+		pubKey, err := h.encryptor.Decrypt(cfg.APIKey)
+		if err != nil {
+			h.logger.Error("decrypt payment public_key", "provider", cfg.Provider, "err", err)
+			continue // skip this provider on decryption error
+		}
 		result = append(result, paymentMethodResponse{
 			Provider:  cfg.Provider,
 			Methods:   methodsForProvider(cfg.Provider),
-			PublicKey: cfg.APIKey,
+			PublicKey: pubKey,
 			Mode:      cfg.Mode,
 		})
 	}

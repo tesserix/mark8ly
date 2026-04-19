@@ -13,19 +13,21 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/country"
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
 // ShippingRatesHandler serves shipping rate quotes for a store.
 type ShippingRatesHandler struct {
-	db     *gorm.DB
-	logger *slog.Logger
+	db        *gorm.DB
+	encryptor crypto.Encryptor
+	logger    *slog.Logger
 }
 
 // NewShippingRatesHandler constructs a ShippingRatesHandler.
-func NewShippingRatesHandler(db *gorm.DB, logger *slog.Logger) *ShippingRatesHandler {
-	return &ShippingRatesHandler{db: db, logger: logger}
+func NewShippingRatesHandler(db *gorm.DB, enc crypto.Encryptor, logger *slog.Logger) *ShippingRatesHandler {
+	return &ShippingRatesHandler{db: db, encryptor: enc, logger: logger}
 }
 
 // shippingRateItemRequest is a single item in the rate request body.
@@ -141,8 +143,35 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 		return
 	}
 
+	// Decrypt API keys before passing to carrier.
+	apiKey, err := h.encryptor.Decrypt(cfg.APIKey)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("shipping_rates: decrypt api_key failed", "err", err)
+		}
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal",
+			"message": "internal server error",
+		})
+		return
+	}
+	var secretKey string
+	if cfg.SecretKey != "" {
+		secretKey, err = h.encryptor.Decrypt(cfg.SecretKey)
+		if err != nil {
+			if h.logger != nil {
+				h.logger.Error("shipping_rates: decrypt secret_key failed", "err", err)
+			}
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"error":   "internal",
+				"message": "internal server error",
+			})
+			return
+		}
+	}
+
 	// Instantiate the carrier.
-	carrier, err := shipping.NewCarrier(cfg.Provider, cfg.APIKey, cfg.SecretKey, cfg.Mode)
+	carrier, err := shipping.NewCarrier(cfg.Provider, apiKey, secretKey, cfg.Mode)
 	if err != nil {
 		if h.logger != nil {
 			h.logger.Error("shipping_rates: carrier instantiation failed",

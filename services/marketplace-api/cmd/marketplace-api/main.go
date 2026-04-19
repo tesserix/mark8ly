@@ -1373,6 +1373,10 @@ func main() {
 		// existing /internal namespace gated by X-Internal-Auth.
 		internalsvc.NewAuditIngestHandler(auditEmitter, domainStoresRepo, log).
 			Register(r.Group("/internal"), cfg.AuditIngestSecret)
+		// P12 — storefront-gate Cloudflare Worker reads this endpoint at
+		// the edge to decide closed-page vs pass-through (§5.4).
+		internalsvc.NewStorefrontStatusHandler(conn).
+			Register(r.Group("/internal"), cfg.AuditIngestSecret)
 		if stripeBillingWebhookHandler != nil {
 			r.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
 		}
@@ -1405,6 +1409,11 @@ func main() {
 			// + read on the same pod simplifies ops and keeps the
 			// storefront engine's surface area small.
 			internalsvc.NewAuditIngestHandler(auditEmitter, domainStoresRepo, log).
+				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
+			// P12 — storefront-gate Cloudflare Worker hits this endpoint
+			// (mounted on admin pod since it reads cross-tenant rows the
+			// storefront pod doesn't otherwise serve).
+			internalsvc.NewStorefrontStatusHandler(conn).
 				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
 			if stripeBillingWebhookHandler != nil {
 				engine.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)

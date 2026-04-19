@@ -507,7 +507,7 @@ func main() {
 			Stripe: stripeAdapter,
 			Logger: log,
 		})
-		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, log)
+		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, log).WithDB(conn)
 
 		// P4 Subscription plan change (upgrade/downgrade) — requires Stripe + stores repo.
 		var changePlanHandler *admin.ChangePlanHandler
@@ -625,6 +625,10 @@ func main() {
 		migrationRepo := migration.NewRepository(conn)
 		migrationHandler := migration.NewHandler(migrationRepo, migration.NoOpValidator{}, log)
 
+		// P8 — Arbitrage appeal handler (§18.8.1).
+		arbitrageAppealSvc := arbitrage.NewAppealService(conn, arbitrage.NoOpPublisher{}, arbitrage.NopPIILogger{})
+		arbitrageAppealHandler := admin.NewArbitrageAppealHandler(arbitrageAppealSvc)
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -655,6 +659,7 @@ func main() {
 			RefundHandler:              refundHandler,
 			ChangePlanHandler:          changePlanHandler,
 			CancelHandler:              cancelHandler,
+			ArbitrageAppealHandler:     arbitrageAppealHandler,
 			TrialBillingHandler:        trialBillingHandler,
 			MigrationFastPathHandler:   migrationHandler,
 			AuditLogsHandler:           auditLogsHandler,

@@ -3,12 +3,16 @@
 package admin
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -16,16 +20,19 @@ import (
 
 // SubscriptionHandler handles /admin/stores/:storeId/subscription endpoints.
 type SubscriptionHandler struct {
-	svc    *subscription.Service
-	audit  *audit.Emitter // optional — nil-safe
-	logger *slog.Logger
+	svc       *subscription.Service
+	audit     *audit.Emitter // optional — nil-safe
+	db        *gorm.DB       // optional — nil skips arbitrage audit enrichment
+	piiLogger arbitrage.PIILogger
+	logger    *slog.Logger
 }
 
 // NewSubscriptionHandler constructs a SubscriptionHandler.
 func NewSubscriptionHandler(svc *subscription.Service, logger *slog.Logger) *SubscriptionHandler {
 	return &SubscriptionHandler{
-		svc:    svc,
-		logger: logger,
+		svc:       svc,
+		piiLogger: arbitrage.NopPIILogger{},
+		logger:    logger,
 	}
 }
 
@@ -34,6 +41,32 @@ func NewSubscriptionHandler(svc *subscription.Service, logger *slog.Logger) *Sub
 func (h *SubscriptionHandler) WithAudit(e *audit.Emitter) *SubscriptionHandler {
 	h.audit = e
 	return h
+}
+
+// WithDB attaches a DB handle so GetSubscription can enrich the response with
+// the latest arbitrage audit row (P8 §18.8.1). Nil-safe — omitting it causes
+// GetSubscription to return arbitrage_flag=false with no audit payload.
+func (h *SubscriptionHandler) WithDB(db *gorm.DB) *SubscriptionHandler {
+	h.db = db
+	return h
+}
+
+// WithPIILogger attaches a PIILogger for arbitrage audit reads.
+func (h *SubscriptionHandler) WithPIILogger(pii arbitrage.PIILogger) *SubscriptionHandler {
+	h.piiLogger = pii
+	return h
+}
+
+// ArbitrageAuditSummary is the public subset of a SubscriptionArbitrageAudit
+// row returned on the GetSubscription endpoint. Intentionally omits ip_hash,
+// reviewed_by, and reviewed_at — those are billing-ops-only via internal tooling.
+type ArbitrageAuditSummary struct {
+	CardCountry    string    `json:"card_country"`
+	BillingCountry string    `json:"billing_country"`
+	IPCountry      string    `json:"ip_country"`
+	Resolution     string    `json:"resolution"`
+	FlaggedAt      time.Time `json:"flagged_at"`
+	MismatchReason string    `json:"mismatch_reason"`
 }
 
 // SubscriptionResponse is the wire DTO for a store subscription.
@@ -47,6 +80,10 @@ type SubscriptionResponse struct {
 	CancelAtPeriodEnd    bool    `json:"cancel_at_period_end"`
 	StripeSubscriptionID *string `json:"stripe_subscription_id,omitempty"`
 	CreatedAt            string  `json:"created_at"`
+	// P8 — geo-pricing anti-arbitrage fields (§18.8.1). Always present;
+	// LatestArbitrageAudit is null when no flag has ever been raised.
+	ArbitrageFlag        bool                   `json:"arbitrage_flag"`
+	LatestArbitrageAudit *ArbitrageAuditSummary `json:"latest_arbitrage_audit,omitempty"`
 }
 
 func toSubscriptionResponse(s subscription.StoreSubscription) SubscriptionResponse {
@@ -57,6 +94,7 @@ func toSubscriptionResponse(s subscription.StoreSubscription) SubscriptionRespon
 		Status:            string(s.Status),
 		CancelAtPeriodEnd: s.CancelAtPeriodEnd,
 		CreatedAt:         s.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		ArbitrageFlag:     s.ArbitrageFlag,
 	}
 	if s.StripeSubscriptionID != nil {
 		resp.StripeSubscriptionID = s.StripeSubscriptionID
@@ -91,7 +129,59 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toSubscriptionResponse(*sub))
+	resp := toSubscriptionResponse(*sub)
+
+	// P8 §18.8.1 — enrich with the latest arbitrage audit row when DB is wired.
+	// Degrade gracefully on error: arbitrage data is not load-bearing for billing.
+	if h.db != nil {
+		var auditRow arbitrage.SubscriptionArbitrageAudit
+		auditErr := h.db.WithContext(c.Request.Context()).
+			Where("tenant_id = ? AND store_id = ?", tenantID, storeID).
+			Order("flagged_at DESC").
+			Limit(1).
+			First(&auditRow).Error
+		if auditErr == nil {
+			// Log PII access before returning the row.
+			userIDStr := c.GetString("user_id")
+			userID, _ := uuid.Parse(userIDStr)
+			h.piiLogger.LogPIIAccess(c.Request.Context(), arbitrage.PIIAccessEvent{
+				Actor:     userID,
+				StoreID:   storeID,
+				TenantID:  tenantID,
+				Operation: "arbitrage_audit_read_admin_subscription",
+			})
+
+			cardCountry := ""
+			if auditRow.CardCountry != nil {
+				cardCountry = *auditRow.CardCountry
+			}
+			billingCountry := ""
+			if auditRow.BillingCountry != nil {
+				billingCountry = *auditRow.BillingCountry
+			}
+			ipCountry := ""
+			if auditRow.IPCountry != nil {
+				ipCountry = *auditRow.IPCountry
+			}
+			mismatchReason := ""
+			if auditRow.MismatchReason != nil {
+				mismatchReason = *auditRow.MismatchReason
+			}
+			resp.LatestArbitrageAudit = &ArbitrageAuditSummary{
+				CardCountry:    cardCountry,
+				BillingCountry: billingCountry,
+				IPCountry:      ipCountry,
+				Resolution:     string(auditRow.Resolution),
+				FlaggedAt:      auditRow.FlaggedAt,
+				MismatchReason: mismatchReason,
+			}
+		} else if !errors.Is(auditErr, gorm.ErrRecordNotFound) {
+			// Non-404 errors are logged but don't fail the request.
+			h.logger.Warn("arbitrage audit load failed; omitting from response", "err", auditErr)
+		}
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // CreateCheckoutRequest is the request body for POST .../subscription/checkout.

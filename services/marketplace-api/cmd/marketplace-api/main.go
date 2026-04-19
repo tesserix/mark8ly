@@ -40,6 +40,10 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
 	"github.com/mark8ly/marketplace-api/internal/billing/migration"
 	"github.com/mark8ly/marketplace-api/internal/billing/pricing"
+	"github.com/mark8ly/marketplace-api/internal/billing/tax"
+	"github.com/mark8ly/marketplace-api/internal/billing/tax/revalidation"
+	"github.com/mark8ly/marketplace-api/internal/billing/tax/seaqueue"
+	"github.com/mark8ly/marketplace-api/internal/billing/tax/taxreg"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
@@ -258,6 +262,10 @@ func main() {
 	// process never mounts the admin group so these dependencies would go
 	// unused there.
 	var adminDeps admin.Deps
+	// taxService is declared at outer scope so the revalidation cron (which
+	// runs in both modes) can reference it. Constructed inside the admin
+	// branch when the registry + handler dependencies are wired.
+	var taxService *tax.Service
 	// vendorSvc stays nil in Storefront mode by design — the storefront
 	// process does not call product.Create and does not expose the
 	// /internal vendor endpoints, so no self-vendor lookup is needed.
@@ -638,6 +646,25 @@ func main() {
 		arbitrageAppealSvc := arbitrage.NewAppealService(conn, arbitrage.NoOpPublisher{}, arbitrage.NopPIILogger{})
 		arbitrageAppealHandler := admin.NewArbitrageAppealHandler(arbitrageAppealSvc)
 
+		// P7 — tax-ID validation pipeline (§19). Registry holds 13 country
+		// validators; NZ is flag-gated until counsel sign-off (§20.3). The
+		// orchestrator wraps the registry with SEA queue insert + clock-pause
+		// + advisory-lock CAS write of tax_id_validated.
+		taxRegistry := taxreg.BuildDefault(taxreg.Config{
+			HTTPClient:    &http.Client{Timeout: 15 * time.Second},
+			NZEnabled:     cfg.NZTaxValidationEnabled,
+			GSTNAuthToken: cfg.GSTNAuthToken,
+			ABNGUID:       cfg.ABNGUID,
+		})
+		taxService = tax.NewService(tax.ServiceConfig{
+			DB:       conn,
+			Registry: taxRegistry,
+			Audit:    auditEmitter,
+			SEAQueue: seaqueue.New(conn),
+			Clock:    tax.NewClockPauseTracker(conn),
+		})
+		taxHandler := admin.NewTaxHandler(conn, taxService, []byte(cfg.TaxAttestationIPHashKey))
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -671,6 +698,7 @@ func main() {
 			ArbitrageAppealHandler:     arbitrageAppealHandler,
 			TrialBillingHandler:        trialBillingHandler,
 			MigrationFastPathHandler:   migrationHandler,
+			TaxHandler:                 taxHandler,
 			AuditLogsHandler:           auditLogsHandler,
 			NotificationsHandler:   notificationsHandler,
 			DashboardHandler:       dashboardHandler,
@@ -1038,6 +1066,10 @@ func main() {
 		}
 		dispatcher := dispatch.New(auditEmitter)
 
+		// P7 §19.2: annotate B2B invoices with the reverse-charge clause on
+		// invoice.finalized for validated tax IDs in reverse-charge jurisdictions.
+		dispatcher.WithReverseChargeAnnotator(billingStripeClient)
+
 		// P8 §18.8: wire arbitrage recorder into the checkout webhook handler.
 		// KeyLoader + Hasher use Secret Manager when ARBITRAGE_HMAC_SECRET_PATH
 		// is set; omit gracefully in local dev (recorder stays nil → no-op).
@@ -1174,6 +1206,28 @@ func main() {
 	scaRemindersCron := dunning.NewSendPaymentActionReminders(conn, dunningEmailClient, log,
 		dunning.WrapPrometheusCounterVec(metrics.PaymentActionRemindersSentTotal),
 		nil)
+
+	// P7 §19.5 — quarterly tax-ID revalidation cron. Daily 02:00 UTC. Re-runs
+	// the validator for each subscription with a >90d-old validation; on
+	// definitive failure flips tax_id_validated=false, opens a 14d grace
+	// window, and unpublishes the storefront on day 14. Subscription status
+	// stays 'active' (billing continues — "no perverse incentive" §19.5).
+	// Skipped when taxService is nil (storefront-only mode).
+	if taxService != nil {
+		revalidationCron := &revalidation.Cron{
+			DB:    conn,
+			Svc:   taxService,
+			Audit: auditEmitter,
+		}
+		if _, err := trialScheduler.AddFunc(revalidation.Spec, func() {
+			if err := revalidationCron.Run(workerCtx); err != nil {
+				log.Error("tax revalidation cron failed", "err", err)
+			}
+		}); err != nil {
+			log.Error("register tax revalidation cron", "err", err)
+		}
+	}
+
 	if _, err := trialScheduler.AddFunc(dunning.PaymentActionRemindersSpec, func() {
 		if err := scaRemindersCron.Run(workerCtx); err != nil {
 			log.Error("SCA reminders cron failed", "err", err)

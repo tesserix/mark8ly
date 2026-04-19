@@ -109,6 +109,16 @@ type Config struct {
 	// emails. {slug} is substituted with the store slug. Empty disables
 	// the "Shop storefront" CTA in gift card emails.
 	StorefrontBaseURLTemplate string `envconfig:"STOREFRONT_BASE_URL_TEMPLATE" default:"https://{slug}.mark8ly.com"`
+
+	// P7 — tax-ID validation (§19). NZTaxValidationEnabled gates the IRD
+	// validator until counsel sign-off (§20.3); leave false in production
+	// until legal approves. The remaining keys are per-registry secrets;
+	// empty values mean "anonymous" for HMRC/VIES/ABN/ACRA (which permit
+	// anonymous lookups) and "skip" for GSTN (token required in prod).
+	NZTaxValidationEnabled bool   `envconfig:"NZ_TAX_VALIDATION_ENABLED" default:"false"`
+	GSTNAuthToken          string `envconfig:"GSTN_AUTH_TOKEN" default:""`
+	ABNGUID                string `envconfig:"AU_ABN_LOOKUP_GUID" default:""`
+	TaxAttestationIPHashKey string `envconfig:"TAX_ATTESTATION_IP_HASH_KEY" default:""`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

@@ -127,6 +127,15 @@ type Config struct {
 	// attestation key but rotated independently; loaded from Secret Manager
 	// in production. Empty disables IP hashing on last_used_ip_hash.
 	APIKeyIPHashKey string `envconfig:"APIKEY_IP_HASH_KEY" default:""`
+
+	// P18 — shipping carrier credentials for v2 country rollout (IE + NZ via
+	// ShipEngine, VN via NinjaVan). Secrets are provisioned in GCP Secret
+	// Manager; these fields wire the env-var reads.
+	ShipEngineCarrierAccountIE string `envconfig:"SHIPENGINE_CARRIER_ACCOUNT_IE" default:""`
+	ShipEngineCarrierAccountNZ string `envconfig:"SHIPENGINE_CARRIER_ACCOUNT_NZ" default:""`
+	NinjaVanVNAPIKey           string `envconfig:"NINJAVAN_VN_API_KEY" default:""`
+	NinjaVanVNClientID         string `envconfig:"NINJAVAN_VN_CLIENT_ID" default:""`
+	NinjaVanVNClientSecret     string `envconfig:"NINJAVAN_VN_CLIENT_SECRET" default:""`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

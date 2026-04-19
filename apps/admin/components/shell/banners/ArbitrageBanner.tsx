@@ -19,6 +19,15 @@ interface ArbitrageBannerProps {
 
 const copy = subscriptionCopy.arbitrage.banner
 
+/**
+ * Returns true when ArbitrageBanner would render (store has an open arbitrage
+ * flag and the query has resolved). Used by BannerStack for priority selection.
+ */
+export function useArbitrageBannerActive(storeId: string): boolean {
+  const { flagged, isLoading } = useArbitrageFlag(storeId)
+  return !isLoading && flagged
+}
+
 export function ArbitrageBanner({ storeId }: ArbitrageBannerProps) {
   const { flagged, isLoading } = useArbitrageFlag(storeId)
 

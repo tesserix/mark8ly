@@ -76,6 +76,15 @@ function buildVariantCopy(
 // Component
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns true when TrialBanner would render (bannerVariant !== 'none').
+ * Used by BannerStack to determine priority without double-rendering.
+ */
+export function useTrialBannerActive(storeId: string): boolean {
+  const { bannerVariant } = useTrialStatus(storeId)
+  return bannerVariant !== 'none'
+}
+
 export function TrialBanner({ storeId }: TrialBannerProps) {
   const { bannerVariant, trialEndsAt } = useTrialStatus(storeId)
   const openPortal = useOpenPortal(storeId)

@@ -59,6 +59,15 @@ interface PaymentActionRequiredBannerProps {
 // Component
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns true when PaymentActionRequiredBanner would render (subscription is
+ * in payment_action_required state). Used by BannerStack for priority selection.
+ */
+export function usePaymentActionRequiredBannerActive(storeId: string): boolean {
+  const { isPending } = usePaymentActionRequiredState(storeId)
+  return isPending
+}
+
 export function PaymentActionRequiredBanner({
   storeId,
 }: PaymentActionRequiredBannerProps) {

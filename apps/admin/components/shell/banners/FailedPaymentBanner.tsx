@@ -35,6 +35,15 @@ interface FailedPaymentBannerProps {
 // Component
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns true when FailedPaymentBanner would render (subscription is past_due).
+ * Used by BannerStack to determine priority without double-rendering.
+ */
+export function useFailedPaymentBannerActive(storeId: string): boolean {
+  const { isPastDue } = usePastDueState(storeId)
+  return isPastDue
+}
+
 export function FailedPaymentBanner({ storeId }: FailedPaymentBannerProps) {
   const { isPastDue, retryAt } = usePastDueState(storeId)
   const openPortal = useOpenPortal(storeId)

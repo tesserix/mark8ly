@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -35,18 +34,18 @@ type cancelRequest struct {
 func (h *Handler) Cancel(c *gin.Context) {
 	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
-		admin.RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
+		respondValidationErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"))
 		return
 	}
 	tenantID, err := uuid.Parse(c.GetString("tenant_id"))
 	if err != nil {
-		admin.RespondErr(c, apperrors.ValidationFailed("tenant_id", "invalid uuid"), h.logger)
+		respondValidationErr(c, apperrors.ValidationFailed("tenant_id", "invalid uuid"))
 		return
 	}
 
 	var req cancelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		admin.RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		respondValidationErr(c, apperrors.ValidationFailed("body", err.Error()))
 		return
 	}
 
@@ -65,6 +64,21 @@ func (h *Handler) Cancel(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, out)
+}
+
+// respondValidationErr writes a 422 JSON error for input validation failures.
+// Mirrors the pattern in internal/handlers/admin/errors.go without importing
+// that package (would create an import cycle via admin/routes.go → cancel).
+func respondValidationErr(c *gin.Context, err error) {
+	var ae *apperrors.Error
+	if errors.As(err, &ae) {
+		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+			"error":   string(ae.Code),
+			"message": ae.Message,
+		})
+		return
+	}
+	c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{"error": "validation_failed"})
 }
 
 func mapCancelErr(c *gin.Context, err error, logger *slog.Logger) {

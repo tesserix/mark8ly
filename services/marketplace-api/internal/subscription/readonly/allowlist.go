@@ -23,4 +23,7 @@ var DefaultAllowlist = []AllowedRoute{
 	// §4.7: merchants in any terminal state must be able to reach the Stripe
 	// hosted invoice page to pay and recover their subscription.
 	{http.MethodGet, "/admin/stores/:storeId/subscription/complete-action"},
+	// P7 §19.3: merchants in read-only states must still be able to fix a
+	// missing or invalid tax ID and the matching attestation checkbox.
+	{http.MethodPost, "/admin/stores/:storeId/tax/*path"},
 }

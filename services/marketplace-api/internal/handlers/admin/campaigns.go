@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -10,6 +11,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mark8ly/marketplace-api/internal/campaign"
+	"github.com/mark8ly/marketplace-api/internal/campaignbudget"
+	"github.com/mark8ly/marketplace-api/internal/campaignbudget/concurrency"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -18,11 +21,27 @@ type CampaignHandler struct {
 	svc    *campaign.Service
 	repo   campaign.Repository
 	logger *slog.Logger
+
+	// P9 — budget gate + concurrency slot; both optional for backward compat.
+	budget *campaignbudget.Service
+	slots  concurrency.SlotAcquirer
 }
 
 // NewCampaignHandler constructs a CampaignHandler.
 func NewCampaignHandler(svc *campaign.Service, repo campaign.Repository, logger *slog.Logger) *CampaignHandler {
 	return &CampaignHandler{svc: svc, repo: repo, logger: logger}
+}
+
+// WithBudgetGate attaches the P9 budget service and concurrency slot acquirer
+// to the handler. Must be called before the handler is registered on the router.
+func (h *CampaignHandler) WithBudgetGate(budget *campaignbudget.Service, slots concurrency.SlotAcquirer) *CampaignHandler {
+	return &CampaignHandler{
+		svc:    h.svc,
+		repo:   h.repo,
+		logger: h.logger,
+		budget: budget,
+		slots:  slots,
+	}
 }
 
 // List handles GET /admin/stores/:storeId/campaigns.
@@ -217,11 +236,76 @@ func (h *CampaignHandler) Delete(c *gin.Context) {
 }
 
 // Send handles POST /admin/stores/:storeId/campaigns/:id/send.
+// When P9 budget gate is wired (h.budget != nil), the handler enforces:
+//   1. Max 3 concurrent sends per store via h.slots.AcquireSlot → 429
+//   2. Monthly campaign email budget via h.budget.Reserve → 403
 func (h *CampaignHandler) Send(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
 		return
+	}
+	storeID, err := uuid.Parse(c.Param("storeId"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid UUID"), h.logger)
+		return
+	}
+
+	// P9: acquire concurrency slot before doing any work.
+	if h.slots != nil {
+		release, slotErr := h.slots.AcquireSlot(c.Request.Context(), storeID)
+		if slotErr != nil {
+			if errors.Is(slotErr, concurrency.ErrTooManyConcurrentSends) {
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":   "too_many_concurrent_sends",
+					"message": "You already have 3 campaign sends in flight. Try again shortly.",
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+		defer release()
+	}
+
+	// P9: check budget. Fetch recipient count from existing campaign data first.
+	if h.budget != nil {
+		cmp, fetchErr := h.repo.GetCampaignByID(c.Request.Context(), h.svc.DB(), id)
+		if fetchErr != nil {
+			RespondErr(c, fetchErr, h.logger)
+			return
+		}
+		recipientCount := cmp.TotalRecipients
+		if recipientCount <= 0 {
+			// Segment not yet resolved — resolve now so we can check budget.
+			recipientCount64, countErr := h.repo.CountRecipientsByCampaign(c.Request.Context(), h.svc.DB(), id)
+			if countErr != nil {
+				RespondErr(c, countErr, h.logger)
+				return
+			}
+			recipientCount = int(recipientCount64)
+		}
+		if recipientCount > 0 {
+			_, budgetErr := h.budget.Reserve(c.Request.Context(), storeID, recipientCount)
+			switch {
+			case errors.Is(budgetErr, campaignbudget.ErrBudgetExhausted):
+				campaignbudget.BudgetExhaustedTotal.WithLabelValues("unknown").Inc()
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":   "campaign_email_budget_exhausted",
+					"message": "You've used your monthly campaign email allowance. Upgrade your plan for more.",
+				})
+				return
+			case errors.Is(budgetErr, campaignbudget.ErrNoBudgetRow):
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "budget_row_missing",
+					"message": "Monthly budget not initialised. Support has been notified.",
+				})
+				return
+			case budgetErr != nil:
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+				return
+			}
+		}
 	}
 
 	result, err := h.svc.SendCampaign(c.Request.Context(), id)

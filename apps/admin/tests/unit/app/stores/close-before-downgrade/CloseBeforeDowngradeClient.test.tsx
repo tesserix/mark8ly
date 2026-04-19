@@ -263,7 +263,7 @@ describe('CloseBeforeDowngradeClient', () => {
     fireEvent.click(closeRadios[0])
 
     expect(
-      screen.getByText(/freezes the storefront behind a closed page/i),
+      screen.getByText(/freezes the storefront and shows a closed page/i),
     ).toBeInTheDocument()
   })
 
@@ -274,7 +274,7 @@ describe('CloseBeforeDowngradeClient', () => {
     fireEvent.click(deleteRadios[0])
 
     expect(
-      screen.getByText(/60-day soft-delete grace/i),
+      screen.getByText(/Your data is kept for 60 days/i),
     ).toBeInTheDocument()
   })
 

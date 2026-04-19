@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { countryToCurrency } from "./countryToCurrency";
+import { CURRENCY_COOKIE_NAME, countryToCurrency } from "./countryToCurrency";
 
-const COOKIE_NAME = "mk8_currency";
+const COOKIE_NAME = CURRENCY_COOKIE_NAME;
 const COOKIE_MAX_AGE = 86_400; // 24 hours in seconds
 
 /**

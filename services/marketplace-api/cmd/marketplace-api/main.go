@@ -37,6 +37,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/apikeys"
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
 	"github.com/mark8ly/marketplace-api/internal/billing/migration"
@@ -204,6 +205,31 @@ func main() {
 	if err != nil {
 		log.Error("db open", "err", err)
 		os.Exit(1)
+	}
+
+	// API key encryptor — AES-256-GCM in production, noop in dev.
+	var apiKeyEncryptor crypto.Encryptor
+	switch cfg.EncryptionMode {
+	case "aes":
+		if cfg.EncryptionKey == "" {
+			log.Error("ENCRYPTION_KEY required when ENCRYPTION_MODE=aes")
+			os.Exit(1)
+		}
+		key, decodeErr := crypto.DecodeKey(cfg.EncryptionKey)
+		if decodeErr != nil {
+			log.Error("invalid ENCRYPTION_KEY", "err", decodeErr)
+			os.Exit(1)
+		}
+		enc, aesErr := crypto.NewAESEncryptor(key)
+		if aesErr != nil {
+			log.Error("create AES encryptor", "err", aesErr)
+			os.Exit(1)
+		}
+		apiKeyEncryptor = enc
+		log.Info("crypto: AES-256-GCM encryptor initialized")
+	default:
+		apiKeyEncryptor = crypto.NewNoopEncryptor()
+		log.Info("crypto: noop encryptor (dev mode)")
 	}
 
 	// OpenFGA client — read-only per spec §13.1.1.
@@ -439,12 +465,12 @@ func main() {
 
 		// Settings handlers (P5a).
 		countryRepoAdmin := country.NewRepository(conn)
-		paymentSettingsHandler := admin.NewPaymentSettingsHandler(conn, countryRepoAdmin, log)
-		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, log)
+		paymentSettingsHandler := admin.NewPaymentSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log)
+		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log)
 		shippingRepo := shipping.NewRepository(conn)
 		shippingService := shipping.NewShippingService(shippingRepo)
 		shipmentsHandler := admin.NewShipmentsHandler(conn, shippingService, shippingRepo, orderDocSvc, log)
-		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, log)
+		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log)
 		settingsMetaHandler := admin.NewSettingsMetaHandler(countryRepoAdmin, log)
 
 		// Coupon handler (Marketing M1).
@@ -860,10 +886,10 @@ func main() {
 		sfPagesHandler := storefront.NewPagesHandler(pageSvcSF, log)
 
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
-		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, log).WithAudit(auditEmitter)
+		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, apiKeyEncryptor, log).WithAudit(auditEmitter)
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
-		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, log)
-		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, log)
+		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, apiKeyEncryptor, log)
+		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, apiKeyEncryptor, log)
 		shippingOptionsHandler := storefront.NewShippingOptionsHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
 			WithGiftCardService(giftCardSvcSF).

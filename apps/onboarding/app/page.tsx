@@ -75,7 +75,8 @@ function Hero() {
           </div>
 
           <p className="mt-8 text-sm text-foreground-tertiary">
-            Free for six months. No card required. One flat fee after that.
+            Free for ninety days. No card required. Three clear plans after
+            that, from $29 a month.
           </p>
         </div>
       </div>
@@ -265,69 +266,123 @@ function FeaturePlate({ kicker, index }: FeaturePlateProps) {
    ============================================================ */
 
 function Pricing() {
+  const plans = [
+    {
+      name: "Starter",
+      tagline: "For your first store.",
+      price: "$29",
+      cadence: "/mo",
+      features: [
+        "1 storefront",
+        "Up to 100 products",
+        "500 orders / month",
+        "Your own domain",
+      ],
+    },
+    {
+      name: "Studio",
+      tagline: "For stores finding their rhythm.",
+      price: "$79",
+      cadence: "/mo",
+      features: [
+        "3 storefronts",
+        "Unlimited products",
+        "5,000 orders / month",
+        "Discount codes, advanced analytics",
+      ],
+    },
+    {
+      name: "Pro",
+      tagline: "For teams scaling past $10k a month.",
+      price: "$99",
+      cadence: "/mo annual",
+      features: [
+        "Unlimited storefronts",
+        "Unlimited everything",
+        "SLA-backed uptime, dedicated infrastructure",
+        "Named account manager",
+      ],
+    },
+  ];
+
   return (
     <section id="pricing" className="border-t border-border-subtle py-16 sm:py-24">
       <div className="mx-auto max-w-6xl px-6">
-        <div className="mb-10 grid gap-8 lg:grid-cols-[1fr_2fr] lg:gap-12">
+        <div className="mb-12 grid gap-8 lg:grid-cols-[1fr_2fr] lg:gap-12">
           <div>
             <p className="eyebrow mb-5">Pricing</p>
             <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
-              One offer.
+              Three plans.
               <br />
               Honestly priced.
             </h2>
           </div>
           <p className="max-w-xl self-end text-lg leading-relaxed text-foreground-secondary">
-            Run free for six months. After that, one flat monthly fee. We
-            never take a cut of your sales — only your processor does, at
-            their standard rate.
+            Ninety days free to start. After that, three clear plans — no
+            hidden fees, no transaction cuts from Mark8ly, only what your
+            payment processor charges at their standard rate. Change plans
+            any time; upgrades prorate, downgrades wait for the period to
+            close.
           </p>
         </div>
 
-        <div className="grid items-end gap-10 lg:grid-cols-[1.5fr_1fr] lg:gap-12">
-          <div>
-            <p
-              className="font-serif text-foreground"
-              style={{
-                fontSize: "clamp(4rem, 2rem + 8vw, 9rem)",
-                lineHeight: 0.95,
-                letterSpacing: "-0.04em",
-              }}
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.05fr_1fr_1.05fr]">
+          {plans.map((plan, i) => (
+            <div
+              key={plan.name}
+              className={
+                i < plans.length - 1
+                  ? "lg:border-r lg:border-border lg:pr-10"
+                  : ""
+              }
             >
-              $0
-            </p>
-            <p className="mt-3 font-sans text-xl text-foreground-tertiary">
-              for the first six months.
-            </p>
-            <p className="mt-6 max-w-md text-foreground-secondary">
-              Then $9.99 per month, flat. Unlimited products. Your own
-              domain. Cancel anytime, take your data with you.
-            </p>
-            <div className="mt-10">
-              <Link
-                href="/onboarding"
-                className="inline-flex h-12 items-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
+              <p className="font-serif text-2xl font-medium text-foreground">
+                {plan.name}
+              </p>
+              <p className="mt-2 text-sm text-foreground-tertiary">
+                {plan.tagline}
+              </p>
+              <p
+                className="mt-6 font-serif text-foreground"
+                style={{
+                  fontSize: "clamp(3rem, 1.5rem + 5vw, 5rem)",
+                  lineHeight: 0.95,
+                  letterSpacing: "-0.03em",
+                }}
               >
-                Open your store
-              </Link>
+                {plan.price}
+                <span className="ml-1 font-sans text-base font-normal text-foreground-tertiary">
+                  {plan.cadence}
+                </span>
+              </p>
+              <ul className="mt-6 space-y-3 text-foreground-secondary">
+                {plan.features.map((feature) => (
+                  <li key={feature} className="flex items-baseline gap-3">
+                    <span
+                      aria-hidden="true"
+                      className="font-serif text-moss-700"
+                    >
+                      ·
+                    </span>
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-          </div>
+          ))}
+        </div>
 
-          <ul className="space-y-4 border-l border-border pl-8 text-foreground-secondary">
-            {[
-              "Unlimited products",
-              "Your own domain",
-              "Mark8ly takes 0% of sales",
-              "Real human support",
-              "Export everything, anytime",
-              "Cancel in one click",
-            ].map((item) => (
-              <li key={item} className="flex items-baseline gap-3">
-                <span aria-hidden="true" className="font-serif text-moss-700">·</span>
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
+        <div className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-4 border-t border-border-subtle pt-10">
+          <Link
+            href="/onboarding"
+            className="inline-flex h-12 items-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
+          >
+            Open your store — free for 90 days
+          </Link>
+          <p className="text-sm text-foreground-tertiary">
+            Annual billing available on every plan. Pro includes an optional
+            White-label App add-on.
+          </p>
         </div>
       </div>
     </section>
@@ -400,9 +455,9 @@ const faqItems = [
       "Yes — that's the entire point. If you can write an email, you can run a store on Mark8ly. And if you get stuck, real humans answer real messages.",
   },
   {
-    question: "What happens after the six free months?",
+    question: "What happens after the ninety-day free trial?",
     answer:
-      "One flat fee — $9.99 a month — kicks in. No tiers, no surprises, no added transaction fees. You can cancel any time and take your data with you.",
+      "You choose between three plans — Starter, Studio, or Pro — starting at $29 a month. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.",
   },
   {
     question: "What does Mark8ly take from each sale?",
@@ -412,7 +467,7 @@ const faqItems = [
   {
     question: "Is there a limit on products?",
     answer:
-      "No. Add as many products, photos, and variants as you want. We're not in the business of nickel-and-diming you.",
+      "Starter caps at 100 products for merchants just opening their first store. Studio and Pro are unlimited — add as many products, photos, and variants as you like.",
   },
   {
     question: "Can I leave?",

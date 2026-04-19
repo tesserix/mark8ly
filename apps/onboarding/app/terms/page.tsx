@@ -7,7 +7,7 @@ import {
 export const metadata = {
   title: "Terms",
   description:
-    "Mark8ly Terms of Service. Six months free, then $9.99 flat per month. No transaction fees from Mark8ly. Cancel any time, export your data, no penalties.",
+    "Mark8ly Terms of Service. Ninety-day free trial, then one of three clear plans from $29 a month. No transaction fees from Mark8ly. Cancel any time, export your data, no penalties.",
   alternates: { canonical: "/terms" },
 };
 
@@ -59,12 +59,20 @@ export default function TermsOfServicePage() {
 
         <h2>3. Pricing and payments</h2>
         <p>
-          <strong>Free trial:</strong> six months completely free. No credit
-          card required.
+          <strong>Free trial:</strong> ninety days completely free. No credit
+          card required to start.
         </p>
         <p>
-          <strong>After the free period:</strong> $9.99 a month, flat. No
-          extra platform transaction fees from Mark8ly. Cancel any time.
+          <strong>After the free period:</strong> three plans — Starter,
+          Studio, and Pro — from $29 a month. Annual billing available on
+          every plan. No extra platform transaction fees from Mark8ly.
+          Upgrades prorate; downgrades take effect at the end of your
+          current period. Cancel any time.
+        </p>
+        <p>
+          <strong>Pro&nbsp;+&nbsp;White-label App add-on:</strong> Pro-plan
+          merchants may purchase the optional White-label App add-on, billed
+          annually and co-terminated with the Pro renewal date.
         </p>
         <h3>Refunds</h3>
         <p>

@@ -49,6 +49,8 @@ type Deps struct {
 	RefundHandler *RefundHandler
 	// P11 — merchant-initiated cancellation + save-offer (§15).
 	CancelHandler *cancel.Handler
+	// P8 — geo-pricing arbitrage appeal (§18.8.1).
+	ArbitrageAppealHandler *ArbitrageAppealHandler
 	MigrationFastPathHandler   *migration.Handler
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
@@ -606,6 +608,11 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 						deps.CancelHandler.Cancel)
 				}
 			}
+		}
+
+		// P8 — Geo-pricing arbitrage appeal (§18.8.1).
+		if deps.ArbitrageAppealHandler != nil {
+			RegisterArbitrageAppeal(storeRoute, deps.ArbitrageAppealHandler, deps.AuthzMiddleware)
 		}
 
 		// Trial billing — P5 deferred-charge card-add (§5.3).

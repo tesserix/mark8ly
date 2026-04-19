@@ -5,6 +5,8 @@
   "exports": {
     "./styles/*.css": "./src/styles/*.css",
     "./storefront-theme": "./src/storefront-theme.ts",
+    "./subscription": "./src/subscription/index.ts",
+    "./subscription/*": "./src/subscription/*.tsx",
     "./*": "./src/*.tsx"
   },
   "scripts": {

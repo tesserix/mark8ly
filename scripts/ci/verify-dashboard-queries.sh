@@ -58,6 +58,9 @@ KNOWN_METRICS=(
     mark8ly_subscription_dunning_emails_sent_total
     mark8ly_subscription_payment_action_reminders_sent_total
     mark8ly_subscription_dunning_suppressed_refund_window_total
+    # P15 white-label app counters.
+    white_label_app_lifecycle_transition_total
+    white_label_app_credential_accessed_total
 )
 
 # Recording rules from k8s/cluster/prometheus/rules/subscription.yaml.
@@ -74,6 +77,13 @@ RECORDING_RULES=(
     "http:requests:rate5m"
     "http:error_rate:ratio5m"
     "outbox:published:rate5m"
+    # P15 white-label app recording rules (white_label_app.yaml).
+    "white_label_app:lifecycle_transitions:rate1h"
+    "white_label_app:downloads_blocked:rate1d"
+    "white_label_app:pulled:rate1d"
+    "white_label_app:credentials_purged:rate1d"
+    "white_label_app:credential_accessed:rate1h"
+    "white_label_app:credential_accessed:median24h"
 )
 
 # Metrics known to be deferred — panels reference them as placeholders.

@@ -76,7 +76,7 @@ export async function uploadAppleCredentials(
   formData.append('key_id', fields.key_id)
 
   return postMultipart(
-    `/api/v1/admin/stores/${storeId}/app-credentials/apple`,
+    `/api/admin/stores/${storeId}/app-credentials/apple`,
     formData,
   )
 }
@@ -103,7 +103,7 @@ export async function uploadGoogleCredentials(
   formData.append('service_account_json', jsonBlob, 'service-account.json')
 
   return postMultipart(
-    `/api/v1/admin/stores/${storeId}/app-credentials/google`,
+    `/api/admin/stores/${storeId}/app-credentials/google`,
     formData,
   )
 }

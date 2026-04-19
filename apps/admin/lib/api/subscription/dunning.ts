@@ -33,7 +33,7 @@
 export async function getCompleteActionUrl(
   storeId: string,
 ): Promise<{ url: string }> {
-  const endpoint = `/api/v1/admin/stores/${storeId}/subscription/complete-action`
+  const endpoint = `/api/admin/stores/${storeId}/subscription/complete-action`
 
   // Use fetch directly with redirect:'manual' so we capture the Location
   // header without navigating. The apiClient does not support manual-redirect

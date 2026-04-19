@@ -1,5 +1,6 @@
 'use client'
 
+import { Skeleton } from '@tesserix/web'
 import { useToast } from '@/components/feedback/Toaster'
 import { ApiError, SubscriptionInactiveError } from '@/lib/api/client'
 import { useCurrentPlan } from '@/lib/api/subscription/hooks/useBilling'
@@ -24,13 +25,10 @@ function PanelSkeleton() {
       aria-label={copy.loadingAriaLabel}
       className="space-y-3 border-b border-[var(--hairline,var(--ink-100))] pb-10"
     >
-      {/* Title placeholder */}
-      <div className="h-7 w-40 rounded-[6px] bg-[var(--paper-200)]" />
-      {/* Body line placeholder */}
-      <div className="h-4 w-72 rounded-[6px] bg-[var(--paper-200)]" />
-      <div className="h-4 w-52 rounded-[6px] bg-[var(--paper-200)]" />
-      {/* CTA placeholder */}
-      <div className="h-10 w-32 rounded-[6px] bg-[var(--paper-200)]" />
+      <Skeleton className="h-7 w-40 rounded-[6px]" />
+      <Skeleton className="h-4 w-72 rounded-[6px]" />
+      <Skeleton className="h-4 w-52 rounded-[6px]" />
+      <Skeleton className="h-10 w-32 rounded-[6px]" />
     </div>
   )
 }

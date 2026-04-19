@@ -40,7 +40,7 @@ export async function getProrationPreview(
   }
 
   const raw = await apiClient.get<unknown>(
-    `/api/v1/admin/stores/${storeId}/subscription/change-plan/preflight?${params.toString()}`,
+    `/api/admin/stores/${storeId}/subscription/change-plan/preflight?${params.toString()}`,
   )
 
   return preflightReportSchema.parse(raw)
@@ -58,7 +58,7 @@ export async function applyPlanChange(
   body: ApplyPlanChangeBody,
 ): Promise<ApplyPlanChangeResponse> {
   const raw = await apiClient.post<unknown>(
-    `/api/v1/admin/stores/${storeId}/subscription/change-plan`,
+    `/api/admin/stores/${storeId}/subscription/change-plan`,
     body as Record<string, unknown>,
   )
 

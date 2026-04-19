@@ -35,7 +35,7 @@ export async function purchaseProApp(
   const validated = purchaseProAppRequestSchema.parse(body)
 
   const raw = await apiClient.post<unknown>(
-    `/api/v1/admin/stores/${storeId}/subscription/add-on/white-label-app`,
+    `/api/admin/stores/${storeId}/subscription/add-on/white-label-app`,
     validated as Record<string, unknown>,
   )
 

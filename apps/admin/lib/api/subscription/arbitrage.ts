@@ -28,7 +28,7 @@ export async function submitArbitrageAppeal(
   body: ArbitrageAppealRequest,
 ): Promise<ArbitrageAppealResponse> {
   const raw = await apiClient.post<unknown>(
-    `/api/v1/admin/stores/${storeId}/arbitrage-appeal`,
+    `/api/admin/stores/${storeId}/arbitrage-appeal`,
     body as Record<string, unknown>,
   )
   return arbitrageAppealResponseSchema.parse(raw)

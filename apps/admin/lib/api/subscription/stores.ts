@@ -73,7 +73,7 @@ export async function getDowngradeBlockList(
   params: GetDowngradeBlockListParams,
 ): Promise<DowngradeBlockList> {
   const { targetPlan, billingPeriod, overBy } = params
-  const preflightUrl = `/api/v1/admin/stores/${storeId}/subscription/downgrade-preflight?target=${encodeURIComponent(targetPlan)}&billing=${encodeURIComponent(billingPeriod)}`
+  const preflightUrl = `/api/admin/stores/${storeId}/subscription/downgrade-preflight?target=${encodeURIComponent(targetPlan)}&billing=${encodeURIComponent(billingPeriod)}`
 
   try {
     const raw = await apiClient.get<unknown>(preflightUrl)
@@ -91,7 +91,7 @@ export async function getDowngradeBlockList(
   // Fallback: derive over-cap stores from GET /admin/stores
   // TODO(P15): remove this block once /downgrade-preflight is implemented.
   // ---------------------------------------------------------------------------
-  const raw = await apiClient.get<AdminStoresListResponse>('/api/v1/admin/stores')
+  const raw = await apiClient.get<AdminStoresListResponse>('/api/admin/stores')
   const allStores = raw.data ?? []
   const cap = PLAN_STORE_CAPS[targetPlan] ?? 0
 
@@ -124,7 +124,7 @@ export async function getDowngradeBlockList(
  */
 export async function closeStore(storeId: string): Promise<StoreActionResponse> {
   const raw = await apiClient.post<unknown>(
-    `/api/v1/admin/stores/${storeId}/close`,
+    `/api/admin/stores/${storeId}/close`,
     null,
   )
   return storeActionResponseSchema.parse(raw)
@@ -139,7 +139,7 @@ export async function closeStore(storeId: string): Promise<StoreActionResponse> 
  */
 export async function deleteStore(storeId: string): Promise<StoreActionResponse> {
   const raw = await apiClient.del<unknown>(
-    `/api/v1/admin/stores/${storeId}`,
+    `/api/admin/stores/${storeId}`,
   )
   return storeActionResponseSchema.parse(raw)
 }

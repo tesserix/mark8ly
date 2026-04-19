@@ -37,7 +37,7 @@ export async function submitTaxId(
   body: TaxIdSubmitRequest,
 ): Promise<TaxIdSubmitResponse> {
   const raw = await apiClient.post<unknown>(
-    `/api/v1/admin/stores/${storeId}/tax/submit`,
+    `/api/admin/stores/${storeId}/tax/submit`,
     body as Record<string, unknown>,
   )
   return taxIdSubmitResponseSchema.parse(raw)

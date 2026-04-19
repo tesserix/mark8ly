@@ -21,7 +21,7 @@ import {
 } from './schemas/cancellation'
 
 const cancelPath = (storeId: string) =>
-  `/api/v1/admin/stores/${storeId}/subscription/cancel`
+  `/api/admin/stores/${storeId}/subscription/cancel`
 
 /**
  * Submit a cancellation (or save-offer response).

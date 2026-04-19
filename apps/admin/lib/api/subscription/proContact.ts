@@ -58,7 +58,7 @@ export async function submitProContact(
   let raw: unknown
   try {
     raw = await apiClient.post<unknown>(
-      `/api/v1/admin/stores/${storeId}/subscription/pro-contact`,
+      `/api/admin/stores/${storeId}/subscription/pro-contact`,
       validated as Record<string, unknown>,
     )
   } catch (err) {

@@ -22,7 +22,7 @@ import {
  */
 export async function getSubscription(storeId: string): Promise<CurrentPlan> {
   const raw = await apiClient.get<unknown>(
-    `/api/v1/admin/stores/${storeId}/subscription`,
+    `/api/admin/stores/${storeId}/subscription`,
   )
   const parsed = subscriptionResponseSchema.parse(raw)
   return toCurrentPlan(parsed)
@@ -44,7 +44,7 @@ export async function openPortal(storeId: string): Promise<PortalResponse> {
       : '/settings/billing'
 
   const raw = await apiClient.post<unknown>(
-    `/api/v1/admin/stores/${storeId}/subscription/portal`,
+    `/api/admin/stores/${storeId}/subscription/portal`,
     { return_url: returnUrl },
   )
   return portalResponseSchema.parse(raw)

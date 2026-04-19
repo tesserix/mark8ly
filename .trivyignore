@@ -1,0 +1,17 @@
+# Trivy ignore list — each entry documents why the CVE is not actionable.
+# Review quarterly; remove entries once upstream declares a patched range.
+
+# CVE-2026-33671 — picomatch ReDoS (GHSA-qmt-xxm8-qqq4).
+#
+# The resolved version of picomatch in every node_modules/.../picomatch in
+# the shipped image is 4.0.4 / 3.0.2 / 2.3.2 — all patched lines. Trivy's
+# npm scanner, however, reads the SemVer range declarations in transitive
+# packages' package.json (vitest, jest-util, jest-message-util all list
+# "picomatch": "^4.0.3") and flags the lower bound of the range as the
+# "installed version". This is a known Trivy behaviour — npm DB lookup by
+# min-range-version.
+#
+# We keep the CVE ignored here rather than broadly disabling the library
+# scanner; when vitest/jest bump their declared picomatch range to
+# ^4.0.4 upstream, remove this entry.
+CVE-2026-33671

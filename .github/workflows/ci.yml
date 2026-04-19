@@ -233,7 +233,9 @@ jobs:
         # exploitable CVE in the built image halts the deploy instead of
         # merely emitting a security-tab alert that no one follows up on.
         # ignore-unfixed stays on so upstream-only-fixed-in-HEAD advisories
-        # (which we can't act on) don't hold up ops.
+        # (which we can't act on) don't hold up ops. trivyignores lists
+        # CVE IDs we've explicitly triaged as false-positives; each entry
+        # in .trivyignore carries a rationale + review date.
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ghcr.io/tesserix/${{ matrix.image.name }}:sha-${{ steps.sha.outputs.short }}
@@ -241,6 +243,7 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
           vuln-type: "os,library"
+          trivyignores: .trivyignore
 
   # ─── Bump tesserix-k8s values ──────────────────────────────────────
   # After all images push successfully, commit the mark8ly-* image tag

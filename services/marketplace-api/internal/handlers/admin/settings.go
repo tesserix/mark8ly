@@ -17,6 +17,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/country"
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
@@ -95,12 +96,13 @@ type PaymentSettingsHandler struct {
 	db          *gorm.DB
 	countryRepo country.Repository
 	audit       *audit.Emitter // optional — nil-safe
+	encryptor   crypto.Encryptor
 	logger      *slog.Logger
 }
 
 // NewPaymentSettingsHandler constructs a PaymentSettingsHandler.
-func NewPaymentSettingsHandler(db *gorm.DB, countryRepo country.Repository, logger *slog.Logger) *PaymentSettingsHandler {
-	return &PaymentSettingsHandler{db: db, countryRepo: countryRepo, logger: logger}
+func NewPaymentSettingsHandler(db *gorm.DB, countryRepo country.Repository, enc crypto.Encryptor, logger *slog.Logger) *PaymentSettingsHandler {
+	return &PaymentSettingsHandler{db: db, countryRepo: countryRepo, encryptor: enc, logger: logger}
 }
 
 // WithAudit attaches an audit emitter so payment provider changes land
@@ -222,12 +224,35 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 	storeUUID, _ := uuid.Parse(store.ID)
 	tenantUUID, _ := uuid.Parse(store.TenantID)
 
+	// Encrypt API keys before storage.
+	apiKeyEnc, err := h.encryptor.Encrypt(req.APIKey)
+	if err != nil {
+		h.logger.Error("encrypt api_key", "store_id", store.ID, "provider", provider, "err", err)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal",
+			"message": "failed to secure payment configuration",
+		})
+		return
+	}
+	var secretKeyEnc string
+	if req.SecretKey != "" {
+		secretKeyEnc, err = h.encryptor.Encrypt(req.SecretKey)
+		if err != nil {
+			h.logger.Error("encrypt secret_key", "store_id", store.ID, "provider", provider, "err", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"error":   "internal",
+				"message": "failed to secure payment configuration",
+			})
+			return
+		}
+	}
+
 	cfg := PaymentGatewayConfig{
 		TenantID:           tenantUUID,
 		StoreID:            storeUUID,
 		Provider:           provider,
-		APIKeyEncrypted:    req.APIKey,
-		SecretKeyEncrypted: req.SecretKey,
+		APIKeyEncrypted:    apiKeyEnc,
+		SecretKeyEncrypted: secretKeyEnc,
 		Mode:               req.Mode,
 		IsActive:           req.IsActive,
 	}
@@ -255,8 +280,8 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 		return
 	} else {
 		updates := map[string]any{
-			"api_key_encrypted":    req.APIKey,
-			"secret_key_encrypted": req.SecretKey,
+			"api_key_encrypted":    apiKeyEnc,
+			"secret_key_encrypted": secretKeyEnc,
 			"mode":                 req.Mode,
 			"is_active":            req.IsActive,
 			"updated_at":           time.Now(),
@@ -404,12 +429,13 @@ func (h *PaymentSettingsHandler) TestConnection(c *gin.Context) {
 type ShippingSettingsHandler struct {
 	db          *gorm.DB
 	countryRepo country.Repository
+	encryptor   crypto.Encryptor
 	logger      *slog.Logger
 }
 
 // NewShippingSettingsHandler constructs a ShippingSettingsHandler.
-func NewShippingSettingsHandler(db *gorm.DB, countryRepo country.Repository, logger *slog.Logger) *ShippingSettingsHandler {
-	return &ShippingSettingsHandler{db: db, countryRepo: countryRepo, logger: logger}
+func NewShippingSettingsHandler(db *gorm.DB, countryRepo country.Repository, enc crypto.Encryptor, logger *slog.Logger) *ShippingSettingsHandler {
+	return &ShippingSettingsHandler{db: db, countryRepo: countryRepo, encryptor: enc, logger: logger}
 }
 
 // shippingConfigResponse is the safe wire DTO for carrier configs.
@@ -582,12 +608,35 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 	storeUUID, _ := uuid.Parse(store.ID)
 	tenantUUID, _ := uuid.Parse(store.TenantID)
 
+	// Encrypt API keys before storage.
+	apiKeyEnc, err := h.encryptor.Encrypt(req.APIKey)
+	if err != nil {
+		h.logger.Error("encrypt api_key", "store_id", store.ID, "provider", provider, "err", err)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal",
+			"message": "failed to secure shipping configuration",
+		})
+		return
+	}
+	var secretKeyEnc string
+	if req.SecretKey != "" {
+		secretKeyEnc, err = h.encryptor.Encrypt(req.SecretKey)
+		if err != nil {
+			h.logger.Error("encrypt secret_key", "store_id", store.ID, "provider", provider, "err", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"error":   "internal",
+				"message": "failed to secure shipping configuration",
+			})
+			return
+		}
+	}
+
 	cfg := ShippingCarrierConfigRow{
 		TenantID:           tenantUUID,
 		StoreID:            storeUUID,
 		Provider:           provider,
-		APIKeyEncrypted:    req.APIKey,
-		SecretKeyEncrypted: req.SecretKey,
+		APIKeyEncrypted:    apiKeyEnc,
+		SecretKeyEncrypted: secretKeyEnc,
 		Mode:               req.Mode,
 		IsActive:           req.IsActive,
 		HandlingFee:        decimal.NewFromFloat(req.HandlingFee),
@@ -625,8 +674,8 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		return
 	} else {
 		updates := map[string]any{
-			"api_key_encrypted":    req.APIKey,
-			"secret_key_encrypted": req.SecretKey,
+			"api_key_encrypted":    apiKeyEnc,
+			"secret_key_encrypted": secretKeyEnc,
 			"mode":                 req.Mode,
 			"is_active":            req.IsActive,
 			"handling_fee":         decimal.NewFromFloat(req.HandlingFee),
@@ -706,12 +755,13 @@ func (h *ShippingSettingsHandler) Delete(c *gin.Context) {
 type TaxSettingsHandler struct {
 	db          *gorm.DB
 	countryRepo country.Repository
+	encryptor   crypto.Encryptor
 	logger      *slog.Logger
 }
 
 // NewTaxSettingsHandler constructs a TaxSettingsHandler.
-func NewTaxSettingsHandler(db *gorm.DB, countryRepo country.Repository, logger *slog.Logger) *TaxSettingsHandler {
-	return &TaxSettingsHandler{db: db, countryRepo: countryRepo, logger: logger}
+func NewTaxSettingsHandler(db *gorm.DB, countryRepo country.Repository, enc crypto.Encryptor, logger *slog.Logger) *TaxSettingsHandler {
+	return &TaxSettingsHandler{db: db, countryRepo: countryRepo, encryptor: enc, logger: logger}
 }
 
 // TaxProviderConfigRow mirrors tax.TaxProviderConfig but is local to avoid
@@ -848,11 +898,22 @@ func (h *TaxSettingsHandler) UpsertTaxJar(c *gin.Context) {
 	storeUUID, _ := uuid.Parse(store.ID)
 	tenantUUID, _ := uuid.Parse(store.TenantID)
 
+	// Encrypt API key before storage.
+	apiKeyEnc, err := h.encryptor.Encrypt(req.APIKey)
+	if err != nil {
+		h.logger.Error("encrypt api_key", "store_id", store.ID, "err", err)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal",
+			"message": "failed to secure TaxJar configuration",
+		})
+		return
+	}
+
 	cfg := TaxProviderConfigRow{
 		TenantID:        tenantUUID,
 		StoreID:         storeUUID,
 		Provider:        "taxjar",
-		APIKeyEncrypted: req.APIKey,
+		APIKeyEncrypted: apiKeyEnc,
 		Mode:            req.Mode,
 		IsActive:        true,
 	}
@@ -880,7 +941,7 @@ func (h *TaxSettingsHandler) UpsertTaxJar(c *gin.Context) {
 		return
 	} else {
 		updates := map[string]any{
-			"api_key_encrypted": req.APIKey,
+			"api_key_encrypted": apiKeyEnc,
 			"mode":              req.Mode,
 			"is_active":         true,
 			"updated_at":        time.Now(),

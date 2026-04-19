@@ -133,7 +133,13 @@ function TogglePill({
         onClick={() => onChange('annual')}
       >
         Annual
-        <span className="ml-2 rounded-full bg-moss-700/10 px-2 py-0.5 text-xs font-normal text-moss-700">
+        <span
+          className={`ml-2 rounded-full px-2 py-0.5 text-xs font-normal ${
+            period === 'annual'
+              ? 'bg-background-elevated/20 text-background-elevated'
+              : 'bg-moss-700/10 text-moss-700'
+          }`}
+        >
           Save ~20%
         </span>
       </button>
@@ -211,7 +217,10 @@ export function Pricing({ currency, catalogue }: PricingProps) {
                   }}
                 >
                   <Money amount={headline} currency={currency} showCents={false} />
-                  <span className="ml-1 font-sans text-base font-normal text-foreground-tertiary">
+                  <span
+                    className="ml-1 font-sans text-base font-normal text-foreground-tertiary"
+                    style={{ letterSpacing: 'normal', whiteSpace: 'nowrap' }}
+                  >
                     {cadence}
                   </span>
                 </p>

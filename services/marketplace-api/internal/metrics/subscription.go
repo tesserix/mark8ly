@@ -46,9 +46,10 @@ type SubscriptionCollectors struct {
 	// hard-delete events. No labels — one per store permanently deleted.
 	BillingArchiveCreatedTotal prometheus.Counter
 
-	// BillingArchiveExpirySoonGauge is the count of billing_archive rows
-	// expiring within 30 days. Populated by the Task 11 expiry collector.
-	BillingArchiveExpirySoonGauge prometheus.Gauge
+	// billing_archive_expiry_soon is emitted by BillingArchiveExpiryCollector
+	// in billing_archive_expiry.go (scrape-time query, self-updating). No
+	// package-level gauge here — registering both caused a duplicate-descriptor
+	// panic at boot (2026-04-19 incident).
 }
 
 // NewSubscriptionCollectors constructs and registers all subscription-related
@@ -128,13 +129,6 @@ func NewSubscriptionCollectors(reg prometheus.Registerer) *SubscriptionCollector
 			},
 		),
 
-		BillingArchiveExpirySoonGauge: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Namespace: "mark8ly",
-				Name:      "billing_archive_expiry_soon",
-				Help:      "Count of billing_archive rows expiring within the next 30 days.",
-			},
-		),
 	}
 
 	reg.MustRegister(
@@ -146,7 +140,6 @@ func NewSubscriptionCollectors(reg prometheus.Registerer) *SubscriptionCollector
 		c.PromoAppliedTotal,
 		c.RefundIssuedTotal,
 		c.BillingArchiveCreatedTotal,
-		c.BillingArchiveExpirySoonGauge,
 	)
 
 	return c

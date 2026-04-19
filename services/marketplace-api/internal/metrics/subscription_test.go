@@ -91,14 +91,9 @@ func TestBillingArchiveCreatedTotal_Inc(t *testing.T) {
 	assert.Equal(t, 2.0, got)
 }
 
-// TestBillingArchiveExpirySoonGauge_Set checks the expiry gauge.
-func TestBillingArchiveExpirySoonGauge_Set(t *testing.T) {
-	c := newIsolatedCollectors(t)
-	c.BillingArchiveExpirySoonGauge.Set(7)
-
-	got := testutil.ToFloat64(c.BillingArchiveExpirySoonGauge)
-	assert.Equal(t, 7.0, got)
-}
+// NOTE: billing_archive_expiry_soon is emitted by BillingArchiveExpiryCollector
+// in billing_archive_expiry.go (scrape-time), not by a package-level gauge.
+// See billing_archive_expiry_test.go for its coverage.
 
 // TestPackageLevelSubscription_NotNil ensures the package-level singleton is
 // initialised by init() and all fields are non-nil.
@@ -112,5 +107,4 @@ func TestPackageLevelSubscription_NotNil(t *testing.T) {
 	assert.NotNil(t, metrics.Subscription.PromoAppliedTotal)
 	assert.NotNil(t, metrics.Subscription.RefundIssuedTotal)
 	assert.NotNil(t, metrics.Subscription.BillingArchiveCreatedTotal)
-	assert.NotNil(t, metrics.Subscription.BillingArchiveExpirySoonGauge)
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	"github.com/mark8ly/marketplace-api/internal/billing/migration"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
@@ -59,6 +60,11 @@ type Deps struct {
 	// P14 — enterprise API keys (§18.4).
 	APIKeysHandler *APIKeysHandler
 	APIKeysLogger  *slog.Logger
+	// P15 — white-label mobile-app add-on (§13.2, §14.2, §18.9). Both
+	// are nil-safe: absence leaves the routes unmounted, matching the
+	// pattern used for TaxHandler / APIKeysHandler above.
+	AppCredentialsHandler *AppCredentialsHandler
+	AppAddOnHandler       *appaddon.Handler
 	// P13 — per-tenant SSO configuration (§12, Pro-gated). Mounted outside
 	// the store-scoped group because SSO config is tenant-wide, not per-store.
 	SSOConfigHandler *SSOConfigHandler
@@ -665,6 +671,13 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		if deps.APIKeysHandler != nil {
 			RegisterAPIKeys(storeRoute, deps.APIKeysHandler, deps.AuthzMiddleware, deps.APIKeysLogger)
 		}
+
+		// P15 — white-label mobile-app add-on (§13.2, §14.2, §18.9). Pro
+		// plan + has_white_label_app_add_on=true gate is enforced inside
+		// the handler; no extra AuthzMiddleware needed because the creds
+		// are tenant-scoped at the appcreds.Service layer.
+		MountAppCredentialsRoutes(storeRoute, deps.AppCredentialsHandler)
+		MountAppAddOnRoutes(storeRoute, deps.AppAddOnHandler)
 
 		// Trial billing — P5 deferred-charge card-add (§5.3).
 		if deps.TrialBillingHandler != nil {

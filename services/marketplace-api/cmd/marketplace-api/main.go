@@ -34,6 +34,7 @@ import (
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	appcredspkg "github.com/mark8ly/marketplace-api/internal/billing/appcreds"
 	wlapple "github.com/mark8ly/marketplace-api/internal/whitelabel/apple"
 	wlfirebase "github.com/mark8ly/marketplace-api/internal/whitelabel/firebase"
@@ -315,6 +316,13 @@ func main() {
 	// (registered outside the admin-mode block) can reference it for the
 	// hard-delete runner's Stripe customer deletion step.
 	var billingStripeClient *billingstripe.Client
+
+	// wlAppCredsSvc is hoisted so both admin route registration (constructs
+	// AppCredentialsHandler + AppAddOnHandler) and the white-label lifecycle
+	// cron (constructs Advancer) share a single appcreds.Service instance.
+	// Assigned inside the admin-mode block; lifecycle cron below guards on
+	// nil for MODE=storefront so the storefront pod doesn't need credstore.
+	var wlAppCredsSvc *appcredspkg.Service
 
 	// auditEmitter is the async audit-log writer. Init runs unconditionally
 	// because both admin AND storefront emit (e.g. storefront checkout
@@ -711,6 +719,36 @@ func main() {
 		_ = apiKeysCache    // referenced by middleware once the public API router mounts
 		_ = apiKeysLastUsed // see above
 
+		// P15 — white-label app credential store + purchase/upload handlers.
+		// GCP Secret Manager when APPCREDS_PROJECT_ID is set; FakeSM dev
+		// fallback when empty. The advancer + lifecycle cron are wired
+		// further down (near trialScheduler); we share this Service via
+		// the hoisted wlAppCredsSvc var.
+		var wlAppCredsSM appcredspkg.SM
+		if cfg.AppCredsProjectID != "" {
+			if smClient, err := secretmanagerclient.NewClient(context.Background()); err != nil {
+				log.Error("init secret manager client for appcreds", "err", err)
+			} else {
+				defer smClient.Close()
+				wlAppCredsSM = appcredspkg.NewGCPSM(smClient, cfg.AppCredsProjectID)
+			}
+		}
+		if wlAppCredsSM == nil {
+			wlAppCredsSM = appcredspkg.NewFakeSM()
+			log.Warn("P15 appcreds using FakeSM — set APPCREDS_PROJECT_ID for production")
+		}
+		wlAppCredsSvc = appcredspkg.NewService(appcredspkg.Config{
+			ProjectID: cfg.AppCredsProjectID,
+			SM:        wlAppCredsSM,
+			Emitter:   auditEmitter,
+		})
+		appCredentialsHandler := admin.NewAppCredentialsHandler(conn, subscriptionRepo, wlAppCredsSvc)
+		appAddOnHandler := appaddon.NewHandler(appaddon.Config{
+			DB:      conn,
+			Stripe:  &appaddon.StripeClientAdapter{Client: billingStripeClient},
+			SubRepo: subscriptionRepo,
+		})
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -747,6 +785,8 @@ func main() {
 			TaxHandler:                 taxHandler,
 			APIKeysHandler:             apiKeysHandler,
 			APIKeysLogger:              log,
+			AppCredentialsHandler:      appCredentialsHandler,
+			AppAddOnHandler:            appAddOnHandler,
 			AuditLogsHandler:           auditLogsHandler,
 			NotificationsHandler:   notificationsHandler,
 			DashboardHandler:       dashboardHandler,
@@ -1394,59 +1434,40 @@ func main() {
 	// shares the same thread pool and shutdown semantics as P5/P6/P11
 	// crons. Production spec: "0 5 * * *" (05:00 UTC daily).
 	// ──────────────────────────────────────────────────────────────────
-	var wlAppCredsSM appcredspkg.SM
-	if cfg.AppCredsProjectID != "" {
-		smClient, err := secretmanagerclient.NewClient(workerCtx)
-		if err != nil {
-			log.Error("init secret manager client for appcreds", "err", err)
-		} else {
-			defer smClient.Close()
-			wlAppCredsSM = appcredspkg.NewGCPSM(smClient, cfg.AppCredsProjectID)
-		}
-	}
-	if wlAppCredsSM == nil {
-		wlAppCredsSM = appcredspkg.NewFakeSM()
-		log.Warn("P15 appcreds using FakeSM — set APPCREDS_PROJECT_ID for production")
-	}
-	wlAppCredsSvc := appcredspkg.NewService(appcredspkg.Config{
-		ProjectID: cfg.AppCredsProjectID,
-		SM:        wlAppCredsSM,
-		Emitter:   auditEmitter,
-	})
-	wlAppleCli := wlapple.NewFakeClient()
-	wlGoogleCli := wlgoogleplay.NewFakeClient()
-	wlFirebaseCli := wlfirebase.NewFakeClient()
-	wlAdvancer := wllifecycle.NewAdvancer(wllifecycle.Config{
-		DB:       conn,
-		Apple:    wlAppleCli,
-		Google:   wlGoogleCli,
-		Firebase: wlFirebaseCli,
-		Creds:    wlAppCredsSvc,
-		Clock:    time.Now,
-		Logger:   log,
-	})
-	if _, err := trialScheduler.AddFunc(cfg.WhiteLabelLifecycleCron, func() {
-		if err := wlAdvancer.AdvanceDue(workerCtx); err != nil {
-			log.Error("P15 white-label lifecycle advance failed", "err", err)
-		}
-	}); err != nil {
-		log.Error("register P15 white-label lifecycle cron", "err", err)
-	}
-	log.Info("P15 white-label lifecycle cron registered",
-		"spec", cfg.WhiteLabelLifecycleCron,
-		"appcreds_mode", func() string {
-			if cfg.AppCredsProjectID == "" {
-				return "fake"
+	// wlAppCredsSvc is assigned above inside the admin-mode block. On
+	// MODE=storefront it's nil and we skip the lifecycle cron — the
+	// storefront pod has no business running the teardown advancer.
+	if wlAppCredsSvc != nil {
+		wlAppleCli := wlapple.NewFakeClient()
+		wlGoogleCli := wlgoogleplay.NewFakeClient()
+		wlFirebaseCli := wlfirebase.NewFakeClient()
+		wlAdvancer := wllifecycle.NewAdvancer(wllifecycle.Config{
+			DB:       conn,
+			Apple:    wlAppleCli,
+			Google:   wlGoogleCli,
+			Firebase: wlFirebaseCli,
+			Creds:    wlAppCredsSvc,
+			Clock:    time.Now,
+			Logger:   log,
+		})
+		if _, err := trialScheduler.AddFunc(cfg.WhiteLabelLifecycleCron, func() {
+			if err := wlAdvancer.AdvanceDue(workerCtx); err != nil {
+				log.Error("P15 white-label lifecycle advance failed", "err", err)
 			}
-			return "gcp"
-		}())
-	_ = wlAppCredsSvc // handlers that consume this land via a separate
-	// mount helper; see internal/handlers/admin/app_routes.go.
-	// HTTP route registration of the Apple/Google credential upload and
-	// add-on purchase handlers is intentionally deferred to avoid
-	// conflicting with parallel P16 work on the admin Deps struct; mount
-	// via admin.MountAppCredentialsRoutes / admin.MountAppAddOnRoutes
-	// once the shared Deps is finalised.
+		}); err != nil {
+			log.Error("register P15 white-label lifecycle cron", "err", err)
+		}
+		log.Info("P15 white-label lifecycle cron registered",
+			"spec", cfg.WhiteLabelLifecycleCron,
+			"appcreds_mode", func() string {
+				if cfg.AppCredsProjectID == "" {
+					return "fake"
+				}
+				return "gcp"
+			}())
+	} else {
+		log.Info("P15 white-label lifecycle cron skipped (MODE=storefront, wlAppCredsSvc nil)")
+	}
 
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)

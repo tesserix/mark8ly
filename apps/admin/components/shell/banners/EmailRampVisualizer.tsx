@@ -54,7 +54,8 @@ function resolveCurrentMilestoneIndex(daysSinceSignup: number): number {
   const milestones = emailRamp.milestones
   let current = 0
   for (let i = 0; i < milestones.length; i++) {
-    if (milestones[i].daysFromSignup <= daysSinceSignup) {
+    const milestone = milestones[i]
+    if (milestone && milestone.daysFromSignup <= daysSinceSignup) {
       current = i
     }
   }

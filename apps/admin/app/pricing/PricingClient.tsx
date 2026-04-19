@@ -36,7 +36,7 @@ interface PricingClientProps {
 // ---------------------------------------------------------------------------
 
 function getPlanPrice(plan: Plan, currency: string): PlanPrice {
-  return plan.prices[currency] ?? plan.prices['USD']
+  return plan.prices[currency] ?? plan.prices['USD']!
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +262,7 @@ interface ProAppCardProps {
 
 function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
   const addonCopy = pricingCopy.proApp
-  const price = pricing.proApp.prices[currency] ?? pricing.proApp.prices['USD']
+  const price = pricing.proApp.prices[currency] ?? pricing.proApp.prices['USD']!
   const amount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
 
   return (

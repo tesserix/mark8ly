@@ -151,7 +151,7 @@ async function setupApiMocks(page: import('@playwright/test').Page) {
       }),
     })
   })
-})
+}
 
 // ---------------------------------------------------------------------------
 // Helper: run axe and separate violations by severity

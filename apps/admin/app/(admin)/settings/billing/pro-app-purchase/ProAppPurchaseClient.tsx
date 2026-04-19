@@ -63,7 +63,7 @@ const ANNUAL_ADDON_PRICE_CENTS = 200000
 /** RHF form schema — only the acknowledgement checkbox. */
 const formSchema = z.object({
   acknowledged: z.literal(true, {
-    errorMap: () => ({ message: 'You must acknowledge this before continuing.' }),
+    message: 'You must acknowledge this before continuing.',
   }),
 })
 

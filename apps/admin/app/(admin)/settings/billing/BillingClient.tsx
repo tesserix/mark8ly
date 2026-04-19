@@ -131,7 +131,7 @@ export function BillingClient({ storeId }: BillingClientProps) {
       <PlanCard plan={plan} storeId={storeId} />
       <PaymentMethodCard plan={plan} storeId={storeId} />
       <InvoicesList storeId={storeId} />
-      <WhiteLabelAppCard plan={plan} />
+      <WhiteLabelAppCard plan={plan} storeId={storeId} />
     </div>
   )
 }

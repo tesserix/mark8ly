@@ -75,9 +75,7 @@ export type AttestationResponse = z.infer<typeof attestationResponseSchema>
 export const attestationFormSchema = z.object({
   country: attestationJurisdictionSchema,
   is_business_entity: z.literal(true, {
-    errorMap: () => ({
-      message: 'You must confirm this store is operated by a registered business entity.',
-    }),
+    message: 'You must confirm this store is operated by a registered business entity.',
   }),
 })
 

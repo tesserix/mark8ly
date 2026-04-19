@@ -42,72 +42,89 @@ export interface SharedPricingCatalogue {
 }
 
 /**
- * Ten currencies cover >95% of Mark8ly's target markets. Adding a
- * new currency means appending its prices here + extending
- * `SUPPORTED_CURRENCIES` in country-map.ts. Currencies present in
- * country-map but missing here fall back to USD on render.
+ * Source of truth for headline pricing per spec v2.3 §4.1 and §4.1.1.
+ * Monthly Pro is +20% premium over annual-equivalent (§3.1 Council finding).
+ *
+ * Developed markets (USD, CAD, GBP, EUR, AUD, NZD, SGD): USD parity.
+ * Emerging markets (INR): PPP-adjusted (~33% discount).
+ * AU prices are GST-EXCLUSIVE — onboarding/admin surfaces must show
+ * "Plus GST" disclosure for AU (§19.4).
+ * Pro+App add-on is USD-only globally — no PPP or AUD localization
+ * (§4.1.2); the catalogue still offers per-currency rows for display,
+ * but billing always bills in USD for the add-on.
+ *
+ * AED and JPY are NOT in the v2.3 launch scope (§4.1 — UAE deferred,
+ * JPY not in 18-country list). Retained for fallback display only;
+ * signup will be blocked for those countries until v2.
  */
 export const SHARED_PRICING_CATALOGUE: SharedPricingCatalogue = {
   plans: [
     {
       id: 'starter',
+      // Spec §4.1: $19/mo or $182/yr developed markets; ₹999/mo or ₹9,599/yr India PPP.
       prices: {
-        USD: { monthly: 2900, annual: 27600, annualMonthlyEquivalent: 2300 },
-        GBP: { monthly: 2300, annual: 21600, annualMonthlyEquivalent: 1800 },
-        EUR: { monthly: 2700, annual: 25200, annualMonthlyEquivalent: 2100 },
-        CAD: { monthly: 3900, annual: 37200, annualMonthlyEquivalent: 3100 },
-        AUD: { monthly: 4500, annual: 43200, annualMonthlyEquivalent: 3600 },
-        NZD: { monthly: 4800, annual: 45600, annualMonthlyEquivalent: 3800 },
-        INR: { monthly: 249900, annual: 2399900, annualMonthlyEquivalent: 199900 },
-        SGD: { monthly: 3900, annual: 37200, annualMonthlyEquivalent: 3100 },
-        AED: { monthly: 10700, annual: 102000, annualMonthlyEquivalent: 8500 },
-        JPY: { monthly: 440000, annual: 4200000, annualMonthlyEquivalent: 350000 },
+        USD: { monthly: 1900, annual: 18200, annualMonthlyEquivalent: 1517 },
+        CAD: { monthly: 2500, annual: 23900, annualMonthlyEquivalent: 1992 },
+        GBP: { monthly: 1500, annual: 14400, annualMonthlyEquivalent: 1200 },
+        EUR: { monthly: 1700, annual: 16300, annualMonthlyEquivalent: 1358 },
+        AUD: { monthly: 2900, annual: 27800, annualMonthlyEquivalent: 2317 }, // GST-exclusive
+        NZD: { monthly: 2900, annual: 27800, annualMonthlyEquivalent: 2317 },
+        SGD: { monthly: 2500, annual: 23900, annualMonthlyEquivalent: 1992 },
+        INR: { monthly: 99900, annual: 959900, annualMonthlyEquivalent: 79992 },
+        AED: { monthly: 1900, annual: 18200, annualMonthlyEquivalent: 1517 }, // USD fallback, deferred
+        JPY: { monthly: 1900, annual: 18200, annualMonthlyEquivalent: 1517 }, // USD fallback, not in scope
       },
     },
     {
       id: 'studio',
+      // Spec §4.1: $49/mo or $470/yr developed; ₹2,499/mo or ₹23,999/yr India.
       prices: {
-        USD: { monthly: 7900, annual: 75600, annualMonthlyEquivalent: 6300 },
-        GBP: { monthly: 6300, annual: 59400, annualMonthlyEquivalent: 4950 },
-        EUR: { monthly: 7300, annual: 69600, annualMonthlyEquivalent: 5800 },
-        CAD: { monthly: 10700, annual: 100800, annualMonthlyEquivalent: 8400 },
-        AUD: { monthly: 12200, annual: 115200, annualMonthlyEquivalent: 9600 },
-        NZD: { monthly: 13100, annual: 124800, annualMonthlyEquivalent: 10400 },
-        INR: { monthly: 649900, annual: 6239900, annualMonthlyEquivalent: 519900 },
-        SGD: { monthly: 10700, annual: 100800, annualMonthlyEquivalent: 8400 },
-        AED: { monthly: 29000, annual: 276000, annualMonthlyEquivalent: 23000 },
-        JPY: { monthly: 1190000, annual: 11400000, annualMonthlyEquivalent: 950000 },
+        USD: { monthly: 4900, annual: 47000, annualMonthlyEquivalent: 3917 },
+        CAD: { monthly: 6500, annual: 62500, annualMonthlyEquivalent: 5208 },
+        GBP: { monthly: 3900, annual: 37500, annualMonthlyEquivalent: 3125 },
+        EUR: { monthly: 4500, annual: 43200, annualMonthlyEquivalent: 3600 },
+        AUD: { monthly: 7500, annual: 71900, annualMonthlyEquivalent: 5992 }, // GST-exclusive
+        NZD: { monthly: 7500, annual: 71900, annualMonthlyEquivalent: 5992 },
+        SGD: { monthly: 6500, annual: 62300, annualMonthlyEquivalent: 5192 },
+        INR: { monthly: 249900, annual: 2399900, annualMonthlyEquivalent: 199992 },
+        AED: { monthly: 4900, annual: 47000, annualMonthlyEquivalent: 3917 }, // USD fallback
+        JPY: { monthly: 4900, annual: 47000, annualMonthlyEquivalent: 3917 }, // USD fallback
       },
     },
     {
       id: 'pro',
+      // Spec §3.1: annual $1,188/yr ($99/mo eq), monthly $119 (+20% premium).
+      // Monthly = round(annual / 12 × 1.20) per spec §4.1 + P2 plan.
       prices: {
-        // Pro: annual = $99/mo-equivalent; monthly = $119/mo (+20% premium).
         USD: { monthly: 11900, annual: 118800, annualMonthlyEquivalent: 9900 },
+        CAD: { monthly: 16200, annual: 161900, annualMonthlyEquivalent: 13492 },
         GBP: { monthly: 9500, annual: 94800, annualMonthlyEquivalent: 7900 },
-        EUR: { monthly: 10900, annual: 108000, annualMonthlyEquivalent: 9000 },
-        CAD: { monthly: 16200, annual: 160800, annualMonthlyEquivalent: 13400 },
-        AUD: { monthly: 18500, annual: 183600, annualMonthlyEquivalent: 15300 },
-        NZD: { monthly: 19900, annual: 198000, annualMonthlyEquivalent: 16500 },
-        INR: { monthly: 989900, annual: 9839900, annualMonthlyEquivalent: 819900 },
-        SGD: { monthly: 16200, annual: 160800, annualMonthlyEquivalent: 13400 },
-        AED: { monthly: 43700, annual: 435000, annualMonthlyEquivalent: 36250 },
-        JPY: { monthly: 1790000, annual: 17900000, annualMonthlyEquivalent: 1491666 },
+        EUR: { monthly: 10700, annual: 106800, annualMonthlyEquivalent: 8900 },
+        AUD: { monthly: 17900, annual: 178800, annualMonthlyEquivalent: 14900 }, // GST-exclusive
+        NZD: { monthly: 17900, annual: 178800, annualMonthlyEquivalent: 14900 },
+        SGD: { monthly: 15500, annual: 154800, annualMonthlyEquivalent: 12900 },
+        INR: { monthly: 659900, annual: 6599900, annualMonthlyEquivalent: 549992 },
+        AED: { monthly: 11900, annual: 118800, annualMonthlyEquivalent: 9900 }, // USD fallback
+        JPY: { monthly: 11900, annual: 118800, annualMonthlyEquivalent: 9900 }, // USD fallback
       },
     },
   ],
+  // Pro+App add-on: spec §4.1.2 — USD-only billing GLOBALLY ($199/mo + $2,000 setup).
+  // All currencies below show the same USD amount; the display layer should
+  // annotate "billed in USD" for non-USD viewers. Setup fee ($2,000) is a
+  // separate one-off charge, not included in this monthly figure.
   proApp: {
     prices: {
-      USD: { monthly: 4900, annual: 47400, annualMonthlyEquivalent: 3950 },
-      GBP: { monthly: 3900, annual: 37200, annualMonthlyEquivalent: 3100 },
-      EUR: { monthly: 4500, annual: 43200, annualMonthlyEquivalent: 3600 },
-      CAD: { monthly: 6700, annual: 64800, annualMonthlyEquivalent: 5400 },
-      AUD: { monthly: 7600, annual: 73200, annualMonthlyEquivalent: 6100 },
-      NZD: { monthly: 8200, annual: 78000, annualMonthlyEquivalent: 6500 },
-      INR: { monthly: 399900, annual: 3839900, annualMonthlyEquivalent: 319900 },
-      SGD: { monthly: 6700, annual: 64800, annualMonthlyEquivalent: 5400 },
-      AED: { monthly: 18000, annual: 172500, annualMonthlyEquivalent: 14375 },
-      JPY: { monthly: 740000, annual: 7080000, annualMonthlyEquivalent: 590000 },
+      USD: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
+      CAD: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
+      GBP: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
+      EUR: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
+      AUD: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
+      NZD: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
+      SGD: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
+      INR: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
+      AED: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
+      JPY: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
     },
   },
 }

@@ -5,15 +5,13 @@ import {
   CURRENCY_COOKIE_NAME,
   Money,
   SHARED_PRICING_CATALOGUE,
-  getAddOnPrice,
-  getPlanPrice,
   normalizeCurrency,
   type Currency,
-  type PlanId,
 } from "@repo/ui/subscription";
 
 import { Header } from "@/components/marketing/Header";
 import { Footer } from "@/components/marketing/Footer";
+import { Pricing } from "@/components/marketing/Pricing";
 
 /**
  * Marketing landing page.
@@ -44,7 +42,7 @@ export default async function HomePage() {
         <Hero />
         <Manifesto />
         <Features />
-        <Pricing currency={currency} />
+        <Pricing currency={currency} catalogue={SHARED_PRICING_CATALOGUE} />
         <HowItWorks />
         <Faq />
         <FinalCta />
@@ -279,162 +277,11 @@ function FeaturePlate({ kicker, index }: FeaturePlateProps) {
 }
 
 /* ============================================================
-   Pricing — three plans, geo-localized currency via the
-   `mk8_currency` cookie set by middleware. Reads the shared
-   catalogue from @repo/ui/subscription, so admin and onboarding
-   always show the same prices for the same visitor.
+   Pricing — rendered by the client island at
+   components/marketing/Pricing.tsx. Source of truth for prices
+   is @repo/ui/subscription/pricing-data.ts (shared with admin
+   /pricing). Feature copy matches spec v2.3 §9 exactly.
    ============================================================ */
-
-interface PlanMeta {
-  id: PlanId;
-  name: string;
-  tagline: string;
-  cadence: string;
-  features: string[];
-}
-
-const PLAN_META: PlanMeta[] = [
-  {
-    id: "starter",
-    name: "Starter",
-    tagline: "For your first store.",
-    cadence: "/mo",
-    features: [
-      "1 storefront",
-      "Up to 100 products",
-      "500 orders / month",
-      "Your own domain",
-    ],
-  },
-  {
-    id: "studio",
-    name: "Studio",
-    tagline: "For stores finding their rhythm.",
-    cadence: "/mo",
-    features: [
-      "3 storefronts",
-      "Unlimited products",
-      "5,000 orders / month",
-      "Discount codes, advanced analytics",
-    ],
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    tagline: "For teams scaling past $10k a month.",
-    cadence: "/mo annual",
-    features: [
-      "Unlimited storefronts",
-      "Unlimited everything",
-      "SLA-backed uptime, dedicated infrastructure",
-      "Named account manager",
-    ],
-  },
-];
-
-function Pricing({ currency }: { currency: Currency }) {
-  const plans = SHARED_PRICING_CATALOGUE.plans;
-  const proAppPrice = getAddOnPrice(SHARED_PRICING_CATALOGUE.proApp, currency);
-
-  return (
-    <section id="pricing" className="border-t border-border-subtle py-16 sm:py-24">
-      <div className="mx-auto max-w-6xl px-6">
-        <div className="mb-12 grid gap-8 lg:grid-cols-[1fr_2fr] lg:gap-12">
-          <div>
-            <p className="eyebrow mb-5">Pricing</p>
-            <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
-              Three plans.
-              <br />
-              Honestly priced.
-            </h2>
-          </div>
-          <p className="max-w-xl self-end text-lg leading-relaxed text-foreground-secondary">
-            Ninety days free to start. After that, three clear plans — no
-            hidden fees, no transaction cuts from Mark8ly, only what your
-            payment processor charges at their standard rate. Change plans
-            any time; upgrades prorate, downgrades wait for the period to
-            close.
-          </p>
-        </div>
-
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.05fr_1fr_1.05fr]">
-          {PLAN_META.map((meta, i) => {
-            const plan = plans.find((p) => p.id === meta.id)!;
-            const price = getPlanPrice(plan, currency);
-            // Pro uses the annual-monthly-equivalent as the headline
-            // (matches admin /pricing's default "annual" toggle).
-            // Starter/Studio show the monthly price.
-            const headline =
-              meta.id === "pro" ? price.annualMonthlyEquivalent : price.monthly;
-            return (
-              <div
-                key={meta.id}
-                className={
-                  i < PLAN_META.length - 1
-                    ? "lg:border-r lg:border-border lg:pr-10"
-                    : ""
-                }
-              >
-                <p className="font-serif text-2xl font-medium text-foreground">
-                  {meta.name}
-                </p>
-                <p className="mt-2 text-sm text-foreground-tertiary">
-                  {meta.tagline}
-                </p>
-                <p
-                  className="mt-6 font-serif text-foreground"
-                  style={{
-                    fontSize: "clamp(3rem, 1.5rem + 5vw, 5rem)",
-                    lineHeight: 0.95,
-                    letterSpacing: "-0.03em",
-                  }}
-                >
-                  <Money amount={headline} currency={currency} showCents={false} />
-                  <span className="ml-1 font-sans text-base font-normal text-foreground-tertiary">
-                    {meta.cadence}
-                  </span>
-                </p>
-                <ul className="mt-6 space-y-3 text-foreground-secondary">
-                  {meta.features.map((feature) => (
-                    <li key={feature} className="flex items-baseline gap-3">
-                      <span
-                        aria-hidden="true"
-                        className="font-serif text-moss-700"
-                      >
-                        ·
-                      </span>
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-
-        <p className="mt-10 text-sm text-foreground-tertiary">
-          Prices shown in {currency}. Annual billing available on every plan.
-          Pro includes an optional White-label App add-on from{" "}
-          <Money
-            amount={proAppPrice.annualMonthlyEquivalent}
-            currency={currency}
-            showCents={false}
-          />{" "}
-          /mo (annual).
-        </p>
-
-        <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4 border-t border-border-subtle pt-10">
-          <Link
-            href="/onboarding"
-            className="inline-flex h-12 items-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
-          >
-            Open your store — free for 90 days
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
 
 /* ============================================================
    How it works — three steps, numbered, left-aligned, narrow

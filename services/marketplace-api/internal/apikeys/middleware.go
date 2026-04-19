@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // Middleware authenticates requests against the public R/W API by validating
@@ -13,18 +14,21 @@ import (
 // key_prefix) index; verifies are bcrypt with a 60s hot-key cache so repeat
 // requests skip the bcrypt cost.
 type Middleware struct {
-	repo  *Repo
-	cache *Cache
-	now   func() time.Time
+	repo     *Repo
+	cache    *Cache
+	lastUsed *LastUsedWorker
+	now      func() time.Time
 }
 
-// NewMiddleware constructs a Middleware. cache may be nil (every request
-// will then run bcrypt — useful for tests but not production).
-func NewMiddleware(repo *Repo, cache *Cache) *Middleware {
+// NewMiddleware constructs a Middleware. cache and lastUsed may both be nil
+// — useful for tests but not production. cache=nil disables the 60s hot-key
+// short-circuit; lastUsed=nil skips the async last_used_at write.
+func NewMiddleware(repo *Repo, cache *Cache, lastUsed *LastUsedWorker) *Middleware {
 	return &Middleware{
-		repo:  repo,
-		cache: cache,
-		now:   func() time.Time { return time.Now().UTC() },
+		repo:     repo,
+		cache:    cache,
+		lastUsed: lastUsed,
+		now:      func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -41,6 +45,7 @@ func (m *Middleware) Authenticate() gin.HandlerFunc {
 		if m.cache != nil {
 			if e, hit := m.cache.Get(key); hit && (e.RevokedAt == nil || e.RevokedAt.After(m.now())) {
 				populateContext(c, e)
+				m.touchLastUsed(c, e.KeyID)
 				c.Next()
 				return
 			}
@@ -78,6 +83,7 @@ func (m *Middleware) Authenticate() gin.HandlerFunc {
 					m.cache.Put(key, e)
 				}
 				populateContext(c, e)
+				m.touchLastUsed(c, e.KeyID)
 				c.Next()
 				return
 			}
@@ -122,4 +128,13 @@ func abort401(c *gin.Context) {
 		"error":   "unauthorized",
 		"message": "invalid_api_key",
 	})
+}
+
+// touchLastUsed enqueues an async last_used_at + ip_hash write. Non-blocking
+// and nil-safe so the auth path is never gated on the worker queue depth.
+func (m *Middleware) touchLastUsed(c *gin.Context, keyID uuid.UUID) {
+	if m.lastUsed == nil {
+		return
+	}
+	m.lastUsed.Submit(keyID, c.ClientIP())
 }

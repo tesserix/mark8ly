@@ -99,6 +99,37 @@ var (
 			Help: "Count of past_due→expired ladder steps skipped due to the 14-day refund window (§16.5).",
 		},
 	)
+
+	// APIKeyUsedTotal counts successful public-API authentications, labeled by
+	// the auth path that resolved (cache_hit | cold_lookup). P14 §18.4.
+	APIKeyUsedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_apikey_used_total",
+			Help: "Count of successful public-API key authentications.",
+		},
+		[]string{"path"},
+	)
+
+	// APIKeyAuthFailedTotal counts unsuccessful authentications, labeled by
+	// reason (missing_bearer | wrong_prefix | unknown_key | revoked).
+	APIKeyAuthFailedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_apikey_auth_failed_total",
+			Help: "Count of failed public-API key authentications.",
+		},
+		[]string{"reason"},
+	)
+
+	// APIKeyRateLimitedTotal counts rate-limit-exceeded responses on the
+	// public R/W API, keyed only by API-key id label class (high-cardinality
+	// avoidance: bucket by which key tier triggered).
+	APIKeyRateLimitedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_apikey_rate_limited_total",
+			Help: "Count of rate-limit-exceeded responses on the public R/W API.",
+		},
+		[]string{"tier"},
+	)
 )
 
 func init() {
@@ -114,5 +145,8 @@ func init() {
 		DunningEmailsSentTotal,
 		PaymentActionRemindersSentTotal,
 		DunningSuppressedRefundWindowTotal,
+		APIKeyUsedTotal,
+		APIKeyAuthFailedTotal,
+		APIKeyRateLimitedTotal,
 	)
 }

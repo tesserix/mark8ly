@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
+
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 )
 
 // RateLimiter is an in-memory per-key token bucket. Buckets are created
@@ -85,6 +87,7 @@ func (l *RateLimiter) Middleware() gin.HandlerFunc {
 		perMin, _ := c.Get("api_key_rate_limit")
 		limit, _ := perMin.(int)
 		if !l.Allow(keyID, limit) {
+			metrics.APIKeyRateLimitedTotal.WithLabelValues(rateTier(limit)).Inc()
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error":   "rate_limit_exceeded",
 				"message": "API key rate limit exceeded",
@@ -92,6 +95,23 @@ func (l *RateLimiter) Middleware() gin.HandlerFunc {
 			return
 		}
 		c.Next()
+	}
+}
+
+// rateTier classifies a per-minute limit into a low-cardinality label so
+// metric series stay bounded.
+func rateTier(perMinute int) string {
+	switch {
+	case perMinute <= 0:
+		return "default"
+	case perMinute <= 100:
+		return "tier_100"
+	case perMinute <= 200:
+		return "tier_200"
+	case perMinute <= 500:
+		return "tier_500"
+	default:
+		return "tier_1000_plus"
 	}
 }
 

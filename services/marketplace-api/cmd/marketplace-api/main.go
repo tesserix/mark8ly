@@ -36,6 +36,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/apikeys"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
 	"github.com/mark8ly/marketplace-api/internal/billing/migration"
@@ -45,6 +46,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/seaqueue"
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/taxreg"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
+	"github.com/mark8ly/marketplace-api/internal/ipprivacy"
 	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/signup"
@@ -665,6 +667,19 @@ func main() {
 		})
 		taxHandler := admin.NewTaxHandler(conn, taxService, []byte(cfg.TaxAttestationIPHashKey))
 
+		// P14 — enterprise API keys (§18.4). Repo + cache + service for the
+		// admin endpoints; auth middleware + rate limiter + last-used worker
+		// for the public R/W API mount (registered later when the public API
+		// router lands — until then the auth surface is dormant but tested).
+		apiKeysRepo := apikeys.NewRepo(conn)
+		apiKeysCache := apikeys.NewCache(60 * time.Second)
+		apiKeysService := apikeys.NewService(conn, apiKeysRepo, apiKeysCache, apikeys.EnvLive, auditEmitter)
+		apiKeysHandler := admin.NewAPIKeysHandler(apiKeysService, planResolver, log)
+		apiKeysIPHasher := ipprivacy.New([]byte(cfg.APIKeyIPHashKey))
+		apiKeysLastUsed := apikeys.NewLastUsedWorker(apiKeysRepo, apiKeysIPHasher, log, 1024)
+		_ = apiKeysCache    // referenced by middleware once the public API router mounts
+		_ = apiKeysLastUsed // see above
+
 		adminDeps = admin.Deps{
 			ProductHandler:          productHandler,
 			CategoryHandler:         categoryHandler,
@@ -699,6 +714,8 @@ func main() {
 			TrialBillingHandler:        trialBillingHandler,
 			MigrationFastPathHandler:   migrationHandler,
 			TaxHandler:                 taxHandler,
+			APIKeysHandler:             apiKeysHandler,
+			APIKeysLogger:              log,
 			AuditLogsHandler:           auditLogsHandler,
 			NotificationsHandler:   notificationsHandler,
 			DashboardHandler:       dashboardHandler,

@@ -119,6 +119,11 @@ type Config struct {
 	GSTNAuthToken          string `envconfig:"GSTN_AUTH_TOKEN" default:""`
 	ABNGUID                string `envconfig:"AU_ABN_LOOKUP_GUID" default:""`
 	TaxAttestationIPHashKey string `envconfig:"TAX_ATTESTATION_IP_HASH_KEY" default:""`
+
+	// P14 — enterprise API key IP-hash key (§18.4). Same shape as the tax
+	// attestation key but rotated independently; loaded from Secret Manager
+	// in production. Empty disables IP hashing on last_used_ip_hash.
+	APIKeyIPHashKey string `envconfig:"APIKEY_IP_HASH_KEY" default:""`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

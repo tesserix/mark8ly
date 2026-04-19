@@ -347,6 +347,53 @@ func classifyActor(actor string) ActorType {
 	return ActorUser
 }
 
+// APIKeyEvent records a lifecycle event on an enterprise API key (§18.4).
+// Action is one of "created" / "rotated" / "revoked"; Severity defaults to
+// info except "revoked" with reason="compromised" which the caller bumps to
+// warning.
+type APIKeyEvent struct {
+	TenantID  uuid.UUID
+	StoreID   uuid.UUID
+	KeyID     uuid.UUID
+	KeyPrefix string
+	Action    string // "created" | "rotated" | "revoked"
+	Reason    string // optional; merchant_revoked | compromised | scheduled_rotation
+	ActorUser uuid.UUID
+}
+
+// EmitAPIKeyEvent is the canonical hook for API-key lifecycle audit. Mirrors
+// the EmitStateTransition shape so dashboards can union the two streams.
+func (e *Emitter) EmitAPIKeyEvent(c *gin.Context, ev APIKeyEvent) {
+	md := map[string]any{
+		"key_id":     ev.KeyID.String(),
+		"key_prefix": ev.KeyPrefix,
+		"action":     ev.Action,
+	}
+	if ev.Reason != "" {
+		md["reason"] = ev.Reason
+	}
+	severity := SeverityInfo
+	if ev.Action == "revoked" && ev.Reason == "compromised" {
+		severity = SeverityWarning
+	}
+	actor := "user:" + ev.ActorUser.String()
+	if ev.ActorUser == uuid.Nil {
+		actor = "system:apikeys"
+	}
+	md["actor"] = actor
+
+	e.Emit(c, Event{
+		Action:         "api_key." + ev.Action,
+		ResourceType:   "api_key",
+		ResourceID:     ev.KeyID.String(),
+		Severity:       severity,
+		Metadata:       md,
+		TenantID:       ev.TenantID,
+		StoreID:        ev.StoreID,
+		ForceActorType: classifyActor(actor),
+	})
+}
+
 // PlanChange records a subscription plan and/or billing-period change for the
 // audit trail. Populate Actor with either a user UUID ("user:<uuid>") for
 // merchant-initiated changes or a system sentinel (e.g. "system:cron:downgrade_recheck").

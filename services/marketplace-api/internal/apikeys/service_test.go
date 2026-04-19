@@ -20,7 +20,7 @@ import (
 func newTestService(t *testing.T) (*apikeys.Service, *gorm.DB) {
 	t.Helper()
 	db := testdb.NewDB(t, "enterprise_api_keys")
-	return apikeys.NewService(db, apikeys.NewRepo(db), apikeys.NewCache(60*time.Second), apikeys.EnvLive), db
+	return apikeys.NewService(db, apikeys.NewRepo(db), apikeys.NewCache(60*time.Second), apikeys.EnvLive, nil), db
 }
 
 func validProInput() apikeys.CreateInput {

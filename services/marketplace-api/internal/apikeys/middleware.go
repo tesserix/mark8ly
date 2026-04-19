@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 )
 
 // Middleware authenticates requests against the public R/W API by validating
@@ -38,6 +40,7 @@ func (m *Middleware) Authenticate() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key, ok := extractBearer(c)
 		if !ok {
+			metrics.APIKeyAuthFailedTotal.WithLabelValues("missing_bearer").Inc()
 			abort401(c)
 			return
 		}
@@ -46,6 +49,7 @@ func (m *Middleware) Authenticate() gin.HandlerFunc {
 			if e, hit := m.cache.Get(key); hit && (e.RevokedAt == nil || e.RevokedAt.After(m.now())) {
 				populateContext(c, e)
 				m.touchLastUsed(c, e.KeyID)
+				metrics.APIKeyUsedTotal.WithLabelValues("cache_hit").Inc()
 				c.Next()
 				return
 			}
@@ -54,6 +58,7 @@ func (m *Middleware) Authenticate() gin.HandlerFunc {
 		prefix, ok := ExtractPrefix(key)
 		if !ok {
 			_ = VerifyDummy(key)
+			metrics.APIKeyAuthFailedTotal.WithLabelValues("wrong_prefix").Inc()
 			abort401(c)
 			return
 		}
@@ -61,6 +66,7 @@ func (m *Middleware) Authenticate() gin.HandlerFunc {
 		candidates, err := m.repo.FindByPrefix(c.Request.Context(), prefix)
 		if err != nil || len(candidates) == 0 {
 			_ = VerifyDummy(key)
+			metrics.APIKeyAuthFailedTotal.WithLabelValues("unknown_key").Inc()
 			abort401(c)
 			return
 		}
@@ -84,11 +90,13 @@ func (m *Middleware) Authenticate() gin.HandlerFunc {
 				}
 				populateContext(c, e)
 				m.touchLastUsed(c, e.KeyID)
+				metrics.APIKeyUsedTotal.WithLabelValues("cold_lookup").Inc()
 				c.Next()
 				return
 			}
 		}
 		_ = VerifyDummy(key)
+		metrics.APIKeyAuthFailedTotal.WithLabelValues("revoked_or_mismatch").Inc()
 		abort401(c)
 	}
 }

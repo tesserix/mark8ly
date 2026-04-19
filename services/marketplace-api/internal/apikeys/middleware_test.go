@@ -32,7 +32,7 @@ func newMwEnv(t *testing.T) mwEnv {
 	db := testdb.NewDB(t, "enterprise_api_keys")
 	repo := apikeys.NewRepo(db)
 	cache := apikeys.NewCache(60 * time.Second)
-	svc := apikeys.NewService(db, repo, cache, apikeys.EnvLive)
+	svc := apikeys.NewService(db, repo, cache, apikeys.EnvLive, nil)
 	mw := apikeys.NewMiddleware(repo, cache, nil)
 	return mwEnv{svc: svc, mw: mw}
 }

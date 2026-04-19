@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
@@ -189,6 +190,14 @@ func (s *Service) IssueRefund(ctx context.Context, in IssueInput) (IssueOutput, 
 	}
 	if err := s.repo.Create(ctx, s.db, audit); err != nil {
 		return IssueOutput{}, fmt.Errorf("refund: persist audit: %w", err)
+	}
+
+	if metrics.Subscription != nil {
+		currency := chargeCurrency
+		if currency == "" {
+			currency = "unknown"
+		}
+		metrics.Subscription.RefundIssuedTotal.WithLabelValues(currency, in.Reason).Inc()
 	}
 
 	return IssueOutput{

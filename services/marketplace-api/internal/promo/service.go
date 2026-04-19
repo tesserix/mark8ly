@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -112,6 +113,10 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 		Currency:         in.Currency,
 	})
 	if !result.Accepted {
+		if metrics.Subscription != nil {
+			metrics.Subscription.PromoAppliedTotal.
+				WithLabelValues(string(in.Plan), in.Currency, string(result.RejectReason)).Inc()
+		}
 		return ApplyOutput{RejectReason: result.RejectReason}, ErrInvalidOrExpired
 	}
 
@@ -119,6 +124,10 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 	_, storeRedErr := s.repo.GetRedemptionByStore(ctx, s.db, pc.ID, in.StoreID)
 	if storeRedErr == nil {
 		// Row found — already applied.
+		if metrics.Subscription != nil {
+			metrics.Subscription.PromoAppliedTotal.
+				WithLabelValues(string(in.Plan), in.Currency, string(RejectReasonMaxPerEmail)).Inc()
+		}
 		return ApplyOutput{RejectReason: RejectReasonMaxPerEmail}, ErrInvalidOrExpired
 	}
 	if !errors.As(storeRedErr, new(*apperrors.Error)) {
@@ -153,6 +162,11 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 			_ = billingstripe.DetachCoupon(ctx, s.stripe, in.StripeSubscriptionID)
 		}
 		return ApplyOutput{}, fmt.Errorf("promo: apply: record redemption: %w", err)
+	}
+
+	if metrics.Subscription != nil {
+		metrics.Subscription.PromoAppliedTotal.
+			WithLabelValues(string(in.Plan), in.Currency, "applied").Inc()
 	}
 
 	return ApplyOutput{

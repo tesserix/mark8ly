@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
@@ -106,6 +107,15 @@ func Transition(ctx context.Context, in TransitionInput) error {
 				StripeEventID: in.StripeEventID,
 			})
 		}
+
+		// Metrics: emit only when the package-level collector is initialised.
+		// Unit tests that construct machine.go without the metrics package
+		// (e.g. integration tests with isolated DBs) are safely skipped.
+		if metrics.Subscription != nil {
+			metrics.Subscription.SubscriptionStateTransitionedTotal.
+				WithLabelValues(string(in.From), string(in.To), in.Reason).Inc()
+		}
+
 		return nil
 	})
 }

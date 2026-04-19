@@ -4,11 +4,16 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
+	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 )
 
@@ -46,10 +51,75 @@ func New(em *audit.Emitter) *Dispatcher {
 // Dispatch routes e to the handler registered for e.EventType. The caller
 // already holds pg_advisory_xact_lock on the store, and tx is that locked
 // transaction's handle.
+//
+// On each invocation the handler latency is observed on
+// metrics.Subscription.StripeWebhookProcessingDuration and, when the handler
+// returns a non-nil error, metrics.Subscription.StripeWebhookFailedTotal is
+// incremented with a classified reason.
 func (d *Dispatcher) Dispatch(ctx context.Context, tx *gorm.DB, e webhookevents.StripeWebhookEvent) error {
 	h, ok := d.handlers[e.EventType]
 	if !ok {
 		return fmt.Errorf("dispatch: no handler for %s", e.EventType)
 	}
-	return h(ctx, tx, []byte(e.Payload))
+
+	start := time.Now()
+	err := h(ctx, tx, []byte(e.Payload))
+	durationSecs := time.Since(start).Seconds()
+
+	if metrics.Subscription != nil {
+		statusLabel := "ok"
+		if err != nil {
+			statusLabel = "error"
+		}
+		metrics.Subscription.StripeWebhookProcessingDuration.
+			WithLabelValues(e.EventType, statusLabel).Observe(durationSecs)
+
+		if err != nil {
+			metrics.Subscription.StripeWebhookFailedTotal.
+				WithLabelValues(e.EventType, classifyWebhookErr(err)).Inc()
+		}
+	}
+
+	return err
+}
+
+// classifyWebhookErr maps a handler error to a short label suitable for the
+// stripe_webhook_failed_total counter. The label vocabulary must stay small and
+// stable so dashboards can reference fixed values.
+func classifyWebhookErr(err error) string {
+	if errors.Is(err, statemachine.ErrCASConflict) {
+		return "cas_conflict"
+	}
+	if errors.Is(err, statemachine.ErrInvalidTransition) {
+		return "invalid_transition"
+	}
+	var apiErr *billingstripe.APIError
+	if errors.As(err, &apiErr) {
+		return "stripe_api"
+	}
+	// Heuristic: GORM / pgx errors tend to contain "sql" or "pq" in the chain.
+	// Use a simple string check rather than importing internal pgx types.
+	msg := err.Error()
+	if len(msg) > 0 {
+		for _, token := range []string{"sql:", "pq:", "ERROR:", "pgconn"} {
+			if containsSubstring(msg, token) {
+				return "db"
+			}
+		}
+	}
+	return "unknown"
+}
+
+// containsSubstring is a minimal helper to avoid importing strings in the
+// package-level function — kept package-private.
+func containsSubstring(s, sub string) bool {
+	if len(sub) > len(s) {
+		return false
+	}
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
 }

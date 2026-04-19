@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
@@ -128,6 +129,10 @@ func (b *Builder) BuildAndPersist(ctx context.Context, in BuildInput) (*BillingA
 	// 6. Persist.
 	if err := b.db.WithContext(ctx).Create(archive).Error; err != nil {
 		return nil, fmt.Errorf("billingarchive: persist archive: %w", err)
+	}
+
+	if metrics.Subscription != nil {
+		metrics.Subscription.BillingArchiveCreatedTotal.Inc()
 	}
 
 	b.logger.Info("billingarchive: archive persisted",

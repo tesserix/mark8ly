@@ -44,6 +44,9 @@ type Deps struct {
 	ChangePlanHandler        *ChangePlanHandler
 	CompleteActionHandler    *CompleteActionHandler
 	TrialBillingHandler      *TrialBillingHandler
+	// P10 — promo-code engine (§7) + 14-day cooling-off refund (§8).
+	PromoHandler  *PromoHandler
+	RefundHandler *RefundHandler
 	// P11 — merchant-initiated cancellation + save-offer (§15).
 	CancelHandler *cancel.Handler
 	MigrationFastPathHandler   *migration.Handler
@@ -575,6 +578,23 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					sub.GET("/complete-action",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionViewRole),
 						deps.CompleteActionHandler.Redirect)
+				}
+
+				// P10 — promo-code engine (§7).
+				if deps.PromoHandler != nil {
+					sub.POST("/apply-promo",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+						deps.PromoHandler.ApplyPromo)
+					sub.DELETE("/promo",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+						deps.PromoHandler.CancelPromo)
+				}
+
+				// P10 — 14-day cooling-off refund (§8).
+				if deps.RefundHandler != nil {
+					sub.POST("/refund",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+						deps.RefundHandler.IssueRefund)
 				}
 
 				// P11 — merchant-initiated cancellation + save-offer (§15).

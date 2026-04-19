@@ -131,10 +131,19 @@ func TestRead_RejectsTamperedCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Tamper: flip a character of the encoded value.
+	// Tamper: flip a character of the encoded value. Using a literal 'X'
+	// here flaked ~1/64 runs when the original base64-encoded cookie
+	// happened to start with 'X' (no-op tamper → valid cookie → no
+	// error). Pick a substitute byte that's guaranteed different from
+	// whatever's currently there.
 	c := w.Result().Cookies()[0]
 	tampered := *c
-	tampered.Value = "X" + c.Value[1:]
+	orig := c.Value[0]
+	sub := byte('X')
+	if orig == sub {
+		sub = 'Y'
+	}
+	tampered.Value = string(sub) + c.Value[1:]
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&tampered)

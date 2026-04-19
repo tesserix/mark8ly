@@ -11,6 +11,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/billing/migration"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
+	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
 )
 
 // Deps groups every dependency the admin route registrar needs.
@@ -42,7 +43,9 @@ type Deps struct {
 	SubscriptionHandler      *SubscriptionHandler
 	ChangePlanHandler        *ChangePlanHandler
 	CompleteActionHandler    *CompleteActionHandler
-	TrialBillingHandler        *TrialBillingHandler
+	TrialBillingHandler      *TrialBillingHandler
+	// P11 — merchant-initiated cancellation + save-offer (§15).
+	CancelHandler *cancel.Handler
 	MigrationFastPathHandler   *migration.Handler
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
@@ -572,6 +575,15 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					sub.GET("/complete-action",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionViewRole),
 						deps.CompleteActionHandler.Redirect)
+				}
+
+				// P11 — merchant-initiated cancellation + save-offer (§15).
+				// Cancel is allowed even in read-only states (allowlist covers
+				// POST /subscription/* — see readonly/allowlist.go).
+				if deps.CancelHandler != nil {
+					sub.POST("/cancel",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+						deps.CancelHandler.Cancel)
 				}
 			}
 		}

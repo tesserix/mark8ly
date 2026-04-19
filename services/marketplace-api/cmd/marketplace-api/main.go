@@ -41,7 +41,11 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/signup"
+	"github.com/mark8ly/marketplace-api/internal/customerportal"
+	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
 	"github.com/mark8ly/marketplace-api/internal/subscription/dunning"
+	"github.com/mark8ly/marketplace-api/internal/subscription/harddelete"
+	"github.com/mark8ly/marketplace-api/internal/subscription/lifecycle"
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/category"
@@ -257,6 +261,10 @@ func main() {
 	// Declared at func scope so the cron-start block below the admin-mode
 	// block can reference it.
 	var downgradeCron *planchange.DowngradeRecheckCron
+	// billingStripeClient is hoisted to func scope so the P11 lifecycle crons
+	// (registered outside the admin-mode block) can reference it for the
+	// hard-delete runner's Stripe customer deletion step.
+	var billingStripeClient *billingstripe.Client
 
 	// auditEmitter is the async audit-log writer. Init runs unconditionally
 	// because both admin AND storefront emit (e.g. storefront checkout
@@ -477,8 +485,9 @@ func main() {
 		// above mode blocks so the storefront can also use the resolve endpoint.
 
 		// Settings S3 — Subscription/Billing.
+		// billingStripeClient is declared at func scope (see above) so the P11
+		// lifecycle crons can reference it outside this admin-mode block.
 		subscriptionRepo := subscription.NewRepository()
-		var billingStripeClient *billingstripe.Client
 		var stripeAdapter subscription.StripeClient
 		if cfg.StripeBillingSecretKey != "" {
 			billingStripeClient = billingstripe.New(cfg.StripeBillingSecretKey)
@@ -592,6 +601,10 @@ func main() {
 			trialBillingHandler = admin.NewTrialBillingHandler(trialSubscriber, log)
 		}
 
+		// P11 — Cancel handler (merchant-initiated cancellation + save-offer §15).
+		cancelSvc := cancel.NewService(conn, subscriptionRepo, auditEmitter, log)
+		cancelHandler := cancel.NewHandler(cancelSvc, log)
+
 		// P5 — Migration fast-path submit handler.
 		migrationRepo := migration.NewRepository(conn)
 		migrationHandler := migration.NewHandler(migrationRepo, migration.NoOpValidator{}, log)
@@ -623,6 +636,7 @@ func main() {
 			DomainsHandler:         domainsHandler,
 			SubscriptionHandler:    subscriptionHandler,
 			ChangePlanHandler:          changePlanHandler,
+			CancelHandler:              cancelHandler,
 			TrialBillingHandler:        trialBillingHandler,
 			MigrationFastPathHandler:   migrationHandler,
 			AuditLogsHandler:           auditLogsHandler,
@@ -806,6 +820,9 @@ func main() {
 			WithNotifier(notificationSvc).
 			WithAudit(auditEmitter)
 
+		// P11 — Customer portal (GDPR order-history + erasure §15.4).
+		customerPortalHandler := customerportal.NewHandler(conn, log)
+
 		storefrontDeps = storefront.Deps{
 			Handler:               storefrontHandler,
 			CheckoutHandler:       checkoutHandler,
@@ -832,9 +849,10 @@ func main() {
 			// B1 branding.
 			BrandingHandler:      sfBrandingHandler,
 			PagesHandler:         sfPagesHandler,
-			DomainResolveHandler: domainsHandler.ResolveDomain,
-			TicketsHandler:       sfTicketsHandler,
-			Logger:               log,
+			DomainResolveHandler:  domainsHandler.ResolveDomain,
+			TicketsHandler:        sfTicketsHandler,
+			CustomerPortalHandler: customerPortalHandler,
+			Logger:                log,
 		}
 	}
 
@@ -1112,6 +1130,59 @@ func main() {
 	}
 
 	log.Info("P6 dunning crons registered", "count", 3)
+
+	// P11 lifecycle crons — post-cancellation pipeline + win-back + GDPR portal.
+	// All registered on the shared trialScheduler (same thread pool as P5/P6).
+	p11SubscriptionRepo := subscription.NewRepository()
+	p11HardDeleteRunner := harddelete.NewRunner(conn, billingStripeClient, auditEmitter, log)
+
+	finalizeCron := lifecycle.NewFinalizeCron(conn, auditEmitter, log, nil)
+	if _, err := trialScheduler.AddFunc(lifecycle.FinalizeSpec, func() {
+		if err := finalizeCron.Run(workerCtx); err != nil {
+			log.Error("lifecycle finalize cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register lifecycle finalize cron", "err", err)
+	}
+
+	closeCron := lifecycle.NewCloseCron(conn, auditEmitter, log, nil)
+	if _, err := trialScheduler.AddFunc(lifecycle.CloseSpec, func() {
+		if err := closeCron.Run(workerCtx); err != nil {
+			log.Error("lifecycle close cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register lifecycle close cron", "err", err)
+	}
+
+	queueHardDeleteCron := lifecycle.NewQueueHardDeleteCron(conn, auditEmitter, log, nil)
+	if _, err := trialScheduler.AddFunc(lifecycle.QueueHardDeleteSpec, func() {
+		if err := queueHardDeleteCron.Run(workerCtx); err != nil {
+			log.Error("lifecycle queue-hard-delete cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register lifecycle queue-hard-delete cron", "err", err)
+	}
+
+	hardDeleteCron := lifecycle.NewHardDeleteCron(conn, p11SubscriptionRepo, p11HardDeleteRunner, auditEmitter, log, nil)
+	if _, err := trialScheduler.AddFunc(lifecycle.HardDeleteSpec, func() {
+		if err := hardDeleteCron.Run(workerCtx); err != nil {
+			log.Error("lifecycle hard-delete cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register lifecycle hard-delete cron", "err", err)
+	}
+
+	winBackEmailClient := email.NoOpClient{Logger: log}
+	winBackCron := lifecycle.NewWinBackCron(conn, winBackEmailClient, log, nil)
+	if _, err := trialScheduler.AddFunc(lifecycle.WinBackSpec, func() {
+		if err := winBackCron.Run(workerCtx); err != nil {
+			log.Error("lifecycle win-back cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register lifecycle win-back cron", "err", err)
+	}
+
+	log.Info("P11 lifecycle crons registered", "count", 5)
 
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)

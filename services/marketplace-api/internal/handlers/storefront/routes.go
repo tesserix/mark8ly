@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mark8ly/marketplace-api/internal/customer"
+	"github.com/mark8ly/marketplace-api/internal/customerportal"
 	"github.com/mark8ly/marketplace-api/internal/ratelimit"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
@@ -46,7 +47,9 @@ type Deps struct {
 	DomainResolveHandler gin.HandlerFunc
 	// Support tickets — public contact form.
 	TicketsHandler *TicketsHandler
-	Logger         *slog.Logger
+	// P11 — GDPR customer portal (unauth order history + erasure request).
+	CustomerPortalHandler *customerportal.Handler
+	Logger                *slog.Logger
 }
 
 // CountryLister is satisfied by country.Handler.ListSupported.
@@ -179,6 +182,17 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 			group.POST("/support/tickets",
 				ratelimit.PerIP(0.05, 3),
 				deps.TicketsHandler.Create)
+		}
+
+		// P11 — GDPR customer portal (§15.4). No auth middleware — HMAC token IS the auth.
+		// Rate-limited to prevent token-grinding attempts.
+		if deps.CustomerPortalHandler != nil {
+			group.GET("/my-orders/:email/:order_token",
+				ratelimit.PerIP(0.083, 5), // 5 req/min per IP
+				deps.CustomerPortalHandler.MyOrders)
+			group.POST("/customer-erasure",
+				ratelimit.PerIP(0.05, 3), // 3 req/min per IP
+				deps.CustomerPortalHandler.CustomerErasure)
 		}
 
 		// Loyalty — Marketing M3. Public endpoints, no auth.

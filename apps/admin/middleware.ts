@@ -45,6 +45,7 @@ const PUBLIC_PREFIXES = [
   "/forgot-password",
   "/reset-password", // branded reset flow — lands here from the email link
   "/accept-invite", // Phase P: invitees must land here without a session
+  "/webhooks", // external provider callbacks (Stripe, etc.) — never gated
   "/_next",
   "/favicon",
   "/icon-",

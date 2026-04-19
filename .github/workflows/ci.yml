@@ -40,6 +40,37 @@ jobs:
       - name: build
         working-directory: services/${{ matrix.service }}
         run: go build ./...
+      # P15 §18.9 — enforce the single choke-point for white-label app
+      # credential access. internal/billing/appcreds/ is the ONLY module
+      # authorised to hold merchant Apple/Google app credentials. Any file
+      # outside the allow-list importing cloud.google.com/go/secretmanager
+      # is a regression that bypasses the audit + metrics + tenant-scope
+      # guarantees documented in docs/ops/white-label-app-iam.md.
+      #
+      # Allow-list (pre-existing subsystems with their own credential flows):
+      #   - internal/billing/appcreds/      — canonical (P15)
+      #   - internal/arbitrage/             — pre-existing arbitrage rotation
+      #   - internal/breakglass/            — P13 break-glass credentials
+      #   - cmd/arbitrage-rotator/          — entrypoint for arbitrage
+      #   - cmd/break-glass-rotation/       — entrypoint for break-glass
+      #   - cmd/marketplace-api/main.go     — wires all of the above at boot
+      - name: appcreds-chokepoint (marketplace-api only)
+        if: matrix.service == 'marketplace-api'
+        working-directory: services/${{ matrix.service }}
+        run: |
+          set -euo pipefail
+          offenders=$(grep -RlE '"cloud\.google\.com/go/secretmanager' \
+            internal cmd --include='*.go' 2>/dev/null \
+            | grep -vE '^(internal/billing/appcreds|internal/arbitrage|internal/breakglass|cmd/arbitrage-rotator|cmd/break-glass-rotation|cmd/marketplace-api/main\.go)' \
+            || true)
+          if [ -n "$offenders" ]; then
+            echo "ERROR: cloud.google.com/go/secretmanager imported outside the allow-list:"
+            echo "$offenders"
+            echo ""
+            echo "White-label app credential reads MUST go through internal/billing/appcreds/."
+            echo "See docs/ops/white-label-app-iam.md for the credential choke-point policy."
+            exit 1
+          fi
       - name: test
         working-directory: services/${{ matrix.service }}
         run: go test ./...

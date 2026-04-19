@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { Skeleton } from '@tesserix/web'
 import { useToast } from '@/components/feedback/Toaster'
 import { ApiError, SubscriptionInactiveError } from '@/lib/api/client'
@@ -72,6 +73,15 @@ export function BillingClient({ storeId }: BillingClientProps) {
   const { data: plan, isLoading, error, refetch } = useCurrentPlan(storeId)
   const { toast } = useToast()
 
+  // Fire the ApiError toast as a side-effect, not during render. Calling
+  // toast.error() inline on every render triggered an infinite re-render loop
+  // because the toast store update re-rendered this component.
+  useEffect(() => {
+    if (error instanceof ApiError) {
+      toast.error(error.message ?? copy.loadingError)
+    }
+  }, [error, toast])
+
   if (isLoading) {
     return (
       <div className="space-y-10">
@@ -96,9 +106,8 @@ export function BillingClient({ storeId }: BillingClientProps) {
       )
     }
 
-    // ApiError: inline panel with retry + transient toast.
+    // ApiError: inline panel with retry. Toast is fired in the effect above.
     if (error instanceof ApiError) {
-      toast.error(error.message ?? copy.loadingError)
       return (
         <div className="space-y-10">
           <ErrorPanel

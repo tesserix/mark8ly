@@ -1,0 +1,36 @@
+name: PII Leak Guard
+
+# =============================================================================
+# Blocks PRs that add log statements containing suspected PII fields.
+# Conservative grep over diff-added lines only; false positives (hashed or
+# redacted values) can be cleared by applying the `pii-audit-cleared` label.
+# =============================================================================
+on:
+  pull_request:
+    paths:
+      - "services/**/*.go"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pii-grep:
+    name: Grep added log lines for PII fields
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.pull_request.labels.*.name, 'pii-audit-cleared')"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history so `git diff origin/<base>...HEAD` resolves.
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin "${GITHUB_BASE_REF}:${GITHUB_BASE_REF}" --depth=50
+
+      - name: Grep for PII in added log lines
+        run: bash scripts/ci/grep-pii-logs.sh

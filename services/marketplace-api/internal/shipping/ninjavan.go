@@ -56,8 +56,13 @@ func NewNinjaVanCarrier(apiKey, secretKey, mode, countryCode string) *NinjaVanCa
 
 func (c *NinjaVanCarrier) ProviderName() string { return "ninjavan" }
 
+// SupportedCountries lists the ISO 3166-1 alpha-2 country codes routed through
+// NinjaVan. VN added per P18 (§4.1.1).
+//
+// TODO(v2): Aramex AE is NOT a NinjaVan country. NinjaVan serves SEA only.
+// UAE coverage is deferred to v2 via the Aramex integration — see spec §2.
 func (c *NinjaVanCarrier) SupportedCountries() []string {
-	return []string{"SG", "MY", "TH", "PH", "ID"}
+	return []string{"ID", "MY", "PH", "SG", "TH", "VN"}
 }
 
 // --- request / response types (private, match NinjaVan JSON schema) ---

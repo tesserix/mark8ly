@@ -41,8 +41,15 @@ func NewShipEngineCarrier(apiKey, mode string) *ShipEngineCarrier {
 
 func (c *ShipEngineCarrier) ProviderName() string { return "shipengine" }
 
+// SupportedCountries lists the ISO 3166-1 alpha-2 country codes routed through
+// ShipEngine. IE + NZ added per P18 (§4.1). NZ addresses lack a state/province
+// field — ShipEngine accepts the empty state_province on NZ requests, and our
+// code has no pre-send state validation to relax.
+//
+// TODO(v2): Aramex AE integration — deferred per spec §2 last row and §25
+// effort table ("AE / Aramex (deferred v2) — 1 week"). Do not add "AE" here.
 func (c *ShipEngineCarrier) SupportedCountries() []string {
-	return []string{"US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "AU"}
+	return []string{"AU", "CA", "DE", "ES", "FR", "GB", "IE", "IT", "NL", "NZ", "US"}
 }
 
 // --- request / response types (private, match ShipEngine JSON schema) ---

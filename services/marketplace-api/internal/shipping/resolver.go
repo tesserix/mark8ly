@@ -27,11 +27,13 @@ func NewCarrier(provider, apiKey, secretKey, mode string, countryCode ...string)
 		if secretKey == "" {
 			return nil, fmt.Errorf("shipping: NewCarrier: secretKey is required for ninjavan")
 		}
-		cc := ""
-		if len(countryCode) > 0 {
-			cc = countryCode[0]
+		// P18 audit: previously, an empty countryCode silently defaulted to "sg"
+		// inside NewNinjaVanCarrier, which would silently route VN / MY / TH / PH
+		// / ID requests to the SG endpoint. Require an explicit country.
+		if len(countryCode) == 0 || strings.TrimSpace(countryCode[0]) == "" {
+			return nil, fmt.Errorf("shipping: NewCarrier: countryCode is required for ninjavan")
 		}
-		return NewNinjaVanCarrier(apiKey, secretKey, mode, cc), nil
+		return NewNinjaVanCarrier(apiKey, secretKey, mode, countryCode[0]), nil
 	default:
 		return nil, fmt.Errorf("shipping: NewCarrier: unknown provider %q", provider)
 	}

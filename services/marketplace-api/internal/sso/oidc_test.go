@@ -220,9 +220,8 @@ func TestOIDC_Exchange_WrongNonce(t *testing.T) {
 	tokenSrv := stubTokenServer(t, discoverySrv.URL, clientID, subject, correctNonce)
 
 	// Patch the RP's OAuth config token endpoint URL to use the stub.
-	rp.OAuth.Endpoint = rp.OAuth.Endpoint // keep auth endpoint
 	rp.OAuth.Endpoint.TokenURL = tokenSrv.URL + "/token"
-	tokenSrv.URL = tokenSrv.URL // suppress unused warning
+	_ = tokenSrv.URL // ensure tokenSrv reference stays after url mutation
 
 	_, err := rp.Exchange(context.Background(), "some-code", "wrong-nonce")
 	require.Error(t, err)

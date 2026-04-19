@@ -35,8 +35,8 @@ interface PricingClientProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getPlanPrice(plan: Plan, currency: string): PlanPrice {
-  return plan.prices[currency] ?? plan.prices['USD']!
+function getPlanPrice(plan: Plan, currency: string): PlanPrice | undefined {
+  return plan.prices[currency] ?? plan.prices['USD']
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,8 @@ interface PlanColumnProps {
 function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
   const price = getPlanPrice(plan, currency)
   const isPro = plan.id === 'pro'
+
+  if (!price) return null
 
   const displayAmount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
   const isConversation = copy.cta === 'Start a conversation'
@@ -262,7 +264,8 @@ interface ProAppCardProps {
 
 function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
   const addonCopy = pricingCopy.proApp
-  const price = pricing.proApp.prices[currency] ?? pricing.proApp.prices['USD']!
+  const price = pricing.proApp.prices[currency] ?? pricing.proApp.prices['USD']
+  if (!price) return null
   const amount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
 
   return (

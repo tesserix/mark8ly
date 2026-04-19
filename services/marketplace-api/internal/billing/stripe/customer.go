@@ -2,6 +2,8 @@ package stripe
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
 	sdk "github.com/stripe/stripe-go/v82"
 )
@@ -45,4 +47,22 @@ func CreateCustomer(ctx context.Context, c *Client, in CreateCustomerInput) (*Cu
 		Email:    cu.Email,
 		Metadata: cu.Metadata,
 	}, nil
+}
+
+// DeleteCustomer permanently deletes a Stripe customer. This is irreversible
+// and is only called as part of the hard-delete pipeline (§15.2 — 150-day step).
+//
+// Idempotent: if the customer is already deleted in Stripe (HTTP 404), the
+// error is treated as a no-op success so the caller can safely retry.
+func DeleteCustomer(ctx context.Context, c *Client, customerID string) error {
+	_, err := c.sdk.V1Customers.Delete(ctx, customerID, nil)
+	if err != nil {
+		var se *sdk.Error
+		if errors.As(err, &se) && se.HTTPStatusCode == http.StatusNotFound {
+			// Already deleted — idempotent success.
+			return nil
+		}
+		return toAPIError(err)
+	}
+	return nil
 }

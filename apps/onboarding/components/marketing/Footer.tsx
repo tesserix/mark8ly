@@ -37,7 +37,7 @@ export function Footer() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-10 sm:grid-cols-4">
             <FooterColumn
               title="Product"
               links={[
@@ -60,8 +60,18 @@ export function Footer() {
               links={[
                 { href: "/about", label: "About" },
                 { href: "/contact", label: "Contact" },
+              ]}
+            />
+            <FooterColumn
+              title="Legal"
+              links={[
                 { href: "/privacy", label: "Privacy" },
                 { href: "/terms", label: "Terms" },
+                { href: "/cookies", label: "Cookies" },
+                { href: "/acceptable-use", label: "Acceptable use" },
+                { href: "/refunds", label: "Refunds" },
+                { href: "/security", label: "Security" },
+                { href: "/legal", label: "All policies" },
               ]}
             />
           </div>

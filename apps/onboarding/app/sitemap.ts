@@ -38,24 +38,25 @@ export default function sitemap(): MetadataRoute.Sitemap {
   ];
 
   // Legal — slowly changing, lower priority but indexed.
-  const legal: MetadataRoute.Sitemap = [
-    {
-      url: `${SITE_URL}/privacy`,
-      lastModified: now,
-      changeFrequency: "yearly",
-      priority: 0.3,
-    },
-    {
-      url: `${SITE_URL}/terms`,
-      lastModified: now,
-      changeFrequency: "yearly",
-      priority: 0.3,
-    },
+  // /dpa is intentionally excluded: noindex because it's the
+  // auto-accepted controller-processor contract and doesn't
+  // belong in search results.
+  const legalRoutes: ReadonlyArray<string> = [
+    "/legal",
+    "/privacy",
+    "/terms",
+    "/acceptable-use",
+    "/cookies",
+    "/refunds",
+    "/sub-processors",
+    "/security",
   ];
-
-  // "Coming soon" stubs are left out deliberately — they have
-  // `robots: { index: false }` and shouldn&apos;t appear in sitemaps
-  // either. They&apos;ll be added back when real content ships.
+  const legal: MetadataRoute.Sitemap = legalRoutes.map((path) => ({
+    url: `${SITE_URL}${path}`,
+    lastModified: now,
+    changeFrequency: "yearly",
+    priority: 0.3,
+  }));
 
   return [...primary, ...legal];
 }

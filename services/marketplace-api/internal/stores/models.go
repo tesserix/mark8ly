@@ -19,6 +19,10 @@ type Store struct {
 	Timezone     string    `gorm:"column:timezone;type:varchar(64);not null"               json:"timezone"`
 	Status       string    `gorm:"column:status;type:varchar(20);not null"                 json:"status"`
 	SyncedAt     time.Time `gorm:"column:synced_at;not null;default:now()"                 json:"synced_at"`
+	// StorefrontCustomerPortalSecret is the per-store HMAC key for customer
+	// portal tokens (§15.4, migration 058). Generated at migration time;
+	// lazily regenerated if empty via customerportal.GenerateSecret().
+	StorefrontCustomerPortalSecret string `gorm:"column:storefront_customer_portal_secret;type:char(64)" json:"-"`
 }
 
 func (Store) TableName() string { return "stores" }

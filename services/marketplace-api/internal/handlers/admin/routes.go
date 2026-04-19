@@ -52,6 +52,8 @@ type Deps struct {
 	// P8 — geo-pricing arbitrage appeal (§18.8.1).
 	ArbitrageAppealHandler *ArbitrageAppealHandler
 	MigrationFastPathHandler   *migration.Handler
+	// P7 — tax-ID submit + US/CA attestation (§19.3, §19.3.1).
+	TaxHandler *TaxHandler
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
 	DashboardHandler         *DashboardHandler
@@ -613,6 +615,13 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		// P8 — Geo-pricing arbitrage appeal (§18.8.1).
 		if deps.ArbitrageAppealHandler != nil {
 			RegisterArbitrageAppeal(storeRoute, deps.ArbitrageAppealHandler, deps.AuthzMiddleware)
+		}
+
+		// P7 — tax-ID submit + US/CA attestation (§19.3, §19.3.1). The tax
+		// routes are also on the read-only allowlist so merchants in
+		// expired/store_closed states can still remediate a missing tax ID.
+		if deps.TaxHandler != nil {
+			RegisterTax(storeRoute, deps.TaxHandler, deps.AuthzMiddleware)
 		}
 
 		// Trial billing — P5 deferred-charge card-add (§5.3).

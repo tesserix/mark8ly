@@ -51,6 +51,7 @@ import { UserMenu } from "./UserMenu";
 import { TenantSwitcher } from "./TenantSwitcher";
 import { StoreSwitcher } from "./StoreSwitcher";
 import { NotificationBell } from "./NotificationBell";
+import { BannerStack } from "./banners/BannerStack";
 
 /**
  * AdminShell wraps every authenticated admin page with the sidebar +
@@ -359,6 +360,12 @@ function AdminShellFrame({
             </div>
           </div>
         </header>
+
+        {/* Priority-selective banner slot — renders at most one banner at a
+            time based on subscription state. Only mounted when storeId is
+            available (store-scoped routes); hidden on the store list page
+            and other non-store surfaces where currentStoreId is undefined. */}
+        {currentStoreId && <BannerStack storeId={currentStoreId} />}
 
         {/* Single source of truth for admin page width. Every admin surface
             renders inside this max-w-5xl container; individual pages should

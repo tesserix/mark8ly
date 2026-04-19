@@ -1,0 +1,34 @@
+name: Log-shipping PII smoke guard
+
+# =============================================================================
+# P17 Task 12 — static grep that prevents fmt.Print* from leaking structured
+# field values (tenant_id, email, trace_id, etc.) through unstructured log
+# lines instead of the slog/logrus JSON pipeline.
+# =============================================================================
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**/*.go"
+      - "scripts/ci/verify-logging-smoke.sh"
+  pull_request:
+    paths:
+      - "services/**/*.go"
+      - "scripts/ci/verify-logging-smoke.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  logging-smoke:
+    name: Log-shipping smoke guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run log-shipping PII smoke guard
+        run: bash scripts/ci/verify-logging-smoke.sh

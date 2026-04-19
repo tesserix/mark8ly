@@ -104,7 +104,7 @@ func (s *Signer) encode(t Token) string {
 
 func (s *Signer) mac(id, tenantID, storeID string, exp int64) []byte {
 	h := hmac.New(sha256.New, s.secret)
-	fmt.Fprintf(h, "%s|%s|%s|%d", id, tenantID, storeID, exp)
+	fmt.Fprintf(h, "%s|%s|%s|%d", id, tenantID, storeID, exp) //nolint:logging-smoke — writing to HMAC hash, not a logger
 	return h.Sum(nil)
 }
 

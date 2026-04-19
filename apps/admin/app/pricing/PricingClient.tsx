@@ -280,7 +280,7 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
             >
               {addonCopy.name}
             </h2>
-            <PlanBadge plan="growth" addon="white_label_app" />
+            <PlanBadge plan="studio" addon="white_label_app" />
           </div>
           <p className="text-sm" style={{ color: 'var(--ink-700)' }}>
             {addonCopy.tagline}

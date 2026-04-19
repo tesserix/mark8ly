@@ -33,7 +33,7 @@ export interface PlanPrice {
 }
 
 export interface Plan {
-  id: 'starter' | 'growth' | 'scale' | 'pro'
+  id: 'starter' | 'studio' | 'pro'
   prices: Record<string, PlanPrice>
 }
 
@@ -60,7 +60,7 @@ const STATIC_PRICING_CATALOGUE: PricingCatalogue = {
       },
     },
     {
-      id: 'growth',
+      id: 'studio',
       prices: {
         USD: { monthly: 7900, annual: 75600, annualMonthlyEquivalent: 6300 },
         GBP: { monthly: 6300, annual: 59400, annualMonthlyEquivalent: 4950 },
@@ -68,17 +68,6 @@ const STATIC_PRICING_CATALOGUE: PricingCatalogue = {
         INR: { monthly: 649900, annual: 6239900, annualMonthlyEquivalent: 519900 },
         AUD: { monthly: 12200, annual: 115200, annualMonthlyEquivalent: 9600 },
         CAD: { monthly: 10700, annual: 100800, annualMonthlyEquivalent: 8400 },
-      },
-    },
-    {
-      id: 'scale',
-      prices: {
-        USD: { monthly: 19900, annual: 190800, annualMonthlyEquivalent: 15900 },
-        GBP: { monthly: 15900, annual: 151200, annualMonthlyEquivalent: 12600 },
-        EUR: { monthly: 18500, annual: 175200, annualMonthlyEquivalent: 14600 },
-        INR: { monthly: 1649900, annual: 15839900, annualMonthlyEquivalent: 1319900 },
-        AUD: { monthly: 30900, annual: 291600, annualMonthlyEquivalent: 24300 },
-        CAD: { monthly: 26900, annual: 255600, annualMonthlyEquivalent: 21300 },
       },
     },
     {

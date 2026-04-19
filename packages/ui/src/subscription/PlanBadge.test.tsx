@@ -5,11 +5,10 @@ import { PlanBadge } from './PlanBadge'
 describe('PlanBadge', () => {
   it.each([
     ['starter', 'Starter'],
-    ['growth', 'Growth'],
-    ['scale', 'Scale'],
+    ['studio', 'Studio'],
     ['pro', 'Pro'],
   ])('renders %s plan as %s', (plan, label) => {
-    render(<PlanBadge plan={plan as 'starter' | 'growth' | 'scale' | 'pro'} />)
+    render(<PlanBadge plan={plan as 'starter' | 'studio' | 'pro'} />)
     expect(screen.getByText(label)).toBeInTheDocument()
   })
 
@@ -19,15 +18,15 @@ describe('PlanBadge', () => {
   })
 
   it('appends +White-label App when addon present', () => {
-    render(<PlanBadge plan="growth" addon="white_label_app" />)
-    expect(screen.getByText('Growth')).toBeInTheDocument()
+    render(<PlanBadge plan="studio" addon="white_label_app" />)
+    expect(screen.getByText('Studio')).toBeInTheDocument()
     expect(screen.getByText(/White-label App/)).toBeInTheDocument()
   })
 
   it('aria-label includes the add-on suffix', () => {
-    render(<PlanBadge plan="growth" addon="white_label_app" />)
+    render(<PlanBadge plan="studio" addon="white_label_app" />)
     const badge = screen.getByRole('status')
-    expect(badge).toHaveAttribute('aria-label', 'Growth · +White-label App')
+    expect(badge).toHaveAttribute('aria-label', 'Studio · +White-label App')
   })
 
   it('uses moss accent only for Pro', () => {
@@ -36,12 +35,12 @@ describe('PlanBadge', () => {
   })
 
   it('does not use moss for non-Pro plans', () => {
-    const { container } = render(<PlanBadge plan="growth" />)
+    const { container } = render(<PlanBadge plan="studio" />)
     expect(container.firstChild).not.toHaveClass(/moss/)
   })
 
   it('is a semantic element with role="status" for screen readers', () => {
-    render(<PlanBadge plan="growth" />)
+    render(<PlanBadge plan="studio" />)
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
 

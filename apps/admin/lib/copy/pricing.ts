@@ -8,7 +8,7 @@
  */
 
 export interface PlanCopyItem {
-  id: 'starter' | 'growth' | 'scale' | 'pro'
+  id: 'starter' | 'studio' | 'pro'
   name: string
   tagline: string
   cta: string
@@ -22,7 +22,7 @@ export const pricingCopy = {
 
   /** Lead paragraph under the headline. */
   intro:
-    'Four plans. Clear limits. No surprise fees. Change plans any time — upgrades prorate, downgrades wait for the period to close.',
+    'Three plans. Clear limits. No surprise fees. Change plans any time — upgrades prorate, downgrades wait for the period to close.',
 
   /** Billing toggle labels. */
   toggle: {
@@ -50,7 +50,7 @@ export const pricingCopy = {
   proApp: {
     name: 'White-label App',
     tagline: 'Publish a branded iOS and Android app for your storefront.',
-    requirement: 'Add-on — requires Growth plan or higher.',
+    requirement: 'Add-on — requires Studio plan or higher.',
     cta: 'Add to plan',
     ctaHref: '/admin/settings/billing/pro-app-purchase',
   },
@@ -59,7 +59,7 @@ export const pricingCopy = {
   disclosureTemplate: (currency: string) =>
     `Prices shown in ${currency}. Annual billing bills upfront; monthly bills each month.`,
 
-  /** The four main plans. */
+  /** The three public plans. Backend uses starter / studio / pro. */
   plans: [
     {
       id: 'starter' as const,
@@ -77,11 +77,11 @@ export const pricingCopy = {
       ],
     },
     {
-      id: 'growth' as const,
-      name: 'Growth',
+      id: 'studio' as const,
+      name: 'Studio',
       tagline: 'For stores gaining consistent monthly revenue.',
       cta: 'Start free trial',
-      ctaHref: '/signup?plan=growth',
+      ctaHref: '/signup?plan=studio',
       features: [
         '3 storefronts',
         'Unlimited products',
@@ -91,24 +91,6 @@ export const pricingCopy = {
         'Priority email support',
         'Custom domain',
         'Discount codes',
-      ],
-    },
-    {
-      id: 'scale' as const,
-      name: 'Scale',
-      tagline: 'For operations managing multiple channels at volume.',
-      cta: 'Start free trial',
-      ctaHref: '/signup?plan=scale',
-      features: [
-        '10 storefronts',
-        'Unlimited products',
-        '50,000 orders / month',
-        'Unlimited staff',
-        'Full analytics suite',
-        'Dedicated onboarding',
-        'API access',
-        'Vendor management',
-        'Multi-currency',
       ],
     },
     {

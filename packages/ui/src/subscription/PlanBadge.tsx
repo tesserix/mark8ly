@@ -10,7 +10,7 @@
  * aria-label carries the full human-readable string including any add-on.
  */
 
-export type PlanTier = 'trial' | 'starter' | 'growth' | 'scale' | 'pro'
+export type PlanTier = 'trial' | 'starter' | 'studio' | 'pro'
 export type PlanAddon = 'white_label_app'
 
 export interface PlanBadgeProps {
@@ -22,8 +22,7 @@ export interface PlanBadgeProps {
 const PLAN_LABELS: Record<string, string> = {
   trial: 'Trial',
   starter: 'Starter',
-  growth: 'Growth',
-  scale: 'Scale',
+  studio: 'Studio',
   pro: 'Pro',
 }
 

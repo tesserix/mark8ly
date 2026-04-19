@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     if: "!contains(github.event.pull_request.labels.*.name, 'pii-audit-cleared')"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           # Full history so `git diff origin/<base>...HEAD` resolves.
           fetch-depth: 0

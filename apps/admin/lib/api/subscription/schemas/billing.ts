@@ -38,6 +38,15 @@ export type SubscriptionStatus = z.infer<typeof subscriptionStatusSchema>
 // Arbitrage audit summary (returned on the GET subscription endpoint, §18.8.1)
 // ---------------------------------------------------------------------------
 
+export const appealStatusSchema = z.enum([
+  'pending',
+  'under_review',
+  'resolved',
+  'rejected',
+])
+
+export type AppealStatus = z.infer<typeof appealStatusSchema>
+
 export const arbitrageAuditSummarySchema = z.object({
   card_country: z.string(),
   billing_country: z.string(),
@@ -45,6 +54,11 @@ export const arbitrageAuditSummarySchema = z.object({
   resolution: z.string(),
   flagged_at: z.string(),
   mismatch_reason: z.string(),
+  // ─── Appeal fields (added by P8 backend; optional until P8 ships) ──────
+  /** Status of an in-progress or completed appeal. */
+  appeal_status: appealStatusSchema.nullable().optional(),
+  /** ISO date string when the appeal was submitted. */
+  appeal_submitted_at: z.string().nullable().optional(),
 })
 
 export type ArbitrageAuditSummary = z.infer<typeof arbitrageAuditSummarySchema>
@@ -95,9 +109,45 @@ export const subscriptionResponseSchema = z.object({
 
   /** Last 4 digits of the card on file. */
   payment_method_last4: z.string().nullable().optional(),
+
+  /**
+   * White-label app lifecycle state. Populated by P13/P14 backend once the
+   * add-on is active. Optional until those plans ship.
+   */
+  white_label_app: z
+    .object({
+      lifecycle_state: z
+        .enum([
+          'pending_credentials',
+          'building',
+          'submitted_apple',
+          'submitted_google',
+          'live_apple',
+          'live_google',
+          'live_both',
+          'update_needed',
+          'paused',
+        ])
+        .nullable()
+        .optional(),
+      updated_at: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
 })
 
 export type SubscriptionResponse = z.infer<typeof subscriptionResponseSchema>
+
+export type WhiteLabelAppLifecycleState =
+  | 'pending_credentials'
+  | 'building'
+  | 'submitted_apple'
+  | 'submitted_google'
+  | 'live_apple'
+  | 'live_google'
+  | 'live_both'
+  | 'update_needed'
+  | 'paused'
 
 /**
  * CurrentPlan — the domain type the UI actually works with.
@@ -120,6 +170,11 @@ export interface CurrentPlan {
   nextInvoiceAmountMinor: number | null
   paymentMethodBrand: string | null
   paymentMethodLast4: string | null
+  /** White-label app lifecycle info. Null until P13/P14 backend ships. */
+  whiteLabelApp: {
+    lifecycleState: WhiteLabelAppLifecycleState | null
+    updatedAt: string | null
+  } | null
 }
 
 export function toCurrentPlan(raw: SubscriptionResponse): CurrentPlan {
@@ -139,6 +194,14 @@ export function toCurrentPlan(raw: SubscriptionResponse): CurrentPlan {
     nextInvoiceAmountMinor: raw.next_invoice_amount_minor ?? null,
     paymentMethodBrand: raw.payment_method_brand ?? null,
     paymentMethodLast4: raw.payment_method_last4 ?? null,
+    whiteLabelApp: raw.white_label_app
+      ? {
+          lifecycleState:
+            (raw.white_label_app.lifecycle_state as WhiteLabelAppLifecycleState | null | undefined) ??
+            null,
+          updatedAt: raw.white_label_app.updated_at ?? null,
+        }
+      : null,
   }
 }
 

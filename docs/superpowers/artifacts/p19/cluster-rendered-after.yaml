@@ -1,0 +1,402 @@
+---
+# Source: mark8ly-postgres/templates/marketplace-api-bootstrap-job.yaml
+# Idempotent bootstrap Job for the marketplace_api role + database.
+#
+# CNPG's bootstrap.postInitSQL only runs on INITIAL cluster creation —
+# by the time this Job is added, the mark8ly-postgres cluster has
+# already been bootstrapped (platform_api + openfga were created via
+# postInitSQL at that time). This Job creates the tertiary role and
+# database if they don't already exist, then sets the role password
+# from the marketplace-api CNPG secret.
+#
+# Runs as an ArgoCD PostSync hook so it fires whenever the chart syncs.
+# Idempotent: CREATE ROLE / CREATE DATABASE are conditional via DO
+# blocks + \gexec; ALTER ROLE ... PASSWORD is safe to re-run.
+#
+# The trigger for running this is a chart sync, not a schema migration.
+# The marketplace-api application's own migrate init container handles
+# actual schema changes against the database this Job creates.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mark8ly-postgres-bootstrap-marketplace-api
+  namespace: mark8ly
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: database-init
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: ghcr.io/cloudnative-pg/postgresql:16.4
+          env:
+            - name: PGHOST
+              value: "mark8ly-postgres-rw.mark8ly.svc.cluster.local"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-postgres-platform-api
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-postgres-platform-api
+                  key: password
+            - name: PGDATABASE
+              value: "postgres"
+            - name: MARKETPLACE_API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-postgres-marketplace-api
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              # Conditional creates via shell-side existence checks instead
+              # of dollar-quoted DO blocks, because Helm + YAML + heredoc
+              # mangle multi-dollar-sign sequences and produce SQL parse
+              # errors at runtime.
+
+              ROLE_EXISTS=$(psql -tAc "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'marketplace_api'")
+              if [ -z "$ROLE_EXISTS" ]; then
+                echo "creating role marketplace_api"
+                psql -v ON_ERROR_STOP=1 -c "CREATE ROLE marketplace_api LOGIN"
+              else
+                echo "role marketplace_api already exists"
+              fi
+
+              DB_EXISTS=$(psql -tAc "SELECT 1 FROM pg_database WHERE datname = 'mark8ly_marketplace_api'")
+              if [ -z "$DB_EXISTS" ]; then
+                echo "creating database mark8ly_marketplace_api"
+                psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE mark8ly_marketplace_api OWNER marketplace_api"
+              else
+                echo "database mark8ly_marketplace_api already exists"
+              fi
+
+              # Set the role password from the secret. ALTER ROLE is
+              # idempotent. Using psql's :'pw' variable form with a
+              # single-quote wrapper so the password is safely escaped
+              # regardless of which characters it contains.
+              psql -v ON_ERROR_STOP=1 -v pw="$MARKETPLACE_API_PASSWORD" \
+                -c "ALTER ROLE marketplace_api WITH PASSWORD :'pw'"
+
+              # Ensure ownership + privileges (safe to re-run).
+              psql -v ON_ERROR_STOP=1 \
+                -c "ALTER DATABASE mark8ly_marketplace_api OWNER TO marketplace_api" \
+                -c "GRANT ALL PRIVILEGES ON DATABASE mark8ly_marketplace_api TO marketplace_api"
+
+              echo "marketplace-api bootstrap complete"
+---
+# Source: mark8ly-postgres/templates/post-init-job.yaml
+# CNPG's postInitSQL cannot reference secrets, so we set the openfga role
+# password in a post-install Job that runs once after the cluster is up.
+# The Job is idempotent: re-running it just re-applies the same password.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mark8ly-postgres-set-openfga-password
+  namespace: mark8ly
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: database-init
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: ghcr.io/cloudnative-pg/postgresql:16.4
+          env:
+            - name: PGHOST
+              value: "mark8ly-postgres-rw.mark8ly.svc.cluster.local"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-postgres-platform-api
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-postgres-platform-api
+                  key: password
+            - name: PGDATABASE
+              value: "postgres"
+            - name: OPENFGA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-postgres-openfga
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              psql -v ON_ERROR_STOP=1 <<SQL
+              ALTER ROLE openfga WITH PASSWORD '$OPENFGA_PASSWORD';
+              SQL
+---
+# Source: mark8ly-postgres/templates/cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: mark8ly-postgres
+  namespace: mark8ly
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: database
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  # Primary database bootstrap. Secondary database + role are created
+  # by a post-init SQL block below.
+  bootstrap:
+    initdb:
+      database: mark8ly_platform_api
+      owner: platform_api
+      secret:
+        name: mark8ly-postgres-platform-api
+      postInitSQL:
+        - "CREATE ROLE openfga LOGIN"
+        - "CREATE DATABASE mark8ly_openfga OWNER openfga"
+        - "ALTER ROLE openfga PASSWORD NULL"
+        # Password is applied after bootstrap by the post-init Job
+        # (templates/post-init-job.yaml) which reads from the CNPG basic-auth
+        # secret. We cannot inline the password here because CNPG does not
+        # support variable substitution inside postInitSQL.
+
+  storage:
+    size: 200Gi
+    storageClass: standard-rwo-retain
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: 20Gi
+    storageClass: standard-rwo-retain
+    resizeInUseVolumes: true
+
+  resources:
+    limits:
+      cpu: "1"
+      memory: 4Gi
+    requests:
+      cpu: "1"
+      memory: 4Gi
+
+  # Drop extra capabilities, non-root UID is enforced by CNPG.
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "256MB"
+      wal_level: "logical"
+      ssl_min_protocol_version: "TLSv1.3"
+      ssl_max_protocol_version: "TLSv1.3"
+      # Query safety nets
+      idle_in_transaction_session_timeout: "300000"
+      statement_timeout: "120000"
+      # SSD-optimized planner (GKE PD-SSD)
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      # Slow query logging (queries > 1s)
+      log_min_duration_statement: "1000"
+      # WAL safety cap
+      max_slot_wal_keep_size: "10GB"
+      # Performance monitoring (CNPG auto-loads extension)
+      pg_stat_statements.track: "all"
+      pg_stat_statements.max: "10000"
+      # P19 §24 — synchronous commit across the replica. Required for
+      # RPO=0 at the 100-merchant tier. CNPG default is "local" which
+      # does NOT wait for standby ack — switching to "on" means every
+      # commit waits for the synchronous standby to fsync before the
+      # transaction returns. Adds +1–5ms per commit within-zone; this
+      # cost is ACCEPTED per spec §22 (churn risk > latency cost).
+      # Takes effect only when instances ≥ 2 AND a synchronous block
+      # is configured below; at instances=1 the parameter is inert.
+      synchronous_commit: "on"
+    # Synchronous replication config — ANY(1, *) meaning any single
+    # standby acknowledging a commit is sufficient. Only wired when
+    # instances > 1; with instances=1 there is no standby to ack and
+    # this block would deadlock every write.
+    synchronous:
+      method: any
+      number: 1
+  backup:
+    barmanObjectStore:
+      destinationPath: "gs://tesseract-prod-backups-in/mark8ly-postgres"
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        immediateCheckpoint: true
+        jobs: 2
+    retentionPolicy: "30d"
+
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: app-secrets-mark8ly-prod@tesseracthub-480811.iam.gserviceaccount.com
+
+  monitoring:
+    enablePodMonitor: true
+    disableDefaultQueries: false
+
+  enableSuperuserAccess: false
+
+  primaryUpdateStrategy: unsupervised
+  failoverDelay: 0
+  switchoverDelay: 3600
+---
+# Source: mark8ly-postgres/templates/pooler.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: mark8ly-postgres-pooler-rw
+  namespace: mark8ly
+spec:
+  cluster:
+    name: mark8ly-postgres
+  instances: 1
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      max_client_conn: "500"
+      default_pool_size: "10"
+      min_pool_size: "0"
+      reserve_pool_size: "5"
+      server_idle_timeout: "600"
+      client_idle_timeout: "0"
+      server_lifetime: "3600"
+      query_wait_timeout: "60"
+---
+# Source: mark8ly-postgres/templates/prometheusrule.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mark8ly-postgres-alerts
+  namespace: mark8ly
+  labels:
+    app.kubernetes.io/component: database
+    role: alert-rules
+spec:
+  groups:
+    - name: mark8ly-postgres.rules
+      rules:
+        # Instance down
+        - alert: CNPGInstanceDown
+          expr: cnpg_collector_up{cluster="mark8ly-postgres"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            cluster: mark8ly-postgres
+          annotations:
+            summary: "CNPG instance {{ $labels.pod }} is down"
+            description: "PostgreSQL instance {{ $labels.pod }} in cluster mark8ly-postgres has been down for more than 5 minutes."
+
+        # Replication lag (standby is behind primary)
+        - alert: CNPGReplicationLag
+          expr: cnpg_pg_replication_lag{cluster="mark8ly-postgres"} > 30
+          for: 5m
+          labels:
+            severity: warning
+            cluster: mark8ly-postgres
+          annotations:
+            summary: "Replication lag on {{ $labels.pod }}"
+            description: "Replica {{ $labels.pod }} is {{ $value }}s behind primary in cluster mark8ly-postgres."
+
+        # Replication lag critical
+        - alert: CNPGReplicationLagCritical
+          expr: cnpg_pg_replication_lag{cluster="mark8ly-postgres"} > 300
+          for: 5m
+          labels:
+            severity: critical
+            cluster: mark8ly-postgres
+          annotations:
+            summary: "Critical replication lag on {{ $labels.pod }}"
+            description: "Replica {{ $labels.pod }} is {{ $value }}s behind primary in cluster mark8ly-postgres."
+
+        # WAL archiving failing
+        - alert: CNPGWALArchiveFailing
+          expr: cnpg_collector_pg_wal_archive_status{cluster="mark8ly-postgres",value="failed"} > 0
+          for: 10m
+          labels:
+            severity: critical
+            cluster: mark8ly-postgres
+          annotations:
+            summary: "WAL archiving failing for mark8ly-postgres"
+            description: "WAL archiving has been failing for more than 10 minutes. Backups and PITR are at risk."
+
+        # WAL accumulation (>1GB of WAL files)
+        - alert: CNPGWALAccumulation
+          expr: cnpg_collector_pg_wal{cluster="mark8ly-postgres",value="size"} > 1073741824
+          for: 15m
+          labels:
+            severity: warning
+            cluster: mark8ly-postgres
+          annotations:
+            summary: "WAL accumulation on mark8ly-postgres"
+            description: "WAL files have grown to {{ $value | humanize1024 }}. Check archiving and replication slots."
+
+        # Sync replica mismatch
+        - alert: CNPGSyncReplicaMismatch
+          expr: cnpg_collector_sync_replicas{cluster="mark8ly-postgres",value="observed"} < cnpg_collector_sync_replicas{cluster="mark8ly-postgres",value="expected"}
+          for: 10m
+          labels:
+            severity: critical
+            cluster: mark8ly-postgres
+          annotations:
+            summary: "Sync replica count mismatch for mark8ly-postgres"
+            description: "Expected {{ $labels.expected }} sync replicas but only {{ $value }} are available. Data durability is degraded."
+
+        # High connection usage (>80% of max_connections)
+        - alert: CNPGHighConnectionUsage
+          expr: cnpg_collector_pg_stat_activity{cluster="mark8ly-postgres",state="active"} > 80
+          for: 5m
+          labels:
+            severity: warning
+            cluster: mark8ly-postgres
+          annotations:
+            summary: "High connection usage on mark8ly-postgres"
+            description: "Active connections are above 80% of max_connections."
+
+        # Long-running transactions (>10 minutes)
+        - alert: CNPGLongRunningTransaction
+          expr: cnpg_collector_pg_long_running_transactions{cluster="mark8ly-postgres"} > 600
+          for: 5m
+          labels:
+            severity: warning
+            cluster: mark8ly-postgres
+          annotations:
+            summary: "Long-running transaction on mark8ly-postgres"
+            description: "A transaction has been running for more than {{ $value }}s."
+---
+# Source: mark8ly-postgres/templates/scheduled-backup.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: mark8ly-postgres-scheduled-backup
+  namespace: mark8ly
+spec:
+  # Twice daily: 02:00 UTC and 14:00 UTC
+  schedule: "0 2,14 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: mark8ly-postgres
+  # Single instance — backup from primary
+  target: primary
+  method: barmanObjectStore

@@ -1,0 +1,96 @@
+{{- if not .Values.hibernate }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: database
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  # Primary database bootstrap. Secondary database + role are created
+  # by a post-init SQL block below.
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.primaryDatabase }}
+      owner: {{ .Values.bootstrap.primaryOwner }}
+      secret:
+        name: {{ .Values.bootstrap.primarySecret }}
+      postInitSQL:
+        - "CREATE ROLE {{ .Values.bootstrap.secondaryOwner }} LOGIN"
+        - "CREATE DATABASE {{ .Values.bootstrap.secondaryDatabase }} OWNER {{ .Values.bootstrap.secondaryOwner }}"
+        - "ALTER ROLE {{ .Values.bootstrap.secondaryOwner }} PASSWORD NULL"
+        # Password is applied after bootstrap by the post-init Job
+        # (templates/post-init-job.yaml) which reads from the CNPG basic-auth
+        # secret. We cannot inline the password here because CNPG does not
+        # support variable substitution inside postInitSQL.
+
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: {{ .Values.walStorageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  resources:
+{{ toYaml .Values.resources | indent 4 }}
+
+  # Drop extra capabilities, non-root UID is enforced by CNPG.
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "256MB"
+      wal_level: "logical"
+      ssl_min_protocol_version: "TLSv1.3"
+      ssl_max_protocol_version: "TLSv1.3"
+      # Query safety nets
+      idle_in_transaction_session_timeout: "300000"
+      statement_timeout: "120000"
+      # SSD-optimized planner (GKE PD-SSD)
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      # Slow query logging (queries > 1s)
+      log_min_duration_statement: "1000"
+      # WAL safety cap
+      max_slot_wal_keep_size: "10GB"
+      # Performance monitoring (CNPG auto-loads extension)
+      pg_stat_statements.track: "all"
+      pg_stat_statements.max: "10000"
+
+  {{- if .Values.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.destinationPath | quote }}
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        immediateCheckpoint: true
+        jobs: 2
+    retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+  {{- end }}
+
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}
+
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.enablePodMonitor }}
+    disableDefaultQueries: false
+
+  enableSuperuserAccess: false
+
+  primaryUpdateStrategy: unsupervised
+  failoverDelay: 0
+  switchoverDelay: 3600
+{{- end }}

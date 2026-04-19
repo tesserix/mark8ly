@@ -1,0 +1,50 @@
+hibernate: false
+
+namespace: mark8ly
+clusterName: mark8ly-postgres
+
+# Single instance for v0.1. Bump to 2+ when HA becomes a requirement.
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+storageSize: 20Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+# Databases to create at bootstrap. CNPG's initdb stanza only seeds one
+# db/role directly, so we rely on a post-init SQL script for the second
+# database. The initdb owner is "platform_api" (the primary app).
+bootstrap:
+  primaryDatabase: mark8ly_platform_api
+  primaryOwner: platform_api
+  # Secret created by ExternalSecret (external-secrets/prod/mark8ly/externalsecret.yaml).
+  primarySecret: mark8ly-postgres-platform-api
+  secondaryDatabase: mark8ly_openfga
+  secondaryOwner: openfga
+  secondarySecret: mark8ly-postgres-openfga
+
+# WAL archive → GCS. The CNPG operator uses the cluster ServiceAccount
+# (Workload Identity) to write to the bucket. Provision the bucket separately;
+# it is referenced here by name.
+# Continuous backup to GCS via Barman Cloud (shared bucket, per-cluster dir)
+backup:
+  enabled: true
+  destinationPath: "gs://tesseract-prod-backups-in/mark8ly-postgres"
+  retentionPolicy: "30d"
+  serviceAccount: "app-secrets-mark8ly-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# Monitoring
+monitoring:
+  enablePodMonitor: true
+
+# PgBouncer connection pooling
+pooler:
+  enabled: true
+  instances: 1
+  maxClientConn: "500"
+  defaultPoolSize: "10"

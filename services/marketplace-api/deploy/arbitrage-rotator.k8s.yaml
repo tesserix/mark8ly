@@ -1,0 +1,46 @@
+# Cloud Run Job triggered nightly by Cloud Scheduler.
+#
+# IAM requirements (infra team — set in tesserix-k8s via Terraform):
+#   - Cloud Run Job service account:
+#       roles/secretmanager.secretVersionAdder on
+#         projects/tesserix-prod/secrets/arbitrage-ip-hmac-key
+#       roles/secretmanager.secretVersionManager on
+#         projects/tesserix-prod/secrets/arbitrage-ip-hmac-key
+#   - Cloud Scheduler service account:
+#       roles/run.invoker on this Cloud Run Job.
+#
+# NOTE: This file is a documentation stub for the infra team.
+# The canonical resource lives in tesserix-k8s via Terraform + ArgoCD.
+# Do not apply this file directly.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: arbitrage-rotator
+  namespace: marketplace
+  labels:
+    app: arbitrage-rotator
+    component: security
+spec:
+  schedule: "0 3 * * *"   # 03:00 UTC daily — runs before any webhook processing spike
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2      # Cloud Scheduler retries on non-zero exit
+      template:
+        spec:
+          serviceAccountName: arbitrage-rotator
+          restartPolicy: Never
+          containers:
+            - name: rotator
+              image: asia-south1-docker.pkg.dev/tesserix-app/services/arbitrage-rotator:latest
+              args:
+                - --secret=projects/tesserix-prod/secrets/arbitrage-ip-hmac-key
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi

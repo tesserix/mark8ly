@@ -87,13 +87,73 @@ jobs:
       - run: npm install --legacy-peer-deps
       - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-admin' --filter='!@repo/mobile-shared'
 
+  # ─── Security scans ────────────────────────────────────────────────
+  # Runs in parallel with Go + Node builds so failures surface early.
+  # Gated at HIGH so a new CVE (critical or high) lands as a CI failure
+  # rather than a silent dependabot alert that nobody reads. Moderate and
+  # below stay informational — they clutter the gate and mostly live in
+  # dev-only tooling.
+  security-npm:
+    name: Security — npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+      - name: Install (with dev — audit must see full tree)
+        run: npm install --legacy-peer-deps
+      - name: npm audit (fail on high+)
+        # Scoped to workspaces that actually ship to production. Mobile
+        # expo apps and tests-only tooling are excluded because their
+        # transitive dev-time graph churns often and is not on the runtime
+        # ship path. To expand coverage, drop the --workspace filters.
+        run: |
+          set -eo pipefail
+          echo "::group::Full tree audit (informational)"
+          npm audit --audit-level=moderate || true
+          echo "::endgroup::"
+          echo "::group::Production-workspace audit (gated)"
+          npm audit \
+            --audit-level=high \
+            --workspace=@mark8ly/admin \
+            --workspace=@mark8ly/storefront \
+            --workspace=@mark8ly/onboarding \
+            --workspace=@repo/ui \
+            --workspace=@repo/otto-widget
+          echo "::endgroup::"
+
+  security-go:
+    name: Security — govulncheck (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [platform-api, auth-bff, marketplace-api, otto]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: services/${{ matrix.service }}/go.sum
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Scan
+        working-directory: services/${{ matrix.service }}
+        # govulncheck narrows the result to CVEs that are actually
+        # reachable from the compiled binary — imports alone don't trip
+        # it, which dramatically cuts false positives vs plain
+        # `go list -m -u`. Non-zero exit = reachable vuln.
+        run: govulncheck ./...
+
   # ─── Image build + push ────────────────────────────────────────────
   # Builds 5 immutable images tagged sha-<12-char-commit> and pushes
   # them to GHCR. Skipped on PRs (only main pushes ship images).
   images:
     name: Build & push (${{ matrix.image.name }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [go, node]
+    needs: [go, node, security-npm, security-go]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -168,11 +228,16 @@ jobs:
             NEXT_PUBLIC_ADMIN_URL_TEMPLATE=${{ secrets.NEXT_PUBLIC_ADMIN_URL_TEMPLATE }}
             NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=${{ secrets.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN }}
 
-      - name: Trivy scan (fail on CRITICAL)
+      - name: Trivy scan (fail on CRITICAL + HIGH)
+        # Gate tightened from CRITICAL-only to CRITICAL,HIGH so a new
+        # exploitable CVE in the built image halts the deploy instead of
+        # merely emitting a security-tab alert that no one follows up on.
+        # ignore-unfixed stays on so upstream-only-fixed-in-HEAD advisories
+        # (which we can't act on) don't hold up ops.
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ghcr.io/tesserix/${{ matrix.image.name }}:sha-${{ steps.sha.outputs.short }}
-          severity: CRITICAL
+          severity: CRITICAL,HIGH
           exit-code: "1"
           ignore-unfixed: true
           vuln-type: "os,library"

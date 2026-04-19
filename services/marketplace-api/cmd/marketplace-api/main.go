@@ -1220,6 +1220,12 @@ func main() {
 	prometheus.MustRegister(mrrCollector)
 	log.Info("P17 MRR rollup collector registered")
 
+	// P17 Task 11 — billing_archive expiry gauge. Counts rows expiring soon
+	// and rows already expired (awaiting sweeper) at each scrape.
+	archiveExpiryCollector := metrics.NewBillingArchiveExpiryCollector(conn, log)
+	prometheus.MustRegister(archiveExpiryCollector)
+	log.Info("P17 billing_archive expiry collector registered")
+
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)
 

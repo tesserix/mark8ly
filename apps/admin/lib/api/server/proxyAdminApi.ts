@@ -28,6 +28,7 @@ export async function proxyAdminApi(
   const h = await headers();
   const userId = h.get("x-session-user-id") ?? "";
   const tenantId = h.get("x-session-tenant-id") ?? "";
+  const email = h.get("x-session-email") ?? "";
   if (!userId || !tenantId) {
     return jsonError(401, "unauthorized", "session headers missing");
   }
@@ -44,6 +45,9 @@ export async function proxyAdminApi(
     "X-Tenant-Id": tenantId,
     Accept: "application/json",
   };
+  if (email) {
+    upstreamHeaders["X-User-Email"] = email;
+  }
   const contentType = request.headers.get("content-type");
   if (contentType) {
     upstreamHeaders["Content-Type"] = contentType;

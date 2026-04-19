@@ -59,6 +59,77 @@ func (s *Service) GetSubscription(ctx context.Context, tenantID, storeID uuid.UU
 	return s.repo.GetByStoreID(ctx, s.db, tenantID, storeID)
 }
 
+// BootstrapInput holds the parameters for lazy-initialising a subscription
+// row for a store that was created before the v2.3 signup → row pipeline
+// shipped. Email + name feed the Stripe customer record.
+type BootstrapInput struct {
+	TenantID uuid.UUID
+	StoreID  uuid.UUID
+	Email    string
+	Name     string
+}
+
+// Bootstrap idempotently initialises a store_subscriptions row.
+//
+// If a row already exists for the (tenant, store) pair it is returned as-is
+// (idempotent — safe to call from a retry). Otherwise a Stripe customer is
+// created and a new row is inserted with plan=trial, status=signup. The
+// status machine (P2) owns the signup → trialing transition once the
+// merchant confirms a plan.
+//
+// This exists because stores created before the subscription-v2 refactor
+// shipped have no row and GetSubscription returns 404. The admin UI calls
+// Bootstrap on that 404 to create the row on demand.
+func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (*StoreSubscription, error) {
+	if in.TenantID == uuid.Nil {
+		return nil, apperrors.ValidationFailed("tenant_id", "tenant_id is required")
+	}
+	if in.StoreID == uuid.Nil {
+		return nil, apperrors.ValidationFailed("store_id", "store_id is required")
+	}
+	if s.stripe == nil {
+		return nil, fmt.Errorf("stripe client not configured")
+	}
+
+	// Idempotency — return the existing row if one is already in place.
+	existing, err := s.repo.GetByStoreID(ctx, s.db, in.TenantID, in.StoreID)
+	if err == nil {
+		return existing, nil
+	}
+	if ae, ok := err.(*apperrors.Error); !ok || ae.Code != apperrors.CodeNotFound {
+		return nil, err
+	}
+
+	email := in.Email
+	if email == "" {
+		// Stripe requires non-empty customer email for reliable dedup;
+		// fall back to a deterministic tenant-scoped placeholder so the
+		// customer record is still unique per tenant/store.
+		email = fmt.Sprintf("billing+%s@mark8ly.local", in.StoreID.String())
+	}
+	name := in.Name
+	if name == "" {
+		name = in.StoreID.String()
+	}
+
+	customerID, err := s.stripe.CreateCustomer(ctx, email, name)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: create stripe customer: %w", err)
+	}
+
+	row := &StoreSubscription{
+		TenantID:         in.TenantID,
+		StoreID:          in.StoreID,
+		StripeCustomerID: customerID,
+		Plan:             PlanTrial,
+		Status:           StatusSignup,
+	}
+	if err := s.repo.Create(ctx, s.db, row); err != nil {
+		return nil, fmt.Errorf("bootstrap: create subscription row: %w", err)
+	}
+	return row, nil
+}
+
 // CheckoutInput holds the parameters for creating a checkout session.
 type CheckoutInput struct {
 	TenantID   uuid.UUID

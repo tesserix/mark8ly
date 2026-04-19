@@ -141,6 +141,13 @@ export const subscriptionCopy = {
       'Add the white-label app to publish iOS and Android builds of your storefront.',
     whiteLabelAppAddCta: 'Add white-label app',
 
+    // ─── Setup / first-run ──────────────────────────────────────────────
+    setupHeading: 'Set up billing',
+    setupDescription:
+      'Finish setting up your billing account to see your plan, payment method, and invoices.',
+    setupCta: 'Set up billing',
+    setupInProgress: 'Setting up\u2026',
+
     // ─── Error / loading states ─────────────────────────────────────────
     loadingError: 'Something went wrong loading your plan.',
     retryLabel: 'Retry',

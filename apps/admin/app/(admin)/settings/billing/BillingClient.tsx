@@ -4,7 +4,10 @@ import { useEffect } from 'react'
 import { Skeleton } from '@tesserix/web'
 import { useToast } from '@/components/feedback/Toaster'
 import { ApiError, SubscriptionInactiveError } from '@/lib/api/client'
-import { useCurrentPlan } from '@/lib/api/subscription/hooks/useBilling'
+import {
+  useBootstrapSubscription,
+  useCurrentPlan,
+} from '@/lib/api/subscription/hooks/useBilling'
 import { subscriptionCopy } from '@/lib/copy/subscription'
 import { PlanCard } from './PlanCard'
 import { InvoicesList } from './InvoicesList'
@@ -31,6 +34,52 @@ function PanelSkeleton() {
       <Skeleton className="h-4 w-52 rounded-[6px]" />
       <Skeleton className="h-10 w-32 rounded-[6px]" />
     </div>
+  )
+}
+
+// ─── Setup panel ──────────────────────────────────────────────────────────────
+
+interface SetupPanelProps {
+  onSetup: () => void
+  isPending: boolean
+  errorMessage: string | null
+}
+
+// Shown when GET subscription returns 404 — the store predates the v2.3
+// signup pipeline so no row exists yet. Single primary CTA creates the
+// Stripe customer + row on demand.
+function SetupPanel({ onSetup, isPending, errorMessage }: SetupPanelProps) {
+  return (
+    <section
+      aria-labelledby="billing-setup-heading"
+      className="border-b border-[var(--hairline,var(--ink-100))] pb-10"
+    >
+      <h2
+        id="billing-setup-heading"
+        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[var(--ink-900)]"
+      >
+        {copy.setupHeading}
+      </h2>
+      <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--ink-700)]">
+        {copy.setupDescription}
+      </p>
+      <div className="mt-6">
+        <button
+          type="button"
+          onClick={onSetup}
+          disabled={isPending}
+          aria-busy={isPending}
+          className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isPending ? copy.setupInProgress : copy.setupCta}
+        </button>
+      </div>
+      {errorMessage && (
+        <p role="alert" className="mt-4 text-sm text-[var(--danger,#7a1a1a)]">
+          {errorMessage}
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -71,13 +120,18 @@ function ErrorPanel({ message, onRetry }: ErrorPanelProps) {
  */
 export function BillingClient({ storeId }: BillingClientProps) {
   const { data: plan, isLoading, error, refetch } = useCurrentPlan(storeId)
+  const bootstrap = useBootstrapSubscription(storeId)
   const { toast } = useToast()
+
+  const isNotFound = error instanceof ApiError && error.status === 404
 
   // Fire the ApiError toast as a side-effect, not during render. Calling
   // toast.error() inline on every render triggered an infinite re-render loop
-  // because the toast store update re-rendered this component.
+  // because the toast store update re-rendered this component. 404 is an
+  // expected state (pre-v2.3 store needs bootstrap) — don't surface it as a
+  // scary toast.
   useEffect(() => {
-    if (error instanceof ApiError) {
+    if (error instanceof ApiError && error.status !== 404) {
       toast.error(error.message ?? copy.loadingError)
     }
   }, [error, toast])
@@ -102,6 +156,29 @@ export function BillingClient({ storeId }: BillingClientProps) {
           <p className="text-sm text-[var(--ink-700)]">
             {copy.inactiveBanner(status)}
           </p>
+        </div>
+      )
+    }
+
+    // 404: the store predates the v2.3 signup pipeline — show the bootstrap CTA.
+    if (isNotFound) {
+      return (
+        <div className="space-y-10">
+          <SetupPanel
+            onSetup={() =>
+              bootstrap.mutate(undefined, {
+                onSuccess: () => {
+                  void refetch()
+                },
+              })
+            }
+            isPending={bootstrap.isPending}
+            errorMessage={
+              bootstrap.error instanceof Error
+                ? bootstrap.error.message
+                : null
+            }
+          />
         </div>
       )
     }

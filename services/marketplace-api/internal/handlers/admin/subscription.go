@@ -14,6 +14,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -182,6 +183,53 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// Bootstrap handles POST /admin/stores/:storeId/subscription/bootstrap.
+//
+// Idempotently initialises a store_subscriptions row for stores created
+// before the v2.3 signup pipeline shipped. Returns the subscription in
+// the same shape as GetSubscription.
+func (h *SubscriptionHandler) Bootstrap(c *gin.Context) {
+	storeID, err := uuid.Parse(c.Param("storeId"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
+		return
+	}
+	tenantID, err := uuid.Parse(c.GetString("tenant_id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("tenant_id", "invalid uuid"), h.logger)
+		return
+	}
+
+	email := c.GetString("user_email")
+	name := ""
+	if storeVal, ok := c.Get("store"); ok {
+		if storeRow, ok := storeVal.(*stores.Store); ok && storeRow != nil {
+			name = storeRow.Name
+		}
+	}
+
+	sub, err := h.svc.Bootstrap(c.Request.Context(), subscription.BootstrapInput{
+		TenantID: tenantID,
+		StoreID:  storeID,
+		Email:    email,
+		Name:     name,
+	})
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	if h.audit != nil {
+		h.audit.Emit(c, audit.Event{
+			Action:       "subscription.bootstrap",
+			ResourceType: "subscription",
+			Metadata:     map[string]any{"store_id": storeID.String()},
+		})
+	}
+
+	c.JSON(http.StatusOK, toSubscriptionResponse(*sub))
 }
 
 // CreateCheckoutRequest is the request body for POST .../subscription/checkout.

@@ -10,7 +10,11 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query'
-import { getSubscription, openPortal } from '../billing'
+import {
+  bootstrapSubscription,
+  getSubscription,
+  openPortal,
+} from '../billing'
 import type { CurrentPlan, PortalResponse } from '../schemas/billing'
 
 const BILLING_STALE_TIME = 30_000
@@ -28,6 +32,25 @@ export function useCurrentPlan(
     queryFn: () => getSubscription(storeId),
     staleTime: BILLING_STALE_TIME,
     enabled: Boolean(storeId),
+  })
+}
+
+/**
+ * Initialises the subscription row for a store that predates the v2.3
+ * signup pipeline. On success seeds the ['subscription', storeId] cache
+ * with the new row so the UI immediately swaps from the "not found" CTA
+ * to the normal billing view.
+ */
+export function useBootstrapSubscription(
+  storeId: string,
+): UseMutationResult<CurrentPlan, Error, void> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => bootstrapSubscription(storeId),
+    onSuccess: (data) => {
+      queryClient.setQueryData<CurrentPlan>(['subscription', storeId], data)
+    },
   })
 }
 

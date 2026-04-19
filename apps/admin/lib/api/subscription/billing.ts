@@ -37,6 +37,23 @@ export async function getSubscription(storeId: string): Promise<CurrentPlan> {
  *
  * Note: the Go handler returns `{ url: string }` (not `portal_url`).
  */
+/**
+ * Idempotently initialise the store_subscriptions row for a store that
+ * predates the v2.3 signup pipeline. The admin billing page calls this
+ * when getSubscription() 404s so the merchant can proceed without
+ * platform intervention.
+ */
+export async function bootstrapSubscription(
+  storeId: string,
+): Promise<CurrentPlan> {
+  const raw = await apiClient.post<unknown>(
+    `/api/admin/stores/${storeId}/subscription/bootstrap`,
+    null,
+  )
+  const parsed = subscriptionResponseSchema.parse(raw)
+  return toCurrentPlan(parsed)
+}
+
 export async function openPortal(storeId: string): Promise<PortalResponse> {
   const returnUrl =
     typeof window !== 'undefined'

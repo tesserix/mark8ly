@@ -34,6 +34,11 @@ import (
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	appcredspkg "github.com/mark8ly/marketplace-api/internal/billing/appcreds"
+	wlapple "github.com/mark8ly/marketplace-api/internal/whitelabel/apple"
+	wlfirebase "github.com/mark8ly/marketplace-api/internal/whitelabel/firebase"
+	wlgoogleplay "github.com/mark8ly/marketplace-api/internal/whitelabel/googleplay"
+	wllifecycle "github.com/mark8ly/marketplace-api/internal/whitelabel/lifecycle"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/apikeys"
@@ -1369,6 +1374,79 @@ func main() {
 	archiveExpiryCollector := metrics.NewBillingArchiveExpiryCollector(conn, log)
 	prometheus.MustRegister(archiveExpiryCollector)
 	log.Info("P17 billing_archive expiry collector registered")
+
+	// ──────────────────────────────────────────────────────────────────
+	// P15 — White-label mobile-app add-on: credential store + teardown
+	// lifecycle cron (spec §13.5, §18.9).
+	//
+	// Credential store (appcreds): uses GCP Secret Manager in production
+	// when APPCREDS_PROJECT_ID is set; falls back to an in-memory FakeSM
+	// for dev so `make dev` boots without GCP auth. Every read/write/
+	// delete emits an audit event + increments a Prometheus counter.
+	//
+	// Apple/Google/Firebase clients: wired as FakeClient today — real
+	// integrations return ErrNotWired until the respective API SDKs are
+	// fleshed out in a follow-up. The lifecycle advancer tolerates
+	// ErrNotWired (logged, swallowed) so day-30/60/90 actions can land
+	// progressively as each integration matures.
+	//
+	// The lifecycle cron registers on the shared trialScheduler so it
+	// shares the same thread pool and shutdown semantics as P5/P6/P11
+	// crons. Production spec: "0 5 * * *" (05:00 UTC daily).
+	// ──────────────────────────────────────────────────────────────────
+	var wlAppCredsSM appcredspkg.SM
+	if cfg.AppCredsProjectID != "" {
+		smClient, err := secretmanagerclient.NewClient(workerCtx)
+		if err != nil {
+			log.Error("init secret manager client for appcreds", "err", err)
+		} else {
+			defer smClient.Close()
+			wlAppCredsSM = appcredspkg.NewGCPSM(smClient, cfg.AppCredsProjectID)
+		}
+	}
+	if wlAppCredsSM == nil {
+		wlAppCredsSM = appcredspkg.NewFakeSM()
+		log.Warn("P15 appcreds using FakeSM — set APPCREDS_PROJECT_ID for production")
+	}
+	wlAppCredsSvc := appcredspkg.NewService(appcredspkg.Config{
+		ProjectID: cfg.AppCredsProjectID,
+		SM:        wlAppCredsSM,
+		Emitter:   auditEmitter,
+	})
+	wlAppleCli := wlapple.NewFakeClient()
+	wlGoogleCli := wlgoogleplay.NewFakeClient()
+	wlFirebaseCli := wlfirebase.NewFakeClient()
+	wlAdvancer := wllifecycle.NewAdvancer(wllifecycle.Config{
+		DB:       conn,
+		Apple:    wlAppleCli,
+		Google:   wlGoogleCli,
+		Firebase: wlFirebaseCli,
+		Creds:    wlAppCredsSvc,
+		Clock:    time.Now,
+		Logger:   log,
+	})
+	if _, err := trialScheduler.AddFunc(cfg.WhiteLabelLifecycleCron, func() {
+		if err := wlAdvancer.AdvanceDue(workerCtx); err != nil {
+			log.Error("P15 white-label lifecycle advance failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register P15 white-label lifecycle cron", "err", err)
+	}
+	log.Info("P15 white-label lifecycle cron registered",
+		"spec", cfg.WhiteLabelLifecycleCron,
+		"appcreds_mode", func() string {
+			if cfg.AppCredsProjectID == "" {
+				return "fake"
+			}
+			return "gcp"
+		}())
+	_ = wlAppCredsSvc // handlers that consume this land via a separate
+	// mount helper; see internal/handlers/admin/app_routes.go.
+	// HTTP route registration of the Apple/Google credential upload and
+	// add-on purchase handlers is intentionally deferred to avoid
+	// conflicting with parallel P16 work on the admin Deps struct; mount
+	// via admin.MountAppCredentialsRoutes / admin.MountAppAddOnRoutes
+	// once the shared Deps is finalised.
 
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)

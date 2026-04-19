@@ -128,6 +128,16 @@ type Config struct {
 	// in production. Empty disables IP hashing on last_used_ip_hash.
 	APIKeyIPHashKey string `envconfig:"APIKEY_IP_HASH_KEY" default:""`
 
+	// P15 — white-label mobile-app add-on lifecycle cron (spec §13.5).
+	// Daily at 05:00 UTC advances sunset_scheduled rows through the
+	// day 7/30/60/90 teardown.
+	WhiteLabelLifecycleCron string `envconfig:"WHITE_LABEL_LIFECYCLE_CRON" default:"0 5 * * *"`
+
+	// P15 — GCP project hosting the merchant_* Secret Manager secrets
+	// referenced by internal/billing/appcreds. Empty = use the same
+	// project as ADC's default (GKE Workload Identity).
+	AppCredsProjectID string `envconfig:"APPCREDS_PROJECT_ID" default:""`
+
 	// P18 — shipping carrier credentials for v2 country rollout (IE + NZ via
 	// ShipEngine, VN via NinjaVan). Secrets are provisioned in GCP Secret
 	// Manager; these fields wire the env-var reads.

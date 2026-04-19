@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { applyGeoCookie } from "./lib/geo/geoMiddleware";
 
 /**
  * Admin middleware — Phase J.
@@ -60,6 +61,14 @@ interface SessionResponse {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Public pricing page — geo-localize currency from CF-IPCountry before RSC
+  // render. No auth or tenant extraction needed; the page is unauthenticated.
+  if (pathname === "/pricing" || pathname.startsWith("/pricing/")) {
+    const response = NextResponse.next();
+    applyGeoCookie(req, response);
+    return response;
+  }
 
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();

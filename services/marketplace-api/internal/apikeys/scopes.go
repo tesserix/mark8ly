@@ -2,7 +2,10 @@ package apikeys
 
 import (
 	"fmt"
+	"net/http"
 	"slices"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Scope is a canonical permission string. Format is "<resource>:<verb>".
@@ -67,4 +70,30 @@ func AllReadOnly(scopes []string) bool {
 		}
 	}
 	return true
+}
+
+// RequireScope returns Gin middleware that checks the authenticated key
+// carries `required`. Mount it on individual routes after Authenticate. The
+// 403 body never identifies which scope was required (defense-in-depth).
+func RequireScope(required Scope) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		raw, ok := c.Get("api_key_scopes")
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		scopes, ok := raw.([]string)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "scope_required"})
+			return
+		}
+		if !slices.Contains(scopes, string(required)) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":   "scope_required",
+				"message": fmt.Sprintf("This endpoint requires the %q scope.", required),
+			})
+			return
+		}
+		c.Next()
+	}
 }

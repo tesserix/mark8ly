@@ -6,6 +6,30 @@ import (
 	sdk "github.com/stripe/stripe-go/v82"
 )
 
+// InvoiceCustomField mirrors the Stripe SDK's InvoiceUpdateCustomFieldParams
+// without leaking the SDK type to non-stripe callers.
+type InvoiceCustomField struct {
+	Name  string
+	Value string
+}
+
+// UpdateInvoiceCustomFields replaces the custom_fields array on an existing
+// invoice. Used by the §19.2 reverse-charge annotator after invoice.finalized.
+func UpdateInvoiceCustomFields(ctx context.Context, c *Client, invoiceID string, fields []InvoiceCustomField) error {
+	params := &sdk.InvoiceUpdateParams{}
+	for _, f := range fields {
+		params.CustomFields = append(params.CustomFields, &sdk.InvoiceUpdateCustomFieldParams{
+			Name:  sdk.String(f.Name),
+			Value: sdk.String(f.Value),
+		})
+	}
+	_, err := c.sdk.V1Invoices.Update(ctx, invoiceID, params)
+	if err != nil {
+		return toAPIError(err)
+	}
+	return nil
+}
+
 type Invoice struct {
 	ID               string `json:"id"`
 	Status           string `json:"status"`

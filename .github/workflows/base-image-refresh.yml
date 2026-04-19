@@ -1,0 +1,40 @@
+name: Base Image Refresh
+
+# Fired by tesserix/base-docker-images when a weekly rebuild publishes
+# new tesserix base images (repository_dispatch event
+# `tesserix-base-images-updated`). Rebuilds all mark8ly images against
+# the refreshed bases so CVE fixes at the base layer propagate here
+# without any per-service PRs.
+#
+# Manual trigger (workflow_dispatch) is kept for operators who want to
+# force a rebuild outside the weekly cadence.
+
+on:
+  repository_dispatch:
+    types: [tesserix-base-images-updated]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  rebuild:
+    name: Rebuild mark8ly on new base images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log trigger context
+        run: |
+          echo "Trigger: ${{ github.event_name }}"
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "Dispatched from base-docker-images weekly rebuild."
+            echo "Client payload: ${{ toJson(github.event.client_payload) }}"
+          fi
+
+      - name: Dispatch mark8ly CI workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run ci.yml --repo ${{ github.repository }} --ref main
+          echo "Dispatched ci.yml on main — all mark8ly apps and services will rebuild."

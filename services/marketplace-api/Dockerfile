@@ -1,41 +1,37 @@
 # syntax=docker/dockerfile:1
+#
+# Mark8ly marketplace-api Dockerfile.
+# Builds on tesserix company-owned base images — non-root uid 10001,
+# tini PID 1, ca-certs + tzdata + wget/curl, and weekly upstream CVE
+# patches are all baked in the base.
 
 # ─── builder ────────────────────────────────────────────────────────────
-FROM golang:1.26-alpine AS builder
-RUN apk add --no-cache git ca-certificates
+FROM ghcr.io/tesserix/base-go-builder:latest AS builder
+USER 0:0
 WORKDIR /src
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/marketplace-api ./cmd/marketplace-api
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
+RUN go build -trimpath -ldflags="-s -w" \
+      -o /out/marketplace-api ./cmd/marketplace-api \
+ && go build -trimpath -ldflags="-s -w" \
+      -o /out/migrate ./cmd/migrate
 
 # ─── migrate ────────────────────────────────────────────────────────────
-FROM alpine:3.22 AS migrate
-RUN apk add --no-cache ca-certificates \
-    && addgroup -g 10001 -S app \
-    && adduser  -u 10001 -S app -G app
-COPY --from=builder /out/migrate /usr/local/bin/migrate
-USER 10001:10001
-ENTRYPOINT ["/usr/local/bin/migrate"]
+# Standalone image used by the K8s Job pattern.
+FROM ghcr.io/tesserix/base-alpine-runtime:latest AS migrate
+COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
+CMD ["/usr/local/bin/migrate"]
 
 # ─── runtime ────────────────────────────────────────────────────────────
-# Runtime image carries BOTH binaries — the server (default ENTRYPOINT)
-# and the migrate CLI at /usr/local/bin/migrate. The Helm chart's init
-# container overrides the entrypoint to call /usr/local/bin/migrate.
-# Mirrors platform-api's pattern of one image, two binaries. Runs as an
-# unprivileged user (uid 10001) so an RCE can't write root-owned paths
-# or escalate via setuid-capable syscalls.
-FROM alpine:3.22 AS runtime
-RUN apk add --no-cache ca-certificates wget \
-    && addgroup -g 10001 -S app \
-    && adduser  -u 10001 -S app -G app
-COPY --from=builder /out/marketplace-api /usr/local/bin/marketplace-api
-COPY --from=builder /out/migrate /usr/local/bin/migrate
-USER 10001:10001
+# Runtime image carries BOTH binaries — server (default CMD) and the
+# migrate CLI at /usr/local/bin/migrate — so the Helm init container
+# can override ENTRYPOINT to run migrations from the same image.
+FROM ghcr.io/tesserix/base-alpine-runtime:latest AS runtime
+COPY --from=builder --chown=10001:10001 /out/marketplace-api /usr/local/bin/marketplace-api
+COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 EXPOSE 8091
-ENTRYPOINT ["/usr/local/bin/marketplace-api"]
+# base-alpine-runtime's ENTRYPOINT is already `tini --`.
+CMD ["/usr/local/bin/marketplace-api"]

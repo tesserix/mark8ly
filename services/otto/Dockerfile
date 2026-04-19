@@ -1,18 +1,19 @@
 # Multi-stage Dockerfile for the otto support-chat service.
-# Mirrors the mark8ly house style (auth-bff / marketplace-api).
+# Builds on tesserix company-owned base images — non-root uid 10001,
+# tini PID 1, ca-certs, tzdata and weekly upstream CVE patches come
+# from the base, so this file only carries the app-specific build +
+# copy chain.
 
-FROM golang:1.26-alpine AS build
+FROM ghcr.io/tesserix/base-go-builder:latest AS build
+USER 0:0
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /out/server ./cmd/server
+RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
-FROM alpine:3.22 AS server
-RUN apk add --no-cache ca-certificates \
- && addgroup -g 1000 otto \
- && adduser -D -u 1000 -G otto otto
-USER otto:otto
-COPY --from=build /out/server /server
+FROM ghcr.io/tesserix/base-alpine-runtime:latest AS server
+COPY --from=build --chown=10001:10001 /out/server /server
 EXPOSE 8089
-ENTRYPOINT ["/server"]
+# base-alpine-runtime's ENTRYPOINT is already `tini --`.
+CMD ["/server"]

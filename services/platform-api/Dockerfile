@@ -1,43 +1,32 @@
-# Multi-stage Dockerfile producing two targets: server and migrate.
+# Multi-stage Dockerfile producing three targets: server, migrate, seed.
 # Same source, same embedded migrations, no version skew.
+# Builds on tesserix company-owned base images.
 
-FROM golang:1.26-alpine AS build
+FROM ghcr.io/tesserix/base-go-builder:latest AS build
+USER 0:0
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /out/server ./cmd/server
-RUN CGO_ENABLED=0 go build -o /out/migrate ./cmd/migrate
-RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed
+RUN go build -trimpath -ldflags="-s -w" -o /out/server  ./cmd/server \
+ && go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
+ && go build -trimpath -ldflags="-s -w" -o /out/seed    ./cmd/seed
 
-# Single runtime stage carrying all three binaries so the K8s init+seed
-# pattern can run /migrate and /seed as command overrides on the same image.
-# Runs as unprivileged user 10001 so the server can't escalate on an RCE.
-FROM alpine:3.22 AS server
-RUN apk add --no-cache ca-certificates \
-    && addgroup -g 10001 -S app \
-    && adduser  -u 10001 -S app -G app
-COPY --from=build /out/server /server
-COPY --from=build /out/migrate /migrate
-COPY --from=build /out/seed /seed
-USER 10001:10001
+# Single runtime stage carries all three binaries so the K8s init+seed
+# pattern can override ENTRYPOINT without pulling a second image.
+FROM ghcr.io/tesserix/base-alpine-runtime:latest AS server
+COPY --from=build --chown=10001:10001 /out/server  /server
+COPY --from=build --chown=10001:10001 /out/migrate /migrate
+COPY --from=build --chown=10001:10001 /out/seed    /seed
 EXPOSE 8086
-ENTRYPOINT ["/server"]
+# base-alpine-runtime's ENTRYPOINT is already `tini --`.
+CMD ["/server"]
 
-# Legacy single-purpose stages retained for local docker-compose flows that
-# build with --target migrate / --target seed.
-FROM alpine:3.22 AS migrate
-RUN apk add --no-cache ca-certificates \
-    && addgroup -g 10001 -S app \
-    && adduser  -u 10001 -S app -G app
-COPY --from=build /out/migrate /migrate
-USER 10001:10001
-ENTRYPOINT ["/migrate"]
+# Legacy single-purpose stages retained for local docker-compose flows.
+FROM ghcr.io/tesserix/base-alpine-runtime:latest AS migrate
+COPY --from=build --chown=10001:10001 /out/migrate /migrate
+CMD ["/migrate"]
 
-FROM alpine:3.22 AS seed
-RUN apk add --no-cache ca-certificates \
-    && addgroup -g 10001 -S app \
-    && adduser  -u 10001 -S app -G app
-COPY --from=build /out/seed /seed
-USER 10001:10001
-ENTRYPOINT ["/seed"]
+FROM ghcr.io/tesserix/base-alpine-runtime:latest AS seed
+COPY --from=build --chown=10001:10001 /out/seed /seed
+CMD ["/seed"]

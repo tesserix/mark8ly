@@ -59,6 +59,9 @@ type Deps struct {
 	// P14 — enterprise API keys (§18.4).
 	APIKeysHandler *APIKeysHandler
 	APIKeysLogger  *slog.Logger
+	// P13 — per-tenant SSO configuration (§12, Pro-gated). Mounted outside
+	// the store-scoped group because SSO config is tenant-wide, not per-store.
+	SSOConfigHandler *SSOConfigHandler
 	// P13 — break-glass emergency admin login (§12.4). Mounted OUTSIDE
 	// the store-scoped + RequireActive group: this is the recovery
 	// path, it must survive read-only / store_closed states.
@@ -97,6 +100,20 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 	// factor verification live inside the handler itself.
 	if deps.BreakGlassLoginHandler != nil {
 		router.POST("/admin/break-glass/login", deps.BreakGlassLoginHandler.Login)
+	}
+
+	// P13 §12 — SSO config. Tenant-wide, Pro-gated, outside /stores/:storeId.
+	// RequireFeatureByTenant resolves the plan from the tenant's highest active
+	// store subscription rather than a specific store.
+	if deps.SSOConfigHandler != nil {
+		ssoTenant := router.Group("/admin/tenants/:tenantId",
+			authMW,
+			plangate.RequireFeatureByTenant(deps.PlanResolver, plangate.FeatureSSO, deps.APIKeysLogger),
+		)
+		ssoTenant.POST("/sso/config", deps.SSOConfigHandler.Upsert)
+		ssoTenant.GET("/sso/config", deps.SSOConfigHandler.Get)
+		ssoTenant.DELETE("/sso/config", deps.SSOConfigHandler.Delete)
+		ssoTenant.POST("/sso/test", deps.SSOConfigHandler.Test)
 	}
 
 	// Tenant-wide admin routes — outside of /stores/:storeId because they

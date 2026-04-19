@@ -105,6 +105,69 @@ func RequireFeature(resolver *PlanResolver, feature Feature, logger *slog.Logger
 	}
 }
 
+// ResolveByTenant returns the highest plan across any active store owned by
+// tenantID. It uses a direct DB query to find the first matching row so that
+// tenant-scoped routes (e.g. /admin/tenants/:tenantId/sso/config) don't need a
+// storeId in the URL. Falls back to PlanTrial on any error (fail-closed).
+func (r *PlanResolver) ResolveByTenant(ctx context.Context, tenantID uuid.UUID) Plan {
+	var plan subscription.SubscriptionPlan
+	err := r.db.WithContext(ctx).
+		Table("store_subscriptions").
+		Select("plan").
+		Where("tenant_id = ?", tenantID).
+		Order("CASE plan "+
+			"WHEN 'marketplace' THEN 4 "+
+			"WHEN 'pro' THEN 3 "+
+			"WHEN 'studio' THEN 2 "+
+			"WHEN 'starter' THEN 1 "+
+			"ELSE 0 END DESC").
+		Limit(1).
+		Scan(&plan).Error
+	if err != nil || plan == "" {
+		return subscription.PlanTrial
+	}
+	if _, ok := planOrder[plan]; !ok {
+		return subscription.PlanTrial
+	}
+	return plan
+}
+
+// RequireFeatureByTenant is like RequireFeature but resolves the plan from any
+// store belonging to the authenticated tenant rather than a specific :storeId.
+// Use this for tenant-scoped admin routes (e.g. SSO config) where no single
+// store owns the feature.
+//
+// It reads the tenant_id set by the upstream auth middleware; it does NOT read
+// the :tenantId path param — callers that want to enforce path ownership must
+// add a separate check in the handler.
+func RequireFeatureByTenant(resolver *PlanResolver, feature Feature, logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tenantID, err := uuid.Parse(c.GetString("tenant_id"))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized", "message": "missing tenant_id"})
+			c.Abort()
+			return
+		}
+
+		plan := resolver.ResolveByTenant(c.Request.Context(), tenantID)
+		if !IsAllowed(plan, feature) {
+			minPlan := MinPlanForFeature(feature)
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":    "plan_required",
+				"message":  fmt.Sprintf("This feature requires the %s plan or higher", minPlan),
+				"required": string(minPlan),
+				"current":  string(plan),
+				"feature":  string(feature),
+			})
+			c.Abort()
+			return
+		}
+
+		c.Set("tenant_plan", string(plan))
+		c.Next()
+	}
+}
+
 // RequirePlan returns middleware that checks the store is on at least the
 // given minimum plan. Requires upstream auth middleware to have set
 // "tenant_id" on the Gin context.

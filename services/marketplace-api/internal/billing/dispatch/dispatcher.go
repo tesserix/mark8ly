@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
@@ -23,8 +24,9 @@ type Handler func(ctx context.Context, tx *gorm.DB, raw []byte) error
 
 // Dispatcher routes incoming webhook events to registered per-type handlers.
 type Dispatcher struct {
-	emitter  *audit.Emitter
-	handlers map[string]Handler
+	emitter   *audit.Emitter
+	recorder  *arbitrage.Recorder // nil-safe: arbitrage check is skipped when nil
+	handlers  map[string]Handler
 }
 
 // New returns a Dispatcher with all P2/P3 handlers wired. em may be nil for
@@ -45,6 +47,14 @@ func New(em *audit.Emitter) *Dispatcher {
 	d.handlers["customer.subscription.deleted"] = d.handleSubscriptionDeleted
 	d.handlers["invoice.payment_failed"] = d.handleInvoicePaymentFailed
 	d.handlers["invoice.payment_action_required"] = d.handleInvoicePaymentActionRequired
+	return d
+}
+
+// WithRecorder attaches an arbitrage.Recorder to the Dispatcher so that
+// checkout.session.completed events trigger the geo-pricing triangulation
+// check per spec §18.8. Recorder may be nil (skips the check).
+func (d *Dispatcher) WithRecorder(r *arbitrage.Recorder) *Dispatcher {
+	d.recorder = r
 	return d
 }
 

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	secretmanagerclient "cloud.google.com/go/secretmanager/apiv1"
 	firebase "firebase.google.com/go/v4"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,6 +32,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
+	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
@@ -1021,6 +1023,27 @@ func main() {
 			allowed[t] = true
 		}
 		dispatcher := dispatch.New(auditEmitter)
+
+		// P8 §18.8: wire arbitrage recorder into the checkout webhook handler.
+		// KeyLoader + Hasher use Secret Manager when ARBITRAGE_HMAC_SECRET_PATH
+		// is set; omit gracefully in local dev (recorder stays nil → no-op).
+		if secretPath := os.Getenv("ARBITRAGE_HMAC_SECRET_PATH"); secretPath != "" {
+			smCtx, smCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			smClient, smErr := secretmanagerclient.NewClient(smCtx)
+			smCancel()
+			if smErr != nil {
+				log.Warn("arbitrage: secret manager client failed — arbitrage check disabled", "err", smErr)
+			} else {
+				keySrc := &arbitrage.SecretManagerSource{Client: smClient, SecretPath: secretPath}
+				keyLoader := arbitrage.NewKeyLoader(keySrc, 5*time.Minute)
+				hasher := arbitrage.NewHasher(keyLoader)
+				recorder := arbitrage.NewRecorder(conn, hasher, &arbitragePrometheusCounter{})
+				dispatcher.WithRecorder(recorder)
+				log.Info("arbitrage: triangulation recorder wired", "secret_path", secretPath)
+			}
+		} else {
+			log.Warn("ARBITRAGE_HMAC_SECRET_PATH not set — arbitrage triangulation disabled")
+		}
 		webhookH := webhooks.NewStripeHandler(webhooks.StripeHandlerConfig{
 			DB:     conn,
 			Secret: cfg.StripeBillingWebhookSecret,
@@ -1385,4 +1408,25 @@ func (a k8sprovAdapter) Deprovision(ctx context.Context, domainName string) erro
 
 func (a k8sprovAdapter) CertStatus(ctx context.Context, domainName string) (bool, string, error) {
 	return a.p.CertStatus(ctx, domainName)
+}
+
+// arbitragePrometheusCounter bridges arbitrage.Counter to the P17 Prometheus
+// singleton (metrics.Subscription.SubscriptionArbitrageFlaggedTotal).
+type arbitragePrometheusCounter struct{}
+
+func (c *arbitragePrometheusCounter) IncArbitrageFlagged() {
+	if metrics.Subscription != nil {
+		metrics.Subscription.SubscriptionArbitrageFlaggedTotal.
+			WithLabelValues("ppp_developed_signal").Inc()
+	}
+}
+
+func (c *arbitragePrometheusCounter) IncArbitrageFalsePositiveCleared() {
+	// P17 dashboard reads the arbitrage_flagged counter; false-positive-cleared
+	// is a separate counter that P17 alert rules reference. Emit on the same
+	// registry under a distinct reason label.
+	if metrics.Subscription != nil {
+		metrics.Subscription.SubscriptionArbitrageFlaggedTotal.
+			WithLabelValues("false_positive_cleared").Inc()
+	}
 }

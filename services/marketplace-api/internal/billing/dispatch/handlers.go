@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
@@ -37,6 +38,22 @@ func (d *Dispatcher) handleCheckoutSessionCompleted(ctx context.Context, tx *gor
 					Plan   string `json:"plan"`
 					Period string `json:"period"`
 				} `json:"metadata"`
+				// P8: geo-pricing arbitrage signals (§18.8).
+				// card_country extracted from payment_method_details.card.country;
+				// billing_country from customer_details.address.country.
+				// ip_country is unavailable at webhook time (Stripe push, not
+				// browser request) — the evaluator will produce ReasonIPUnknown
+				// and will not flag on card alone per spec.
+				CustomerDetails struct {
+					Address struct {
+						Country string `json:"country"`
+					} `json:"address"`
+				} `json:"customer_details"`
+				PaymentMethodDetails struct {
+					Card struct {
+						Country string `json:"country"`
+					} `json:"card"`
+				} `json:"payment_method_details"`
 			} `json:"object"`
 		} `json:"data"`
 	}
@@ -72,6 +89,29 @@ func (d *Dispatcher) handleCheckoutSessionCompleted(ctx context.Context, tx *gor
 	if err := tx.WithContext(ctx).Where("stripe_customer_id = ?", obj.Customer).First(&sub).Error; err != nil {
 		return fmt.Errorf("dispatch: reload after update: %w", err)
 	}
+	// P8 §18.8: triangulation check — flag-only, never short-circuits checkout.
+	// ip_country is unavailable at webhook time (Stripe push has no CF-IPCountry
+	// header), so the evaluator returns ReasonIPUnknown and does not flag on
+	// card alone — preventing false positives for travelers/dual-citizens.
+	if d.recorder != nil {
+		recErr := d.recorder.RecordIfFlagged(ctx, arbitrage.RecordInput{
+			SubscriptionID: sub.ID,
+			TenantID:       sub.TenantID,
+			StoreID:        sub.StoreID,
+			PriceTier:      sub.PriceTier,
+			CardCountry:    obj.PaymentMethodDetails.Card.Country,
+			BillingCountry: obj.CustomerDetails.Address.Country,
+			IPCountry:      "", // unknown at webhook time — evaluated as "??"
+			RawIP:          "", // no raw IP at webhook time
+		})
+		if recErr != nil {
+			// Arbitrage write failure must NOT block the subscription lifecycle.
+			// Log via fmt.Errorf wrapping so the error surfaces in webhook metrics
+			// but we swallow it here to preserve Stripe idempotency.
+			_ = fmt.Errorf("dispatch: arbitrage record (non-fatal): %w", recErr)
+		}
+	}
+
 	if sub.Status != subscription.StatusSignup {
 		// Already past signup (replay or out-of-order event). No transition needed.
 		return nil

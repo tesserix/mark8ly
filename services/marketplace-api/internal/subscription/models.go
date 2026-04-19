@@ -119,6 +119,17 @@ type StoreSubscription struct {
 	HostedInvoiceURL *string    `gorm:"column:hosted_invoice_url"`
 	FirstChargeAt    *time.Time `gorm:"column:first_charge_at"`
 
+	// P5 — migration fast-path window shortening (migration 053).
+	// NULL = standard 14d window; non-NULL = 48h shortened window after CSM-approved fast-path.
+	TaxIDWindowShortenedAt *time.Time `gorm:"column:tax_id_window_shortened_at"`
+
+	// P7 — storefront publish gate + quarterly revalidation (migration 067, §5.3, §19.5).
+	StorefrontPublished        bool       `gorm:"column:storefront_published;not null;default:false"`
+	StorefrontUnpublishedAt    *time.Time `gorm:"column:storefront_unpublished_at"`
+	StorefrontUnpublishReason  *string    `gorm:"column:storefront_unpublish_reason;type:varchar(40)"`
+	RevalidationAttemptedAt    *time.Time `gorm:"column:revalidation_attempted_at"`
+	TaxRevalidationStartedAt   *time.Time `gorm:"column:tax_revalidation_started_at"`
+
 	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:now()"`
 }

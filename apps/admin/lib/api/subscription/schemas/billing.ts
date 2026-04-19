@@ -114,6 +114,8 @@ export interface CurrentPlan {
   arbitrageFlag: boolean
   billingCurrency: string
   addOns: string[]
+  /** ISO date string: when the subscription record was created (signup timestamp). */
+  createdAt: string
   trialEndsAt: string | null
   nextInvoiceAmountMinor: number | null
   paymentMethodBrand: string | null
@@ -132,6 +134,7 @@ export function toCurrentPlan(raw: SubscriptionResponse): CurrentPlan {
     arbitrageFlag: raw.arbitrage_flag,
     billingCurrency: raw.billing_currency ?? 'USD',
     addOns: raw.add_ons ?? [],
+    createdAt: raw.created_at,
     trialEndsAt: raw.trial_ends_at ?? null,
     nextInvoiceAmountMinor: raw.next_invoice_amount_minor ?? null,
     paymentMethodBrand: raw.payment_method_brand ?? null,

@@ -128,7 +128,7 @@ export function BillingClient({ storeId }: BillingClientProps) {
 
   return (
     <div className="space-y-10">
-      <PlanCard plan={plan} />
+      <PlanCard plan={plan} storeId={storeId} />
       <PaymentMethodCard plan={plan} storeId={storeId} />
       <InvoicesList storeId={storeId} />
       <WhiteLabelAppCard plan={plan} />

@@ -105,6 +105,11 @@ export const subscriptionCopy = {
     renewsOn: (date: string) => `Renews on ${date}`,
     trialEnds: (date: string) => `Trial ends ${date}`,
     cancelScheduled: 'Your subscription will end at the close of the current period.',
+    cancelScheduledNote: (periodEnd: string) =>
+      `Cancellation scheduled \u2014 full access continues until ${periodEnd}.`,
+    restoreCta: 'Restore subscription',
+    toastRestored: 'Subscription restored.',
+    toastRestoreError: "Couldn't restore. Please try again.",
     changePlan: 'Change plan',
     cancelSubscription: 'Cancel subscription',
     contactSales: 'Contact sales',

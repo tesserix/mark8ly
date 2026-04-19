@@ -7,9 +7,12 @@ import type { SubscriptionStatus } from '@repo/ui/subscription'
 import type { CurrentPlan } from '@/lib/api/subscription/schemas/billing'
 import { subscriptionCopy } from '@/lib/copy/subscription'
 import { formatBillingDate } from '@/lib/format/date'
+import { useRevertCancellation } from '@/lib/api/subscription/hooks/useCancellation'
+import { useToast } from '@/components/feedback/Toaster'
 
 interface PlanCardProps {
   plan: CurrentPlan
+  storeId: string
 }
 
 const copy = subscriptionCopy.billing
@@ -34,6 +37,71 @@ function toStatusBadge(status: string): SubscriptionStatus {
 }
 
 /**
+ * CancelScheduledRow — shown in place of the normal CTA row when
+ * status === 'cancel_scheduled'.
+ *
+ * Editorial voice: calm, factual. Not "Uh-oh!", not urgency language.
+ * Single primary CTA: "Restore subscription".
+ */
+interface CancelScheduledRowProps {
+  periodEnd: string | null
+  storeId: string
+}
+
+function CancelScheduledRow({ periodEnd, storeId }: CancelScheduledRowProps) {
+  const { toast } = useToast()
+  const revert = useRevertCancellation(storeId)
+
+  const formattedDate = periodEnd ? formatBillingDate(periodEnd) : null
+  const noteText = formattedDate
+    ? copy.cancelScheduledNote(formattedDate)
+    : copy.cancelScheduled
+
+  function handleRestore() {
+    revert.mutate(undefined, {
+      onSuccess: () => {
+        toast.success(copy.toastRestored)
+      },
+      onError: () => {
+        toast.error(copy.toastRestoreError)
+      },
+    })
+  }
+
+  return (
+    <div className="mt-6 space-y-4">
+      {/* Editorial inline note — screen readers hear this on state change */}
+      <p
+        aria-live="polite"
+        className="text-sm text-[var(--ink-700)]"
+      >
+        {noteText}
+      </p>
+
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <button
+          type="button"
+          onClick={handleRestore}
+          disabled={revert.isPending}
+          className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--moss-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {revert.isPending ? 'Restoring\u2026' : copy.restoreCta}
+        </button>
+      </div>
+
+      {revert.isError && (
+        <p
+          role="alert"
+          className="text-sm text-[var(--danger,#7a1a1a)]"
+        >
+          {copy.toastRestoreError}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
  * PlanCard — shows the merchant's current plan, subscription status,
  * and renewal date. Hairline-only, no bordered card.
  *
@@ -41,18 +109,25 @@ function toStatusBadge(status: string): SubscriptionStatus {
  *   - Source Serif 4 H2 ("Current plan")
  *   - PlanBadge + SubscriptionStatusBadge inline
  *   - Renewal line below badges
- *   - CTA row right-aligned: Change plan (non-Pro) | Contact sales (Pro),
- *     Cancel subscription secondary
+ *   - When status === 'cancel_scheduled':
+ *       editorial note + "Restore subscription" primary CTA
+ *   - Otherwise:
+ *       CTA row right-aligned: Change plan (non-Pro) | Contact sales (Pro),
+ *       Cancel subscription secondary
  */
-export function PlanCard({ plan }: PlanCardProps) {
+export function PlanCard({ plan, storeId }: PlanCardProps) {
   const renewalDate = plan.periodEnd ? formatBillingDate(plan.periodEnd) : null
   const trialDate = plan.trialEndsAt
     ? formatBillingDate(plan.trialEndsAt)
     : null
 
+  const isCancelScheduled = plan.status === 'cancel_scheduled'
+
   const renewalLine = (() => {
-    if (plan.status === 'cancel_scheduled' && renewalDate) {
-      return copy.cancelScheduled
+    if (isCancelScheduled && renewalDate) {
+      // The cancel-scheduled note is rendered separately inside
+      // CancelScheduledRow; suppress the duplicate renewal line.
+      return null
     }
     if (trialDate) {
       return copy.trialEnds(trialDate)
@@ -97,30 +172,34 @@ export function PlanCard({ plan }: PlanCardProps) {
         <p className="mt-3 text-sm text-[var(--ink-700)]">{renewalLine}</p>
       )}
 
-      <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
-        {isPro ? (
-          <Link
-            href="/settings/billing/pro-contact"
-            className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
-          >
-            {copy.contactSales}
-          </Link>
-        ) : (
-          <Link
-            href="/settings/billing/plan-change"
-            className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
-          >
-            {copy.changePlan}
-          </Link>
-        )}
+      {isCancelScheduled ? (
+        <CancelScheduledRow periodEnd={plan.periodEnd} storeId={storeId} />
+      ) : (
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+          {isPro ? (
+            <Link
+              href="/settings/billing/pro-contact"
+              className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+            >
+              {copy.contactSales}
+            </Link>
+          ) : (
+            <Link
+              href="/settings/billing/plan-change"
+              className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+            >
+              {copy.changePlan}
+            </Link>
+          )}
 
-        <Link
-          href="/settings/billing/cancel"
-          className="inline-flex h-10 items-center rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-5 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
-        >
-          {copy.cancelSubscription}
-        </Link>
-      </div>
+          <Link
+            href="/settings/billing/cancel"
+            className="inline-flex h-10 items-center rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-5 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+          >
+            {copy.cancelSubscription}
+          </Link>
+        </div>
+      )}
     </section>
   )
 }

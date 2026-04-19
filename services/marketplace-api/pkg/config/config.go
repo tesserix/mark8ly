@@ -92,8 +92,11 @@ type Config struct {
 
 	// P0 — CORS allowed origins (comma-separated, storefront engine only).
 	CORSAllowedOrigins string `envconfig:"CORS_ALLOWED_ORIGINS" default:"https://*.mark8ly.com"`
-	// P0 — Encryption mode: "kms" for GCP KMS, "noop" for base64 dev stub.
+	// P0 — Encryption mode: "aes" for AES-256-GCM, "noop" for base64 dev stub.
 	EncryptionMode string `envconfig:"ENCRYPTION_MODE" default:"noop"`
+	// P0 — DEK for API key encryption (32-byte hex or base64). Required when
+	// EncryptionMode=aes. In production, loaded from GCP Secret Manager.
+	EncryptionKey string `envconfig:"ENCRYPTION_KEY" default:""`
 	// P0 — Sentry DSN for error tracking. Empty disables Sentry.
 	SentryDSN string `envconfig:"SENTRY_DSN" default:""`
 	// P1 — Prometheus metrics port. 0 disables the metrics server.

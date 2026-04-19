@@ -5,6 +5,8 @@
 package admin
 
 import (
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/mark8ly/marketplace-api/internal/auth"
@@ -54,6 +56,9 @@ type Deps struct {
 	MigrationFastPathHandler   *migration.Handler
 	// P7 — tax-ID submit + US/CA attestation (§19.3, §19.3.1).
 	TaxHandler *TaxHandler
+	// P14 — enterprise API keys (§18.4).
+	APIKeysHandler *APIKeysHandler
+	APIKeysLogger  *slog.Logger
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
 	DashboardHandler         *DashboardHandler
@@ -622,6 +627,13 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		// expired/store_closed states can still remediate a missing tax ID.
 		if deps.TaxHandler != nil {
 			RegisterTax(storeRoute, deps.TaxHandler, deps.AuthzMiddleware)
+		}
+
+		// P14 — enterprise API keys (§18.4). List is gated FeatureReadAPI
+		// (Studio+); create/rotate/revoke also gated FeatureReadAPI but the
+		// service layer enforces FeatureFullAPI for write scopes (Pro+).
+		if deps.APIKeysHandler != nil {
+			RegisterAPIKeys(storeRoute, deps.APIKeysHandler, deps.AuthzMiddleware, deps.APIKeysLogger)
 		}
 
 		// Trial billing — P5 deferred-charge card-add (§5.3).

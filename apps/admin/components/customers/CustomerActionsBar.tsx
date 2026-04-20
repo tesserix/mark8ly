@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { useToast } from "@/components/feedback/Toaster";
 import type { CustomerStatus } from "@/lib/api/marketplace-api";
 
 interface CustomerActionsBarProps {
@@ -19,34 +20,40 @@ export function CustomerActionsBar({
   unblockAction,
 }: CustomerActionsBarProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [showBlockForm, setShowBlockForm] = useState(false);
   const [blockReason, setBlockReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   function handleBlock() {
-    if (!blockReason.trim()) return;
-    setError(null);
+    if (!blockReason.trim()) {
+      setValidationError("Reason is required.");
+      return;
+    }
+    setValidationError(null);
     startTransition(async () => {
       const result = await blockAction(customerId, blockReason.trim());
       if (result.ok) {
+        toast.success("Customer blocked", "They can no longer place orders.");
         setShowBlockForm(false);
         setBlockReason("");
         router.refresh();
       } else {
-        setError(result.error ?? "Failed to block customer");
+        toast.error("Couldn't block customer", result.error);
       }
     });
   }
 
   function handleUnblock() {
-    setError(null);
+    setValidationError(null);
     startTransition(async () => {
       const result = await unblockAction(customerId);
       if (result.ok) {
+        toast.success("Customer unblocked");
         router.refresh();
       } else {
-        setError(result.error ?? "Failed to unblock customer");
+        toast.error("Couldn't unblock customer", result.error);
       }
     });
   }
@@ -124,9 +131,9 @@ export function CustomerActionsBar({
         </button>
       )}
 
-      {error && (
+      {validationError && (
         <p role="alert" className="text-sm text-[color:var(--danger)]">
-          {error}
+          {validationError}
         </p>
       )}
     </section>

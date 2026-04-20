@@ -1,6 +1,7 @@
 import { AdminPage } from "@/components/layout";
 import { CustomersList } from "@/components/customers/CustomersList";
 import { CustomersListEmpty } from "@/components/customers/CustomersListEmpty";
+import { CustomersListFilters } from "@/components/customers/CustomersListFilters";
 import { CustomersListPagination } from "@/components/customers/CustomersListPagination";
 import {
   listCustomers,
@@ -70,6 +71,7 @@ export default async function CustomersPage({
       title="Customers"
       description={DESCRIPTION}
     >
+      <CustomersListFilters />
       {isEmpty ? (
         <CustomersListEmpty
           variant={hasActiveFilters ? "no-matches" : "no-customers"}

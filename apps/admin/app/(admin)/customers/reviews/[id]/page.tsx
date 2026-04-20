@@ -114,8 +114,8 @@ export default async function ReviewDetailPage({
             </section>
           </div>
 
-          <aside className="flex flex-col gap-6 lg:w-72 lg:shrink-0">
-            <div className="flex flex-col gap-3 border border-border-subtle p-4">
+          <aside className="flex flex-col gap-8 lg:w-72 lg:shrink-0 lg:sticky lg:top-8 lg:self-start">
+            <section className="flex flex-col gap-3">
               <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
                 Actions
               </h2>
@@ -125,9 +125,9 @@ export default async function ReviewDetailPage({
                 featured={review.featured}
                 showViewLink={false}
               />
-            </div>
+            </section>
 
-            <div className="flex flex-col gap-3 border border-border-subtle p-4">
+            <section className="flex flex-col gap-3 border-t border-border-subtle pt-6">
               <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
                 Customer
               </h2>
@@ -145,9 +145,9 @@ export default async function ReviewDetailPage({
                   <dd className="break-all">{review.customer_email || "—"}</dd>
                 </div>
               </dl>
-            </div>
+            </section>
 
-            <div className="flex flex-col gap-3 border border-border-subtle p-4">
+            <section className="flex flex-col gap-3 border-t border-border-subtle pt-6">
               <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
                 Product
               </h2>
@@ -163,9 +163,9 @@ export default async function ReviewDetailPage({
                   {review.product_id}
                 </span>
               )}
-            </div>
+            </section>
 
-            <div className="flex flex-col gap-3 border border-border-subtle p-4">
+            <section className="flex flex-col gap-3 border-t border-border-subtle pt-6">
               <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
                 Engagement
               </h2>
@@ -174,7 +174,7 @@ export default async function ReviewDetailPage({
                   <dt className="text-[11px] uppercase tracking-[0.12em] text-foreground-tertiary">
                     Helpful
                   </dt>
-                  <dd className="font-serif text-xl">
+                  <dd className="font-serif text-xl tabular-nums text-foreground">
                     {review.helpful_count}
                   </dd>
                 </div>
@@ -182,12 +182,12 @@ export default async function ReviewDetailPage({
                   <dt className="text-[11px] uppercase tracking-[0.12em] text-foreground-tertiary">
                     Not helpful
                   </dt>
-                  <dd className="font-serif text-xl">
+                  <dd className="font-serif text-xl tabular-nums text-foreground">
                     {review.not_helpful_count}
                   </dd>
                 </div>
               </dl>
-            </div>
+            </section>
           </aside>
         </div>
       </section>

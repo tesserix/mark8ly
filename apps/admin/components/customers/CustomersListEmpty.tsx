@@ -11,8 +11,8 @@ export function CustomersListEmpty({
 }: CustomersListEmptyProps) {
   if (variant === "no-customers") {
     return (
-      <div className="flex flex-col items-start gap-4 py-16">
-        <h2 className="font-serif text-3xl font-medium text-foreground">
+      <div className="flex flex-col items-start gap-4 border-t border-border-subtle py-16">
+        <h2 className="font-serif text-2xl font-medium text-foreground">
           No customers yet
         </h2>
         <p className="max-w-prose text-sm text-foreground-secondary">
@@ -23,8 +23,8 @@ export function CustomersListEmpty({
     );
   }
   return (
-    <div className="flex flex-col items-start gap-3 py-12">
-      <h2 className="font-serif text-2xl font-medium text-foreground">
+    <div className="flex flex-col items-start gap-3 border-t border-border-subtle py-12">
+      <h2 className="font-serif text-xl font-medium text-foreground">
         No customers match your filters
       </h2>
       <p className="max-w-prose text-sm text-foreground-secondary">

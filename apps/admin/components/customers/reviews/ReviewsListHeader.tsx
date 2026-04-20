@@ -60,7 +60,7 @@ export function ReviewsListHeader({
 
       <nav
         aria-label="Filter reviews by status"
-        className="flex flex-wrap items-center gap-1 border-b border-border-subtle"
+        className="flex flex-wrap items-center gap-0 overflow-x-auto border-b border-border-subtle px-1 scrollbar-hide"
       >
         {tabs.map((tab) => {
           const active = tab.status === activeStatus;
@@ -69,15 +69,21 @@ export function ReviewsListHeader({
               key={tab.label}
               href={tab.href}
               aria-current={active ? "page" : undefined}
-              className={`inline-flex min-h-[2.75rem] items-center gap-2 border-b-2 px-4 py-2 text-sm transition-colors ${
-                active
-                  ? "border-[color:var(--moss-700)] text-foreground"
-                  : "border-transparent text-foreground-secondary hover:text-foreground"
-              }`}
+              className={
+                "-mb-px flex shrink-0 items-baseline gap-1.5 border-b-2 px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
+                (active
+                  ? "border-[color:var(--ink-900)] text-foreground"
+                  : "border-transparent text-foreground-tertiary hover:text-foreground")
+              }
             >
               <span>{tab.label}</span>
               {typeof tab.count === "number" && tab.count > 0 && (
-                <span className="rounded-full bg-paper-100 px-2 py-0.5 text-[11px] font-semibold text-foreground-secondary">
+                <span
+                  className={
+                    "text-[11px] tabular-nums " +
+                    (active ? "text-foreground-secondary" : "text-foreground-tertiary")
+                  }
+                >
                   {tab.count}
                 </span>
               )}

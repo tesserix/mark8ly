@@ -18,11 +18,11 @@ export function OrdersListEmpty({
 }: OrdersListEmptyProps) {
   if (variant === "no-orders") {
     return (
-      <div className="flex flex-col items-start gap-3 border-t border-[color:var(--ink-900)]/10 py-12">
-        <h2 className="text-lg font-medium text-[color:var(--ink-900)]">
+      <div className="flex flex-col items-start gap-3 border-t border-border-subtle py-12">
+        <h2 className="font-serif text-xl font-medium text-foreground">
           No orders yet
         </h2>
-        <p className="max-w-prose text-sm text-[color:var(--ink-900)] opacity-70">
+        <p className="max-w-prose text-sm text-foreground-secondary">
           When customers buy from your storefront, every order will land here
           with status, items, shipping, and refund controls.
         </p>
@@ -30,11 +30,11 @@ export function OrdersListEmpty({
     );
   }
   return (
-    <div className="flex flex-col items-start gap-3 border-t border-[color:var(--ink-900)]/10 py-12">
-      <h2 className="text-lg font-medium text-[color:var(--ink-900)]">
+    <div className="flex flex-col items-start gap-3 border-t border-border-subtle py-12">
+      <h2 className="font-serif text-xl font-medium text-foreground">
         No orders match your filters
       </h2>
-      <p className="max-w-prose text-[color:var(--ink-900)] opacity-70">
+      <p className="max-w-prose text-sm text-foreground-secondary">
         Try adjusting the status or payment filters, or clear them to start over.
       </p>
       {clearFiltersHref && (

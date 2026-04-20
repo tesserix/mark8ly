@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { AdminPage } from "@/components/layout";
 import { OrdersList } from "@/components/orders/OrdersList";
 import { OrdersListEmpty } from "@/components/orders/OrdersListEmpty";
@@ -59,7 +61,13 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
 
   return (
     <AdminPage eyebrow="Operations" title="Orders" description={DESCRIPTION}>
-      <OrdersSearchBar defaultValue={query.search ?? ""} />
+      <OrdersFilterBar
+        search={query.search ?? ""}
+        status={query.status}
+        paymentStatus={query.paymentStatus}
+        total={meta.total}
+        clearable={hasActiveFilters}
+      />
       {isEmpty ? (
         <OrdersListEmpty
           variant={hasActiveFilters ? "no-matches" : "no-orders"}
@@ -79,40 +87,171 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
   );
 }
 
-// Plain GET form so the search survives hard reload + deep-links. The
-// preserved inputs carry existing status/payment_status through so
-// searching inside a filtered view doesn't silently clear the filter.
-function OrdersSearchBar({ defaultValue }: { defaultValue: string }) {
+// Editorial filter bar — one hairline-underlined search input paired
+// with an underline chip row for status + payment filters. Each chip
+// is a plain Link that preserves the other query params, so filters
+// compose cleanly and the URL stays deep-linkable.
+interface OrdersFilterBarProps {
+  search: string;
+  status?: OrderStatus;
+  paymentStatus?: PaymentStatus;
+  total: number;
+  clearable: boolean;
+}
+
+function OrdersFilterBar({
+  search,
+  status,
+  paymentStatus,
+  total,
+  clearable,
+}: OrdersFilterBarProps) {
+  // Preserve the non-status params when a status chip is clicked so
+  // filters compose rather than replace each other.
+  const buildStatusHref = (next?: OrderStatus): string => {
+    const p = new URLSearchParams();
+    if (next) p.set("status", next);
+    if (paymentStatus) p.set("payment_status", paymentStatus);
+    if (search) p.set("search", search);
+    const qs = p.toString();
+    return qs ? `/orders?${qs}` : "/orders";
+  };
+  const buildPaymentHref = (next?: PaymentStatus): string => {
+    const p = new URLSearchParams();
+    if (status) p.set("status", status);
+    if (next) p.set("payment_status", next);
+    if (search) p.set("search", search);
+    const qs = p.toString();
+    return qs ? `/orders?${qs}` : "/orders";
+  };
+
   return (
-    <form
-      action="/orders"
-      method="get"
-      className="mb-4 flex items-center gap-2"
-      role="search"
-      aria-label="Search orders"
-    >
-      <input
-        type="search"
-        name="search"
-        defaultValue={defaultValue}
-        placeholder="Search by order #, customer name or email"
-        className="w-full max-w-md rounded-md border border-border-subtle bg-background px-3 py-2 text-sm placeholder:text-foreground-tertiary focus:border-foreground focus:outline-none"
-      />
-      <button
-        type="submit"
-        className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"
+    <div className="flex flex-col gap-6">
+      <form
+        action="/orders"
+        method="get"
+        className="flex max-w-xl items-center gap-3 border-b border-border-subtle pb-2"
+        role="search"
+        aria-label="Search orders"
       >
-        Search
-      </button>
-      {defaultValue && (
-        <a
-          href="/orders"
-          className="text-xs text-foreground-tertiary hover:text-foreground"
+        {status && <input type="hidden" name="status" value={status} />}
+        {paymentStatus && (
+          <input type="hidden" name="payment_status" value={paymentStatus} />
+        )}
+        <input
+          type="search"
+          name="search"
+          defaultValue={search}
+          placeholder="Search by order #, customer name or email"
+          className="w-full border-none bg-transparent py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:outline-none"
+        />
+        <button
+          type="submit"
+          className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground-secondary transition-colors hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
-          Clear
-        </a>
-      )}
-    </form>
+          Search
+        </button>
+        {search && (
+          <Link
+            href={`/orders${status || paymentStatus ? `?${new URLSearchParams({
+              ...(status ? { status } : {}),
+              ...(paymentStatus ? { payment_status: paymentStatus } : {}),
+            }).toString()}` : ""}`}
+            className="text-xs text-foreground-tertiary underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Clear
+          </Link>
+        )}
+      </form>
+
+      <div className="flex flex-col gap-3">
+        <FilterChipRow
+          legend="Status"
+          current={status}
+          options={[
+            { value: undefined, label: "All" },
+            { value: "pending", label: "Pending" },
+            { value: "confirmed", label: "Confirmed" },
+            { value: "fulfilled", label: "Fulfilled" },
+            { value: "cancelled", label: "Cancelled" },
+          ]}
+          buildHref={buildStatusHref as (v: string | undefined) => string}
+        />
+        <FilterChipRow
+          legend="Payment"
+          current={paymentStatus}
+          options={[
+            { value: undefined, label: "All" },
+            { value: "pending", label: "Pending" },
+            { value: "authorized", label: "Authorized" },
+            { value: "paid", label: "Paid" },
+            { value: "failed", label: "Failed" },
+            { value: "partially_refunded", label: "Partial refund" },
+            { value: "refunded", label: "Refunded" },
+          ]}
+          buildHref={buildPaymentHref as (v: string | undefined) => string}
+        />
+        {clearable && (
+          <p className="flex items-center gap-3 text-xs text-foreground-tertiary">
+            <span className="tabular-nums">
+              {total} {total === 1 ? "result" : "results"}
+            </span>
+            <span aria-hidden="true">·</span>
+            <Link
+              href="/orders"
+              className="text-[color:var(--moss-700)] underline-offset-4 hover:underline"
+            >
+              Clear all filters
+            </Link>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface FilterChipOption {
+  value: string | undefined;
+  label: string;
+}
+
+function FilterChipRow({
+  legend,
+  current,
+  options,
+  buildHref,
+}: {
+  legend: string;
+  current: string | undefined;
+  options: FilterChipOption[];
+  buildHref: (v: string | undefined) => string;
+}) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
+        {legend}
+      </span>
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        {options.map((opt) => {
+          const isCurrent = current === opt.value;
+          return (
+            <Link
+              key={opt.label}
+              href={buildHref(opt.value)}
+              aria-current={isCurrent ? "true" : undefined}
+              className={
+                "text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
+                (isCurrent
+                  ? "text-foreground underline underline-offset-[6px] decoration-[1.5px]"
+                  : "text-foreground-tertiary hover:text-foreground")
+              }
+            >
+              {opt.label}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

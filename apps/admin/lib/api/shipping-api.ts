@@ -175,3 +175,77 @@ export async function updateShipmentStatus(
   }
   return { ok: true, data: (await res.json()) as ShipmentResponse };
 }
+
+/**
+ * Fetch the raw shipping-label PDF bytes through the admin API (which
+ * signs the carrier request with the store's API token). Returns the
+ * binary body as an ArrayBuffer so the caller can trigger a browser
+ * download without exposing the Delhivery token to the client.
+ */
+export async function downloadShipmentLabel(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<{ bytes: ArrayBuffer; contentType: string }>> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/shipments/${shipmentId}/label`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: readHeaders(session),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const bytes = await res.arrayBuffer();
+  const contentType = res.headers.get("Content-Type") ?? "application/pdf";
+  return { ok: true, data: { bytes, contentType } };
+}
+
+/**
+ * Email the shipping-label PDF to a nominated address (e.g. the 3PL
+ * warehouse operator). The backend fetches the PDF from the carrier
+ * and attaches it; no PDF bytes cross through the browser.
+ */
+export async function emailShipmentLabel(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  input: { recipient: string },
+  session: SessionHeaders,
+): Promise<MutationResult<{ ok: true; recipient: string }>> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/shipments/${shipmentId}/label/email`;
+  const res = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    headers: commonHeaders(session),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as { ok: true; recipient: string } };
+}
+
+/**
+ * Pull the carrier's latest tracking status and sync it back to the
+ * shipment row. Returns the (possibly updated) shipment. Used by the
+ * admin "Refresh tracking" button to reflect real Delhivery state on
+ * demand without waiting for a scheduled poller.
+ */
+export async function refreshShipmentTracking(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<ShipmentResponse>> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/shipments/${shipmentId}/tracking/refresh`;
+  const res = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    headers: commonHeaders(session),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as ShipmentResponse };
+}

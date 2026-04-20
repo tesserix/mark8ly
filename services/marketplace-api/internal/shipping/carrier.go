@@ -20,6 +20,17 @@ type Carrier interface {
 	SupportedCountries() []string
 }
 
+// LabelFetcher is implemented by carriers whose shipping label must be
+// pulled separately (behind the same API token that signs create/track
+// calls) instead of being returned inline by CreateShipment. Delhivery
+// is the canonical example — its packing-slip endpoint returns a PDF
+// that the browser cannot fetch directly because it requires the secret
+// token as an Authorization header. The admin API proxies through a
+// handler that type-asserts this interface.
+type LabelFetcher interface {
+	FetchLabel(ctx context.Context, trackingNumber string) (pdf []byte, contentType string, err error)
+}
+
 // Address represents a physical address for shipping origin/destination.
 type Address struct {
 	Name        string

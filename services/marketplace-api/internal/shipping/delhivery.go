@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -265,24 +266,14 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 		if remarks == "" {
 			remarks = truncate(string(bodyBytes), 400)
 		}
-		// Test-mode fallback: without a registered warehouse on the
-		// Delhivery dashboard, create.json rejects every payload. That's
-		// a one-time operator step — we don't want it to block testing
-		// of the storefront / admin / customer-timeline flow. Stub out
-		// a tracking number so the rest of the journey works end-to-end
-		// and the merchant can address the warehouse registration
-		// separately. Production shipments (mode != "test") never fall
-		// back; the error surfaces with the carrier's remarks.
-		if c.mode == "test" {
-			stubWaybill := fmt.Sprintf("TEST-DLV-%d", time.Now().UnixNano())
-			return &Shipment{
-				ProviderShipmentID: stubWaybill,
-				TrackingNumber:     stubWaybill,
-				Carrier:            "delhivery",
-				Service:            "standard",
-			}, nil
-		}
-		return nil, fmt.Errorf("delhivery: create shipment: %s", remarks)
+		// Previously, test mode stubbed a fake waybill here so the rest
+		// of the journey (admin UI, customer timeline) could be
+		// exercised end-to-end. That stub actively masked real
+		// integration failures: the Delhivery dashboard stayed at zero
+		// orders while the admin UI reported success. We always bubble
+		// the carrier error now so missing warehouse registration /
+		// invalid token issues are visible and actionable.
+		return nil, classifyDelhiveryCreateError(remarks, in.FromAddress.Name)
 	}
 
 	pkg := cr.Packages[0]
@@ -292,6 +283,31 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 		Carrier:            "delhivery",
 		Service:            "standard",
 	}, nil
+}
+
+// classifyDelhiveryCreateError turns Delhivery's opaque remarks string
+// into an actionable error. The two most common failures in practice:
+//
+//  1. "ClientWarehouse matching query does not exist" — the warehouse
+//     name we sent isn't registered on the merchant's one.delhivery.com
+//     dashboard. Remediation is a one-time operator step on the
+//     Delhivery side.
+//  2. "Invalid token" — the API key is wrong or the caller sent the
+//     ciphertext through without decrypting it.
+func classifyDelhiveryCreateError(remarks, warehouseName string) error {
+	lower := strings.ToLower(remarks)
+	switch {
+	case strings.Contains(lower, "clientwarehouse") && strings.Contains(lower, "does not exist"):
+		return fmt.Errorf(
+			"delhivery: warehouse %q is not registered on your Delhivery account — open one.delhivery.com → Settings → Warehouses and add a warehouse with this exact name, then retry. (carrier: %s)",
+			warehouseName, remarks)
+	case strings.Contains(lower, "invalid token") || strings.Contains(lower, "unauthorized"):
+		return fmt.Errorf(
+			"delhivery: API token rejected — verify the token in Settings → Shipping matches the one on one.delhivery.com → Settings → API. (carrier: %s)",
+			remarks)
+	default:
+		return fmt.Errorf("delhivery: create shipment: %s", remarks)
+	}
 }
 
 func truncate(s string, n int) string {
@@ -341,6 +357,46 @@ func (c *DelhiveryCarrier) GetTracking(ctx context.Context, trackingNumber strin
 		Status:         mapDelhiveryStatus(shipment.Status.StatusType),
 		Events:         events,
 	}, nil
+}
+
+// FetchLabel pulls the packing-slip PDF for an already-created waybill.
+// Delhivery's /api/p/packing_slip?wbns=<waybill>&pdf=true responds with
+// a binary PDF when the Authorization header is valid; the body ends up
+// as a small HTML / JSON error page otherwise. The caller is
+// responsible for streaming the returned bytes to the end user (or
+// attaching them to an email) — we don't persist them.
+func (c *DelhiveryCarrier) FetchLabel(ctx context.Context, trackingNumber string) ([]byte, string, error) {
+	if trackingNumber == "" {
+		return nil, "", fmt.Errorf("delhivery: fetch label: trackingNumber is required")
+	}
+	path := fmt.Sprintf("/api/p/packing_slip?wbns=%s&pdf=true", url.QueryEscape(trackingNumber))
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("delhivery: fetch label: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("delhivery: fetch label: read body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("delhivery: fetch label: status=%d body=%s",
+			resp.StatusCode, truncate(string(body), 400))
+	}
+	contentType := resp.Header.Get("Content-Type")
+	// Delhivery sometimes returns 200 with a JSON error envelope instead
+	// of a PDF when the waybill isn't yet manifested. If the response
+	// doesn't smell like a PDF, surface the body so the operator can see
+	// what happened instead of downloading a broken file.
+	if !strings.HasPrefix(strings.ToLower(contentType), "application/pdf") &&
+		!bytes.HasPrefix(body, []byte("%PDF")) {
+		return nil, "", fmt.Errorf("delhivery: fetch label: not a PDF (content-type=%q body=%s)",
+			contentType, truncate(string(body), 400))
+	}
+	if contentType == "" {
+		contentType = "application/pdf"
+	}
+	return body, contentType, nil
 }
 
 func (c *DelhiveryCarrier) CancelShipment(ctx context.Context, shipmentID string) error {

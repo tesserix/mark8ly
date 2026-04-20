@@ -22,6 +22,8 @@ import {
   createShipmentAction,
   getShipmentAction,
   updateShipmentStatusAction,
+  emailShipmentLabelAction,
+  refreshShipmentTrackingAction,
   type ShippingActionResult,
 } from "@/app/(admin)/orders/[id]/shipping-actions";
 
@@ -94,7 +96,12 @@ export function ShippingLabelPanel({
         >
           Shipping
         </h2>
-        <ShipmentDetails shipment={shipment} />
+        <ShipmentDetails
+          storeId={storeId}
+          orderId={orderId}
+          shipment={shipment}
+          onUpdated={setShipment}
+        />
         <AdvanceStatusBar
           storeId={storeId}
           orderId={orderId}
@@ -140,7 +147,17 @@ export function ShippingLabelPanel({
 // Shipment details (existing shipment)
 // ─────────────────────────────────────────────────────────────────────────
 
-function ShipmentDetails({ shipment }: { shipment: ShipmentResponse }) {
+function ShipmentDetails({
+  storeId,
+  orderId,
+  shipment,
+  onUpdated,
+}: {
+  storeId: string;
+  orderId: string;
+  shipment: ShipmentResponse;
+  onUpdated: (s: ShipmentResponse) => void;
+}) {
   const eta = shipment.estimated_delivery
     ? new Date(shipment.estimated_delivery).toLocaleDateString(undefined, {
         month: "short",
@@ -148,6 +165,13 @@ function ShipmentDetails({ shipment }: { shipment: ShipmentResponse }) {
         year: "numeric",
       })
     : null;
+
+  // The download always goes through the Next.js proxy route so the
+  // browser can reuse the admin session cookie instead of exposing
+  // the carrier token. The backend canonical label_url may already
+  // point here, but we build it locally too so the button stays wired
+  // even for legacy shipment rows that were saved with an empty URL.
+  const labelProxyURL = `/api/admin/stores/${storeId}/orders/${orderId}/shipments/${shipment.id}/label`;
 
   return (
     <div className="flex flex-col gap-3 rounded-md border border-[color:var(--ink-900)]/10 bg-white px-5 py-4 shadow-sm">
@@ -158,15 +182,146 @@ function ShipmentDetails({ shipment }: { shipment: ShipmentResponse }) {
         <DetailRow label="Status" value={shipment.status} />
         {eta && <DetailRow label="ETA" value={eta} />}
       </div>
-      {shipment.label_url && (
+      <LabelActions
+        storeId={storeId}
+        orderId={orderId}
+        shipment={shipment}
+        labelProxyURL={labelProxyURL}
+        onUpdated={onUpdated}
+      />
+    </div>
+  );
+}
+
+function LabelActions({
+  storeId,
+  orderId,
+  shipment,
+  labelProxyURL,
+  onUpdated,
+}: {
+  storeId: string;
+  orderId: string;
+  shipment: ShipmentResponse;
+  labelProxyURL: string;
+  onUpdated: (s: ShipmentResponse) => void;
+}) {
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [recipient, setRecipient] = useState("");
+  const [emailPending, emailStartTransition] = useTransition();
+  const [emailMsg, setEmailMsg] = useState<
+    { kind: "ok" | "err"; text: string } | null
+  >(null);
+  const [refreshPending, refreshStartTransition] = useTransition();
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
+
+  const sendEmail = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      setEmailMsg(null);
+      emailStartTransition(async () => {
+        const r = await emailShipmentLabelAction(
+          storeId,
+          orderId,
+          shipment.id,
+          recipient,
+        );
+        if (!r.ok) {
+          setEmailMsg({ kind: "err", text: r.error.message });
+          return;
+        }
+        setEmailMsg({ kind: "ok", text: `Label sent to ${recipient}.` });
+        setRecipient("");
+        setShowEmailForm(false);
+      });
+    },
+    [storeId, orderId, shipment.id, recipient],
+  );
+
+  const refresh = useCallback(() => {
+    setRefreshMsg(null);
+    refreshStartTransition(async () => {
+      const r = await refreshShipmentTrackingAction(storeId, orderId, shipment.id);
+      if (!r.ok) {
+        setRefreshMsg(r.error?.message ?? "Tracking refresh failed.");
+        return;
+      }
+      if (r.data) {
+        onUpdated(r.data);
+        setRefreshMsg("Tracking synced.");
+      }
+    });
+  }, [storeId, orderId, shipment.id, onUpdated]);
+
+  return (
+    <div className="flex flex-col gap-2 pt-1">
+      <div className="flex flex-wrap items-center gap-2">
         <a
-          href={shipment.label_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          href={labelProxyURL}
+          download
+          className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
-          Print label
+          Download label
         </a>
+        <button
+          type="button"
+          onClick={() => {
+            setShowEmailForm((v) => !v);
+            setEmailMsg(null);
+          }}
+          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        >
+          {showEmailForm ? "Cancel email" : "Email label"}
+        </button>
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={refreshPending}
+          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {refreshPending ? "Syncing…" : "Refresh tracking"}
+        </button>
+      </div>
+      {refreshMsg && (
+        <p className="text-xs text-[color:var(--ink-900)] opacity-70">
+          {refreshMsg}
+        </p>
+      )}
+      {showEmailForm && (
+        <form onSubmit={sendEmail} className="flex flex-col gap-2 pt-2">
+          <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+            Send to
+            <input
+              type="email"
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value)}
+              placeholder="warehouse@example.com"
+              required
+              className="rounded-md border border-[color:var(--ink-900)]/30 px-3 py-2 text-sm normal-case tracking-normal text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none"
+            />
+          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={emailPending || !recipient}
+              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {emailPending ? "Sending…" : "Send label"}
+            </button>
+          </div>
+        </form>
+      )}
+      {emailMsg && (
+        <p
+          role="status"
+          className={`text-xs ${
+            emailMsg.kind === "ok"
+              ? "text-[color:var(--moss-700)]"
+              : "text-red-700"
+          }`}
+        >
+          {emailMsg.text}
+        </p>
       )}
     </div>
   );

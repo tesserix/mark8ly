@@ -482,7 +482,18 @@ func main() {
 		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log)
 		shippingRepo := shipping.NewRepository(conn)
 		shippingService := shipping.NewShippingService(shippingRepo)
-		shipmentsHandler := admin.NewShipmentsHandler(conn, shippingService, shippingRepo, orderDocSvc, log)
+		// Label email: SendGrid when configured, log-only fallback
+		// otherwise so local dev still exercises the dispatch path and
+		// the admin UI sees a 200 instead of a 503.
+		var labelMailer admin.LabelMailer
+		if cfg.SendGridAPIKey != "" {
+			labelMailer = shipping.NewSendGridLabelMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+		} else {
+			labelMailer = &shipping.LogLabelMailer{Logger: log}
+		}
+		shipmentsHandler := admin.NewShipmentsHandler(conn, shippingService, shippingRepo, orderDocSvc, log).
+			WithEncryptor(apiKeyEncryptor).
+			WithLabelMailer(labelMailer)
 		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log)
 		settingsMetaHandler := admin.NewSettingsMetaHandler(countryRepoAdmin, log)
 

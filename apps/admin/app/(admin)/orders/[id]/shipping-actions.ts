@@ -12,6 +12,8 @@ import {
   createShipment,
   updateShipmentStatus,
   getOrderShipment,
+  emailShipmentLabel,
+  refreshShipmentTracking,
   type CreateShipmentInput,
   type ShipmentResponse,
 } from "@/lib/api/shipping-api";
@@ -136,6 +138,72 @@ export async function updateShipmentStatusAction(
     input,
     { userId: ctx.userId, tenantId: ctx.tenantId },
   );
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: { code: result.error.code, message: result.error.message },
+    };
+  }
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true, data: result.data };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Email the label PDF to a nominated recipient.
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function emailShipmentLabelAction(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  recipient: string,
+): Promise<{ ok: true } | { ok: false; error: { code: string; message: string } }> {
+  const ctx = await readContext(storeId);
+  if (!ctx) {
+    return {
+      ok: false,
+      error: { code: "no_session", message: "Your session has expired." },
+    };
+  }
+  const trimmed = recipient.trim();
+  if (!trimmed) {
+    return {
+      ok: false,
+      error: { code: "validation_failed", message: "Recipient email is required." },
+    };
+  }
+  const result = await emailShipmentLabel(
+    ctx.storeId,
+    orderId,
+    shipmentId,
+    { recipient: trimmed },
+    { userId: ctx.userId, tenantId: ctx.tenantId },
+  );
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: { code: result.error.code, message: result.error.message },
+    };
+  }
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Refresh the carrier's tracking state and sync it back to the shipment.
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function refreshShipmentTrackingAction(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+): Promise<ShippingActionResult> {
+  const ctx = await readContext(storeId);
+  if (!ctx) return noSession();
+
+  const result = await refreshShipmentTracking(ctx.storeId, orderId, shipmentId, {
+    userId: ctx.userId,
+    tenantId: ctx.tenantId,
+  });
   if (!result.ok) {
     return {
       ok: false,

@@ -299,6 +299,20 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					orders.PATCH("/:id/shipments/:shipmentId/status",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
 						deps.ShipmentsHandler.UpdateStatus)
+					// Label PDF — GET streams the file (browser download);
+					// POST /label/email dispatches it as an attachment.
+					orders.GET("/:id/shipments/:shipmentId/label",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+						deps.ShipmentsHandler.DownloadLabel)
+					orders.POST("/:id/shipments/:shipmentId/label/email",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.EmailLabel)
+					// On-demand tracking refresh — pulls the carrier's
+					// latest status and syncs it back to the shipment row
+					// + order_events timeline.
+					orders.POST("/:id/shipments/:shipmentId/tracking/refresh",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.RefreshTracking)
 				}
 			}
 		}

@@ -108,7 +108,7 @@ export function StoresList({
             <button
               type="button"
               onClick={() => setShowAdd(true)}
-              className="inline-flex items-center justify-center rounded-xl border border-border bg-white/70 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-white"
+              className="inline-flex items-center justify-center rounded-xl border border-border bg-background-elevated/70 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background-elevated"
             >
               + Add store
             </button>

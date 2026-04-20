@@ -133,7 +133,7 @@ export function NotificationSettingsClient({
                 }`}
               >
                 <span
-                  className={`pointer-events-none block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform ${
+                  className={`pointer-events-none block h-5 w-5 rounded-full bg-background-elevated shadow-sm ring-0 transition-transform ${
                     enabled ? "translate-x-5" : "translate-x-0"
                   }`}
                 />

@@ -188,9 +188,9 @@ export function ProviderCard({
             role="alert"
             className="rounded-[6px] border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--warning)]"
           >
-            Are you sure? This will remove the {formatProviderName(providerName)}{" "}
-            configuration. Click &quot;Confirm remove&quot; again to proceed, or
-            configure/close to cancel.
+            Remove {formatProviderName(providerName)}? You&rsquo;ll need to add it
+            again to re-enable. Click &quot;Confirm remove&quot; to proceed, or
+            close to cancel.
           </div>
         </div>
       )}

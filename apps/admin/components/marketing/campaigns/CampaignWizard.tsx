@@ -263,7 +263,7 @@ export function CampaignWizard({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Summer Sale Announcement"
-                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="mt-1 block w-full rounded-md border border-ink-200 bg-background-elevated px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </label>
 
@@ -333,7 +333,7 @@ export function CampaignWizard({
                   className={`rounded-md border p-4 text-left transition ${
                     selectedTemplate === t.id
                       ? "border-moss-700 bg-moss-50"
-                      : "border-ink-200 bg-white hover:border-ink-300"
+                      : "border-ink-200 bg-background-elevated hover:border-ink-300"
                   }`}
                 >
                   <p className="text-sm font-medium text-ink-900">{t.name}</p>
@@ -360,7 +360,7 @@ export function CampaignWizard({
                   setSelectedTemplate(null);
                 }}
                 placeholder="e.g. Big savings await"
-                className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                className="mt-1 block w-full rounded-md border border-ink-200 bg-background-elevated px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
               />
             </label>
 
@@ -379,7 +379,7 @@ export function CampaignWizard({
           <div className="flex justify-between">
             <button
               onClick={() => setStep(1)}
-              className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
+              className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-background-elevated px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
             >
               Back
             </button>
@@ -402,7 +402,7 @@ export function CampaignWizard({
           </h2>
 
           {/* Review summary */}
-          <div className="rounded-md border border-ink-200 bg-white p-4 space-y-2">
+          <div className="rounded-md border border-ink-200 bg-background-elevated p-4 space-y-2">
             <p className="text-sm text-ink-500">
               <span className="font-medium text-ink-700">Campaign:</span>{" "}
               {name}
@@ -443,7 +443,7 @@ export function CampaignWizard({
                   onChange={(e) => setStorefrontLabel(e.target.value)}
                   placeholder="e.g. Summer sale — 20% off everything"
                   maxLength={120}
-                  className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                  className="mt-1 block w-full rounded-md border border-ink-200 bg-background-elevated px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
                 />
                 <p className="mt-1 text-xs text-ink-500">
                   If the campaign has a linked coupon, the code will appear
@@ -492,7 +492,7 @@ export function CampaignWizard({
                   type="datetime-local"
                   value={scheduledAt}
                   onChange={(e) => setScheduledAt(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                  className="mt-1 block w-full rounded-md border border-ink-200 bg-background-elevated px-3 py-2.5 text-sm text-ink-900 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
                 />
               </label>
             )}
@@ -507,7 +507,7 @@ export function CampaignWizard({
           <div className="flex items-center justify-between">
             <button
               onClick={() => setStep(2)}
-              className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
+              className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-background-elevated px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
             >
               Back
             </button>
@@ -516,7 +516,7 @@ export function CampaignWizard({
               <button
                 onClick={() => handleSubmit("draft")}
                 disabled={submitting}
-                className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-background-elevated px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
               >
                 Save as draft
               </button>
@@ -558,7 +558,7 @@ export function CampaignWizard({
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <button className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50">
+              <button className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-background-elevated px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50">
                 Cancel
               </button>
             </DialogClose>

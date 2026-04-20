@@ -67,14 +67,16 @@ export function PageSkeleton({
 // ─── Variants ────────────────────────────────────────────────────────
 
 function ListSkeleton() {
-  // Hairline list skeleton — mirrors the real list pages (no bordered
-  // table container, no wrapped filter-box). Filter strip is a hairline
-  // underline, rows are separated by hairlines only.
+  // Hairline list skeleton — mirrors the real list pages. Uses
+  // border-border-subtle (ink @ ~10% but tokenized) so rows read as
+  // quiet hairlines, not black rules. No bordered table container,
+  // no wrapped filter-box. Matches the visual weight of OrdersList
+  // and ProductsList once they render.
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-3 border-b border-border-subtle pb-2">
-          <Skeleton className="h-5 flex-1" />
+          <Skeleton className="h-5 flex-1 max-w-sm" />
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Skeleton className="h-3 w-14" />
@@ -85,7 +87,7 @@ function ListSkeleton() {
         </div>
       </div>
       <div className="flex flex-col">
-        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-6 border-b border-[color:var(--ink-900)]/15 pb-3">
+        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-6 border-b border-border-subtle pb-3">
           <Skeleton className="h-3 w-20" />
           <Skeleton className="h-3 w-16" />
           <Skeleton className="h-3 w-14" />
@@ -94,11 +96,11 @@ function ListSkeleton() {
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-6 border-b border-[color:var(--ink-900)]/10 py-4"
+            className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-6 border-b border-border-subtle py-4"
           >
             <div className="flex flex-col gap-1.5">
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-4 w-48 max-w-full" />
+              <Skeleton className="h-3 w-32 max-w-full" />
             </div>
             <Skeleton className="h-3 w-16" />
             <Skeleton className="h-3 w-20" />
@@ -111,10 +113,42 @@ function ListSkeleton() {
 }
 
 function DetailSkeleton() {
+  // Detail skeleton — mirrors an entity detail page (order, product,
+  // customer). Masthead serif number + subtitle row, lifecycle stepper
+  // rail, two-column body with rail cards. Reserves space for the real
+  // layout so first paint doesn't shift.
   return (
-    <div className="space-y-6">
-      <PanelSkeleton />
-      <PanelSkeleton />
+    <div className="space-y-8">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <Skeleton className="h-9 w-56" />
+          <Skeleton className="h-6 w-3" />
+          <Skeleton className="h-7 w-32" />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+          <Skeleton className="h-3 w-28" />
+          <Skeleton className="h-3 w-36" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+      </div>
+      <div className="flex items-center justify-between border-y border-border-subtle py-5">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-2.5">
+            <Skeleton className="h-6 w-6 rounded-full" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="space-y-6">
+          <PanelSkeleton />
+          <PanelSkeleton />
+        </div>
+        <div className="space-y-6">
+          <PanelSkeleton />
+          <PanelSkeleton />
+        </div>
+      </div>
     </div>
   );
 }

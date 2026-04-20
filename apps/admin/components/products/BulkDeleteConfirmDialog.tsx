@@ -24,8 +24,8 @@ export function BulkDeleteConfirmDialog({
     <AlertDialog
       isOpen={isOpen}
       onClose={onCancel}
-      title="Delete products"
-      message={`Are you sure you want to delete ${count} products? This cannot be undone.`}
+      title={`Delete ${count} ${count === 1 ? "product" : "products"}?`}
+      message="This can't be undone."
       type="confirm"
       confirmLabel="Delete"
       cancelLabel="Cancel"

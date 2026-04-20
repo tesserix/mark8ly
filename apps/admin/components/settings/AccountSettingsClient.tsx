@@ -364,7 +364,7 @@ function MFASection({
             <img
               src={qrUrl!}
               alt="MFA QR code"
-              className="h-48 w-48 rounded-[6px] border border-border bg-white"
+              className="h-48 w-48 rounded-[6px] border border-border bg-background-elevated"
             />
             {secret && (
               <details className="text-xs text-foreground-secondary">
@@ -392,7 +392,7 @@ function MFASection({
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               disabled={isPending}
-              className="h-10 w-40 rounded-[6px] border border-border bg-white px-3 font-mono text-lg tracking-[0.4em] text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+              className="h-10 w-40 rounded-[6px] border border-border bg-background-elevated px-3 font-mono text-lg tracking-[0.4em] text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
               placeholder="000000"
             />
           </div>

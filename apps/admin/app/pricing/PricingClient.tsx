@@ -332,7 +332,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
   const plans = pricingCopy.plans
 
   return (
-    <div className="px-8 py-16 max-w-7xl mx-auto">
+    <div className="px-8 py-16 max-w-6xl mx-auto">
       {/* ── Page headline + intro ─────────────────────────────────────────── */}
       <header className="mb-12 max-w-2xl">
         <h1

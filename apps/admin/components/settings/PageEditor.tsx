@@ -297,8 +297,8 @@ export function PageEditor({ page, canManage }: PageEditorProps) {
       <AlertDialog
         isOpen={deleteOpen}
         onClose={() => setDeleteOpen(false)}
-        title="Delete page"
-        message="Are you sure you want to delete this page? This cannot be undone."
+        title="Delete page?"
+        message="This can't be undone."
         type="confirm"
         confirmLabel="Delete"
         cancelLabel="Cancel"

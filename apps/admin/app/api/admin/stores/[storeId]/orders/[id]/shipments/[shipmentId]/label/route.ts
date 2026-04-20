@@ -1,4 +1,4 @@
-// apps/admin/app/api/admin/stores/[storeId]/orders/[orderId]/shipments/[shipmentId]/label/route.ts
+// apps/admin/app/api/admin/stores/[storeId]/orders/[id]/shipments/[shipmentId]/label/route.ts
 //
 // Proxy for downloading the shipping-label PDF from marketplace-api.
 // The backend holds the Delhivery API token — we can't deep-link to
@@ -13,15 +13,19 @@ import { NextResponse } from "next/server";
 
 import { downloadShipmentLabel } from "@/lib/api/shipping-api";
 
+// The dynamic segment is named `[id]` here rather than `[orderId]` to
+// match the rest of the admin API tree (e.g. /orders/[id]/invoice,
+// /orders/[id]/shipments/[shipmentId]/status). Next.js rejects a build
+// when siblings disagree on a segment's slug name.
 export async function GET(
   _request: Request,
   {
     params,
   }: {
-    params: Promise<{ storeId: string; orderId: string; shipmentId: string }>;
+    params: Promise<{ storeId: string; id: string; shipmentId: string }>;
   },
 ): Promise<Response> {
-  const { storeId, orderId, shipmentId } = await params;
+  const { storeId, id: orderId, shipmentId } = await params;
   const h = await headers();
   const userId = h.get("x-session-user-id") ?? "";
   const tenantId = h.get("x-session-tenant-id") ?? "";

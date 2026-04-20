@@ -164,7 +164,10 @@ function OrdersFilterBar({
         )}
       </form>
 
-      <div className="flex flex-col gap-3">
+      {/* Status + Payment chips sit on the same row divided by a short
+          vertical hairline. On narrow viewports the row wraps so each
+          axis gets its own line without clipping. */}
+      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
         <FilterChipRow
           legend="Status"
           current={status}
@@ -176,6 +179,10 @@ function OrdersFilterBar({
             { value: "cancelled", label: "Cancelled" },
           ]}
           buildHref={buildStatusHref as (v: string | undefined) => string}
+        />
+        <span
+          aria-hidden="true"
+          className="h-4 w-px shrink-0 self-center bg-border-subtle"
         />
         <FilterChipRow
           legend="Payment"
@@ -192,7 +199,7 @@ function OrdersFilterBar({
           buildHref={buildPaymentHref as (v: string | undefined) => string}
         />
         {clearable && (
-          <p className="flex items-center gap-3 text-xs text-foreground-tertiary">
+          <span className="ml-auto flex items-center gap-3 text-xs text-foreground-tertiary">
             <span className="tabular-nums">
               {total} {total === 1 ? "result" : "results"}
             </span>
@@ -201,9 +208,9 @@ function OrdersFilterBar({
               href="/orders"
               className="text-[color:var(--moss-700)] underline-offset-4 hover:underline"
             >
-              Clear all filters
+              Clear all
             </Link>
-          </p>
+          </span>
         )}
       </div>
     </div>

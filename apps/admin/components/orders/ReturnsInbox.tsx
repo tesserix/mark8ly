@@ -271,7 +271,7 @@ function TabBar({
   return (
     <nav
       aria-label="Return status filter"
-      className="flex items-center gap-0 overflow-x-auto border-b border-border-subtle px-1 scrollbar-hide"
+      className="flex flex-wrap items-center gap-x-1 gap-y-0 border-b border-border-subtle px-1"
     >
       {TABS.map((t) => {
         const count = returns.filter((r) => t.match.includes(r.status)).length;
@@ -282,7 +282,7 @@ function TabBar({
             type="button"
             onClick={() => setTab(t.key)}
             className={
-              "-mb-px flex shrink-0 items-baseline gap-1 border-b-2 px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
+              "flex shrink-0 items-baseline gap-1 border-b-2 px-2 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
               (active
                 ? "border-[color:var(--ink-900)] text-foreground"
                 : "border-transparent text-foreground-tertiary hover:text-foreground")
@@ -292,7 +292,7 @@ function TabBar({
             {count > 0 && (
               <span
                 className={
-                  "text-[11px] tabular-nums " +
+                  "text-[10.5px] tabular-nums " +
                   (active ? "text-foreground-secondary" : "text-foreground-tertiary")
                 }
               >

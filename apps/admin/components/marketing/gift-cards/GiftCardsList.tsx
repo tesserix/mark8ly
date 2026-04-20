@@ -12,34 +12,42 @@ interface GiftCardsListProps {
   currentStatus?: string;
 }
 
+// Dot + label status badge matching the orders/campaigns visual language.
 function statusBadge(status: string) {
-  const base = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize";
-  switch (status) {
-    case "active":
-      return <span className={`${base} bg-moss-700/10 text-moss-700`}>Active</span>;
-    case "pending":
-      return <span className={`${base} bg-amber-100 text-amber-800`}>Pending</span>;
-    case "depleted":
-      return <span className={`${base} bg-ink-100 text-ink-600`}>Depleted</span>;
-    case "disabled":
-      return <span className={`${base} bg-ink-100 text-ink-500`}>Disabled</span>;
-    case "refunded":
-      return <span className={`${base} bg-[color:var(--signal)]/10 text-[color:var(--signal)]`}>Refunded</span>;
-    default:
-      return <span className={`${base} bg-ink-100 text-ink-600`}>{status}</span>;
-  }
+  const dotClass =
+    status === "active"
+      ? "bg-[color:var(--moss-700)]"
+      : status === "pending"
+        ? "border border-[color:var(--moss-700)] bg-transparent"
+        : status === "refunded"
+          ? "bg-[color:var(--signal)]"
+          : status === "depleted" || status === "disabled"
+            ? "bg-[color:var(--ink-900)] opacity-40"
+            : "border border-[color:var(--ink-900)]/25 bg-transparent";
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  return (
+    <span className="inline-flex items-center gap-2 text-sm text-foreground">
+      <span
+        aria-hidden="true"
+        className={`inline-block h-2 w-2 rounded-full ${dotClass}`}
+      />
+      {label}
+    </span>
+  );
 }
 
-function sourceBadge(gc: AdminGiftCard) {
-  const base = "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium";
-  if (gc.purchased_via_storefront) {
-    return (
-      <span className={`${base} bg-moss-700/10 text-moss-700`} title={gc.purchased_by_email ?? undefined}>
-        Storefront
-      </span>
-    );
-  }
-  return <span className={`${base} bg-ink-100 text-ink-600`}>Admin</span>;
+// Source label — not a badge, just a small uppercase tag since it's
+// reference metadata, not an axis of state.
+function sourceLabel(gc: AdminGiftCard) {
+  const label = gc.purchased_via_storefront ? "Storefront" : "Admin";
+  return (
+    <span
+      className="text-[11px] uppercase tracking-[0.12em] text-foreground-tertiary"
+      title={gc.purchased_by_email ?? undefined}
+    >
+      {label}
+    </span>
+  );
 }
 
 function formatCurrency(amount: string, currency: string): string {
@@ -70,10 +78,10 @@ function CopyButton({ text }: { text: string }) {
       }}
       aria-label={`Copy ${text}`}
       title="Copy code"
-      className="ml-1.5 inline-flex items-center rounded p-0.5 text-ink-400 transition hover:text-ink-700"
+      className="ml-1.5 inline-flex items-center rounded p-0.5 text-foreground-tertiary transition-colors hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
     >
       {copied ? (
-        <Check className="size-3.5 text-moss-700" aria-hidden="true" />
+        <Check className="size-3.5 text-[color:var(--moss-700)]" aria-hidden="true" />
       ) : (
         <Copy className="size-3.5" aria-hidden="true" />
       )}
@@ -98,31 +106,40 @@ export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListP
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Status filter tabs */}
-      <div className="flex gap-3 border-b border-ink-900/10 pb-2" role="tablist" aria-label="Filter gift cards by status">
+      {/* Underline tabs — hairline baseline, tabular-nums count, same
+          pattern as orders/returns/campaigns. */}
+      <nav
+        role="tablist"
+        aria-label="Filter gift cards by status"
+        className="flex flex-wrap items-center gap-x-1 gap-y-0 border-b border-border-subtle px-1"
+      >
         {[
           { label: "All", value: undefined },
           { label: "Active", value: "active" },
-          { label: "Pending payment", value: "pending" },
+          { label: "Pending", value: "pending" },
           { label: "Depleted", value: "depleted" },
           { label: "Disabled", value: "disabled" },
           { label: "Refunded", value: "refunded" },
-        ].map((tab) => (
-          <button
-            key={tab.label}
-            role="tab"
-            aria-selected={currentStatus === tab.value}
-            onClick={() => setStatusFilter(tab.value)}
-            className={`text-sm font-medium transition-colors ${
-              currentStatus === tab.value
-                ? "text-ink-900 border-b-2 border-ink-900 -mb-[9px] pb-2"
-                : "text-ink-900/50 hover:text-ink-900"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+        ].map((tab) => {
+          const active = currentStatus === tab.value;
+          return (
+            <button
+              key={tab.label}
+              role="tab"
+              aria-selected={active}
+              onClick={() => setStatusFilter(tab.value)}
+              className={
+                "flex shrink-0 items-baseline gap-1 border-b-2 px-2.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
+                (active
+                  ? "border-[color:var(--ink-900)] text-foreground"
+                  : "border-transparent text-foreground-tertiary hover:text-foreground")
+              }
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </nav>
 
       {/* Table */}
       <div className="overflow-x-auto">
@@ -162,7 +179,7 @@ export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListP
                   {formatCurrency(gc.initial_balance, gc.currency_code)}
                 </td>
                 <td className="py-3 px-3">{statusBadge(gc.status)}</td>
-                <td className="py-3 px-3">{sourceBadge(gc)}</td>
+                <td className="py-3 px-3">{sourceLabel(gc)}</td>
                 <td className="py-3 px-3 text-foreground-secondary">
                   {gc.recipient_name ?? gc.recipient_email ?? "\u2014"}
                 </td>
@@ -175,34 +192,41 @@ export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListP
         </table>
       </div>
 
-      {/* Pagination */}
+      {/* Pagination — editorial: serif tabular-nums current page, moss
+          underline, chevrons. Matches the orders/products pattern. */}
       {meta && meta.total_pages > 1 && (
-        <div className="flex items-center justify-between text-sm text-ink-500">
-          <span>
+        <nav
+          className="flex items-center justify-between pt-4 text-xs text-foreground-tertiary"
+          aria-label="Gift cards pagination"
+        >
+          <span className="tabular-nums">
             {meta.total} gift card{meta.total !== 1 ? "s" : ""}
           </span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-4">
             {meta.page > 1 && (
               <Link
                 href={`/marketing/gift-cards?page=${meta.page - 1}${currentStatus ? `&status=${currentStatus}` : ""}`}
-                className="text-moss-700 hover:underline"
+                className="text-foreground-secondary underline-offset-4 hover:text-[color:var(--moss-700)] hover:underline"
               >
-                Previous
+                ‹ Previous
               </Link>
             )}
-            <span>
-              Page {meta.page} of {meta.total_pages}
+            <span className="font-serif text-base tabular-nums text-foreground">
+              <span className="underline underline-offset-[6px] decoration-[color:var(--moss-700)] decoration-[1.5px]">
+                {meta.page}
+              </span>
+              <span className="ml-1 text-foreground-tertiary">/ {meta.total_pages}</span>
             </span>
             {meta.page < meta.total_pages && (
               <Link
                 href={`/marketing/gift-cards?page=${meta.page + 1}${currentStatus ? `&status=${currentStatus}` : ""}`}
-                className="text-moss-700 hover:underline"
+                className="text-foreground-secondary underline-offset-4 hover:text-[color:var(--moss-700)] hover:underline"
               >
-                Next
+                Next ›
               </Link>
             )}
           </div>
-        </div>
+        </nav>
       )}
     </div>
   );

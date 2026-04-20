@@ -23,11 +23,7 @@
 // Every variant renders inside the same outer shell (max-w-5xl, space-y-10,
 // header skeleton) so the first paint doesn't shift when real content arrives.
 
-import {
-  Skeleton,
-  PanelSkeleton,
-  DataTableSkeleton,
-} from "@tesserix/web";
+import { Skeleton, PanelSkeleton } from "@tesserix/web";
 
 // Page header skeleton — mimics the AdminPage header block. Reused by
 // every variant so top-level chrome is consistent.
@@ -71,15 +67,45 @@ export function PageSkeleton({
 // ─── Variants ────────────────────────────────────────────────────────
 
 function ListSkeleton() {
+  // Hairline list skeleton — mirrors the real list pages (no bordered
+  // table container, no wrapped filter-box). Filter strip is a hairline
+  // underline, rows are separated by hairlines only.
   return (
-    <div className="space-y-3">
-      {/* Filter bar */}
-      <div className="flex items-center gap-3">
-        <Skeleton className="h-10 min-w-0 flex-1" />
-        <Skeleton className="h-10 w-40" />
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-3 border-b border-border-subtle pb-2">
+          <Skeleton className="h-5 flex-1" />
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-10" />
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-18" />
+        </div>
       </div>
-      {/* Table body — DataTableSkeleton from the design system */}
-      <DataTableSkeleton rows={6} />
+      <div className="flex flex-col">
+        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-6 border-b border-[color:var(--ink-900)]/15 pb-3">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-12 justify-self-end" />
+        </div>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-6 border-b border-[color:var(--ink-900)]/10 py-4"
+          >
+            <div className="flex flex-col gap-1.5">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-3 w-32" />
+            </div>
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-4 w-20 justify-self-end" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

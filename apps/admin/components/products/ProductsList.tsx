@@ -21,6 +21,7 @@ import type {
   AdminStore,
   AdminCategory,
 } from "@/lib/api/marketplace-api";
+import { timeAgo } from "@/lib/format";
 import { useProductSelection } from "@/lib/products/useProductSelection";
 import { BulkActionsBar, type StoreRole } from "./BulkActionsBar";
 import { CopyToStoreDialog, type CopyToStoreRequest } from "./CopyToStoreDialog";
@@ -300,8 +301,21 @@ const ProductRow = memo(function ProductRow({
           <span className="font-serif text-base text-foreground group-hover:underline">
             {product.title}
           </span>
-          <span className="text-xs text-foreground-tertiary">
-            /{product.handle}
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-foreground-tertiary">
+            <span>/{product.handle}</span>
+            {product.categories.length > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="truncate">
+                  {product.categories.slice(0, 2).map((c) => c.name).join(" · ")}
+                  {product.categories.length > 2 && ` +${product.categories.length - 2}`}
+                </span>
+              </>
+            )}
+            <span aria-hidden="true">·</span>
+            <span className="tabular-nums" title={`Edited ${new Date(product.updated_at).toLocaleString()}`}>
+              edited {timeAgo(product.updated_at)}
+            </span>
           </span>
         </Link>
       </td>
@@ -320,8 +334,10 @@ const ProductRow = memo(function ProductRow({
       <td className="py-3 px-3">
         <PriceCell
           priceMin={priceMin}
+          priceMax={priceMax}
           isVariantRange={isVariantRange}
           currency={currency}
+          sku={variantCount === 1 ? product.variants[0]?.sku : undefined}
         />
       </td>
       <td className="relative py-3 pl-2 pr-4 text-right">
@@ -399,46 +415,77 @@ function StockCell({
 }): ReactNode {
   if (isDraft) {
     return (
-      <span className="text-[color:var(--ink-900)] opacity-40">Draft</span>
+      <span className="text-foreground-tertiary">Draft</span>
     );
   }
+  const variantSub =
+    variantCount > 1 ? (
+      <span className="block text-xs text-foreground-tertiary tabular-nums">
+        {variantCount} variants
+      </span>
+    ) : null;
   if (isOutOfStock) {
     return (
-      <span className="text-[color:var(--signal)]">Out of stock</span>
+      <span className="flex flex-col">
+        <span className="text-[color:var(--signal)] tabular-nums">Out of stock</span>
+        {variantSub}
+      </span>
     );
   }
   if (isLowStock) {
     return (
-      <span className="text-[color:var(--signal)]">
-        {stock} in stock
+      <span className="flex flex-col">
+        <span className="text-[color:var(--signal)] tabular-nums">
+          {stock} in stock
+        </span>
+        {variantSub}
       </span>
     );
   }
   return (
-    <span className="text-[color:var(--ink-900)]">
-      {stock} {variantCount > 1 ? `across ${variantCount} variants` : "in stock"}
+    <span className="flex flex-col">
+      <span className="text-foreground tabular-nums">
+        {stock} in stock
+      </span>
+      {variantSub}
     </span>
   );
 }
 
 function PriceCell({
   priceMin,
+  priceMax,
   isVariantRange,
   currency,
+  sku,
 }: {
   priceMin: number | null;
+  priceMax: number | null;
   isVariantRange: boolean;
   currency: string;
+  sku?: string;
 }): ReactNode {
   if (priceMin === null) {
-    return <span className="text-[color:var(--ink-900)] opacity-40">—</span>;
+    return <span className="text-foreground-tertiary">—</span>;
   }
-  if (isVariantRange) {
-    return (
-      <span className="text-[color:var(--ink-900)]">
-        from <PriceDisplay amount={String(priceMin)} currencyCode={currency} />
+  return (
+    <span className="flex flex-col">
+      <span className="font-serif text-base tabular-nums text-foreground">
+        {isVariantRange && priceMax !== null ? (
+          <>
+            <PriceDisplay amount={String(priceMin)} currencyCode={currency} />
+            <span className="mx-1 text-foreground-tertiary">–</span>
+            <PriceDisplay amount={String(priceMax)} currencyCode={currency} />
+          </>
+        ) : (
+          <PriceDisplay amount={String(priceMin)} currencyCode={currency} />
+        )}
       </span>
-    );
-  }
-  return <PriceDisplay amount={String(priceMin)} currencyCode={currency} />;
+      {sku && (
+        <span className="block font-mono text-[11px] text-foreground-tertiary" title={`SKU ${sku}`}>
+          {sku}
+        </span>
+      )}
+    </span>
+  );
 }

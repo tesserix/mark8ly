@@ -13,20 +13,43 @@ function formatCurrency(amount: string, currency: string): string {
   return formatMoney(amount, currency);
 }
 
-function txnTypeBadge(type: string) {
-  const base = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium";
-  switch (type) {
-    case "purchase":
-      return <span className={`${base} bg-[color:var(--accent-tint)] text-[color:var(--moss-700)]`}>Purchase</span>;
-    case "redeem":
-      return <span className={`${base} bg-[color:var(--ink-900)]/10 text-foreground`}>Redeem</span>;
-    case "refund":
-      return <span className={`${base} bg-[color:var(--ink-900)]/5 text-foreground-secondary`}>Refund</span>;
-    case "adjustment":
-      return <span className={`${base} bg-[color:var(--ink-900)]/10 text-foreground-secondary`}>Adjustment</span>;
-    default:
-      return <span className={`${base} bg-[color:var(--ink-900)]/10 text-foreground`}>{type}</span>;
-  }
+// Transaction type — editorial uppercase tertiary label, not a pill.
+// The amount column's sign + color carries the state; the type label
+// is reference metadata, not a state axis.
+function txnTypeLabel(type: string) {
+  const labelMap: Record<string, string> = {
+    purchase: "Purchase",
+    redeem: "Redeem",
+    refund: "Refund",
+    adjustment: "Adjustment",
+  };
+  return (
+    <span className="text-[11px] uppercase tracking-[0.12em] text-foreground-tertiary">
+      {labelMap[type] ?? type}
+    </span>
+  );
+}
+
+// Status — dot + label matching the list page.
+function statusDotLabel(status: string) {
+  const dotClass =
+    status === "active"
+      ? "bg-[color:var(--moss-700)]"
+      : status === "pending"
+        ? "border border-[color:var(--moss-700)] bg-transparent"
+        : status === "refunded"
+          ? "bg-[color:var(--signal)]"
+          : "bg-[color:var(--ink-900)] opacity-40";
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  return (
+    <span className="inline-flex items-center gap-2 text-sm text-foreground">
+      <span
+        aria-hidden="true"
+        className={`inline-block h-2 w-2 rounded-full ${dotClass}`}
+      />
+      {label}
+    </span>
+  );
 }
 
 export default async function GiftCardDetailPage({ params }: GiftCardDetailPageProps) {
@@ -84,7 +107,7 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
             <span className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
               Status
             </span>
-            <span className="text-sm capitalize text-foreground">{gc.status}</span>
+            <span>{statusDotLabel(gc.status)}</span>
           </div>
         </div>
 
@@ -150,9 +173,11 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
                   <td className="py-3 pr-4 text-foreground-tertiary">
                     {new Date(txn.created_at).toLocaleString()}
                   </td>
-                  <td className="py-3 pr-4">{txnTypeBadge(txn.type)}</td>
+                  <td className="py-3 pr-4">{txnTypeLabel(txn.type)}</td>
                   <td className={`py-3 pr-4 font-serif tabular-nums ${
-                    Number(txn.amount) < 0 ? "text-signal" : "text-moss-700"
+                    Number(txn.amount) < 0
+                      ? "text-[color:var(--signal)]"
+                      : "text-[color:var(--moss-700)]"
                   }`}>
                     {Number(txn.amount) > 0 ? "+" : ""}
                     {formatCurrency(txn.amount, gc.currency_code)}

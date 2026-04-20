@@ -24,20 +24,32 @@ const STATUS_TABS: { label: string; value: string }[] = [
   { label: "Paused", value: "paused" },
 ];
 
+// Dot + label badge matching the orders/returns visual language.
+// Variant semantics:
+//   good     → sent / sending (positive terminal or active dispatch)
+//   active   → scheduled (in-progress, not yet terminal)
+//   muted    → draft / paused / cancelled (inactive states)
 function statusBadge(status: CampaignStatus) {
-  const colors: Record<string, string> = {
-    draft: "bg-ink-100 text-ink-500",
-    scheduled: "bg-ink-100 text-ink-700",
-    sending: "bg-moss-700/10 text-moss-700",
-    sent: "bg-moss-700/10 text-moss-700",
-    paused: "bg-ink-100 text-ink-500",
-    cancelled: "bg-ink-100 text-ink-500",
-  };
+  const variant: "good" | "active" | "muted" =
+    status === "sent" || status === "sending"
+      ? "good"
+      : status === "scheduled"
+        ? "active"
+        : "muted";
+  const dotClass =
+    variant === "good"
+      ? "bg-[color:var(--moss-700)]"
+      : variant === "active"
+        ? "border border-[color:var(--moss-700)] bg-transparent"
+        : "bg-[color:var(--ink-900)] opacity-40";
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
   return (
-    <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium capitalize ${colors[status] ?? "bg-ink-100 text-ink-500"}`}
-    >
-      {status}
+    <span className="inline-flex items-center gap-2 text-sm text-foreground">
+      <span
+        aria-hidden="true"
+        className={`inline-block h-2 w-2 rounded-full ${dotClass}`}
+      />
+      {label}
     </span>
   );
 }
@@ -76,22 +88,30 @@ export function CampaignsList({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Status filter tabs */}
-      <nav className="flex gap-1 border-b border-ink-200">
-        {STATUS_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => handleTabClick(tab.value)}
-            className={`px-3 py-2 text-sm font-medium transition ${
-              activeStatus === tab.value
-                ? "border-b-2 border-moss-700 text-ink-900"
-                : "text-ink-500 hover:text-ink-700"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+    <div className="flex flex-col gap-6">
+      {/* Underline tabs — matches orders/returns pattern. */}
+      <nav
+        aria-label="Filter campaigns by status"
+        className="flex flex-wrap items-center gap-x-1 gap-y-0 border-b border-border-subtle px-1"
+      >
+        {STATUS_TABS.map((tab) => {
+          const active = activeStatus === tab.value;
+          return (
+            <button
+              key={tab.value}
+              onClick={() => handleTabClick(tab.value)}
+              aria-current={active ? "true" : undefined}
+              className={
+                "flex shrink-0 items-baseline gap-1 border-b-2 px-2.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
+                (active
+                  ? "border-[color:var(--ink-900)] text-foreground"
+                  : "border-transparent text-foreground-tertiary hover:text-foreground")
+              }
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </nav>
 
       {/* Table */}
@@ -108,16 +128,16 @@ export function CampaignsList({
               <th className="pb-3 px-3 pr-4">Date</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[color:var(--ink-900)]/10">
+          <tbody>
             {campaigns.map((c) => (
               <tr
                 key={c.id}
-                className="group transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-within:bg-[color:var(--ink-900)]/[0.03]"
+                className="group border-b border-[color:var(--ink-900)]/10 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-within:bg-[color:var(--ink-900)]/[0.03]"
               >
                 <td className="py-3 pl-4 pr-3">
                   <Link
                     href={`/marketing/campaigns/${c.id}`}
-                    className="rounded-sm text-sm font-medium text-foreground underline-offset-2 transition-colors group-hover:text-[color:var(--moss-700)] group-hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                    className="rounded-sm font-serif text-base text-foreground transition-colors group-hover:text-[color:var(--moss-700)] group-hover:underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
                   >
                     {c.name}
                   </Link>
@@ -126,22 +146,22 @@ export function CampaignsList({
                   {c.type}
                 </td>
                 <td className="py-3 px-3">{statusBadge(c.status)}</td>
-                <td className="py-3 px-3 font-mono tabular-nums text-foreground">
+                <td className="py-3 px-3 tabular-nums text-foreground">
                   {c.total_recipients.toLocaleString()}
                 </td>
-                <td className="py-3 px-3 text-foreground-secondary">
+                <td className="py-3 px-3 tabular-nums text-foreground-secondary">
                   {c.delivered.toLocaleString()}
                   <span className="ml-1 text-xs text-foreground-tertiary">
                     ({pct(c.delivered, c.total_recipients)})
                   </span>
                 </td>
-                <td className="py-3 px-3 text-foreground-secondary">
+                <td className="py-3 px-3 tabular-nums text-foreground-secondary">
                   {c.opened.toLocaleString()}
                   <span className="ml-1 text-xs text-foreground-tertiary">
                     ({pct(c.opened, c.total_recipients)})
                   </span>
                 </td>
-                <td className="py-3 px-3 pr-4 text-foreground-secondary">
+                <td className="py-3 px-3 pr-4 text-foreground-tertiary">
                   {formatDate(c.sent_at ?? c.scheduled_at ?? c.created_at)}
                 </td>
               </tr>

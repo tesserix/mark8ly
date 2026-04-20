@@ -23,16 +23,20 @@ function formatType(type: AdminCoupon["type"]): string {
 }
 
 function statusBadge(status: AdminCoupon["status"]) {
-  const colors: Record<string, string> = {
-    active: "bg-moss-700/10 text-moss-700",
-    disabled: "bg-ink-100 text-ink-500",
-    expired: "bg-[color:var(--signal)]/10 text-[color:var(--signal)]",
-  };
+  const dotClass =
+    status === "active"
+      ? "bg-[color:var(--moss-700)]"
+      : status === "expired"
+        ? "bg-[color:var(--signal)]"
+        : "bg-[color:var(--ink-900)] opacity-40";
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
   return (
-    <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors[status] ?? "bg-ink-100 text-ink-500"}`}
-    >
-      {status}
+    <span className="inline-flex items-center gap-2 text-sm text-foreground">
+      <span
+        aria-hidden="true"
+        className={`inline-block h-2 w-2 rounded-full ${dotClass}`}
+      />
+      {label}
     </span>
   );
 }
@@ -54,10 +58,10 @@ function CopyButton({ text }: { text: string }) {
       }}
       aria-label={`Copy ${text}`}
       title="Copy code"
-      className="ml-1.5 inline-flex items-center rounded p-0.5 text-ink-400 transition hover:text-ink-700"
+      className="ml-1.5 inline-flex items-center rounded p-0.5 text-foreground-tertiary transition-colors hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
     >
       {copied ? (
-        <Check className="size-3.5 text-moss-700" aria-hidden="true" />
+        <Check className="size-3.5 text-[color:var(--moss-700)]" aria-hidden="true" />
       ) : (
         <Copy className="size-3.5" aria-hidden="true" />
       )}

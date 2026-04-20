@@ -231,6 +231,23 @@ its own init container.
   the golden path, form validation, slug collision, invalid token,
   browser-close-and-resume.
 
+## Shipping & carrier integrations
+
+The Delhivery integration lives across storefront checkout, admin
+shipping settings, the per-tenant GCP Secret Manager backing store,
+a background tracking CronJob, and a public push-webhook endpoint.
+End-to-end architecture, sequence diagrams, schema, and error
+classification are in their own doc:
+
+- [`delhivery-integration.md`](./delhivery-integration.md) — master doc
+- [`delhivery-pickup.md`](./delhivery-pickup.md) — pickup-scheduling detail
+- [`delhivery-webhook.md`](./delhivery-webhook.md) — push-webhook detail
+
+Adding a new carrier is a one-file extension: implement
+`shipping.Carrier` (+ optionally `PickupScheduler`, `WarehouseSyncer`,
+`LabelFetcher`), register it in `shipping.NewCarrier`, and the
+per-tenant secret store auto-namespaces the credentials by provider.
+
 ## What's deliberately NOT here (yet)
 
 This slice ends at the welcome page. Everything below is next-phase

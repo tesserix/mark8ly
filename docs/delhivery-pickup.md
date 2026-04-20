@@ -1,5 +1,11 @@
 # Delhivery pickup scheduling
 
+> Part of the Delhivery integration.
+> For big-picture architecture + sequence diagrams, see
+> [`delhivery-integration.md`](./delhivery-integration.md).
+> For the push-webhook half, see
+> [`delhivery-webhook.md`](./delhivery-webhook.md).
+
 ## What this is
 
 When a merchant clicks **Create shipping label** on an order, mark8ly

@@ -1,5 +1,11 @@
 # Delhivery webhook — real-time tracking push
 
+> Part of the Delhivery integration.
+> For big-picture architecture + sequence diagrams, see
+> [`delhivery-integration.md`](./delhivery-integration.md).
+> For the pickup-scheduling half, see
+> [`delhivery-pickup.md`](./delhivery-pickup.md).
+
 `marketplace-api` exposes a public webhook endpoint that Delhivery can
 POST to on every scan (pickup, in-transit, out-for-delivery,
 delivered). Configuring the webhook on a merchant's Delhivery account

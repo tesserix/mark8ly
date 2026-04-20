@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@tesserix/web";
 import { useToast } from "@/components/feedback/Toaster";
+import { useUnsavedGuard } from "@/lib/hooks/useUnsavedGuard";
 import type { CreateCouponBody } from "@/lib/api/coupons-api";
 
 interface CouponFormProps {
@@ -44,6 +45,24 @@ export function CouponForm({
   const [perCustomer, setPerCustomer] = useState("1");
   const [stackable, setStackable] = useState(false);
   const [startsAt, setStartsAt] = useState("");
+
+  // Dirty when any user-facing field has deviated from its default. The
+  // defaults (perCustomer = "1", stackable = false) aren't counted as
+  // edits — only explicit overrides trigger the unsaved-changes warning.
+  const dirty =
+    code.length > 0 ||
+    value.length > 0 ||
+    endsAt.length > 0 ||
+    title.length > 0 ||
+    description.length > 0 ||
+    minPurchase.length > 0 ||
+    maxDiscount.length > 0 ||
+    usageLimit.length > 0 ||
+    startsAt.length > 0 ||
+    type !== "percentage" ||
+    perCustomer !== "1" ||
+    stackable;
+  useUnsavedGuard(dirty, submitting);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {

@@ -34,12 +34,10 @@ export function ShippingSettingsClient({
 
   if (supported.shipping_carriers.length === 0) {
     return (
-      <div className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-10 text-center">
-        <p className="text-sm text-foreground-tertiary">
-          No shipping carriers are currently available for{" "}
-          {supported.country_name} ({supported.country_code}).
-        </p>
-      </div>
+      <p className="border-t border-border-subtle py-10 text-sm text-foreground-tertiary">
+        No shipping carriers are currently available for{" "}
+        {supported.country_name} ({supported.country_code}).
+      </p>
     );
   }
 

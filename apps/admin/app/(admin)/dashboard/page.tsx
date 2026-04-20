@@ -67,16 +67,17 @@ export default async function DashboardPage() {
 
 function EmptyStoreState() {
   return (
-    <div className="py-16 text-center">
+    <div className="flex flex-col items-start gap-3 border-t border-border-subtle py-12">
       <h2 className="font-serif text-3xl font-medium text-foreground">
-        Create a store to get started
+        Begin with a store
       </h2>
-      <p className="mt-3 text-base text-foreground-secondary">
-        Set up your first store to access your dashboard.
+      <p className="max-w-prose text-base text-foreground-secondary">
+        Your dashboard lives here — revenue, orders, customers, low stock.
+        Spin up your first store and the numbers will follow.
       </p>
       <a
         href="/settings/stores"
-        className="mt-6 inline-flex h-12 items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
+        className="mt-3 inline-flex items-center rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
       >
         Create store
       </a>
@@ -86,12 +87,15 @@ function EmptyStoreState() {
 
 function DashboardLoadError() {
   return (
-    <div className="py-16 text-center" role="alert">
+    <div
+      className="flex flex-col items-start gap-3 border-t border-border-subtle py-12"
+      role="alert"
+    >
       <h2 className="font-serif text-3xl font-medium text-foreground">
-        Unable to load dashboard
+        We couldn&rsquo;t reach your store
       </h2>
-      <p className="mt-3 text-base text-foreground-secondary">
-        We could not reach the server. Please try refreshing the page.
+      <p className="max-w-prose text-base text-foreground-secondary">
+        A momentary hiccup on our side. Refresh to try again.
       </p>
     </div>
   );
@@ -115,13 +119,13 @@ function DashboardContent({
       <SetupChecklist checklist={setup_checklist} />
 
       {isNewStore ? (
-        <section className="py-10 text-center">
+        <section className="flex flex-col items-start gap-3 border-t border-border-subtle py-10">
           <h2 className="font-serif text-2xl font-medium text-foreground">
-            Complete your store setup to see your dashboard
+            Your first product unlocks the view
           </h2>
-          <p className="mt-3 max-w-md mx-auto text-sm text-foreground-secondary">
-            Add your first product to unlock your stats, recent orders, and
-            product performance data.
+          <p className="max-w-prose text-sm text-foreground-secondary">
+            Once you add a product, revenue, recent orders, and performance
+            data start flowing into this page.
           </p>
         </section>
       ) : (

@@ -51,7 +51,7 @@ export function ReviewRowActions({
           aria-label={featured ? "Unfeature review" : "Feature review"}
           className={`inline-flex min-h-[2.5rem] items-center justify-center rounded-sm border px-2.5 py-1 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
             featured
-              ? "border-[color:var(--moss-700)] bg-[color:rgba(45,74,43,0.06)] text-[color:var(--moss-700)]"
+              ? "border-[color:var(--moss-700)] bg-[color:var(--accent-tint)] text-[color:var(--moss-700)]"
               : "border-border-subtle text-foreground-secondary hover:text-foreground"
           }`}
           title={featured ? "Unfeature" : "Feature"}
@@ -67,7 +67,7 @@ export function ReviewRowActions({
           type="button"
           onClick={() => runAction(() => approveReviewAction(reviewId))}
           disabled={isPending || status === "approved"}
-          className="inline-flex min-h-[2.5rem] items-center rounded-sm border border-[color:var(--moss-700)] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--moss-700)] transition-colors hover:bg-[color:rgba(45,74,43,0.06)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex min-h-[2.5rem] items-center rounded-sm border border-[color:var(--moss-700)] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--moss-700)] transition-colors hover:bg-[color:var(--accent-tint)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           Approve
         </button>
@@ -91,7 +91,7 @@ export function ReviewRowActions({
       {error && (
         <p
           role="alert"
-          className="text-[11px] text-[color:var(--danger,#8e1a1a)]"
+          className="text-[11px] text-[color:var(--danger)]"
         >
           {error}
         </p>

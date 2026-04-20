@@ -53,7 +53,7 @@ export function ReviewReplyForm({ reviewId }: ReviewReplyFormProps) {
       <div className="flex items-center justify-between gap-3">
         <span
           className={`text-[11px] ${
-            remaining < 0 ? "text-[color:var(--danger,#8e1a1a)]" : "text-foreground-tertiary"
+            remaining < 0 ? "text-[color:var(--danger)]" : "text-foreground-tertiary"
           }`}
         >
           {remaining} characters remaining
@@ -61,7 +61,7 @@ export function ReviewReplyForm({ reviewId }: ReviewReplyFormProps) {
         <button
           type="submit"
           disabled={disabled}
-          className="inline-flex min-h-[2.75rem] items-center rounded-sm bg-[color:var(--ink-900)] px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[color:var(--paper-200)] transition-colors hover:bg-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex min-h-[2.75rem] items-center rounded-sm bg-[color:var(--ink-900)] px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {isPending ? "Posting…" : "Post reply"}
         </button>
@@ -69,7 +69,7 @@ export function ReviewReplyForm({ reviewId }: ReviewReplyFormProps) {
       {error && (
         <p
           role="alert"
-          className="text-xs text-[color:var(--danger,#8e1a1a)]"
+          className="text-xs text-[color:var(--danger)]"
         >
           {error}
         </p>

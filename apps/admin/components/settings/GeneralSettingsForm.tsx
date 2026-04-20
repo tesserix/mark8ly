@@ -197,14 +197,14 @@ export function GeneralSettingsForm({
               setError(null);
             }}
             disabled={!dirty || pending}
-            className="rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md px-4 py-2 text-sm font-medium text-foreground-secondary transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Reset
           </button>
           <button
             type="submit"
             disabled={!dirty || pending}
-            className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-[0_14px_30px_rgba(31,30,28,0.18)] transition-[transform,box-shadow,opacity] hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center justify-center rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? "Saving..." : "Save changes"}
           </button>
@@ -221,7 +221,7 @@ interface SectionProps {
 
 function Section({ title, children }: SectionProps) {
   return (
-    <section className="admin-panel space-y-5 rounded-[1.6rem] p-6">
+    <section className="admin-panel space-y-5 rounded-[6px] p-6">
       <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {title}
       </h2>

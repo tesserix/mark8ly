@@ -12,11 +12,11 @@ const LABELS: Record<ReviewStatus, string> = {
 
 const STYLES: Record<ReviewStatus, string> = {
   pending:
-    "bg-[color:var(--warning-bg,rgba(180,120,20,0.08))] text-[color:var(--warning,#7a4f00)]",
+    "bg-[color:var(--warning)]/10 text-[color:var(--warning)]",
   approved:
-    "bg-[color:rgba(45,74,43,0.08)] text-[color:var(--moss-700)]",
+    "bg-[color:var(--accent-tint)] text-[color:var(--moss-700)]",
   rejected:
-    "bg-[color:rgba(142,26,26,0.08)] text-[color:var(--danger,#8e1a1a)]",
+    "bg-[color:var(--danger)]/10 text-[color:var(--danger)]",
 };
 
 export function ReviewStatusBadge({ status }: ReviewStatusBadgeProps) {

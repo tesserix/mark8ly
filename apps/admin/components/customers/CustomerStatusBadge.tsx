@@ -15,7 +15,7 @@ const statusConfig: Record<
   },
   blocked: {
     label: "Blocked",
-    colorClass: "text-[color:var(--signal,#C4391D)]",
+    colorClass: "text-[color:var(--danger)]",
   },
 };
 

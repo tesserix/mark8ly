@@ -43,6 +43,7 @@ import {
 import type { VariantDraft as MatrixVariantDraft } from "@/components/products/variants/VariantMatrixTable";
 
 import { useToast } from "@/components/feedback/Toaster";
+import { useUnsavedGuard } from "@/lib/hooks/useUnsavedGuard";
 import {
   ProductFormTabs,
   type ProductFormTabId,
@@ -293,19 +294,11 @@ export function ProductForm({
     });
   };
 
-  // Unsaved-changes guard — warn on tab close / reload / cross-site nav if
-  // the form has dirty changes. In-app nav via the Discard button opens a
-  // dedicated confirm dialog instead (see handleDiscard below) because
-  // App Router doesn't fire beforeunload on client-side navigation.
-  useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!methods.formState.isDirty || isPending) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [methods.formState.isDirty, isPending]);
+  // Unsaved-changes guard — warn on tab close / reload / cross-site nav
+  // when the form is dirty. In-app nav via Discard opens a confirm dialog
+  // instead (see handleDiscard below) because App Router doesn't fire
+  // beforeunload on client-side navigation.
+  useUnsavedGuard(methods.formState.isDirty, isPending);
 
   const handleDiscard = (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (methods.formState.isDirty && !isPending) {

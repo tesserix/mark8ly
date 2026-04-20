@@ -241,7 +241,7 @@ function ModeBadge({ mode }: { mode: string }) {
   const isLive = mode === "live";
   return (
     <span
-      className={`inline-block rounded-[4px] px-2 py-0.5 text-[11px] uppercase tracking-wider ${
+      className={`inline-block rounded-sm px-2 py-0.5 text-[11px] uppercase tracking-wider ${
         isLive
           ? "bg-[color:var(--moss-700)]/10 font-bold text-[color:var(--moss-700)]"
           : "bg-[color:var(--warning)]/10 font-semibold text-[color:var(--warning)]"

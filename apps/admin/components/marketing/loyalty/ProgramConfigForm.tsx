@@ -117,27 +117,30 @@ export function ProgramConfigForm({
   if (isEmpty && !isEditing) {
     if (!editable) {
       return (
-        <div className="rounded-md bg-background-elevated px-6 py-10 text-center">
-          <p className="text-sm text-ink-500">
-            No loyalty program configured yet.
+        <div className="flex flex-col items-start gap-3 border-t border-border-subtle py-12">
+          <h2 className="font-serif text-xl font-medium text-foreground">
+            No loyalty program yet
+          </h2>
+          <p className="max-w-prose text-sm text-foreground-secondary">
+            Ask a store admin to configure loyalty for this shop.
           </p>
         </div>
       );
     }
     return (
-      <div className="rounded-md bg-background-elevated px-6 py-10 text-center">
-        <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
+      <div className="flex flex-col items-start gap-3 border-t border-border-subtle py-12">
+        <h2 className="font-serif text-2xl font-medium text-foreground">
           Set up your loyalty program
         </h2>
-        <p className="mx-auto mt-2 max-w-md text-sm text-ink-600">
-          Reward repeat customers with points they can redeem at checkout,
-          plus signup and referral bonuses. Defaults give you a clean 1%
-          back program — adjust any of them before saving.
+        <p className="max-w-prose text-sm text-foreground-secondary">
+          Reward repeat customers with points they can redeem at checkout, plus
+          signup and referral bonuses. Defaults give you a clean 1%-back program
+          — adjust any of them before saving.
         </p>
         <button
           type="button"
           onClick={() => setIsEditing(true)}
-          className="mt-6 rounded-md bg-[color:var(--ink-900)] px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90"
+          className="mt-2 inline-flex items-center rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           Set up loyalty
         </button>
@@ -148,28 +151,26 @@ export function ProgramConfigForm({
   // ── Read mode ─────────────────────────────────────────────────────
   if (!isEditing) {
     return (
-      <div className="space-y-6">
-        <div className="rounded-md bg-background-elevated px-6 py-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-[color:var(--ink-900)]">
-                Loyalty program
-              </h2>
-              <div className="mt-2 flex items-center gap-2">
-                <StatusBadge active={isActive} />
-              </div>
+      <div className="space-y-10">
+        <section className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
+              Loyalty program
+            </h2>
+            <div className="mt-2 flex items-center gap-2">
+              <StatusBadge active={isActive} />
             </div>
-            {editable && (
-              <button
-                type="button"
-                onClick={() => setIsEditing(true)}
-                className="rounded-md border border-[color:var(--ink-900)]/15 px-4 py-2 text-xs font-medium text-[color:var(--ink-900)] transition-colors hover:bg-[color:var(--paper-200)]"
-              >
-                Edit
-              </button>
-            )}
           </div>
-        </div>
+          {editable && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="rounded-md border border-[color:var(--ink-900)]/15 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-100)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              Edit
+            </button>
+          )}
+        </section>
 
         <Section title="Points configuration">
           <ReadGrid>
@@ -234,30 +235,28 @@ export function ProgramConfigForm({
     "w-full rounded-md border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2 text-sm text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-10">
       {/* Active toggle */}
-      <div className="rounded-md bg-background-elevated px-6 py-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-[color:var(--ink-900)]">
-              Loyalty program
-            </h2>
-            <p className="text-sm text-ink-600">
-              Enable the loyalty program for your store.
-            </p>
-          </div>
-          <label className="relative inline-flex cursor-pointer items-center">
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-              className="peer sr-only"
-              aria-label="Toggle loyalty program"
-            />
-            <div className="h-6 w-11 rounded-md bg-[color:var(--ink-900)]/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-md after:bg-background-elevated after:transition-all peer-checked:bg-[color:var(--moss-700)] peer-checked:after:translate-x-full" />
-          </label>
+      <section className="flex items-center justify-between">
+        <div>
+          <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
+            Loyalty program
+          </h2>
+          <p className="mt-1 text-sm text-foreground-secondary">
+            Enable the loyalty program for your store.
+          </p>
         </div>
-      </div>
+        <label className="relative inline-flex cursor-pointer items-center">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+            className="peer sr-only"
+            aria-label="Toggle loyalty program"
+          />
+          <div className="h-6 w-11 rounded-full bg-[color:var(--ink-900)]/15 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-background-elevated after:shadow-sm after:transition-all peer-checked:bg-[color:var(--moss-700)] peer-checked:after:translate-x-full" />
+        </label>
+      </section>
 
       {/* Points configuration */}
       <Section title="Points configuration">
@@ -367,26 +366,26 @@ export function ProgramConfigForm({
       </Section>
 
       {/* Tiers */}
-      <div className="rounded-md bg-background-elevated px-6 py-5">
+      <section className="space-y-4 border-t border-border-subtle pt-10">
         <TierBuilder value={tiers} onChange={setTiers} disabled={false} />
-      </div>
+      </section>
 
       {/* Save / Cancel */}
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex items-center justify-end gap-3 border-t border-border-subtle pt-6">
         <button
           type="button"
           onClick={handleCancel}
           disabled={isPending}
-          className="rounded-md border border-[color:var(--ink-900)]/15 px-6 py-2.5 text-sm font-medium text-[color:var(--ink-900)] transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+          className="rounded-md border border-[color:var(--ink-900)]/15 px-5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-100)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-[color:var(--ink-900)] px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
+          className="rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
         >
-          {isPending ? "Saving..." : "Save program"}
+          {isPending ? "Saving…" : "Save program"}
         </button>
       </div>
     </form>
@@ -397,13 +396,12 @@ export function ProgramConfigForm({
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-md bg-background-elevated px-6 py-5 space-y-4">
-      <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
+    <section className="space-y-4 border-t border-border-subtle pt-10">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
         {title}
       </h3>
-      <hr className="border-t border-ink-200" />
       {children}
-    </div>
+    </section>
   );
 }
 

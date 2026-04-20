@@ -191,13 +191,13 @@ function StoreRowSkeleton() {
       className="flex flex-col gap-4 border-b border-[var(--hairline,var(--ink-100))] py-8 sm:flex-row sm:items-start sm:gap-8"
     >
       <div className="flex-1 space-y-3">
-        <div className="h-6 w-48 rounded-[4px] bg-[var(--paper-200)] animate-pulse" />
-        <div className="h-4 w-72 rounded-[4px] bg-[var(--paper-200)] animate-pulse" />
-        <div className="h-4 w-32 rounded-[4px] bg-[var(--paper-200)] animate-pulse" />
+        <div className="h-6 w-48 rounded-sm bg-[var(--paper-200)] animate-pulse" />
+        <div className="h-4 w-72 rounded-sm bg-[var(--paper-200)] animate-pulse" />
+        <div className="h-4 w-32 rounded-sm bg-[var(--paper-200)] animate-pulse" />
       </div>
       <div className="shrink-0 space-y-3 sm:w-64">
-        <div className="h-5 w-40 rounded-[4px] bg-[var(--paper-200)] animate-pulse" />
-        <div className="h-5 w-40 rounded-[4px] bg-[var(--paper-200)] animate-pulse" />
+        <div className="h-5 w-40 rounded-sm bg-[var(--paper-200)] animate-pulse" />
+        <div className="h-5 w-40 rounded-sm bg-[var(--paper-200)] animate-pulse" />
       </div>
     </li>
   )

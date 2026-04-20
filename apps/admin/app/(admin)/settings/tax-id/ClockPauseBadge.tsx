@@ -47,7 +47,7 @@ export function ClockPauseBadge({ reason, className }: ClockPauseBadgeProps) {
         // Layout
         'inline-flex items-center gap-1.5',
         // Sizing + shape
-        'rounded-[4px] px-2.5 py-1',
+        'rounded-sm px-2.5 py-1',
         // Info tone — moss text on paper background, hairline border
         'border border-[var(--moss-700)] bg-[var(--paper-200)]',
         'text-xs font-medium text-[var(--moss-700)]',

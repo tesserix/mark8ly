@@ -50,7 +50,7 @@ export function MarqueeSectionForm({ section, onChange, editable }: Props) {
         <FieldLabel htmlFor="section_marquee_items">
           Items ({section.items.length}/{MAX_ITEMS})
         </FieldLabel>
-        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] p-2 focus-within:border-[color:var(--moss-700)]">
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-[color:var(--background-elevated)] p-2 focus-within:border-[color:var(--moss-700)]">
           {section.items.map((item, i) => (
             <span
               key={`${i}-${item}`}
@@ -99,7 +99,7 @@ export function MarqueeSectionForm({ section, onChange, editable }: Props) {
             patch({ speed: e.target.value as MarqueeSection["speed"] })
           }
           disabled={!editable}
-          className="h-10 w-40 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
+          className="h-10 w-40 rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
         >
           <option value="slow">Slow</option>
           <option value="normal">Normal</option>

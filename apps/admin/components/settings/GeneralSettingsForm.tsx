@@ -30,6 +30,7 @@ import {
 import { updateGeneralSettings } from "@/app/(admin)/settings/general/actions";
 import type { Store, Tenant, Timezone } from "@/lib/api/platform-api";
 import { useToast } from "@/components/feedback/Toaster";
+import { useUnsavedGuard } from "@/lib/hooks/useUnsavedGuard";
 
 // Humanise ISO codes. Falls through to the raw code when Intl doesn't
 // know the region or currency — better to show "XX" than the empty
@@ -89,6 +90,8 @@ export function GeneralSettingsForm({
   const nameDirty = name.trim() !== store.name && name.trim().length > 0;
   const tzDirty = timezone !== store.timezone && timezone.length > 0;
   const dirty = nameDirty || tzDirty;
+
+  useUnsavedGuard(dirty, pending);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -181,7 +184,7 @@ export function GeneralSettingsForm({
       {error && (
         <div
           role="alert"
-          className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
         >
           {error}
         </div>

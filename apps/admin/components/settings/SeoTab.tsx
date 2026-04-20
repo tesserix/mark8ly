@@ -72,7 +72,7 @@ export function SeoTab({ form, patch, editable }: SeoTabProps) {
             rows={3}
             maxLength={300}
             placeholder="Handwoven textiles and quiet objects from small ateliers across India."
-            className="w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
           />
           <p className="text-xs text-foreground-secondary">
             150–160 characters is the sweet spot for Google snippets.
@@ -165,7 +165,7 @@ export function SeoTab({ form, patch, editable }: SeoTabProps) {
             rows={12}
             spellCheck={false}
             placeholder={`{\n  "@context": "https://schema.org",\n  "@type": "Store",\n  "name": "India Store",\n  "url": "https://indiastore.com",\n  "logo": "https://cdn.example.com/logo.png",\n  "sameAs": [\n    "https://instagram.com/indiastore",\n    "https://twitter.com/indiastore"\n  ]\n}`}
-            className="w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 font-mono text-xs leading-5 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 font-mono text-xs leading-5 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
           />
           <p className="text-xs text-foreground-secondary">
             Validate with{" "}
@@ -231,7 +231,7 @@ export function SeoTab({ form, patch, editable }: SeoTabProps) {
             rows={10}
             spellCheck={false}
             placeholder={`# India Store\n\n> Handwoven textiles and quiet objects sourced from small ateliers across India.\n\n## Shop\n- [All products](/products): Browse our full catalog\n- [Collections](/categories): Curated collections\n\n## About\n- [Our story](/pages/about): How we started and what we value`}
-            className="w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 font-mono text-xs leading-5 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 font-mono text-xs leading-5 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
           />
           <p className="text-xs text-foreground-secondary">
             Emerging standard (<a href="https://llmstxt.org/" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">llmstxt.org</a>). Plain-text summary of your site for LLM agents, served at <code>/llms.txt</code>. If empty, we auto-generate from your store name + description.

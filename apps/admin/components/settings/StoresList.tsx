@@ -108,7 +108,7 @@ export function StoresList({
             <button
               type="button"
               onClick={() => setShowAdd(true)}
-              className="inline-flex items-center justify-center rounded-xl border border-border bg-background-elevated/70 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background-elevated"
+              className="inline-flex items-center justify-center rounded-md border border-border bg-background-elevated/70 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background-elevated"
             >
               + Add store
             </button>
@@ -155,7 +155,7 @@ export function StoresList({
                       type="button"
                       onClick={() => handleSwitch(s.id)}
                       disabled={pending}
-                      className="rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Switch
                     </button>
@@ -178,7 +178,7 @@ export function StoresList({
       {switchError && !showAdd && (
         <div
           role="alert"
-          className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
         >
           {switchError}
         </div>

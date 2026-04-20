@@ -89,7 +89,7 @@ function PeriodToggle({ value, onChange }: PeriodToggleProps) {
             aria-pressed={isActive}
             onClick={() => onChange(period)}
             className={[
-              'rounded-[4px] px-4 py-1.5 text-sm font-medium transition-colors',
+              'rounded-sm px-4 py-1.5 text-sm font-medium transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]',
               isActive
                 ? 'bg-[var(--ink-900)] text-white'
@@ -459,7 +459,7 @@ export function PlanChangeClient({ storeId }: PlanChangeClientProps) {
 
         <Link
           href="/settings/billing"
-          className="text-sm text-[var(--ink-600)] underline-offset-2 hover:text-[var(--ink-900)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] rounded-[4px]"
+          className="text-sm text-[var(--ink-600)] underline-offset-2 hover:text-[var(--ink-900)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] rounded-sm"
         >
           {copy.cancelCta}
         </Link>

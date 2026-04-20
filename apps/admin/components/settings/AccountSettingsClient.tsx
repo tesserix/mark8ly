@@ -369,7 +369,7 @@ function MFASection({
             {secret && (
               <details className="text-xs text-foreground-secondary">
                 <summary className="cursor-pointer">Can&rsquo;t scan? Show setup key</summary>
-                <code className="mt-2 block break-all rounded-[4px] bg-[color:var(--paper-200)] px-2 py-1 font-mono">
+                <code className="mt-2 block break-all rounded-sm bg-[color:var(--paper-200)] px-2 py-1 font-mono">
                   {secret}
                 </code>
               </details>

@@ -92,7 +92,7 @@ export function HomepageSectionsEditor({
         {sections.map((s, i) => (
           <article
             key={sectionKey(s, i)}
-            className="space-y-4 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] p-5"
+            className="space-y-4 rounded-md border border-border bg-[color:var(--background-elevated)] p-5"
           >
             <header className="flex items-center justify-between">
               <p className="text-xs font-medium uppercase tracking-wide text-foreground-secondary">
@@ -134,7 +134,7 @@ export function HomepageSectionsEditor({
         ))}
 
         {sections.length === 0 ? (
-          <p className="rounded-[var(--radius)] border border-dashed border-border px-6 py-10 text-center text-sm text-foreground-secondary">
+          <p className="rounded-md border border-dashed border-border px-6 py-10 text-center text-sm text-foreground-secondary">
             No sections yet. Pick a block type below to add your first one.
           </p>
         ) : null}
@@ -154,7 +154,7 @@ export function HomepageSectionsEditor({
           </button>
           {addMenuOpen && canAdd ? (
             <div
-              className="absolute z-10 mt-1 w-56 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] p-1 shadow-lg"
+              className="absolute z-10 mt-1 w-56 rounded-md border border-border bg-[color:var(--background-elevated)] p-1 shadow-lg"
               role="menu"
             >
               {ADD_GROUPS.map((group) => (

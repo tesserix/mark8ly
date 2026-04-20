@@ -189,7 +189,7 @@ export function ProductSlugPicker({
 
       {editable && !atMax ? (
         <div className="relative">
-          <div className="flex items-center gap-2 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3">
+          <div className="flex items-center gap-2 rounded-md border border-border bg-[color:var(--background-elevated)] px-3">
             <Search className="h-4 w-4 text-foreground-secondary" />
             <input
               id="product_slug_picker_search"
@@ -200,7 +200,7 @@ export function ProductSlugPicker({
             />
           </div>
           {query.trim() && (loading || results.length > 0) ? (
-            <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] shadow-lg">
+            <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-[color:var(--background-elevated)] shadow-lg">
               {loading ? (
                 <li className="px-3 py-2 text-xs text-foreground-secondary">
                   Searching…

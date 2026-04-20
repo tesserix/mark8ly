@@ -12,6 +12,7 @@ import { FooterSectionsEditor } from "./FooterSectionsEditor";
 import { ImageUploadInput } from "./ImageUploadInput";
 import { updateBrandingAction } from "@/app/(admin)/settings/themes/actions";
 import { useToast } from "@/components/feedback/Toaster";
+import { useUnsavedGuard } from "@/lib/hooks/useUnsavedGuard";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -92,6 +93,8 @@ export function BrandingSettingsClient({
   const [heroValid, setHeroValid] = useState(true);
 
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
+
+  useUnsavedGuard(dirty, isPending);
 
   const patch = useCallback(
     (updates: Partial<StoreBranding>) => {
@@ -185,7 +188,7 @@ export function BrandingSettingsClient({
               type="button"
               onClick={handleSave}
               disabled={!dirty || isPending || !heroValid}
-              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-40"
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-40"
             >
               {isPending ? "Saving..." : status.type === "saved" ? (
                 <>
@@ -199,7 +202,7 @@ export function BrandingSettingsClient({
                 type="button"
                 onClick={handleReset}
                 disabled={isPending}
-                className="h-10 rounded-[var(--radius)] px-4 text-sm text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-40"
+                className="h-10 rounded-md px-4 text-sm text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-40"
               >
                 Reset
               </button>
@@ -269,7 +272,7 @@ export function TextInput({
       placeholder={placeholder}
       disabled={disabled}
       maxLength={maxLength}
-      className="h-10 w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+      className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
     />
   );
 }
@@ -297,7 +300,7 @@ export function ColorField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
-          className="h-10 w-10 shrink-0 cursor-pointer rounded-[var(--radius)] border border-border p-0.5 disabled:cursor-default disabled:opacity-50"
+          className="h-10 w-10 shrink-0 cursor-pointer rounded-md border border-border p-0.5 disabled:cursor-default disabled:opacity-50"
         />
         <input
           type="text"
@@ -307,7 +310,7 @@ export function ColorField({
             if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) onChange(v);
           }}
           disabled={disabled}
-          className="h-10 w-24 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 font-mono text-xs text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+          className="h-10 w-24 rounded-md border border-border bg-[color:var(--background-elevated)] px-3 font-mono text-xs text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
         />
       </div>
     </div>
@@ -474,7 +477,7 @@ function PoliciesTab({ form, patch, editable }: TabProps) {
           disabled={!editable}
           rows={12}
           maxLength={8000}
-          className="w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 text-sm leading-6 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+          className="w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 text-sm leading-6 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
           placeholder={`Returns are accepted within 30 days of delivery for items in their original condition.\n\nTo initiate a return, email support@yourstore.com with your order number. We'll send a prepaid label within 2 business days.\n\nRefunds are issued to the original payment method within 5–7 business days of receiving your return.`}
         />
       </div>
@@ -527,7 +530,7 @@ function AdvancedTab({ form, patch, editable }: TabProps) {
           disabled={!editable}
           rows={14}
           spellCheck={false}
-          className="w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 font-mono text-xs leading-5 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+          className="w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 py-2.5 font-mono text-xs leading-5 text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
           placeholder={`/* Override storefront theme variables */\n:root {\n  --storefront-accent: #B86800;\n}\n\n/* Style product cards */\nmain#main .rounded-md {\n  box-shadow: 0 1px 3px rgba(0,0,0,.08);\n}\n\n/* Adjust nav spacing */\nnav[aria-label="Store"] {\n  padding-block: 1.5rem;\n}`}
         />
       </div>

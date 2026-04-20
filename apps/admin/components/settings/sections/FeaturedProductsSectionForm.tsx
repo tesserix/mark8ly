@@ -68,7 +68,7 @@ export function FeaturedProductsSectionForm({
 
       <fieldset className="space-y-2">
         <FieldLabel>Source</FieldLabel>
-        <div className="inline-flex rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] p-0.5 text-sm">
+        <div className="inline-flex rounded-md border border-border bg-[color:var(--background-elevated)] p-0.5 text-sm">
           <button
             type="button"
             onClick={switchToCollection}
@@ -106,7 +106,7 @@ export function FeaturedProductsSectionForm({
           ) : (
             <select
               id="section_featured_collection"
-              className="h-10 w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
+              className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
               value={section.collection_slug ?? ""}
               onChange={(e) => patch({ collection_slug: e.target.value })}
               disabled={!editable}
@@ -148,7 +148,7 @@ export function FeaturedProductsSectionForm({
             value={section.limit ?? 8}
             onChange={(e) => patch({ limit: Number(e.target.value) || 8 })}
             disabled={!editable}
-            className="h-10 w-24 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
+            className="h-10 w-24 rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
           />
         </div>
       ) : null}

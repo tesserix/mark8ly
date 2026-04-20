@@ -22,7 +22,7 @@ export default function NotFound() {
           <nav className="flex items-center gap-6 pt-2">
             <Link
               href="/"
-              className="inline-flex h-10 items-center rounded-[var(--radius)] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors duration-200 hover:bg-[color:var(--ink-800)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--moss-700)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--background)]"
+              className="inline-flex h-10 items-center rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors duration-200 hover:bg-[color:var(--ink-800)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--moss-700)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--background)]"
             >
               Back to dashboard
             </Link>

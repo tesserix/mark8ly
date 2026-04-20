@@ -159,7 +159,7 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
                   {strategyLabel(taxConfig.strategy, countryCode)}
                 </p>
               </div>
-              <span className="ml-auto inline-block rounded-[4px] bg-[color:var(--moss-700)]/10 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-[color:var(--moss-700)]">
+              <span className="ml-auto inline-block rounded-sm bg-[color:var(--moss-700)]/10 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-[color:var(--moss-700)]">
                 {taxConfig.strategy.replace(/_/g, " ")}
               </span>
             </div>

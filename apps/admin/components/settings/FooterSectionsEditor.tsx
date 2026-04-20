@@ -123,14 +123,14 @@ export function FooterSectionsEditor({
               }
               disabled={!editable}
               placeholder="Section label"
-              className="h-9 flex-1 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 text-sm font-medium text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+              className="h-9 flex-1 rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm font-medium text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             />
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => moveSection(secIdx, -1)}
                 disabled={!editable || secIdx === 0}
-                className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-30"
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-[color:var(--background-elevated)] text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-30"
                 aria-label="Move section up"
               >
                 <ArrowUp className="h-3.5 w-3.5" />
@@ -139,7 +139,7 @@ export function FooterSectionsEditor({
                 type="button"
                 onClick={() => moveSection(secIdx, 1)}
                 disabled={!editable || secIdx === sections.length - 1}
-                className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-30"
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-[color:var(--background-elevated)] text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-30"
                 aria-label="Move section down"
               >
                 <ArrowDown className="h-3.5 w-3.5" />
@@ -148,7 +148,7 @@ export function FooterSectionsEditor({
                 type="button"
                 onClick={() => removeSection(secIdx)}
                 disabled={!editable}
-                className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] text-foreground-secondary transition-colors hover:text-[color:var(--danger)] disabled:opacity-30"
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-[color:var(--background-elevated)] text-foreground-secondary transition-colors hover:text-[color:var(--danger)] disabled:opacity-30"
                 aria-label="Remove section"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -171,7 +171,7 @@ export function FooterSectionsEditor({
                   }
                   disabled={!editable}
                   placeholder="Link label"
-                  className="h-9 w-0 flex-[2] rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+                  className="h-9 w-0 flex-[2] rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
                 />
 
                 {/* Kind select */}
@@ -185,7 +185,7 @@ export function FooterSectionsEditor({
                     })
                   }
                   disabled={!editable}
-                  className="h-9 flex-[1] rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-2 text-sm text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+                  className="h-9 flex-[1] rounded-md border border-border bg-[color:var(--background-elevated)] px-2 text-sm text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
                 >
                   <option value="page">Page</option>
                   <option value="url">URL</option>
@@ -200,7 +200,7 @@ export function FooterSectionsEditor({
                         updateItem(secIdx, itemIdx, { page_slug: e.target.value })
                       }
                       disabled={!editable}
-                      className="h-9 w-0 flex-[2] rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-2 text-sm text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+                      className="h-9 w-0 flex-[2] rounded-md border border-border bg-[color:var(--background-elevated)] px-2 text-sm text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
                     >
                       {pages.map((p) => (
                         <option key={p.id} value={p.slug}>
@@ -222,7 +222,7 @@ export function FooterSectionsEditor({
                     }
                     disabled={!editable}
                     placeholder="https://…"
-                    className="h-9 w-0 flex-[2] rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+                    className="h-9 w-0 flex-[2] rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
                   />
                 )}
 
@@ -232,7 +232,7 @@ export function FooterSectionsEditor({
                     type="button"
                     onClick={() => moveItem(secIdx, itemIdx, -1)}
                     disabled={!editable || itemIdx === 0}
-                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-30"
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-30"
                     aria-label="Move link up"
                   >
                     <ArrowUp className="h-3 w-3" />
@@ -241,7 +241,7 @@ export function FooterSectionsEditor({
                     type="button"
                     onClick={() => moveItem(secIdx, itemIdx, 1)}
                     disabled={!editable || itemIdx === section.items.length - 1}
-                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-30"
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-foreground-secondary transition-colors hover:text-foreground disabled:opacity-30"
                     aria-label="Move link down"
                   >
                     <ArrowDown className="h-3 w-3" />
@@ -250,7 +250,7 @@ export function FooterSectionsEditor({
                     type="button"
                     onClick={() => removeItem(secIdx, itemIdx)}
                     disabled={!editable}
-                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] text-foreground-secondary transition-colors hover:text-[color:var(--danger)] disabled:opacity-30"
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-foreground-secondary transition-colors hover:text-[color:var(--danger)] disabled:opacity-30"
                     aria-label="Remove link"
                   >
                     <Trash2 className="h-3 w-3" />
@@ -279,7 +279,7 @@ export function FooterSectionsEditor({
           type="button"
           onClick={addSection}
           disabled={!editable || !canAddSection}
-          className="flex items-center gap-2 rounded-[var(--radius)] border border-dashed border-border px-4 py-2 text-sm text-foreground-secondary transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] disabled:opacity-40"
+          className="flex items-center gap-2 rounded-md border border-dashed border-border px-4 py-2 text-sm text-foreground-secondary transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] disabled:opacity-40"
         >
           <Plus className="h-4 w-4" />
           Add section

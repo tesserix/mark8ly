@@ -70,7 +70,7 @@ export function HeroEditor({ value, onChange, pages, editable, layoutVariant, st
         description="The banner at the very top of your homepage. Leave fields blank to fall back to your store name."
       />
 
-      <div className="flex items-center justify-between rounded-[var(--radius)] border border-border px-4 py-3">
+      <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
         <div>
           <p className="text-sm font-medium text-foreground">Show hero</p>
           <p className="mt-0.5 text-xs text-foreground-secondary">
@@ -268,7 +268,7 @@ function CtaUrlPicker({
     <div className="space-y-2">
       {pages.length > 0 ? (
         <select
-          className="h-10 w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
+          className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
           value={matched ? matched.slug : ""}
           onChange={(e) => {
             const slug = e.target.value;

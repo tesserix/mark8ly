@@ -133,7 +133,7 @@ export function HomepageTab({
 
       <div className="border-t border-border-subtle pt-10">
         {isEmpty ? (
-          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-dashed border-border px-4 py-3 text-sm">
+          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-md border border-dashed border-border px-4 py-3 text-sm">
             <span className="rounded-full bg-[color:var(--moss-700)]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--moss-700)]">
               Using theme defaults
             </span>

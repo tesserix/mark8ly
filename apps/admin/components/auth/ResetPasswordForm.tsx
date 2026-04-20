@@ -67,7 +67,7 @@ export function ResetPasswordForm({ oobCode }: ResetPasswordFormProps) {
         </div>
         <Link
           href="/forgot-password"
-          className="inline-flex h-10 items-center rounded-[var(--radius)] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-800)]"
+          className="inline-flex h-10 items-center rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-800)]"
         >
           Request new link
         </Link>
@@ -103,7 +103,7 @@ export function ResetPasswordForm({ oobCode }: ResetPasswordFormProps) {
         </div>
         <Link
           href="/login"
-          className="inline-flex h-10 items-center rounded-[var(--radius)] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-800)]"
+          className="inline-flex h-10 items-center rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-800)]"
         >
           Go to sign in
         </Link>

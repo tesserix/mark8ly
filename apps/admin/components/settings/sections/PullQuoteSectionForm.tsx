@@ -25,7 +25,7 @@ export function PullQuoteSectionForm({ section, onChange, editable }: Props) {
           disabled={!editable}
           maxLength={500}
           placeholder="A short, memorable line."
-          className="w-full rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+          className="w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
         />
         <p className="text-xs text-foreground-secondary">
           Rendered as an editorial pull quote — styling varies by layout.

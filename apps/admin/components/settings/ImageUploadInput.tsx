@@ -73,7 +73,7 @@ export function ImageUploadInput({
       ) : null}
 
       {value ? (
-        <div className="flex items-start gap-3 rounded-[var(--radius)] border border-border bg-[color:var(--background-elevated)] p-3">
+        <div className="flex items-start gap-3 rounded-md border border-border bg-[color:var(--background-elevated)] p-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={value}
@@ -108,7 +108,7 @@ export function ImageUploadInput({
           type="button"
           onClick={onClick}
           disabled={disabled || uploading}
-          className="flex w-full flex-col items-center justify-center gap-2 rounded-[var(--radius)] border border-dashed border-border bg-[color:var(--background-elevated)] px-4 py-6 text-sm text-foreground-secondary transition-colors hover:border-[color:var(--moss-700)] hover:text-foreground disabled:opacity-50"
+          className="flex w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-[color:var(--background-elevated)] px-4 py-6 text-sm text-foreground-secondary transition-colors hover:border-[color:var(--moss-700)] hover:text-foreground disabled:opacity-50"
         >
           <Upload className="h-5 w-5" />
           <span>{uploading ? `Uploading… ${progress}%` : "Click to upload an image"}</span>

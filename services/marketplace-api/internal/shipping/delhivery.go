@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,14 @@ import (
 
 	"github.com/shopspring/decimal"
 )
+
+// ErrPickupAlreadyScheduled is returned by SchedulePickup when
+// Delhivery rejects the request because an equivalent pickup already
+// exists for the (warehouse, date) pair. Callers treat this as a
+// non-fatal signal — the pickup was already booked, by us or by a
+// previous retry — and proceed as if success. This mirrors
+// gorm.ErrRecordNotFound in shape: compare with errors.Is.
+var ErrPickupAlreadyScheduled = errors.New("delhivery: pickup already scheduled for this warehouse + date")
 
 const (
 	delhiveryLiveURL    = "https://track.delhivery.com"
@@ -617,6 +626,215 @@ func delhiveryWarehouseMissing(body string) bool {
 	lower := strings.ToLower(body)
 	return strings.Contains(lower, "clientwarehouse matching query does not exist") ||
 		strings.Contains(lower, "warehouse matching query does not exist")
+}
+
+// SchedulePickup requests a Delhivery pickup-executive dispatch for the
+// merchant's warehouse on the given date and slot. Without this call,
+// a freshly-created waybill stays at "Manifested" status on
+// one.delhivery.com and the merchant has to click "Add to Pickup"
+// manually before a pickup agent is routed. Calling this endpoint
+// closes that gap so the admin "Create shipping label" click is
+// genuinely one-shot.
+//
+// Delhivery quirks this implementation pins:
+//
+//  1. Endpoint is /fm/request/new/ with a trailing slash — omitting
+//     the trailing slash 404s on production. The body is JSON, not
+//     form-encoded (the /api/cmu/create.json path differs here).
+//  2. Success path: HTTP 200 + {"pr_id": 12345, "pickup_id": 12345,
+//     ...}. Delhivery aliases pr_id and pickup_id in different
+//     responses; we accept either.
+//  3. Duplicate path: HTTP 400 with a body containing "already" +
+//     "scheduled"/"exists" in some field. Translated to
+//     ErrPickupAlreadyScheduled so the caller can treat it as
+//     success with unknown-id metadata.
+//  4. Wallet / token failures: surface verbatim so the operator can
+//     self-diagnose. Observed shapes:
+//       {"prepaid":"Client wallet balance is 298.48 which is less than 500.0"}
+//       {"detail":"Invalid token"}
+//
+// ExpectedPackageCount defaults to max(1, req.ExpectedPackageCount)
+// because the endpoint rejects 0 with "expected_package_count must be
+// a positive integer".
+func (c *DelhiveryCarrier) SchedulePickup(ctx context.Context, req PickupRequest) (*Pickup, error) {
+	if strings.TrimSpace(req.WarehouseName) == "" {
+		return nil, fmt.Errorf("delhivery: schedule pickup: warehouse_name is required")
+	}
+	if req.Date.IsZero() {
+		return nil, fmt.Errorf("delhivery: schedule pickup: date is required")
+	}
+	timeStart := strings.TrimSpace(req.TimeStart)
+	if timeStart == "" {
+		timeStart = "14:00:00"
+	}
+	pkgCount := req.ExpectedPackageCount
+	if pkgCount <= 0 {
+		pkgCount = 1
+	}
+	dateStr := req.Date.Format("2006-01-02")
+
+	body := map[string]any{
+		"pickup_location":        req.WarehouseName,
+		"pickup_date":            dateStr,
+		"pickup_time":            timeStart,
+		"expected_package_count": pkgCount,
+	}
+	resp, err := c.doJSONRequest(ctx, http.MethodPost, "/fm/request/new/", body)
+	if err != nil {
+		return nil, fmt.Errorf("delhivery: schedule pickup: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("delhivery: schedule pickup: read body: %w", readErr)
+	}
+
+	// Build the combined ScheduledFor timestamp once — both branches
+	// reuse it. Falls back to the date-only midnight UTC if the time
+	// slot is malformed, so callers never see a zero-value time.
+	scheduledFor := combinePickupDateTime(req.Date, timeStart)
+
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+		pickupID, parseErr := parseDelhiveryPickupID(raw)
+		if parseErr != nil {
+			return nil, fmt.Errorf("delhivery: schedule pickup: %w (body=%s)",
+				parseErr, truncate(string(raw), 400))
+		}
+		return &Pickup{
+			ProviderPickupID: pickupID,
+			ScheduledFor:     scheduledFor,
+			RawResponse:      raw,
+		}, nil
+	}
+
+	// Duplicate detection. Delhivery sometimes returns 400, sometimes
+	// 409 — treat any non-2xx whose body hints at duplication as the
+	// idempotent path. We also accept the phrase "already added" which
+	// Delhivery uses when the pickup has been rolled into an existing
+	// request for the same warehouse + date.
+	if isDelhiveryDuplicatePickup(raw) {
+		return &Pickup{
+			ProviderPickupID: "already-scheduled",
+			ScheduledFor:     scheduledFor,
+			RawResponse:      raw,
+		}, ErrPickupAlreadyScheduled
+	}
+
+	return nil, fmt.Errorf("delhivery: schedule pickup: status=%d body=%s",
+		resp.StatusCode, truncate(string(raw), 400))
+}
+
+// parseDelhiveryPickupID pulls Delhivery's pickup identifier out of a
+// success body. The endpoint is inconsistent across docs and responses —
+// real observed keys include pr_id (numeric), pickup_id (numeric), and
+// pickup_request_id (numeric). We accept any of them. Numbers are
+// coerced to string via json.Number so we don't lose precision on the
+// larger IDs.
+func parseDelhiveryPickupID(body []byte) (string, error) {
+	var env struct {
+		PrID            json.Number `json:"pr_id"`
+		PickupID        json.Number `json:"pickup_id"`
+		PickupRequestID json.Number `json:"pickup_request_id"`
+		IncomingName    string      `json:"incoming_center_name"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&env); err != nil {
+		return "", fmt.Errorf("decode pickup response: %w", err)
+	}
+	for _, candidate := range []json.Number{env.PrID, env.PickupID, env.PickupRequestID} {
+		s := strings.TrimSpace(string(candidate))
+		if s != "" && s != "0" {
+			return s, nil
+		}
+	}
+	// Some older Delhivery endpoints returned the pickup_id as a plain
+	// string inside an "id" field. Fall through to a permissive scan.
+	var fallback map[string]any
+	if err := json.Unmarshal(body, &fallback); err == nil {
+		for _, k := range []string{"id", "request_id"} {
+			if v, ok := fallback[k]; ok {
+				if s, ok := v.(string); ok && s != "" {
+					return s, nil
+				}
+				if n, ok := v.(json.Number); ok && n != "" {
+					return string(n), nil
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("no pickup id in response")
+}
+
+// isDelhiveryDuplicatePickup scans the response body for the phrases
+// Delhivery uses when a pickup already exists for the submitted
+// (warehouse, date). Delhivery has used at least three wordings in the
+// wild, hence the multi-pattern check.
+func isDelhiveryDuplicatePickup(body []byte) bool {
+	lower := strings.ToLower(string(body))
+	if !strings.Contains(lower, "already") {
+		return false
+	}
+	switch {
+	case strings.Contains(lower, "already scheduled"),
+		strings.Contains(lower, "already exists"),
+		strings.Contains(lower, "already added"),
+		strings.Contains(lower, "pickup already"):
+		return true
+	}
+	return false
+}
+
+// combinePickupDateTime merges a YYYY-MM-DD date and an "HH:MM:SS" slot
+// into a single time.Time. IST (Asia/Kolkata) is the source timezone
+// because Delhivery expresses all pickup windows in India-local time on
+// the dashboard, but we return UTC so the DB's timestamptz columns
+// remain consistent. Falls back to the date at UTC midnight on parse
+// failure — better a slightly-wrong display than a zero-value time
+// that blows up downstream formatters.
+func combinePickupDateTime(date time.Time, slot string) time.Time {
+	loc, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		loc = time.UTC
+	}
+	y, m, d := date.Date()
+	parts := strings.Split(slot, ":")
+	if len(parts) < 2 {
+		return time.Date(y, m, d, 0, 0, 0, 0, loc).UTC()
+	}
+	hh, _ := strconvAtoi(parts[0])
+	mm, _ := strconvAtoi(parts[1])
+	ss := 0
+	if len(parts) >= 3 {
+		ss, _ = strconvAtoi(parts[2])
+	}
+	return time.Date(y, m, d, hh, mm, ss, 0, loc).UTC()
+}
+
+// strconvAtoi is a tiny local helper that swallows errors for the slot
+// parser; invalid segments degrade gracefully to zero rather than
+// failing the whole pickup write. Kept local to avoid importing
+// "strconv" just for one two-line helper.
+func strconvAtoi(s string) (int, error) {
+	n := 0
+	neg := false
+	if strings.HasPrefix(s, "-") {
+		neg = true
+		s = s[1:]
+	}
+	if s == "" {
+		return 0, fmt.Errorf("empty")
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, fmt.Errorf("not a digit: %q", r)
+		}
+		n = n*10 + int(r-'0')
+	}
+	if neg {
+		n = -n
+	}
+	return n, nil
 }
 
 // --- helpers ---

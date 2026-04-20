@@ -15,7 +15,9 @@ import {
   emailShipmentLabel,
   refreshShipmentTracking,
   deleteShipment,
+  schedulePickup,
   type CreateShipmentInput,
+  type SchedulePickupInput,
   type ShipmentResponse,
 } from "@/lib/api/shipping-api";
 
@@ -202,6 +204,33 @@ export async function refreshShipmentTrackingAction(
   if (!ctx) return noSession();
 
   const result = await refreshShipmentTracking(ctx.storeId, orderId, shipmentId, {
+    userId: ctx.userId,
+    tenantId: ctx.tenantId,
+  });
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: { code: result.error.code, message: result.error.message },
+    };
+  }
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true, data: result.data };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Schedule / reschedule a carrier pickup.
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function schedulePickupAction(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  input: SchedulePickupInput,
+): Promise<ShippingActionResult> {
+  const ctx = await readContext(storeId);
+  if (!ctx) return noSession();
+
+  const result = await schedulePickup(ctx.storeId, orderId, shipmentId, input, {
     userId: ctx.userId,
     tenantId: ctx.tenantId,
   });

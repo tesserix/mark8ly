@@ -5,6 +5,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -229,6 +230,14 @@ type ShipmentResponse struct {
 	Status             string     `json:"status"`
 	CurrencyCode       string     `json:"currency_code"`
 	EstimatedDelivery  *time.Time `json:"estimated_delivery,omitempty"`
+	// Pickup scheduling. PickupRequestID is Delhivery's pr_id (or the
+	// "already-scheduled" sentinel) and PickupScheduledFor combines
+	// the date + slot-start into a single UTC timestamp so the admin
+	// UI can render "Pickup: Fri, Apr 21, 14:00" without having to
+	// re-derive the slot. Both omitempty — legacy shipments written
+	// before the pickup flow shipped leave them null.
+	PickupRequestID    string     `json:"pickup_request_id,omitempty"`
+	PickupScheduledFor *time.Time `json:"pickup_scheduled_for,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 }
 
@@ -244,6 +253,8 @@ func toShipmentResponse(rec *shipping.ShipmentRecord) ShipmentResponse {
 		Status:             rec.Status,
 		CurrencyCode:       rec.CurrencyCode,
 		EstimatedDelivery:  rec.EstimatedDelivery,
+		PickupRequestID:    rec.PickupRequestID,
+		PickupScheduledFor: rec.PickupScheduledFor,
 		CreatedAt:          rec.CreatedAt,
 	}
 }
@@ -484,6 +495,20 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		}
 	}
 
+	// Auto-schedule a Delhivery pickup so the waybill doesn't sit at
+	// "Manifested" waiting for the merchant to click "Add to Pickup"
+	// on one.delhivery.com. Only runs when the carrier implements
+	// PickupScheduler AND the carrier-config has the master toggle
+	// on. Failures here are deliberately non-fatal — the shipment
+	// row is already committed and the merchant can retry via the
+	// manual reschedule endpoint. Runs before the timeline event so
+	// a successful pickup shows up on the same render cycle.
+	if carrierCfg.AutoSchedulePickup {
+		if ps, ok := carrier.(shipping.PickupScheduler); ok {
+			h.tryAutoSchedulePickup(ctx, rec, ps, carrierCfg)
+		}
+	}
+
 	// Timeline event — customer order-detail page reads order_events to
 	// render the tracking feed. Failures here only log; the shipment
 	// still persisted successfully.
@@ -491,6 +516,226 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		"Shipping label created — package will be picked up shortly.")
 
 	c.JSON(http.StatusCreated, toShipmentResponse(rec))
+}
+
+// tryAutoSchedulePickup calls SchedulePickup with the next-business-day
+// default and persists the pr_id on the shipment row. Errors log WARN
+// but never return — the caller's Create response must not fail just
+// because Delhivery's pickup endpoint had a hiccup. Duplicates (same
+// warehouse + date already booked) are treated as success so the
+// merchant isn't punished for retrying a shipment on the same day.
+func (h *ShipmentsHandler) tryAutoSchedulePickup(
+	ctx context.Context,
+	rec *shipping.ShipmentRecord,
+	ps shipping.PickupScheduler,
+	cfg *shipping.CarrierConfig,
+) {
+	slot := strings.TrimSpace(cfg.DefaultPickupSlotStart)
+	if slot == "" {
+		slot = "14:00:00"
+	}
+	date := nextBusinessDay(time.Now().UTC())
+	req := shipping.PickupRequest{
+		WarehouseName:        cfg.WarehouseName,
+		Date:                 date,
+		TimeStart:            slot,
+		ExpectedPackageCount: 1,
+	}
+	p, err := ps.SchedulePickup(ctx, req)
+	if err != nil && !errors.Is(err, shipping.ErrPickupAlreadyScheduled) {
+		if h.logger != nil {
+			h.logger.Warn("shipments: auto-schedule pickup failed",
+				"shipment_id", rec.ID.String(),
+				"carrier", rec.Carrier,
+				"warehouse", cfg.WarehouseName,
+				"date", date.Format("2006-01-02"),
+				"err", err)
+		}
+		return
+	}
+	// Success or duplicate — persist the pickup metadata and append a
+	// timeline event either way. The duplicate path still has a valid
+	// ScheduledFor on the Pickup so the admin UI "Pickup: <time>" row
+	// renders even though the carrier didn't echo back a fresh id.
+	if p == nil {
+		return
+	}
+	updates := map[string]any{
+		"pickup_request_id":    p.ProviderPickupID,
+		"pickup_scheduled_for": p.ScheduledFor,
+		"updated_at":           time.Now().UTC(),
+	}
+	if err := h.db.WithContext(ctx).
+		Table("shipments").
+		Where("id = ?", rec.ID).
+		Updates(updates).Error; err != nil {
+		if h.logger != nil {
+			h.logger.Warn("shipments: persist pickup metadata failed",
+				"shipment_id", rec.ID.String(), "err", err)
+		}
+		return
+	}
+	rec.PickupRequestID = p.ProviderPickupID
+	rec.PickupScheduledFor = &p.ScheduledFor
+
+	desc := fmt.Sprintf("Pickup scheduled for %s.", p.ScheduledFor.Format("Mon, Jan 2 at 15:04"))
+	if errors.Is(err, shipping.ErrPickupAlreadyScheduled) {
+		desc = fmt.Sprintf("Pickup already on schedule for %s.", p.ScheduledFor.Format("Mon, Jan 2"))
+	}
+	h.appendShipmentEvent(ctx, rec.OrderID, rec, order.EventKindPickupScheduled, desc)
+
+	if h.logger != nil {
+		h.logger.Info("shipments: pickup scheduled",
+			"shipment_id", rec.ID.String(),
+			"pickup_request_id", p.ProviderPickupID,
+			"scheduled_for", p.ScheduledFor,
+			"duplicate", errors.Is(err, shipping.ErrPickupAlreadyScheduled))
+	}
+}
+
+// nextBusinessDay returns the next Mon–Sat date after t. Delhivery
+// treats Sundays as non-operational — submitting a Sunday pickup_date
+// is accepted silently but no agent is dispatched — so we skip to
+// Monday. We deliberately do NOT handle Indian public holidays here:
+// the calendar is long, merchant-specific, and Delhivery's own UI
+// handles the rollover on their side. Merchants who need a precise
+// date can still use the manual reschedule endpoint.
+func nextBusinessDay(t time.Time) time.Time {
+	d := t.AddDate(0, 0, 1)
+	for d.Weekday() == time.Sunday {
+		d = d.AddDate(0, 0, 1)
+	}
+	return d
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Manual pickup reschedule — POST .../shipments/:shipmentId/pickup/schedule
+// ─────────────────────────────────────────────────────────────────────────
+
+// SchedulePickupRequest is the wire body for manual pickup scheduling.
+// Both fields are optional; blank values fall back to the carrier
+// config's default_pickup_slot_start and the next business day from
+// now. Date format matches Delhivery's — "YYYY-MM-DD".
+type SchedulePickupRequest struct {
+	Date      string `json:"date"`
+	SlotStart string `json:"slot_start"`
+}
+
+// SchedulePickup handles POST
+// /admin/stores/:storeId/orders/:id/shipments/:shipmentId/pickup/schedule.
+// Merchants hit this from the "Reschedule pickup" button in the admin
+// order panel when the auto-schedule on create missed (wallet low,
+// carrier outage) or they want to move the pickup to a different day.
+// Returns the updated shipment DTO so the client can echo the new row
+// without a separate refetch.
+func (h *ShipmentsHandler) SchedulePickup(c *gin.Context) {
+	ctx := c.Request.Context()
+	storeID := c.Param("storeId")
+	orderID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	shipmentID, err := uuid.Parse(c.Param("shipmentId"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("shipmentId", "must be a uuid"), h.logger)
+		return
+	}
+
+	var req SchedulePickupRequest
+	// Body is optional on this endpoint — the empty-body "use the
+	// defaults" case is the most common manual action. Tolerate the
+	// missing-body / invalid-json case by treating it as zero.
+	_ = c.ShouldBindJSON(&req)
+
+	rec, err := h.repo.GetShipmentByID(ctx, shipmentID)
+	if err != nil || rec.OrderID != orderID || rec.StoreID.String() != storeID {
+		RespondErr(c, apperrors.NotFound("shipment"), h.logger)
+		return
+	}
+
+	carrierCfg, err := h.repo.GetCarrierConfig(ctx, storeID, rec.Carrier)
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("provider",
+			fmt.Sprintf("no active carrier config for %q", rec.Carrier)), h.logger)
+		return
+	}
+	apiKey, secretKey, err := h.resolveCarrierCreds(ctx, carrierCfg)
+	if err != nil {
+		RespondErr(c, fmt.Errorf("shipments: %w", err), h.logger)
+		return
+	}
+	h.maybeRewrapCarrierCreds(ctx, carrierCfg, apiKey, secretKey)
+	carrier, err := shipping.NewCarrier(rec.Carrier, apiKey, secretKey, carrierCfg.Mode)
+	if err != nil {
+		RespondErr(c, fmt.Errorf("shipments: create carrier: %w", err), h.logger)
+		return
+	}
+
+	ps, ok := carrier.(shipping.PickupScheduler)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+			"error":   "unsupported_by_carrier",
+			"message": fmt.Sprintf("carrier %q does not support pickup scheduling", rec.Carrier),
+		})
+		return
+	}
+
+	// Resolve date: explicit request > next business day from now.
+	date := nextBusinessDay(time.Now().UTC())
+	if strings.TrimSpace(req.Date) != "" {
+		parsed, perr := time.Parse("2006-01-02", strings.TrimSpace(req.Date))
+		if perr != nil {
+			RespondErr(c, apperrors.ValidationFailed("date", "must be YYYY-MM-DD"), h.logger)
+			return
+		}
+		date = parsed
+	}
+	// Resolve slot: explicit request > config default > 14:00:00.
+	slot := strings.TrimSpace(req.SlotStart)
+	if slot == "" {
+		slot = strings.TrimSpace(carrierCfg.DefaultPickupSlotStart)
+	}
+	if slot == "" {
+		slot = "14:00:00"
+	}
+
+	p, schedErr := ps.SchedulePickup(ctx, shipping.PickupRequest{
+		WarehouseName:        carrierCfg.WarehouseName,
+		Date:                 date,
+		TimeStart:            slot,
+		ExpectedPackageCount: 1,
+	})
+	if schedErr != nil && !errors.Is(schedErr, shipping.ErrPickupAlreadyScheduled) {
+		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+			"error":   "pickup_schedule_failed",
+			"message": schedErr.Error(),
+		})
+		return
+	}
+
+	updates := map[string]any{
+		"pickup_request_id":    p.ProviderPickupID,
+		"pickup_scheduled_for": p.ScheduledFor,
+		"updated_at":           time.Now().UTC(),
+	}
+	if err := h.db.WithContext(ctx).
+		Table("shipments").
+		Where("id = ?", shipmentID).
+		Updates(updates).Error; err != nil {
+		RespondErr(c, fmt.Errorf("shipments: persist pickup: %w", err), h.logger)
+		return
+	}
+	rec.PickupRequestID = p.ProviderPickupID
+	rec.PickupScheduledFor = &p.ScheduledFor
+
+	desc := fmt.Sprintf("Pickup rescheduled for %s.", p.ScheduledFor.Format("Mon, Jan 2 at 15:04"))
+	if errors.Is(schedErr, shipping.ErrPickupAlreadyScheduled) {
+		desc = fmt.Sprintf("Pickup already on schedule for %s.", p.ScheduledFor.Format("Mon, Jan 2"))
+	}
+	h.appendShipmentEvent(ctx, rec.OrderID, rec, order.EventKindPickupScheduled, desc)
+
+	c.JSON(http.StatusOK, toShipmentResponse(rec))
 }
 
 // derefStringPtr returns "" when the input is nil — used while building

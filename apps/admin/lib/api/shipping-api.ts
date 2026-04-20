@@ -30,12 +30,26 @@ export interface ShipmentResponse {
   status: string;
   currency_code: string;
   estimated_delivery?: string;
+  /** Delhivery pr_id / pickup_id (or "already-scheduled" sentinel). */
+  pickup_request_id?: string;
+  /** UTC timestamp combining pickup date + slot start. */
+  pickup_scheduled_for?: string;
   created_at: string;
 }
 
 export interface CreateShipmentInput {
   provider: string;
   service: string;
+}
+
+/**
+ * Input for (re)scheduling a Delhivery pickup. Both fields are
+ * optional; blank date falls back to the next business day and blank
+ * slot falls back to the carrier config's default_pickup_slot_start.
+ */
+export interface SchedulePickupInput {
+  date?: string; // "YYYY-MM-DD"
+  slot_start?: string; // "HH:MM:SS"
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -243,6 +257,33 @@ export async function refreshShipmentTracking(
     method: "POST",
     cache: "no-store",
     headers: commonHeaders(session),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as ShipmentResponse };
+}
+
+/**
+ * Request a carrier pickup for the shipment. Used by the "Reschedule
+ * pickup" button in the admin order panel AND as the fallback when
+ * auto-schedule-on-create missed (e.g. wallet balance low). The
+ * backend accepts an empty body and applies the sensible defaults
+ * (next business day, carrier config's default slot).
+ */
+export async function schedulePickup(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  input: SchedulePickupInput,
+  session: SessionHeaders,
+): Promise<MutationResult<ShipmentResponse>> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/shipments/${shipmentId}/pickup/schedule`;
+  const res = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    headers: commonHeaders(session),
+    body: JSON.stringify(input),
   });
   if (!res.ok) {
     return { ok: false, error: await parseMutationError(res) };

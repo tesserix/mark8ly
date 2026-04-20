@@ -34,6 +34,13 @@ const (
 	EventKindShipmentOutForDelivery EventKind = "shipment_out_for_delivery"
 	EventKindShipmentDelivered      EventKind = "shipment_delivered"
 	EventKindShipmentException      EventKind = "shipment_exception"
+	// EventKindPickupScheduled fires when the carrier has accepted a
+	// pickup request for the shipment (either freshly scheduled or
+	// recognised as an idempotent duplicate). Appending this to the
+	// order timeline lets the customer-facing tracking feed render
+	// "Pickup scheduled for Fri, Apr 21" even before the waybill has
+	// moved off Manifested.
+	EventKindPickupScheduled EventKind = "pickup_scheduled"
 )
 
 // ShipmentEventPayload is written for every shipment lifecycle event.

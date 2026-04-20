@@ -25,6 +25,7 @@ import {
   emailShipmentLabelAction,
   refreshShipmentTrackingAction,
   deleteShipmentAction,
+  schedulePickupAction,
   type ShippingActionResult,
 } from "@/app/(admin)/orders/[id]/shipping-actions";
 
@@ -170,6 +171,13 @@ function ShipmentDetails({
       })
     : null;
 
+  // Pickup line. Only render when the carrier has scheduled one —
+  // pre-auto-schedule shipments leave this null and we hide the row
+  // entirely. Format matches the task spec: "Fri, Apr 21, 14:00".
+  const pickup = shipment.pickup_scheduled_for
+    ? formatPickupDisplay(shipment.pickup_scheduled_for)
+    : null;
+
   // Waybills starting with TEST-DLV- were written by the old test-mode
   // stub that fabricated a tracking number when Delhivery rejected the
   // create call. Delhivery never heard of these IDs, so every Download
@@ -188,6 +196,7 @@ function ShipmentDetails({
         <DetailRow label="Tracking" value={shipment.tracking_number || "Pending"} />
         <DetailRow label="Status" value={shipment.status} />
         {eta && <DetailRow label="ETA" value={eta} />}
+        {pickup && <DetailRow label="Pickup" value={pickup} />}
       </div>
       {isStub && (
         <div
@@ -244,6 +253,15 @@ function LabelActions({
   const [downloadErr, setDownloadErr] = useState<string | null>(null);
   const [deletePending, deleteStartTransition] = useTransition();
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  // Pickup reschedule popover state. Kept local to LabelActions so the
+  // rest of the panel doesn't need to know the slot catalogue.
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState(defaultRescheduleDate);
+  const [rescheduleSlot, setRescheduleSlot] = useState("14:00:00");
+  const [reschedulePending, rescheduleStartTransition] = useTransition();
+  const [rescheduleMsg, setRescheduleMsg] = useState<
+    { kind: "ok" | "err"; text: string } | null
+  >(null);
 
   const sendEmail = useCallback(
     (e: React.FormEvent) => {
@@ -324,6 +342,32 @@ function LabelActions({
     }
   }, [labelProxyURL, shipment.id, shipment.tracking_number]);
 
+  const reschedulePickup = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      setRescheduleMsg(null);
+      rescheduleStartTransition(async () => {
+        const r = await schedulePickupAction(storeId, orderId, shipment.id, {
+          date: rescheduleDate || undefined,
+          slot_start: rescheduleSlot || undefined,
+        });
+        if (!r.ok) {
+          setRescheduleMsg({
+            kind: "err",
+            text: r.error?.message ?? "Reschedule failed.",
+          });
+          return;
+        }
+        if (r.data) {
+          onUpdated(r.data);
+          setRescheduleMsg({ kind: "ok", text: "Pickup rescheduled." });
+          setShowReschedule(false);
+        }
+      });
+    },
+    [storeId, orderId, shipment.id, rescheduleDate, rescheduleSlot, onUpdated],
+  );
+
   const clearShipment = useCallback(() => {
     setDeleteErr(null);
     deleteStartTransition(async () => {
@@ -373,6 +417,22 @@ function LabelActions({
         </button>
         <button
           type="button"
+          onClick={() => {
+            setShowReschedule((v) => !v);
+            setRescheduleMsg(null);
+          }}
+          disabled={isStub || reschedulePending}
+          title={
+            isStub
+              ? "Mock tracking number — delete and recreate before scheduling pickup"
+              : undefined
+          }
+          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {showReschedule ? "Cancel reschedule" : "Reschedule pickup"}
+        </button>
+        <button
+          type="button"
           onClick={clearShipment}
           disabled={deletePending}
           className="inline-flex items-center gap-2 rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 transition-colors hover:border-red-500 hover:text-red-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -394,6 +454,57 @@ function LabelActions({
         <p className="text-xs text-[color:var(--ink-900)] opacity-70">
           {refreshMsg}
         </p>
+      )}
+      {showReschedule && (
+        <form
+          onSubmit={reschedulePickup}
+          className="flex flex-col gap-2 rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-3"
+        >
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+              Pickup date
+              <input
+                type="date"
+                value={rescheduleDate}
+                onChange={(e) => setRescheduleDate(e.target.value)}
+                className="rounded-md border border-[color:var(--ink-900)]/30 px-3 py-2 text-sm normal-case tracking-normal text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+              Slot
+              <select
+                value={rescheduleSlot}
+                onChange={(e) => setRescheduleSlot(e.target.value)}
+                className="rounded-md border border-[color:var(--ink-900)]/30 px-3 py-2 text-sm normal-case tracking-normal text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none"
+              >
+                <option value="10:00:00">Morning (10–14)</option>
+                <option value="14:00:00">Afternoon (14–18)</option>
+                <option value="16:00:00">Evening (16–20)</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={reschedulePending}
+              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {reschedulePending ? "Scheduling…" : "Schedule pickup"}
+            </button>
+          </div>
+          {rescheduleMsg && (
+            <p
+              role={rescheduleMsg.kind === "err" ? "alert" : "status"}
+              className={`text-xs ${
+                rescheduleMsg.kind === "ok"
+                  ? "text-[color:var(--moss-700)]"
+                  : "text-red-700"
+              }`}
+            >
+              {rescheduleMsg.text}
+            </p>
+          )}
+        </form>
       )}
       {showEmailForm && (
         <form onSubmit={sendEmail} className="flex flex-col gap-2 pt-2">
@@ -490,6 +601,39 @@ function AdvanceStatusBar({
       ))}
     </div>
   );
+}
+
+// formatPickupDisplay turns the shipment's pickup_scheduled_for
+// (RFC3339 UTC) into the admin-panel "Pickup: Fri, Apr 21, 14:00"
+// copy. Rendered in the caller's locale so an Indian warehouse
+// operator sees IST even though the column is UTC in the DB.
+function formatPickupDisplay(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const day = d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const time = d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return `${day}, ${time}`;
+}
+
+// defaultRescheduleDate pre-fills the reschedule input with
+// "today + 1 day" so the merchant doesn't need to type a date for
+// the common "bump by one day" case. Format must match <input
+// type="date">: YYYY-MM-DD in local time.
+function defaultRescheduleDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {

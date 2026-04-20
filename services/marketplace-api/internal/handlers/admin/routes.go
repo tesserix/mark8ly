@@ -345,6 +345,14 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					orders.DELETE("/:id/shipments/:shipmentId",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
 						deps.ShipmentsHandler.Delete)
+					// Manual pickup (re)schedule — complements the
+					// auto-schedule that fires on Create. Merchants
+					// hit this from the "Reschedule pickup" button
+					// when auto-schedule missed (wallet low) or they
+					// want to move the pickup to a different day.
+					orders.POST("/:id/shipments/:shipmentId/pickup/schedule",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.SchedulePickup)
 				}
 			}
 		}

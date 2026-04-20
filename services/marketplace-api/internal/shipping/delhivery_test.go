@@ -2,11 +2,14 @@ package shipping
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestDelhivery_CreateShipment_SendsTokenAsBearer pins the regression
@@ -424,6 +427,166 @@ func TestDelhivery_FetchLabel_S3NotPDF(t *testing.T) {
 	_, _, err := c.FetchLabel(context.Background(), "WB404")
 	if err == nil || !strings.Contains(err.Error(), "not a PDF") {
 		t.Fatalf("expected 'not a PDF' error, got %v", err)
+	}
+}
+
+// TestDelhivery_SchedulePickup_Success pins the happy path. Delhivery
+// returns HTTP 200 with a pr_id / pickup_id numeric body; we must
+// populate ProviderPickupID, ScheduledFor, and carry the raw body
+// through for audit.
+func TestDelhivery_SchedulePickup_Success(t *testing.T) {
+	var gotPath, gotAuth, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"pr_id":987654,"pickup_id":987654,"incoming_center_name":"Pune_H","success":"Request received"}`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "plaintext-token", mode: "live", baseURL: srv.URL, client: srv.Client()}
+
+	date, _ := time.Parse("2006-01-02", "2026-04-25")
+	p, err := c.SchedulePickup(context.Background(), PickupRequest{
+		WarehouseName:        "Primary",
+		Date:                 date,
+		TimeStart:            "14:00:00",
+		ExpectedPackageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("SchedulePickup returned %v", err)
+	}
+	if p.ProviderPickupID != "987654" {
+		t.Errorf("ProviderPickupID = %q, want 987654", p.ProviderPickupID)
+	}
+	if p.ScheduledFor.IsZero() {
+		t.Error("ScheduledFor should be populated")
+	}
+	if len(p.RawResponse) == 0 {
+		t.Error("RawResponse should carry the upstream body")
+	}
+	if gotPath != "/fm/request/new/" {
+		t.Errorf("path = %q, want /fm/request/new/", gotPath)
+	}
+	if gotAuth != "Token plaintext-token" {
+		t.Errorf("Authorization = %q, want Token plaintext-token", gotAuth)
+	}
+	// Verify the request body shape — names match Delhivery's API.
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(gotBody), &parsed); err != nil {
+		t.Fatalf("request body is not valid JSON: %v (body=%s)", err, gotBody)
+	}
+	if parsed["pickup_location"] != "Primary" {
+		t.Errorf("pickup_location = %v, want Primary", parsed["pickup_location"])
+	}
+	if parsed["pickup_date"] != "2026-04-25" {
+		t.Errorf("pickup_date = %v, want 2026-04-25", parsed["pickup_date"])
+	}
+	if parsed["pickup_time"] != "14:00:00" {
+		t.Errorf("pickup_time = %v, want 14:00:00", parsed["pickup_time"])
+	}
+	// expected_package_count arrives as float64 from JSON unmarshal.
+	if cnt, ok := parsed["expected_package_count"].(float64); !ok || cnt != 1 {
+		t.Errorf("expected_package_count = %v, want 1", parsed["expected_package_count"])
+	}
+}
+
+// TestDelhivery_SchedulePickup_DuplicateIsNotFatal confirms that when
+// Delhivery rejects the request with the "already scheduled" signal we
+// return ErrPickupAlreadyScheduled AND a populated Pickup with the
+// sentinel ID, so the caller can keep the shipment flow moving without
+// having to parse the error string. This is the whole point of the
+// interface contract — upstream must distinguish "already booked" from
+// "failed to book" because the remediation is opposite (persist the
+// schedule vs. retry later).
+func TestDelhivery_SchedulePickup_DuplicateIsNotFatal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// 400 is what Delhivery actually returns for this case on
+		// production — the earlier fm/request endpoint used 200 with
+		// success:false but the new path is status-coded.
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"pr_exists":"pickup already scheduled for this client warehouse on this date"}`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	date, _ := time.Parse("2006-01-02", "2026-04-25")
+	p, err := c.SchedulePickup(context.Background(), PickupRequest{
+		WarehouseName: "Primary",
+		Date:          date,
+		TimeStart:     "14:00:00",
+	})
+	if !errors.Is(err, ErrPickupAlreadyScheduled) {
+		t.Fatalf("expected ErrPickupAlreadyScheduled, got %v", err)
+	}
+	if p == nil {
+		t.Fatal("Pickup should be non-nil even on duplicate")
+	}
+	if p.ProviderPickupID != "already-scheduled" {
+		t.Errorf("ProviderPickupID = %q, want already-scheduled", p.ProviderPickupID)
+	}
+	if p.ScheduledFor.IsZero() {
+		t.Error("ScheduledFor should still be populated on duplicate")
+	}
+}
+
+// TestDelhivery_SchedulePickup_AuthHeader locks in the bearer-token
+// contract for the pickup endpoint. The shipments handler used to pass
+// the envelope-encrypted ciphertext through as the bearer token for
+// create calls, which failed silently with 401 — we guard against the
+// same regression on pickup by pinning the exact header shape.
+func TestDelhivery_SchedulePickup_AuthHeader(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"pr_id":1}`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "plaintext-123", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	date, _ := time.Parse("2006-01-02", "2026-04-25")
+	if _, err := c.SchedulePickup(context.Background(), PickupRequest{
+		WarehouseName: "Primary", Date: date, TimeStart: "14:00:00",
+	}); err != nil {
+		t.Fatalf("SchedulePickup returned %v", err)
+	}
+	if gotAuth != "Token plaintext-123" {
+		t.Errorf("Authorization = %q, want Token plaintext-123", gotAuth)
+	}
+}
+
+// TestDelhivery_SchedulePickup_WalletError captures the real-world
+// non-duplicate failure mode observed from production probes: Delhivery
+// blocks pickups when the prepaid wallet balance is below threshold.
+// We must NOT silently swallow that as success; callers want the raw
+// error so ops can top up the wallet. Verbatim body from the probe:
+//
+//	{"prepaid":"Client wallet balance is 298.48 which is less than 500.0"}
+func TestDelhivery_SchedulePickup_WalletError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"prepaid":"Client wallet balance is 298.48 which is less than 500.0"}`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	date, _ := time.Parse("2006-01-02", "2026-04-25")
+	_, err := c.SchedulePickup(context.Background(), PickupRequest{
+		WarehouseName: "Primary", Date: date, TimeStart: "14:00:00",
+	})
+	if err == nil {
+		t.Fatal("expected error for wallet-balance rejection")
+	}
+	if errors.Is(err, ErrPickupAlreadyScheduled) {
+		t.Errorf("wallet error must NOT be classified as duplicate: %v", err)
+	}
+	if !strings.Contains(err.Error(), "wallet") {
+		t.Errorf("error should surface the wallet-balance body: %v", err)
 	}
 }
 

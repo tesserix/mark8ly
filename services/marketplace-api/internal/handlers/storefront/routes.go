@@ -284,17 +284,23 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 
 	// Webhook endpoints — at the API root, not under /storefront/stores.
 	//
-	// Two routes:
+	// Two routes, deliberately on DIFFERENT prefixes:
 	//   • /webhooks/:storeSlug/:provider — preferred. Config is scoped
 	//     by the store named in the URL, so a callback for tenant A
 	//     cannot match tenant B's config.
-	//   • /webhooks/:provider — legacy. Only processes when exactly one
-	//     active gateway config exists for the provider across the DB;
-	//     otherwise fails closed (see 2026-04-10 prod-readiness §2.3).
-	//     New merchant onboarding must use the scoped URL.
+	//   • /legacy-webhooks/:provider — pre-scoped fallback. Only
+	//     processes when exactly one active gateway config exists for
+	//     the provider across the DB; otherwise fails closed
+	//     (see 2026-04-10 prod-readiness §2.3). New merchant onboarding
+	//     MUST use the scoped URL above.
+	//
+	// These used to share the "/webhooks/" prefix, but gin rejects two
+	// differently-named wildcards at the same tree level and crash-
+	// looped the storefront pod on boot. Moving the legacy fallback
+	// to its own root restores both paths without a behaviour change.
 	if deps.WebhookHandler != nil {
 		router.POST("/webhooks/:storeSlug/:provider", deps.WebhookHandler.HandleScopedWebhook)
-		router.POST("/webhooks/:provider", deps.WebhookHandler.HandleWebhook)
+		router.POST("/legacy-webhooks/:provider", deps.WebhookHandler.HandleWebhook)
 	}
 
 	// Public reference data — no auth, no store context.

@@ -57,6 +57,40 @@ type WarehouseSyncer interface {
 	UpsertWarehouse(ctx context.Context, wh Warehouse) error
 }
 
+// PickupScheduler is implemented by carriers that support requesting
+// a pickup-agent dispatch for a pickup location + date + time slot.
+// Without this call Delhivery leaves the waybill at "Manifested" state
+// and the merchant has to click "Add to Pickup" on one.delhivery.com
+// before a pickup executive is dispatched — which is exactly the
+// friction this interface is designed to eliminate.
+type PickupScheduler interface {
+	SchedulePickup(ctx context.Context, req PickupRequest) (*Pickup, error)
+}
+
+// PickupRequest is the minimal input for SchedulePickup. Delhivery is
+// the pinning implementation: the carrier only cares about the date
+// (YYYY-MM-DD) and a start-of-slot time; any time-of-day on Date is
+// ignored and TimeStart takes precedence.
+type PickupRequest struct {
+	WarehouseName        string
+	Date                 time.Time // YYYY-MM-DD used; time-of-day ignored
+	TimeStart            string    // "HH:MM:SS" — Delhivery's pickup_time
+	ExpectedPackageCount int
+}
+
+// Pickup is the carrier's response after a successful (or idempotent
+// duplicate) pickup request. ProviderPickupID is the carrier's own
+// identifier — numeric for Delhivery success, "already-scheduled" for
+// the duplicate-tolerance path where the carrier tells us a pickup
+// already exists for (warehouse, date) but won't echo back the pr_id.
+// ScheduledFor combines Date + TimeStart so callers can render and
+// persist a single timestamptz.
+type Pickup struct {
+	ProviderPickupID string
+	ScheduledFor     time.Time
+	RawResponse      []byte // for audit / debugging
+}
+
 // Address represents a physical address for shipping origin/destination.
 type Address struct {
 	Name        string

@@ -37,6 +37,16 @@ export function ShippingConfigForm({
     existing?.free_shipping_threshold ?? "0",
   );
 
+  // Pickup automation. Defaults mirror the DB: TRUE + 14:00-18:00 so
+  // existing merchants get the zero-friction path the moment they load
+  // the edit form, without needing to flip the checkbox first.
+  const [autoSchedulePickup, setAutoSchedulePickup] = useState(
+    existing?.auto_schedule_pickup ?? true,
+  );
+  const [defaultPickupSlotStart, setDefaultPickupSlotStart] = useState(
+    existing?.default_pickup_slot_start ?? "14:00:00",
+  );
+
   // Warehouse address
   const [whName, setWhName] = useState(existing?.warehouse_name ?? "");
   const [whLine1, setWhLine1] = useState(existing?.warehouse_line1 ?? "");
@@ -72,6 +82,12 @@ export function ShippingConfigForm({
         warehouse_postal: whPostal || undefined,
         warehouse_country: whCountry || undefined,
         warehouse_phone: whPhone || undefined,
+        auto_schedule_pickup: autoSchedulePickup,
+        default_pickup_slot_start: defaultPickupSlotStart,
+        // Slot end mirrors the start + 4h — kept implicit because the UI
+        // only offers the three named windows below, each with a fixed
+        // 4-hour span. We send it anyway so the DB always has a value.
+        default_pickup_slot_end: slotEndFor(defaultPickupSlotStart),
       });
       if (!result.ok) {
         setError(result.message);
@@ -190,6 +206,52 @@ export function ShippingConfigForm({
         </div>
       </fieldset>
 
+      {/* Pickup automation — Delhivery only, but the form is
+          carrier-agnostic so the fields stay visible for all providers.
+          A merchant with ShipEngine sees the checkbox but it no-ops
+          because the backend only calls SchedulePickup when the carrier
+          implements the interface. */}
+      <fieldset className="space-y-4">
+        <legend className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50 mb-2">
+          Pickup automation
+        </legend>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoSchedulePickup}
+            onChange={(e) => { setAutoSchedulePickup(e.target.checked); setSuccess(false); }}
+            disabled={pending}
+            className="h-4 w-4 rounded border-[color:var(--ink-900)]/20 text-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
+          />
+          <span className="text-sm text-[color:var(--ink-900)]">
+            Auto-schedule Delhivery pickup when a label is created
+          </span>
+        </label>
+        <Field label="Default pickup window" htmlFor={`${provider}-pickup-slot`}>
+          <Select
+            value={defaultPickupSlotStart}
+            onValueChange={(value) => {
+              setDefaultPickupSlotStart(value);
+              setSuccess(false);
+            }}
+            disabled={pending || !autoSchedulePickup}
+          >
+            <SelectTrigger id={`${provider}-pickup-slot`} className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10:00:00">Morning (10:00 – 14:00)</SelectItem>
+              <SelectItem value="14:00:00">Afternoon (14:00 – 18:00)</SelectItem>
+              <SelectItem value="16:00:00">Evening (16:00 – 20:00)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
+            Delhivery dispatches a pickup agent during this window on the
+            next business day after the label is created.
+          </p>
+        </Field>
+      </fieldset>
+
       {/* Fees */}
       <fieldset className="space-y-4">
         <legend className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50 mb-2">
@@ -251,6 +313,22 @@ export function ShippingConfigForm({
       </div>
     </form>
   );
+}
+
+// slotEndFor derives the slot-end string from the chosen start. We
+// offer three fixed 4-hour windows so there's no free-form edit path
+// — encoding the mapping here keeps the UI from surfacing a separate
+// "Slot end" picker that would just confuse the merchant.
+function slotEndFor(start: string): string {
+  switch (start) {
+    case "10:00:00":
+      return "14:00:00";
+    case "16:00:00":
+      return "20:00:00";
+    case "14:00:00":
+    default:
+      return "18:00:00";
+  }
 }
 
 function Field({

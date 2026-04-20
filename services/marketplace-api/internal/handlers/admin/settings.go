@@ -632,6 +632,12 @@ type shippingConfigResponse struct {
 	WarehousePostal       string `json:"warehouse_postal,omitempty"`
 	WarehouseCountry      string `json:"warehouse_country,omitempty"`
 	WarehousePhone        string `json:"warehouse_phone,omitempty"`
+	// Pickup automation — surfaced so the admin UI can render the
+	// "Auto-schedule Delhivery pickup" checkbox + slot selector and
+	// preserve the merchant's choice across saves.
+	AutoSchedulePickup     bool   `json:"auto_schedule_pickup"`
+	DefaultPickupSlotStart string `json:"default_pickup_slot_start,omitempty"`
+	DefaultPickupSlotEnd   string `json:"default_pickup_slot_end,omitempty"`
 	CreatedAt             string `json:"created_at"`
 	UpdatedAt             string `json:"updated_at"`
 }
@@ -658,6 +664,10 @@ type ShippingCarrierConfigRow struct {
 	WarehousePhone        string          `gorm:"column:warehouse_phone;type:varchar(40)"`
 	HandlingFee           decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
 	FreeShippingMin       decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
+	// Pickup automation. See shipping.CarrierConfig for the rationale.
+	AutoSchedulePickup     bool   `gorm:"column:auto_schedule_pickup;type:boolean;not null;default:true"`
+	DefaultPickupSlotStart string `gorm:"column:default_pickup_slot_start;type:varchar(8);default:14:00:00"`
+	DefaultPickupSlotEnd   string `gorm:"column:default_pickup_slot_end;type:varchar(8);default:18:00:00"`
 	CreatedAt             time.Time       `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt             time.Time       `gorm:"column:updated_at;not null;default:now()"`
 }
@@ -682,6 +692,9 @@ func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg Sh
 		WarehousePostal:       cfg.WarehousePostal,
 		WarehouseCountry:      cfg.WarehouseCountry,
 		WarehousePhone:        cfg.WarehousePhone,
+		AutoSchedulePickup:     cfg.AutoSchedulePickup,
+		DefaultPickupSlotStart: cfg.DefaultPickupSlotStart,
+		DefaultPickupSlotEnd:   cfg.DefaultPickupSlotEnd,
 		CreatedAt:             cfg.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:             cfg.UpdatedAt.Format(time.RFC3339),
 	}
@@ -738,6 +751,14 @@ type shippingUpsertRequest struct {
 	WarehousePostal   string  `json:"warehouse_postal"`
 	WarehouseCountry  string  `json:"warehouse_country"`
 	WarehousePhone    string  `json:"warehouse_phone"`
+	// Pickup automation. AutoSchedulePickup is a *bool so zero-value
+	// (JSON omitted) keeps the DB default instead of forcing false
+	// on every save — we don't want the checkbox to flip itself off
+	// because the admin resaved a row without touching it. Slot
+	// fields are plain strings; blank means "keep the stored value".
+	AutoSchedulePickup     *bool  `json:"auto_schedule_pickup"`
+	DefaultPickupSlotStart string `json:"default_pickup_slot_start"`
+	DefaultPickupSlotEnd   string `json:"default_pickup_slot_end"`
 }
 
 // Upsert handles PUT /settings/shipping/:provider — create or update a shipping
@@ -838,6 +859,32 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		}
 	}
 
+	// Resolve auto-schedule toggle: explicit value > existing value > true
+	// default. The DB default covers fresh rows; this covers the edit
+	// path where the admin might have turned it off and the checkbox
+	// wasn't present in an older version of the form.
+	autoSchedule := true
+	if !isCreate {
+		autoSchedule = existing.AutoSchedulePickup
+	}
+	if req.AutoSchedulePickup != nil {
+		autoSchedule = *req.AutoSchedulePickup
+	}
+	slotStart := strings.TrimSpace(req.DefaultPickupSlotStart)
+	if slotStart == "" && !isCreate {
+		slotStart = existing.DefaultPickupSlotStart
+	}
+	if slotStart == "" {
+		slotStart = "14:00:00"
+	}
+	slotEnd := strings.TrimSpace(req.DefaultPickupSlotEnd)
+	if slotEnd == "" && !isCreate {
+		slotEnd = existing.DefaultPickupSlotEnd
+	}
+	if slotEnd == "" {
+		slotEnd = "18:00:00"
+	}
+
 	cfg := ShippingCarrierConfigRow{
 		TenantID:           tenantUUID,
 		StoreID:            storeUUID,
@@ -856,6 +903,9 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		WarehousePostal:    req.WarehousePostal,
 		WarehouseCountry:   req.WarehouseCountry,
 		WarehousePhone:     req.WarehousePhone,
+		AutoSchedulePickup:     autoSchedule,
+		DefaultPickupSlotStart: slotStart,
+		DefaultPickupSlotEnd:   slotEnd,
 	}
 
 	if isCreate {
@@ -870,21 +920,24 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		}
 	} else {
 		updates := map[string]any{
-			"api_key_encrypted":    apiKeyEnc,
-			"secret_key_encrypted": secretKeyEnc,
-			"mode":                 req.Mode,
-			"is_active":            req.IsActive,
-			"handling_fee":         decimal.NewFromFloat(req.HandlingFee),
-			"free_shipping_min":    decimal.NewFromFloat(req.FreeShippingMin),
-			"warehouse_name":       req.WarehouseName,
-			"warehouse_line1":      req.WarehouseLine1,
-			"warehouse_line2":      req.WarehouseLine2,
-			"warehouse_city":       req.WarehouseCity,
-			"warehouse_region":     req.WarehouseRegion,
-			"warehouse_postal":     req.WarehousePostal,
-			"warehouse_country":    req.WarehouseCountry,
-			"warehouse_phone":      req.WarehousePhone,
-			"updated_at":           time.Now(),
+			"api_key_encrypted":         apiKeyEnc,
+			"secret_key_encrypted":      secretKeyEnc,
+			"mode":                      req.Mode,
+			"is_active":                 req.IsActive,
+			"handling_fee":              decimal.NewFromFloat(req.HandlingFee),
+			"free_shipping_min":         decimal.NewFromFloat(req.FreeShippingMin),
+			"warehouse_name":            req.WarehouseName,
+			"warehouse_line1":           req.WarehouseLine1,
+			"warehouse_line2":           req.WarehouseLine2,
+			"warehouse_city":            req.WarehouseCity,
+			"warehouse_region":          req.WarehouseRegion,
+			"warehouse_postal":          req.WarehousePostal,
+			"warehouse_country":         req.WarehouseCountry,
+			"warehouse_phone":           req.WarehousePhone,
+			"auto_schedule_pickup":      autoSchedule,
+			"default_pickup_slot_start": slotStart,
+			"default_pickup_slot_end":   slotEnd,
+			"updated_at":                time.Now(),
 		}
 		if err := h.db.WithContext(c.Request.Context()).
 			Model(&ShippingCarrierConfigRow{}).

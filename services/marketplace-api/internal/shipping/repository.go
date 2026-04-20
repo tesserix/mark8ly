@@ -44,6 +44,14 @@ type ShipmentRecord struct {
 	CreatedAt          time.Time       `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt          time.Time       `gorm:"column:updated_at;not null;default:now()"`
 
+	// Pickup scheduling (Delhivery). PickupRequestID carries either the
+	// carrier's numeric pr_id (stringified) or the sentinel
+	// "already-scheduled" when we detected a duplicate and persisted
+	// anyway. Nullable TIMESTAMPTZ on the DB side so rows created
+	// before the pickup-scheduling feature shipped stay valid.
+	PickupRequestID    string     `gorm:"column:pickup_request_id;type:varchar(100)"`
+	PickupScheduledFor *time.Time `gorm:"column:pickup_scheduled_for"`
+
 	// Response-shape only — never touch the DB. Callers map these after
 	// reading a row, and the carrier layer sets them on create.
 	Provider           string `gorm:"-"`
@@ -78,6 +86,16 @@ type CarrierConfig struct {
 	WarehousePostal       string          `gorm:"column:warehouse_postal;type:varchar(40)"`
 	WarehouseCountry      string          `gorm:"column:warehouse_country;type:char(2)"`
 	WarehousePhone        string          `gorm:"column:warehouse_phone;type:varchar(40)"`
+	// Pickup automation. AutoSchedulePickup is the master toggle; rows
+	// default to TRUE in SQL so existing configs auto-opt-in when the
+	// shipping_pickup.sql ALTERs apply. DefaultPickupSlotStart is fed
+	// back to Delhivery verbatim as pickup_time; DefaultPickupSlotEnd
+	// is UI-only ("Pickup: 14:00 – 18:00"). Keeping the slot columns
+	// as VARCHAR(8) mirrors Delhivery's HH:MM:SS wire format — we
+	// never do arithmetic on them server-side.
+	AutoSchedulePickup     bool   `gorm:"column:auto_schedule_pickup;type:boolean;not null;default:true"`
+	DefaultPickupSlotStart string `gorm:"column:default_pickup_slot_start;type:varchar(8);default:14:00:00"`
+	DefaultPickupSlotEnd   string `gorm:"column:default_pickup_slot_end;type:varchar(8);default:18:00:00"`
 	CreatedAt             time.Time       `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt             time.Time       `gorm:"column:updated_at;not null;default:now()"`
 }

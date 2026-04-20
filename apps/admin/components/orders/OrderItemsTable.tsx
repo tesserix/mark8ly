@@ -5,11 +5,14 @@
 // right-aligned in serif.
 
 import type { AdminOrderItem } from "@/lib/api/marketplace-api";
+import { formatMoney } from "@/lib/format";
 
 interface OrderItemsTableProps {
   items: AdminOrderItem[];
   currencyCode: string;
 }
+
+const GRID = "grid-cols-[minmax(0,3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]";
 
 export function OrderItemsTable({ items, currencyCode }: OrderItemsTableProps) {
   return (
@@ -19,14 +22,14 @@ export function OrderItemsTable({ items, currencyCode }: OrderItemsTableProps) {
     >
       <h2
         id="order-items-heading"
-        className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-xl text-[color:var(--ink-900)]"
+        className="font-serif text-2xl font-medium text-foreground"
       >
         Items
       </h2>
       <div className="flex flex-col">
         <div
           role="presentation"
-          className="grid grid-cols-[minmax(0,3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-end gap-6 border-b border-[color:var(--ink-900)] border-opacity-15 pb-3 text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60"
+          className={`grid ${GRID} items-end gap-6 border-b border-[color:var(--ink-900)]/15 pb-3 text-xs font-medium uppercase tracking-wider text-foreground-tertiary`}
         >
           <span>Item</span>
           <span className="text-right">Unit price</span>
@@ -37,24 +40,24 @@ export function OrderItemsTable({ items, currencyCode }: OrderItemsTableProps) {
           {items.map((it) => (
             <li
               key={it.id}
-              className="grid grid-cols-[minmax(0,3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-6 border-b border-[color:var(--ink-900)] border-opacity-10 py-4"
+              className={`grid ${GRID} items-center gap-6 border-b border-[color:var(--ink-900)]/10 py-4`}
             >
               <span className="flex flex-col gap-1">
-                <span className="text-base text-[color:var(--ink-900)]">
+                <span className="text-base text-foreground">
                   {it.title_snapshot}
                 </span>
-                <span className="text-xs text-[color:var(--ink-900)] opacity-60">
+                <span className="text-xs text-foreground-tertiary">
                   SKU {it.sku_snapshot}
                   {it.option_summary && ` · ${it.option_summary}`}
                 </span>
               </span>
-              <span className="text-right text-sm text-[color:var(--ink-900)] opacity-80">
+              <span className="text-right text-sm tabular-nums text-foreground-secondary">
                 {formatMoney(it.unit_price, it.currency_code)}
               </span>
-              <span className="text-right text-sm text-[color:var(--ink-900)] opacity-80">
+              <span className="text-right text-sm tabular-nums text-foreground-secondary">
                 {it.quantity}
               </span>
-              <span className="text-right font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-base text-[color:var(--ink-900)]">
+              <span className="text-right font-serif text-base tabular-nums text-foreground">
                 {formatMoney(it.line_total, it.currency_code)}
               </span>
             </li>
@@ -64,17 +67,4 @@ export function OrderItemsTable({ items, currencyCode }: OrderItemsTableProps) {
       <span className="sr-only">Currency: {currencyCode}</span>
     </section>
   );
-}
-
-function formatMoney(amount: string, currency: string): string {
-  const n = Number.parseFloat(amount);
-  if (Number.isNaN(n)) return `${currency} ${amount}`;
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency,
-    }).format(n);
-  } catch {
-    return `${currency} ${amount}`;
-  }
 }

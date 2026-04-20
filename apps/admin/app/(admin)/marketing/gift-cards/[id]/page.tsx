@@ -17,15 +17,15 @@ function txnTypeBadge(type: string) {
   const base = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium";
   switch (type) {
     case "purchase":
-      return <span className={`${base} bg-moss-700/10 text-moss-700`}>Purchase</span>;
+      return <span className={`${base} bg-[color:var(--accent-tint)] text-[color:var(--moss-700)]`}>Purchase</span>;
     case "redeem":
-      return <span className={`${base} bg-ink-900/10 text-ink-900`}>Redeem</span>;
+      return <span className={`${base} bg-[color:var(--ink-900)]/10 text-foreground`}>Redeem</span>;
     case "refund":
-      return <span className={`${base} bg-ink-100 text-ink-600`}>Refund</span>;
+      return <span className={`${base} bg-[color:var(--ink-900)]/5 text-foreground-secondary`}>Refund</span>;
     case "adjustment":
-      return <span className={`${base} bg-ink-900/10 text-ink-900/70`}>Adjustment</span>;
+      return <span className={`${base} bg-[color:var(--ink-900)]/10 text-foreground-secondary`}>Adjustment</span>;
     default:
-      return <span className={`${base} bg-ink-900/10 text-ink-900`}>{type}</span>;
+      return <span className={`${base} bg-[color:var(--ink-900)]/10 text-foreground`}>{type}</span>;
   }
 }
 
@@ -65,78 +65,78 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
         {/* Card summary */}
         <div className="grid grid-cols-3 gap-6">
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wider text-ink-500">
+            <span className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
               Current Balance
             </span>
-            <span className="font-serif text-3xl tabular-nums text-ink-900">
+            <span className="font-serif text-3xl tabular-nums text-foreground">
               {formatCurrency(gc.current_balance, gc.currency_code)}
             </span>
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wider text-ink-500">
+            <span className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
               Initial Balance
             </span>
-            <span className="font-serif text-xl tabular-nums text-ink-900/70">
+            <span className="font-serif text-xl tabular-nums text-foreground-secondary">
               {formatCurrency(gc.initial_balance, gc.currency_code)}
             </span>
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wider text-ink-500">
+            <span className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
               Status
             </span>
-            <span className="text-sm capitalize text-ink-900">{gc.status}</span>
+            <span className="text-sm capitalize text-foreground">{gc.status}</span>
           </div>
         </div>
 
-        <hr className="border-ink-900/10" />
+        <hr className="border-border-subtle" />
 
         {/* Details */}
         <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
           {gc.recipient_name && (
             <div>
-              <span className="text-ink-500">Recipient:</span>{" "}
-              <span className="text-ink-900">{gc.recipient_name}</span>
+              <span className="text-foreground-tertiary">Recipient:</span>{" "}
+              <span className="text-foreground">{gc.recipient_name}</span>
             </div>
           )}
           {gc.recipient_email && (
             <div>
-              <span className="text-ink-500">Recipient email:</span>{" "}
-              <span className="text-ink-900">{gc.recipient_email}</span>
+              <span className="text-foreground-tertiary">Recipient email:</span>{" "}
+              <span className="text-foreground">{gc.recipient_email}</span>
             </div>
           )}
           {gc.sender_name && (
             <div>
-              <span className="text-ink-500">Sender:</span>{" "}
-              <span className="text-ink-900">{gc.sender_name}</span>
+              <span className="text-foreground-tertiary">Sender:</span>{" "}
+              <span className="text-foreground">{gc.sender_name}</span>
             </div>
           )}
           {gc.expires_at && (
             <div>
-              <span className="text-ink-500">Expires:</span>{" "}
-              <span className="text-ink-900">
+              <span className="text-foreground-tertiary">Expires:</span>{" "}
+              <span className="text-foreground">
                 {new Date(gc.expires_at).toLocaleDateString()}
               </span>
             </div>
           )}
           {gc.message && (
             <div className="col-span-2">
-              <span className="text-ink-500">Message:</span>{" "}
-              <span className="text-ink-900 italic">&ldquo;{gc.message}&rdquo;</span>
+              <span className="text-foreground-tertiary">Message:</span>{" "}
+              <span className="text-foreground italic">&ldquo;{gc.message}&rdquo;</span>
             </div>
           )}
         </div>
 
-        <hr className="border-ink-900/10" />
+        <hr className="border-border-subtle" />
 
         {/* Transaction ledger */}
-        <h2 className="font-serif text-lg text-ink-900">Transaction History</h2>
+        <h2 className="font-serif text-lg text-foreground">Transaction History</h2>
         {gc.transactions.length === 0 ? (
-          <p className="text-sm text-ink-500" aria-live="polite">No transactions yet.</p>
+          <p className="text-sm text-foreground-tertiary" aria-live="polite">No transactions yet.</p>
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-900/10 text-left text-xs font-medium uppercase tracking-wider text-ink-500">
+              <tr className="border-b border-border-subtle text-left text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
                 <th className="pb-3 pr-4">Date</th>
                 <th className="pb-3 pr-4">Type</th>
                 <th className="pb-3 pr-4">Amount</th>
@@ -146,8 +146,8 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
             </thead>
             <tbody>
               {gc.transactions.map((txn) => (
-                <tr key={txn.id} className="border-b border-ink-900/5">
-                  <td className="py-3 pr-4 text-ink-500">
+                <tr key={txn.id} className="border-b border-border-subtle">
+                  <td className="py-3 pr-4 text-foreground-tertiary">
                     {new Date(txn.created_at).toLocaleString()}
                   </td>
                   <td className="py-3 pr-4">{txnTypeBadge(txn.type)}</td>
@@ -157,10 +157,10 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
                     {Number(txn.amount) > 0 ? "+" : ""}
                     {formatCurrency(txn.amount, gc.currency_code)}
                   </td>
-                  <td className="py-3 pr-4 font-serif tabular-nums text-ink-900">
+                  <td className="py-3 pr-4 font-serif tabular-nums text-foreground">
                     {formatCurrency(txn.balance_after, gc.currency_code)}
                   </td>
-                  <td className="py-3 text-ink-500">{txn.note ?? "\u2014"}</td>
+                  <td className="py-3 text-foreground-tertiary">{txn.note ?? "\u2014"}</td>
                 </tr>
               ))}
             </tbody>

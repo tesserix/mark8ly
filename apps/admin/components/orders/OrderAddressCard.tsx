@@ -19,7 +19,7 @@ export function OrderAddressCard({ addresses }: OrderAddressCardProps) {
     >
       <h2
         id="order-addresses-heading"
-        className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-xl text-[color:var(--ink-900)]"
+        className="font-serif text-2xl font-medium text-foreground"
       >
         Addresses
       </h2>
@@ -38,12 +38,12 @@ interface AddressBlockProps {
 
 function AddressBlock({ title, address }: AddressBlockProps) {
   return (
-    <div className="flex flex-col gap-2 border-t border-[color:var(--ink-900)] border-opacity-15 pt-4">
-      <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+    <div className="flex flex-col gap-2 border-t border-[color:var(--ink-900)]/15 pt-4">
+      <span className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
         {title}
       </span>
       {address ? (
-        <address className="not-italic text-sm leading-6 text-[color:var(--ink-900)]">
+        <address className="not-italic text-sm leading-6 text-foreground">
           <div>{address.name}</div>
           <div>{address.line1}</div>
           {address.line2 && <div>{address.line2}</div>}
@@ -53,10 +53,10 @@ function AddressBlock({ title, address }: AddressBlockProps) {
             {address.postal_code && ` ${address.postal_code}`}
           </div>
           <div>{address.country_code}</div>
-          {address.phone && <div className="opacity-60">{address.phone}</div>}
+          {address.phone && <div className="text-foreground-tertiary">{address.phone}</div>}
         </address>
       ) : (
-        <span className="text-sm text-[color:var(--ink-900)] opacity-50">
+        <span className="text-sm text-foreground-tertiary">
           Not provided
         </span>
       )}

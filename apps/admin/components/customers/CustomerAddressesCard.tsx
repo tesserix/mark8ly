@@ -9,13 +9,13 @@ export function CustomerAddressesCard({ addresses }: CustomerAddressesCardProps)
     <section aria-labelledby="addresses-heading" className="flex flex-col gap-6">
       <h2
         id="addresses-heading"
-        className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-2xl text-[color:var(--ink-900)]"
+        className="font-serif text-2xl font-medium text-foreground"
       >
         Addresses
       </h2>
 
       {addresses.length === 0 ? (
-        <p className="text-sm text-[color:var(--ink-900)] opacity-60">
+        <p className="text-sm text-foreground-tertiary">
           No saved addresses.
         </p>
       ) : (
@@ -23,33 +23,33 @@ export function CustomerAddressesCard({ addresses }: CustomerAddressesCardProps)
           {addresses.map((addr) => (
             <li
               key={addr.id}
-              className="border-b border-[color:var(--ink-900)] border-opacity-10 pb-4 last:border-b-0"
+              className="border-b border-border-subtle pb-4 last:border-b-0"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex flex-col gap-1 text-sm text-[color:var(--ink-900)]">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-1 text-sm text-foreground">
                   <span className="font-medium">{addr.name}</span>
-                  <span className="opacity-80">{addr.line1}</span>
+                  <span className="text-foreground-secondary">{addr.line1}</span>
                   {addr.line2 && (
-                    <span className="opacity-80">{addr.line2}</span>
+                    <span className="text-foreground-secondary">{addr.line2}</span>
                   )}
-                  <span className="opacity-80">
+                  <span className="text-foreground-secondary">
                     {addr.city}
                     {addr.region ? `, ${addr.region}` : ""}{" "}
                     {addr.postal_code ?? ""}
                   </span>
-                  <span className="opacity-60">{addr.country_code}</span>
+                  <span className="text-foreground-tertiary">{addr.country_code}</span>
                   {addr.phone && (
-                    <span className="opacity-60">{addr.phone}</span>
+                    <span className="text-foreground-tertiary">{addr.phone}</span>
                   )}
                 </div>
                 <div className="flex gap-2">
                   {addr.is_default && (
-                    <span className="rounded-sm bg-[color:var(--moss-700)] bg-opacity-10 px-2 py-0.5 text-xs font-medium text-[color:var(--moss-700)]">
+                    <span className="rounded-sm bg-[color:var(--accent-tint)] px-2 py-0.5 text-xs font-medium text-[color:var(--moss-700)]">
                       Default
                     </span>
                   )}
                   {addr.label && (
-                    <span className="rounded-sm bg-[color:var(--ink-900)] bg-opacity-[0.06] px-2 py-0.5 text-xs text-[color:var(--ink-900)] opacity-70">
+                    <span className="rounded-sm bg-[color:var(--ink-900)]/[0.06] px-2 py-0.5 text-xs text-foreground-secondary">
                       {addr.label}
                     </span>
                   )}

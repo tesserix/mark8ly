@@ -36,7 +36,7 @@ export function CustomerNotesEditor({
     <section aria-labelledby="notes-heading" className="flex flex-col gap-4">
       <h2
         id="notes-heading"
-        className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-2xl text-[color:var(--ink-900)]"
+        className="font-serif text-2xl font-medium text-foreground"
       >
         Notes
       </h2>
@@ -48,7 +48,7 @@ export function CustomerNotesEditor({
         disabled={isPending}
         placeholder="Internal notes about this customer..."
         aria-label="Customer notes"
-        className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-transparent px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:opacity-40 focus:border-[color:var(--moss-700)] focus:outline-none disabled:opacity-50"
+        className="w-full rounded-md border border-[color:var(--ink-900)]/20 bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none disabled:opacity-50"
       />
 
       <div className="flex items-center gap-3">
@@ -56,13 +56,13 @@ export function CustomerNotesEditor({
           type="button"
           onClick={handleSave}
           disabled={isPending || !isDirty}
-          className="rounded-md bg-[color:var(--ink-900)] px-4 py-2.5 text-sm text-[color:var(--paper-200,#F7F6F2)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
+          className="rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
         >
           {isPending ? "Saving..." : "Save notes"}
         </button>
 
         {error && (
-          <p role="alert" className="text-sm text-[color:var(--signal,#C4391D)]">
+          <p role="alert" className="text-sm text-[color:var(--danger)]">
             {error}
           </p>
         )}

@@ -50,7 +50,7 @@ export function CustomerTagsEditor({
     <section aria-labelledby="tags-heading" className="flex flex-col gap-4">
       <h2
         id="tags-heading"
-        className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-2xl text-[color:var(--ink-900)]"
+        className="font-serif text-2xl font-medium text-foreground"
       >
         Tags
       </h2>
@@ -59,14 +59,14 @@ export function CustomerTagsEditor({
         {tags.map((tag) => (
           <span
             key={tag}
-            className="flex items-center gap-1.5 rounded-sm bg-[color:var(--ink-900)] bg-opacity-[0.06] px-2 py-1 text-sm text-[color:var(--ink-900)]"
+            className="flex items-center gap-1.5 rounded-sm bg-[color:var(--ink-900)]/[0.06] px-2 py-1 text-sm text-foreground"
           >
             {tag}
             <button
               type="button"
               onClick={() => handleRemove(tag)}
               disabled={isPending}
-              className="text-[color:var(--ink-900)] opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-30"
+              className="text-foreground-tertiary transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-30"
               aria-label={`Remove tag ${tag}`}
             >
               ×
@@ -75,7 +75,7 @@ export function CustomerTagsEditor({
         ))}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex max-w-md gap-2">
         <input
           type="text"
           value={input}
@@ -89,20 +89,20 @@ export function CustomerTagsEditor({
           placeholder="Add a tag..."
           aria-label="Add a tag"
           disabled={isPending}
-          className="flex-1 rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-transparent px-3 py-1.5 text-sm text-[color:var(--ink-900)] placeholder:opacity-40 focus:border-[color:var(--moss-700)] focus:outline-none disabled:opacity-50"
+          className="flex-1 rounded-md border border-[color:var(--ink-900)]/20 bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none disabled:opacity-50"
         />
         <button
           type="button"
           onClick={handleAdd}
           disabled={isPending || !input.trim()}
-          className="rounded-md bg-[color:var(--ink-900)] px-3 py-2.5 text-sm text-[color:var(--paper-200,#F7F6F2)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
+          className="rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
         >
           Add
         </button>
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-[color:var(--signal,#C4391D)]">
+        <p role="alert" className="text-sm text-[color:var(--danger)]">
           {error}
         </p>
       )}

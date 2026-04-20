@@ -82,12 +82,12 @@ function PageButton({
   ariaLabel,
 }: PageButtonProps) {
   const base =
-    "inline-flex h-9 min-w-9 items-center justify-center rounded-md px-3 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]";
+    "inline-flex h-9 min-w-9 items-center justify-center px-2 text-sm tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]";
   const variants = current
-    ? "bg-[color:var(--ink-900)] text-[color:var(--paper-200)]"
+    ? "font-serif text-base text-foreground underline underline-offset-[6px] decoration-[color:var(--moss-700)] decoration-[1.5px]"
     : disabled
-      ? "text-[color:var(--ink-900)] opacity-30"
-      : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5";
+      ? "text-foreground-tertiary opacity-50"
+      : "text-foreground-secondary hover:text-[color:var(--moss-700)]";
   if (href) {
     return (
       <Link

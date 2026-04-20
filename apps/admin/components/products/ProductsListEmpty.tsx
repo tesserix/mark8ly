@@ -17,17 +17,17 @@ export function ProductsListEmpty({
 }: ProductsListEmptyProps) {
   if (variant === "no-products") {
     return (
-      <div className="flex flex-col items-start gap-3 border-t border-[color:var(--ink-900)]/10 py-12">
-        <h2 className="text-lg font-medium text-[color:var(--ink-900)]">
+      <div className="flex flex-col items-start gap-3 border-t border-border-subtle py-12">
+        <h2 className="font-serif text-xl font-medium text-foreground">
           No products yet
         </h2>
-        <p className="max-w-prose text-sm text-[color:var(--ink-900)] opacity-70">
+        <p className="max-w-prose text-sm text-foreground-secondary">
           Your catalogue is empty. Add your first product to start selling —
           photos, variants, and pricing all in one place.
         </p>
         <Link
           href="/products/new"
-          className="mt-1 inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="mt-1 inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           + New product
         </Link>
@@ -35,11 +35,11 @@ export function ProductsListEmpty({
     );
   }
   return (
-    <div className="flex flex-col items-start gap-3 border-t border-[color:var(--ink-900)]/10 py-12">
-      <h2 className="text-lg font-medium text-[color:var(--ink-900)]">
+    <div className="flex flex-col items-start gap-3 border-t border-border-subtle py-12">
+      <h2 className="font-serif text-xl font-medium text-foreground">
         No products match your filters
       </h2>
-      <p className="max-w-prose text-[color:var(--ink-900)] opacity-70">
+      <p className="max-w-prose text-sm text-foreground-secondary">
         Try adjusting your search or clearing the filters.
       </p>
       {clearFiltersHref && (

@@ -1,23 +1,22 @@
 "use client";
 
-// apps/admin/components/products/ProductsListFilters.tsx
-//
-// Client component: debounced search input + status dropdown. URL is the
-// source of truth — every change pushes a new navigation with updated
-// search params. Resets to page 1 on any filter change.
+// Editorial filter bar for /products. URL is the source of truth —
+// search is a debounced hairline input, status is a row of underline
+// chips that compose with search. Navigating replaces the URL so the
+// view is deep-linkable and survives hard reload.
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Search, SlidersHorizontal, X } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@tesserix/web";
+import Link from "next/link";
 
-const STATUS_ALL = "__all__";
+type StatusValue = "draft" | "active" | "archived" | undefined;
+
+const STATUS_OPTIONS: { value: StatusValue; label: string }[] = [
+  { value: undefined, label: "All" },
+  { value: "active", label: "Active" },
+  { value: "draft", label: "Draft" },
+  { value: "archived", label: "Archived" },
+];
 
 export function ProductsListFilters() {
   const router = useRouter();
@@ -27,10 +26,11 @@ export function ProductsListFilters() {
   const [searchDraft, setSearchDraft] = useState(
     searchParams.get("search") ?? "",
   );
-  const status = searchParams.get("status") ?? "";
+  const status = (searchParams.get("status") ?? undefined) as StatusValue;
   const hasFilters = !!status || !!searchDraft;
 
-  // Debounce search input → URL navigation
+  // Debounce search → URL navigation. The URL is the source of truth so
+  // a hard reload or shared link restores the same filtered view.
   useEffect(() => {
     const handler = setTimeout(() => {
       const params = new URLSearchParams(searchParams.toString());
@@ -39,7 +39,7 @@ export function ProductsListFilters() {
       } else {
         params.delete("search");
       }
-      params.delete("page"); // reset to page 1 on new search
+      params.delete("page");
       const qs = params.toString();
       router.push(qs ? `${pathname}?${qs}` : pathname);
     }, 300);
@@ -47,71 +47,70 @@ export function ProductsListFilters() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchDraft]);
 
-  const setStatus = (next: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (next && next !== STATUS_ALL) {
-      params.set("status", next);
-    } else {
-      params.delete("status");
-    }
-    params.delete("page");
+  const buildStatusHref = (next: StatusValue): string => {
+    const params = new URLSearchParams();
+    if (next) params.set("status", next);
+    if (searchDraft) params.set("search", searchDraft);
     const qs = params.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
-  };
-
-  const clearAll = () => {
-    setSearchDraft("");
-    router.push(pathname);
+    return qs ? `${pathname}?${qs}` : pathname;
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <label className="relative min-w-64 flex-1">
-        <Search
-          className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--ink-900)] opacity-50"
-          aria-hidden="true"
-        />
+    <div className="flex flex-col gap-5">
+      <label className="flex items-center gap-3 border-b border-border-subtle pb-2">
+        <span className="sr-only">Search products</span>
         <input
           type="search"
           value={searchDraft}
           onChange={(e) => setSearchDraft(e.target.value)}
           placeholder="Search products…"
           aria-label="Search products"
-          className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] py-2 pl-10 pr-3 text-sm text-[color:var(--ink-900)] placeholder:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="w-full border-none bg-transparent py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:outline-none"
         />
-      </label>
-      <div className="inline-flex items-center gap-2 text-sm">
-        <SlidersHorizontal
-          className="h-4 w-4 text-foreground-secondary"
-          aria-hidden="true"
-        />
-        <Select
-          value={status || STATUS_ALL}
-          onValueChange={setStatus}
-        >
-          <SelectTrigger
-            aria-label="Filter by status"
-            className="min-w-[10rem]"
+        {searchDraft && (
+          <button
+            type="button"
+            onClick={() => setSearchDraft("")}
+            className="text-xs text-foreground-tertiary underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
-            <SelectValue placeholder="All statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={STATUS_ALL}>All statuses</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="archived">Archived</SelectItem>
-          </SelectContent>
-        </Select>
+            Clear
+          </button>
+        )}
+      </label>
+
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
+          Status
+        </span>
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          {STATUS_OPTIONS.map((opt) => {
+            const isCurrent = status === opt.value;
+            return (
+              <Link
+                key={opt.label}
+                href={buildStatusHref(opt.value)}
+                aria-current={isCurrent ? "true" : undefined}
+                className={
+                  "text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
+                  (isCurrent
+                    ? "text-foreground underline underline-offset-[6px] decoration-[1.5px]"
+                    : "text-foreground-tertiary hover:text-foreground")
+                }
+              >
+                {opt.label}
+              </Link>
+            );
+          })}
+        </div>
+        {hasFilters && (
+          <Link
+            href={pathname}
+            className="ml-auto text-xs text-[color:var(--moss-700)] underline-offset-4 hover:underline"
+          >
+            Clear all
+          </Link>
+        )}
       </div>
-      {hasFilters && (
-        <button
-          type="button"
-          onClick={clearAll}
-          className="inline-flex items-center gap-1 text-sm text-[color:var(--moss-700)] underline-offset-4 hover:underline focus-visible:underline"
-        >
-          <X className="h-3 w-3" aria-hidden="true" /> Clear
-        </button>
-      )}
     </div>
   );
 }

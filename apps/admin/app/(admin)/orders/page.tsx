@@ -130,7 +130,7 @@ function OrdersFilterBar({
       <form
         action="/orders"
         method="get"
-        className="flex max-w-xl items-center gap-3 border-b border-border-subtle pb-2"
+        className="flex items-center gap-3 border-b border-border-subtle pb-2"
         role="search"
         aria-label="Search orders"
       >

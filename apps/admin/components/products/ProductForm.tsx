@@ -19,6 +19,8 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Trash2 } from "lucide-react";
 
+import { StatusDot } from "@repo/ui/status-dot";
+
 import {
   productFormSchema,
   type ProductFormValues,
@@ -322,15 +324,20 @@ export function ProductForm({
         className="flex flex-col gap-8"
         aria-labelledby="product-form-heading"
       >
-        <header className="flex flex-col gap-2">
-          <h1
-            id="product-form-heading"
-            className="font-serif text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl"
-          >
-            {title}
-          </h1>
+        <header className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+            <h1
+              id="product-form-heading"
+              className="font-serif text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl"
+            >
+              {title}
+            </h1>
+            {mode === "edit" && initialProduct && (
+              <StatusDot status={initialProduct.status} />
+            )}
+          </div>
           {mode === "edit" && initialProduct && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-tertiary">
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-tertiary">
               <span className="font-mono">/{initialProduct.handle}</span>
               {storeSlug && initialProduct.status === "active" && (
                 <>
@@ -349,19 +356,14 @@ export function ProductForm({
                   </a>
                 </>
               )}
-            </div>
+            </p>
           )}
         </header>
 
         {rootError && (
           <div
             role="alert"
-            className="rounded-md border px-4 py-3 text-sm"
-            style={{
-              borderColor: "rgba(180, 50, 20, 0.3)",
-              backgroundColor: "rgba(180, 50, 20, 0.06)",
-              color: "rgb(140, 30, 10)",
-            }}
+            className="border-y border-[color:var(--danger)]/30 bg-[color:var(--danger)]/[0.06] px-4 py-3 text-sm text-[color:var(--danger)]"
           >
             {rootError}
           </div>
@@ -397,11 +399,13 @@ export function ProductForm({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center justify-between border-t border-[color:var(--ink-900)] border-opacity-10 pt-6">
+        {/* Actions — hairline top separator, discard as text link on left,
+            destructive + primary pair on the right. Primary CTA uses the
+            ink-filled + moss hover pair that the rest of admin uses. */}
+        <div className="flex items-center justify-between border-t border-border-subtle pt-6">
           <Link
             href="/products"
-            className="text-sm text-[color:var(--ink-900)] opacity-70 underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
+            className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
             Discard
           </Link>
@@ -411,7 +415,7 @@ export function ProductForm({
                 type="button"
                 onClick={handleDelete}
                 disabled={isPending}
-                className="inline-flex items-center gap-1 rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-3 py-2 text-sm text-[color:var(--signal)] transition-colors hover:bg-[color:var(--signal)] hover:bg-opacity-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ink-900)]/20 px-3 py-2 text-sm text-foreground-secondary transition-colors hover:border-[color:var(--danger)] hover:text-[color:var(--danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Delete product"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete
@@ -420,7 +424,7 @@ export function ProductForm({
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-5 py-2 text-sm text-[color:var(--paper-200)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isPending
                 ? "Saving…"

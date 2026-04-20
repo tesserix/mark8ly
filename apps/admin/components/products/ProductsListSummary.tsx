@@ -18,11 +18,17 @@ export function ProductsListSummary({
   statusFilter,
 }: ProductsListSummaryProps) {
   const noun = meta.total === 1 ? "product" : "products";
-  const filterLabel = statusFilter ? ` · filtered by ${statusFilter}` : "";
   return (
-    <p className="text-sm text-[color:var(--ink-900)] opacity-60">
-      {meta.total.toLocaleString()} {noun} total
-      {filterLabel}
+    <p className="flex items-center gap-3 text-xs text-foreground-tertiary">
+      <span className="tabular-nums">
+        {meta.total.toLocaleString()} {noun}
+      </span>
+      {statusFilter && (
+        <>
+          <span aria-hidden="true">·</span>
+          <span>filtered by {statusFilter}</span>
+        </>
+      )}
     </p>
   );
 }

@@ -186,7 +186,7 @@ export function ReturnsInbox({ storeId, initialReturns }: Props) {
     "w-full resize-y rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated)] px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary transition-colors focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]";
 
   return (
-    <div className="grid min-h-[640px] grid-cols-1 border-y border-border-subtle lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+    <div className="grid min-h-[640px] grid-cols-1 border-y border-border-subtle lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
       <aside className="flex flex-col border-b border-border-subtle lg:border-b-0 lg:border-r">
         <TabBar tab={tab} setTab={setTab} returns={returns} />
         <div className="flex-1 overflow-y-auto">
@@ -271,7 +271,7 @@ function TabBar({
   return (
     <nav
       aria-label="Return status filter"
-      className="flex items-center gap-0 border-b border-border-subtle px-2"
+      className="flex items-center gap-0 overflow-x-auto border-b border-border-subtle px-1 scrollbar-hide"
     >
       {TABS.map((t) => {
         const count = returns.filter((r) => t.match.includes(r.status)).length;
@@ -282,7 +282,7 @@ function TabBar({
             type="button"
             onClick={() => setTab(t.key)}
             className={
-              "-mb-px flex items-baseline gap-1.5 border-b-2 px-2.5 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
+              "-mb-px flex shrink-0 items-baseline gap-1 border-b-2 px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
               (active
                 ? "border-[color:var(--ink-900)] text-foreground"
                 : "border-transparent text-foreground-tertiary hover:text-foreground")

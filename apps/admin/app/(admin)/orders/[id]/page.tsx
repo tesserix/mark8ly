@@ -13,6 +13,7 @@ import { OrderAddressCard } from "@/components/orders/OrderAddressCard";
 import { OrderDetailHeader } from "@/components/orders/OrderDetailHeader";
 import { OrderDocumentsPanel } from "@/components/orders/OrderDocumentsPanel";
 import { OrderItemsTable } from "@/components/orders/OrderItemsTable";
+import { OrderLifecycleStepper } from "@/components/orders/OrderLifecycleStepper";
 import { OrderTotalsCard } from "@/components/orders/OrderTotalsCard";
 import { getOrder } from "@/lib/api/marketplace-api";
 import { getOrderShipment } from "@/lib/api/shipping-api";
@@ -54,15 +55,28 @@ export default async function OrderDetailPage({ params }: PageProps) {
 
       <OrderDetailHeader order={order} />
 
-      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <OrderLifecycleStepper order={order} shipmentStatus={shipment?.status ?? null} />
+
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex min-w-0 flex-col gap-10">
           <OrderItemsTable
             items={order.items}
             currencyCode={order.currency_code}
           />
-          <OrderTotalsCard order={order} />
-          <OrderAddressCard addresses={order.addresses} />
+          <div className="border-t border-border-subtle pt-10">
+            <OrderTotalsCard order={order} />
+          </div>
+          <div className="border-t border-border-subtle pt-10">
+            <OrderAddressCard addresses={order.addresses} />
+          </div>
+          <div className="border-t border-border-subtle pt-10">
+            <OrderDocumentsPanel
+              order={order}
+              shipmentStatus={shipment?.status ?? null}
+            />
+          </div>
         </div>
+
         <aside className="flex flex-col gap-8 lg:sticky lg:top-8 lg:self-start">
           <OrderActionsBar order={order} />
           <div className="border-t border-border-subtle pt-8">
@@ -71,9 +85,6 @@ export default async function OrderDetailPage({ params }: PageProps) {
               orderId={order.id}
               orderStatus={order.status}
             />
-          </div>
-          <div className="border-t border-border-subtle pt-8">
-            <OrderDocumentsPanel order={order} shipmentStatus={shipment?.status ?? null} />
           </div>
         </aside>
       </div>

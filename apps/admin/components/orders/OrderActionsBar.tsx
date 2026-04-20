@@ -16,6 +16,7 @@
 // or surfaces the typed error inline.
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import type { ComponentType, SVGProps } from "react";
 import {
   Select,
   SelectContent,
@@ -23,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@tesserix/web";
+import { Check, CreditCard, PackageCheck, XCircle } from "lucide-react";
 
 import type { AdminOrder, PaymentStatus } from "@/lib/api/marketplace-api";
 
@@ -106,10 +108,11 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col items-start gap-1.5">
         {canConfirm && (
           <ActionButton
             label="Confirm order"
+            icon={Check}
             primary
             active={panel === "confirm"}
             disabled={pending}
@@ -119,6 +122,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
         {canFulfill && (
           <ActionButton
             label={pending ? "Marking…" : "Mark fulfilled"}
+            icon={PackageCheck}
             primary
             disabled={pending}
             onClick={runFulfill}
@@ -127,6 +131,8 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
         {canCancel && (
           <ActionButton
             label="Cancel order"
+            icon={XCircle}
+            tone="danger"
             active={panel === "cancel"}
             disabled={pending}
             onClick={() => setPanel(panel === "cancel" ? "none" : "cancel")}
@@ -135,13 +141,14 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
         {canRefund && (
           <ActionButton
             label="Issue refund"
+            icon={CreditCard}
             active={panel === "refund"}
             disabled={pending}
             onClick={() => setPanel(panel === "refund" ? "none" : "refund")}
           />
         )}
         {!canConfirm && !canFulfill && !canCancel && !canRefund && (
-          <span className="text-sm text-[color:var(--ink-900)] opacity-60">
+          <span className="text-sm text-foreground-tertiary">
             No further actions available for this order.
           </span>
         )}
@@ -192,7 +199,9 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
 
 interface ActionButtonProps {
   label: string;
+  icon?: ComponentType<SVGProps<SVGSVGElement>>;
   primary?: boolean;
+  tone?: "default" | "danger";
   active?: boolean;
   disabled?: boolean;
   onClick: () => void;
@@ -200,22 +209,28 @@ interface ActionButtonProps {
 
 function ActionButton({
   label,
+  icon: Icon,
   primary,
+  tone = "default",
   active,
   disabled,
   onClick,
 }: ActionButtonProps) {
   const base =
-    "inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50";
+    "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50";
   let cls = "";
   if (primary) {
     cls = active
-      ? "bg-[color:var(--moss-700)] text-[color:var(--paper-200)]"
-      : "bg-[color:var(--ink-900)] text-[color:var(--paper-200)] hover:bg-[color:var(--moss-700)]";
+      ? "bg-[color:var(--moss-700)] text-[color:var(--primary-foreground)]"
+      : "bg-[color:var(--ink-900)] text-[color:var(--primary-foreground)] hover:bg-[color:var(--moss-700)]";
+  } else if (tone === "danger") {
+    cls = active
+      ? "border border-[color:var(--danger)] text-[color:var(--danger)]"
+      : "border border-[color:var(--ink-900)]/20 text-foreground-secondary hover:border-[color:var(--danger)] hover:text-[color:var(--danger)]";
   } else {
     cls = active
       ? "border border-[color:var(--moss-700)] text-[color:var(--moss-700)]"
-      : "border border-[color:var(--ink-900)] border-opacity-40 text-[color:var(--ink-900)] hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)]";
+      : "border border-[color:var(--ink-900)]/20 text-foreground hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)]";
   }
   return (
     <button
@@ -224,6 +239,7 @@ function ActionButton({
       onClick={onClick}
       className={`${base} ${cls}`}
     >
+      {Icon && <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
       {label}
     </button>
   );

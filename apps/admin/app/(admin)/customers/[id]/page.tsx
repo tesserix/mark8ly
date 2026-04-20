@@ -50,25 +50,23 @@ export default async function CustomerDetailPage({ params }: PageProps) {
 
       <CustomerDetailHeader customer={customer} />
 
-      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[2fr_1fr]">
-        <div className="flex flex-col gap-10">
-          <CustomerOverviewCard
-            customer={customer}
-            currency={currentStore.currency_code}
-          />
-          <CustomerAddressesCard addresses={customer.addresses} />
-          <CustomerTagsEditor
-            customerId={customer.id}
-            initialTags={customer.tags}
-            updateAction={updateTagsAction}
-          />
-          <CustomerNotesEditor
-            customerId={customer.id}
-            initialNotes={customer.notes ?? ""}
-            updateAction={updateNotesAction}
-          />
-        </div>
-        <div className="flex flex-col gap-10 lg:sticky lg:top-8 lg:self-start">
+      <div className="flex flex-col gap-10">
+        <CustomerOverviewCard
+          customer={customer}
+          currency={currentStore.currency_code}
+        />
+        <CustomerAddressesCard addresses={customer.addresses} />
+        <CustomerTagsEditor
+          customerId={customer.id}
+          initialTags={customer.tags}
+          updateAction={updateTagsAction}
+        />
+        <CustomerNotesEditor
+          customerId={customer.id}
+          initialNotes={customer.notes ?? ""}
+          updateAction={updateNotesAction}
+        />
+        <div className="border-t border-border-subtle pt-8">
           <CustomerActionsBar
             customerId={customer.id}
             status={customer.status}

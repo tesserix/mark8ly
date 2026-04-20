@@ -128,42 +128,45 @@ export function GiftCardsList({ giftCards, meta, currentStatus }: GiftCardsListP
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-ink-900/10 text-left text-xs font-medium uppercase tracking-wider text-ink-500">
-              <th className="pb-3 pr-4">Code</th>
-              <th className="pb-3 pr-4">Balance</th>
-              <th className="pb-3 pr-4">Initial</th>
-              <th className="pb-3 pr-4">Status</th>
-              <th className="pb-3 pr-4">Source</th>
-              <th className="pb-3 pr-4">Recipient</th>
-              <th className="pb-3">Created</th>
+            <tr className="border-b border-[color:var(--ink-900)]/15 text-left text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
+              <th className="pb-3 pl-4 pr-3">Code</th>
+              <th className="pb-3 px-3">Balance</th>
+              <th className="pb-3 px-3">Initial</th>
+              <th className="pb-3 px-3">Status</th>
+              <th className="pb-3 px-3">Source</th>
+              <th className="pb-3 px-3">Recipient</th>
+              <th className="pb-3 px-3 pr-4">Created</th>
             </tr>
           </thead>
           <tbody>
             {giftCards.map((gc) => (
-              <tr key={gc.id} className="border-b border-ink-900/5 hover:bg-paper-200/50">
-                <td className="py-3 pr-4">
+              <tr
+                key={gc.id}
+                className="group border-b border-[color:var(--ink-900)]/5 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-within:bg-[color:var(--ink-900)]/[0.03]"
+              >
+                <td className="py-3 pl-4 pr-3">
                   <span className="inline-flex items-center">
                     <Link
                       href={`/marketing/gift-cards/${gc.id}`}
-                      className="font-mono text-sm text-moss-700 hover:underline"
+                      className="rounded-sm font-mono text-sm text-foreground transition-colors group-hover:text-[color:var(--moss-700)] group-hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
                     >
                       {gc.code_display}
                     </Link>
                     <CopyButton text={gc.code_display} />
                   </span>
                 </td>
-                <td className="py-3 pr-4 font-serif tabular-nums">
+                <td className="py-3 px-3 font-serif tabular-nums text-foreground">
                   {formatCurrency(gc.current_balance, gc.currency_code)}
                 </td>
-                <td className="py-3 pr-4 text-ink-500 tabular-nums">
+                <td className="py-3 px-3 tabular-nums text-foreground-secondary">
                   {formatCurrency(gc.initial_balance, gc.currency_code)}
                 </td>
-                <td className="py-3 pr-4">{statusBadge(gc.status)}</td>
-                <td className="py-3 pr-4">{sourceBadge(gc)}</td>
-                <td className="py-3 pr-4 text-ink-900/70">
+                <td className="py-3 px-3">{statusBadge(gc.status)}</td>
+                <td className="py-3 px-3">{sourceBadge(gc)}</td>
+                <td className="py-3 px-3 text-foreground-secondary">
                   {gc.recipient_name ?? gc.recipient_email ?? "\u2014"}
                 </td>
-                <td className="py-3 text-ink-500">
+                <td className="py-3 px-3 pr-4 text-foreground-tertiary">
                   {new Date(gc.created_at).toLocaleDateString()}
                 </td>
               </tr>

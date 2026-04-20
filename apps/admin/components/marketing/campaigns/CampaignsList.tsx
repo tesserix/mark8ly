@@ -98,47 +98,50 @@ export function CampaignsList({
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-ink-200 text-xs font-medium uppercase tracking-wider text-ink-500">
-              <th className="pb-3 pr-4">Name</th>
-              <th className="pb-3 pr-4">Type</th>
-              <th className="pb-3 pr-4">Status</th>
-              <th className="pb-3 pr-4">Recipients</th>
-              <th className="pb-3 pr-4">Delivered</th>
-              <th className="pb-3 pr-4">Opened</th>
-              <th className="pb-3 pr-4">Date</th>
+            <tr className="border-b border-[color:var(--ink-900)]/15 text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
+              <th className="pb-3 pl-4 pr-3">Name</th>
+              <th className="pb-3 px-3">Type</th>
+              <th className="pb-3 px-3">Status</th>
+              <th className="pb-3 px-3">Recipients</th>
+              <th className="pb-3 px-3">Delivered</th>
+              <th className="pb-3 px-3">Opened</th>
+              <th className="pb-3 px-3 pr-4">Date</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-ink-100">
+          <tbody className="divide-y divide-[color:var(--ink-900)]/10">
             {campaigns.map((c) => (
-              <tr key={c.id} className="group">
-                <td className="py-3 pr-4">
+              <tr
+                key={c.id}
+                className="group transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-within:bg-[color:var(--ink-900)]/[0.03]"
+              >
+                <td className="py-3 pl-4 pr-3">
                   <Link
                     href={`/marketing/campaigns/${c.id}`}
-                    className="text-sm font-medium text-moss-700 underline-offset-2 group-hover:underline"
+                    className="rounded-sm text-sm font-medium text-foreground underline-offset-2 transition-colors group-hover:text-[color:var(--moss-700)] group-hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
                   >
                     {c.name}
                   </Link>
                 </td>
-                <td className="py-3 pr-4 text-ink-500 capitalize">
+                <td className="py-3 px-3 capitalize text-foreground-secondary">
                   {c.type}
                 </td>
-                <td className="py-3 pr-4">{statusBadge(c.status)}</td>
-                <td className="py-3 pr-4 font-mono text-ink-700">
+                <td className="py-3 px-3">{statusBadge(c.status)}</td>
+                <td className="py-3 px-3 font-mono tabular-nums text-foreground">
                   {c.total_recipients.toLocaleString()}
                 </td>
-                <td className="py-3 pr-4 text-ink-500">
+                <td className="py-3 px-3 text-foreground-secondary">
                   {c.delivered.toLocaleString()}
-                  <span className="ml-1 text-xs text-ink-600">
+                  <span className="ml-1 text-xs text-foreground-tertiary">
                     ({pct(c.delivered, c.total_recipients)})
                   </span>
                 </td>
-                <td className="py-3 pr-4 text-ink-500">
+                <td className="py-3 px-3 text-foreground-secondary">
                   {c.opened.toLocaleString()}
-                  <span className="ml-1 text-xs text-ink-600">
+                  <span className="ml-1 text-xs text-foreground-tertiary">
                     ({pct(c.opened, c.total_recipients)})
                   </span>
                 </td>
-                <td className="py-3 pr-4 text-ink-500">
+                <td className="py-3 px-3 pr-4 text-foreground-secondary">
                   {formatDate(c.sent_at ?? c.scheduled_at ?? c.created_at)}
                 </td>
               </tr>

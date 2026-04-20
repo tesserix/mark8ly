@@ -175,7 +175,7 @@ export function TicketsList({
             <li key={ticket.id}>
               <Link
                 href={`/support/tickets/${ticket.id}`}
-                className="flex min-h-[44px] items-center justify-between gap-4 py-4 transition-colors hover:bg-paper-100"
+                className="flex min-h-[44px] items-center justify-between gap-4 px-4 py-4 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
               >
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-center gap-3">

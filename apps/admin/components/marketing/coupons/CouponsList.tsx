@@ -70,45 +70,48 @@ export function CouponsList({ coupons }: CouponsListProps) {
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-ink-200 text-xs font-medium uppercase tracking-wider text-ink-600">
-            <th className="pb-3 pr-4">Code</th>
-            <th className="pb-3 pr-4">Title</th>
-            <th className="pb-3 pr-4">Type</th>
-            <th className="pb-3 pr-4">Value</th>
-            <th className="pb-3 pr-4">Used</th>
-            <th className="pb-3 pr-4">Status</th>
-            <th className="pb-3 pr-4">Expires</th>
+          <tr className="border-b border-[color:var(--ink-900)]/15 text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
+            <th className="pb-3 pl-4 pr-3">Code</th>
+            <th className="pb-3 px-3">Title</th>
+            <th className="pb-3 px-3">Type</th>
+            <th className="pb-3 px-3">Value</th>
+            <th className="pb-3 px-3">Used</th>
+            <th className="pb-3 px-3">Status</th>
+            <th className="pb-3 px-3 pr-4">Expires</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-ink-100">
+        <tbody className="divide-y divide-[color:var(--ink-900)]/10">
           {coupons.map((c) => (
-            <tr key={c.id} className="group">
-              <td className="py-3 pr-4">
+            <tr
+              key={c.id}
+              className="group transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-within:bg-[color:var(--ink-900)]/[0.03]"
+            >
+              <td className="py-3 pl-4 pr-3">
                 <span className="inline-flex items-center">
                   <Link
                     href={`/marketing/coupons/${c.id}`}
-                    className="font-mono text-sm font-medium text-moss-700 underline-offset-2 group-hover:underline"
+                    className="rounded-sm font-mono text-sm font-medium text-foreground underline-offset-2 transition-colors group-hover:text-[color:var(--moss-700)] group-hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
                   >
                     {c.code}
                   </Link>
                   <CopyButton text={c.code} />
                 </span>
               </td>
-              <td className="py-3 pr-4 text-ink-700">{c.title}</td>
-              <td className="py-3 pr-4 text-ink-600">{formatType(c.type)}</td>
-              <td className="py-3 pr-4 font-mono text-ink-700">
+              <td className="py-3 px-3 text-foreground">{c.title}</td>
+              <td className="py-3 px-3 text-foreground-secondary">{formatType(c.type)}</td>
+              <td className="py-3 px-3 font-mono tabular-nums text-foreground">
                 {c.type === "percentage"
                   ? `${c.value}%`
                   : c.type === "free_shipping"
-                    ? "--"
+                    ? "—"
                     : `${c.currency_code ?? ""} ${c.value}`}
               </td>
-              <td className="py-3 pr-4 text-ink-600">
+              <td className="py-3 px-3 tabular-nums text-foreground-secondary">
                 {c.usage_count}
                 {c.usage_limit != null ? ` / ${c.usage_limit}` : ""}
               </td>
-              <td className="py-3 pr-4">{statusBadge(c.status)}</td>
-              <td className="py-3 pr-4 text-ink-600">
+              <td className="py-3 px-3">{statusBadge(c.status)}</td>
+              <td className="py-3 px-3 pr-4 text-foreground-secondary">
                 {c.ends_at
                   ? new Date(c.ends_at).toLocaleDateString()
                   : "No expiry"}

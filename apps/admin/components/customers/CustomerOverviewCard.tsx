@@ -1,9 +1,8 @@
 import type { AdminCustomerDetail } from "@/lib/api/marketplace-api";
+import { formatDate, formatMoney } from "@/lib/format";
 
 interface CustomerOverviewCardProps {
   customer: AdminCustomerDetail;
-  // ISO-4217 store currency used to format total_spent. Falls back to
-  // USD rather than the old AUD-hardcoded default.
   currency?: string;
 }
 
@@ -15,7 +14,7 @@ export function CustomerOverviewCard({
     <section aria-labelledby="overview-heading" className="flex flex-col gap-6">
       <h2
         id="overview-heading"
-        className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-2xl text-[color:var(--ink-900)]"
+        className="font-serif text-2xl font-medium text-foreground"
       >
         Overview
       </h2>
@@ -35,27 +34,27 @@ export function CustomerOverviewCard({
         />
       </div>
 
-      <div className="border-t border-[color:var(--ink-900)] border-opacity-10 pt-6">
-        <dl className="grid grid-cols-1 gap-y-4 sm:grid-cols-2 sm:gap-x-8 text-sm">
+      <div className="border-t border-border-subtle pt-6">
+        <dl className="grid grid-cols-1 gap-y-4 text-sm sm:grid-cols-2 sm:gap-x-8">
           <div>
-            <dt className="text-[color:var(--ink-900)] opacity-60">Email</dt>
-            <dd className="mt-1 text-[color:var(--ink-900)]">{customer.email}</dd>
+            <dt className="text-foreground-tertiary">Email</dt>
+            <dd className="mt-1 text-foreground">{customer.email}</dd>
           </div>
           <div>
-            <dt className="text-[color:var(--ink-900)] opacity-60">Phone</dt>
-            <dd className="mt-1 text-[color:var(--ink-900)]">
+            <dt className="text-foreground-tertiary">Phone</dt>
+            <dd className="mt-1 text-foreground">
               {customer.phone || "Not provided"}
             </dd>
           </div>
           <div>
-            <dt className="text-[color:var(--ink-900)] opacity-60">Marketing opt-in</dt>
-            <dd className="mt-1 text-[color:var(--ink-900)]">
+            <dt className="text-foreground-tertiary">Marketing opt-in</dt>
+            <dd className="mt-1 text-foreground">
               {customer.marketing_opt_in ? "Yes" : "No"}
             </dd>
           </div>
           <div>
-            <dt className="text-[color:var(--ink-900)] opacity-60">Joined</dt>
-            <dd className="mt-1 text-[color:var(--ink-900)]">
+            <dt className="text-foreground-tertiary">Joined</dt>
+            <dd className="mt-1 text-foreground">
               {formatDate(customer.created_at)}
             </dd>
           </div>
@@ -68,37 +67,12 @@ export function CustomerOverviewCard({
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+      <span className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
         {label}
       </span>
-      <span className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-2xl text-[color:var(--ink-900)]">
+      <span className="font-serif text-2xl tabular-nums text-foreground">
         {value}
       </span>
     </div>
   );
-}
-
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function formatMoney(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currency.toUpperCase(),
-      minimumFractionDigits: 2,
-    }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency.toUpperCase()}`;
-  }
 }

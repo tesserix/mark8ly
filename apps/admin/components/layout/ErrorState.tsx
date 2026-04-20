@@ -40,7 +40,7 @@ export function ErrorState({
   backLabel = "Go back",
 }: ErrorStateProps) {
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-10">
+    <div className="mx-auto w-full max-w-6xl space-y-10">
       <header className="space-y-4">
         <p className="eyebrow text-danger">{eyebrow}</p>
         <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground text-balance sm:text-5xl">

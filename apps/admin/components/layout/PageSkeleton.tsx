@@ -56,7 +56,7 @@ export function PageSkeleton({
       role="status"
       aria-live="polite"
       aria-label="Loading"
-      className="mx-auto w-full max-w-5xl space-y-10"
+      className="mx-auto w-full max-w-6xl space-y-10"
     >
       {!omitHeader && <SkeletonHeader />}
       {variant === "list" && <ListSkeleton />}

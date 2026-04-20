@@ -368,11 +368,12 @@ function AdminShellFrame({
         {currentStoreId && <BannerStack storeId={currentStoreId} />}
 
         {/* Single source of truth for admin page width. Every admin surface
-            renders inside this max-w-5xl container; individual pages should
-            NOT wrap themselves in another mx-auto/max-w container. Padding
-            comes from the outer main element so the container can be pure. */}
+            renders inside this max-w-6xl container; individual pages should
+            NOT wrap themselves in another mx-auto/max-w container. Long-form
+            prose inside pages is constrained by its own max-w-2xl/3xl so
+            text measure stays readable. */}
         <main id="main" className="flex-1 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-          <div className="mx-auto w-full max-w-5xl">{children}</div>
+          <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
       </SidebarInset>
     </>

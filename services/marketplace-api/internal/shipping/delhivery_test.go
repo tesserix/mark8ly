@@ -339,25 +339,91 @@ func TestDelhivery_UpsertWarehouse_SurfacesOtherErrors(t *testing.T) {
 	}
 }
 
-// TestDelhivery_FetchLabel_RequiresPDFBody guards against a subtle
-// failure: Delhivery sometimes responds 200 OK with a JSON error
-// envelope for un-manifested waybills. We must refuse to return those
-// bytes as if they were a PDF — the admin UI would happily download
-// "label.pdf" filled with JSON.
-func TestDelhivery_FetchLabel_RequiresPDFBody(t *testing.T) {
+// TestDelhivery_FetchLabel_EmptyEnvelope guards against a subtle
+// failure: Delhivery sometimes responds 200 OK with a JSON envelope
+// that has no packages / no pdf_download_link. We must refuse to
+// return those bytes as if they were a PDF — the admin UI would
+// happily download "label.pdf" filled with JSON.
+func TestDelhivery_FetchLabel_EmptyEnvelope(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"error": "waybill not found"}`)
+		_, _ = io.WriteString(w, `{"packages": []}`)
 	}))
 	defer srv.Close()
 
 	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
 	_, _, err := c.FetchLabel(context.Background(), "WB404")
 	if err == nil {
-		t.Fatal("expected error for non-PDF body, got nil")
+		t.Fatal("expected error for empty packages, got nil")
 	}
-	if !strings.Contains(err.Error(), "not a PDF") {
-		t.Errorf("error should mention 'not a PDF', got %v", err)
+	if !strings.Contains(err.Error(), "empty packages") {
+		t.Errorf("error should mention 'empty packages', got %v", err)
+	}
+}
+
+// TestDelhivery_FetchLabel_S3Indirection pins the real production
+// behaviour observed with live Delhivery responses: the
+// /api/p/packing_slip endpoint returns application/json with a
+// pre-signed S3 URL in packages[0].pdf_download_link. An earlier
+// version of this code treated the JSON envelope as the PDF and
+// shipped it straight through to the browser — labels saved as
+// "label.txt". The carrier now follows the S3 redirect and returns
+// the real PDF bytes.
+func TestDelhivery_FetchLabel_S3Indirection(t *testing.T) {
+	pdfPayload := []byte("%PDF-1.4\nreal s3 content\n%%EOF")
+	// Stand up a second httptest server to play the role of S3; the
+	// packing_slip endpoint returns a URL pointing at it.
+	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Pre-signed S3 URLs are self-authenticating — assert no
+		// Authorization header is sent on the follow.
+		if h := r.Header.Get("Authorization"); h != "" {
+			t.Errorf("S3 fetch should not carry Authorization, got %q", h)
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write(pdfPayload)
+	}))
+	defer s3.Close()
+
+	delhivery := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"packages":[{"pdf_download_link":"`+s3.URL+`/label.pdf","status":"ready"}]}`)
+	}))
+	defer delhivery.Close()
+
+	c := &DelhiveryCarrier{apiKey: "plain-token", mode: "live", baseURL: delhivery.URL, client: delhivery.Client()}
+	got, ct, err := c.FetchLabel(context.Background(), "WB12345")
+	if err != nil {
+		t.Fatalf("FetchLabel returned %v", err)
+	}
+	if string(got) != string(pdfPayload) {
+		t.Errorf("PDF body mismatch")
+	}
+	if ct != "application/pdf" {
+		t.Errorf("content-type = %q, want application/pdf", ct)
+	}
+}
+
+// TestDelhivery_FetchLabel_S3NotPDF guards a second edge: the S3
+// link itself could (in extremely rare pre-provision cases) return
+// something that isn't a PDF. We must refuse that too rather than
+// hand a junk file to the admin.
+func TestDelhivery_FetchLabel_S3NotPDF(t *testing.T) {
+	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, `<html><body>expired</body></html>`)
+	}))
+	defer s3.Close()
+
+	delhivery := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"packages":[{"pdf_download_link":"`+s3.URL+`/expired"}]}`)
+	}))
+	defer delhivery.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: delhivery.URL, client: delhivery.Client()}
+	_, _, err := c.FetchLabel(context.Background(), "WB404")
+	if err == nil || !strings.Contains(err.Error(), "not a PDF") {
+		t.Fatalf("expected 'not a PDF' error, got %v", err)
 	}
 }
 

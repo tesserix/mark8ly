@@ -413,11 +413,15 @@ func (c *DelhiveryCarrier) GetTracking(ctx context.Context, trackingNumber strin
 }
 
 // FetchLabel pulls the packing-slip PDF for an already-created waybill.
-// Delhivery's /api/p/packing_slip?wbns=<waybill>&pdf=true responds with
-// a binary PDF when the Authorization header is valid; the body ends up
-// as a small HTML / JSON error page otherwise. The caller is
-// responsible for streaming the returned bytes to the end user (or
-// attaching them to an email) — we don't persist them.
+//
+// Delhivery's /api/p/packing_slip?wbns=<waybill>&pdf=true returns
+// application/json — NOT a PDF — with a pre-signed S3 URL in
+// packages[0].pdf_download_link that the caller must fetch to get
+// the actual bytes. An earlier version of this code assumed the
+// response was the PDF directly and passed the JSON envelope through
+// to the browser, which saved it as "label.txt" or a broken PDF.
+// We now follow the redirect ourselves so the carrier detail stays
+// contained and the caller always gets the real PDF bytes.
 func (c *DelhiveryCarrier) FetchLabel(ctx context.Context, trackingNumber string) ([]byte, string, error) {
 	if trackingNumber == "" {
 		return nil, "", fmt.Errorf("delhivery: fetch label: trackingNumber is required")
@@ -437,19 +441,78 @@ func (c *DelhiveryCarrier) FetchLabel(ctx context.Context, trackingNumber string
 			resp.StatusCode, truncate(string(body), 400))
 	}
 	contentType := resp.Header.Get("Content-Type")
-	// Delhivery sometimes returns 200 with a JSON error envelope instead
-	// of a PDF when the waybill isn't yet manifested. If the response
-	// doesn't smell like a PDF, surface the body so the operator can see
-	// what happened instead of downloading a broken file.
-	if !strings.HasPrefix(strings.ToLower(contentType), "application/pdf") &&
-		!bytes.HasPrefix(body, []byte("%PDF")) {
-		return nil, "", fmt.Errorf("delhivery: fetch label: not a PDF (content-type=%q body=%s)",
-			contentType, truncate(string(body), 400))
+	// Happy path when Delhivery decides to return the PDF inline — rare
+	// but historically seen on some older waybills. Keep for back-compat.
+	if strings.HasPrefix(strings.ToLower(contentType), "application/pdf") ||
+		bytes.HasPrefix(body, []byte("%PDF")) {
+		if contentType == "" {
+			contentType = "application/pdf"
+		}
+		return body, contentType, nil
 	}
-	if contentType == "" {
-		contentType = "application/pdf"
+	// Modern Delhivery response: JSON with packages[].pdf_download_link.
+	var env struct {
+		Packages []struct {
+			PDFDownloadLink string `json:"pdf_download_link"`
+			Status          string `json:"status"`
+			Error           string `json:"error"`
+		} `json:"packages"`
 	}
-	return body, contentType, nil
+	if err := json.Unmarshal(body, &env); err != nil {
+		return nil, "", fmt.Errorf("delhivery: fetch label: decode envelope: %w (body=%s)",
+			err, truncate(string(body), 400))
+	}
+	if len(env.Packages) == 0 {
+		return nil, "", fmt.Errorf("delhivery: fetch label: empty packages (body=%s)",
+			truncate(string(body), 400))
+	}
+	pkg := env.Packages[0]
+	if pkg.PDFDownloadLink == "" {
+		msg := pkg.Error
+		if msg == "" {
+			msg = pkg.Status
+		}
+		if msg == "" {
+			msg = "no pdf_download_link returned"
+		}
+		return nil, "", fmt.Errorf("delhivery: fetch label: %s", msg)
+	}
+	// The pre-signed S3 URL is short-lived (≈24h) and self-authenticating
+	// — no Authorization header needed. Using the same *http.Client
+	// gives us timeouts and TLS verification for free.
+	pdfReq, err := http.NewRequestWithContext(ctx, http.MethodGet, pkg.PDFDownloadLink, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("delhivery: fetch label: build s3 request: %w", err)
+	}
+	pdfResp, err := c.client.Do(pdfReq)
+	if err != nil {
+		return nil, "", fmt.Errorf("delhivery: fetch label: s3 fetch: %w", err)
+	}
+	defer pdfResp.Body.Close()
+	pdf, err := io.ReadAll(pdfResp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("delhivery: fetch label: read s3 body: %w", err)
+	}
+	if pdfResp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("delhivery: fetch label: s3 status=%d body=%s",
+			pdfResp.StatusCode, truncate(string(pdf), 200))
+	}
+	if !bytes.HasPrefix(pdf, []byte("%PDF")) {
+		return nil, "", fmt.Errorf("delhivery: fetch label: s3 body is not a PDF (first-bytes=%q)",
+			string(pdf[:min(16, len(pdf))]))
+	}
+	pdfCT := pdfResp.Header.Get("Content-Type")
+	if pdfCT == "" {
+		pdfCT = "application/pdf"
+	}
+	return pdf, pdfCT, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (c *DelhiveryCarrier) CancelShipment(ctx context.Context, shipmentID string) error {

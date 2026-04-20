@@ -122,26 +122,25 @@ export function OrderLifecycleStepper({
   return (
     <nav
       aria-label="Order lifecycle"
-      className="flex items-start gap-3 overflow-x-auto border-y border-border-subtle py-5 sm:gap-4"
+      className="border-y border-border-subtle py-6"
     >
-      {stages.map((stage, i) => (
-        <div
-          key={stage.key}
-          className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4"
-        >
-          <StageNode
-            label={stage.label}
-            timestamp={stage.timestamp}
-            state={stage.state}
-          />
-          {i < stages.length - 1 && (
-            <span
-              aria-hidden="true"
-              className="mt-1.5 h-px flex-1 bg-[color:var(--ink-900)]/10"
+      <ol className="grid grid-cols-5 gap-0">
+        {stages.map((stage, i) => (
+          <li key={stage.key} className="relative flex flex-col gap-1.5">
+            {i < stages.length - 1 && (
+              <span
+                aria-hidden="true"
+                className="absolute left-[calc(50%+0.5rem+0.25rem)] right-0 top-[5px] h-px bg-[color:var(--ink-900)]/10"
+              />
+            )}
+            <StageNode
+              label={stage.label}
+              timestamp={stage.timestamp}
+              state={stage.state}
             />
-          )}
-        </div>
-      ))}
+          </li>
+        ))}
+      </ol>
     </nav>
   );
 }
@@ -160,7 +159,7 @@ function StageNode({ label, timestamp, state }: StageNodeProps) {
         ? "bg-[color:var(--moss-700)] ring-4 ring-[color:var(--moss-700)]/20"
         : state === "cancelled"
           ? "bg-[color:var(--danger)]"
-          : "border border-[color:var(--ink-900)]/30 bg-transparent";
+          : "border border-[color:var(--ink-900)]/25 bg-[color:var(--background)]";
 
   const labelClass =
     state === "upcoming"
@@ -170,23 +169,25 @@ function StageNode({ label, timestamp, state }: StageNodeProps) {
         : "text-foreground";
 
   return (
-    <div className="flex shrink-0 flex-col items-start gap-1">
-      <div className="flex items-center gap-2">
+    <>
+      <div className="flex items-center gap-2 pl-0">
         <span
           aria-hidden="true"
-          className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`}
+          className={`relative z-10 h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`}
         />
         <span
-          className={`text-xs font-medium uppercase tracking-wider ${labelClass}`}
+          className={`truncate text-[11px] font-semibold uppercase tracking-[0.12em] ${labelClass}`}
         >
           {label}
         </span>
       </div>
-      {timestamp && (
-        <span className="pl-4.5 text-[11px] text-foreground-tertiary">
-          {timestamp}
-        </span>
-      )}
-    </div>
+      {/* Reserved row keeps every stage the same height so the connector
+          line stays horizontal even when only some stages have dates. */}
+      <span
+        className={`block min-h-[14px] pl-[18px] text-[11px] tabular-nums text-foreground-tertiary ${timestamp ? "" : "invisible"}`}
+      >
+        {timestamp ?? "—"}
+      </span>
+    </>
   );
 }

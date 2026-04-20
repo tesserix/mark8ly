@@ -69,12 +69,6 @@ export default async function OrderDetailPage({ params }: PageProps) {
           <div className="border-t border-border-subtle pt-10">
             <OrderAddressCard addresses={order.addresses} />
           </div>
-          <div className="border-t border-border-subtle pt-10">
-            <OrderDocumentsPanel
-              order={order}
-              shipmentStatus={shipment?.status ?? null}
-            />
-          </div>
         </div>
 
         <aside className="flex flex-col gap-8 lg:sticky lg:top-8 lg:self-start">
@@ -84,6 +78,12 @@ export default async function OrderDetailPage({ params }: PageProps) {
               storeId={currentStore.id}
               orderId={order.id}
               orderStatus={order.status}
+            />
+          </div>
+          <div className="border-t border-border-subtle pt-8">
+            <OrderDocumentsPanel
+              order={order}
+              shipmentStatus={shipment?.status ?? null}
             />
           </div>
         </aside>

@@ -105,12 +105,6 @@ export function ShippingLabelPanel({
           onUpdated={setShipment}
           onCleared={() => setShipment(null)}
         />
-        <AdvanceStatusBar
-          storeId={storeId}
-          orderId={orderId}
-          shipment={shipment}
-          onUpdated={setShipment}
-        />
       </section>
     );
   }
@@ -189,26 +183,31 @@ function ShipmentDetails({
   const labelProxyURL = `/api/admin/stores/${storeId}/orders/${orderId}/shipments/${shipment.id}/label`;
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-[color:var(--ink-900)]/10 bg-white px-5 py-4 shadow-sm">
-      <div className="flex flex-col gap-2">
-        <DetailRow label="Carrier" value={shipment.provider} />
-        <DetailRow label="Service" value={shipment.service} />
-        <DetailRow label="Tracking" value={shipment.tracking_number || "Pending"} />
+    <div className="flex flex-col gap-5 rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-5 py-5">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+        {shipment.provider && (
+          <DetailRow label="Carrier" value={shipment.provider} />
+        )}
+        {shipment.service && (
+          <DetailRow label="Service" value={shipment.service} />
+        )}
+        <DetailRow
+          label="Tracking"
+          value={shipment.tracking_number || "Pending"}
+          mono
+        />
         <DetailRow label="Status" value={shipment.status} />
         {eta && <DetailRow label="ETA" value={eta} />}
         {pickup && <DetailRow label="Pickup" value={pickup} />}
-      </div>
+      </dl>
       {isStub && (
         <div
           role="status"
-          className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="rounded-md border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.06] px-4 py-3 text-xs text-[color:var(--warning)]"
         >
-          <span>
-            This shipment uses a mock tracking number from an earlier test run
-            (before the Delhivery integration was fixed) and won&apos;t produce a
-            real label. Clear it and click <strong>Create shipping label</strong>{" "}
-            again to generate a real waybill against your Delhivery account.
-          </span>
+          This shipment uses a mock tracking number from an earlier test run
+          and won&apos;t produce a real label. Clear it and create a new
+          shipment to generate a real waybill.
         </div>
       )}
       <LabelActions
@@ -219,6 +218,12 @@ function ShipmentDetails({
         isStub={isStub}
         onUpdated={onUpdated}
         onCleared={onCleared}
+      />
+      <AdvanceStatusBar
+        storeId={storeId}
+        orderId={orderId}
+        shipment={shipment}
+        onUpdated={onUpdated}
       />
     </div>
   );
@@ -381,8 +386,8 @@ function LabelActions({
   }, [storeId, orderId, shipment.id, onCleared]);
 
   return (
-    <div className="flex flex-col gap-2 pt-1">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-3 pt-1">
+      <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           onClick={download}
@@ -392,68 +397,54 @@ function LabelActions({
               ? "Mock tracking number — delete and recreate before downloading"
               : undefined
           }
-          className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center rounded-md bg-[color:var(--ink-900)] px-3 text-[13px] font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {downloadPending ? "Fetching…" : "Download label"}
         </button>
-        <button
-          type="button"
+        <GhostBtn
           onClick={() => {
             setShowEmailForm((v) => !v);
             setEmailMsg(null);
           }}
           disabled={isStub}
-          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+          active={showEmailForm}
         >
           {showEmailForm ? "Cancel email" : "Email label"}
-        </button>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={refreshPending || isStub}
-          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        </GhostBtn>
+        <GhostBtn onClick={refresh} disabled={refreshPending || isStub}>
           {refreshPending ? "Syncing…" : "Refresh tracking"}
-        </button>
-        <button
-          type="button"
+        </GhostBtn>
+        <GhostBtn
           onClick={() => {
             setShowReschedule((v) => !v);
             setRescheduleMsg(null);
           }}
           disabled={isStub || reschedulePending}
-          title={
-            isStub
-              ? "Mock tracking number — delete and recreate before scheduling pickup"
-              : undefined
-          }
-          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+          active={showReschedule}
         >
-          {showReschedule ? "Cancel reschedule" : "Reschedule pickup"}
-        </button>
+          {showReschedule ? "Cancel" : "Reschedule pickup"}
+        </GhostBtn>
         <button
           type="button"
           onClick={clearShipment}
           disabled={deletePending}
-          className="inline-flex items-center gap-2 rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 transition-colors hover:border-red-500 hover:text-red-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center rounded-md border border-[color:var(--ink-900)]/15 px-3 text-[13px] font-medium text-foreground-secondary transition-colors hover:border-[color:var(--danger)] hover:text-[color:var(--danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {deletePending ? "Deleting…" : "Delete shipment"}
+          {deletePending ? "Deleting…" : "Delete"}
         </button>
       </div>
       {downloadErr && (
-        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+        <p role="alert" className="rounded-md border border-[color:var(--danger)]/20 bg-[color:var(--danger)]/[0.05] px-3 py-2 text-xs text-[color:var(--danger)]">
           {downloadErr}
         </p>
       )}
       {deleteErr && (
-        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+        <p role="alert" className="rounded-md border border-[color:var(--danger)]/20 bg-[color:var(--danger)]/[0.05] px-3 py-2 text-xs text-[color:var(--danger)]">
           {deleteErr}
         </p>
       )}
       {refreshMsg && (
-        <p className="text-xs text-[color:var(--ink-900)] opacity-70">
-          {refreshMsg}
-        </p>
+        <p className="text-xs text-foreground-tertiary">{refreshMsg}</p>
       )}
       {showReschedule && (
         <form
@@ -587,18 +578,23 @@ function AdvanceStatusBar({
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-2 pt-1">
-      {steps.map((s) => (
-        <button
-          key={s.status}
-          type="button"
-          onClick={() => advance(s.status)}
-          disabled={disabledFor(s.status)}
-          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/20 px-3 py-1.5 text-xs text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {target === s.status ? "Updating…" : s.label}
-        </button>
-      ))}
+    <div className="flex flex-col gap-2 border-t border-border-subtle pt-3">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground-tertiary">
+        Advance status
+      </span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {steps.map((s) => (
+          <button
+            key={s.status}
+            type="button"
+            onClick={() => advance(s.status)}
+            disabled={disabledFor(s.status)}
+            className="inline-flex h-8 items-center rounded-md border border-[color:var(--ink-900)]/20 px-3 text-[13px] font-medium text-foreground transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {target === s.status ? "Updating…" : s.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -636,14 +632,54 @@ function defaultRescheduleDate(): string {
   return `${y}-${m}-${day}`;
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
-    <div className="flex items-baseline gap-3">
-      <span className="w-20 shrink-0 text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+    <>
+      <dt className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
         {label}
-      </span>
-      <span className="text-sm text-[color:var(--ink-900)]">{value}</span>
-    </div>
+      </dt>
+      <dd
+        className={`min-w-0 text-sm text-foreground ${mono ? "font-mono tabular-nums" : ""}`}
+      >
+        {value || "—"}
+      </dd>
+    </>
+  );
+}
+
+function GhostBtn({
+  onClick,
+  disabled,
+  active,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "inline-flex h-8 items-center rounded-md border px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50 " +
+        (active
+          ? "border-[color:var(--moss-700)] text-[color:var(--moss-700)]"
+          : "border-[color:var(--ink-900)]/20 text-foreground hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)]")
+      }
+    >
+      {children}
+    </button>
   );
 }
 

@@ -87,13 +87,13 @@ export function BannerShell({
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span
             className="font-serif text-sm font-semibold leading-snug text-[var(--ink-900)]"
-            style={{ fontFamily: "'Source Serif 4', serif" }}
+
           >
             {heading}
           </span>
           <span
             className="text-sm leading-snug text-[var(--ink-700)]"
-            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+           
           >
             {body}
           </span>
@@ -137,7 +137,7 @@ function CtaElement({ cta }: { cta: BannerCta }) {
         target={cta.target}
         rel={rel}
         className={ctaClass}
-        style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+       
       >
         {cta.label}
       </a>
@@ -149,7 +149,7 @@ function CtaElement({ cta }: { cta: BannerCta }) {
       type="button"
       onClick={cta.onClick}
       className={ctaClass}
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {cta.label}
     </button>

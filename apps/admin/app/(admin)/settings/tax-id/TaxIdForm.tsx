@@ -59,7 +59,7 @@ function FieldLabel({
     <label
       htmlFor={htmlFor}
       className="block text-sm font-medium text-[var(--ink-900)]"
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {children}
     </label>
@@ -70,7 +70,7 @@ function FieldHelp({ children }: { children: React.ReactNode }) {
   return (
     <p
       className="text-xs text-[var(--ink-700)]"
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {children}
     </p>
@@ -83,7 +83,7 @@ function FieldError({ message }: { message: string | undefined }) {
     <p
       role="alert"
       className="text-xs text-[var(--danger)]"
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {message}
     </p>
@@ -103,13 +103,13 @@ function StatusPanel({ storeId }: { storeId: string; onUpdate: () => void }) {
       <div className="space-y-1">
         <p
           className="text-sm font-medium text-[var(--ink-900)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {statusCopy.validatedHeading}
         </p>
         <p
           className="text-sm text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {statusCopy.validatedBody}
         </p>
@@ -122,13 +122,13 @@ function StatusPanel({ storeId }: { storeId: string; onUpdate: () => void }) {
       <div className="space-y-1">
         <p
           className="text-sm font-medium text-[var(--danger)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {statusCopy.rejectedHeading}
         </p>
         <p
           className="text-sm text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {statusCopy.rejectedBodyTemplate(validationCode)}
         </p>
@@ -226,7 +226,7 @@ export function TaxIdForm({ storeId }: TaxIdFormProps) {
               type="button"
               onClick={() => setShowForm(true)}
               className="inline-flex h-9 items-center rounded-md border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2"
-              style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+             
             >
               {copy.updateCta}
             </button>
@@ -240,7 +240,7 @@ export function TaxIdForm({ storeId }: TaxIdFormProps) {
           <ClockPauseBadge reason={pauseReason} />
           <p
             className="text-sm text-[var(--ink-700)]"
-            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+           
           >
             {pauseReason === 'registry_unavailable'
               ? copy.status.pausedRegistryBody
@@ -270,7 +270,7 @@ export function TaxIdForm({ storeId }: TaxIdFormProps) {
             <div
               role="alert"
               className="mb-8 rounded-md border border-[var(--hairline)] bg-[var(--paper-200)] px-4 py-3 text-sm text-[var(--ink-700)]"
-              style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+             
             >
               {errors.root.message}
             </div>
@@ -291,7 +291,7 @@ export function TaxIdForm({ storeId }: TaxIdFormProps) {
                 aria-invalid={Boolean(errors.business_name)}
                 {...register('business_name')}
                 className="h-11 w-full rounded-md border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-700)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[var(--moss-700)]"
-                style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+               
                 placeholder="Acme Ltd"
               />
               <FieldError message={errors.business_name?.message} />
@@ -353,7 +353,7 @@ export function TaxIdForm({ storeId }: TaxIdFormProps) {
                 aria-invalid={Boolean(errors.tax_id)}
                 {...register('tax_id')}
                 className="h-11 w-full rounded-md border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-700)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[var(--moss-700)]"
-                style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+               
                 placeholder="e.g. GB123456789"
               />
               <FieldError message={errors.tax_id?.message} />
@@ -374,7 +374,7 @@ export function TaxIdForm({ storeId }: TaxIdFormProps) {
                 type="text"
                 {...register('billing_address')}
                 className="h-11 w-full rounded-md border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-700)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[var(--moss-700)]"
-                style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+               
                 placeholder="123 High Street, London, EC1A 1BB"
               />
             </div>
@@ -386,7 +386,7 @@ export function TaxIdForm({ storeId }: TaxIdFormProps) {
               type="submit"
               disabled={isSubmitting || submitMutation.isPending}
               className="inline-flex h-11 items-center justify-center rounded-md bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--background-elevated)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-              style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+             
             >
               {submitMutation.isPending
                 ? 'Submitting\u2026'
@@ -401,7 +401,7 @@ export function TaxIdForm({ storeId }: TaxIdFormProps) {
                 type="button"
                 onClick={() => setShowForm(false)}
                 className="inline-flex h-11 items-center justify-center rounded-md border border-[var(--hairline)] bg-transparent px-6 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2"
-                style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+               
               >
                 Cancel
               </button>

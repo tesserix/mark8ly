@@ -55,7 +55,7 @@ export function ClockPauseBadge({ reason, className }: ClockPauseBadgeProps) {
       ]
         .filter(Boolean)
         .join(' ')}
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {/* Pause indicator — small circle, moss fill, info tone */}
       <span

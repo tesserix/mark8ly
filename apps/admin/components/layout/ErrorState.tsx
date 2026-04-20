@@ -51,7 +51,7 @@ export function ErrorState({
         </p>
       </header>
 
-      <div className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)] p-6">
+      <div className="border-t border-border-subtle pt-6">
         <div className="flex items-start gap-4">
           <AlertCircle
             className="mt-1 h-5 w-5 shrink-0 text-danger"

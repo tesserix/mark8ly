@@ -109,7 +109,7 @@ export function DunningEmailPreview({
       >
         <p
           className="whitespace-pre-line text-sm leading-6 text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
           data-testid="dunning-body"
         >
           {body}

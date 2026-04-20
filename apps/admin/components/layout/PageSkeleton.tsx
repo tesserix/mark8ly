@@ -154,12 +154,40 @@ function DetailSkeleton() {
 }
 
 function FormSkeleton() {
+  // Editorial settings skeleton — mirrors the hairline section layout
+  // used by account / shipping / payments / team settings. Each section
+  // is: heading + description + 2-col label-input grid, separated by a
+  // hairline rule. No boxed panels — matches the real pages once mounted.
   return (
-    <div className="space-y-6">
-      <PanelSkeleton />
-      <PanelSkeleton />
-      <PanelSkeleton />
+    <div className="space-y-10">
+      <FormSection fields={2} />
+      <FormSection fields={3} />
+      <FormSection fields={2} />
+      <div className="flex items-center justify-end gap-3 border-t border-border-subtle pt-6">
+        <Skeleton className="h-9 w-20 rounded-md" />
+        <Skeleton className="h-9 w-28 rounded-md" />
+      </div>
     </div>
+  );
+}
+
+function FormSection({ fields }: { fields: number }) {
+  return (
+    <section className="space-y-5 border-t border-border-subtle pt-8 first:border-t-0 first:pt-0">
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-6 w-56 max-w-full" />
+        <Skeleton className="h-4 w-full max-w-md" />
+      </div>
+      <div className="grid gap-5 sm:grid-cols-2">
+        {Array.from({ length: fields }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-10 w-full rounded-md" />
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

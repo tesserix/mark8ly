@@ -23,7 +23,7 @@ export default async function TaxIdPage() {
       <div className="max-w-2xl">
         <p
           className="mb-8 text-sm leading-relaxed text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {copy.intro}
         </p>
@@ -33,7 +33,7 @@ export default async function TaxIdPage() {
         ) : (
           <p
             className="text-sm text-[var(--danger)]"
-            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+           
           >
             No store found. Please create a store before submitting tax details.
           </p>

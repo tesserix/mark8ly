@@ -313,7 +313,7 @@ function DomainCard({
   onCancelRemove: () => void;
 }) {
   return (
-    <div className="rounded-md border border-border bg-[color:var(--background-elevated)] p-5">
+    <div className="border-t border-border-subtle py-5 first:border-t-0 first:pt-0">
       {/* Header row */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">

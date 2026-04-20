@@ -352,7 +352,7 @@ function MFASection({
       </div>
 
       {enrolling && (
-        <div className="max-w-md space-y-4 rounded-md border border-border bg-[color:var(--background-elevated)] p-5">
+        <div className="max-w-md space-y-4 border-t border-border-subtle pt-5">
           <div className="space-y-2">
             <p className="text-sm font-medium text-foreground">
               1. Scan this QR code with your authenticator app

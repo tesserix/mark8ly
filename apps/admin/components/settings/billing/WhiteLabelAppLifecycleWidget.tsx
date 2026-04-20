@@ -113,7 +113,7 @@ function PlatformRow({ platform, state, updatedAt }: PlatformRowProps) {
       <div className="space-y-0.5">
         <p
           className="text-xs font-medium uppercase tracking-wide text-[var(--ink-500)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {platformName}
         </p>
@@ -126,7 +126,7 @@ function PlatformRow({ platform, state, updatedAt }: PlatformRowProps) {
               ? 'text-[var(--warning,#A0622A)]'
               : 'text-[var(--ink-400)]',
           ].join(' ')}
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
           data-testid={`lifecycle-state-${platform}`}
         >
           {label}
@@ -134,7 +134,7 @@ function PlatformRow({ platform, state, updatedAt }: PlatformRowProps) {
         {updatedAt && (
           <p
             className="text-xs text-[var(--ink-400)]"
-            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+           
           >
             {copy.lastUpdatedLabel} {formatBillingDate(updatedAt)}
           </p>
@@ -195,7 +195,7 @@ export function WhiteLabelAppLifecycleWidget({
     >
       <p
         className="pb-2 text-xs font-medium uppercase tracking-wide text-[var(--ink-500)]"
-        style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+       
       >
         {copy.heading}
       </p>
@@ -219,7 +219,7 @@ export function WhiteLabelAppLifecycleWidget({
       {lifecycleState === 'update_needed' && (
         <p
           className="pt-3 text-xs text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
           data-testid="lifecycle-update-note"
         >
           {copy.updateNeededNote}

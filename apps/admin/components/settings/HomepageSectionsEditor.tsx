@@ -92,7 +92,7 @@ export function HomepageSectionsEditor({
         {sections.map((s, i) => (
           <article
             key={sectionKey(s, i)}
-            className="space-y-4 rounded-md border border-border bg-[color:var(--background-elevated)] p-5"
+            className="space-y-4 border-t border-border-subtle pt-5 first:border-t-0 first:pt-0"
           >
             <header className="flex items-center justify-between">
               <p className="text-xs font-medium uppercase tracking-wide text-foreground-secondary">

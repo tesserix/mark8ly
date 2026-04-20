@@ -106,7 +106,7 @@ function MilestoneItem({ milestone, index, currentIndex }: MilestoneItemProps) {
                 ? 'text-[var(--ink-900)]'
                 : 'text-[var(--ink-700)]',
           ].join(' ')}
-          style={{ fontFamily: "'Source Serif 4', serif" }}
+
         >
           {milestone.label}
         </span>
@@ -114,7 +114,7 @@ function MilestoneItem({ milestone, index, currentIndex }: MilestoneItemProps) {
         {isCurrent && (
           <span
             className="inline-flex items-center rounded-sm bg-[var(--moss-700)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white"
-            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+           
           >
             {emailRamp.currentBadge}
           </span>
@@ -127,7 +127,7 @@ function MilestoneItem({ milestone, index, currentIndex }: MilestoneItemProps) {
           'text-sm leading-snug',
           isPast ? 'text-[var(--ink-400)]' : 'text-[var(--ink-700)]',
         ].join(' ')}
-        style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+       
       >
         {milestone.limit}
       </span>
@@ -153,7 +153,7 @@ export function EmailRampVisualizer({
       {/* Heading */}
       <h3
         className="text-sm font-semibold text-[var(--ink-900)]"
-        style={{ fontFamily: "'Source Serif 4', serif" }}
+
       >
         {emailRamp.heading}
       </h3>
@@ -161,7 +161,7 @@ export function EmailRampVisualizer({
       {/* Intro */}
       <p
         className="text-sm leading-relaxed text-[var(--ink-700)]"
-        style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+       
       >
         {emailRamp.intro}
       </p>
@@ -181,7 +181,7 @@ export function EmailRampVisualizer({
       {/* Footnote */}
       <p
         className="border-t border-[var(--hairline)] pt-3 text-xs leading-relaxed text-[var(--ink-400)]"
-        style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+       
       >
         {emailRamp.footnote}
       </p>

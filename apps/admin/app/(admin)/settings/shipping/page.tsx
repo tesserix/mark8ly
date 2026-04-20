@@ -68,12 +68,10 @@ async function ShippingSettingsContent({
 
   if (!supported) {
     return (
-      <div className="rounded-md bg-background-elevated px-6 py-10 text-center">
-        <p className="text-sm text-[color:var(--ink-900)]/50">
-          Unable to load supported carriers for this store. Please try again
-          later.
-        </p>
-      </div>
+      <p className="border-t border-border-subtle py-10 text-sm text-foreground-tertiary">
+        Unable to load supported carriers for this store. Please try again
+        later.
+      </p>
     );
   }
 

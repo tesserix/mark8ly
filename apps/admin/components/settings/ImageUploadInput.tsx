@@ -1,7 +1,13 @@
 "use client";
 
+// Branding image uploader — compact, editorial. No boxed card wrapper;
+// the uploaded state is just a clickable thumbnail + a trash icon for
+// removal. The empty state is a compact upload button, not a full-width
+// dashed dropzone (logos and favicons are small — full width reads as
+// visual noise).
+
 import { useRef, useState } from "react";
-import { Upload, X } from "lucide-react";
+import { Trash2, Upload } from "lucide-react";
 
 import {
   ACCEPT,
@@ -24,6 +30,12 @@ interface ImageUploadInputProps {
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`;
   return `${Math.round(bytes / 1024)} KB`;
+}
+
+// Preview size per asset — favicons are tiny (32px), logos render a bit
+// larger so the uploaded state gives meaningful preview. Match by kind.
+function previewSizeClass(kind: BrandingImageKind): string {
+  return kind === "favicon" ? "h-10 w-10" : "h-14 w-14";
 }
 
 export function ImageUploadInput({
@@ -61,7 +73,7 @@ export function ImageUploadInput({
     }
   };
 
-  const onClick = () => {
+  const openFilePicker = () => {
     if (disabled || uploading) return;
     inputRef.current?.click();
   };
@@ -73,45 +85,42 @@ export function ImageUploadInput({
       ) : null}
 
       {value ? (
-        <div className="flex items-start gap-3 rounded-md border border-border bg-[color:var(--background-elevated)] p-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={value}
-            alt=""
-            className="h-16 w-16 shrink-0 rounded border border-border object-cover"
-          />
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={onClick}
-                disabled={disabled || uploading}
-                className="inline-flex h-8 items-center rounded-md border border-border bg-[color:var(--background)] px-3 text-xs font-medium text-foreground hover:border-[color:var(--moss-700)] disabled:opacity-50"
-              >
-                Replace
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange(null)}
-                disabled={disabled || uploading}
-                className="inline-flex h-8 items-center gap-1 rounded-md border border-transparent px-2 text-xs text-foreground-secondary hover:text-danger disabled:opacity-50"
-                aria-label="Remove image"
-              >
-                <X className="h-3.5 w-3.5" />
-                Remove
-              </button>
-            </div>
-          </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={openFilePicker}
+            disabled={disabled || uploading}
+            aria-label="Replace image"
+            title="Click to replace"
+            className={`${previewSizeClass(kind)} shrink-0 overflow-hidden rounded-md border border-border bg-[color:var(--background-elevated)] transition-colors hover:border-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={value}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            disabled={disabled || uploading}
+            aria-label="Remove image"
+            title="Remove"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-foreground-tertiary transition-colors hover:bg-[color:var(--danger)]/[0.06] hover:text-[color:var(--danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       ) : (
         <button
           type="button"
-          onClick={onClick}
+          onClick={openFilePicker}
           disabled={disabled || uploading}
-          className="flex w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-[color:var(--background-elevated)] px-4 py-6 text-sm text-foreground-secondary transition-colors hover:border-[color:var(--moss-700)] hover:text-foreground disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-md border border-border bg-[color:var(--background-elevated)] px-3 py-2 text-sm text-foreground-secondary transition-colors hover:border-[color:var(--moss-700)] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
         >
-          <Upload className="h-5 w-5" />
-          <span>{uploading ? `Uploading… ${progress}%` : "Click to upload an image"}</span>
+          <Upload className="h-4 w-4" aria-hidden="true" />
+          <span>{uploading ? `Uploading… ${progress}%` : "Upload image"}</span>
         </button>
       )}
 
@@ -127,10 +136,10 @@ export function ImageUploadInput({
         }}
       />
 
-      {uploading ? (
+      {uploading && value ? (
         <p className="text-xs text-foreground-secondary">Uploading… {progress}%</p>
       ) : null}
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
+      {error ? <p className="text-xs text-[color:var(--danger)]">{error}</p> : null}
       {hint && !error ? (
         <p className="text-xs text-foreground-secondary">{hint}</p>
       ) : null}

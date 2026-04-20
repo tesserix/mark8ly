@@ -169,7 +169,7 @@ export function AppealStatus({ storeId }: AppealStatusProps) {
       <div className="space-y-3">
         <p
           className="text-sm text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {copy.status.pending}
         </p>
@@ -199,7 +199,7 @@ export function AppealStatus({ storeId }: AppealStatusProps) {
           role="status"
           aria-live="polite"
           className="text-sm text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
           data-testid="appeal-sla-message"
         >
           {slaMessage}
@@ -209,7 +209,7 @@ export function AppealStatus({ storeId }: AppealStatusProps) {
       {appealStatus === 'rejected' && (
         <p
           className="text-sm text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
           data-testid="appeal-rejected-message"
         >
           {copy.status.rejected}
@@ -219,7 +219,7 @@ export function AppealStatus({ storeId }: AppealStatusProps) {
       {appealStatus === 'resolved' && (
         <p
           className="text-sm text-[var(--moss-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
           data-testid="appeal-resolved-message"
         >
           {copy.status.resolved}

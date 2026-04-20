@@ -69,7 +69,7 @@ function FieldLabel({
     <label
       htmlFor={htmlFor}
       className="block text-sm font-medium text-[var(--ink-900)]"
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {children}
     </label>
@@ -82,7 +82,7 @@ function FieldError({ message }: { message: string | undefined }) {
     <p
       role="alert"
       className="text-xs text-[var(--danger)]"
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {message}
     </p>
@@ -101,13 +101,13 @@ function SignedPanel({ acceptedAt }: { acceptedAt: string | null }) {
       <div className="space-y-1">
         <p
           className="text-sm font-medium text-[var(--ink-900)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {copy.signedHeading}
         </p>
         <p
           className="text-sm text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {formattedDate
             ? copy.signedBodyTemplate(formattedDate)
@@ -119,7 +119,7 @@ function SignedPanel({ acceptedAt }: { acceptedAt: string | null }) {
       {formattedDate && (
         <p
           className="text-xs text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {copy.supportHint}
         </p>
@@ -257,7 +257,7 @@ export function AttestationForm({ storeId }: AttestationFormProps) {
                 />
                 <span
                   className="text-sm leading-relaxed text-[var(--ink-900)]"
-                  style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+                 
                 >
                   {copy.checkboxLabel}
                 </span>
@@ -279,7 +279,7 @@ export function AttestationForm({ storeId }: AttestationFormProps) {
             signMutation.isPending
           }
           className="inline-flex h-11 items-center justify-center rounded-md bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--background-elevated)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {signMutation.isPending ? 'Saving\u2026' : copy.submitCta}
         </button>

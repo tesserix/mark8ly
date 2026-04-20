@@ -23,7 +23,7 @@ export default async function ArbitragePage() {
       <div className="max-w-2xl">
         <p
           className="mb-8 text-sm leading-relaxed text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {copy.intro}
         </p>

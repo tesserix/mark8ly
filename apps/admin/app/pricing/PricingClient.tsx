@@ -99,7 +99,7 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
       <div>
         <h2
           className="text-2xl font-semibold leading-tight mb-2"
-          style={{ fontFamily: 'var(--font-editorial-serif, serif)', color: 'var(--ink-900)' }}
+          style={{ color: 'var(--ink-900)' }}
         >
           {copy.name}
         </h2>
@@ -140,7 +140,7 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
         ]
           .filter(Boolean)
           .join(' ')}
-        style={{ fontFamily: 'var(--font-editorial-sans, sans-serif)' }}
+       
       >
         {copy.cta}
       </a>
@@ -279,7 +279,7 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
           <div className="flex items-center gap-3">
             <h2
               className="text-xl font-semibold"
-              style={{ fontFamily: 'var(--font-editorial-serif, serif)', color: 'var(--ink-900)' }}
+              style={{ color: 'var(--ink-900)' }}
             >
               {addonCopy.name}
             </h2>
@@ -313,7 +313,7 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
               'bg-[var(--ink-900)] text-[var(--paper-200)] hover:bg-[var(--moss-700)]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
             ].join(' ')}
-            style={{ fontFamily: 'var(--font-editorial-sans, sans-serif)' }}
+           
           >
             {addonCopy.cta}
           </a>
@@ -337,19 +337,13 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
       <header className="mb-12 max-w-2xl">
         <h1
           className="text-5xl font-semibold leading-tight mb-4"
-          style={{
-            fontFamily: 'var(--font-editorial-serif, serif)',
-            color: 'var(--ink-900)',
-          }}
+          style={{ color: 'var(--ink-900)' }}
         >
           {pricingCopy.h1}
         </h1>
         <p
           className="text-base leading-relaxed"
-          style={{
-            fontFamily: 'var(--font-editorial-sans, sans-serif)',
-            color: 'var(--ink-700)',
-          }}
+          style={{ color: 'var(--ink-700)' }}
         >
           {pricingCopy.intro}
         </p>
@@ -372,7 +366,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
                 ? 'bg-[var(--ink-900)] text-[var(--paper-200)]'
                 : 'text-[var(--ink-700)] hover:text-[var(--ink-900)]',
             ].join(' ')}
-            style={{ fontFamily: 'var(--font-editorial-sans, sans-serif)' }}
+           
           >
             {pricingCopy.toggle.monthly}
           </button>
@@ -389,7 +383,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
                 ? 'bg-[var(--ink-900)] text-[var(--paper-200)]'
                 : 'text-[var(--ink-700)] hover:text-[var(--ink-900)]',
             ].join(' ')}
-            style={{ fontFamily: 'var(--font-editorial-sans, sans-serif)' }}
+           
           >
             {pricingCopy.toggle.annual}
           </button>
@@ -449,7 +443,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
               'bg-[var(--ink-900)] text-[var(--paper-200)] hover:bg-[var(--moss-700)]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
             ].join(' ')}
-            style={{ fontFamily: 'var(--font-editorial-sans, sans-serif)' }}
+           
           >
             {pricingCopy.proCtas.conversation}
           </a>
@@ -460,7 +454,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
               'border border-[var(--ink-900)] text-[var(--ink-900)] hover:border-[var(--moss-700)] hover:text-[var(--moss-700)]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
             ].join(' ')}
-            style={{ fontFamily: 'var(--font-editorial-sans, sans-serif)' }}
+           
           >
             {pricingCopy.proCtas.brief}
           </a>
@@ -471,10 +465,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
       <footer className="mt-12 pt-6 border-t border-[var(--hairline,var(--ink-100))]">
         <p
           className="text-xs"
-          style={{
-            fontFamily: 'var(--font-editorial-sans, sans-serif)',
-            color: 'var(--ink-500)',
-          }}
+          style={{ color: 'var(--ink-500)' }}
         >
           {pricingCopy.disclosureTemplate(currency)}
         </p>

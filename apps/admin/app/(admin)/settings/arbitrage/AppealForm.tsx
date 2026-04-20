@@ -60,7 +60,7 @@ function FieldLabel({
     <label
       htmlFor={htmlFor}
       className="block text-sm font-medium text-[var(--ink-900)]"
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {children}
     </label>
@@ -71,7 +71,7 @@ function FieldHelp({ children }: { children: React.ReactNode }) {
   return (
     <p
       className="text-xs text-[var(--ink-700)]"
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {children}
     </p>
@@ -84,7 +84,7 @@ function FieldError({ message }: { message: string | undefined }) {
     <p
       role="alert"
       className="text-xs text-[var(--danger)]"
-      style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+     
     >
       {message}
     </p>
@@ -156,7 +156,7 @@ export function AppealForm({ storeId }: AppealFormProps) {
         <div
           role="alert"
           className="mb-8 rounded-md border border-[var(--hairline)] bg-[var(--paper-200)] px-4 py-3 text-sm text-[var(--ink-700)]"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {errors.root.message}
         </div>
@@ -219,7 +219,7 @@ export function AppealForm({ storeId }: AppealFormProps) {
             aria-invalid={Boolean(errors.justification)}
             {...register('justification')}
             className="w-full rounded-md border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 py-3 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-700)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[var(--moss-700)]"
-            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+           
             placeholder="Optional — describe anything unusual about your customer distribution."
           />
 
@@ -229,7 +229,7 @@ export function AppealForm({ storeId }: AppealFormProps) {
               aria-live="polite"
               aria-label={`${justificationLength} of 2000 characters`}
               className="ml-auto text-xs text-[var(--ink-700)]"
-              style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+             
             >
               {justificationLength}/2000
             </span>
@@ -255,7 +255,7 @@ export function AppealForm({ storeId }: AppealFormProps) {
             aria-invalid={Boolean(errors.document_url)}
             {...register('document_url')}
             className="h-11 w-full rounded-md border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-700)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[var(--moss-700)]"
-            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+           
             placeholder="https://storage.googleapis.com/…"
           />
 
@@ -269,7 +269,7 @@ export function AppealForm({ storeId }: AppealFormProps) {
           type="submit"
           disabled={isSubmitting || submit.isPending}
           className="inline-flex h-11 items-center justify-center rounded-md bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--background-elevated)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-          style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+         
         >
           {submit.isPending ? 'Submitting\u2026' : copy.submitCta}
         </button>

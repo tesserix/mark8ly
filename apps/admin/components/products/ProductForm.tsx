@@ -17,7 +17,7 @@ import {
 } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 import {
   productFormSchema,
@@ -322,44 +322,35 @@ export function ProductForm({
         className="flex flex-col gap-8"
         aria-labelledby="product-form-heading"
       >
-        {/* Header strip */}
-        <div className="flex flex-col gap-2">
-          <Link
-            href="/products"
-            className="inline-flex w-fit items-center gap-1 text-sm text-[color:var(--ink-900)] opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        <header className="flex items-start justify-between gap-4">
+          <h1
+            id="product-form-heading"
+            className="font-serif text-4xl font-medium leading-tight tracking-tight text-foreground sm:text-5xl"
           >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Products
-          </Link>
-          <div className="flex items-start justify-between gap-4">
-            <h1
-              id="product-form-heading"
-              className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-4xl leading-tight text-[color:var(--ink-900)]"
-            >
-              {title}
-            </h1>
-            {mode === "edit" && initialProduct && (
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-[color:var(--ink-900)] opacity-50">
-                  /{initialProduct.handle}
-                </span>
-                {storeSlug && initialProduct.status === "active" && (
-                  <a
-                    href={`${
-                      typeof window !== "undefined" && window.location.hostname === "localhost"
-                        ? `/products/${initialProduct.handle}?slug=${storeSlug}`
-                        : `https://${storeSlug}.mark8ly.com/products/${initialProduct.handle}`
-                    }`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-[color:var(--moss-700)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-                  >
-                    View on storefront ↗
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+            {title}
+          </h1>
+          {mode === "edit" && initialProduct && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-foreground-tertiary">
+                /{initialProduct.handle}
+              </span>
+              {storeSlug && initialProduct.status === "active" && (
+                <a
+                  href={`${
+                    typeof window !== "undefined" && window.location.hostname === "localhost"
+                      ? `/products/${initialProduct.handle}?slug=${storeSlug}`
+                      : `https://${storeSlug}.mark8ly.com/products/${initialProduct.handle}`
+                  }`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-[color:var(--moss-700)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                >
+                  View on storefront ↗
+                </a>
+              )}
+            </div>
+          )}
+        </header>
 
         {rootError && (
           <div

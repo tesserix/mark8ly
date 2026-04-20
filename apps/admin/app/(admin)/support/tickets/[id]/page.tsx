@@ -1,8 +1,6 @@
-import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
-
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { getTicket } from "@/lib/api/marketplace-api";
+import { Breadcrumbs } from "@/components/layout";
 import { TicketDetail } from "@/components/support/TicketDetail";
 
 interface TicketDetailPageProps {
@@ -29,27 +27,27 @@ export default async function TicketDetailPage({
       : null;
 
   return (
-          <div className="space-y-6">
-        <Link
-          href="/support/tickets"
-          className="inline-flex min-h-[44px] items-center gap-1 text-sm text-foreground-secondary hover:text-foreground"
-        >
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          Back to tickets
-        </Link>
+    <div className="flex flex-col gap-8">
+      <Breadcrumbs
+        items={[
+          { label: "Support", href: "/support" },
+          { label: "Tickets", href: "/support/tickets" },
+          { label: ticket ? `#${ticket.id.slice(0, 8)}` : "Not found" },
+        ]}
+      />
 
-        {!ticket ? (
-          <div className="py-12 text-center" role="alert">
-            <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-foreground">
-              Ticket not found
-            </h2>
-            <p className="mt-2 text-sm text-foreground-secondary">
-              This ticket may have been deleted or you do not have access to it.
-            </p>
-          </div>
-        ) : (
-          <TicketDetail ticket={ticket} />
-        )}
-      </div>
+      {!ticket ? (
+        <div className="py-12 text-center" role="alert">
+          <h2 className="font-serif text-2xl font-medium text-foreground">
+            Ticket not found
+          </h2>
+          <p className="mt-2 text-sm text-foreground-secondary">
+            This ticket may have been deleted or you do not have access to it.
+          </p>
+        </div>
+      ) : (
+        <TicketDetail ticket={ticket} />
+      )}
+    </div>
   );
 }

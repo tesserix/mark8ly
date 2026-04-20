@@ -11,4 +11,6 @@
 //     import { ErrorState } from "@/components/layout/ErrorState";
 
 export { AdminPage, PageSection, ReadOnlyNotice } from "./AdminPage";
+export { BackLink } from "./BackLink";
+export { Breadcrumbs, type BreadcrumbItem } from "./Breadcrumbs";
 export { PageSkeleton } from "./PageSkeleton";

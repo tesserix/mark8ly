@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import type { AdminCustomerDetail } from "@/lib/api/marketplace-api";
 
 import { CustomerStatusBadge } from "./CustomerStatusBadge";
@@ -12,23 +10,16 @@ export function CustomerDetailHeader({ customer }: CustomerDetailHeaderProps) {
   const name = formatName(customer);
 
   return (
-    <header className="flex flex-col gap-4">
-      <Link
-        href="/customers"
-        className="text-sm text-[color:var(--moss-700)] underline-offset-4 hover:underline focus-visible:underline"
-      >
-        Back to customers
-      </Link>
-
+    <header className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
           <h1
             id="customer-heading"
-            className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-4xl text-[color:var(--ink-900)]"
+            className="font-serif text-4xl font-medium tracking-tight text-foreground sm:text-5xl"
           >
             {name}
           </h1>
-          <p className="text-sm text-[color:var(--ink-900)] opacity-70">
+          <p className="text-sm text-foreground-secondary">
             {customer.email}
             {customer.phone ? ` \u00b7 ${customer.phone}` : ""}
           </p>
@@ -38,7 +29,7 @@ export function CustomerDetailHeader({ customer }: CustomerDetailHeaderProps) {
       </div>
 
       {customer.status === "blocked" && customer.block_reason && (
-        <p className="text-sm text-[color:var(--signal,#C4391D)]">
+        <p className="text-sm text-[color:var(--danger)]">
           Blocked: {customer.block_reason}
         </p>
       )}

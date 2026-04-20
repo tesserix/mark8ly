@@ -1,9 +1,9 @@
-import Link from "next/link";
 import {
   canEditSettings,
   getServerSessionContext,
 } from "@/lib/auth/serverSession";
 import { getLoyaltyMember, adjustPoints } from "@/lib/api/loyalty-api";
+import { Breadcrumbs } from "@/components/layout";
 import { MemberDetailPanel } from "@/components/marketing/loyalty/MemberDetailPanel";
 
 interface MemberDetailPageProps {
@@ -39,17 +39,16 @@ export default async function MemberDetailPage({
 
   if (!result) {
     return (
-              <div className="space-y-6">
-          <Link
-            href="/marketing/loyalty"
-            className="text-sm text-[color:var(--moss-700)] hover:underline"
-          >
-            ← Back to loyalty
-          </Link>
-          <p className="text-sm text-[color:var(--ink-900)]/50">
-            Member not found.
-          </p>
-        </div>
+      <div className="flex flex-col gap-6">
+        <Breadcrumbs
+          items={[
+            { label: "Marketing", href: "/marketing/campaigns" },
+            { label: "Loyalty", href: "/marketing/loyalty" },
+            { label: "Not found" },
+          ]}
+        />
+        <p className="text-sm text-foreground-tertiary">Member not found.</p>
+      </div>
     );
   }
 
@@ -63,20 +62,26 @@ export default async function MemberDetailPage({
     return adjustPoints(storeId, id, { points, description }, session);
   }
 
+  const displayName =
+    result.data.customer_name?.trim() ||
+    result.data.customer_email ||
+    "Member";
+
   return (
-          <div className="space-y-6">
-        <Link
-          href="/marketing/loyalty"
-          className="text-sm text-[color:var(--moss-700)] hover:underline"
-        >
-          ← Back to loyalty
-        </Link>
-        <MemberDetailPanel
-          member={result.data}
-          transactions={result.transactions}
-          editable={editable}
-          onAdjust={handleAdjust}
-        />
-      </div>
+    <div className="flex flex-col gap-8">
+      <Breadcrumbs
+        items={[
+          { label: "Marketing", href: "/marketing/campaigns" },
+          { label: "Loyalty", href: "/marketing/loyalty" },
+          { label: displayName },
+        ]}
+      />
+      <MemberDetailPanel
+        member={result.data}
+        transactions={result.transactions}
+        editable={editable}
+        onAdjust={handleAdjust}
+      />
+    </div>
   );
 }

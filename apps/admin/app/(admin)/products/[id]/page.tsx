@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { getProduct, listCategories } from "@/lib/api/marketplace-api";
+import { Breadcrumbs } from "@/components/layout";
 import { ProductForm } from "@/components/products/ProductForm";
 
 interface PageProps {
@@ -32,18 +33,24 @@ export default async function ProductDetailPage({ params }: PageProps) {
   }
 
   return (
-          <main className="">
-        <ProductForm
-          mode="edit"
-          storeId={currentStore.id}
-          initialProduct={product}
-          categories={categories}
-          currencyCode={currentStore.currency_code}
-          canDelete={role === "owner"}
-          canArchive={role === "owner" || role === "admin"}
-          session={{ userId, tenantId }}
-          storeSlug={currentStore.slug}
-        />
-      </main>
+    <main className="flex flex-col gap-8">
+      <Breadcrumbs
+        items={[
+          { label: "Products", href: "/products" },
+          { label: product.title },
+        ]}
+      />
+      <ProductForm
+        mode="edit"
+        storeId={currentStore.id}
+        initialProduct={product}
+        categories={categories}
+        currencyCode={currentStore.currency_code}
+        canDelete={role === "owner"}
+        canArchive={role === "owner" || role === "admin"}
+        session={{ userId, tenantId }}
+        storeSlug={currentStore.slug}
+      />
+    </main>
   );
 }

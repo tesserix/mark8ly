@@ -1,5 +1,6 @@
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { getCampaign } from "@/lib/api/campaigns-api";
+import { Breadcrumbs } from "@/components/layout";
 import { CampaignAnalytics } from "@/components/marketing/campaigns/CampaignAnalytics";
 import { notFound } from "next/navigation";
 
@@ -24,14 +25,14 @@ export default async function CampaignDetailPage({
 
   if (!currentStore) {
     return (
-              <main className="space-y-10">
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-ink-900">
-            No store selected
-          </h1>
-          <p className="text-sm text-ink-500">
-            Set up a store before viewing campaigns.
-          </p>
-        </main>
+      <main className="flex flex-col gap-6">
+        <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
+          No store selected
+        </h1>
+        <p className="text-sm text-foreground-secondary">
+          Set up a store before viewing campaigns.
+        </p>
+      </main>
     );
   }
 
@@ -45,8 +46,15 @@ export default async function CampaignDetailPage({
   }
 
   return (
-          <main className="space-y-10">
-        <CampaignAnalytics campaign={campaign} />
-      </main>
+    <main className="flex flex-col gap-10">
+      <Breadcrumbs
+        items={[
+          { label: "Marketing", href: "/marketing/campaigns" },
+          { label: "Campaigns", href: "/marketing/campaigns" },
+          { label: campaign.name || "Campaign" },
+        ]}
+      />
+      <CampaignAnalytics campaign={campaign} />
+    </main>
   );
 }

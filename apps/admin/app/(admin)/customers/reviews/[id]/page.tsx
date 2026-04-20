@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
+import { Breadcrumbs } from "@/components/layout";
 import { ReviewMediaGallery } from "@/components/customers/reviews/ReviewMediaGallery";
 import { ReviewReplyForm } from "@/components/customers/reviews/ReviewReplyForm";
 import { ReviewReplyList } from "@/components/customers/reviews/ReviewReplyList";
@@ -49,21 +49,22 @@ export default async function ReviewDetailPage({
   });
 
   return (
-          <section className="flex flex-col gap-8">
-        <div className="flex flex-col gap-3">
-          <Link
-            href="/customers/reviews"
-            className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-foreground-secondary hover:text-foreground"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-            All reviews
-          </Link>
-          <div className="flex flex-col gap-2">
-            <p className="eyebrow">Review</p>
-            <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
-              {review.title || "Untitled review"}
-            </h1>
-          </div>
+    <section className="flex flex-col gap-8">
+      <Breadcrumbs
+        items={[
+          { label: "Customers", href: "/customers" },
+          { label: "Reviews", href: "/customers/reviews" },
+          { label: review.title || "Untitled review" },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
+          <p className="eyebrow">Review</p>
+          <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
+            {review.title || "Untitled review"}
+          </h1>
+        </div>
           <div className="flex flex-wrap items-center gap-3">
             <ReviewStars rating={review.rating} />
             <ReviewStatusBadge status={review.status} />

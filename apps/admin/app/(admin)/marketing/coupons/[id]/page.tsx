@@ -1,8 +1,8 @@
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { getCoupon } from "@/lib/api/coupons-api";
+import { Breadcrumbs } from "@/components/layout";
 import { CouponDetailSummary } from "@/components/marketing/coupons/CouponDetailSummary";
 import { CouponUsageTable } from "@/components/marketing/coupons/CouponUsageTable";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 interface CouponDetailPageProps {
@@ -26,31 +26,33 @@ export default async function CouponDetailPage({
   }
 
   return (
-          <main className="">
-        <div className="mb-6 flex items-center gap-3">
-          <Link
-            href="/marketing/coupons"
-            className="text-sm text-ink-500 hover:text-ink-700"
-          >
-            Coupons
-          </Link>
-          <span className="text-ink-300">/</span>
-          <h1 className="font-serif text-2xl font-semibold text-ink-900">
-            {response.data.code}
-          </h1>
-        </div>
+    <main className="flex flex-col gap-8">
+      <Breadcrumbs
+        items={[
+          { label: "Marketing", href: "/marketing/campaigns" },
+          { label: "Coupons", href: "/marketing/coupons" },
+          { label: response.data.code },
+        ]}
+      />
 
-        <CouponDetailSummary coupon={response.data} />
+      <header className="flex flex-col gap-2">
+        <p className="eyebrow">Coupon</p>
+        <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground">
+          {response.data.code}
+        </h1>
+      </header>
 
-        <hr className="my-8 border-ink-200" />
+      <CouponDetailSummary coupon={response.data} />
 
-        <h2 className="mb-4 font-serif text-lg font-semibold text-ink-900">
+      <section className="flex flex-col gap-4 border-t border-border-subtle pt-8">
+        <h2 className="font-serif text-2xl font-medium text-foreground">
           Usage history
         </h2>
         <CouponUsageTable
           usages={response.usage ?? []}
           total={response.usage_total ?? 0}
         />
-      </main>
+      </section>
+    </main>
   );
 }

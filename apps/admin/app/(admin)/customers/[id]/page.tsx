@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { Breadcrumbs } from "@/components/layout";
 import { CustomerActionsBar } from "@/components/customers/CustomerActionsBar";
 import { CustomerAddressesCard } from "@/components/customers/CustomerAddressesCard";
 import { CustomerDetailHeader } from "@/components/customers/CustomerDetailHeader";
@@ -34,40 +35,48 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  return (
-          <main
-        className="flex-col gap-10"
-        aria-labelledby="customer-heading"
-      >
-        <CustomerDetailHeader customer={customer} />
+  const displayName = [customer.first_name, customer.last_name]
+    .filter(Boolean)
+    .join(" ") || customer.email;
 
-        <div className="grid grid-cols-1 gap-10 lg:grid-cols-[2fr_1fr]">
-          <div className="flex flex-col gap-10">
-            <CustomerOverviewCard
-              customer={customer}
-              currency={currentStore.currency_code}
-            />
-            <CustomerAddressesCard addresses={customer.addresses} />
-            <CustomerTagsEditor
-              customerId={customer.id}
-              initialTags={customer.tags}
-              updateAction={updateTagsAction}
-            />
-            <CustomerNotesEditor
-              customerId={customer.id}
-              initialNotes={customer.notes ?? ""}
-              updateAction={updateNotesAction}
-            />
-          </div>
-          <div className="flex flex-col gap-10 lg:sticky lg:top-8 lg:self-start">
-            <CustomerActionsBar
-              customerId={customer.id}
-              status={customer.status}
-              blockAction={blockCustomerAction}
-              unblockAction={unblockCustomerAction}
-            />
-          </div>
+  return (
+    <main className="flex flex-col gap-10" aria-labelledby="customer-heading">
+      <Breadcrumbs
+        items={[
+          { label: "Customers", href: "/customers" },
+          { label: displayName },
+        ]}
+      />
+
+      <CustomerDetailHeader customer={customer} />
+
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[2fr_1fr]">
+        <div className="flex flex-col gap-10">
+          <CustomerOverviewCard
+            customer={customer}
+            currency={currentStore.currency_code}
+          />
+          <CustomerAddressesCard addresses={customer.addresses} />
+          <CustomerTagsEditor
+            customerId={customer.id}
+            initialTags={customer.tags}
+            updateAction={updateTagsAction}
+          />
+          <CustomerNotesEditor
+            customerId={customer.id}
+            initialNotes={customer.notes ?? ""}
+            updateAction={updateNotesAction}
+          />
         </div>
-      </main>
+        <div className="flex flex-col gap-10 lg:sticky lg:top-8 lg:self-start">
+          <CustomerActionsBar
+            customerId={customer.id}
+            status={customer.status}
+            blockAction={blockCustomerAction}
+            unblockAction={unblockCustomerAction}
+          />
+        </div>
+      </div>
+    </main>
   );
 }

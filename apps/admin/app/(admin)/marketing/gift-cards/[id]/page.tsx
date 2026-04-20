@@ -1,21 +1,16 @@
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { getGiftCard } from "@/lib/api/marketplace-api";
 import { notFound } from "next/navigation";
-import Link from "next/link";
+
+import { Breadcrumbs } from "@/components/layout";
+import { formatMoney } from "@/lib/format";
 
 interface GiftCardDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
 function formatCurrency(amount: string, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency,
-    }).format(Number(amount));
-  } catch {
-    return `${currency} ${amount}`;
-  }
+  return formatMoney(amount, currency);
 }
 
 function txnTypeBadge(type: string) {
@@ -51,18 +46,21 @@ export default async function GiftCardDetailPage({ params }: GiftCardDetailPageP
   const gc = response.data;
 
   return (
-          <main className="flex flex-col gap-8">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <Link
-            href="/marketing/gift-cards"
-            className="text-sm text-ink-500 hover:text-ink-900"
-          >
-            Gift Cards
-          </Link>
-          <span className="text-ink-500">/</span>
-          <span className="font-mono text-sm text-ink-900">{gc.code_display}</span>
-        </div>
+    <main className="flex flex-col gap-8">
+      <Breadcrumbs
+        items={[
+          { label: "Marketing", href: "/marketing/campaigns" },
+          { label: "Gift cards", href: "/marketing/gift-cards" },
+          { label: gc.code_display },
+        ]}
+      />
+
+      <header className="flex flex-col gap-2">
+        <p className="eyebrow">Gift card</p>
+        <h1 className="font-mono text-2xl font-medium text-foreground">
+          {gc.code_display}
+        </h1>
+      </header>
 
         {/* Card summary */}
         <div className="grid grid-cols-3 gap-6">

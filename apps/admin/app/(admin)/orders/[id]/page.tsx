@@ -6,6 +6,7 @@
 
 import { notFound } from "next/navigation";
 
+import { Breadcrumbs } from "@/components/layout";
 import { OrderActionsBar } from "@/components/orders/OrderActionsBar";
 import { ShippingLabelPanel } from "@/components/orders/ShippingLabelPanel";
 import { OrderAddressCard } from "@/components/orders/OrderAddressCard";
@@ -43,13 +44,17 @@ export default async function OrderDetailPage({ params }: PageProps) {
   }).catch(() => null);
 
   return (
-          <main
-        className="flex-col gap-10"
-        aria-labelledby="order-heading"
-      >
-        <OrderDetailHeader order={order} />
+    <main className="flex flex-col gap-10" aria-labelledby="order-heading">
+      <Breadcrumbs
+        items={[
+          { label: "Orders", href: "/orders" },
+          { label: order.order_number },
+        ]}
+      />
 
-        <div className="grid grid-cols-1 gap-10 lg:grid-cols-[2fr_1fr]">
+      <OrderDetailHeader order={order} />
+
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[2fr_1fr]">
           <div className="flex flex-col gap-10">
             <OrderItemsTable
               items={order.items}
@@ -57,17 +62,17 @@ export default async function OrderDetailPage({ params }: PageProps) {
             />
             <OrderAddressCard addresses={order.addresses} />
           </div>
-          <div className="flex flex-col gap-10 lg:sticky lg:top-8 lg:self-start">
-            <OrderTotalsCard order={order} />
-            <OrderActionsBar order={order} />
-            <ShippingLabelPanel
-              storeId={currentStore.id}
-              orderId={order.id}
-              orderStatus={order.status}
-            />
-            <OrderDocumentsPanel order={order} shipmentStatus={shipment?.status ?? null} />
-          </div>
+        <div className="flex flex-col gap-10 lg:sticky lg:top-8 lg:self-start">
+          <OrderTotalsCard order={order} />
+          <OrderActionsBar order={order} />
+          <ShippingLabelPanel
+            storeId={currentStore.id}
+            orderId={order.id}
+            orderStatus={order.status}
+          />
+          <OrderDocumentsPanel order={order} shipmentStatus={shipment?.status ?? null} />
         </div>
-      </main>
+      </div>
+    </main>
   );
 }

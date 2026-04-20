@@ -1,14 +1,13 @@
 "use client";
 
+// User menu — matches the NotificationBell dropdown pattern so the
+// top-right cluster reads as one visual family: icon-sized trigger
+// that opens a hairline-divided panel with a header, a divided list
+// of actions, and a footer link. Click-outside + Escape dismiss.
+
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { LogOut, Settings as SettingsIcon, User } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@tesserix/web";
 
 interface UserMenuProps {
   email?: string;
@@ -29,66 +28,122 @@ function displayNameFromEmail(email: string | undefined): string {
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
 
-/**
- * Top-right user menu. Shows the user's avatar if they've uploaded one,
- * otherwise the first letter of their display name. Display name prefers
- * the persisted profile name, then falls back to an email-derived label.
- */
 export function UserMenu({ email, name, avatarUrl }: UserMenuProps) {
+  const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
   const display = (name && name.trim()) || displayNameFromEmail(email);
   const initial = display.trim().charAt(0).toUpperCase() || "M";
 
+  // Close on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  // Close on Escape
+  useEffect(() => {
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    if (open) {
+      document.addEventListener("keydown", handleEscape);
+    }
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [open]);
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-3 rounded-full border border-border/80 bg-white/82 px-2 py-1.5 text-sm text-muted-foreground shadow-[0_12px_26px_rgba(76,52,24,0.08)] transition-[background-color,color,border-color,box-shadow] hover:border-border hover:bg-white hover:text-foreground hover:shadow-[0_14px_30px_rgba(76,52,24,0.1)]"
-          aria-label="Account menu"
-          aria-haspopup="menu"
-        >
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt=""
-              className="h-8 w-8 rounded-full object-cover shadow-[0_8px_20px_rgba(34,28,23,0.16)]"
-            />
-          ) : (
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(34,28,23,0.16)]">
-              {initial}
-            </span>
-          )}
-          <span className="hidden max-w-[12rem] truncate pr-2 sm:inline">
-            {display}
+    <div className="relative" ref={panelRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Account menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex h-11 items-center gap-2.5 rounded-full pl-1 pr-3 text-sm text-foreground-secondary transition-colors hover:bg-paper-100 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+      >
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={avatarUrl}
+            alt=""
+            className="h-9 w-9 rounded-full object-cover"
+          />
+        ) : (
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--ink-900)] text-xs font-semibold text-[color:var(--primary-foreground)]">
+            {initial}
           </span>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56 rounded-2xl border-border/80 bg-[rgba(255,252,248,0.98)] shadow-[0_24px_60px_rgba(76,52,24,0.14)]">
-        <DropdownMenuLabel className="truncate">
-          {email ?? "Not signed in"}
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <a href="/settings/account">
-            <User className="mr-2 h-4 w-4" />
-            Profile
-          </a>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <a href="/settings">
-            <SettingsIcon className="mr-2 h-4 w-4" />
-            Settings
-          </a>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <a href="/logout" className="text-destructive focus:text-destructive">
-            <LogOut className="mr-2 h-4 w-4" />
-            Sign out
-          </a>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        )}
+        <span className="hidden max-w-[10rem] truncate sm:inline">{display}</span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-[6px] border border-border bg-[color:var(--background-elevated)] shadow-lg"
+        >
+          <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarUrl}
+                alt=""
+                className="h-10 w-10 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color:var(--ink-900)] text-sm font-semibold text-[color:var(--primary-foreground)]">
+                {initial}
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-serif text-sm text-foreground">{display}</p>
+              {email && (
+                <p className="truncate text-xs text-foreground-tertiary">{email}</p>
+              )}
+            </div>
+          </div>
+
+          <ul role="list" className="divide-y divide-border">
+            <li>
+              <Link
+                href="/settings/account"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 text-sm text-foreground transition-colors hover:bg-[color:var(--paper-100)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
+              >
+                <User className="h-4 w-4 shrink-0 text-foreground-secondary" aria-hidden="true" />
+                Profile
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/settings"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 text-sm text-foreground transition-colors hover:bg-[color:var(--paper-100)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
+              >
+                <SettingsIcon className="h-4 w-4 shrink-0 text-foreground-secondary" aria-hidden="true" />
+                Settings
+              </Link>
+            </li>
+          </ul>
+
+          <div className="border-t border-border">
+            <a
+              href="/logout"
+              className="flex items-center gap-3 px-4 py-3 text-sm text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/[0.06] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
+            >
+              <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+              Sign out
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

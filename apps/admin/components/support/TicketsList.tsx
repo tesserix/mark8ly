@@ -24,17 +24,26 @@ const tabs: { status: TicketStatus; label: string }[] = [
   { status: "closed", label: "Closed" },
 ];
 
-function statusBadgeClass(status: TicketStatus): string {
-  switch (status) {
-    case "open":
-      return "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]";
-    case "in_progress":
-      return "bg-amber-100 text-amber-900";
-    case "resolved":
-      return "bg-[color:var(--moss-700)] text-white";
-    case "closed":
-      return "bg-[color:var(--ink-900)]/10 text-[color:var(--ink-900)]/60";
-  }
+// Dot + label status badge. Matches the orders/returns/marketing pattern
+// so the visual language stays consistent across every admin list.
+function StatusBadge({ status }: { status: TicketStatus }) {
+  const dotClass =
+    status === "open"
+      ? "border border-[color:var(--ink-900)]/60 bg-transparent"
+      : status === "in_progress"
+        ? "bg-[color:var(--warning)]"
+        : status === "resolved"
+          ? "bg-[color:var(--moss-700)]"
+          : "bg-[color:var(--ink-900)] opacity-40";
+  return (
+    <span className="inline-flex items-center gap-2 text-sm text-foreground">
+      <span
+        aria-hidden="true"
+        className={`inline-block h-2 w-2 rounded-full ${dotClass}`}
+      />
+      {statusLabel(status)}
+    </span>
+  );
 }
 
 function statusLabel(status: TicketStatus): string {
@@ -50,12 +59,12 @@ function statusLabel(status: TicketStatus): string {
   }
 }
 
-function priorityBadgeClass(priority: TicketPriority): string {
+function priorityLabelClass(priority: TicketPriority): string {
   switch (priority) {
     case "low":
-      return "text-[color:var(--ink-900)]/40";
+      return "text-foreground-tertiary";
     case "medium":
-      return "text-[color:var(--ink-900)]/60";
+      return "text-foreground-secondary";
     case "high":
       return "text-[color:var(--signal)]";
   }
@@ -118,9 +127,13 @@ export function TicketsList({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Tabs */}
-      <div className="flex items-center gap-6 border-b border-border-subtle">
+    <div className="flex flex-col gap-6">
+      {/* Underline tabs — hairline baseline, ink indicator, tabular-nums
+          count. Matches the orders/returns/marketing pattern. */}
+      <nav
+        aria-label="Filter tickets by status"
+        className="flex flex-wrap items-center gap-x-1 gap-y-0 border-b border-border-subtle px-1"
+      >
         {tabs.map((tab) => {
           const count = counts[tab.status] ?? 0;
           const isActive = tab.status === activeStatus;
@@ -129,85 +142,89 @@ export function TicketsList({
               key={tab.status}
               type="button"
               onClick={() => handleTabChange(tab.status)}
-              className={`relative min-h-[44px] pb-3 text-sm font-medium transition-colors ${
-                isActive
-                  ? "text-foreground"
-                  : "text-foreground-secondary hover:text-foreground"
-              }`}
               aria-current={isActive ? "page" : undefined}
+              className={
+                "flex shrink-0 items-baseline gap-1.5 border-b-2 px-2.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
+                (isActive
+                  ? "border-[color:var(--ink-900)] text-foreground"
+                  : "border-transparent text-foreground-tertiary hover:text-foreground")
+              }
             >
-              {tab.label} ({count})
-              {isActive && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[color:var(--moss-700)]" />
+              <span>{tab.label}</span>
+              {count > 0 && (
+                <span
+                  className={
+                    "text-[11px] tabular-nums " +
+                    (isActive
+                      ? "text-foreground-secondary"
+                      : "text-foreground-tertiary")
+                  }
+                >
+                  {count}
+                </span>
               )}
             </button>
           );
         })}
-      </div>
+      </nav>
 
-      {/* Search */}
-      <form onSubmit={handleSearch} className="relative w-full sm:w-auto">
+      {/* Search — hairline input, matches orders/products/customers. */}
+      <form onSubmit={handleSearch} className="flex items-center gap-3 border-b border-border-subtle pb-2">
         <Search
-          className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-tertiary"
+          className="h-4 w-4 shrink-0 text-foreground-tertiary"
           aria-hidden="true"
         />
         <input
           type="search"
           value={search}
           onChange={(e) => handleSearchChange(e.target.value)}
-          placeholder="Search tickets..."
-          className="h-11 w-full rounded-md border border-border bg-background pl-10 pr-4 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] sm:w-80"
+          placeholder="Search tickets…"
+          className="w-full border-none bg-transparent py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:outline-none"
           aria-label="Search tickets"
         />
       </form>
 
-      {/* Table */}
+      {/* Rows */}
       {tickets.length === 0 ? (
-        <div className="py-10 text-center">
-          <p className="text-sm text-foreground-secondary">
-            No {activeStatus} tickets found.
+        <div className="border-t border-border-subtle py-12">
+          <p className="font-serif text-xl font-medium text-foreground">
+            No {activeStatus.replace("_", " ")} tickets
+          </p>
+          <p className="mt-2 max-w-prose text-sm text-foreground-secondary">
+            When a customer opens a support ticket, it will appear here.
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-        <ul className="divide-y divide-border-subtle" role="list">
+        <ul role="list" className="flex flex-col">
           {tickets.map((ticket) => (
             <li key={ticket.id}>
               <Link
                 href={`/support/tickets/${ticket.id}`}
-                className="flex min-h-[44px] items-center justify-between gap-4 px-4 py-4 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
+                className="flex items-center justify-between gap-4 border-b border-border-subtle px-4 py-4 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
               >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="font-mono text-sm text-foreground-secondary"
-                      style={{ fontFeatureSettings: '"tnum" 1' }}
-                    >
+                <div className="min-w-0 flex-1 flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="font-serif text-sm tabular-nums text-foreground">
                       {ticket.ticket_number}
                     </span>
+                    <StatusBadge status={ticket.status} />
                     <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(ticket.status)}`}
-                    >
-                      {statusLabel(ticket.status)}
-                    </span>
-                    <span
-                      className={`text-[11px] font-medium uppercase ${priorityBadgeClass(ticket.priority)}`}
+                      className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${priorityLabelClass(ticket.priority)}`}
                     >
                       {ticket.priority}
                     </span>
                   </div>
-                  <p className="truncate text-sm font-medium text-foreground">
+                  <p className="mt-1 truncate text-sm text-foreground">
                     {ticket.subject}
                   </p>
                 </div>
-                <p className="shrink-0 text-xs text-foreground-tertiary">
+                <p className="shrink-0 text-xs tabular-nums text-foreground-tertiary">
                   {timeAgo(ticket.created_at)}
                 </p>
               </Link>
             </li>
           ))}
         </ul>
-        </div>
       )}
     </div>
   );

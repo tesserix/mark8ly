@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { Fragment, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -199,40 +199,52 @@ export function CampaignWizard({
 
   return (
     <div className="space-y-8">
-      {/* Progress indicator */}
-      <div className="flex items-center gap-2 text-sm text-ink-500">
+      {/* Progress indicator — flex-1 connector so lines auto-balance
+          regardless of label width, and the rail stretches to fill
+          the available space instead of hugging the left edge. */}
+      <nav
+        aria-label={`Step ${step} of 3`}
+        className="flex items-center border-y border-border-subtle py-5 text-sm"
+      >
         {[1, 2, 3].map((s) => {
           const stepName = s === 1 ? "Audience" : s === 2 ? "Content" : "Schedule";
+          const isCurrent = s === step;
+          const isDone = s < step;
+          const dotClass = isCurrent
+            ? "bg-[color:var(--ink-900)] text-[color:var(--paper-200)]"
+            : isDone
+              ? "bg-[color:var(--moss-700)] text-[color:var(--paper-200)]"
+              : "border border-[color:var(--ink-900)]/25 bg-[color:var(--background)] text-foreground-tertiary";
+          const labelClass = isCurrent
+            ? "text-foreground"
+            : isDone
+              ? "text-foreground"
+              : "text-foreground-tertiary";
           return (
-          <div key={s} className="flex items-center gap-2">
-            <span
-              aria-label={`Step ${s} of 3: ${stepName}`}
-              className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
-                s === step
-                  ? "bg-ink-900 text-paper-200"
-                  : s < step
-                    ? "bg-moss-700 text-white"
-                    : "bg-ink-100 text-ink-500"
-              }`}
-            >
-              {s}
-            </span>
-            <span
-              className={
-                s === step ? "font-medium text-ink-900" : "text-ink-500"
-              }
-            >
-              {stepName}
-            </span>
-            {s < 3 && (
-              <span className="mx-2 h-px w-8 bg-ink-200" aria-hidden />
-            )}
-          </div>
+            <Fragment key={s}>
+              <div className="flex shrink-0 items-center gap-2.5">
+                <span
+                  aria-hidden="true"
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${dotClass}`}
+                >
+                  {s}
+                </span>
+                <span
+                  className={`whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] ${labelClass}`}
+                >
+                  {stepName}
+                </span>
+              </div>
+              {s < 3 && (
+                <span
+                  aria-hidden="true"
+                  className="mx-4 h-px min-w-6 flex-1 bg-[color:var(--ink-900)]/10"
+                />
+              )}
+            </Fragment>
           );
         })}
-      </div>
-
-      <hr className="border-ink-200" />
+      </nav>
 
       {/* Step 1 — Audience */}
       {step === 1 && (

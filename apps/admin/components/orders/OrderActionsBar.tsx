@@ -12,10 +12,10 @@
 //
 // Inline expanding form panels (no modal dialogs). Pressing an action
 // button reveals its form below the bar; submitting the form runs the
-// server action and either closes the panel + lets the page revalidate,
-// or surfaces the typed error inline.
+// server action and either toasts success and closes the panel, or
+// surfaces the typed error inline next to the form for correction.
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import type { ComponentType, SVGProps } from "react";
 import {
   Select,
@@ -26,6 +26,7 @@ import {
 } from "@tesserix/web";
 import { Check, CreditCard, PackageCheck, XCircle } from "lucide-react";
 
+import { useToast } from "@/components/feedback/Toaster";
 import type { AdminOrder, PaymentStatus } from "@/lib/api/marketplace-api";
 
 import {
@@ -43,10 +44,10 @@ interface OrderActionsBarProps {
 type Panel = "none" | "confirm" | "cancel" | "refund";
 
 export function OrderActionsBar({ order }: OrderActionsBarProps) {
+  const { toast } = useToast();
   const [panel, setPanel] = useState<Panel>("none");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   const canConfirm = order.status === "pending";
   const canFulfill = order.status === "confirmed";
@@ -55,58 +56,35 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
     order.payment_status === "paid" ||
     order.payment_status === "partially_refunded";
 
-  // Auto-clear success strip after 4 seconds.
-  useEffect(() => {
-    if (!success) return;
-    const t = setTimeout(() => setSuccess(null), 4000);
-    return () => clearTimeout(t);
-  }, [success]);
-
   const close = useCallback(() => {
     setPanel("none");
     setError(null);
   }, []);
 
-  const onSuccess = useCallback((msg: string) => {
-    close();
-    setSuccess(msg);
-  }, [close]);
+  const onSuccess = useCallback(
+    (title: string, description?: string) => {
+      close();
+      toast.success(title, description);
+    },
+    [close, toast],
+  );
 
   const runFulfill = () => {
     setError(null);
     startTransition(async () => {
       const r = await fulfillOrderAction(order.store_id, order.id);
       if (!r.ok) {
-        setError(r.error?.message ?? "Action failed");
+        const msg = r.error?.message ?? "Action failed";
+        setError(msg);
+        toast.error("Couldn't mark fulfilled", msg);
       } else {
-        onSuccess("Order marked as fulfilled.");
+        onSuccess("Order marked fulfilled");
       }
     });
   };
 
   return (
-    <section
-      aria-labelledby="order-actions-heading"
-      className="flex flex-col gap-4"
-    >
-      <h2
-        id="order-actions-heading"
-        className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
-      >
-        Actions
-      </h2>
-
-      {/* Success feedback strip — editorial style: serif italic, hairline rules. */}
-      {success && (
-        <div
-          role="status"
-          className="border-y border-[color:var(--moss-700)] border-opacity-40 py-3"
-        >
-          <p className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-sm italic text-[color:var(--moss-700)]">
-            {success}
-          </p>
-        </div>
-      )}
+    <section aria-label="Order actions" className="flex flex-col gap-4">
 
       <div className="flex flex-wrap items-center gap-2">
         {canConfirm && (
@@ -167,7 +145,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
         <ConfirmForm
           orderId={order.id}
           storeId={order.store_id}
-          onDone={(msg) => onSuccess(msg ?? "Order confirmed.")}
+          onDone={(msg) => (msg ? onSuccess("Order confirmed", msg) : close())}
         />
       )}
       {panel === "cancel" && (
@@ -175,7 +153,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
           orderId={order.id}
           storeId={order.store_id}
           customerEmail={order.customer_email}
-          onDone={(msg) => onSuccess(msg ?? "Order cancelled.")}
+          onDone={(msg) => (msg ? onSuccess("Order cancelled", msg) : close())}
         />
       )}
       {panel === "refund" && (
@@ -186,7 +164,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
           refundedAmount={order.refunded_amount}
           currencyCode={order.currency_code}
           customerEmail={order.customer_email}
-          onDone={(msg) => onSuccess(msg ?? "Refund issued.")}
+          onDone={(msg) => (msg ? onSuccess("Refund issued", msg) : close())}
         />
       )}
     </section>
@@ -256,9 +234,15 @@ function PanelShell({
   title: string;
   children: React.ReactNode;
 }) {
+  // Hairline-top inline continuation. The form reads as an elaboration
+  // of the action button above it, not as a callout — the destructive
+  // weight of cancel/refund comes from button color and two-step copy,
+  // not from a border treatment around the workspace.
   return (
-    <div className="flex flex-col gap-4 border-l-2 border-[color:var(--moss-700)] bg-[color:var(--ink-900)] bg-opacity-[0.02] px-5 py-4">
-      <h3 className="text-base text-[color:var(--ink-900)]">{title}</h3>
+    <div className="flex flex-col gap-4 border-t border-border-subtle pt-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-foreground-tertiary">
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -305,8 +289,10 @@ function ConfirmForm({ storeId, orderId, onDone }: ConfirmFormProps) {
         setError(r.error);
         return;
       }
-      const ps = paymentStatus ? ` Payment marked as ${paymentStatus}.` : "";
-      onDone(`Order confirmed.${ps}`);
+      const desc = paymentStatus
+        ? `Payment marked as ${paymentStatus}.`
+        : "Order moved to confirmed.";
+      onDone(desc);
     });
   };
 
@@ -377,7 +363,7 @@ function CancelForm({ storeId, orderId, customerEmail, onDone }: CancelFormProps
         setStep("form");
         return;
       }
-      onDone("Order cancelled.");
+      onDone(`${customerEmail} has been notified.`);
     });
   };
 
@@ -474,7 +460,7 @@ function RefundForm({
         setStep("form");
         return;
       }
-      onDone(`Refund of ${currencyCode} ${amount} issued.`);
+      onDone(`${currencyCode} ${amount} refunded to ${customerEmail}.`);
     });
   };
 

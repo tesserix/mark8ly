@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@tesserix/web";
 
+import { useToast } from "@/components/feedback/Toaster";
 import type { ShipmentResponse } from "@/lib/api/shipping-api";
 
 import {
@@ -183,7 +184,7 @@ function ShipmentDetails({
   const labelProxyURL = `/api/admin/stores/${storeId}/orders/${orderId}/shipments/${shipment.id}/label`;
 
   return (
-    <div className="flex flex-col gap-5 rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-5 py-5">
+    <div className="flex flex-col gap-5">
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
         {shipment.provider && (
           <DetailRow label="Carrier" value={shipment.provider} />
@@ -246,32 +247,24 @@ function LabelActions({
   onUpdated: (s: ShipmentResponse) => void;
   onCleared: () => void;
 }) {
+  const { toast } = useToast();
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [recipient, setRecipient] = useState("");
   const [emailPending, emailStartTransition] = useTransition();
-  const [emailMsg, setEmailMsg] = useState<
-    { kind: "ok" | "err"; text: string } | null
-  >(null);
   const [refreshPending, refreshStartTransition] = useTransition();
-  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
   const [downloadPending, setDownloadPending] = useState(false);
   const [downloadErr, setDownloadErr] = useState<string | null>(null);
   const [deletePending, deleteStartTransition] = useTransition();
-  const [deleteErr, setDeleteErr] = useState<string | null>(null);
   // Pickup reschedule popover state. Kept local to LabelActions so the
   // rest of the panel doesn't need to know the slot catalogue.
   const [showReschedule, setShowReschedule] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(defaultRescheduleDate);
   const [rescheduleSlot, setRescheduleSlot] = useState("14:00:00");
   const [reschedulePending, rescheduleStartTransition] = useTransition();
-  const [rescheduleMsg, setRescheduleMsg] = useState<
-    { kind: "ok" | "err"; text: string } | null
-  >(null);
 
   const sendEmail = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      setEmailMsg(null);
       emailStartTransition(async () => {
         const r = await emailShipmentLabelAction(
           storeId,
@@ -280,31 +273,30 @@ function LabelActions({
           recipient,
         );
         if (!r.ok) {
-          setEmailMsg({ kind: "err", text: r.error.message });
+          toast.error("Couldn't email label", r.error.message);
           return;
         }
-        setEmailMsg({ kind: "ok", text: `Label sent to ${recipient}.` });
+        toast.success("Label sent", `Delivered to ${recipient}.`);
         setRecipient("");
         setShowEmailForm(false);
       });
     },
-    [storeId, orderId, shipment.id, recipient],
+    [storeId, orderId, shipment.id, recipient, toast],
   );
 
   const refresh = useCallback(() => {
-    setRefreshMsg(null);
     refreshStartTransition(async () => {
       const r = await refreshShipmentTrackingAction(storeId, orderId, shipment.id);
       if (!r.ok) {
-        setRefreshMsg(r.error?.message ?? "Tracking refresh failed.");
+        toast.error("Tracking refresh failed", r.error?.message);
         return;
       }
       if (r.data) {
         onUpdated(r.data);
-        setRefreshMsg("Tracking synced.");
+        toast.success("Tracking synced");
       }
     });
-  }, [storeId, orderId, shipment.id, onUpdated]);
+  }, [storeId, orderId, shipment.id, onUpdated, toast]);
 
   // Download via fetch so we can inspect the Content-Type. If the
   // carrier returned a real PDF we stream it through a Blob URL and
@@ -350,43 +342,42 @@ function LabelActions({
   const reschedulePickup = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      setRescheduleMsg(null);
       rescheduleStartTransition(async () => {
         const r = await schedulePickupAction(storeId, orderId, shipment.id, {
           date: rescheduleDate || undefined,
           slot_start: rescheduleSlot || undefined,
         });
         if (!r.ok) {
-          setRescheduleMsg({
-            kind: "err",
-            text: r.error?.message ?? "Reschedule failed.",
-          });
+          toast.error("Reschedule failed", r.error?.message);
           return;
         }
         if (r.data) {
           onUpdated(r.data);
-          setRescheduleMsg({ kind: "ok", text: "Pickup rescheduled." });
+          toast.success("Pickup rescheduled");
           setShowReschedule(false);
         }
       });
     },
-    [storeId, orderId, shipment.id, rescheduleDate, rescheduleSlot, onUpdated],
+    [storeId, orderId, shipment.id, rescheduleDate, rescheduleSlot, onUpdated, toast],
   );
 
   const clearShipment = useCallback(() => {
-    setDeleteErr(null);
     deleteStartTransition(async () => {
       const r = await deleteShipmentAction(storeId, orderId, shipment.id);
       if (!r.ok) {
-        setDeleteErr(r.error.message);
+        toast.error("Couldn't delete shipment", r.error.message);
         return;
       }
+      toast.success("Shipment deleted");
       onCleared();
     });
-  }, [storeId, orderId, shipment.id, onCleared]);
+  }, [storeId, orderId, shipment.id, onCleared, toast]);
 
   return (
     <div className="flex flex-col gap-3 pt-1">
+      {/* Tier 1 — primary actions. Download is the action a merchant
+          reaches for most often, so it takes the ink-filled weight;
+          Email is its close sibling in a ghost treatment. */}
       <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
@@ -402,54 +393,47 @@ function LabelActions({
           {downloadPending ? "Fetching…" : "Download label"}
         </button>
         <GhostBtn
-          onClick={() => {
-            setShowEmailForm((v) => !v);
-            setEmailMsg(null);
-          }}
+          onClick={() => setShowEmailForm((v) => !v)}
           disabled={isStub}
           active={showEmailForm}
         >
           {showEmailForm ? "Cancel email" : "Email label"}
         </GhostBtn>
-        <GhostBtn onClick={refresh} disabled={refreshPending || isStub}>
-          {refreshPending ? "Syncing…" : "Refresh tracking"}
-        </GhostBtn>
-        <GhostBtn
-          onClick={() => {
-            setShowReschedule((v) => !v);
-            setRescheduleMsg(null);
-          }}
+      </div>
+
+      {/* Tier 2 — utility actions. Text-only links with bullet separators
+          so they visually recede behind the primary CTAs without needing
+          their own bordered buttons fighting for attention. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-secondary">
+        <TextLink onClick={refresh} disabled={refreshPending || isStub}>
+          {refreshPending ? "Syncing tracking…" : "Refresh tracking"}
+        </TextLink>
+        <span aria-hidden="true" className="text-foreground-tertiary">·</span>
+        <TextLink
+          onClick={() => setShowReschedule((v) => !v)}
           disabled={isStub || reschedulePending}
           active={showReschedule}
         >
-          {showReschedule ? "Cancel" : "Reschedule pickup"}
-        </GhostBtn>
-        <button
-          type="button"
+          {showReschedule ? "Cancel reschedule" : "Reschedule pickup"}
+        </TextLink>
+        <span aria-hidden="true" className="text-foreground-tertiary">·</span>
+        <TextLink
           onClick={clearShipment}
           disabled={deletePending}
-          className="inline-flex h-8 items-center rounded-md border border-[color:var(--ink-900)]/15 px-3 text-[13px] font-medium text-foreground-secondary transition-colors hover:border-[color:var(--danger)] hover:text-[color:var(--danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+          tone="danger"
         >
-          {deletePending ? "Deleting…" : "Delete"}
-        </button>
+          {deletePending ? "Deleting…" : "Delete shipment"}
+        </TextLink>
       </div>
       {downloadErr && (
-        <p role="alert" className="rounded-md border border-[color:var(--danger)]/20 bg-[color:var(--danger)]/[0.05] px-3 py-2 text-xs text-[color:var(--danger)]">
+        <p role="alert" className="text-xs text-[color:var(--danger)]">
           {downloadErr}
         </p>
-      )}
-      {deleteErr && (
-        <p role="alert" className="rounded-md border border-[color:var(--danger)]/20 bg-[color:var(--danger)]/[0.05] px-3 py-2 text-xs text-[color:var(--danger)]">
-          {deleteErr}
-        </p>
-      )}
-      {refreshMsg && (
-        <p className="text-xs text-foreground-tertiary">{refreshMsg}</p>
       )}
       {showReschedule && (
         <form
           onSubmit={reschedulePickup}
-          className="flex flex-col gap-2 rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-3"
+          className="flex flex-col gap-2 border-t border-border-subtle pt-3"
         >
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
@@ -483,18 +467,6 @@ function LabelActions({
               {reschedulePending ? "Scheduling…" : "Schedule pickup"}
             </button>
           </div>
-          {rescheduleMsg && (
-            <p
-              role={rescheduleMsg.kind === "err" ? "alert" : "status"}
-              className={`text-xs ${
-                rescheduleMsg.kind === "ok"
-                  ? "text-[color:var(--moss-700)]"
-                  : "text-red-700"
-              }`}
-            >
-              {rescheduleMsg.text}
-            </p>
-          )}
         </form>
       )}
       {showEmailForm && (
@@ -521,18 +493,6 @@ function LabelActions({
           </div>
         </form>
       )}
-      {emailMsg && (
-        <p
-          role="status"
-          className={`text-xs ${
-            emailMsg.kind === "ok"
-              ? "text-[color:var(--moss-700)]"
-              : "text-red-700"
-          }`}
-        >
-          {emailMsg.text}
-        </p>
-      )}
     </div>
   );
 }
@@ -551,6 +511,7 @@ function AdvanceStatusBar({
   shipment: ShipmentResponse;
   onUpdated: (s: ShipmentResponse) => void;
 }) {
+  const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [target, setTarget] = useState<string | null>(null);
 
@@ -564,10 +525,20 @@ function AdvanceStatusBar({
 
   function advance(status: string) {
     setTarget(status);
+    const labelMap: Record<string, string> = {
+      in_transit: "In transit",
+      out_for_delivery: "Out for delivery",
+      delivered: "Delivered",
+    };
     startTransition(async () => {
       const r = await updateShipmentStatusAction(storeId, orderId, shipment.id, { status });
       setTarget(null);
-      if (r.ok && r.data) onUpdated(r.data);
+      if (r.ok && r.data) {
+        onUpdated(r.data);
+        toast.success("Shipment updated", `Marked as ${labelMap[status] ?? status}.`);
+      } else if (!r.ok) {
+        toast.error("Couldn't update shipment", r.error?.message);
+      }
     });
   }
 
@@ -683,6 +654,36 @@ function GhostBtn({
   );
 }
 
+function TextLink({
+  onClick,
+  disabled,
+  active,
+  tone = "default",
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  tone?: "default" | "danger";
+  children: React.ReactNode;
+}) {
+  const hoverClass =
+    tone === "danger"
+      ? "hover:text-[color:var(--danger)]"
+      : "hover:text-[color:var(--moss-700)]";
+  const activeClass = active ? "text-[color:var(--moss-700)]" : "";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`text-xs underline-offset-4 transition-colors hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40 ${hoverClass} ${activeClass}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Create shipment form
 // ─────────────────────────────────────────────────────────────────────────
@@ -711,6 +712,7 @@ function CreateShipmentForm({
   onCreated,
   onCancel,
 }: CreateShipmentFormProps) {
+  const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<ShippingActionResult["error"] | undefined>();
   // The customer already picked a carrier + service level at checkout;
@@ -733,23 +735,25 @@ function CreateShipmentForm({
         });
         if (!r.ok) {
           setError(r.error);
+          toast.error("Couldn't generate label", r.error?.message);
           return;
         }
         if (r.data) {
+          toast.success("Shipping label generated");
           onCreated(r.data);
         }
       });
     },
-    [storeId, orderId, provider, service, onCreated],
+    [storeId, orderId, provider, service, onCreated, toast],
   );
 
   return (
-    <div className="flex flex-col gap-4 rounded-md border border-[color:var(--ink-900)]/10 bg-white px-5 py-4 shadow-sm">
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-base text-[color:var(--ink-900)]">
+    <div className="flex flex-col gap-4 border-t border-border-subtle pt-4">
+      <div className="flex flex-col gap-1">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-foreground-tertiary">
           Approve &amp; generate label
         </h3>
-        <p className="text-xs text-[color:var(--ink-900)] opacity-60">
+        <p className="text-xs text-foreground-tertiary">
           Picked by customer: {CARRIERS.find((c) => c.value === provider)?.label ?? provider}
           {" · "}
           {SERVICE_LEVELS.find((s) => s.value === service)?.label ?? service}

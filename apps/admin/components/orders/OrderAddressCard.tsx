@@ -19,7 +19,7 @@ export function OrderAddressCard({ addresses }: OrderAddressCardProps) {
     >
       <h2
         id="order-addresses-heading"
-        className="font-serif text-2xl font-medium text-foreground"
+        className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
       >
         Addresses
       </h2>

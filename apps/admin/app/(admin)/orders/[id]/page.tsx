@@ -45,7 +45,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
   }).catch(() => null);
 
   return (
-    <main className="flex flex-col gap-10" aria-labelledby="order-heading">
+    <main className="flex flex-col gap-8" aria-labelledby="order-heading">
       <Breadcrumbs
         items={[
           { label: "Orders", href: "/orders" },
@@ -53,24 +53,34 @@ export default async function OrderDetailPage({ params }: PageProps) {
         ]}
       />
 
+      {/* Masthead — serif order number + serif grand total on a single
+          baseline. Meta row carries placed date, customer, item count. */}
       <OrderDetailHeader order={order} />
 
+      {/* Lifecycle rail — the canonical status signal. Directly under
+          the masthead so a merchant can read "where is this order" in
+          one glance. No duplicated status badges above. */}
       <OrderLifecycleStepper order={order} shipmentStatus={shipment?.status ?? null} />
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="flex min-w-0 flex-col gap-10">
+        {/* Main column — tighter rhythm between financial sections
+            (items → totals), looser at the section boundary into
+            addresses. Creates grouping without adding chrome. */}
+        <div className="flex min-w-0 flex-col gap-6">
           <OrderItemsTable
             items={order.items}
             currencyCode={order.currency_code}
           />
-          <div className="border-t border-border-subtle pt-10">
+          <div className="border-t border-border-subtle pt-6">
             <OrderTotalsCard order={order} />
           </div>
-          <div className="border-t border-border-subtle pt-10">
+          <div className="mt-4 border-t border-border-subtle pt-8">
             <OrderAddressCard addresses={order.addresses} />
           </div>
         </div>
 
+        {/* Aside — sticky action workspace. All three sections use the
+            hairline system; no elevated cards inside. */}
         <aside className="flex flex-col gap-8 lg:sticky lg:top-8 lg:self-start">
           <OrderActionsBar order={order} />
           <div className="border-t border-border-subtle pt-8">

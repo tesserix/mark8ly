@@ -11,8 +11,9 @@
 
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 
+import { useToast } from "@/components/feedback/Toaster";
 import type { AdminOrder } from "@/lib/api/marketplace-api";
 import {
   invoiceNumberFromOrder,
@@ -44,7 +45,7 @@ export function OrderDocumentsPanel({ order, shipmentStatus }: Props) {
         Documents
       </h2>
 
-      <div className="flex flex-col gap-4 rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-5 py-4">
+      <div className="flex flex-col gap-4">
         <DocumentRow
           kind="invoice"
           storeId={order.store_id}
@@ -100,85 +101,63 @@ function DocumentRow({
   enabled,
   hint,
 }: RowProps) {
+  const { toast } = useToast();
   const [pending, startTransition] = useTransition();
-  const [feedback, setFeedback] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   function resend() {
-    setFeedback(null);
     startTransition(async () => {
       const r = await resendDocumentEmail(storeId, orderId, kind);
       if (r.ok) {
-        setFeedback({ tone: "ok", text: `Sent to ${recipient}.` });
-        // Auto-clear after a few seconds
-        setTimeout(() => setFeedback(null), 4000);
+        toast.success(`${label} emailed`, `Delivered to ${recipient}.`);
       } else {
-        setFeedback({ tone: "err", text: r.error?.message ?? "Send failed." });
+        toast.error(`Couldn't send ${label.toLowerCase()}`, r.error?.message);
       }
     });
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col">
-          <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
-            {label}
-          </span>
-          <span
-            className={`text-sm ${
-              enabled
-                ? "text-[color:var(--ink-900)]"
-                : "text-[color:var(--ink-900)] opacity-50"
-            }`}
-            style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
-          >
-            {number}
-          </span>
-          {hint && (
-            <span className="mt-1 text-xs text-[color:var(--ink-900)] opacity-50">
-              {hint}
-            </span>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {enabled ? (
-            <>
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)] border-opacity-40 px-3 py-1.5 text-xs text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-              >
-                Download PDF
-              </a>
-              <button
-                type="button"
-                onClick={resend}
-                disabled={pending}
-                className="text-xs text-[color:var(--ink-900)] opacity-70 underline-offset-4 hover:underline hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-              >
-                {pending ? "Sending…" : "Email to customer"}
-              </button>
-            </>
-          ) : (
-            <span className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/15 px-3 py-1.5 text-xs text-[color:var(--ink-900)]/40">
-              Not yet available
-            </span>
-          )}
-        </div>
-      </div>
-      {feedback && (
-        <p
-          role="status"
-          className={`text-xs ${
-            feedback.tone === "ok"
-              ? "text-[color:var(--moss-700)]"
-              : "text-[color:var(--danger,#5a1010)]"
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col">
+        <span className="text-xs uppercase tracking-wider text-foreground-tertiary">
+          {label}
+        </span>
+        <span
+          className={`text-sm tabular-nums ${
+            enabled ? "text-foreground" : "text-foreground-tertiary"
           }`}
         >
-          {feedback.text}
-        </p>
-      )}
+          {number}
+        </span>
+        {hint && (
+          <span className="mt-1 text-xs text-foreground-tertiary">{hint}</span>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        {enabled ? (
+          <>
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/40 px-3 py-1.5 text-xs text-foreground transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              Download PDF
+            </a>
+            <button
+              type="button"
+              onClick={resend}
+              disabled={pending}
+              className="text-xs text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              {pending ? "Sending…" : "Email to customer"}
+            </button>
+          </>
+        ) : (
+          <span className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/15 px-3 py-1.5 text-xs text-foreground-tertiary">
+            Not yet available
+          </span>
+        )}
+      </div>
     </div>
   );
 }

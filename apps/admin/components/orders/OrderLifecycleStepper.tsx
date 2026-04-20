@@ -1,7 +1,11 @@
-// Editorial milestone rail for order lifecycle. Five linear stages
-// (Placed → Confirmed → Fulfilled → Shipped → Delivered) plus a
-// terminal Cancelled branch. The colour of each dot carries the state —
-// no filled progress bar. The connecting line is a hairline only.
+// Editorial lifecycle rail for order status. Five stages (Placed →
+// Confirmed → Fulfilled → Shipped → Delivered) with a terminal
+// Cancelled branch. Layout is flex-based with flex-1 hairline
+// connectors between stages — lines auto-balance to the available
+// gap regardless of label width, which the previous absolute-within-
+// grid approach could not.
+
+import { Fragment } from "react";
 
 import type {
   AdminOrder,
@@ -16,10 +20,10 @@ interface OrderLifecycleStepperProps {
 }
 
 type StageKey = "placed" | "confirmed" | "fulfilled" | "shipped" | "delivered";
-type StageState = "done" | "active" | "upcoming";
+type StageState = "done" | "active" | "upcoming" | "cancelled";
 
 interface Stage {
-  key: StageKey;
+  key: string;
   label: string;
   state: StageState;
   timestamp?: string;
@@ -42,10 +46,6 @@ function computeStages(
   const isConfirmed =
     status === "confirmed" || isFulfilled || isDelivered || hasShipment;
 
-  const stageAt = (done: boolean, iso?: string | null): string | undefined =>
-    done && iso ? formatDate(iso) : undefined;
-
-  // Pick the single active stage — the last stage that isn't done yet.
   let active: StageKey = "placed";
   if (isDelivered) active = "delivered";
   else if (isShipped) active = "delivered";
@@ -55,6 +55,9 @@ function computeStages(
 
   const mark = (key: StageKey, done: boolean): StageState =>
     done ? "done" : key === active ? "active" : "upcoming";
+
+  const stageAt = (done: boolean, iso?: string | null): string | undefined =>
+    done && iso ? formatDate(iso) : undefined;
 
   return [
     {
@@ -91,56 +94,45 @@ export function OrderLifecycleStepper({
   order,
   shipmentStatus,
 }: OrderLifecycleStepperProps) {
-  if (order.status === "cancelled") {
-    return (
-      <nav
-        aria-label="Order lifecycle"
-        className="flex items-center gap-6 border-y border-border-subtle py-5"
-      >
-        <StageNode
-          label="Placed"
-          timestamp={formatDate(order.placed_at)}
-          state="done"
-        />
-        <span
-          aria-hidden="true"
-          className="h-px flex-1 bg-[color:var(--ink-900)]/10"
-        />
-        <StageNode label="Cancelled" state="cancelled" />
-      </nav>
-    );
-  }
-
-  const stages = computeStages(
-    order.status,
-    order.fulfillment_status,
-    shipmentStatus,
-    order.placed_at,
-    order.fulfilled_at,
-  );
+  const stages: Stage[] =
+    order.status === "cancelled"
+      ? [
+          {
+            key: "placed",
+            label: "Placed",
+            state: "done",
+            timestamp: formatDate(order.placed_at),
+          },
+          { key: "cancelled", label: "Cancelled", state: "cancelled" },
+        ]
+      : computeStages(
+          order.status,
+          order.fulfillment_status,
+          shipmentStatus,
+          order.placed_at,
+          order.fulfilled_at,
+        );
 
   return (
     <nav
       aria-label="Order lifecycle"
-      className="border-y border-border-subtle py-6"
+      className="flex items-start border-y border-border-subtle py-6"
     >
-      <ol className="grid grid-cols-5 gap-0">
-        {stages.map((stage, i) => (
-          <li key={stage.key} className="relative flex flex-col gap-1.5">
-            {i < stages.length - 1 && (
-              <span
-                aria-hidden="true"
-                className="absolute left-[calc(50%+0.5rem+0.25rem)] right-0 top-[5px] h-px bg-[color:var(--ink-900)]/10"
-              />
-            )}
-            <StageNode
-              label={stage.label}
-              timestamp={stage.timestamp}
-              state={stage.state}
+      {stages.map((stage, i) => (
+        <Fragment key={stage.key}>
+          <StageNode
+            label={stage.label}
+            timestamp={stage.timestamp}
+            state={stage.state}
+          />
+          {i < stages.length - 1 && (
+            <span
+              aria-hidden="true"
+              className="mx-4 mt-[5px] h-px min-w-6 flex-1 bg-[color:var(--ink-900)]/10"
             />
-          </li>
-        ))}
-      </ol>
+          )}
+        </Fragment>
+      ))}
     </nav>
   );
 }
@@ -148,7 +140,7 @@ export function OrderLifecycleStepper({
 interface StageNodeProps {
   label: string;
   timestamp?: string;
-  state: StageState | "cancelled";
+  state: StageState;
 }
 
 function StageNode({ label, timestamp, state }: StageNodeProps) {
@@ -169,25 +161,23 @@ function StageNode({ label, timestamp, state }: StageNodeProps) {
         : "text-foreground";
 
   return (
-    <>
-      <div className="flex items-center gap-2 pl-0">
+    <div className="flex shrink-0 flex-col gap-1.5">
+      <div className="flex items-center gap-2">
         <span
           aria-hidden="true"
-          className={`relative z-10 h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`}
+          className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`}
         />
         <span
-          className={`truncate text-[11px] font-semibold uppercase tracking-[0.12em] ${labelClass}`}
+          className={`whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] ${labelClass}`}
         >
           {label}
         </span>
       </div>
-      {/* Reserved row keeps every stage the same height so the connector
-          line stays horizontal even when only some stages have dates. */}
-      <span
-        className={`block min-h-[14px] pl-[18px] text-[11px] tabular-nums text-foreground-tertiary ${timestamp ? "" : "invisible"}`}
-      >
-        {timestamp ?? "—"}
-      </span>
-    </>
+      {timestamp && (
+        <span className="pl-[18px] text-[11px] tabular-nums text-foreground-tertiary">
+          {timestamp}
+        </span>
+      )}
+    </div>
   );
 }

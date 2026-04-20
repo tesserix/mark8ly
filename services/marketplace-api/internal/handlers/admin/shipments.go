@@ -576,6 +576,53 @@ func (h *ShipmentsHandler) GetByOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, toShipmentResponse(rec))
 }
 
+// Delete handles DELETE /admin/stores/:storeId/orders/:id/shipments/:shipmentId.
+//
+// Used to clear a shipment record so the merchant can retry "Create
+// shipping label" against the real carrier. Specifically needed for
+// any rows carrying TEST-DLV-* tracking numbers from the old test-mode
+// stub — they can never produce a real label and would otherwise
+// block the admin from retrying. Also handy when a carrier API call
+// succeeded but the operator wants to cancel before pickup.
+//
+// We do NOT call the carrier's cancel endpoint here — that is a
+// separate operator action (Delhivery charges for cancelled pickups
+// that have already been scheduled). This endpoint only drops the
+// local record.
+func (h *ShipmentsHandler) Delete(c *gin.Context) {
+	ctx := c.Request.Context()
+	storeID := c.Param("storeId")
+	orderID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	shipmentID, err := uuid.Parse(c.Param("shipmentId"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("shipmentId", "must be a uuid"), h.logger)
+		return
+	}
+
+	rec, err := h.repo.GetShipmentByID(ctx, shipmentID)
+	if err != nil || rec.OrderID != orderID || rec.StoreID.String() != storeID {
+		RespondErr(c, apperrors.NotFound("shipment"), h.logger)
+		return
+	}
+
+	if err := h.db.WithContext(ctx).
+		Table("shipments").
+		Where("id = ?", shipmentID).
+		Delete(nil).Error; err != nil {
+		RespondErr(c, fmt.Errorf("shipments: delete: %w", err), h.logger)
+		return
+	}
+
+	h.appendShipmentEvent(ctx, orderID, rec, order.EventKindShipmentCreated,
+		"Shipment record cleared — ready to regenerate shipping label.")
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Label PDF — download + email
 // ─────────────────────────────────────────────────────────────────────────
@@ -602,6 +649,18 @@ func (h *ShipmentsHandler) fetchLabelBytes(ctx context.Context, storeID string, 
 	}
 	if rec.TrackingNumber == "" {
 		return nil, nil, "", apperrors.ValidationFailed("shipment", "tracking number not yet assigned by carrier")
+	}
+	// Guard against stubbed waybills from the pre-fix era. The old
+	// test-mode fallback wrote "TEST-DLV-<nanos>" into tracking_number
+	// so the admin journey could proceed without a registered
+	// warehouse. Those rows still live in the DB and will happily hit
+	// Delhivery's packing_slip endpoint with a waybill the carrier
+	// never heard of — producing a JSON error the browser saves as
+	// "label.txt". Refuse to call out to the carrier for stubs and
+	// tell the merchant to delete + recreate the shipment.
+	if strings.HasPrefix(rec.TrackingNumber, "TEST-DLV-") {
+		return nil, nil, "", apperrors.ValidationFailed("shipment",
+			"this shipment has a mock tracking number from an earlier test run and will never produce a real label — delete it and click 'Create shipping label' again")
 	}
 
 	carrierCfg, err := h.repo.GetCarrierConfig(ctx, storeID, rec.Carrier)

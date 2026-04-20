@@ -24,6 +24,7 @@ import {
   updateShipmentStatusAction,
   emailShipmentLabelAction,
   refreshShipmentTrackingAction,
+  deleteShipmentAction,
   type ShippingActionResult,
 } from "@/app/(admin)/orders/[id]/shipping-actions";
 
@@ -101,6 +102,7 @@ export function ShippingLabelPanel({
           orderId={orderId}
           shipment={shipment}
           onUpdated={setShipment}
+          onCleared={() => setShipment(null)}
         />
         <AdvanceStatusBar
           storeId={storeId}
@@ -152,11 +154,13 @@ function ShipmentDetails({
   orderId,
   shipment,
   onUpdated,
+  onCleared,
 }: {
   storeId: string;
   orderId: string;
   shipment: ShipmentResponse;
   onUpdated: (s: ShipmentResponse) => void;
+  onCleared: () => void;
 }) {
   const eta = shipment.estimated_delivery
     ? new Date(shipment.estimated_delivery).toLocaleDateString(undefined, {
@@ -166,11 +170,14 @@ function ShipmentDetails({
       })
     : null;
 
-  // The download always goes through the Next.js proxy route so the
-  // browser can reuse the admin session cookie instead of exposing
-  // the carrier token. The backend canonical label_url may already
-  // point here, but we build it locally too so the button stays wired
-  // even for legacy shipment rows that were saved with an empty URL.
+  // Waybills starting with TEST-DLV- were written by the old test-mode
+  // stub that fabricated a tracking number when Delhivery rejected the
+  // create call. Delhivery never heard of these IDs, so every Download
+  // / Email / Refresh action will fail. Flag them inline and offer
+  // delete-and-retry instead of silently letting the user download a
+  // JSON error as "label.txt".
+  const isStub = shipment.tracking_number.startsWith("TEST-DLV-");
+
   const labelProxyURL = `/api/admin/stores/${storeId}/orders/${orderId}/shipments/${shipment.id}/label`;
 
   return (
@@ -182,12 +189,27 @@ function ShipmentDetails({
         <DetailRow label="Status" value={shipment.status} />
         {eta && <DetailRow label="ETA" value={eta} />}
       </div>
+      {isStub && (
+        <div
+          role="status"
+          className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <span>
+            This shipment uses a mock tracking number from an earlier test run
+            (before the Delhivery integration was fixed) and won&apos;t produce a
+            real label. Clear it and click <strong>Create shipping label</strong>{" "}
+            again to generate a real waybill against your Delhivery account.
+          </span>
+        </div>
+      )}
       <LabelActions
         storeId={storeId}
         orderId={orderId}
         shipment={shipment}
         labelProxyURL={labelProxyURL}
+        isStub={isStub}
         onUpdated={onUpdated}
+        onCleared={onCleared}
       />
     </div>
   );
@@ -198,13 +220,17 @@ function LabelActions({
   orderId,
   shipment,
   labelProxyURL,
+  isStub,
   onUpdated,
+  onCleared,
 }: {
   storeId: string;
   orderId: string;
   shipment: ShipmentResponse;
   labelProxyURL: string;
+  isStub: boolean;
   onUpdated: (s: ShipmentResponse) => void;
+  onCleared: () => void;
 }) {
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [recipient, setRecipient] = useState("");
@@ -214,6 +240,10 @@ function LabelActions({
   >(null);
   const [refreshPending, refreshStartTransition] = useTransition();
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
+  const [downloadPending, setDownloadPending] = useState(false);
+  const [downloadErr, setDownloadErr] = useState<string | null>(null);
+  const [deletePending, deleteStartTransition] = useTransition();
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
 
   const sendEmail = useCallback(
     (e: React.FormEvent) => {
@@ -253,35 +283,113 @@ function LabelActions({
     });
   }, [storeId, orderId, shipment.id, onUpdated]);
 
+  // Download via fetch so we can inspect the Content-Type. If the
+  // carrier returned a real PDF we stream it through a Blob URL and
+  // trigger a download. If the proxy returned a JSON error (wrong
+  // token, unserviceable pincode, warehouse not registered) we surface
+  // the message inline instead of letting the browser save "label.txt".
+  const download = useCallback(async () => {
+    setDownloadErr(null);
+    setDownloadPending(true);
+    try {
+      const resp = await fetch(labelProxyURL, { cache: "no-store" });
+      const contentType = resp.headers.get("content-type") ?? "";
+      if (!resp.ok || !contentType.toLowerCase().includes("pdf")) {
+        const body = await resp.text().catch(() => "");
+        let msg = `Download failed (status ${resp.status}).`;
+        try {
+          const parsed = JSON.parse(body) as { message?: string };
+          if (parsed?.message) msg = parsed.message;
+        } catch {
+          if (body) msg = body.slice(0, 400);
+        }
+        setDownloadErr(msg);
+        return;
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `shipping-label-${shipment.tracking_number || shipment.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setDownloadErr(
+        e instanceof Error ? e.message : "Download failed — network error.",
+      );
+    } finally {
+      setDownloadPending(false);
+    }
+  }, [labelProxyURL, shipment.id, shipment.tracking_number]);
+
+  const clearShipment = useCallback(() => {
+    setDeleteErr(null);
+    deleteStartTransition(async () => {
+      const r = await deleteShipmentAction(storeId, orderId, shipment.id);
+      if (!r.ok) {
+        setDeleteErr(r.error.message);
+        return;
+      }
+      onCleared();
+    });
+  }, [storeId, orderId, shipment.id, onCleared]);
+
   return (
     <div className="flex flex-col gap-2 pt-1">
       <div className="flex flex-wrap items-center gap-2">
-        <a
-          href={labelProxyURL}
-          download
-          className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        <button
+          type="button"
+          onClick={download}
+          disabled={downloadPending || isStub}
+          title={
+            isStub
+              ? "Mock tracking number — delete and recreate before downloading"
+              : undefined
+          }
+          className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Download label
-        </a>
+          {downloadPending ? "Fetching…" : "Download label"}
+        </button>
         <button
           type="button"
           onClick={() => {
             setShowEmailForm((v) => !v);
             setEmailMsg(null);
           }}
-          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          disabled={isStub}
+          className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {showEmailForm ? "Cancel email" : "Email label"}
         </button>
         <button
           type="button"
           onClick={refresh}
-          disabled={refreshPending}
+          disabled={refreshPending || isStub}
           className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/30 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {refreshPending ? "Syncing…" : "Refresh tracking"}
         </button>
+        <button
+          type="button"
+          onClick={clearShipment}
+          disabled={deletePending}
+          className="inline-flex items-center gap-2 rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 transition-colors hover:border-red-500 hover:text-red-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {deletePending ? "Deleting…" : "Delete shipment"}
+        </button>
       </div>
+      {downloadErr && (
+        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          {downloadErr}
+        </p>
+      )}
+      {deleteErr && (
+        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          {deleteErr}
+        </p>
+      )}
       {refreshMsg && (
         <p className="text-xs text-[color:var(--ink-900)] opacity-70">
           {refreshMsg}

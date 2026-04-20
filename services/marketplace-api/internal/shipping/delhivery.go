@@ -101,13 +101,31 @@ type dlShipmentEntry struct {
 	TotalAmount   float64 `json:"total_amount"`
 }
 
+// dlCreateResponse mirrors Delhivery's /api/cmu/create.json response.
+// Two schema details that have bitten this code before:
+//
+//  1. There is NO top-level `success` boolean. Success is per-package
+//     via Packages[i].Status ("Success" / "Fail") and a non-empty
+//     Waybill. An earlier version read `success` and silently treated
+//     every response as a failure because the field didn't exist.
+//  2. Remarks is an ARRAY of strings, not a single string. Declaring
+//     it as `string` here caused every live create to fail decode with
+//     "cannot unmarshal array into Go struct field .packages.remarks
+//     of type string" — masking whatever reason Delhivery actually
+//     returned (serviceability, invalid warehouse, bad token, etc.).
 type dlCreateResponse struct {
-	Success       bool   `json:"success"`
-	Packages      []struct {
-		Waybill   string `json:"waybill"`
-		Status    string `json:"status"`
-		Remarks   string `json:"remarks"`
-	} `json:"packages"`
+	UploadWBN string      `json:"upload_wbn"`
+	Packages  []dlPackage `json:"packages"`
+}
+
+type dlPackage struct {
+	Waybill     string   `json:"waybill"`
+	Refnum      string   `json:"refnum"`
+	Status      string   `json:"status"`
+	Remarks     []string `json:"remarks"`
+	Serviceable bool     `json:"serviceable"`
+	SortCode    *string  `json:"sort_code"`
+	Payment     string   `json:"payment"`
 }
 
 type dlTrackingResponse struct {
@@ -258,25 +276,22 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 		return nil, fmt.Errorf("delhivery: create shipment: decode: %w (body=%s)",
 			err, truncate(string(bodyBytes), 400))
 	}
-	if !cr.Success || len(cr.Packages) == 0 {
-		remarks := ""
-		if len(cr.Packages) > 0 {
-			remarks = cr.Packages[0].Remarks
-		}
-		if remarks == "" {
-			remarks = truncate(string(bodyBytes), 400)
-		}
-		// Previously, test mode stubbed a fake waybill here so the rest
-		// of the journey (admin UI, customer timeline) could be
-		// exercised end-to-end. That stub actively masked real
-		// integration failures: the Delhivery dashboard stayed at zero
-		// orders while the admin UI reported success. We always bubble
-		// the carrier error now so missing warehouse registration /
-		// invalid token issues are visible and actionable.
-		return nil, classifyDelhiveryCreateError(remarks, in.FromAddress.Name)
+	if len(cr.Packages) == 0 {
+		return nil, fmt.Errorf("delhivery: create shipment: empty packages (body=%s)",
+			truncate(string(bodyBytes), 400))
+	}
+	pkg := cr.Packages[0]
+	// Delhivery signals failure two ways:
+	//   - pkg.Status == "Fail" (string, case-insensitive in practice), OR
+	//   - pkg.Waybill == ""    (success always includes a non-empty waybill).
+	// We also flag pkg.Serviceable == false up-front since it has the
+	// most specific remediation.
+	if strings.EqualFold(pkg.Status, "Fail") || pkg.Waybill == "" {
+		remark := joinRemarks(pkg.Remarks)
+		return nil, classifyDelhiveryCreateError(remark, in.FromAddress.Name,
+			in.FromAddress.PostalCode, in.ToAddress.PostalCode, pkg.Serviceable)
 	}
 
-	pkg := cr.Packages[0]
 	return &Shipment{
 		ProviderShipmentID: pkg.Waybill,
 		TrackingNumber:     pkg.Waybill,
@@ -285,27 +300,56 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 	}, nil
 }
 
+// joinRemarks flattens Delhivery's remarks array into a single string
+// suitable for error messages. Most responses carry exactly one
+// element, but we guard for the multi-element case (and the empty
+// case — Delhivery occasionally returns "packages":[{}] with no
+// remarks key at all).
+func joinRemarks(rs []string) string {
+	cleaned := make([]string, 0, len(rs))
+	for _, r := range rs {
+		r = strings.TrimSpace(r)
+		if r != "" {
+			cleaned = append(cleaned, r)
+		}
+	}
+	return strings.Join(cleaned, "; ")
+}
+
 // classifyDelhiveryCreateError turns Delhivery's opaque remarks string
-// into an actionable error. The two most common failures in practice:
+// into an actionable error. The common failures in practice:
 //
-//  1. "ClientWarehouse matching query does not exist" — the warehouse
-//     name we sent isn't registered on the merchant's one.delhivery.com
-//     dashboard. Remediation is a one-time operator step on the
-//     Delhivery side.
-//  2. "Invalid token" — the API key is wrong or the caller sent the
-//     ciphertext through without decrypting it.
-func classifyDelhiveryCreateError(remarks, warehouseName string) error {
+//  1. serviceable == false — the origin/destination pincode pair isn't
+//     covered by the merchant's Delhivery service tier. The remediation
+//     is on the merchant side (enable the route on one.delhivery.com
+//     → Pricing / Services) or use a destination pincode they already
+//     serve.
+//  2. "ClientWarehouse matching query does not exist" — the warehouse
+//     name we sent isn't registered on one.delhivery.com → Settings
+//     → Pickup Locations. Case-sensitive: "Primary" ≠ "primary".
+//  3. "Invalid token" — the API key is wrong, rotated, or the caller
+//     sent the envelope-encrypted ciphertext through without
+//     decrypting it (regression risk; pinned by delhivery_test.go).
+//  4. Anything else — bubble the remarks verbatim so ops can triage.
+func classifyDelhiveryCreateError(remarks, warehouseName, fromPin, toPin string, serviceable bool) error {
 	lower := strings.ToLower(remarks)
 	switch {
+	case !serviceable || strings.Contains(lower, "not serviceable") || strings.Contains(lower, "no serviceable"):
+		return fmt.Errorf(
+			"delhivery: pincode %q → %q is not serviceable on your Delhivery account — either enable this route on one.delhivery.com → Pricing, or test with a destination pincode you already serve. (carrier: %s)",
+			fromPin, toPin, remarks)
 	case strings.Contains(lower, "clientwarehouse") && strings.Contains(lower, "does not exist"):
 		return fmt.Errorf(
-			"delhivery: warehouse %q is not registered on your Delhivery account — open one.delhivery.com → Settings → Warehouses and add a warehouse with this exact name, then retry. (carrier: %s)",
-			warehouseName, remarks)
+			"delhivery: warehouse %q is not registered on your Delhivery account — open one.delhivery.com → Settings → Pickup Locations and add one named exactly %q (case-sensitive), then retry. (carrier: %s)",
+			warehouseName, warehouseName, remarks)
 	case strings.Contains(lower, "invalid token") || strings.Contains(lower, "unauthorized"):
 		return fmt.Errorf(
 			"delhivery: API token rejected — verify the token in Settings → Shipping matches the one on one.delhivery.com → Settings → API. (carrier: %s)",
 			remarks)
 	default:
+		if remarks == "" {
+			remarks = "no remarks returned"
+		}
 		return fmt.Errorf("delhivery: create shipment: %s", remarks)
 	}
 }

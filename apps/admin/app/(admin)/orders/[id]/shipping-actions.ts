@@ -14,6 +14,7 @@ import {
   getOrderShipment,
   emailShipmentLabel,
   refreshShipmentTracking,
+  deleteShipment,
   type CreateShipmentInput,
   type ShipmentResponse,
 } from "@/lib/api/shipping-api";
@@ -212,4 +213,35 @@ export async function refreshShipmentTrackingAction(
   }
   revalidatePath(`/orders/${orderId}`);
   return { ok: true, data: result.data };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Delete a shipment record (used to clear pre-fix TEST-DLV-* stubs so
+// Create shipping label can be retried against real Delhivery).
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function deleteShipmentAction(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+): Promise<{ ok: true } | { ok: false; error: { code: string; message: string } }> {
+  const ctx = await readContext(storeId);
+  if (!ctx) {
+    return {
+      ok: false,
+      error: { code: "no_session", message: "Your session has expired." },
+    };
+  }
+  const result = await deleteShipment(ctx.storeId, orderId, shipmentId, {
+    userId: ctx.userId,
+    tenantId: ctx.tenantId,
+  });
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: { code: result.error.code, message: result.error.message },
+    };
+  }
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true };
 }

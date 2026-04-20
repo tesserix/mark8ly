@@ -26,7 +26,7 @@ func TestDelhivery_CreateShipment_SendsTokenAsBearer(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"success": true, "packages": [{"waybill": "TEST1234", "status": "Success"}]}`)
+		_, _ = io.WriteString(w, `{"upload_wbn":"UPL1","packages":[{"waybill":"TEST1234","status":"Success","serviceable":true,"remarks":[]}]}`)
 	}))
 	defer srv.Close()
 
@@ -69,11 +69,12 @@ func TestDelhivery_CreateShipment_WarehouseNotRegistered(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{
-			"success": false,
+			"upload_wbn": "UPL-X",
 			"packages": [{
 				"waybill": "",
 				"status": "Fail",
-				"remarks": "ClientWarehouse matching query does not exist"
+				"serviceable": true,
+				"remarks": ["ClientWarehouse matching query does not exist"]
 			}]
 		}`)
 	}))
@@ -83,15 +84,12 @@ func TestDelhivery_CreateShipment_WarehouseNotRegistered(t *testing.T) {
 
 	_, err := c.CreateShipment(context.Background(), ShipmentRequest{
 		OrderID:     "ORD-2",
-		FromAddress: Address{Name: "Unregistered WH"},
-		ToAddress:   Address{},
+		FromAddress: Address{Name: "Unregistered WH", PostalCode: "411011"},
+		ToAddress:   Address{PostalCode: "560100"},
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	// The old test-mode stub would have swallowed this and returned
-	// a fake waybill — confirm it doesn't anymore, and that the
-	// actionable remediation copy is surfaced.
 	msg := err.Error()
 	if !strings.Contains(msg, "Unregistered WH") {
 		t.Errorf("error missing warehouse name: %v", err)
@@ -107,7 +105,7 @@ func TestDelhivery_CreateShipment_WarehouseNotRegistered(t *testing.T) {
 func TestDelhivery_CreateShipment_InvalidToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"success": false, "packages": [{"remarks": "Invalid token"}]}`)
+		_, _ = io.WriteString(w, `{"upload_wbn":"U","packages":[{"waybill":"","status":"Fail","serviceable":true,"remarks":["Invalid token"]}]}`)
 	}))
 	defer srv.Close()
 
@@ -115,6 +113,72 @@ func TestDelhivery_CreateShipment_InvalidToken(t *testing.T) {
 	_, err := c.CreateShipment(context.Background(), ShipmentRequest{OrderID: "O"})
 	if err == nil || !strings.Contains(err.Error(), "token rejected") {
 		t.Fatalf("expected 'token rejected' remediation, got %v", err)
+	}
+}
+
+// TestDelhivery_CreateShipment_NotServiceable pins the classification
+// for the real-world failure that blocked the Playwright flow: Pune →
+// Bengaluru 560100 returned serviceable:false on the merchant's tier.
+// The old code had remarks declared as string — it failed JSON decode
+// before even getting to this branch, so the user just saw an
+// unmarshal error. This test guards the whole path:
+//   - remarks array decodes cleanly
+//   - serviceable:false is the signal we branch on
+//   - the error names the origin/destination pincode so the operator
+//     knows which leg to enable on Delhivery.
+func TestDelhivery_CreateShipment_NotServiceable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"upload_wbn": "UPL865",
+			"packages": [{
+				"waybill": "",
+				"refnum": "abc",
+				"status": "Fail",
+				"serviceable": false,
+				"remarks": ["No serviceable pincodes for this route"]
+			}]
+		}`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	_, err := c.CreateShipment(context.Background(), ShipmentRequest{
+		OrderID:     "ORD-3",
+		FromAddress: Address{Name: "Primary", PostalCode: "411011"},
+		ToAddress:   Address{PostalCode: "560100"},
+	})
+	if err == nil {
+		t.Fatal("expected serviceability error, got nil")
+	}
+	msg := err.Error()
+	for _, want := range []string{`"411011"`, `"560100"`, "not serviceable"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+// TestDelhivery_CreateShipment_RemarksIsArray is a tight regression
+// guard for the root cause of the last blocker: an earlier struct
+// declared remarks as string, which made every real Delhivery
+// response fail decode with "cannot unmarshal array into Go struct
+// field .packages.remarks of type string". No classification happened;
+// the operator saw the raw unmarshal error in the admin UI.
+func TestDelhivery_CreateShipment_RemarksIsArray(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"upload_wbn":"U","packages":[{"waybill":"","status":"Fail","serviceable":false,"remarks":["first","second"]}]}`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	_, err := c.CreateShipment(context.Background(), ShipmentRequest{OrderID: "O"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), "cannot unmarshal") {
+		t.Fatalf("remarks array still broke decode: %v", err)
 	}
 }
 

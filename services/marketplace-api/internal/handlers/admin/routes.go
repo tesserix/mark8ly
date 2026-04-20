@@ -313,6 +313,13 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					orders.POST("/:id/shipments/:shipmentId/tracking/refresh",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
 						deps.ShipmentsHandler.RefreshTracking)
+					// Drop the shipment row so the merchant can retry
+					// "Create shipping label" — needed for TEST-DLV-*
+					// stubs from the pre-fix era that will never
+					// produce a real label.
+					orders.DELETE("/:id/shipments/:shipmentId",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.Delete)
 				}
 			}
 		}

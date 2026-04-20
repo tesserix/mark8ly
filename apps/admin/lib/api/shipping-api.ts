@@ -249,3 +249,27 @@ export async function refreshShipmentTracking(
   }
   return { ok: true, data: (await res.json()) as ShipmentResponse };
 }
+
+/**
+ * Drop a shipment record. Needed for TEST-DLV-* stubs that predate the
+ * real-integration fix, and for cancel-before-pickup cases. Does NOT
+ * call the carrier's cancel endpoint — Delhivery charges for cancelled
+ * scheduled pickups so that remains a separate operator action.
+ */
+export async function deleteShipment(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<{ ok: true }>> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/shipments/${shipmentId}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    cache: "no-store",
+    headers: commonHeaders(session),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: { ok: true } };
+}

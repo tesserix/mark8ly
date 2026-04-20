@@ -1,140 +1,57 @@
-# Patches for tesserix-k8s (apply separately)
+# tesserix-k8s changes (applied in commit 63dd4c1)
 
-This worktree moves per-tenant carrier credentials (Delhivery, Razorpay,
-TaxJar, future providers) from the `shipping_carrier_configs.api_key_encrypted`
-Postgres column into GCP Secret Manager. The application code is complete
-and tested; the infrastructure knobs still need to land in
-`tesserix-k8s`. The changes below are the minimum needed to turn on
-`SHIPPING_SECRET_STORE=gcpsm` in the test cluster (and later prod).
+Per-tenant carrier credentials (Delhivery, Razorpay, TaxJar, future
+providers) moved from `shipping_carrier_configs.api_key_encrypted`
+into **GCP Secret Manager** — one secret per
+(tenant, domain, provider, field).
 
-Everything below is **to be applied by hand in the `tesserix-k8s` repo**
-— do not apply manifests with `kubectl apply`. The team's rule is
-ArgoCD-only.
+## What's applied
 
----
+- `charts/apps/mark8ly-marketplace-api-admin/values.yaml`:
+  `carrierSecretStore: "gcpsm"`, `gcpProjectId`,
+  `carrierSecretPrefix: "mark8ly-test"`, `carrierIamBootstrap.enabled`.
+- `charts/apps/mark8ly-marketplace-api-storefront/values.yaml`: same
+  store-side settings (reads must match writes).
+- `charts/apps/mark8ly-marketplace-api-admin/templates/deployment.yaml`:
+  plumbs `SHIPPING_SECRET_STORE`, `GCP_PROJECT_ID`,
+  `SECRET_NAME_PREFIX` into the container.
+- `charts/apps/mark8ly-marketplace-api-admin/templates/carrier-iam-bootstrap.yaml`:
+  Helm post-install/post-upgrade Job that idempotently grants
+  `roles/secretmanager.admin` to the marketplace-api GCP SA. Replaces
+  every previous manual `gcloud` step — operators never touch IAM.
 
-## 1. `charts/apps/marketplace-api/values.yaml`
+## IAM model
 
-Add the following under the existing `env:` map (next to `ENCRYPTION_MODE`):
+The binding is **unconditional**. GCP IAM cannot gate
+`secretmanager.secrets.create` by `resource.name.startsWith(...)`
+because at create-time `resource.name` evaluates to the parent
+project, not the future secret. See:
+<https://cloud.google.com/iam/docs/conditions-attribute-reference#resource-name-binary-prefix>.
 
-```yaml
-env:
-  # ... existing keys ...
+The security boundary is therefore:
 
-  # Per-tenant carrier credential store. "gcpsm" reads/writes one
-  # GCP Secret Manager secret per (tenant, domain, provider, field).
-  # "inline" falls back to envelope-encrypted DB columns.
-  SHIPPING_SECRET_STORE: "gcpsm"
+1. A dedicated SA
+   (`app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com`)
+   bound only to marketplace-api pods via Workload Identity.
+2. Application-layer naming: Go code only ever writes secrets under
+   the `mark8ly-{env}-*` prefix (enforced in
+   `internal/carriersecrets/refs.go`).
 
-  # GCP project hosting the carrier secrets. Must match the project
-  # the workload-identity SA (app-secrets-marketplace-prod@...) has
-  # Secret Manager Admin on.
-  GCP_PROJECT_ID: "tesseracthub-480811"
+## Rollout order
 
-  # Prefix on every secret ID. Scopes IAM bindings via
-  # resource.name.startsWith(...) so the prod SA cannot touch test
-  # secrets and vice-versa.
-  SECRET_NAME_PREFIX: "mark8ly-prod"
-```
+1. Merge + deploy this chart. ArgoCD auto-syncs.
+2. Helm post-install Job applies the IAM binding (idempotent on
+   re-install / re-upgrade).
+3. marketplace-api pods come up, log
+   `carriersecrets: hybrid store online`.
+4. Every new carrier-config save creates a GCP SM secret. Every read
+   of a legacy `noop:` / `aes:` row lazily rewraps to `gsm://`.
+5. No data-migration job required.
 
-For the `test` overlay (`values-test.yaml` or equivalent), override:
+## Rollback
 
-```yaml
-env:
-  SHIPPING_SECRET_STORE: "gcpsm"
-  GCP_PROJECT_ID: "tesseracthub-480811"
-  SECRET_NAME_PREFIX: "mark8ly-test"
-```
-
-For dev-loop bringup where GCP Workload Identity isn't wired yet,
-leave `SHIPPING_SECRET_STORE: "inline"` — the app will boot and
-behave exactly like today.
-
----
-
-## 2. IAM binding — `app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com`
-
-The workload-identity SA needs `roles/secretmanager.admin` scoped by
-IAM condition so it can only CRUD secrets whose name starts with the
-expected prefix. Two bindings — one per cluster / namespace prefix —
-so prod can never touch test and vice-versa.
-
-The binding lives in `tesserix-k8s/gcp-iam/marketplace-api.yaml` (or
-whichever module owns marketplace-api's SA bindings). Add:
-
-```yaml
-# Prod binding — scoped to mark8ly-prod-* secrets.
-- member: "serviceAccount:app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com"
-  role: "roles/secretmanager.admin"
-  condition:
-    title: "mark8ly-prod carrier secrets only"
-    description: "Restrict prod SA to mark8ly-prod-* Secret Manager secrets"
-    expression: |
-      resource.name.startsWith("projects/_/secrets/mark8ly-prod-")
-
-# Test binding — scoped to mark8ly-test-* secrets (same SA, separate
-# condition so the test namespace workload can CRUD its own bucket).
-- member: "serviceAccount:app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com"
-  role: "roles/secretmanager.admin"
-  condition:
-    title: "mark8ly-test carrier secrets only"
-    description: "Restrict test SA to mark8ly-test-* Secret Manager secrets"
-    expression: |
-      resource.name.startsWith("projects/_/secrets/mark8ly-test-")
-```
-
-If marketplace-api test and prod use *different* Google service
-accounts, split these into two separate members with only the
-relevant prefix. Don't widen past `roles/secretmanager.admin` — the
-app needs Create + AddVersion + Access + Delete, which this role
-covers and nothing more.
-
----
-
-## 3. Workload Identity binding (only if not already present)
-
-The Kubernetes SA that marketplace-api runs as must be
-workload-identity-bound to the Google SA above. If this is the first
-time marketplace-api needs GCP SM write access, also add:
-
-```yaml
-- member: "serviceAccount:tesseracthub-480811.svc.id.goog[marketplace/marketplace-api]"
-  role: "roles/iam.workloadIdentityUser"
-  resource: "projects/tesseracthub-480811/serviceAccounts/app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com"
-```
-
-`make dev` / local runs don't need this — they fall back to
-`SHIPPING_SECRET_STORE=inline`.
-
----
-
-## 4. Roll-out sequence
-
-1. Merge and deploy the tesserix-k8s change **with `SHIPPING_SECRET_STORE=inline` left on** and only the IAM binding added. This gives the SA write permission without changing app behaviour.
-2. Flip `SHIPPING_SECRET_STORE=gcpsm` in the values file and sync. The app will read existing `noop:`/`aes:` rows via the legacy fallback, and **will rewrite them to `gsm://` references on the next read** (lazy migration via `HybridStore.MaybeRewrap`). No downtime; no data migration job needed.
-3. After a full week with no errors, drop the fallback `ENCRYPTION_KEY` from the deployment — it becomes purely used by the inline dev mode. All carrier credential read paths (admin shipments, storefront shipping rates, checkout_ext, payment_methods, webhooks) go through `carriersecrets.Store` and lazily rewrap any remaining legacy rows to `gsm://` on read.
-
----
-
-## 5. Rollback
-
-Set `SHIPPING_SECRET_STORE=inline` and redeploy. Any rows already
-migrated to `gsm://` references will fail to decrypt (InlineStore
-rejects gsm:// references), so a rollback after full migration
-requires:
-
-- Flip `SHIPPING_SECRET_STORE=gcpsm` back on so reads work.
-- Implement the reverse rewrap (not shipped here — we deliberately
-  don't expose it).
-
-Practically: don't roll back once every row is migrated. The safe
-roll-back window is the first week, where most rows are still
-inline.
-
----
-
-## 6. Nothing to do in `db-schema-bootstrap`
-
-Schema is unchanged: `shipping_carrier_configs.api_key_encrypted` is
-still a `text` column. We just persist a different flavour of opaque
-string in it. No migration SQL needed.
+Flip `carrierSecretStore: "inline"` in the values file and resync.
+The app falls back to the old envelope-encrypted DB column path.
+`gsm://` rows resolve via the HybridStore's Get path which still
+works in inline mode (it just doesn't rewrite). Rolling forward
+again is a no-op.

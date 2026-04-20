@@ -58,7 +58,7 @@ export function Field({ label, children, error, helper }: FieldProps) {
       {helper && !error && (
         <span
           id={helperId}
-          className="text-xs text-[color:var(--ink-900)] opacity-50"
+          className="text-xs text-foreground-tertiary"
         >
           {helper}
         </span>

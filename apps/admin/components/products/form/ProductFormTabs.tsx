@@ -69,14 +69,14 @@ export function ProductFormTabs({
               "relative -mb-px pb-3 pt-2 text-sm transition-colors",
               isActive
                 ? "text-[color:var(--ink-900)] border-b-2 border-[color:var(--moss-700)]"
-                : "text-[color:var(--ink-900)] opacity-60 hover:opacity-100",
+                : "text-foreground-tertiary hover:opacity-100",
               isDisabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
               "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]",
             ].join(" ")}
           >
             {tab.label}
             {typeof badge === "number" && badge > 0 && (
-              <span className="ml-2 text-xs text-[color:var(--ink-900)] opacity-60">
+              <span className="ml-2 text-xs text-foreground-tertiary">
                 {badge}
               </span>
             )}

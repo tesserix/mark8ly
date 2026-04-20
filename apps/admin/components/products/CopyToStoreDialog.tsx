@@ -85,13 +85,13 @@ export function CopyToStoreDialog({
           <DialogTitle className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-lg text-[color:var(--ink-900)]">
             {title}
           </DialogTitle>
-          <DialogDescription className="text-sm text-[color:var(--ink-900)] opacity-60">
+          <DialogDescription className="text-sm text-foreground-tertiary">
             Copied products will land as drafts in the target store.
           </DialogDescription>
         </DialogHeader>
 
         <fieldset className="flex flex-col gap-1 py-2">
-          <legend className="pb-2 text-xs font-medium uppercase tracking-wide text-[color:var(--ink-900)] opacity-60">
+          <legend className="pb-2 text-xs font-medium uppercase tracking-wide text-foreground-tertiary">
             Target store
           </legend>
           {availableStores.map((store) => (

@@ -102,7 +102,7 @@ export function GeneralTab({
       </Field>
 
       {hasMultipleVariants ? (
-        <div className="rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--paper-200)] px-4 py-3 text-sm text-[color:var(--ink-900)] opacity-70">
+        <div className="rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--paper-200)] px-4 py-3 text-sm text-foreground-secondary">
           This product has variants. Price and stock live in the Variants tab.
         </div>
       ) : (

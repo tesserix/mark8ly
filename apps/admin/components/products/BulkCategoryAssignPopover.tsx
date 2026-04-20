@@ -48,7 +48,7 @@ export function BulkCategoryAssignPopover({
         <button
           type="button"
           onClick={handleClose}
-          className="text-xs text-[color:var(--ink-900)] opacity-50 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="text-xs text-foreground-tertiary hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           Close
         </button>

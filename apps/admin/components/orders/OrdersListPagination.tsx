@@ -40,7 +40,7 @@ export function OrdersListPagination({
         p === "…" ? (
           <span
             key={`ellipsis-${i}`}
-            className="px-2 text-sm text-[color:var(--ink-900)] opacity-50"
+            className="px-2 text-sm text-foreground-tertiary"
             aria-hidden="true"
           >
             …

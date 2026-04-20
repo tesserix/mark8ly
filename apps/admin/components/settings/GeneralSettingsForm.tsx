@@ -184,7 +184,7 @@ export function GeneralSettingsForm({
       {error && (
         <div
           role="alert"
-          className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          className="rounded-md border border-[color:var(--danger)]/20 bg-[color:var(--danger)]/[0.06] px-4 py-3 text-sm text-[color:var(--danger)]"
         >
           {error}
         </div>

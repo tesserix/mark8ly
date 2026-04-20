@@ -133,7 +133,7 @@ export function ProductCategoriesPicker({
         <div className="relative">
           <label className="relative block">
             <Plus
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--ink-900)] opacity-50"
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-tertiary"
               aria-hidden="true"
             />
             <input
@@ -190,7 +190,7 @@ export function ProductCategoriesPicker({
                     : `Create "${query.trim()}"`}
                 </button>
               ) : (
-                <p className="px-3 py-2 text-sm text-[color:var(--ink-900)] opacity-60">
+                <p className="px-3 py-2 text-sm text-foreground-tertiary">
                   No matching categories.
                 </p>
               )}

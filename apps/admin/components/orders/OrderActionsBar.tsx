@@ -250,7 +250,7 @@ function PanelShell({
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+    <span className="text-xs uppercase tracking-wider text-foreground-tertiary">
       {children}
     </span>
   );
@@ -490,7 +490,7 @@ function RefundForm({
 
   return (
     <PanelShell title="Issue a refund">
-      <p className="text-sm text-[color:var(--ink-900)] opacity-70">
+      <p className="text-sm text-foreground-secondary">
         Refundable: {currencyCode} {remaining}
       </p>
       <form
@@ -596,7 +596,7 @@ function DismissButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="text-sm text-[color:var(--ink-900)] opacity-70 hover:opacity-100 hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+      className="text-sm text-foreground-secondary hover:opacity-100 hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
     >
       {label}
     </button>

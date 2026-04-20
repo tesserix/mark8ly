@@ -83,7 +83,7 @@ export function ShippingLabelPanel({
         >
           Shipping
         </h2>
-        <p className="text-sm text-[color:var(--ink-900)] opacity-60">
+        <p className="text-sm text-foreground-tertiary">
           Loading shipment details...
         </p>
       </section>
@@ -436,7 +436,7 @@ function LabelActions({
           className="flex flex-col gap-2 border-t border-border-subtle pt-3"
         >
           <div className="grid gap-2 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+            <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-foreground-tertiary">
               Pickup date
               <input
                 type="date"
@@ -445,7 +445,7 @@ function LabelActions({
                 className="rounded-md border border-[color:var(--ink-900)]/30 px-3 py-2 text-sm normal-case tracking-normal text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+            <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-foreground-tertiary">
               Slot
               <select
                 value={rescheduleSlot}
@@ -471,7 +471,7 @@ function LabelActions({
       )}
       {showEmailForm && (
         <form onSubmit={sendEmail} className="flex flex-col gap-2 pt-2">
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+          <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-foreground-tertiary">
             Send to
             <input
               type="email"
@@ -763,7 +763,7 @@ function CreateShipmentForm({
         {showOverride && (
           <>
             <div className="flex flex-col gap-2">
-              <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+              <span className="text-xs uppercase tracking-wider text-foreground-tertiary">
                 Carrier
               </span>
               <Select value={provider} onValueChange={(v) => setProvider(v)}>
@@ -780,7 +780,7 @@ function CreateShipmentForm({
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <span className="text-xs uppercase tracking-wider text-[color:var(--ink-900)] opacity-60">
+              <span className="text-xs uppercase tracking-wider text-foreground-tertiary">
                 Service level
               </span>
               <Select value={service} onValueChange={(v) => setService(v)}>
@@ -799,7 +799,7 @@ function CreateShipmentForm({
           </>
         )}
         {error && (
-          <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <p role="alert" className="rounded-md border border-[color:var(--signal)]/30 bg-[color:var(--signal)]/[0.06] px-3 py-2 text-sm text-[color:var(--signal)]">
             {error.message}
           </p>
         )}
@@ -822,7 +822,7 @@ function CreateShipmentForm({
             type="button"
             onClick={onCancel}
             disabled={pending}
-            className="text-sm text-[color:var(--ink-900)] opacity-70 hover:opacity-100 hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="text-sm text-foreground-secondary hover:opacity-100 hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
           </button>

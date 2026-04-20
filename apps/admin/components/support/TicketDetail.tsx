@@ -12,17 +12,25 @@ interface TicketDetailProps {
   ticket: AdminTicket;
 }
 
-function statusBadgeClass(status: TicketStatus): string {
-  switch (status) {
-    case "open":
-      return "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]";
-    case "in_progress":
-      return "bg-amber-100 text-amber-900";
-    case "resolved":
-      return "bg-[color:var(--moss-700)] text-white";
-    case "closed":
-      return "bg-[color:var(--ink-900)]/10 text-[color:var(--ink-900)]/60";
-  }
+// Dot + label status — matches TicketsList and the rest of admin.
+function StatusBadge({ status }: { status: TicketStatus }) {
+  const dotClass =
+    status === "open"
+      ? "border border-[color:var(--ink-900)]/60 bg-transparent"
+      : status === "in_progress"
+        ? "bg-[color:var(--warning)]"
+        : status === "resolved"
+          ? "bg-[color:var(--moss-700)]"
+          : "bg-[color:var(--ink-900)] opacity-40";
+  return (
+    <span className="inline-flex items-center gap-2 text-sm text-foreground">
+      <span
+        aria-hidden="true"
+        className={`inline-block h-2 w-2 rounded-full ${dotClass}`}
+      />
+      {statusLabel(status)}
+    </span>
+  );
 }
 
 function statusLabel(status: TicketStatus): string {
@@ -38,12 +46,12 @@ function statusLabel(status: TicketStatus): string {
   }
 }
 
-function priorityBadgeClass(priority: TicketPriority): string {
+function priorityLabelClass(priority: TicketPriority): string {
   switch (priority) {
     case "low":
-      return "text-[color:var(--ink-900)]/40";
+      return "text-foreground-tertiary";
     case "medium":
-      return "text-[color:var(--ink-900)]/60";
+      return "text-foreground-secondary";
     case "high":
       return "text-[color:var(--signal)]";
   }
@@ -61,39 +69,32 @@ function formatDate(dateStr: string): string {
 
 export function TicketDetail({ ticket }: TicketDetailProps) {
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <span
-            className="font-mono text-sm text-foreground-secondary"
-            style={{ fontFeatureSettings: '"tnum" 1' }}
-          >
+    <div className="flex flex-col gap-8">
+      {/* Masthead — serif ticket number + subject, status + priority as
+          editorial meta row. */}
+      <header className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="font-serif text-sm tabular-nums text-foreground">
             {ticket.ticket_number}
           </span>
+          <StatusBadge status={ticket.status} />
           <span
-            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(ticket.status)}`}
-          >
-            {statusLabel(ticket.status)}
-          </span>
-          <span
-            className={`text-xs font-medium uppercase ${priorityBadgeClass(ticket.priority)}`}
+            className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${priorityLabelClass(ticket.priority)}`}
           >
             {ticket.priority} priority
           </span>
         </div>
-        <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-foreground">
+        <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground text-balance sm:text-3xl">
           {ticket.subject}
         </h2>
         <p className="text-sm text-foreground-secondary">
           Opened on {formatDate(ticket.created_at)} by {ticket.author_email}
         </p>
-      </div>
+      </header>
 
-      {/* Status stepper — interactive workflow indicator at the top so
-          merchants see (and can change) the ticket state before they
-          read the content. Tap a step to transition. */}
-      <div className="rounded-md border border-border-subtle bg-background-elevated px-5 py-4">
+      {/* Status stepper — hairline-framed, not a bordered card, so it
+          matches the rest of the editorial chrome. */}
+      <div className="border-y border-border-subtle py-5">
         <TicketStatusStepper ticketId={ticket.id} status={ticket.status} />
       </div>
 

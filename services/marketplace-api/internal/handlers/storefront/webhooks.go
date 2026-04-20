@@ -1,13 +1,26 @@
-// Package storefront — webhooks.go: POST /api/v1/webhooks/:provider.
-// Receives payment provider webhook callbacks, verifies signatures,
-// deduplicates via the webhook_events table, and updates payment/order
-// state. Webhook routes sit at the API root, NOT under
-// /storefront/stores/:storeSlug, because providers send callbacks to a
-// fixed URL.
+// Package storefront — webhooks.go: payment-provider webhook receiver.
+//
+// Two routes mount here:
+//
+//	POST /api/v1/webhooks/:storeSlug/:provider   — scoped (preferred)
+//	POST /api/v1/webhooks/:provider              — legacy, fail-closed on ambiguity
+//
+// The scoped form resolves the store from :storeSlug and looks up the
+// payment gateway config by (store_id, provider). The legacy form
+// queries by provider alone; it returns 200 "ambiguous" and drops the
+// event when more than one tenant has an active config for the same
+// provider — this closes the cross-tenant webhook-spoofing gap flagged
+// in the 2026-04-10 prod-readiness spec §2.3. New merchant onboarding
+// must use the scoped URL.
+//
+// Webhook routes sit at the API root (not under
+// /storefront/stores/:storeSlug/...) because providers send callbacks
+// to a URL baked into their dashboard config.
 package storefront
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -25,20 +38,25 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
+	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
 // webhookGatewayConfigRow is a read-only projection of payment_gateway_configs
 // used to look up the webhook secret for signature verification.
 // ID + TenantID are loaded so MaybeRewrap can scope the lazy migration
 // and we know which row to UPDATE when rewriting a legacy inline reference.
+// WebhookSecretEncrypted is preferred over SecretKeyEncrypted when
+// non-empty (spec §2.6).
 type webhookGatewayConfigRow struct {
-	ID                 string `gorm:"column:id"`
-	TenantID           string `gorm:"column:tenant_id"`
-	Provider           string `gorm:"column:provider"`
-	APIKey             string `gorm:"column:api_key_encrypted"`
-	SecretKeyEncrypted string `gorm:"column:secret_key_encrypted"`
-	Mode               string `gorm:"column:mode"`
-	IsActive           bool   `gorm:"column:is_active"`
+	ID                     string    `gorm:"column:id"`
+	TenantID               string    `gorm:"column:tenant_id"`
+	StoreID                uuid.UUID `gorm:"column:store_id"`
+	Provider               string    `gorm:"column:provider"`
+	APIKey                 string    `gorm:"column:api_key_encrypted"`
+	SecretKeyEncrypted     string    `gorm:"column:secret_key_encrypted"`
+	WebhookSecretEncrypted string    `gorm:"column:webhook_secret_encrypted"`
+	Mode                   string    `gorm:"column:mode"`
+	IsActive               bool      `gorm:"column:is_active"`
 }
 
 func (webhookGatewayConfigRow) TableName() string { return "payment_gateway_configs" }
@@ -47,6 +65,7 @@ func (webhookGatewayConfigRow) TableName() string { return "payment_gateway_conf
 type WebhookHandler struct {
 	db          *gorm.DB
 	orderSvc    *order.Service
+	storeCache  *stores.SlugCache     // optional — enables the /webhooks/:storeSlug/:provider scoped route
 	giftCardSvc *giftcard.Service     // optional — when set, gift card checkout events activate cards
 	loyaltySvc  *loyalty.Service      // optional — when set, awards points after payment success
 	notify      *notification.Service // optional — nil-safe; emits payment_received on success
@@ -61,6 +80,14 @@ type WebhookHandler struct {
 // NewWebhookHandler constructs a WebhookHandler.
 func NewWebhookHandler(db *gorm.DB, orderSvc *order.Service, logger *slog.Logger) *WebhookHandler {
 	return &WebhookHandler{db: db, orderSvc: orderSvc, logger: logger}
+}
+
+// WithStoreCache wires the slug→store lookup used by the scoped
+// /webhooks/:storeSlug/:provider route. Without it, only the legacy
+// unscoped route is served (fail-closed on ambiguity).
+func (h *WebhookHandler) WithStoreCache(c *stores.SlugCache) *WebhookHandler {
+	h.storeCache = c
+	return h
 }
 
 // WithEncryptor attaches the envelope-encryption decoder used to unwrap
@@ -174,11 +201,19 @@ func (h *WebhookHandler) WithLoyaltyService(svc *loyalty.Service) *WebhookHandle
 	return h
 }
 
-// HandleWebhook handles POST /api/v1/webhooks/:provider.
+// HandleWebhook handles POST /api/v1/webhooks/:provider — legacy route.
+//
+// **Deprecated.** Prefer /api/v1/webhooks/:storeSlug/:provider
+// (HandleScopedWebhook). This variant only processes events when
+// exactly one active gateway config exists for the given provider
+// across the whole database — otherwise it fails closed with a log
+// line and drops the event, because picking "first active" would let
+// a webhook for tenant A match tenant B's config (cross-tenant data
+// leak; see 2026-04-10 prod-readiness spec §2.3).
 //
 // The handler always returns 200 to the provider, even when internal
-// processing fails. Returning a non-2xx causes providers to retry, which
-// is worse than logging and investigating. Errors are logged.
+// processing fails. Returning a non-2xx causes providers to retry,
+// which is worse than logging and investigating.
 func (h *WebhookHandler) HandleWebhook(c *gin.Context) {
 	provider := strings.ToLower(c.Param("provider"))
 	if provider == "" {
@@ -198,24 +233,122 @@ func (h *WebhookHandler) HandleWebhook(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Look up the gateway config by provider name. We need the first active
-	// config to get the webhook/secret key for verification. For webhooks
-	// we pick the first active config since the provider sends to one URL.
+	// Ambiguity check: count active configs for this provider. If more
+	// than one tenant serves this provider, we cannot safely guess which
+	// store the callback belongs to, so we fail closed. Merchants must
+	// migrate to /webhooks/:storeSlug/:provider.
+	var activeCount int64
+	if err := h.db.WithContext(ctx).
+		Table("payment_gateway_configs").
+		Where("provider = ? AND is_active = true", provider).
+		Count(&activeCount).Error; err != nil {
+		h.logError("webhook: count active configs failed",
+			"provider", provider, "err", err)
+		c.JSON(http.StatusOK, gin.H{"status": "error"})
+		return
+	}
+	if activeCount == 0 {
+		h.logError("webhook: no active gateway config", "provider", provider)
+		c.JSON(http.StatusOK, gin.H{"status": "ignored"})
+		return
+	}
+	if activeCount > 1 {
+		h.logError("webhook: ambiguous gateway config — multiple active tenants; migrate merchant to /webhooks/:storeSlug/:provider",
+			"provider", provider, "active_count", activeCount)
+		c.JSON(http.StatusOK, gin.H{"status": "ambiguous_store_configs"})
+		return
+	}
+
 	var cfg webhookGatewayConfigRow
 	if err := h.db.WithContext(ctx).
 		Where("provider = ? AND is_active = true", provider).
 		First(&cfg).Error; err != nil {
-		h.logError("webhook: no active gateway config for provider",
+		h.logError("webhook: gateway config fetch failed",
 			"provider", provider, "err", err)
+		c.JSON(http.StatusOK, gin.H{"status": "error"})
+		return
+	}
+
+	if h.logger != nil {
+		h.logger.Warn("webhook: using legacy unscoped route — migrate this merchant to /webhooks/:storeSlug/:provider",
+			"provider", provider, "store_id", cfg.StoreID.String())
+	}
+
+	h.processWithConfig(c, ctx, provider, body, cfg)
+}
+
+// HandleScopedWebhook handles POST /api/v1/webhooks/:storeSlug/:provider
+// — the preferred route. Resolves the store from the slug, then looks
+// up the gateway config scoped by store_id. Cross-tenant webhook
+// spoofing is impossible because the config is hard-pinned to the
+// store named in the URL.
+func (h *WebhookHandler) HandleScopedWebhook(c *gin.Context) {
+	storeSlug := strings.ToLower(c.Param("storeSlug"))
+	provider := strings.ToLower(c.Param("provider"))
+	if storeSlug == "" || provider == "" {
+		c.JSON(http.StatusOK, gin.H{"status": "ignored"})
+		return
+	}
+	if h.storeCache == nil {
+		h.logError("webhook: scoped route hit but storeCache not wired",
+			"provider", provider, "store_slug", storeSlug)
+		c.JSON(http.StatusOK, gin.H{"status": "error"})
+		return
+	}
+
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		h.logError("webhook: failed to read body",
+			"provider", provider, "store_slug", storeSlug, "err", err)
+		c.JSON(http.StatusOK, gin.H{"status": "error"})
+		return
+	}
+	defer c.Request.Body.Close()
+
+	ctx := c.Request.Context()
+
+	store, err := h.storeCache.Get(ctx, storeSlug)
+	if err != nil {
+		if errors.Is(err, stores.ErrNotFound) {
+			c.JSON(http.StatusOK, gin.H{"status": "ignored"})
+			return
+		}
+		h.logError("webhook: store lookup failed",
+			"provider", provider, "store_slug", storeSlug, "err", err)
+		c.JSON(http.StatusOK, gin.H{"status": "error"})
+		return
+	}
+	if store == nil {
+		c.JSON(http.StatusOK, gin.H{"status": "ignored"})
+		return
+	}
+	storeID, perr := uuid.Parse(store.ID)
+	if perr != nil {
+		h.logError("webhook: store row has invalid UUID",
+			"provider", provider, "store_slug", storeSlug, "raw_id", store.ID, "err", perr)
+		c.JSON(http.StatusOK, gin.H{"status": "error"})
+		return
+	}
+
+	var cfg webhookGatewayConfigRow
+	if err := h.db.WithContext(ctx).
+		Where("store_id = ? AND provider = ? AND is_active = true", storeID, provider).
+		First(&cfg).Error; err != nil {
+		h.logError("webhook: no active gateway config for (store, provider)",
+			"provider", provider, "store_slug", storeSlug, "store_id", storeID.String(), "err", err)
 		c.JSON(http.StatusOK, gin.H{"status": "ignored"})
 		return
 	}
 
-	// Resolve api_key + secret_key before handing them to the gateway — the
-	// DB columns are encrypted at write time (admin/settings.go). Passing
-	// ciphertext to the gateway would make every signature check 401 and
-	// silently drop real provider callbacks. Routes through the
-	// carriersecrets.Store when wired (handles gsm:// + legacy inline).
+	h.processWithConfig(c, ctx, provider, body, cfg)
+}
+
+// processWithConfig runs the common decrypt, rewrap, verify, idempotency,
+// and dispatch flow once a webhook has been matched to a (store,
+// provider, config) tuple by one of the route entrypoints. Prefers
+// WebhookSecretEncrypted over SecretKeyEncrypted (spec §2.6); legacy
+// merchants without a dedicated webhook secret keep working.
+func (h *WebhookHandler) processWithConfig(c *gin.Context, ctx context.Context, provider string, body []byte, cfg webhookGatewayConfigRow) {
 	apiKey, err := h.decryptAPIKey(ctx, cfg.APIKey)
 	if err != nil {
 		h.logError("webhook: api_key decrypt failed",
@@ -223,6 +356,23 @@ func (h *WebhookHandler) HandleWebhook(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "error"})
 		return
 	}
+
+	// Choose signing secret: prefer webhook_secret when configured.
+	signingCipher := cfg.WebhookSecretEncrypted
+	signingField := "webhook_secret"
+	if signingCipher == "" {
+		signingCipher = cfg.SecretKeyEncrypted
+		signingField = "secret_key"
+	}
+	signingSecret, err := h.decryptAPIKey(ctx, signingCipher)
+	if err != nil {
+		h.logError("webhook: signing_secret decrypt failed",
+			"provider", provider, "field", signingField, "err", err)
+		c.JSON(http.StatusOK, gin.H{"status": "error"})
+		return
+	}
+	// Still decrypt the raw secret_key for the rewrap migration path so
+	// MaybeRewrap can migrate both fields independently.
 	secretKey, err := h.decryptAPIKey(ctx, cfg.SecretKeyEncrypted)
 	if err != nil {
 		h.logError("webhook: secret_key decrypt failed",
@@ -235,7 +385,7 @@ func (h *WebhookHandler) HandleWebhook(c *gin.Context) {
 	h.maybeRewrapWebhookRow(ctx, cfg, apiKey, secretKey)
 
 	// Instantiate the gateway for verification.
-	gateway, err := payment.NewGateway(provider, apiKey, secretKey, cfg.Mode)
+	gateway, err := payment.NewGateway(provider, apiKey, signingSecret, cfg.Mode)
 	if err != nil {
 		h.logError("webhook: gateway instantiation failed",
 			"provider", provider, "err", err)
@@ -243,10 +393,8 @@ func (h *WebhookHandler) HandleWebhook(c *gin.Context) {
 		return
 	}
 
-	// Extract signature from provider-specific headers.
 	signature := extractWebhookSignature(c, provider)
 
-	// Verify webhook signature and parse the event.
 	evt, err := gateway.VerifyWebhook(ctx, body, signature)
 	if err != nil {
 		h.logError("webhook: signature verification failed",
@@ -272,12 +420,10 @@ func (h *WebhookHandler) HandleWebhook(c *gin.Context) {
 		return
 	}
 	if insertResult.RowsAffected == 0 {
-		// Already processed — idempotent skip.
 		c.JSON(http.StatusOK, gin.H{"status": "duplicate"})
 		return
 	}
 
-	// Process the event based on type.
 	h.processEvent(ctx, provider, evt)
 
 	// Mark event as processed.

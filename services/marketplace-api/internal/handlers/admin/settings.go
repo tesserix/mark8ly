@@ -120,17 +120,24 @@ func containsProvider(haystack []string, needle string) bool {
 // ---------------------------------------------------------------------------
 
 // PaymentGatewayConfig is the GORM model for the payment_gateway_configs table.
+//
+// WebhookSecretEncrypted is separate from SecretKeyEncrypted (spec §2.6):
+// providers like Razorpay used to share one string between the API secret
+// and the webhook-signature secret, letting a compromised API key forge
+// signed webhooks. When NULL, webhook verification falls back to
+// SecretKeyEncrypted for legacy merchants who have not yet split creds.
 type PaymentGatewayConfig struct {
-	ID                uuid.UUID  `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID          uuid.UUID  `gorm:"column:tenant_id;type:uuid;not null"`
-	StoreID           uuid.UUID  `gorm:"column:store_id;type:uuid;not null"`
-	Provider          string     `gorm:"column:provider;type:varchar(20);not null"`
-	APIKeyEncrypted   string     `gorm:"column:api_key_encrypted;type:text;not null"`
-	SecretKeyEncrypted string    `gorm:"column:secret_key_encrypted;type:text"`
-	Mode              string     `gorm:"column:mode;type:varchar(10);not null;default:test"`
-	IsActive          bool       `gorm:"column:is_active;type:boolean;not null;default:false"`
-	CreatedAt         time.Time  `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt         time.Time  `gorm:"column:updated_at;not null;default:now()"`
+	ID                     uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID               uuid.UUID `gorm:"column:tenant_id;type:uuid;not null"`
+	StoreID                uuid.UUID `gorm:"column:store_id;type:uuid;not null"`
+	Provider               string    `gorm:"column:provider;type:varchar(20);not null"`
+	APIKeyEncrypted        string    `gorm:"column:api_key_encrypted;type:text;not null"`
+	SecretKeyEncrypted     string    `gorm:"column:secret_key_encrypted;type:text"`
+	WebhookSecretEncrypted string    `gorm:"column:webhook_secret_encrypted;type:text"`
+	Mode                   string    `gorm:"column:mode;type:varchar(10);not null;default:test"`
+	IsActive               bool      `gorm:"column:is_active;type:boolean;not null;default:false"`
+	CreatedAt              time.Time `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt              time.Time `gorm:"column:updated_at;not null;default:now()"`
 }
 
 func (PaymentGatewayConfig) TableName() string { return "payment_gateway_configs" }
@@ -176,14 +183,15 @@ func (h *PaymentSettingsHandler) WithAudit(e *audit.Emitter) *PaymentSettingsHan
 
 // paymentConfigResponse is the safe wire DTO with keys masked.
 type paymentConfigResponse struct {
-	ID        string `json:"id"`
-	Provider  string `json:"provider"`
-	APIKey    string `json:"api_key"`
-	SecretKey string `json:"secret_key"`
-	Mode      string `json:"mode"`
-	IsActive  bool   `json:"is_active"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID            string `json:"id"`
+	Provider      string `json:"provider"`
+	APIKey        string `json:"api_key"`
+	SecretKey     string `json:"secret_key"`
+	WebhookSecret string `json:"webhook_secret"` // masked; empty when not configured
+	Mode          string `json:"mode"`
+	IsActive      bool   `json:"is_active"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 // toPaymentResponse serializes a row for the wire. When the handler
@@ -192,14 +200,15 @@ type paymentConfigResponse struct {
 // fall back to the Encryptor-based masker.
 func (h *PaymentSettingsHandler) toPaymentResponse(ctx context.Context, cfg PaymentGatewayConfig) paymentConfigResponse {
 	return paymentConfigResponse{
-		ID:        cfg.ID.String(),
-		Provider:  cfg.Provider,
-		APIKey:    h.maskKeyField(ctx, cfg.APIKeyEncrypted),
-		SecretKey: h.maskKeyField(ctx, cfg.SecretKeyEncrypted),
-		Mode:      cfg.Mode,
-		IsActive:  cfg.IsActive,
-		CreatedAt: cfg.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: cfg.UpdatedAt.Format(time.RFC3339),
+		ID:            cfg.ID.String(),
+		Provider:      cfg.Provider,
+		APIKey:        h.maskKeyField(ctx, cfg.APIKeyEncrypted),
+		SecretKey:     h.maskKeyField(ctx, cfg.SecretKeyEncrypted),
+		WebhookSecret: h.maskKeyField(ctx, cfg.WebhookSecretEncrypted),
+		Mode:          cfg.Mode,
+		IsActive:      cfg.IsActive,
+		CreatedAt:     cfg.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:     cfg.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -243,11 +252,15 @@ func (h *PaymentSettingsHandler) List(c *gin.Context) {
 }
 
 // paymentUpsertRequest is the request body for PUT /settings/payments/:provider.
+// WebhookSecret is optional; when omitted (nil) the existing value is
+// preserved, so UI forms don't have to re-submit webhook secrets on
+// every save. An explicit empty string clears the column.
 type paymentUpsertRequest struct {
-	APIKey    string `json:"api_key"    binding:"required"`
-	SecretKey string `json:"secret_key"`
-	Mode      string `json:"mode"       binding:"required,oneof=test live"`
-	IsActive  bool   `json:"is_active"`
+	APIKey        string  `json:"api_key"    binding:"required"`
+	SecretKey     string  `json:"secret_key"`
+	WebhookSecret *string `json:"webhook_secret"`
+	Mode          string  `json:"mode"       binding:"required,oneof=test live"`
+	IsActive      bool    `json:"is_active"`
 }
 
 // Upsert handles PUT /settings/payments/:provider — create or update a payment
@@ -322,14 +335,31 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 		}
 	}
 
+	// Webhook secret uses a pointer so we can distinguish "not sent"
+	// (preserve existing) from "sent empty" (clear the column).
+	var webhookSecretEnc string
+	webhookTouched := req.WebhookSecret != nil
+	if webhookTouched && *req.WebhookSecret != "" {
+		webhookSecretEnc, err = h.putCredential(c.Request.Context(), store.TenantID, provider, "webhook_secret", *req.WebhookSecret)
+		if err != nil {
+			h.logger.Error("persist payment webhook_secret", "store_id", store.ID, "provider", provider, "err", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"error":   "internal",
+				"message": "failed to secure payment configuration",
+			})
+			return
+		}
+	}
+
 	cfg := PaymentGatewayConfig{
-		TenantID:           tenantUUID,
-		StoreID:            storeUUID,
-		Provider:           provider,
-		APIKeyEncrypted:    apiKeyEnc,
-		SecretKeyEncrypted: secretKeyEnc,
-		Mode:               req.Mode,
-		IsActive:           req.IsActive,
+		TenantID:               tenantUUID,
+		StoreID:                storeUUID,
+		Provider:               provider,
+		APIKeyEncrypted:        apiKeyEnc,
+		SecretKeyEncrypted:     secretKeyEnc,
+		WebhookSecretEncrypted: webhookSecretEnc,
+		Mode:                   req.Mode,
+		IsActive:               req.IsActive,
 	}
 
 	result := h.db.WithContext(c.Request.Context()).
@@ -360,6 +390,11 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 			"mode":                 req.Mode,
 			"is_active":            req.IsActive,
 			"updated_at":           time.Now(),
+		}
+		if webhookTouched {
+			// Only write when the caller explicitly sent the field;
+			// omitted → preserve existing encrypted value.
+			updates["webhook_secret_encrypted"] = webhookSecretEnc
 		}
 		if err := h.db.WithContext(c.Request.Context()).
 			Model(&PaymentGatewayConfig{}).

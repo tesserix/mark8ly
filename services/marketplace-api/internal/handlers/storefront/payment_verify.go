@@ -21,9 +21,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/mark8ly/marketplace-api/internal/payment"
+	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
 type verifyPaymentRequest struct {
@@ -54,24 +56,46 @@ func (h *WebhookHandler) HandleVerifyPayment(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Load the active razorpay gateway config so we can recover the
-	// secret key and verify the signature.
+	// Resolve the store from the StoreContext middleware so the gateway
+	// config query is scoped by store_id. Without this, the query would
+	// match the first active razorpay config across all tenants — the
+	// cross-tenant leak that the 2026-04-10 prod-readiness spec §2.3
+	// flagged.
+	storeVal, _ := c.Get("store")
+	store, _ := storeVal.(*stores.Store)
+	if store == nil {
+		h.logError("verify-payment: store context missing", "order_id", orderID)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "store context missing"})
+		return
+	}
+	storeID, perr := uuid.Parse(store.ID)
+	if perr != nil {
+		h.logError("verify-payment: invalid store id", "raw_id", store.ID, "err", perr)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "gateway not configured"})
+		return
+	}
+
+	// Load the active razorpay gateway config scoped to this store.
 	var cfg webhookGatewayConfigRow
 	if err := h.db.WithContext(ctx).
-		Where("provider = ? AND is_active = true", provider).
+		Where("store_id = ? AND provider = ? AND is_active = true", storeID, provider).
 		First(&cfg).Error; err != nil {
-		h.logError("verify-payment: no active gateway config", "err", err)
+		h.logError("verify-payment: no active gateway config",
+			"store_id", storeID.String(), "provider", provider, "err", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "gateway not configured"})
 		return
 	}
 
 	// Razorpay's checkout signature: HMAC-SHA256(order|payment, secret).
-	// The stored secret is envelope-encrypted (admin/settings.go writes via
-	// crypto.Encryptor.Encrypt); unwrap it before feeding into hmac.New or
-	// every genuine callback would fail with a signature mismatch.
-	secretKey, err := h.resolveWebhookSecret(cfg.SecretKeyEncrypted)
+	// Prefer the dedicated webhook secret over the API secret (spec §2.6);
+	// both are envelope-encrypted at rest — unwrap before HMAC.
+	signingCipher := cfg.WebhookSecretEncrypted
+	if signingCipher == "" {
+		signingCipher = cfg.SecretKeyEncrypted
+	}
+	secretKey, err := h.resolveWebhookSecret(signingCipher)
 	if err != nil {
-		h.logError("verify-payment: decrypt secret_key failed", "err", err)
+		h.logError("verify-payment: decrypt signing secret failed", "err", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "gateway not configured"})
 		return
 	}

@@ -1007,7 +1007,12 @@ func main() {
 			WithSecretStore(carrierSecretStore).
 			WithGiftCardService(giftCardSvcSF).
 			WithLoyaltyService(loyaltySvcSF).
-			WithNotifier(notificationSvc)
+			WithNotifier(notificationSvc).
+			// Enables /webhooks/:storeSlug/:provider — spec §2.3 scoped
+			// route. Without this the legacy /webhooks/:provider is the
+			// only mount, and it fails closed on ambiguous multi-tenant
+			// configs. Share the same slug cache as the storefront group.
+			WithStoreCache(slugCache)
 		// Order document mailer for the storefront — needed so the
 		// customer self-service cancel path can fire the cancellation
 		// email itself (the admin OrdersHandler.dispatchCancellationEmail

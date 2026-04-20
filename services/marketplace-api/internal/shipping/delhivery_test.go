@@ -182,6 +182,163 @@ func TestDelhivery_CreateShipment_RemarksIsArray(t *testing.T) {
 	}
 }
 
+// TestDelhivery_CreateShipment_PhoneMissing_TakesPrecedenceOverServiceable
+// pins the fix for the real-world Playwright blocker: Delhivery returns
+// serviceable:false AND a remark of "No phone number provided." when the
+// shipping address on our side has an empty phone. The previous
+// classifier checked !serviceable first, so every phone-missing failure
+// was mis-reported as a pincode routing problem. This test asserts the
+// specific phone error wins, NOT the serviceability error.
+func TestDelhivery_CreateShipment_PhoneMissing_TakesPrecedenceOverServiceable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"upload_wbn": "UPL-PHONE",
+			"packages": [{
+				"waybill": "",
+				"status": "Fail",
+				"serviceable": false,
+				"remarks": ["No phone number provided."]
+			}]
+		}`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	_, err := c.CreateShipment(context.Background(), ShipmentRequest{
+		OrderID:     "ORD-PHONE",
+		FromAddress: Address{Name: "Primary", PostalCode: "411011"},
+		ToAddress:   Address{PostalCode: "400001"},
+	})
+	if err == nil {
+		t.Fatal("expected phone-missing error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "phone number is required") {
+		t.Errorf("error should mention 'phone number is required', got %v", err)
+	}
+	if strings.Contains(msg, "not serviceable") {
+		t.Errorf("error should NOT be classified as serviceability issue, got %v", err)
+	}
+}
+
+// TestDelhivery_UpsertWarehouse_CreatesWhenMissing exercises the
+// create-fallback leg: Delhivery's edit/ endpoint returns the "matching
+// query does not exist" envelope, and the carrier is expected to retry
+// via create/ before returning success.
+func TestDelhivery_UpsertWarehouse_CreatesWhenMissing(t *testing.T) {
+	var editHits, createHits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/backend/clientwarehouse/edit/":
+			editHits++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"error":"ClientWarehouse matching query does not exist"}`)
+		case "/api/backend/clientwarehouse/create/":
+			createHits++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"success":true}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	err := c.UpsertWarehouse(context.Background(), Warehouse{
+		Name:        "Primary",
+		Phone:       "9999999999",
+		Address:     "1 Store Rd",
+		City:        "Pune",
+		PinCode:     "411011",
+		CountryCode: "IN",
+		Region:      "MH",
+	})
+	if err != nil {
+		t.Fatalf("UpsertWarehouse returned %v", err)
+	}
+	if editHits != 1 {
+		t.Errorf("expected 1 edit hit, got %d", editHits)
+	}
+	if createHits != 1 {
+		t.Errorf("expected 1 create hit, got %d", createHits)
+	}
+}
+
+// TestDelhivery_UpsertWarehouse_EditsWhenPresent pins the happy path:
+// the warehouse is already registered under this name, edit/ returns
+// 200 with no "does not exist" marker, and create/ must NOT be called.
+func TestDelhivery_UpsertWarehouse_EditsWhenPresent(t *testing.T) {
+	var editHits, createHits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/backend/clientwarehouse/edit/":
+			editHits++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"success":true,"data":{"id":42}}`)
+		case "/api/backend/clientwarehouse/create/":
+			createHits++
+			http.Error(w, "create should not be called", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	err := c.UpsertWarehouse(context.Background(), Warehouse{
+		Name:        "Primary",
+		Address:     "1 Store Rd",
+		City:        "Pune",
+		PinCode:     "411011",
+		CountryCode: "IN",
+	})
+	if err != nil {
+		t.Fatalf("UpsertWarehouse returned %v", err)
+	}
+	if editHits != 1 {
+		t.Errorf("expected 1 edit hit, got %d", editHits)
+	}
+	if createHits != 0 {
+		t.Errorf("expected 0 create hits, got %d", createHits)
+	}
+}
+
+// TestDelhivery_UpsertWarehouse_SurfacesOtherErrors confirms that a
+// non-"does not exist" failure on edit/ bubbles up verbatim instead of
+// silently falling through to create/. This matters because it's the
+// only way ops can tell "misconfigured token" from "new warehouse."
+func TestDelhivery_UpsertWarehouse_SurfacesOtherErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/backend/clientwarehouse/edit/" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"error":"internal server blew up"}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	err := c.UpsertWarehouse(context.Background(), Warehouse{
+		Name:        "Primary",
+		Address:     "1 Store Rd",
+		City:        "Pune",
+		PinCode:     "411011",
+		CountryCode: "IN",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "status=500") {
+		t.Errorf("expected status=500 in error, got %v", err)
+	}
+}
+
 // TestDelhivery_FetchLabel_RequiresPDFBody guards against a subtle
 // failure: Delhivery sometimes responds 200 OK with a JSON error
 // envelope for un-manifested waybills. We must refuse to return those

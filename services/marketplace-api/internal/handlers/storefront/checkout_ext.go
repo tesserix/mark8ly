@@ -284,6 +284,25 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		}
 	}
 
+	// Delhivery (and every India domestic carrier) rejects shipment
+	// creation when the destination has no phone, with a generic
+	// serviceable:false remark that hides the real cause. Fail the
+	// checkout here with a specific error so the storefront can
+	// surface it to the customer before the order is ever persisted.
+	if strings.EqualFold(req.ShippingAddress.CountryCode, "IN") {
+		phone := ""
+		if req.ShippingAddress.Phone != nil {
+			phone = strings.TrimSpace(*req.ShippingAddress.Phone)
+		}
+		if phone == "" {
+			c.AbortWithStatusJSON(http.StatusBadRequest, map[string]any{
+				"error":   "validation_failed",
+				"message": "Phone number is required for shipping to India",
+			})
+			return
+		}
+	}
+
 	ctx := c.Request.Context()
 
 	// ── Step 1: Resolve country config ──────────────────────────────────

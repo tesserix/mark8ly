@@ -31,6 +31,32 @@ type LabelFetcher interface {
 	FetchLabel(ctx context.Context, trackingNumber string) (pdf []byte, contentType string, err error)
 }
 
+// Warehouse is the carrier-side representation of a pickup location.
+// Populated by the admin settings handler from the warehouse_* columns
+// on shipping_carrier_configs and pushed to the carrier via
+// WarehouseSyncer so merchants don't have to mirror the address on two
+// sides.
+type Warehouse struct {
+	Name        string
+	Email       string
+	Phone       string
+	Address     string
+	City        string
+	PinCode     string
+	CountryCode string
+	Region      string
+}
+
+// WarehouseSyncer is implemented by carriers that can accept an upsert
+// of the merchant's pickup / warehouse address. Delhivery is the first
+// implementor: its /clientwarehouse/edit/ + /clientwarehouse/create/
+// endpoints let us keep one.delhivery.com's Pickup Locations in lockstep
+// with the admin's Shipping settings, so a fresh merchant doesn't have
+// to hand-enter the same warehouse in two places.
+type WarehouseSyncer interface {
+	UpsertWarehouse(ctx context.Context, wh Warehouse) error
+}
+
 // Address represents a physical address for shipping origin/destination.
 type Address struct {
 	Name        string

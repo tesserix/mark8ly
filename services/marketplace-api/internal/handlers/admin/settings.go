@@ -20,6 +20,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
+	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
@@ -866,7 +867,100 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 			First(&cfg)
 	}
 
+	// Push the merchant's pickup location to the carrier so one.delhivery.com
+	// → Settings → Pickup Locations stays in lockstep with the admin UI.
+	// Detached from the request context: Delhivery's clientwarehouse
+	// endpoints can be slow or transiently unavailable, and we don't want
+	// that to fail the admin save — the DB row is already committed.
+	h.syncWarehouseAsync(provider, cfg.Mode, apiKeyEnc, secretKeyEnc, cfg)
+
 	c.JSON(http.StatusOK, gin.H{"data": h.toShippingResponse(c.Request.Context(), cfg)})
+}
+
+// syncWarehouseAsync pushes the admin's warehouse address to the carrier
+// in a background goroutine with a detached 30s context. Failures only
+// log — the DB row is the source of truth and the merchant's save has
+// already succeeded. See (*ShippingSettingsHandler).buildCarrierForSync
+// for the credential-resolution path.
+func (h *ShippingSettingsHandler) syncWarehouseAsync(
+	provider, mode, apiKeyRef, secretKeyRef string,
+	cfg ShippingCarrierConfigRow,
+) {
+	if strings.TrimSpace(cfg.WarehouseName) == "" {
+		// Without a name we have nothing to key on — skip silently.
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		carrier, err := h.buildCarrierForSync(ctx, provider, mode, apiKeyRef, secretKeyRef)
+		if err != nil {
+			h.logger.Warn("warehouse sync: build carrier failed",
+				"provider", provider, "store_id", cfg.StoreID.String(), "err", err)
+			return
+		}
+		syncer, ok := carrier.(shipping.WarehouseSyncer)
+		if !ok {
+			// Not all carriers support warehouse sync — this is fine,
+			// silently no-op. Delhivery is the only implementor today.
+			return
+		}
+		wh := shipping.Warehouse{
+			Name:        cfg.WarehouseName,
+			Phone:       cfg.WarehousePhone,
+			Address:     strings.TrimSpace(cfg.WarehouseLine1 + " " + cfg.WarehouseLine2),
+			City:        cfg.WarehouseCity,
+			PinCode:     cfg.WarehousePostal,
+			CountryCode: cfg.WarehouseCountry,
+			Region:      cfg.WarehouseRegion,
+		}
+		if err := syncer.UpsertWarehouse(ctx, wh); err != nil {
+			h.logger.Warn("warehouse sync: upsert failed",
+				"provider", provider, "store_id", cfg.StoreID.String(),
+				"warehouse", cfg.WarehouseName, "err", err)
+			return
+		}
+		h.logger.Info("warehouse sync: upsert succeeded",
+			"provider", provider, "store_id", cfg.StoreID.String(),
+			"warehouse", cfg.WarehouseName)
+	}()
+}
+
+// buildCarrierForSync resolves the stored credential references to
+// plaintext and constructs a carrier client ready for outbound calls.
+// Mirrors the read path used by the shipments handler (see
+// maybeRewrapCarrierCreds there) except we don't lazy-rewrap on save —
+// the settings.Upsert write path is already authoritative.
+func (h *ShippingSettingsHandler) buildCarrierForSync(
+	ctx context.Context,
+	provider, mode, apiKeyRef, secretKeyRef string,
+) (shipping.Carrier, error) {
+	apiKey, err := h.resolveCred(ctx, apiKeyRef)
+	if err != nil {
+		return nil, err
+	}
+	var secretKey string
+	if secretKeyRef != "" {
+		secretKey, err = h.resolveCred(ctx, secretKeyRef)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return shipping.NewCarrier(provider, apiKey, secretKey, mode)
+}
+
+// resolveCred routes a stored credential reference to plaintext. Uses
+// the Store when wired (handles both gsm:// and legacy inline refs),
+// falling back to the Encryptor path so inline-mode deployments and
+// tests that only supply an Encryptor continue to work.
+func (h *ShippingSettingsHandler) resolveCred(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
+	}
+	if h.secretStore != nil {
+		return h.secretStore.Get(ctx, ref)
+	}
+	return h.encryptor.Decrypt(ref)
 }
 
 // Delete handles DELETE /settings/shipping/:provider — removes the config row.

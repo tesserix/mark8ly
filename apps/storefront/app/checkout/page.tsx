@@ -62,6 +62,7 @@ interface AddressFields {
   region: string;
   postal_code: string;
   country_code: string;
+  phone: string;
 }
 
 interface SavedAddress {
@@ -80,10 +81,25 @@ const EMPTY_ADDRESS: AddressFields = {
   region: "",
   postal_code: "",
   country_code: "",
+  phone: "",
 };
 
+// Indian mobile numbers are 10 digits starting with 6/7/8/9. Delhivery
+// rejects shipment-create for IN destinations with an empty phone, so
+// we enforce the format client-side as well as server-side.
+const IN_PHONE_RE = /^[6-9]\d{9}$/;
+
 function isAddressFilled(a: AddressFields): boolean {
-  return a.name.trim() !== "" && a.line1.trim() !== "" && a.city.trim() !== "" && a.country_code.trim().length === 2;
+  const basicsOk =
+    a.name.trim() !== "" &&
+    a.line1.trim() !== "" &&
+    a.city.trim() !== "" &&
+    a.country_code.trim().length === 2;
+  if (!basicsOk) return false;
+  if (a.country_code.trim().toUpperCase() === "IN") {
+    return IN_PHONE_RE.test(a.phone.trim());
+  }
+  return true;
 }
 
 function toCheckoutAddress(a: AddressFields): CheckoutAddressBody {
@@ -95,6 +111,7 @@ function toCheckoutAddress(a: AddressFields): CheckoutAddressBody {
     region: a.region.trim() || undefined,
     postal_code: a.postal_code.trim() || undefined,
     country_code: a.country_code.trim().toUpperCase(),
+    phone: a.phone.trim() || undefined,
   };
 }
 
@@ -976,6 +993,33 @@ function AddressForm({ address, onChange }: AddressFormProps) {
           value={address.postal_code}
           onChange={(e) => update("postal_code", e.target.value)}
           className={inputClass}
+        />
+      </div>
+      <div>
+        <label htmlFor="ship-phone" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
+          Phone number
+          {address.country_code.trim().toUpperCase() === "IN" && (
+            <span className="ml-1 opacity-60">(required)</span>
+          )}
+        </label>
+        <input
+          id="ship-phone"
+          type="tel"
+          autoComplete="shipping tel"
+          required={address.country_code.trim().toUpperCase() === "IN"}
+          pattern={
+            address.country_code.trim().toUpperCase() === "IN"
+              ? "[6-9][0-9]{9}"
+              : undefined
+          }
+          value={address.phone}
+          onChange={(e) => update("phone", e.target.value)}
+          className={inputClass}
+          placeholder={
+            address.country_code.trim().toUpperCase() === "IN"
+              ? "10-digit mobile e.g. 9876543210"
+              : ""
+          }
         />
       </div>
       <div>

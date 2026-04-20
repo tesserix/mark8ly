@@ -319,25 +319,30 @@ func joinRemarks(rs []string) string {
 // classifyDelhiveryCreateError turns Delhivery's opaque remarks string
 // into an actionable error. The common failures in practice:
 //
-//  1. serviceable == false — the origin/destination pincode pair isn't
-//     covered by the merchant's Delhivery service tier. The remediation
-//     is on the merchant side (enable the route on one.delhivery.com
-//     → Pricing / Services) or use a destination pincode they already
-//     serve.
+//  1. "No phone number provided" — the destination address on our end
+//     had an empty phone. Delhivery ALSO returns serviceable:false
+//     alongside this remark, so we check the specific remark patterns
+//     BEFORE the serviceability branch below — otherwise every phone-
+//     missing failure would be mis-classified as a pincode routing
+//     issue, which is impossible for an operator to self-diagnose.
 //  2. "ClientWarehouse matching query does not exist" — the warehouse
 //     name we sent isn't registered on one.delhivery.com → Settings
 //     → Pickup Locations. Case-sensitive: "Primary" ≠ "primary".
 //  3. "Invalid token" — the API key is wrong, rotated, or the caller
 //     sent the envelope-encrypted ciphertext through without
 //     decrypting it (regression risk; pinned by delhivery_test.go).
-//  4. Anything else — bubble the remarks verbatim so ops can triage.
+//  4. serviceable == false — default branch, after all the specific
+//     remarks above. Origin/destination pincode pair isn't covered by
+//     the merchant's Delhivery service tier. Remediation is on the
+//     merchant side (enable the route on one.delhivery.com → Pricing
+//     / Services) or use a destination pincode they already serve.
+//  5. Anything else — bubble the remarks verbatim so ops can triage.
 func classifyDelhiveryCreateError(remarks, warehouseName, fromPin, toPin string, serviceable bool) error {
 	lower := strings.ToLower(remarks)
 	switch {
-	case !serviceable || strings.Contains(lower, "not serviceable") || strings.Contains(lower, "no serviceable"):
+	case strings.Contains(lower, "no phone number") || strings.Contains(lower, "phone number provided"):
 		return fmt.Errorf(
-			"delhivery: pincode %q → %q is not serviceable on your Delhivery account — either enable this route on one.delhivery.com → Pricing, or test with a destination pincode you already serve. (carrier: %s)",
-			fromPin, toPin, remarks)
+			"delhivery: customer phone number is required on the shipping address — ask the customer to add their phone and retry. (carrier: %s)", remarks)
 	case strings.Contains(lower, "clientwarehouse") && strings.Contains(lower, "does not exist"):
 		return fmt.Errorf(
 			"delhivery: warehouse %q is not registered on your Delhivery account — open one.delhivery.com → Settings → Pickup Locations and add one named exactly %q (case-sensitive), then retry. (carrier: %s)",
@@ -346,6 +351,10 @@ func classifyDelhiveryCreateError(remarks, warehouseName, fromPin, toPin string,
 		return fmt.Errorf(
 			"delhivery: API token rejected — verify the token in Settings → Shipping matches the one on one.delhivery.com → Settings → API. (carrier: %s)",
 			remarks)
+	case !serviceable || strings.Contains(lower, "not serviceable") || strings.Contains(lower, "no serviceable"):
+		return fmt.Errorf(
+			"delhivery: pincode %q → %q is not serviceable on your Delhivery account — either enable this route on one.delhivery.com → Pricing, or test with a destination pincode you already serve. (carrier: %s)",
+			fromPin, toPin, remarks)
 	default:
 		if remarks == "" {
 			remarks = "no remarks returned"
@@ -459,6 +468,92 @@ func (c *DelhiveryCarrier) CancelShipment(ctx context.Context, shipmentID string
 		return fmt.Errorf("delhivery: cancel shipment: unexpected status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// UpsertWarehouse keeps one.delhivery.com → Settings → Pickup Locations
+// in sync with the admin's Shipping settings. Delhivery exposes separate
+// create and edit endpoints keyed by warehouse name; it does NOT expose
+// an idempotent upsert. We try edit/ first and fall through to create/
+// on the specific "does not exist" error — both legs return 200 on
+// success, so the status code isn't enough to discriminate.
+//
+// Shared payload: Delhivery's clientwarehouse endpoints use the same
+// JSON shape as the billing "register warehouse" form on their dashboard.
+// We reuse the merchant's warehouse address for the return_* fields
+// because Delhivery requires them on both create and edit and
+// marketplace-api doesn't model a separate RTO address yet.
+func (c *DelhiveryCarrier) UpsertWarehouse(ctx context.Context, wh Warehouse) error {
+	if strings.TrimSpace(wh.Name) == "" {
+		return fmt.Errorf("delhivery: upsert warehouse: name is required")
+	}
+
+	payload := map[string]any{
+		"name":            wh.Name,
+		"email":           wh.Email,
+		"phone":           wh.Phone,
+		"address":         wh.Address,
+		"city":            wh.City,
+		"country":         wh.CountryCode,
+		"pin":             wh.PinCode,
+		"return_address":  wh.Address,
+		"return_pin":      wh.PinCode,
+		"return_city":     wh.City,
+		"return_state":    wh.Region,
+		"return_country":  wh.CountryCode,
+	}
+
+	// Step 1: try edit/. If the warehouse is already registered under
+	// this name, Delhivery returns success.
+	editBody, editStatus, editErr := c.doWarehouseRequest(ctx, "/api/backend/clientwarehouse/edit/", payload)
+	if editErr != nil {
+		return fmt.Errorf("delhivery: upsert warehouse: edit request: %w", editErr)
+	}
+	if editStatus == http.StatusOK && !delhiveryWarehouseMissing(editBody) {
+		return nil
+	}
+
+	// Step 2: edit reported the warehouse doesn't exist → create it.
+	// Any other non-200 on edit is surfaced as-is so ops can see it.
+	if editStatus != http.StatusOK && !delhiveryWarehouseMissing(editBody) {
+		return fmt.Errorf("delhivery: upsert warehouse: edit status=%d body=%s",
+			editStatus, truncate(editBody, 400))
+	}
+
+	createBody, createStatus, createErr := c.doWarehouseRequest(ctx, "/api/backend/clientwarehouse/create/", payload)
+	if createErr != nil {
+		return fmt.Errorf("delhivery: upsert warehouse: create request: %w", createErr)
+	}
+	if createStatus != http.StatusOK {
+		return fmt.Errorf("delhivery: upsert warehouse: create status=%d body=%s",
+			createStatus, truncate(createBody, 400))
+	}
+	return nil
+}
+
+// doWarehouseRequest is a small helper around the clientwarehouse/*
+// endpoints: JSON POST + Token auth, returning the body bytes as a
+// string so both callers can scan for Delhivery's "matching query does
+// not exist" phrase. Returns (body, statusCode, transportErr).
+func (c *DelhiveryCarrier) doWarehouseRequest(ctx context.Context, path string, payload any) (string, int, error) {
+	resp, err := c.doJSONRequest(ctx, http.MethodPost, path, payload)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", resp.StatusCode, fmt.Errorf("read body: %w", err)
+	}
+	return string(body), resp.StatusCode, nil
+}
+
+// delhiveryWarehouseMissing detects the "fall through to create" signal.
+// Delhivery's edit endpoint returns this exact phrase as part of a JSON
+// envelope when the name doesn't resolve to an existing warehouse.
+func delhiveryWarehouseMissing(body string) bool {
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, "clientwarehouse matching query does not exist") ||
+		strings.Contains(lower, "warehouse matching query does not exist")
 }
 
 // --- helpers ---

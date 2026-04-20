@@ -31,7 +31,7 @@ const BILLING_STALE_TIME = 30_000
  */
 export function useCurrentPlan(
   storeId: string,
-): UseQueryResult<CurrentPlan, Error> {
+): UseQueryResult<CurrentPlan | null, Error> {
   return useQuery({
     queryKey: ['subscription', storeId],
     queryFn: () => getSubscription(storeId),

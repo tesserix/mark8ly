@@ -49,7 +49,7 @@ export interface PastDueState {
   periodEnd: Date | null
 }
 
-function derivePastDueState(plan: CurrentPlan | undefined): PastDueState {
+function derivePastDueState(plan: CurrentPlan | undefined | null): PastDueState {
   if (!plan || plan.status !== 'past_due') {
     return {
       isPastDue: false,
@@ -110,7 +110,7 @@ export interface PaymentActionRequiredState {
 }
 
 function derivePaymentActionRequiredState(
-  plan: CurrentPlan | undefined,
+  plan: CurrentPlan | undefined | null,
 ): PaymentActionRequiredState {
   if (!plan || plan.status !== 'payment_action_required') {
     return {

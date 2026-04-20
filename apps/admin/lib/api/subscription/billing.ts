@@ -5,7 +5,7 @@
  *   GET  /api/v1/admin/stores/:storeId/subscription  → current plan
  *   POST /api/v1/admin/stores/:storeId/subscription/portal → Stripe portal URL
  */
-import { apiClient } from '@/lib/api/client'
+import { ApiError, apiClient } from '@/lib/api/client'
 import {
   subscriptionResponseSchema,
   portalResponseSchema,
@@ -21,13 +21,31 @@ import {
  *
  * The response is validated with Zod. Throws on network or API errors —
  * callers should handle via React Query's error state.
+ *
+ * A 404 on this endpoint is not an error: it means the store predates
+ * the v2.3 signup pipeline and has no store_subscriptions row yet. The
+ * billing page has its own bootstrap flow to remediate. Every OTHER
+ * admin page — Shipping, Payments, Products, etc. — mounts the shell
+ * BannerStack which calls this via useCurrentPlan, so we must NOT
+ * pollute the console with a 404 on every navigation. Returning null
+ * lets banner hooks render nothing (they already treat undefined/null
+ * data as "no active banner") and silences the devtools noise.
  */
-export async function getSubscription(storeId: string): Promise<CurrentPlan> {
-  const raw = await apiClient.get<unknown>(
-    `/api/admin/stores/${storeId}/subscription`,
-  )
-  const parsed = subscriptionResponseSchema.parse(raw)
-  return toCurrentPlan(parsed)
+export async function getSubscription(
+  storeId: string,
+): Promise<CurrentPlan | null> {
+  try {
+    const raw = await apiClient.get<unknown>(
+      `/api/admin/stores/${storeId}/subscription`,
+    )
+    const parsed = subscriptionResponseSchema.parse(raw)
+    return toCurrentPlan(parsed)
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return null
+    }
+    throw err
+  }
 }
 
 /**

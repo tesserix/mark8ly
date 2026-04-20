@@ -48,7 +48,7 @@ const TRIAL_LENGTH_DAYS = 90
 // ---------------------------------------------------------------------------
 
 export function deriveTrialStatus(
-  plan: CurrentPlan | undefined,
+  plan: CurrentPlan | undefined | null,
   now: Date = new Date(),
 ): TrialStatus {
   const EMPTY: TrialStatus = {

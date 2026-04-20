@@ -140,6 +140,25 @@ describe('getSubscription', () => {
       (err: unknown) => err instanceof ApiError && (err as ApiError).status === 500,
     )
   })
+
+  // A 404 here is not a real error — the store simply has no
+  // store_subscriptions row yet (pre-v2.3 signup, fresh test store).
+  // Returning null lets the shell banner stack degrade to "no banner"
+  // on every admin page instead of logging a red 404 in the browser
+  // console each navigation. Regressing this would make every refresh
+  // on /settings/shipping (and everywhere else) noisy again.
+  it('404 resolves to null instead of throwing', async () => {
+    server.use(
+      http.get(SUBSCRIPTION_PATH, () =>
+        HttpResponse.json(
+          { error: 'not_found', message: 'subscription not configured' },
+          { status: 404 },
+        ),
+      ),
+    )
+
+    await expect(getSubscription(STORE_ID)).resolves.toBeNull()
+  })
 })
 
 describe('openPortal', () => {

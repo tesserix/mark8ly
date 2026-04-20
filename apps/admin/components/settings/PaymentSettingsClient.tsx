@@ -95,6 +95,7 @@ export function PaymentSettingsClient({
                     provider={provider}
                     initialMode={cfg?.mode}
                     initialIsActive={cfg?.is_active ?? false}
+                    hasWebhookSecret={Boolean(cfg?.webhook_secret)}
                   />
                 ) : (
                   <p className="text-sm text-[color:var(--ink-900)]/50">

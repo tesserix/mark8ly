@@ -20,6 +20,10 @@ interface PaymentConfigFormProps {
   initialApiKey?: string;
   initialMode?: "test" | "live";
   initialIsActive?: boolean;
+  // True when the server already has a dedicated webhook secret stored
+  // for this provider. Controls the help text on the field — "keep
+  // existing" vs "optional, falls back to API secret".
+  hasWebhookSecret?: boolean;
 }
 
 export function PaymentConfigForm({
@@ -27,10 +31,17 @@ export function PaymentConfigForm({
   initialApiKey = "",
   initialMode = "test",
   initialIsActive = false,
+  hasWebhookSecret = false,
 }: PaymentConfigFormProps) {
   const router = useRouter();
   const [apiKey, setApiKey] = useState(initialApiKey);
   const [secretKey, setSecretKey] = useState("");
+  // Webhook secret uses tri-state semantics:
+  //   untouched (never changed)   → omit from payload (backend preserves)
+  //   touched, non-empty          → set to the new value
+  //   touched, empty              → clear the column (backend falls back to API secret)
+  const [webhookSecret, setWebhookSecret] = useState("");
+  const [webhookSecretTouched, setWebhookSecretTouched] = useState(false);
   const [mode, setMode] = useState<"test" | "live">(initialMode);
   const [isActive, setIsActive] = useState(initialIsActive);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +57,10 @@ export function PaymentConfigForm({
       const result = await savePaymentConfig(provider, {
         api_key: apiKey,
         secret_key: secretKey || undefined,
+        // Only include webhook_secret when the user actually interacted
+        // with the field. This preserves the existing stored value when
+        // untouched and lets an empty-on-purpose submission clear it.
+        ...(webhookSecretTouched ? { webhook_secret: webhookSecret } : {}),
         mode,
         is_active: isActive,
       });
@@ -55,6 +70,8 @@ export function PaymentConfigForm({
       }
       setSuccess(true);
       setSecretKey("");
+      setWebhookSecret("");
+      setWebhookSecretTouched(false);
       router.refresh();
     });
   }
@@ -92,6 +109,29 @@ export function PaymentConfigForm({
           </p>
         </FieldGroup>
       </div>
+
+      <FieldGroup
+        label="Webhook signing secret"
+        htmlFor={`${provider}-webhook-secret`}
+      >
+        <input
+          id={`${provider}-webhook-secret`}
+          type="password"
+          autoComplete="off"
+          value={webhookSecret}
+          onChange={(e) => {
+            setWebhookSecret(e.target.value);
+            setWebhookSecretTouched(true);
+            setSuccess(false);
+          }}
+          placeholder={webhookSecretPlaceholder(provider)}
+          disabled={pending}
+          className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+        />
+        <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
+          {webhookSecretHelpText(provider, hasWebhookSecret)}
+        </p>
+      </FieldGroup>
 
       <div className="flex items-center gap-6">
         <FieldGroup label="Mode" htmlFor={`${provider}-mode`}>
@@ -175,4 +215,34 @@ function FieldGroup({
       {children}
     </div>
   );
+}
+
+function webhookSecretPlaceholder(provider: string): string {
+  switch (provider.toLowerCase()) {
+    case "stripe":
+      return "whsec_...";
+    case "razorpay":
+      return "Razorpay webhook secret";
+    case "paypal":
+      return "PayPal webhook ID / secret";
+    default:
+      return "Webhook signing secret";
+  }
+}
+
+function webhookSecretHelpText(
+  provider: string,
+  hasWebhookSecret: boolean,
+): string {
+  const p = provider.toLowerCase();
+  if (hasWebhookSecret) {
+    return "Leave blank to keep the existing webhook secret. Enter a new value to rotate it, or clear it to fall back to the API secret.";
+  }
+  if (p === "razorpay") {
+    return "Optional. Configure a dedicated webhook secret in your Razorpay dashboard so rotating the API secret doesn't invalidate webhooks. Leave blank to use the API secret (legacy behaviour).";
+  }
+  if (p === "stripe") {
+    return "Optional. Paste the signing secret from your Stripe webhook endpoint (starts with whsec_). Leave blank to use the API secret.";
+  }
+  return "Optional. When set, this secret is used for webhook signature verification instead of the API secret.";
 }

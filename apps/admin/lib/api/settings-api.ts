@@ -18,6 +18,7 @@ export interface PaymentConfig {
   provider: string;
   api_key: string; // masked
   secret_key: string; // masked
+  webhook_secret: string; // masked; empty when not configured
   mode: "test" | "live";
   is_active: boolean;
   created_at: string;
@@ -27,6 +28,11 @@ export interface PaymentConfig {
 export interface PaymentConfigUpsertInput {
   api_key: string;
   secret_key?: string;
+  // webhook_secret semantics match the backend pointer:
+  //   undefined (omit)    → preserve existing value
+  //   ""       (empty)    → clear the column (fall back to API secret)
+  //   "sk_..." (non-empty) → set the dedicated webhook signing secret
+  webhook_secret?: string;
   mode: "test" | "live";
   is_active: boolean;
 }

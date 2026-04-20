@@ -22,7 +22,7 @@ export function OrderDetailHeader({ order }: OrderDetailHeaderProps) {
       <div className="flex flex-col gap-2">
         <h1
           id="order-heading"
-          className="font-serif text-4xl font-medium tracking-tight text-foreground sm:text-5xl"
+          className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl"
         >
           {order.order_number}
         </h1>

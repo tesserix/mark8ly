@@ -37,7 +37,7 @@ export default async function CouponDetailPage({
 
       <header className="flex flex-col gap-2">
         <p className="eyebrow">Coupon</p>
-        <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground">
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
           {response.data.code}
         </h1>
       </header>

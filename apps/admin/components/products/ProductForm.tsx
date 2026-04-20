@@ -322,31 +322,32 @@ export function ProductForm({
         className="flex flex-col gap-8"
         aria-labelledby="product-form-heading"
       >
-        <header className="flex items-start justify-between gap-4">
+        <header className="flex flex-col gap-2">
           <h1
             id="product-form-heading"
-            className="font-serif text-4xl font-medium leading-tight tracking-tight text-foreground sm:text-5xl"
+            className="font-serif text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl"
           >
             {title}
           </h1>
           {mode === "edit" && initialProduct && (
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-foreground-tertiary">
-                /{initialProduct.handle}
-              </span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-tertiary">
+              <span className="font-mono">/{initialProduct.handle}</span>
               {storeSlug && initialProduct.status === "active" && (
-                <a
-                  href={`${
-                    typeof window !== "undefined" && window.location.hostname === "localhost"
-                      ? `/products/${initialProduct.handle}?slug=${storeSlug}`
-                      : `https://${storeSlug}.mark8ly.com/products/${initialProduct.handle}`
-                  }`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-[color:var(--moss-700)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-                >
-                  View on storefront ↗
-                </a>
+                <>
+                  <span aria-hidden="true">·</span>
+                  <a
+                    href={`${
+                      typeof window !== "undefined" && window.location.hostname === "localhost"
+                        ? `/products/${initialProduct.handle}?slug=${storeSlug}`
+                        : `https://${storeSlug}.mark8ly.com/products/${initialProduct.handle}`
+                    }`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[color:var(--moss-700)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  >
+                    View on storefront ↗
+                  </a>
+                </>
               )}
             </div>
           )}

@@ -67,7 +67,7 @@ export function AdminPage({
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0 flex-1 space-y-3">
             {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-            <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground text-balance sm:text-5xl">
+            <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground text-balance sm:text-3xl">
               {title}
             </h1>
             {description && (

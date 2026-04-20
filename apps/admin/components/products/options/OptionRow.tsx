@@ -32,9 +32,12 @@ export function OptionRow({
     onValuesChange(option.values.filter((_, i) => i !== index));
   };
 
+  const fieldClass =
+    "h-10 w-full rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary transition-colors focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]";
+
   return (
-    <div className="flex flex-col gap-3 border-b border-[var(--ink-100)] py-4 md:flex-row md:items-start md:gap-6">
-      <div className="md:w-48">
+    <div className="flex flex-col gap-3 border-b border-border-subtle py-4 md:flex-row md:items-start md:gap-4">
+      <div className="md:w-56 md:shrink-0">
         <label className="sr-only" htmlFor={`option-name-${option.id ?? option.name}`}>
           Option name
         </label>
@@ -44,21 +47,21 @@ export function OptionRow({
           value={option.name}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="Option name"
-          className="w-full bg-[var(--paper-200)] px-3 py-2 text-sm text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+          className={fieldClass}
         />
       </div>
-      <div className="flex flex-1 flex-wrap items-center gap-2">
+      <div className="flex min-h-10 flex-1 flex-wrap items-center gap-1.5 rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated)] px-2 py-1.5 focus-within:border-[color:var(--moss-700)] focus-within:ring-1 focus-within:ring-[color:var(--moss-700)]">
         {option.values.map((v, i) => (
           <span
             key={v.id ?? `${i}-${v.value}`}
-            className="inline-flex items-center gap-1 rounded-full border border-[var(--ink-100)] bg-[var(--background-elevated)] px-3 py-1 text-xs text-[var(--ink-900)]"
+            className="inline-flex items-center gap-1 rounded-full bg-[color:var(--ink-900)]/[0.06] px-2.5 py-1 text-xs text-foreground"
           >
             {v.value}
             <button
               type="button"
               aria-label={`Remove value ${v.value}`}
               onClick={() => removeValue(i)}
-              className="text-[var(--ink-500)] hover:text-[var(--moss-700)] focus:text-[var(--moss-700)] focus:outline-none"
+              className="text-foreground-tertiary transition-colors hover:text-foreground focus:text-foreground focus:outline-none"
             >
               <X className="h-3 w-3" />
             </button>
@@ -74,15 +77,15 @@ export function OptionRow({
               commitValue();
             }
           }}
-          placeholder="Add a value"
-          className="min-w-[8rem] flex-1 bg-transparent px-2 py-1 text-xs text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+          placeholder={option.values.length === 0 ? "Add a value" : "Add another"}
+          className="min-w-[8rem] flex-1 bg-transparent px-1.5 py-0.5 text-sm text-foreground placeholder:text-foreground-tertiary outline-none"
         />
       </div>
       <button
         type="button"
         aria-label="Remove option"
         onClick={onRemove}
-        className="self-start text-[var(--ink-500)] hover:text-[var(--moss-700)] focus:text-[var(--moss-700)] focus:outline-none"
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-foreground-tertiary transition-colors hover:bg-[color:var(--ink-900)]/[0.04] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
       >
         <Trash2 className="h-4 w-4" />
       </button>

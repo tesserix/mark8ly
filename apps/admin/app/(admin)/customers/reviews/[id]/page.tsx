@@ -61,7 +61,7 @@ export default async function ReviewDetailPage({
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-2">
           <p className="eyebrow">Review</p>
-          <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground">
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
             {review.title || "Untitled review"}
           </h1>
         </div>

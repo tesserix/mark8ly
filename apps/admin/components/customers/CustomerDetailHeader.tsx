@@ -15,7 +15,7 @@ export function CustomerDetailHeader({ customer }: CustomerDetailHeaderProps) {
         <div className="flex flex-col gap-2">
           <h1
             id="customer-heading"
-            className="font-serif text-4xl font-medium tracking-tight text-foreground sm:text-5xl"
+            className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl"
           >
             {name}
           </h1>

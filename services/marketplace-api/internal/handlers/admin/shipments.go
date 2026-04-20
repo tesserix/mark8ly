@@ -47,7 +47,17 @@ type ShipmentsHandler struct {
 	// when nil, the email endpoint returns a 503 so the admin can see that
 	// label email is not wired in this deployment.
 	labelMailer LabelMailer
-	logger      *slog.Logger
+	// carrierFactory, when non-nil, overrides the normal
+	// shipping.NewCarrier() construction inside the sync loop. Lives
+	// here (rather than as an argument on runTrackingSync) so tests
+	// can attach a fake carrier to a handler the same way production
+	// attaches a labelMailer via WithLabelMailer. Nil on production
+	// builds — the sync loop goes straight to shipping.NewCarrier.
+	// The opaque second arg is the current open-shipment projection;
+	// `any` keeps the tuple-struct unexported while still letting
+	// cross-package tests register a factory.
+	carrierFactory func(provider string, sh any) (shipping.Carrier, bool)
+	logger         *slog.Logger
 }
 
 // NewShipmentsHandler constructs a ShipmentsHandler. docMailer is
@@ -938,6 +948,39 @@ func (h *ShipmentsHandler) RefreshTracking(c *gin.Context) {
 		return
 	}
 
+	if _, err := h.AdvanceShipmentFromTracking(ctx, rec, tracking); err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, toShipmentResponse(rec))
+}
+
+// AdvanceShipmentFromTracking applies a carrier tracking response to
+// the local shipment row. Returns (changed, err). changed==true means
+// the status transitioned and callers should count the row as
+// updated.
+//
+// Shared by RefreshTracking (single-shipment, on-demand),
+// SyncAllOpenShipments (background poller, every 2 min), and the
+// public Delhivery webhook receiver (push path). Centralizing the
+// mutation here keeps all three entry points in lock-step — if one
+// ever advances a shipment the others can't, the timeline drifts and
+// the customer sees conflicting state. Exported so the public
+// webhook handler can call into the same code without importing the
+// admin package directly (avoids an import cycle).
+//
+// Caller owns the carrier timeout (this helper is context-respecting).
+// rec is mutated in place: its Status is updated when the transition
+// persists, so the caller can echo it back.
+func (h *ShipmentsHandler) AdvanceShipmentFromTracking(
+	ctx context.Context,
+	rec *shipping.ShipmentRecord,
+	tracking *shipping.Tracking,
+) (bool, error) {
+	if tracking == nil {
+		return false, nil
+	}
 	// Map the carrier's coarse status onto our internal status vocab.
 	// GetTracking returns one of "in_transit", "delivered", "exception".
 	// We leave "out_for_delivery" / fine-grained states to the per-scan
@@ -945,32 +988,29 @@ func (h *ShipmentsHandler) RefreshTracking(c *gin.Context) {
 	// through tracking.Events rather than the top-level status).
 	newStatus := tracking.Status
 	if newStatus == "" || newStatus == rec.Status {
-		// Nothing to persist — just echo the current record.
-		c.JSON(http.StatusOK, toShipmentResponse(rec))
-		return
+		return false, nil
 	}
 	// Don't regress — delivered is terminal.
 	statusOrder := []string{"pending", "created", "in_transit", "out_for_delivery", "delivered"}
 	cur := indexOf(statusOrder, rec.Status)
 	next := indexOf(statusOrder, newStatus)
 	if cur >= 0 && next >= 0 && next < cur {
-		c.JSON(http.StatusOK, toShipmentResponse(rec))
-		return
+		return false, nil
 	}
 
-	fields := map[string]any{"status": newStatus, "updated_at": time.Now().UTC()}
+	now := time.Now().UTC()
+	fields := map[string]any{"status": newStatus, "updated_at": now}
 	if newStatus == "in_transit" && rec.Status != "in_transit" {
-		fields["shipped_at"] = time.Now().UTC()
+		fields["shipped_at"] = now
 	}
 	if newStatus == "delivered" {
-		fields["delivered_at"] = time.Now().UTC()
+		fields["delivered_at"] = now
 	}
 	if err := h.db.WithContext(ctx).
 		Table("shipments").
-		Where("id = ?", shipmentID).
+		Where("id = ?", rec.ID).
 		Updates(fields).Error; err != nil {
-		RespondErr(c, fmt.Errorf("shipments: update status: %w", err), h.logger)
-		return
+		return false, fmt.Errorf("shipments: update status: %w", err)
 	}
 	rec.Status = newStatus
 
@@ -983,13 +1023,28 @@ func (h *ShipmentsHandler) RefreshTracking(c *gin.Context) {
 				desc = last.Description
 			}
 		}
-		h.appendShipmentEvent(ctx, orderID, rec, kind, desc)
+		h.appendShipmentEvent(ctx, rec.OrderID, rec, kind, desc)
 	}
 	if newStatus == "delivered" {
-		h.dispatchReceiptEmail(orderID)
+		h.dispatchReceiptEmail(rec.OrderID)
+		// Fire the in-app notification for the merchant — same path
+		// the manual UpdateStatus handler uses so the sync loop's
+		// transitions are indistinguishable from human actions.
+		fulfilledMsg := "An order was marked delivered."
+		fulfilledResource := "order"
+		orderID := rec.OrderID
+		notification.Emit(ctx, h.notify, h.logger, notification.Notification{
+			TenantID:     rec.TenantID,
+			StoreID:      rec.StoreID,
+			Type:         notification.TypeOrderFulfilled,
+			Title:        "Order fulfilled",
+			Message:      &fulfilledMsg,
+			ResourceType: &fulfilledResource,
+			ResourceID:   &orderID,
+		})
 	}
 
-	c.JSON(http.StatusOK, toShipmentResponse(rec))
+	return true, nil
 }
 
 func indexOf(xs []string, x string) int {

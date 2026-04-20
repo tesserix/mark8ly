@@ -13,6 +13,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	"github.com/mark8ly/marketplace-api/internal/billing/migration"
+	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
 )
@@ -85,6 +86,12 @@ type Deps struct {
 	SubscriptionReadOnlyGate gin.HandlerFunc // optional; runs after StatusLoader — returns 402 on read-only states
 	AuthzMiddleware          *authz.Middleware
 	InternalSecret           string
+	// AuditIngestSecret gates /internal/* routes on the admin engine
+	// (audit-events, shipments/tracking/sync, storefront-status). In
+	// prod all three endpoints pull the SAME value from the
+	// mark8ly-marketplace-api-internal-auth Secret. Empty disables
+	// the check — fine for local dev.
+	AuditIngestSecret string
 }
 
 // RegisterAdmin mounts the admin route group on the given router. The
@@ -98,6 +105,24 @@ type Deps struct {
 // RequireTenantRelation runs the FGA Check per spec §13.1.1.
 func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 	authMW := auth.HeaderTrustAuth(deps.InternalSecret)
+
+	// Internal-only routes — cluster-internal callers (CronJobs,
+	// other services). Gated ONLY by the shared X-Internal-Auth
+	// secret; no user identity, no tenant/store scoping, no FGA
+	// check. Mounted outside the /admin/stores/:storeId tree because
+	// the CronJob iterates across every tenant in a single call.
+	//
+	// Reuses the AuditIngestSecret knob so we don't introduce yet
+	// another shared secret for the same trust boundary. In prod
+	// both cron-callers (audit-ingest from auth-bff, tracking-sync
+	// from the tracking-sync-cronjob) pull the SAME value from
+	// mark8ly-marketplace-api-internal-auth. See
+	// tesserix-k8s/charts/apps/mark8ly-marketplace-api-admin/values.yaml.
+	if deps.ShipmentsHandler != nil {
+		internalGroup := router.Group("/internal/shipments")
+		internalGroup.Use(internalsvc.RequireInternalAuth(deps.AuditIngestSecret))
+		internalGroup.POST("/tracking/sync", deps.ShipmentsHandler.SyncAllOpenShipments)
+	}
 
 	// P13 §12.4 — break-glass emergency login. Mounted at /admin root
 	// with NO authMW, NO store middleware, NO RequireActive: this is

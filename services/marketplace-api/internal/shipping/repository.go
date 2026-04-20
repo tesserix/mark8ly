@@ -94,6 +94,12 @@ type Repository interface {
 	CreateShipment(ctx context.Context, rec *ShipmentRecord) error
 	GetShipmentByID(ctx context.Context, id uuid.UUID) (*ShipmentRecord, error)
 	GetShipmentByOrderID(ctx context.Context, orderID uuid.UUID) (*ShipmentRecord, error)
+	// GetShipmentByTrackingNumber resolves a (carrier, AWB) tuple to
+	// the local shipment record. Added for the Delhivery webhook
+	// receiver, which has only the AWB in hand and must not leak
+	// existence of other shipments — callers treat a
+	// not-found the same way as a success.
+	GetShipmentByTrackingNumber(ctx context.Context, carrier, trackingNumber string) (*ShipmentRecord, error)
 	ListShipmentsByStore(ctx context.Context, storeID uuid.UUID, limit, offset int) ([]ShipmentRecord, int64, error)
 	UpdateShipmentStatus(ctx context.Context, id uuid.UUID, status string) error
 
@@ -147,6 +153,25 @@ func (r *gormRepository) GetShipmentByOrderID(ctx context.Context, orderID uuid.
 	}
 	if err != nil {
 		return nil, fmt.Errorf("shipping: get shipment by order id: %w", err)
+	}
+	return &rec, nil
+}
+
+// GetShipmentByTrackingNumber returns the shipment whose carrier + AWB
+// match the inputs. ErrRecordNotFound is wrapped in a domain-level
+// error string so the webhook handler can distinguish a lookup miss
+// (treat as success, don't leak existence) from a transient DB error
+// (treat as auth-failed to avoid ack'ing a webhook we couldn't verify).
+func (r *gormRepository) GetShipmentByTrackingNumber(ctx context.Context, carrier, trackingNumber string) (*ShipmentRecord, error) {
+	var rec ShipmentRecord
+	err := r.db.WithContext(ctx).
+		Where("carrier = ? AND tracking_number = ?", carrier, trackingNumber).
+		First(&rec).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("shipping: shipment not found for tracking number")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("shipping: get shipment by tracking number: %w", err)
 	}
 	return &rec, nil
 }

@@ -81,6 +81,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
+	"github.com/mark8ly/marketplace-api/internal/handlers/public"
 	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
 	"github.com/mark8ly/marketplace-api/internal/handlers/testroutes"
 	"github.com/mark8ly/marketplace-api/internal/handlers/webhooks"
@@ -333,6 +334,13 @@ func main() {
 	// process never mounts the admin group so these dependencies would go
 	// unused there.
 	var adminDeps admin.Deps
+	// delhiveryWebhookHandler is constructed in the admin wiring branch
+	// (where shipmentsHandler, apiKeyEncryptor and carrierSecretStore
+	// are built) but mounted below inside the engine switch, so declare
+	// it at outer scope. Nil-safe — the RegisterPublic call skips the
+	// route when it's still nil, so Storefront-only builds don't mount
+	// the webhook.
+	var delhiveryWebhookHandler *public.DelhiveryWebhookHandler
 	// taxService is declared at outer scope so the revalidation cron (which
 	// runs in both modes) can reference it. Constructed inside the admin
 	// branch when the registry + handler dependencies are wired.
@@ -534,6 +542,15 @@ func main() {
 			WithEncryptor(apiKeyEncryptor).
 			WithSecretStore(carrierSecretStore).
 			WithLabelMailer(labelMailer)
+
+		// Public Delhivery webhook receiver — same carrier-secret resolution
+		// path as the shipments admin handler, wired to the admin handler's
+		// AdvanceShipmentFromTracking so push-updates and poller-updates
+		// produce identical order_events rows.
+		delhiveryWebhookHandler = public.NewDelhiveryWebhookHandler(conn, shippingRepo, log).
+			WithEncryptor(apiKeyEncryptor).
+			WithSecretStore(carrierSecretStore).
+			WithAdvance(shipmentsHandler.AdvanceShipmentFromTracking)
 		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log).
 			WithSecretStore(carrierSecretStore)
 		settingsMetaHandler := admin.NewSettingsMetaHandler(countryRepoAdmin, log)
@@ -861,6 +878,7 @@ func main() {
 			SubscriptionReadOnlyGate: readonly.RequireActive(readonly.Config{}),
 			AuthzMiddleware:          authzMW,
 			InternalSecret:           cfg.InternalAuthSecret,
+			AuditIngestSecret:        cfg.AuditIngestSecret,
 		}
 	}
 
@@ -1557,6 +1575,9 @@ func main() {
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
 		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
+		public.RegisterPublic(r.Group("/api/v1"), public.PublicDeps{
+			DelhiveryWebhookHandler: delhiveryWebhookHandler,
+		})
 		if brandingSeeder != nil {
 			brandingSeeder.Register(r.Group("/api/v1/test"))
 		}
@@ -1593,6 +1614,14 @@ func main() {
 		if m == mode.Admin {
 			admin.RegisterAdmin(engine.Group("/api/v1"), adminDeps)
 			admin.RegisterAdminMobile(engine.Group("/api/v1"), mobileDeps)
+			// Public Delhivery webhook receiver. Mounted on the admin
+			// engine because the merchant-configured URL points at the
+			// admin hostname (playwrite-test-admin.mark8ly.com) and the
+			// handler shares shipments/secrets wiring with the admin
+			// ShipmentsHandler.
+			public.RegisterPublic(engine.Group("/api/v1"), public.PublicDeps{
+				DelhiveryWebhookHandler: delhiveryWebhookHandler,
+			})
 			if countryPublicHandler != nil {
 				engine.GET("/api/v1/public/supported-countries", countryPublicHandler.ListSupported)
 			}

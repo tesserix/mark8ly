@@ -1,12 +1,16 @@
 "use client";
 
 // Client-rendered order/shipment timeline. Renders the initial server
-// payload, then polls GET /api/account/orders/:id/timeline every 5s so
-// the customer sees "Out for delivery" → "Delivered" transitions as
-// the admin advances shipment status (or as webhooks/tracking pollers
-// fire once real pub/sub delivery is wired up).
+// payload, then polls GET /api/account/orders/:id/timeline every 5s
+// while the tab is in the foreground so the customer sees "Out for
+// delivery" → "Delivered" transitions the moment the marketplace-api
+// sync loop (every 2 min) or the Delhivery webhook writes a new
+// order_events row. On top of the timer we also re-pull on window
+// focus / tab visibility change — many customers leave an order tab
+// open for days, and the focus refresh catches them up instantly
+// instead of waiting up to a full tick.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import type { OrderShipment, OrderTimelineEntry } from "@/lib/api/checkout-api";
 
@@ -73,6 +77,12 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
     return last ? `${last.kind}@${last.occurred_at}` : "";
   }, [events]);
 
+  // pullRef holds the current pull() closure so the focus/visibility
+  // handlers can invoke it without being redeclared every render — the
+  // outer effect owns the interval lifecycle, the inner one only
+  // wires listeners.
+  const pullRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     let stopped = false;
     let seenKey = latestKey;
@@ -111,14 +121,32 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
         // Transient network error — next tick will retry.
       }
     }
+    pullRef.current = pull;
 
     const id = window.setInterval(pull, POLL_MS);
     // Prime once after mount so a tab reopened hours later catches up fast.
     const kick = window.setTimeout(pull, 750);
+
+    // Re-pull the moment the tab regains focus or visibility — the
+    // interval keeps running in the background on modern browsers,
+    // but a suspended mobile Safari tab may have missed several
+    // ticks, so an explicit trigger on resume avoids the customer
+    // seeing a stale "In transit" when their package was actually
+    // delivered hours ago.
+    const onFocus = () => {
+      if (document.visibilityState === "visible") {
+        void pull();
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+
     return () => {
       stopped = true;
       window.clearInterval(id);
       window.clearTimeout(kick);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
     };
   }, [orderId, latestKey]);
 

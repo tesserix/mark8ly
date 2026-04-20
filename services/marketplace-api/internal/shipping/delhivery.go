@@ -407,7 +407,7 @@ func (c *DelhiveryCarrier) GetTracking(ctx context.Context, trackingNumber strin
 
 	return &Tracking{
 		TrackingNumber: trackingNumber,
-		Status:         mapDelhiveryStatus(shipment.Status.StatusType),
+		Status:         MapDelhiveryStatus(shipment.Status.StatusType),
 		Events:         events,
 	}, nil
 }
@@ -649,7 +649,7 @@ func (c *DelhiveryCarrier) doForm(ctx context.Context, path string, form url.Val
 	return c.client.Do(req)
 }
 
-func mapDelhiveryStatus(statusType string) string {
+func MapDelhiveryStatus(statusType string) string {
 	switch statusType {
 	case "DL":
 		return "delivered"

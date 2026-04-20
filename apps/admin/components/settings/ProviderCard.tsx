@@ -92,9 +92,9 @@ export function ProviderCard({
       : "Add credentials";
 
   return (
-    <article className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)]">
+    <article className="border-b border-border-subtle last:border-b-0">
       {/* Header row */}
-      <div className="flex items-start justify-between gap-4 px-6 py-5">
+      <div className="flex items-start justify-between gap-4 py-5">
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-3">
             <h3 className="font-serif text-lg font-medium text-foreground">
@@ -161,7 +161,7 @@ export function ProviderCard({
       {/* Test connection feedback */}
       <div aria-live="polite" aria-atomic="true">
         {testResult && (
-          <div className="px-6 pb-4">
+          <div className="pb-4">
             {testResult.success ? (
               <div
                 role="status"
@@ -183,7 +183,7 @@ export function ProviderCard({
 
       {/* Confirm remove warning */}
       {confirmRemove && !removing && (
-        <div className="px-6 pb-4">
+        <div className="pb-4">
           <div
             role="alert"
             className="rounded-md border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--warning)]"
@@ -202,10 +202,9 @@ export function ProviderCard({
       >
         <div className="overflow-hidden">
           {expanded && (
-            <>
-              <hr className="border-t border-[color:var(--ink-900)]/6 mx-6" />
-              <div className="px-6 py-5">{children}</div>
-            </>
+            <div className="border-t border-border-subtle pb-5 pt-5">
+              {children}
+            </div>
           )}
         </div>
       </div>

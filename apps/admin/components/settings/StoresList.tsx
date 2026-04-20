@@ -99,16 +99,16 @@ export function StoresList({
 
   return (
     <div className="space-y-6">
-      <section className="admin-panel space-y-4 rounded-[1.6rem] p-6">
+      <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
             Your stores
           </h2>
           {canManage && !showAdd && (
             <button
               type="button"
               onClick={() => setShowAdd(true)}
-              className="inline-flex items-center justify-center rounded-md border border-border bg-background-elevated/70 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background-elevated"
+              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
             >
               + Add store
             </button>
@@ -147,7 +147,11 @@ export function StoresList({
                     </p>
                   </div>
                   {isCurrent ? (
-                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--moss-700)]/10 px-2.5 py-1 text-xs font-medium text-[color:var(--moss-700)]">
+                      <span
+                        aria-hidden="true"
+                        className="h-1.5 w-1.5 rounded-full bg-[color:var(--moss-700)]"
+                      />
                       Current
                     </span>
                   ) : (
@@ -315,9 +319,9 @@ function AddStoreForm({
   }
 
   return (
-    <section className="admin-panel space-y-4 rounded-[1.6rem] p-6">
+    <section className="space-y-4 border-t border-border-subtle pt-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
           Add a store
         </h2>
         <button

@@ -224,8 +224,8 @@ interface SectionProps {
 
 function Section({ title, children }: SectionProps) {
   return (
-    <section className="admin-panel space-y-5 rounded-md p-6">
-      <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+    <section className="space-y-5 border-t border-border-subtle pt-8 first:border-t-0 first:pt-0">
+      <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
         {title}
       </h2>
       <div className="space-y-4">{children}</div>

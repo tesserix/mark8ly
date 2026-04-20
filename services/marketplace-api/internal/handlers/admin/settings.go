@@ -27,11 +27,36 @@ import (
 
 // maskKey returns "****" + last 4 chars for display. Returns "****" when the
 // input is too short to safely reveal a suffix.
+//
+// NOTE: callers that hold a ciphertext (api_key_encrypted /
+// secret_key_encrypted columns) must pass the *plaintext* here, not the
+// ciphertext — the whole point of the mask is to let the merchant
+// recognize their own key. Use maskEncryptedKey below when you only
+// have the ciphertext + an Encryptor.
 func maskKey(key string) string {
 	if len(key) <= 4 {
 		return "****"
 	}
 	return "****" + key[len(key)-4:]
+}
+
+// maskEncryptedKey decrypts a stored ciphertext and returns the masked
+// plaintext tail. On decrypt failure (key rotated, malformed ciphertext,
+// noop→aes drift) we fall back to a neutral "****" — never leak any part
+// of the raw ciphertext into the response, since the merchant will
+// interpret it as their real key and report a false recognition match.
+func maskEncryptedKey(enc crypto.Encryptor, ciphertext string) string {
+	if ciphertext == "" {
+		return ""
+	}
+	if enc == nil {
+		return "****"
+	}
+	plaintext, err := enc.Decrypt(ciphertext)
+	if err != nil || plaintext == "" {
+		return "****"
+	}
+	return maskKey(plaintext)
 }
 
 // storeFromCtx extracts the *stores.Store set by the StoreMiddleware. Returns
@@ -124,16 +149,12 @@ type paymentConfigResponse struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-func toPaymentResponse(cfg PaymentGatewayConfig) paymentConfigResponse {
-	secretDisplay := ""
-	if cfg.SecretKeyEncrypted != "" {
-		secretDisplay = maskKey(cfg.SecretKeyEncrypted)
-	}
+func toPaymentResponse(cfg PaymentGatewayConfig, enc crypto.Encryptor) paymentConfigResponse {
 	return paymentConfigResponse{
 		ID:        cfg.ID.String(),
 		Provider:  cfg.Provider,
-		APIKey:    maskKey(cfg.APIKeyEncrypted),
-		SecretKey: secretDisplay,
+		APIKey:    maskEncryptedKey(enc, cfg.APIKeyEncrypted),
+		SecretKey: maskEncryptedKey(enc, cfg.SecretKeyEncrypted),
 		Mode:      cfg.Mode,
 		IsActive:  cfg.IsActive,
 		CreatedAt: cfg.CreatedAt.Format(time.RFC3339),
@@ -164,7 +185,7 @@ func (h *PaymentSettingsHandler) List(c *gin.Context) {
 
 	resp := make([]paymentConfigResponse, 0, len(configs))
 	for _, cfg := range configs {
-		resp = append(resp, toPaymentResponse(cfg))
+		resp = append(resp, toPaymentResponse(cfg, h.encryptor))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": resp})
@@ -314,7 +335,7 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 			"is_active": req.IsActive,
 		},
 	})
-	c.JSON(http.StatusOK, gin.H{"data": toPaymentResponse(cfg)})
+	c.JSON(http.StatusOK, gin.H{"data": toPaymentResponse(cfg, h.encryptor)})
 }
 
 // Delete handles DELETE /settings/payments/:provider — removes the config row.
@@ -488,16 +509,12 @@ type ShippingCarrierConfigRow struct {
 
 func (ShippingCarrierConfigRow) TableName() string { return "shipping_carrier_configs" }
 
-func toShippingResponse(cfg ShippingCarrierConfigRow) shippingConfigResponse {
-	secretDisplay := ""
-	if cfg.SecretKeyEncrypted != "" {
-		secretDisplay = maskKey(cfg.SecretKeyEncrypted)
-	}
+func toShippingResponse(cfg ShippingCarrierConfigRow, enc crypto.Encryptor) shippingConfigResponse {
 	return shippingConfigResponse{
 		ID:                    cfg.ID.String(),
 		Provider:              cfg.Provider,
-		APIKey:                maskKey(cfg.APIKeyEncrypted),
-		SecretKey:             secretDisplay,
+		APIKey:                maskEncryptedKey(enc, cfg.APIKeyEncrypted),
+		SecretKey:             maskEncryptedKey(enc, cfg.SecretKeyEncrypted),
 		Mode:                  cfg.Mode,
 		Enabled:               cfg.IsActive,
 		HandlingFee:           cfg.HandlingFee.String(),
@@ -538,15 +555,21 @@ func (h *ShippingSettingsHandler) List(c *gin.Context) {
 
 	resp := make([]shippingConfigResponse, 0, len(configs))
 	for _, cfg := range configs {
-		resp = append(resp, toShippingResponse(cfg))
+		resp = append(resp, toShippingResponse(cfg, h.encryptor))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": resp})
 }
 
 // shippingUpsertRequest is the request body for PUT /settings/shipping/:provider.
+//
+// APIKey and SecretKey are NOT required on update: an admin editing the
+// warehouse address or toggling Active on an existing row shouldn't have
+// to re-enter their Delhivery token every time. When blank, the handler
+// keeps the previously-encrypted value. A blank submit on a new row (no
+// existing row) still fails — validated after the lookup below.
 type shippingUpsertRequest struct {
-	APIKey            string  `json:"api_key"    binding:"required"`
+	APIKey            string  `json:"api_key"`
 	SecretKey         string  `json:"secret_key"`
 	Mode              string  `json:"mode"       binding:"required,oneof=test live"`
 	IsActive          bool    `json:"is_active"`
@@ -608,19 +631,47 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 	storeUUID, _ := uuid.Parse(store.ID)
 	tenantUUID, _ := uuid.Parse(store.TenantID)
 
-	// Encrypt API keys before storage.
-	apiKeyEnc, err := h.encryptor.Encrypt(req.APIKey)
-	if err != nil {
-		h.logger.Error("encrypt api_key", "store_id", store.ID, "provider", provider, "err", err)
+	// Look up the existing row first so we can decide whether a blank
+	// api_key in the payload means "keep the stored ciphertext" (update
+	// path) or "missing required credential" (create path).
+	var existing ShippingCarrierConfigRow
+	lookup := h.db.WithContext(c.Request.Context()).
+		Where("store_id = ? AND provider = ?", storeUUID, provider).
+		First(&existing)
+	isCreate := errors.Is(lookup.Error, gorm.ErrRecordNotFound)
+	if lookup.Error != nil && !isCreate {
+		h.logger.Error("lookup shipping config", "store_id", store.ID, "provider", provider, "err", lookup.Error)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 			"error":   "internal",
-			"message": "failed to secure shipping configuration",
+			"message": "failed to save shipping configuration",
 		})
 		return
 	}
-	var secretKeyEnc string
-	if req.SecretKey != "" {
-		secretKeyEnc, err = h.encryptor.Encrypt(req.SecretKey)
+	if isCreate && strings.TrimSpace(req.APIKey) == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_failed",
+			"message": "api_key is required when creating a new carrier configuration",
+		})
+		return
+	}
+
+	// Encrypt only when the caller supplied a new credential. Blank =
+	// preserve what's already stored.
+	apiKeyEnc := existing.APIKeyEncrypted
+	if strings.TrimSpace(req.APIKey) != "" {
+		apiKeyEnc, err = h.encryptor.Encrypt(strings.TrimSpace(req.APIKey))
+		if err != nil {
+			h.logger.Error("encrypt api_key", "store_id", store.ID, "provider", provider, "err", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"error":   "internal",
+				"message": "failed to secure shipping configuration",
+			})
+			return
+		}
+	}
+	secretKeyEnc := existing.SecretKeyEncrypted
+	if strings.TrimSpace(req.SecretKey) != "" {
+		secretKeyEnc, err = h.encryptor.Encrypt(strings.TrimSpace(req.SecretKey))
 		if err != nil {
 			h.logger.Error("encrypt secret_key", "store_id", store.ID, "provider", provider, "err", err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
@@ -651,11 +702,7 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		WarehousePhone:     req.WarehousePhone,
 	}
 
-	result := h.db.WithContext(c.Request.Context()).
-		Where("store_id = ? AND provider = ?", storeUUID, provider).
-		First(&ShippingCarrierConfigRow{})
-
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+	if isCreate {
 		cfg.ID = uuid.New()
 		if err := h.db.WithContext(c.Request.Context()).Create(&cfg).Error; err != nil {
 			h.logger.Error("create shipping config", "store_id", store.ID, "provider", provider, "err", err)
@@ -665,13 +712,6 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 			})
 			return
 		}
-	} else if result.Error != nil {
-		h.logger.Error("lookup shipping config", "store_id", store.ID, "provider", provider, "err", result.Error)
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-			"error":   "internal",
-			"message": "failed to save shipping configuration",
-		})
-		return
 	} else {
 		updates := map[string]any{
 			"api_key_encrypted":    apiKeyEnc,
@@ -706,7 +746,7 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 			First(&cfg)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": toShippingResponse(cfg)})
+	c.JSON(http.StatusOK, gin.H{"data": toShippingResponse(cfg, h.encryptor)})
 }
 
 // Delete handles DELETE /settings/shipping/:provider — removes the config row.
@@ -835,7 +875,7 @@ func (h *TaxSettingsHandler) Get(c *gin.Context) {
 		tj := &taxJarStatus{Configured: false, IsActive: false}
 		if lookupErr == nil {
 			tj.Configured = true
-			tj.APIKey = maskKey(cfg.APIKeyEncrypted)
+			tj.APIKey = maskEncryptedKey(h.encryptor, cfg.APIKeyEncrypted)
 			tj.Mode = cfg.Mode
 			tj.IsActive = cfg.IsActive
 		} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
@@ -965,7 +1005,7 @@ func (h *TaxSettingsHandler) UpsertTaxJar(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"provider":  "taxjar",
-			"api_key":   maskKey(cfg.APIKeyEncrypted),
+			"api_key":   maskEncryptedKey(h.encryptor, cfg.APIKeyEncrypted),
 			"mode":      cfg.Mode,
 			"is_active": cfg.IsActive,
 		},

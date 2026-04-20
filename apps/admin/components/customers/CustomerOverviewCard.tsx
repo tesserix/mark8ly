@@ -2,9 +2,15 @@ import type { AdminCustomerDetail } from "@/lib/api/marketplace-api";
 
 interface CustomerOverviewCardProps {
   customer: AdminCustomerDetail;
+  // ISO-4217 store currency used to format total_spent. Falls back to
+  // USD rather than the old AUD-hardcoded default.
+  currency?: string;
 }
 
-export function CustomerOverviewCard({ customer }: CustomerOverviewCardProps) {
+export function CustomerOverviewCard({
+  customer,
+  currency = "USD",
+}: CustomerOverviewCardProps) {
   return (
     <section aria-labelledby="overview-heading" className="flex flex-col gap-6">
       <h2
@@ -21,7 +27,7 @@ export function CustomerOverviewCard({ customer }: CustomerOverviewCardProps) {
         />
         <StatCard
           label="Total spent"
-          value={formatMoney(customer.total_spent ?? 0)}
+          value={formatMoney(customer.total_spent ?? 0, currency)}
         />
         <StatCard
           label="Last order"
@@ -85,14 +91,14 @@ function formatDate(iso: string): string {
   }
 }
 
-function formatMoney(amount: number): string {
+function formatMoney(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
-      currency: "AUD",
+      currency: currency.toUpperCase(),
       minimumFractionDigits: 2,
     }).format(amount);
   } catch {
-    return `$${amount.toFixed(2)}`;
+    return `${amount.toFixed(2)} ${currency.toUpperCase()}`;
   }
 }

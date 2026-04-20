@@ -43,7 +43,10 @@ export default async function CustomerDetailPage({ params }: PageProps) {
 
         <div className="grid grid-cols-1 gap-10 lg:grid-cols-[2fr_1fr]">
           <div className="flex flex-col gap-10">
-            <CustomerOverviewCard customer={customer} />
+            <CustomerOverviewCard
+              customer={customer}
+              currency={currentStore.currency_code}
+            />
             <CustomerAddressesCard addresses={customer.addresses} />
             <CustomerTagsEditor
               customerId={customer.id}

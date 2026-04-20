@@ -51,17 +51,25 @@ type Repository interface {
 	// ListForStore returns customers with aggregated order stats for the admin list.
 	ListForStore(ctx context.Context, storeID, tenantID string, q ListCustomersQuery) ([]CustomerWithStats, int64, error)
 
-	// GetByIDForAdmin returns a customer scoped to store + tenant.
-	GetByIDForAdmin(ctx context.Context, storeID, tenantID, customerID string) (*CustomerProfile, error)
+	// GetByIDForAdmin returns a customer scoped to store + tenant with
+	// aggregated order stats (order_count, total_spent, last_order_at)
+	// populated via the same correlated subqueries used by ListForStore.
+	// Previously returned a plain *CustomerProfile with zero-valued
+	// stats, which surfaced on the detail page as "0 orders / $0" even
+	// when the list row next to it showed real numbers.
+	GetByIDForAdmin(ctx context.Context, storeID, tenantID, customerID string) (*CustomerWithStats, error)
 
-	// UpdateTags replaces the tags array on a customer profile.
-	UpdateTags(ctx context.Context, storeID, tenantID, customerID string, tags []string) (*CustomerProfile, error)
+	// UpdateTags replaces the tags array on a customer profile and
+	// returns the refreshed row with stats populated.
+	UpdateTags(ctx context.Context, storeID, tenantID, customerID string, tags []string) (*CustomerWithStats, error)
 
-	// UpdateNotes replaces the notes field on a customer profile.
-	UpdateNotes(ctx context.Context, storeID, tenantID, customerID, notes string) (*CustomerProfile, error)
+	// UpdateNotes replaces the notes field on a customer profile and
+	// returns the refreshed row with stats populated.
+	UpdateNotes(ctx context.Context, storeID, tenantID, customerID, notes string) (*CustomerWithStats, error)
 
-	// SetStatus sets the customer status to active or blocked.
-	SetStatus(ctx context.Context, storeID, tenantID, customerID, status, reason string) (*CustomerProfile, error)
+	// SetStatus sets the customer status to active or blocked and
+	// returns the refreshed row with stats populated.
+	SetStatus(ctx context.Context, storeID, tenantID, customerID, status, reason string) (*CustomerWithStats, error)
 
 	// ListAddressesByCustomer returns all addresses for a customer (admin detail).
 	ListAddressesByCustomer(ctx context.Context, customerID string) ([]CustomerAddress, error)
@@ -282,21 +290,23 @@ func (r *gormRepo) ListForStore(ctx context.Context, storeID, tenantID string, q
 	return rows, total, nil
 }
 
-func (r *gormRepo) GetByIDForAdmin(ctx context.Context, storeID, tenantID, customerID string) (*CustomerProfile, error) {
-	var p CustomerProfile
+func (r *gormRepo) GetByIDForAdmin(ctx context.Context, storeID, tenantID, customerID string) (*CustomerWithStats, error) {
+	var row CustomerWithStats
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND store_id = ? AND tenant_id = ?", customerID, storeID, tenantID).
-		First(&p).Error
+		Table("customer_profiles AS cp").
+		Select(statsSelect).
+		Where("cp.id = ? AND cp.store_id = ? AND cp.tenant_id = ?", customerID, storeID, tenantID).
+		Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("customer: get by id for admin: %w", err)
 	}
-	return &p, nil
+	return &row, nil
 }
 
-func (r *gormRepo) UpdateTags(ctx context.Context, storeID, tenantID, customerID string, tags []string) (*CustomerProfile, error) {
+func (r *gormRepo) UpdateTags(ctx context.Context, storeID, tenantID, customerID string, tags []string) (*CustomerWithStats, error) {
 	if tags == nil {
 		tags = []string{}
 	}
@@ -313,7 +323,7 @@ func (r *gormRepo) UpdateTags(ctx context.Context, storeID, tenantID, customerID
 	return r.GetByIDForAdmin(ctx, storeID, tenantID, customerID)
 }
 
-func (r *gormRepo) UpdateNotes(ctx context.Context, storeID, tenantID, customerID, notes string) (*CustomerProfile, error) {
+func (r *gormRepo) UpdateNotes(ctx context.Context, storeID, tenantID, customerID, notes string) (*CustomerWithStats, error) {
 	err := r.db.WithContext(ctx).
 		Model(&CustomerProfile{}).
 		Where("id = ? AND store_id = ? AND tenant_id = ?", customerID, storeID, tenantID).
@@ -327,7 +337,7 @@ func (r *gormRepo) UpdateNotes(ctx context.Context, storeID, tenantID, customerI
 	return r.GetByIDForAdmin(ctx, storeID, tenantID, customerID)
 }
 
-func (r *gormRepo) SetStatus(ctx context.Context, storeID, tenantID, customerID, status, reason string) (*CustomerProfile, error) {
+func (r *gormRepo) SetStatus(ctx context.Context, storeID, tenantID, customerID, status, reason string) (*CustomerWithStats, error) {
 	if status != StatusActive && status != StatusBlocked {
 		return nil, fmt.Errorf("customer: invalid status %q", status)
 	}

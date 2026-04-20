@@ -77,7 +77,10 @@ export default async function CustomersPage({
         />
       ) : (
         <>
-          <CustomersList customers={customers} />
+          <CustomersList
+            customers={customers}
+            currency={currentStore.currency_code}
+          />
           <CustomersListPagination
             currentPage={meta.page}
             totalPages={meta.total_pages}

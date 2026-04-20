@@ -108,7 +108,7 @@ func (h *CustomersHandler) Get(c *gin.Context) {
 	}
 
 	resp := AdminCustomerDetailResponse{
-		AdminCustomerResponse: toAdminCustomerProfileResponse(profile),
+		AdminCustomerResponse: toAdminCustomerResponse(profile),
 		Addresses:             addrOut,
 	}
 	c.JSON(http.StatusOK, resp)
@@ -142,7 +142,7 @@ func (h *CustomersHandler) UpdateTags(c *gin.Context) {
 		ResourceID:   customerID,
 		Metadata:     map[string]any{"tags": req.Tags},
 	})
-	c.JSON(http.StatusOK, toAdminCustomerProfileResponse(profile))
+	c.JSON(http.StatusOK, toAdminCustomerResponse(profile))
 }
 
 // UpdateNotes handles PATCH /admin/stores/:storeId/customers/:id/notes.
@@ -172,7 +172,7 @@ func (h *CustomersHandler) UpdateNotes(c *gin.Context) {
 		ResourceType: "customer",
 		ResourceID:   customerID,
 	})
-	c.JSON(http.StatusOK, toAdminCustomerProfileResponse(profile))
+	c.JSON(http.StatusOK, toAdminCustomerResponse(profile))
 }
 
 // Block handles POST /admin/stores/:storeId/customers/:id/block.
@@ -204,7 +204,7 @@ func (h *CustomersHandler) Block(c *gin.Context) {
 		Severity:     audit.SeverityWarning,
 		Metadata:     map[string]any{"reason": req.Reason},
 	})
-	c.JSON(http.StatusOK, toAdminCustomerProfileResponse(profile))
+	c.JSON(http.StatusOK, toAdminCustomerResponse(profile))
 }
 
 // Unblock handles POST /admin/stores/:storeId/customers/:id/unblock.
@@ -228,5 +228,5 @@ func (h *CustomersHandler) Unblock(c *gin.Context) {
 		ResourceType: "customer",
 		ResourceID:   customerID,
 	})
-	c.JSON(http.StatusOK, toAdminCustomerProfileResponse(profile))
+	c.JSON(http.StatusOK, toAdminCustomerResponse(profile))
 }

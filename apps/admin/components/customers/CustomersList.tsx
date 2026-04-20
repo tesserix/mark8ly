@@ -6,9 +6,13 @@ import { CustomerStatusBadge } from "./CustomerStatusBadge";
 
 interface CustomersListProps {
   customers: AdminCustomer[];
+  // ISO-4217 store currency used to format total_spent. Falls back to
+  // USD when omitted so a mis-wired page renders dollars rather than
+  // silently pretending everything's in AUD (the previous default).
+  currency?: string;
 }
 
-export function CustomersList({ customers }: CustomersListProps) {
+export function CustomersList({ customers, currency = "USD" }: CustomersListProps) {
   return (
     <div className="flex flex-col">
       <div
@@ -68,7 +72,7 @@ export function CustomersList({ customers }: CustomersListProps) {
               </span>
 
               <span className="hidden md:block text-right font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-base text-[color:var(--ink-900)]">
-                {formatMoney(c.total_spent)}
+                {formatMoney(c.total_spent, currency)}
               </span>
 
               <span className="hidden md:block text-xs text-[color:var(--ink-900)] opacity-60">
@@ -100,14 +104,14 @@ function formatDate(iso: string): string {
   }
 }
 
-function formatMoney(amount: number): string {
+function formatMoney(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
-      currency: "AUD",
+      currency: currency.toUpperCase(),
       minimumFractionDigits: 2,
     }).format(amount);
   } catch {
-    return `$${amount.toFixed(2)}`;
+    return `${amount.toFixed(2)} ${currency.toUpperCase()}`;
   }
 }

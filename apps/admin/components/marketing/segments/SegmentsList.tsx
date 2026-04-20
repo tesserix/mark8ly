@@ -68,16 +68,16 @@ export function SegmentsList({
 
   if (segments.length === 0) {
     return (
-      <div className="flex flex-col items-start gap-4 rounded-md border border-ink-200 bg-white px-6 py-12">
-        <h2 className="font-serif text-lg font-semibold text-ink-900">
+      <div className="flex flex-col items-start gap-3 border-t border-border-subtle py-12">
+        <h2 className="font-serif text-xl font-medium text-foreground">
           No segments yet
         </h2>
-        <p className="text-sm text-ink-500">
+        <p className="max-w-prose text-sm text-foreground-secondary">
           Create your first segment to define an audience for your campaigns.
         </p>
         <Link
           href="/marketing/segments/new"
-          className="inline-flex items-center gap-2 rounded-md bg-ink-900 px-4 py-2 text-sm font-medium text-paper-200 transition hover:bg-ink-800"
+          className="mt-1 inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           Create segment
         </Link>
@@ -89,9 +89,9 @@ export function SegmentsList({
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-ink-200 text-xs font-medium uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-[color:var(--ink-900)]/15 text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
             <th className="pb-3 pr-4">Name</th>
-            <th className="pb-3 pr-4">Members</th>
+            <th className="pb-3 pr-4 text-right">Members</th>
             <th className="pb-3 pr-4">Rules</th>
             <th className="pb-3 pr-4">Created</th>
             <th className="pb-3 pr-4">
@@ -99,26 +99,29 @@ export function SegmentsList({
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-ink-100">
+        <tbody>
           {segments.map((seg) => (
-            <tr key={seg.id} className="group">
+            <tr
+              key={seg.id}
+              className="group border-b border-[color:var(--ink-900)]/10 transition-colors hover:bg-[color:var(--ink-900)]/[0.03]"
+            >
               <td className="py-3 pr-4">
-                <span className="text-sm font-medium text-ink-900">
+                <span className="font-serif text-base text-foreground">
                   {seg.name}
                 </span>
                 {seg.description && (
-                  <p className="mt-0.5 text-xs text-ink-500 line-clamp-1">
+                  <p className="mt-0.5 line-clamp-1 text-xs text-foreground-tertiary">
                     {seg.description}
                   </p>
                 )}
               </td>
-              <td className="py-3 pr-4 font-mono text-ink-700">
+              <td className="py-3 pr-4 text-right font-serif text-base tabular-nums text-foreground">
                 {seg.member_count.toLocaleString()}
               </td>
-              <td className="py-3 pr-4 text-ink-500">
+              <td className="py-3 pr-4 text-foreground-secondary">
                 {summarizeRules(seg.rules)}
               </td>
-              <td className="py-3 pr-4 text-ink-500">
+              <td className="py-3 pr-4 text-foreground-tertiary tabular-nums">
                 {formatDate(seg.created_at)}
               </td>
               <td className="py-3 pr-4 text-right">
@@ -126,9 +129,9 @@ export function SegmentsList({
                   onClick={() => handleDelete(seg.id)}
                   disabled={deletingId === seg.id}
                   aria-label={`Delete segment ${seg.name}`}
-                  className="text-xs text-signal-700 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50"
+                  className="text-xs text-[color:var(--danger)] underline-offset-4 opacity-0 transition-opacity hover:underline group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50"
                 >
-                  {deletingId === seg.id ? "Deleting..." : "Delete"}
+                  {deletingId === seg.id ? "Deleting…" : "Delete"}
                 </button>
               </td>
             </tr>

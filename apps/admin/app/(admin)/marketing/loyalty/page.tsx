@@ -31,7 +31,7 @@ export default async function LoyaltyPage() {
           <div className="space-y-10">
         <header className="space-y-3">
           <p className="eyebrow">Marketing</p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground text-balance sm:text-3xl">
             Loyalty program
           </h1>
           <p className="max-w-2xl text-base leading-7 text-foreground-secondary">

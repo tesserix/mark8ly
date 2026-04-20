@@ -39,12 +39,12 @@ export function OrderDocumentsPanel({ order, shipmentStatus }: Props) {
     >
       <h2
         id="documents-heading"
-        className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-xl text-[color:var(--ink-900)]"
+        className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
       >
         Documents
       </h2>
 
-      <div className="flex flex-col gap-4 rounded-md border border-[color:var(--ink-900)]/10 bg-white px-5 py-4 shadow-sm">
+      <div className="flex flex-col gap-4 rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-5 py-4">
         <DocumentRow
           kind="invoice"
           storeId={order.store_id}

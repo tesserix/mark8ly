@@ -89,7 +89,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
     >
       <h2
         id="order-actions-heading"
-        className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-xl text-[color:var(--ink-900)]"
+        className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
       >
         Actions
       </h2>

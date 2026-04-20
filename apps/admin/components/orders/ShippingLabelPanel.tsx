@@ -78,7 +78,7 @@ export function ShippingLabelPanel({
       <section aria-labelledby="shipping-heading" className="flex flex-col gap-4">
         <h2
           id="shipping-heading"
-          className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-xl text-[color:var(--ink-900)]"
+          className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
         >
           Shipping
         </h2>
@@ -94,7 +94,7 @@ export function ShippingLabelPanel({
       <section aria-labelledby="shipping-heading" className="flex flex-col gap-4">
         <h2
           id="shipping-heading"
-          className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-xl text-[color:var(--ink-900)]"
+          className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
         >
           Shipping
         </h2>
@@ -119,7 +119,7 @@ export function ShippingLabelPanel({
     <section aria-labelledby="shipping-heading" className="flex flex-col gap-4">
       <h2
         id="shipping-heading"
-        className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-xl text-[color:var(--ink-900)]"
+        className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
       >
         Shipping
       </h2>

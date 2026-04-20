@@ -261,6 +261,81 @@ func (h *SubscriptionHandler) Bootstrap(c *gin.Context) {
 	c.JSON(http.StatusOK, toSubscriptionResponse(*sub))
 }
 
+// InvoiceDTO is the wire shape for a single invoice row rendered in the
+// admin billing page's invoice history table.
+type InvoiceDTO struct {
+	ID          string `json:"id"`
+	Number      string `json:"number"`
+	CreatedAt   string `json:"created_at"`
+	AmountPaid  int64  `json:"amount_paid"`
+	AmountDue   int64  `json:"amount_due"`
+	Currency    string `json:"currency"`
+	Status      string `json:"status"`
+	HostedURL   string `json:"hosted_invoice_url"`
+	PDFURL      string `json:"invoice_pdf"`
+	PeriodStart string `json:"period_start"`
+	PeriodEnd   string `json:"period_end"`
+}
+
+// ListInvoicesResponse is the envelope returned by GET .../subscription/invoices.
+type ListInvoicesResponse struct {
+	Data []InvoiceDTO `json:"data"`
+}
+
+// ListInvoices handles GET /admin/stores/:storeId/subscription/invoices.
+//
+// Returns up to 25 most-recent invoices for the store's Stripe customer.
+// When no Stripe customer is wired yet (pre-bootstrap row), responds with an
+// empty list rather than an error so the UI can render "No invoices yet".
+func (h *SubscriptionHandler) ListInvoices(c *gin.Context) {
+	storeID, err := uuid.Parse(c.Param("storeId"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
+		return
+	}
+	tenantID, err := uuid.Parse(c.GetString("tenant_id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("tenant_id", "invalid uuid"), h.logger)
+		return
+	}
+
+	sub, err := h.svc.GetSubscription(c.Request.Context(), tenantID, storeID)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	if h.stripe == nil || sub.StripeCustomerID == "" {
+		c.JSON(http.StatusOK, ListInvoicesResponse{Data: []InvoiceDTO{}})
+		return
+	}
+
+	invoices, err := billingstripe.ListCustomerInvoices(c.Request.Context(), h.stripe, sub.StripeCustomerID, 25)
+	if err != nil {
+		h.logger.Warn("stripe list invoices failed", "err", err)
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	resp := ListInvoicesResponse{Data: make([]InvoiceDTO, 0, len(invoices))}
+	for _, inv := range invoices {
+		resp.Data = append(resp.Data, InvoiceDTO{
+			ID:          inv.ID,
+			Number:      inv.Number,
+			CreatedAt:   inv.Created.Format(time.RFC3339),
+			AmountPaid:  inv.AmountPaid,
+			AmountDue:   inv.AmountDue,
+			Currency:    inv.Currency,
+			Status:      inv.Status,
+			HostedURL:   inv.HostedURL,
+			PDFURL:      inv.PDFURL,
+			PeriodStart: inv.PeriodStart.Format(time.RFC3339),
+			PeriodEnd:   inv.PeriodEnd.Format(time.RFC3339),
+		})
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 // CreateCheckoutRequest is the request body for POST .../subscription/checkout.
 type CreateCheckoutRequest struct {
 	Plan       string `json:"plan" binding:"required"`

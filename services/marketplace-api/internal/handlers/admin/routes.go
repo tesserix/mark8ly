@@ -603,6 +603,9 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				sub.GET("",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionViewRole),
 					deps.SubscriptionHandler.GetSubscription)
+				sub.GET("/invoices",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionViewRole),
+					deps.SubscriptionHandler.ListInvoices)
 				sub.POST("/bootstrap",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
 					deps.SubscriptionHandler.Bootstrap)

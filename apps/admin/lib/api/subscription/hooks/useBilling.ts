@@ -13,9 +13,14 @@ import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query'
 import {
   bootstrapSubscription,
   getSubscription,
+  listInvoices,
   openPortal,
 } from '../billing'
-import type { CurrentPlan, PortalResponse } from '../schemas/billing'
+import type {
+  CurrentPlan,
+  Invoice,
+  PortalResponse,
+} from '../schemas/billing'
 
 const BILLING_STALE_TIME = 30_000
 
@@ -51,6 +56,19 @@ export function useBootstrapSubscription(
     onSuccess: (data) => {
       queryClient.setQueryData<CurrentPlan>(['subscription', storeId], data)
     },
+  })
+}
+
+/**
+ * Fetches up to 25 most-recent invoices for the store's Stripe customer.
+ * Pre-bootstrap stores resolve to an empty array (no Stripe customer yet).
+ */
+export function useInvoices(storeId: string): UseQueryResult<Invoice[], Error> {
+  return useQuery({
+    queryKey: ['subscription', storeId, 'invoices'],
+    queryFn: () => listInvoices(storeId),
+    staleTime: BILLING_STALE_TIME,
+    enabled: Boolean(storeId),
   })
 }
 

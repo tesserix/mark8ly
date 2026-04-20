@@ -216,3 +216,34 @@ export const portalResponseSchema = z.object({
 })
 
 export type PortalResponse = z.infer<typeof portalResponseSchema>
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/stores/:storeId/subscription/invoices
+// Returns { data: InvoiceDTO[] } — up to 25 most-recent Stripe invoices.
+// ---------------------------------------------------------------------------
+
+export const invoiceSchema = z.object({
+  id: z.string(),
+  number: z.string().default(''),
+  /** ISO-8601 timestamp from Stripe's `created` unix epoch. */
+  created_at: z.string(),
+  /** Minor units (cents/paise/sen/etc.). Zero-decimal currencies already in base units per Stripe. */
+  amount_paid: z.number().int(),
+  amount_due: z.number().int(),
+  /** Lowercase ISO 4217 — e.g. 'usd', 'inr'. */
+  currency: z.string(),
+  /** Stripe status: paid | open | void | draft | uncollectible. Unknown values passthrough. */
+  status: z.string(),
+  hosted_invoice_url: z.string().default(''),
+  invoice_pdf: z.string().default(''),
+  period_start: z.string(),
+  period_end: z.string(),
+})
+
+export type Invoice = z.infer<typeof invoiceSchema>
+
+export const listInvoicesResponseSchema = z.object({
+  data: z.array(invoiceSchema),
+})
+
+export type ListInvoicesResponse = z.infer<typeof listInvoicesResponseSchema>

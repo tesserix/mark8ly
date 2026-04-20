@@ -9,8 +9,10 @@ import { apiClient } from '@/lib/api/client'
 import {
   subscriptionResponseSchema,
   portalResponseSchema,
+  listInvoicesResponseSchema,
   toCurrentPlan,
   type CurrentPlan,
+  type Invoice,
   type PortalResponse,
 } from './schemas/billing'
 
@@ -52,6 +54,18 @@ export async function bootstrapSubscription(
   )
   const parsed = subscriptionResponseSchema.parse(raw)
   return toCurrentPlan(parsed)
+}
+
+/**
+ * Fetch up to 25 most-recent invoices for the store's Stripe customer.
+ * Pre-bootstrap stores return an empty list (no Stripe customer yet).
+ */
+export async function listInvoices(storeId: string): Promise<Invoice[]> {
+  const raw = await apiClient.get<unknown>(
+    `/api/admin/stores/${storeId}/subscription/invoices`,
+  )
+  const parsed = listInvoicesResponseSchema.parse(raw)
+  return parsed.data
 }
 
 export async function openPortal(storeId: string): Promise<PortalResponse> {

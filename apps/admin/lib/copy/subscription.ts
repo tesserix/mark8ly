@@ -117,7 +117,18 @@ export const subscriptionCopy = {
     // ─── Invoices panel ─────────────────────────────────────────────────
     invoicesHeading: 'Invoices and receipts',
     invoicesDescription:
-      'Open the Stripe billing portal to download invoices, update payment methods, or view receipts.',
+      'Your billing history, with downloadable PDFs for each charge.',
+    invoicesEmpty:
+      'No invoices yet. We\u2019ll list them here once your first charge lands.',
+    invoicesError: 'Couldn\u2019t load invoices. Try again in a moment.',
+    invoiceColDate: 'Date',
+    invoiceColNumber: 'Invoice',
+    invoiceColAmount: 'Amount',
+    invoiceColStatus: 'Status',
+    invoiceColActions: '',
+    invoiceDownloadPdf: 'Download PDF',
+    invoiceView: 'View',
+    manageInPortal: 'Manage in portal',
     openPortalCta: 'Open billing portal',
     openingPortal: 'Opening portal\u2026',
 

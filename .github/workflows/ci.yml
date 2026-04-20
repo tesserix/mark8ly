@@ -51,6 +51,12 @@ jobs:
       #   - internal/billing/appcreds/      — canonical (P15)
       #   - internal/arbitrage/             — pre-existing arbitrage rotation
       #   - internal/breakglass/            — P13 break-glass credentials
+      #   - internal/carriersecrets/        — per-tenant carrier credentials
+      #                                        (Delhivery, Razorpay, TaxJar, ...)
+      #                                        Single Store abstraction routes
+      #                                        every carrier read/write; the
+      #                                        only package allowed to hold
+      #                                        merchant carrier tokens.
       #   - cmd/arbitrage-rotator/          — entrypoint for arbitrage
       #   - cmd/break-glass-rotation/       — entrypoint for break-glass
       #   - cmd/marketplace-api/main.go     — wires all of the above at boot
@@ -61,7 +67,7 @@ jobs:
           set -euo pipefail
           offenders=$(grep -RlE '"cloud\.google\.com/go/secretmanager' \
             internal cmd --include='*.go' 2>/dev/null \
-            | grep -vE '^(internal/billing/appcreds|internal/arbitrage|internal/breakglass|cmd/arbitrage-rotator|cmd/break-glass-rotation|cmd/marketplace-api/main\.go)' \
+            | grep -vE '^(internal/billing/appcreds|internal/arbitrage|internal/breakglass|internal/carriersecrets|cmd/arbitrage-rotator|cmd/break-glass-rotation|cmd/marketplace-api/main\.go)' \
             || true)
           if [ -n "$offenders" ]; then
             echo "ERROR: cloud.google.com/go/secretmanager imported outside the allow-list:"

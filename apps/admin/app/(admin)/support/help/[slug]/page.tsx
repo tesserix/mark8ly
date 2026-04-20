@@ -57,7 +57,7 @@ export default async function HelpArticlePage({
         </Link>
 
         <header>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium tracking-tight text-foreground">
+          <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground">
             {article.title}
           </h1>
         </header>
@@ -72,7 +72,7 @@ export default async function HelpArticlePage({
         {/* Related articles */}
         {related.length > 0 && (
           <section className="border-t border-border-subtle pt-8">
-            <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl font-medium text-foreground">
+            <h2 className="font-serif text-xl font-medium text-foreground">
               Related articles
             </h2>
             <ul className="mt-4 space-y-3">

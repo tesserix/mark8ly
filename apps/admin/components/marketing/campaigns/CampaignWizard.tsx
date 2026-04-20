@@ -249,7 +249,7 @@ export function CampaignWizard({
       {/* Step 1 — Audience */}
       {step === 1 && (
         <div className="space-y-6">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-ink-900">
+          <h2 className="font-serif text-2xl font-medium text-ink-900">
             Choose your audience
           </h2>
 
@@ -316,7 +316,7 @@ export function CampaignWizard({
       {/* Step 2 — Content */}
       {step === 2 && (
         <div className="space-y-6">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-ink-900">
+          <h2 className="font-serif text-2xl font-medium text-ink-900">
             Create your content
           </h2>
 
@@ -397,7 +397,7 @@ export function CampaignWizard({
       {/* Step 3 — Schedule */}
       {step === 3 && (
         <div className="space-y-6">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-ink-900">
+          <h2 className="font-serif text-2xl font-medium text-ink-900">
             Schedule delivery
           </h2>
 

@@ -232,7 +232,7 @@ interface TabProps {
 export function SectionHeader({ title, description }: { title: string; description: string }) {
   return (
     <div className="space-y-1">
-      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
+      <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
         {title}
       </h2>
       <p className="text-sm leading-6 text-foreground-secondary">{description}</p>

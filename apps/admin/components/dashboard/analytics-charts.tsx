@@ -90,7 +90,7 @@ function EditorialTooltip({ active, title, rows }: EditorialTooltipProps) {
             )}
             <span className="text-foreground-tertiary">{row.label}</span>
             <span
-              className="ml-auto font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm font-medium text-foreground"
+              className="ml-auto font-serif text-sm font-medium text-foreground"
               style={{ fontFeatureSettings: '"tnum" 1' }}
             >
               {row.value}
@@ -464,7 +464,7 @@ export function RatingDistributionChart({
               />
             </div>
             <span
-              className="w-12 shrink-0 text-right font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm font-medium text-foreground"
+              className="w-12 shrink-0 text-right font-serif text-sm font-medium text-foreground"
               style={{ fontFeatureSettings: '"tnum" 1' }}
             >
               {r.count}

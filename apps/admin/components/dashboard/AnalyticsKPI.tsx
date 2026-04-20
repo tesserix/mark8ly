@@ -22,7 +22,7 @@ export function AnalyticsKPI({
         {label}
       </p>
       <p
-        className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-foreground"
+        className="mt-2 font-serif text-2xl font-medium text-foreground"
         style={{ fontFeatureSettings: '"tnum" 1' }}
       >
         {value}

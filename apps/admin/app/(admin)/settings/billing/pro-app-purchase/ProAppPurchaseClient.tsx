@@ -88,7 +88,7 @@ function inputClass(hasError?: boolean): string {
 function NeedsProGate() {
   return (
     <div className="max-w-xl space-y-4">
-      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[var(--ink-900)]">
+      <h2 className="font-serif text-2xl font-medium tracking-tight text-[var(--ink-900)]">
         {copy.needsProHeading}
       </h2>
       <p className="text-sm leading-6 text-[var(--ink-700)]">
@@ -107,7 +107,7 @@ function NeedsProGate() {
 function AlreadyActiveState() {
   return (
     <div className="max-w-xl space-y-4">
-      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[var(--ink-900)]">
+      <h2 className="font-serif text-2xl font-medium tracking-tight text-[var(--ink-900)]">
         {copy.alreadyActiveHeading}
       </h2>
       <p className="text-sm leading-6 text-[var(--ink-700)]">

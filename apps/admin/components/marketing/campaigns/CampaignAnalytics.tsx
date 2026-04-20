@@ -57,7 +57,7 @@ function MetricCard({ label, value, total, variant = "default" }: MetricCardProp
         {label}
       </p>
       <p
-        className={`mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium ${
+        className={`mt-1 font-serif text-2xl font-medium ${
           variant === "danger" ? "text-signal-700" : "text-ink-900"
         }`}
       >
@@ -79,7 +79,7 @@ export function CampaignAnalytics({
       <div className="flex items-start justify-between">
         <div className="space-y-2">
           <p className="eyebrow">Campaign</p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium tracking-tight text-ink-900">
+          <h1 className="font-serif text-4xl font-medium tracking-tight text-ink-900">
             {c.name}
           </h1>
           <div className="flex items-center gap-3">
@@ -182,7 +182,7 @@ export function CampaignAnalytics({
           <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
             Revenue attributed
           </p>
-          <p className="mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-moss-700">
+          <p className="mt-1 font-serif text-2xl font-medium text-moss-700">
             ${parseFloat(c.revenue).toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
         </div>
@@ -194,7 +194,7 @@ export function CampaignAnalytics({
           <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
             Unsubscribed
           </p>
-          <p className="mt-1 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-signal-700">
+          <p className="mt-1 font-serif text-2xl font-medium text-signal-700">
             {c.unsubscribed.toLocaleString()}
           </p>
           <p className="mt-0.5 text-xs text-ink-500">

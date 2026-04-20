@@ -36,7 +36,7 @@ export function WhiteLabelAppCard({ plan, storeId }: WhiteLabelAppCardProps) {
     >
       <h2
         id="white-label-app-heading"
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[var(--ink-900)]"
+        className="font-serif text-2xl font-medium tracking-tight text-[var(--ink-900)]"
       >
         {copy.whiteLabelAppHeading}
       </h2>

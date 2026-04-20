@@ -16,7 +16,7 @@ export default function Error({ error, reset }: ErrorProps) {
             </p>
             <div className="h-px w-12 bg-[color:var(--signal)]/30" aria-hidden="true" />
           </div>
-          <h1 className="font-[family-name:var(--font-editorial-serif)] text-[clamp(2rem,5vw,3.5rem)] font-medium leading-[1.1] tracking-tight text-foreground">
+          <h1 className="font-serif text-[clamp(2rem,5vw,3.5rem)] font-medium leading-[1.1] tracking-tight text-foreground">
             Unexpected error
           </h1>
           <p className="max-w-md text-[15px] leading-relaxed text-foreground-secondary">

@@ -51,7 +51,7 @@ export default async function HelpCenterPage() {
           <div className="space-y-12">
         <header className="space-y-5">
           <p className="eyebrow">Support</p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
+          <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
             Help Center
           </h1>
           <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
@@ -63,7 +63,7 @@ export default async function HelpCenterPage() {
 
         {/* Categories */}
         <section>
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-foreground">
+          <h2 className="font-serif text-2xl font-medium text-foreground">
             Browse by category
           </h2>
           <div className="mt-6">
@@ -73,7 +73,7 @@ export default async function HelpCenterPage() {
 
         {/* Featured articles */}
         <section className="border-t border-border-subtle pt-10">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-foreground">
+          <h2 className="font-serif text-2xl font-medium text-foreground">
             Popular articles
           </h2>
           <ul className="mt-6 divide-y divide-border-subtle" role="list">

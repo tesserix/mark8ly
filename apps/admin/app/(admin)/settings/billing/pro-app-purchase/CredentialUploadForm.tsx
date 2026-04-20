@@ -203,7 +203,7 @@ function ApplePanel({ storeId }: ApplePanelProps) {
     <section aria-labelledby={`${formId}-apple-heading`} className="flex-1 min-w-0">
       <h2
         id={`${formId}-apple-heading`}
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl font-medium tracking-tight text-[var(--ink-900)]"
+        className="font-serif text-xl font-medium tracking-tight text-[var(--ink-900)]"
       >
         {copy.apple.heading}
       </h2>
@@ -367,7 +367,7 @@ function GooglePanel({ storeId }: GooglePanelProps) {
     <section aria-labelledby={`${formId}-google-heading`} className="flex-1 min-w-0">
       <h2
         id={`${formId}-google-heading`}
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl font-medium tracking-tight text-[var(--ink-900)]"
+        className="font-serif text-xl font-medium tracking-tight text-[var(--ink-900)]"
       >
         {copy.google.heading}
       </h2>

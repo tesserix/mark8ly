@@ -14,7 +14,7 @@ export default async function NewTicketPage() {
           <div className="space-y-8">
         <header className="space-y-3">
           <p className="eyebrow">Support</p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
+          <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
             New ticket
           </h1>
           <p className="max-w-xl text-base leading-7 text-foreground-secondary">

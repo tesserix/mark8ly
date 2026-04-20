@@ -141,7 +141,7 @@ function ProfileSection({
   return (
     <section className="space-y-6">
       <div className="space-y-1">
-        <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
+        <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
           Profile
         </h2>
         <p className="text-sm text-foreground-secondary">
@@ -333,7 +333,7 @@ function MFASection({
       <div className="flex items-start gap-4">
         <Shield className="mt-0.5 h-5 w-5 text-foreground-secondary" aria-hidden="true" />
         <div className="flex-1 space-y-1">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
+          <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
             Two-factor authentication
           </h2>
           <p className="text-sm text-foreground-secondary">
@@ -464,7 +464,7 @@ function SessionsSection({ sessions }: { sessions: AccountSession[] }) {
       <div className="flex items-start gap-4">
         <Monitor className="mt-0.5 h-5 w-5 text-foreground-secondary" aria-hidden="true" />
         <div className="space-y-1">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-foreground">
+          <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
             Active sessions
           </h2>
           <p className="text-sm text-foreground-secondary">
@@ -545,7 +545,7 @@ function DangerZone({ editable }: { editable: boolean }) {
 
   return (
     <section className="space-y-4">
-      <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[color:var(--danger)]">
+      <h2 className="font-serif text-2xl font-medium tracking-tight text-[color:var(--danger)]">
         Danger zone
       </h2>
       <div className="rounded-md border border-[color:var(--danger)]/30 p-6 space-y-4">

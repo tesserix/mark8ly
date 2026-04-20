@@ -41,7 +41,7 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
         <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-3">
             <p className="eyebrow">Support</p>
-            <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
+            <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
               Tickets
             </h1>
             <p className="max-w-2xl text-base leading-7 text-foreground-secondary">

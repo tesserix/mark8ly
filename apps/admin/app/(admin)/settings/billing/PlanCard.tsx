@@ -147,7 +147,7 @@ export function PlanCard({ plan, storeId }: PlanCardProps) {
     >
       <h2
         id="plan-card-heading"
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[var(--ink-900)]"
+        className="font-serif text-2xl font-medium tracking-tight text-[var(--ink-900)]"
       >
         {copy.planCardHeading}
       </h2>

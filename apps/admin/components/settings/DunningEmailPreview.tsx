@@ -81,7 +81,7 @@ export function DunningEmailPreview({
     >
       <h3
         id="dunning-preview-heading"
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-base font-medium text-[var(--ink-900)]"
+        className="font-serif text-base font-medium text-[var(--ink-900)]"
       >
         Email preview — {tier.toUpperCase()}
         <span className="ml-2 text-xs font-normal text-[var(--ink-500)]">

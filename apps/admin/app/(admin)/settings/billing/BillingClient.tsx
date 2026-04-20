@@ -56,7 +56,7 @@ function SetupPanel({ onSetup, isPending, errorMessage }: SetupPanelProps) {
     >
       <h2
         id="billing-setup-heading"
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[var(--ink-900)]"
+        className="font-serif text-2xl font-medium tracking-tight text-[var(--ink-900)]"
       >
         {copy.setupHeading}
       </h2>

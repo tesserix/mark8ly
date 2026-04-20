@@ -109,7 +109,7 @@ export function AnalyticsSection({
         <div>
           <h2
             id="analytics-heading"
-            className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-foreground"
+            className="font-serif text-2xl font-medium text-foreground"
           >
             Analytics
           </h2>
@@ -350,7 +350,7 @@ function CustomersTab({
                 <div className="flex items-baseline gap-4 text-foreground-secondary">
                   <span>{c.order_count} orders</span>
                   <span
-                    className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-base text-foreground"
+                    className="font-serif text-base text-foreground"
                     style={{ fontFeatureSettings: '"tnum" 1' }}
                   >
                     {formatCurrency(c.spend, currency)}

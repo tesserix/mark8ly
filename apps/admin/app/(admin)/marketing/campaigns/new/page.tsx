@@ -17,7 +17,7 @@ export default async function NewCampaignPage() {
   if (!currentStore) {
     return (
               <main className="space-y-10">
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-3xl font-medium text-ink-900">
+          <h1 className="font-serif text-3xl font-medium text-ink-900">
             No store selected
           </h1>
           <p className="text-sm text-ink-500">
@@ -37,7 +37,7 @@ export default async function NewCampaignPage() {
           <main className="space-y-10">
         <header className="space-y-3">
           <p className="eyebrow">Marketing</p>
-          <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
+          <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
             New campaign
           </h1>
         </header>

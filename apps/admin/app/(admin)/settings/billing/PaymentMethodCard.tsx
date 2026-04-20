@@ -49,7 +49,7 @@ export function PaymentMethodCard({ plan, storeId }: PaymentMethodCardProps) {
     >
       <h2
         id="payment-method-heading"
-        className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[var(--ink-900)]"
+        className="font-serif text-2xl font-medium tracking-tight text-[var(--ink-900)]"
       >
         {copy.paymentMethodHeading}
       </h2>

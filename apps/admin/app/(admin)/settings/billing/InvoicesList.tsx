@@ -138,7 +138,7 @@ export function InvoicesList({ storeId }: InvoicesListProps) {
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <h2
           id="invoices-heading"
-          className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[var(--ink-900)]"
+          className="font-serif text-2xl font-medium tracking-tight text-[var(--ink-900)]"
         >
           {copy.invoicesHeading}
         </h2>

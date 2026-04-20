@@ -48,7 +48,7 @@ export function SetupChecklist({ checklist }: SetupChecklistProps) {
         aria-expanded={!collapsed}
       >
         <div className="space-y-1 text-left">
-          <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl font-medium text-foreground">
+          <h2 className="font-serif text-xl font-medium text-foreground">
             Store setup
           </h2>
           <p className="text-sm text-foreground-secondary">

@@ -24,7 +24,7 @@ export function HelpCategoryGrid({ categories }: HelpCategoryGridProps) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
             {cat.count} {cat.count === 1 ? "article" : "articles"}
           </p>
-          <h3 className="mt-2 font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl font-medium text-foreground group-hover:text-[color:var(--moss-700)]">
+          <h3 className="mt-2 font-serif text-xl font-medium text-foreground group-hover:text-[color:var(--moss-700)]">
             {cat.name}
           </h3>
         </Link>

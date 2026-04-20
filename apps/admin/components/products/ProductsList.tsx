@@ -298,7 +298,7 @@ const ProductRow = memo(function ProductRow({
           href={`/products/${product.id}`}
           className="group inline-flex flex-col rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
-          <span className="font-serif text-base text-foreground group-hover:underline">
+          <span className="block max-w-full truncate font-serif text-base text-foreground group-hover:underline">
             {product.title}
           </span>
           <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-foreground-tertiary">
@@ -394,7 +394,7 @@ function MediaThumb({
         alt={media.alt ?? productTitle}
         fill
         sizes="40px"
-        unoptimized
+        loading="lazy"
       />
     </div>
   );

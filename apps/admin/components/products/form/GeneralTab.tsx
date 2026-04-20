@@ -1,6 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useId,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { useFormContext } from "react-hook-form";
 import {
   Select,
@@ -145,6 +151,12 @@ export function GeneralTab({
   );
 }
 
+interface FieldChildProps {
+  id?: string;
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
+}
+
 function Field({
   label,
   children,
@@ -156,19 +168,42 @@ function Field({
   error?: string;
   helper?: string;
 }) {
+  const generatedId = useId();
+  const errorId = `${generatedId}-error`;
+  const helperId = `${generatedId}-helper`;
+
+  // Inject a11y props so screen readers announce validation errors and
+  // associate helper text with the input. Safe for both native inputs and
+  // wrapper components (extra props are ignored if unused).
+  const enhanced =
+    isValidElement<FieldChildProps>(children)
+      ? cloneElement(children as ReactElement<FieldChildProps>, {
+          id: children.props.id ?? generatedId,
+          "aria-invalid": error ? true : undefined,
+          "aria-describedby": error ? errorId : helper ? helperId : undefined,
+        })
+      : children;
+
   return (
-    <label className="flex flex-col gap-2">
+    <label htmlFor={generatedId} className="flex flex-col gap-2">
       <span className="text-sm font-medium text-[color:var(--ink-900)]">
         {label}
       </span>
-      {children}
+      {enhanced}
       {helper && !error && (
-        <span className="text-xs text-[color:var(--ink-900)] opacity-50">
+        <span
+          id={helperId}
+          className="text-xs text-[color:var(--ink-900)] opacity-50"
+        >
           {helper}
         </span>
       )}
       {error && (
-        <span className="text-xs text-[color:var(--signal,#C23B22)]" role="alert">
+        <span
+          id={errorId}
+          className="text-xs text-[color:var(--signal,#C23B22)]"
+          role="alert"
+        >
           {error}
         </span>
       )}

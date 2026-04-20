@@ -55,7 +55,7 @@ export function MemberDetailPanel({
   return (
     <div className="space-y-6">
       {/* Member info */}
-      <div className="rounded-[6px] bg-white px-6 py-5">
+      <div className="rounded-[6px] bg-background-elevated px-6 py-5">
         <div className="flex items-start justify-between">
           <div>
             <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-xl font-medium text-[color:var(--ink-900)]">
@@ -104,7 +104,7 @@ export function MemberDetailPanel({
 
       {/* Adjust points form */}
       {editable && (
-        <div className="rounded-[6px] bg-white px-6 py-5 space-y-4">
+        <div className="rounded-[6px] bg-background-elevated px-6 py-5 space-y-4">
           <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
             Adjust points
           </h3>
@@ -120,7 +120,7 @@ export function MemberDetailPanel({
                   value={adjustPoints}
                   onChange={(e) => setAdjustPoints(e.target.value)}
                   placeholder="e.g. 100 or -50"
-                  className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                  className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
                 />
               </div>
               <div className="space-y-1">
@@ -132,7 +132,7 @@ export function MemberDetailPanel({
                   value={adjustDescription}
                   onChange={(e) => setAdjustDescription(e.target.value)}
                   placeholder="e.g. Customer support goodwill"
-                  className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                  className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
                 />
               </div>
             </div>
@@ -153,7 +153,7 @@ export function MemberDetailPanel({
       )}
 
       {/* Transaction history */}
-      <div className="rounded-[6px] bg-white">
+      <div className="rounded-[6px] bg-background-elevated">
         <div className="px-6 py-4">
           <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
             Transaction history

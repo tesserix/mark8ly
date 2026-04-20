@@ -18,6 +18,7 @@ import {
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Trash2 } from "lucide-react";
+import { AlertDialog } from "@tesserix/web";
 
 import { StatusDot } from "@repo/ui/status-dot";
 
@@ -85,6 +86,8 @@ export function ProductForm({
   const [isPending, startTransition] = useTransition();
   const [rootError, setRootError] = useState<string | null>(null);
   const [currentTab, setCurrentTab] = useState<ProductFormTabId>("general");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const hasMultipleVariants = (initialProduct?.variants.length ?? 0) > 1;
   const firstVariant = initialProduct?.variants[0];
 
@@ -273,12 +276,12 @@ export function ProductForm({
 
   const handleDelete = () => {
     if (!initialProduct) return;
-    if (
-      !window.confirm(
-        `Delete "${initialProduct.title}"? This cannot be undone.`,
-      )
-    )
-      return;
+    setDeleteOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (!initialProduct) return;
+    setDeleteOpen(false);
     startTransition(async () => {
       const result = await deleteProductAction(storeId, initialProduct.id);
       if (!result.ok && result.error) {
@@ -288,6 +291,32 @@ export function ProductForm({
         toast.success("Product deleted");
       }
     });
+  };
+
+  // Unsaved-changes guard — warn on tab close / reload / cross-site nav if
+  // the form has dirty changes. In-app nav via the Discard button opens a
+  // dedicated confirm dialog instead (see handleDiscard below) because
+  // App Router doesn't fire beforeunload on client-side navigation.
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!methods.formState.isDirty || isPending) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [methods.formState.isDirty, isPending]);
+
+  const handleDiscard = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (methods.formState.isDirty && !isPending) {
+      e.preventDefault();
+      setDiscardOpen(true);
+    }
+  };
+
+  const confirmDiscard = () => {
+    setDiscardOpen(false);
+    router.push("/products");
   };
 
   const onInvalid = (errors: Record<string, unknown>) => {
@@ -405,6 +434,7 @@ export function ProductForm({
         <div className="flex items-center justify-between border-t border-border-subtle pt-6">
           <Link
             href="/products"
+            onClick={handleDiscard}
             className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
             Discard
@@ -435,6 +465,32 @@ export function ProductForm({
           </div>
         </div>
       </form>
+
+      {initialProduct && (
+        <AlertDialog
+          isOpen={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          title={`Delete "${initialProduct.title}"?`}
+          message="This can't be undone."
+          type="confirm"
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteOpen(false)}
+        />
+      )}
+
+      <AlertDialog
+        isOpen={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+        title="Discard unsaved changes?"
+        message="Your edits will be lost."
+        type="confirm"
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onConfirm={confirmDiscard}
+        onCancel={() => setDiscardOpen(false)}
+      />
     </FormProvider>
   );
 }

@@ -126,7 +126,7 @@ export function CreateSegmentForm({
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Gold tier members"
             required
-            className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="mt-1 block w-full rounded-md border border-ink-200 bg-background-elevated px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
         </label>
 
@@ -139,7 +139,7 @@ export function CreateSegmentForm({
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
             placeholder="Brief description of this audience segment"
-            className="mt-1 block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="mt-1 block w-full rounded-md border border-ink-200 bg-background-elevated px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
         </label>
       </div>
@@ -192,7 +192,7 @@ export function CreateSegmentForm({
                     updateRule(index, "value", e.target.value)
                   }
                   placeholder={valuePlaceholder(rule.type)}
-                  className="block w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+                  className="block w-full rounded-md border border-ink-200 bg-background-elevated px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
                 />
               )}
             </div>
@@ -221,7 +221,7 @@ export function CreateSegmentForm({
         <button
           type="button"
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
+          className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-background-elevated px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
         >
           Cancel
         </button>

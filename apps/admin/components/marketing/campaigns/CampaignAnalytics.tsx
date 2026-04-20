@@ -52,7 +52,7 @@ interface MetricCardProps {
 function MetricCard({ label, value, total, variant = "default" }: MetricCardProps) {
   const percentage = pct(value, total);
   return (
-    <div className="rounded-md bg-white p-4 shadow-sm">
+    <div className="rounded-md bg-background-elevated p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
         {label}
       </p>
@@ -123,7 +123,7 @@ export function CampaignAnalytics({
           </div>
           <div className="h-2 w-full rounded-full bg-ink-100">
             <div
-              className="h-2 rounded-full bg-moss-700 transition-all"
+              className="h-2 rounded-full bg-moss-700 transition-[width] duration-300 ease-out"
               style={{
                 width: `${Math.min(100, (c.delivered / c.total_recipients) * 100)}%`,
               }}
@@ -178,7 +178,7 @@ export function CampaignAnalytics({
 
       {/* Revenue */}
       {parseFloat(c.revenue) > 0 && (
-        <div className="rounded-md bg-white p-4 shadow-sm">
+        <div className="rounded-md bg-background-elevated p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
             Revenue attributed
           </p>
@@ -190,7 +190,7 @@ export function CampaignAnalytics({
 
       {/* Unsubscribed */}
       {c.unsubscribed > 0 && (
-        <div className="rounded-md bg-white p-4 shadow-sm">
+        <div className="rounded-md bg-background-elevated p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wider text-ink-500">
             Unsubscribed
           </p>
@@ -215,7 +215,7 @@ export function CampaignAnalytics({
             </p>
           )}
           <div
-            className="prose prose-sm max-w-none rounded-md bg-white p-6 text-ink-700 shadow-sm"
+            className="prose prose-sm max-w-none rounded-md bg-background-elevated p-6 text-ink-700 shadow-sm"
             dangerouslySetInnerHTML={{ __html: c.content }}
           />
         </div>

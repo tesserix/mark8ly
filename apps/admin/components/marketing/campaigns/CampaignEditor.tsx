@@ -63,7 +63,7 @@ export function CampaignEditor({ content, onChange }: CampaignEditorProps) {
   }
 
   return (
-    <div className="rounded-md border border-ink-200 bg-white">
+    <div className="rounded-md border border-ink-200 bg-background-elevated">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 border-b border-ink-200 px-2 py-1.5">
         <ToolbarButton

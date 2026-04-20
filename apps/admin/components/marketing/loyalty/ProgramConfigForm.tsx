@@ -117,7 +117,7 @@ export function ProgramConfigForm({
   if (isEmpty && !isEditing) {
     if (!editable) {
       return (
-        <div className="rounded-[6px] bg-white px-6 py-10 text-center">
+        <div className="rounded-[6px] bg-background-elevated px-6 py-10 text-center">
           <p className="text-sm text-ink-500">
             No loyalty program configured yet.
           </p>
@@ -125,7 +125,7 @@ export function ProgramConfigForm({
       );
     }
     return (
-      <div className="rounded-[6px] bg-white px-6 py-10 text-center">
+      <div className="rounded-[6px] bg-background-elevated px-6 py-10 text-center">
         <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium text-[color:var(--ink-900)]">
           Set up your loyalty program
         </h2>
@@ -149,7 +149,7 @@ export function ProgramConfigForm({
   if (!isEditing) {
     return (
       <div className="space-y-6">
-        <div className="rounded-[6px] bg-white px-6 py-5">
+        <div className="rounded-[6px] bg-background-elevated px-6 py-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-[color:var(--ink-900)]">
@@ -231,12 +231,12 @@ export function ProgramConfigForm({
 
   // ── Edit mode (form) ──────────────────────────────────────────────
   const inputClass =
-    "w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-2 text-sm text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]";
+    "w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2 text-sm text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Active toggle */}
-      <div className="rounded-[6px] bg-white px-6 py-5">
+      <div className="rounded-[6px] bg-background-elevated px-6 py-5">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-[color:var(--ink-900)]">
@@ -254,7 +254,7 @@ export function ProgramConfigForm({
               className="peer sr-only"
               aria-label="Toggle loyalty program"
             />
-            <div className="h-6 w-11 rounded-md bg-[color:var(--ink-900)]/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-md after:bg-white after:transition-all peer-checked:bg-[color:var(--moss-700)] peer-checked:after:translate-x-full" />
+            <div className="h-6 w-11 rounded-md bg-[color:var(--ink-900)]/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-md after:bg-background-elevated after:transition-all peer-checked:bg-[color:var(--moss-700)] peer-checked:after:translate-x-full" />
           </label>
         </div>
       </div>
@@ -367,7 +367,7 @@ export function ProgramConfigForm({
       </Section>
 
       {/* Tiers */}
-      <div className="rounded-[6px] bg-white px-6 py-5">
+      <div className="rounded-[6px] bg-background-elevated px-6 py-5">
         <TierBuilder value={tiers} onChange={setTiers} disabled={false} />
       </div>
 
@@ -397,7 +397,7 @@ export function ProgramConfigForm({
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-[6px] bg-white px-6 py-5 space-y-4">
+    <div className="rounded-[6px] bg-background-elevated px-6 py-5 space-y-4">
       <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-500">
         {title}
       </h3>

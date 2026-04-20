@@ -65,7 +65,7 @@ export function SetupChecklist({ checklist }: SetupChecklistProps) {
 
       <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[color:var(--ink-900)]/10">
         <div
-          className="h-full rounded-full bg-[color:var(--moss-700)] transition-all duration-500"
+          className="h-full rounded-full bg-[color:var(--moss-700)] transition-[width] duration-500 ease-out"
           style={{ width: `${progressPct}%` }}
           role="progressbar"
           aria-valuenow={completedCount}

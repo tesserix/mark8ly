@@ -76,7 +76,7 @@ async function PaymentSettingsContent({
 
   if (!supported) {
     return (
-      <div className="rounded-[6px] bg-white px-6 py-10 text-center">
+      <div className="rounded-[6px] bg-background-elevated px-6 py-10 text-center">
         <p className="text-sm text-[color:var(--ink-900)]/50">
           Unable to load supported providers for this store. Please try again
           later.

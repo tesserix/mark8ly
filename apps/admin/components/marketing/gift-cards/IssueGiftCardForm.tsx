@@ -86,7 +86,7 @@ export function IssueGiftCardForm({ currency }: IssueGiftCardFormProps) {
             min="0.01"
             required
             placeholder="50.00"
-            className="flex-1 rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="flex-1 rounded-md border border-ink-900/15 bg-background-elevated px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
           <span
             aria-label={`Store currency: ${currency}`}
@@ -115,7 +115,7 @@ export function IssueGiftCardForm({ currency }: IssueGiftCardFormProps) {
             id="recipient_name"
             name="recipient_name"
             type="text"
-            className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="rounded-md border border-ink-900/15 bg-background-elevated px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -126,7 +126,7 @@ export function IssueGiftCardForm({ currency }: IssueGiftCardFormProps) {
             id="recipient_email"
             name="recipient_email"
             type="email"
-            className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="rounded-md border border-ink-900/15 bg-background-elevated px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
         </div>
       </div>
@@ -144,7 +144,7 @@ export function IssueGiftCardForm({ currency }: IssueGiftCardFormProps) {
             id="sender_name"
             name="sender_name"
             type="text"
-            className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="rounded-md border border-ink-900/15 bg-background-elevated px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -155,7 +155,7 @@ export function IssueGiftCardForm({ currency }: IssueGiftCardFormProps) {
             id="sender_email"
             name="sender_email"
             type="email"
-            className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+            className="rounded-md border border-ink-900/15 bg-background-elevated px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
           />
         </div>
       </div>
@@ -170,7 +170,7 @@ export function IssueGiftCardForm({ currency }: IssueGiftCardFormProps) {
           name="message"
           rows={3}
           maxLength={500}
-          className="rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+          className="rounded-md border border-ink-900/15 bg-background-elevated px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
         />
       </div>
 
@@ -183,7 +183,7 @@ export function IssueGiftCardForm({ currency }: IssueGiftCardFormProps) {
           id="expires_at"
           name="expires_at"
           type="date"
-          className="w-48 rounded-md border border-ink-900/15 bg-white px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
+          className="w-48 rounded-md border border-ink-900/15 bg-background-elevated px-3 py-2.5 text-sm focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
         />
       </div>
 

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import Link from "next/link";
 
 import type { AdminCustomer } from "@/lib/api/marketplace-api";
@@ -29,62 +30,73 @@ export function CustomersList({ customers, currency = "USD" }: CustomersListProp
 
       <ul role="list" className="flex flex-col">
         {customers.map((c) => (
-          <li
-            key={c.id}
-            className="border-b border-[color:var(--ink-900)]/10"
-          >
-            <Link
-              href={`/customers/${c.id}`}
-              className={`grid ${GRID} items-center gap-6 px-4 py-4 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]`}
-              aria-label={`Customer ${formatName(c)} — ${c.email}`}
-            >
-              <span className="flex flex-col gap-1">
-                <span className="font-serif text-base text-foreground">
-                  {formatName(c)}
-                </span>
-                {c.tags.length > 0 && (
-                  <span className="flex flex-wrap gap-1">
-                    {c.tags.slice(0, 3).map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-sm bg-[color:var(--ink-900)]/[0.06] px-1.5 py-0.5 text-[10px] text-foreground-secondary"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    {c.tags.length > 3 && (
-                      <span className="text-[10px] text-foreground-tertiary">
-                        +{c.tags.length - 3}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </span>
-
-              <span className="truncate text-sm text-foreground-secondary">
-                {c.email}
-              </span>
-
-              <CustomerStatusBadge status={c.status} className="text-sm" />
-
-              <span className="hidden md:block text-right font-serif text-base tabular-nums text-foreground">
-                {c.order_count}
-              </span>
-
-              <span className="hidden md:block text-right font-serif text-base tabular-nums text-foreground">
-                {formatMoney(c.total_spent, currency)}
-              </span>
-
-              <span className="hidden md:block text-xs text-foreground-tertiary">
-                {formatDate(c.created_at)}
-              </span>
-            </Link>
-          </li>
+          <CustomerRow key={c.id} customer={c} currency={currency} />
         ))}
       </ul>
     </div>
   );
 }
+
+interface CustomerRowProps {
+  customer: AdminCustomer;
+  currency: string;
+}
+
+const CustomerRow = memo(function CustomerRow({
+  customer: c,
+  currency,
+}: CustomerRowProps) {
+  return (
+    <li className="border-b border-[color:var(--ink-900)]/10">
+      <Link
+        href={`/customers/${c.id}`}
+        className={`grid ${GRID} items-center gap-6 px-4 py-4 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]`}
+        aria-label={`Customer ${formatName(c)} — ${c.email}`}
+      >
+        <span className="flex min-w-0 flex-col gap-1">
+          <span className="truncate font-serif text-base text-foreground">
+            {formatName(c)}
+          </span>
+          {c.tags.length > 0 && (
+            <span className="flex flex-wrap gap-1">
+              {c.tags.slice(0, 3).map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-sm bg-[color:var(--ink-900)]/[0.06] px-1.5 py-0.5 text-[10px] text-foreground-secondary"
+                >
+                  {tag}
+                </span>
+              ))}
+              {c.tags.length > 3 && (
+                <span className="text-[10px] text-foreground-tertiary">
+                  +{c.tags.length - 3}
+                </span>
+              )}
+            </span>
+          )}
+        </span>
+
+        <span className="truncate text-sm text-foreground-secondary">
+          {c.email}
+        </span>
+
+        <CustomerStatusBadge status={c.status} className="text-sm" />
+
+        <span className="hidden md:block text-right font-serif text-base tabular-nums text-foreground">
+          {c.order_count}
+        </span>
+
+        <span className="hidden md:block text-right font-serif text-base tabular-nums text-foreground">
+          {formatMoney(c.total_spent, currency)}
+        </span>
+
+        <span className="hidden md:block text-xs text-foreground-tertiary">
+          {formatDate(c.created_at)}
+        </span>
+      </Link>
+    </li>
+  );
+});
 
 function formatName(c: AdminCustomer): string {
   const parts = [c.first_name, c.last_name].filter(Boolean);

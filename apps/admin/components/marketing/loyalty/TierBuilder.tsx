@@ -75,7 +75,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
                 onChange={(e) => updateTier(index, "name", e.target.value)}
                 disabled={disabled}
                 placeholder="e.g. Silver"
-                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
               />
             </div>
             <div className="w-32 space-y-1">
@@ -90,7 +90,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
                 }
                 disabled={disabled}
                 min={0}
-                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-2.5 text-sm text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2.5 text-sm text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
               />
             </div>
             <div className="w-28 space-y-1">
@@ -105,7 +105,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
                 }
                 disabled={disabled}
                 placeholder="1.5"
-                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-white px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
               />
             </div>
             {!disabled && (

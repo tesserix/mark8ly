@@ -31,7 +31,7 @@ export function VariantImagePicker({
               aria-checked={selected}
               aria-label={m.alt ?? "Image"}
               onClick={() => onSelect(m.id)}
-              className={`relative h-20 w-20 overflow-hidden rounded-[6px] border transition-all focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)] ${
+              className={`relative h-20 w-20 overflow-hidden rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)] ${
                 selected
                   ? "border-[var(--moss-700)] ring-2 ring-[var(--moss-700)]"
                   : "border-[var(--ink-100)]"

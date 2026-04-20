@@ -71,7 +71,7 @@ export function CampaignActions({ campaign }: CampaignActionsProps) {
         <button
           onClick={() => proxyAction(`/api/marketing/campaigns/${c.id}/pause`)}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-background-elevated px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
         >
           {loading ? "Pausing..." : "Pause"}
         </button>
@@ -95,7 +95,7 @@ export function CampaignActions({ campaign }: CampaignActionsProps) {
         <button
           onClick={() => setShowDeleteDialog(true)}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-[color:var(--signal)] transition hover:bg-ink-50 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-background-elevated px-4 py-2 text-sm font-medium text-[color:var(--signal)] transition hover:bg-ink-50 disabled:opacity-50"
         >
           Delete
         </button>
@@ -116,7 +116,7 @@ export function CampaignActions({ campaign }: CampaignActionsProps) {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <button className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50">
+              <button className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-background-elevated px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50">
                 Cancel
               </button>
             </DialogClose>
@@ -146,7 +146,7 @@ export function CampaignActions({ campaign }: CampaignActionsProps) {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <button className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50">
+              <button className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-background-elevated px-4 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50">
                 Cancel
               </button>
             </DialogClose>

@@ -116,7 +116,7 @@ export function CsvJobProgress({
           className="h-2 w-full overflow-hidden rounded-full bg-[var(--paper-200)]"
         >
           <div
-            className="h-full rounded-full bg-[var(--moss-700)] transition-all duration-300"
+            className="h-full rounded-full bg-[var(--moss-700)] transition-[width] duration-300 ease-out"
             style={{
               width: `${percent}%`,
               ...(percent > 0 ? {} : { minWidth: 0 }),

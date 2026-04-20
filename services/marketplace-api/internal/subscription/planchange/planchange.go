@@ -25,6 +25,7 @@ import (
 // billingstripe.Client satisfies this via StripeClientAdapter.
 type StripeClient interface {
 	UpdateSubscription(ctx context.Context, in billingstripe.UpdateSubscriptionParams) (*billingstripe.Subscription, error)
+	CreateSubscription(ctx context.Context, in billingstripe.CreateSubscriptionInput) (*billingstripe.Subscription, error)
 	PriceIDFor(ctx context.Context, plan subscription.SubscriptionPlan, period subscription.SubscriptionPeriod, currency string, tier subscription.PriceTier) (string, error)
 }
 
@@ -35,6 +36,10 @@ type StripeClientAdapter struct{ C *billingstripe.Client }
 
 func (a *StripeClientAdapter) UpdateSubscription(ctx context.Context, in billingstripe.UpdateSubscriptionParams) (*billingstripe.Subscription, error) {
 	return billingstripe.UpdateSubscription(ctx, a.C, in)
+}
+
+func (a *StripeClientAdapter) CreateSubscription(ctx context.Context, in billingstripe.CreateSubscriptionInput) (*billingstripe.Subscription, error) {
+	return billingstripe.CreateSubscription(ctx, a.C, in)
 }
 
 func (a *StripeClientAdapter) PriceIDFor(ctx context.Context, plan subscription.SubscriptionPlan, period subscription.SubscriptionPeriod, currency string, tier subscription.PriceTier) (string, error) {
@@ -197,11 +202,79 @@ func (o *Orchestrator) Execute(ctx context.Context, in Input) (Output, error) {
 	return out, nil
 }
 
+// executeInitialSubscription creates the first Stripe subscription for a row
+// that was lazily bootstrapped (stripe_customer_id set, stripe_subscription_id
+// still NULL). Uses the 90-day trial flow per §4.6 so nothing is charged until
+// trial_end. The row stays in signup state until the customer.subscription.*
+// webhook fires statemachine.Transition(signup → trialing).
+func (o *Orchestrator) executeInitialSubscription(ctx context.Context, tx *gorm.DB, in Input, sub *subscription.StoreSubscription) (Output, error) {
+	if sub.StripeCustomerID == "" {
+		return Output{}, fmt.Errorf("planchange: subscription has no stripe_customer_id — run bootstrap first")
+	}
+
+	currency := ""
+	if sub.BillingCurrency != nil {
+		currency = *sub.BillingCurrency
+	}
+	priceID, err := o.deps.Stripe.PriceIDFor(ctx, in.TargetPlan, in.TargetPeriod, currency, sub.PriceTier)
+	if err != nil {
+		return Output{}, fmt.Errorf("planchange: resolve price id: %w", err)
+	}
+
+	// trial_end = signup_date + 90d. CreatedAt is the signup timestamp.
+	trialEnd := sub.CreatedAt.Add(90 * 24 * time.Hour).Unix()
+
+	stripeSub, err := o.deps.Stripe.CreateSubscription(ctx, billingstripe.CreateSubscriptionInput{
+		StoreID:    in.StoreID.String(),
+		Plan:       string(in.TargetPlan),
+		Period:     string(in.TargetPeriod),
+		CustomerID: sub.StripeCustomerID,
+		PriceID:    priceID,
+		TrialEnd:   trialEnd,
+	})
+	if err != nil {
+		return Output{}, fmt.Errorf("planchange: stripe create subscription: %w", err)
+	}
+
+	// Persist stripe_subscription_id + plan + period onto the row. Status
+	// stays signup until the webhook fires the transition — the state
+	// machine owns that.
+	if err := tx.Model(&subscription.StoreSubscription{}).
+		Where("tenant_id = ? AND store_id = ?", in.TenantID, in.StoreID).
+		Updates(map[string]any{
+			"stripe_subscription_id": stripeSub.ID,
+			"plan":                   in.TargetPlan,
+			"subscription_period":    in.TargetPeriod,
+			"last_plan_change_at":    in.Now,
+			"last_plan_change_reason": "initial_selection",
+		}).Error; err != nil {
+		return Output{}, fmt.Errorf("planchange: persist initial subscription: %w", err)
+	}
+
+	if o.deps.Emitter != nil && in.GinCtx != nil {
+		o.deps.Emitter.Emit(in.GinCtx, audit.Event{
+			Action:       "subscription.initial_selected",
+			ResourceType: "subscription",
+			Metadata: map[string]any{
+				"plan":                   string(in.TargetPlan),
+				"period":                 string(in.TargetPeriod),
+				"stripe_subscription_id": stripeSub.ID,
+			},
+		})
+	}
+
+	return Output{
+		Result:        ResultUpgradeCommitted,
+		EffectiveAt:   in.Now,
+		StripeUpdated: true,
+	}, nil
+}
+
 // executeUpgrade handles immediate plan upgrades and period upgrades
 // (monthly → annual). Called from within the advisory lock.
 func (o *Orchestrator) executeUpgrade(ctx context.Context, tx *gorm.DB, in Input, sub *subscription.StoreSubscription) (Output, error) {
 	if sub.StripeSubscriptionID == nil || *sub.StripeSubscriptionID == "" {
-		return Output{}, fmt.Errorf("planchange: subscription has no stripe_subscription_id")
+		return o.executeInitialSubscription(ctx, tx, in, sub)
 	}
 
 	// Determine billing currency to use.

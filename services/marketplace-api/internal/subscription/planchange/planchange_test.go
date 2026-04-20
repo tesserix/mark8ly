@@ -28,6 +28,10 @@ func (f *fakeStripe) UpdateSubscription(_ context.Context, _ billingstripe.Updat
 	return f.updateSub, f.updateErr
 }
 
+func (f *fakeStripe) CreateSubscription(_ context.Context, _ billingstripe.CreateSubscriptionInput) (*billingstripe.Subscription, error) {
+	return f.updateSub, f.updateErr
+}
+
 func (f *fakeStripe) PriceIDFor(_ context.Context, _ subscription.SubscriptionPlan, _ subscription.SubscriptionPeriod, _ string, _ subscription.PriceTier) (string, error) {
 	return f.priceID, f.priceIDErr
 }

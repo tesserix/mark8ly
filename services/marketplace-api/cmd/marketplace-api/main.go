@@ -565,7 +565,7 @@ func main() {
 			Stripe: stripeAdapter,
 			Logger: log,
 		})
-		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, log).WithDB(conn)
+		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, log).WithDB(conn).WithStripe(billingStripeClient)
 
 		// P4 Subscription plan change (upgrade/downgrade) — requires Stripe + stores repo.
 		var changePlanHandler *admin.ChangePlanHandler

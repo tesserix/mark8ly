@@ -102,6 +102,45 @@ func TestAllFeatures_IncludesAllConstants(t *testing.T) {
 		"expected 25 feature constants per §9 — update this count if new ones are added")
 }
 
+// TestMatrix_IsAllowedRoundTrip asserts that every (plan, feature) pair
+// agrees between the externalised limits map and the IsAllowed helper.
+// A cell is considered "allowed" when its limit is non-zero (positive
+// numeric cap, Unlimited, or Negotiated). The helper must agree. This
+// catches the class of bug where a new feature was added to the matrix
+// but IsAllowed wiring was forgotten (or vice versa).
+func TestMatrix_IsAllowedRoundTrip(t *testing.T) {
+	for _, p := range []subscription.SubscriptionPlan{
+		subscription.PlanTrial,
+		subscription.PlanStarter,
+		subscription.PlanStudio,
+		subscription.PlanPro,
+	} {
+		t.Run(string(p), func(t *testing.T) {
+			limits := plangate.AllFeatureLimits(p)
+			for _, f := range plangate.AllFeatures() {
+				lim, ok := limits[string(f)]
+				require.True(t, ok, "feature %s missing for plan %s", f, p)
+				allowed := plangate.IsAllowed(p, f)
+				if lim == plangate.Disabled {
+					require.False(t, allowed,
+						"feature %s on %s: limit=Disabled but IsAllowed returned true", f, p)
+				} else {
+					require.True(t, allowed,
+						"feature %s on %s: limit=%d but IsAllowed returned false", f, p, lim)
+				}
+			}
+		})
+	}
+}
+
+// Note: a "min plan → every higher plan also allows" invariant would be
+// tempting but is violated on purpose by the support-tier features
+// (standard_email_support is on Trial/Starter/Studio but OFF on Pro,
+// which gets priority_email_support instead). The IsAllowedRoundTrip
+// test above already catches the cheaper class of bug (missing cell or
+// desync between matrix and IsAllowed) and that is the one that has
+// historically bitten us.
+
 func TestImagesAllowed_PlainStudio_UsesMatrix(t *testing.T) {
 	// No grandfathering needed for Studio itself.
 	created := time.Now()

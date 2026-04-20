@@ -27,7 +27,13 @@ const (
 	FeatureFullColorPalette    Feature = "full_color_palette"
 	FeatureAnnouncementBar     Feature = "announcement_bar"
 	FeatureRemovePoweredBy     Feature = "remove_powered_by"
-	FeatureCustomCSS           Feature = "custom_css"
+	FeatureCustomCSS Feature = "custom_css"
+	// FeatureCustomCodeInjection — reserved for the future head/body
+	// script-injection surface. No handler accepts arbitrary <script>
+	// payloads today, so the gate is a forward-compat hedge. When the
+	// surface ships, add plangate.RequireFeature(FeatureCustomCodeInjection)
+	// at the write handler AND ensure the render path CSPs/escapes the
+	// stored value. Pro-only in the matrix.
 	FeatureCustomCodeInjection Feature = "custom_code_injection"
 	FeatureWhiteLabelApp       Feature = "white_label_app" // always Disabled in matrix; gated by add-on
 

@@ -1,7 +1,9 @@
 // Package admin — apikeys_handler.go: §18.4 enterprise API-key admin
-// endpoints. Mounted under /admin/stores/:storeId/api-keys with
-// plangate.RequireFeature(FeatureFullAPI) on writes (Pro+) and
-// plangate.RequireFeature(FeatureReadAPI) on the list (Studio+).
+// endpoints. Mounted under /admin/stores/:storeId/api-keys. Reads (GET)
+// are gated by plangate.RequireFeature(FeatureReadAPI) (Studio+); writes
+// (POST create/rotate, DELETE revoke) are gated by FeatureFullAPI (Pro).
+// The service layer additionally rejects write-scoped key creation when
+// FeatureFullAPI is not allowed for the resolved plan.
 package admin
 
 import (
@@ -249,8 +251,8 @@ func (h *APIKeysHandler) parseUser(c *gin.Context) (uuid.UUID, bool) {
 
 // RegisterAPIKeys mounts the admin endpoints. List is gated by FeatureReadAPI
 // (Studio+); create/rotate/revoke are gated by FeatureFullAPI (Pro). Read
-// endpoints under FeatureReadAPI also let Studio+ merchants list their
-// (read-only) keys without upgrading.
+// endpoints under FeatureReadAPI let Studio+ merchants list their keys
+// without upgrading; write endpoints require an explicit Pro plan.
 func RegisterAPIKeys(storeRoute gin.IRouter, h *APIKeysHandler, fgaMw *authz.Middleware, logger *slog.Logger) {
 	if h == nil || h.resolver == nil {
 		return
@@ -262,15 +264,15 @@ func RegisterAPIKeys(storeRoute gin.IRouter, h *APIKeysHandler, fgaMw *authz.Mid
 			fgaMw.RequireTenantRelation(authz.SubscriptionViewRole),
 			h.List)
 		keys.POST("",
-			plangate.RequireFeature(h.resolver, plangate.FeatureReadAPI, logger),
+			plangate.RequireFeature(h.resolver, plangate.FeatureFullAPI, logger),
 			fgaMw.RequireTenantRelation(authz.SubscriptionEditRole),
 			h.Create)
 		keys.POST("/:keyId/rotate",
-			plangate.RequireFeature(h.resolver, plangate.FeatureReadAPI, logger),
+			plangate.RequireFeature(h.resolver, plangate.FeatureFullAPI, logger),
 			fgaMw.RequireTenantRelation(authz.SubscriptionEditRole),
 			h.Rotate)
 		keys.DELETE("/:keyId",
-			plangate.RequireFeature(h.resolver, plangate.FeatureReadAPI, logger),
+			plangate.RequireFeature(h.resolver, plangate.FeatureFullAPI, logger),
 			fgaMw.RequireTenantRelation(authz.SubscriptionEditRole),
 			h.Revoke)
 	}

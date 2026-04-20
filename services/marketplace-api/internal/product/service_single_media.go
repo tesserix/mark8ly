@@ -6,6 +6,7 @@ package product
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -14,6 +15,30 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
+
+// MediaSnapshot is the minimal view of a product needed to evaluate a
+// per-plan media-count gate. Exposed so handlers can compute
+// plangate.ImagesAllowed without coupling product.Service to plangate.
+type MediaSnapshot struct {
+	CurrentCount     int
+	ProductCreatedAt time.Time
+}
+
+// GetMediaSnapshot returns the current media count for a product and the
+// product's CreatedAt so callers can evaluate per-plan image caps
+// (plangate.ImagesAllowed takes product CreatedAt for grandfathering).
+// Returns apperrors.NotFound when the product doesn't belong to the
+// (tenant, store) scope.
+func (s *Service) GetMediaSnapshot(ctx context.Context, productID, storeID, tenantID string) (MediaSnapshot, error) {
+	agg, err := s.repo.GetByIDForStore(ctx, productID, storeID, tenantID)
+	if err != nil {
+		return MediaSnapshot{}, err
+	}
+	return MediaSnapshot{
+		CurrentCount:     len(agg.Media),
+		ProductCreatedAt: agg.Product.CreatedAt,
+	}, nil
+}
 
 // AddMediaRequest is the service-level DTO for inserting a single
 // product_media row.

@@ -5,14 +5,19 @@
 package admin
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/media"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/product"
+	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -22,6 +27,13 @@ type MediaHandler struct {
 	uploader     media.Uploader
 	logger       *slog.Logger
 	signedURLTTL time.Duration
+	// resolver + subRepo + db are optional. When all three are wired, the
+	// Create path enforces the per-plan images-per-product cap via
+	// plangate.ImagesAllowed (applies grandfathering for existing products).
+	// Production must always wire them; tests may leave them nil.
+	resolver *plangate.PlanResolver
+	subRepo  subscription.Repository
+	subDB    *gorm.DB
 }
 
 // NewMediaHandler constructs a MediaHandler with the default 15-minute
@@ -33,6 +45,16 @@ func NewMediaHandler(svc *product.Service, uploader media.Uploader, logger *slog
 		logger:       logger,
 		signedURLTTL: 15 * time.Minute,
 	}
+}
+
+// SetPlanGate wires the plan resolver and subscription repository used to
+// enforce the images-per-product cap at Create time. Pass the same *gorm.DB
+// the subscription repository was constructed against. Without these, the
+// cap is not enforced — production main.go must always wire this.
+func (h *MediaHandler) SetPlanGate(resolver *plangate.PlanResolver, subRepo subscription.Repository, db *gorm.DB) {
+	h.resolver = resolver
+	h.subRepo = subRepo
+	h.subDB = db
 }
 
 // UploadURL handles POST /admin/stores/:storeId/products/:id/media/upload-url.
@@ -70,6 +92,11 @@ func (h *MediaHandler) UploadURL(c *gin.Context) {
 }
 
 // Create handles POST /admin/stores/:storeId/products/:id/media.
+// When the plan gate is wired, the per-plan images-per-product cap is
+// enforced before the DB write. plangate.ImagesAllowed applies the
+// grandfathering rule (existing products keep their cap after a
+// downgrade) so a cap breach here means "this NEW media would push the
+// product above the effective cap on the current plan".
 func (h *MediaHandler) Create(c *gin.Context) {
 	storeID := c.Param("storeId")
 	productID := c.Param("id")
@@ -80,6 +107,11 @@ func (h *MediaHandler) Create(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
 		return
 	}
+
+	if err := h.enforceImageCap(c, tenantID, storeID, productID); err != nil {
+		return
+	}
+
 	svcReq := toServiceAddMedia(req, productID, storeID, tenantID)
 	m, err := h.svc.AddMedia(c.Request.Context(), svcReq)
 	if err != nil {
@@ -87,6 +119,60 @@ func (h *MediaHandler) Create(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, ToAdminMediaResponse(m))
+}
+
+// enforceImageCap returns non-nil after it has already written the 403
+// response and the handler should abort. Returns nil to continue. When
+// the gate dependencies are not wired (tests, dev), it is a no-op.
+func (h *MediaHandler) enforceImageCap(c *gin.Context, tenantID, storeID, productID string) error {
+	if h.resolver == nil || h.subRepo == nil || h.subDB == nil {
+		return nil
+	}
+	tenantUUID, terr := uuid.Parse(tenantID)
+	storeUUID, serr := uuid.Parse(storeID)
+	if terr != nil || serr != nil {
+		return nil // scope errors surface later from service layer
+	}
+
+	snap, err := h.svc.GetMediaSnapshot(c.Request.Context(), productID, storeID, tenantID)
+	if err != nil {
+		// Let the service layer's AddMedia return the real error (NotFound,
+		// etc.) so we don't duplicate error-shape logic here.
+		return nil
+	}
+
+	sub, err := h.subRepo.GetByStoreID(c.Request.Context(), h.subDB, tenantUUID, storeUUID)
+	if err != nil {
+		// Fail-closed: without a subscription row we can't evaluate the gate.
+		// Apply the trial cap as the conservative default.
+		cap := plangate.Limit(subscription.PlanTrial, plangate.FeatureImagesPerProduct)
+		if cap != plangate.Unlimited && snap.CurrentCount >= cap {
+			respondImageCap(c, subscription.PlanTrial, cap, snap.CurrentCount)
+			return fmt.Errorf("plan gate: trial-fallback cap reached")
+		}
+		return nil
+	}
+
+	limit := plangate.ImagesAllowed(sub.Plan, snap.ProductCreatedAt, sub.LastPlanChangeAt)
+	if limit == plangate.Unlimited {
+		return nil
+	}
+	if snap.CurrentCount >= limit {
+		respondImageCap(c, sub.Plan, limit, snap.CurrentCount)
+		return fmt.Errorf("plan gate: images-per-product cap reached")
+	}
+	return nil
+}
+
+func respondImageCap(c *gin.Context, plan subscription.SubscriptionPlan, limit, current int) {
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+		"error":   "plan_limit_exceeded",
+		"message": fmt.Sprintf("This product is at its images cap (%d). Upgrade your plan to add more images.", limit),
+		"feature": string(plangate.FeatureImagesPerProduct),
+		"limit":   limit,
+		"current": current,
+		"plan":    string(plan),
+	})
 }
 
 // Patch handles PATCH /admin/stores/:storeId/products/:id/media/:mediaId.

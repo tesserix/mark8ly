@@ -17,14 +17,16 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/media"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
 // BrandingHandler handles /admin/stores/:storeId/branding endpoints.
 type BrandingHandler struct {
 	svc      *branding.Service
-	uploader media.Uploader // optional; only used by UploadURL
-	audit    *audit.Emitter // optional — nil-safe
+	uploader media.Uploader         // optional; only used by UploadURL
+	audit    *audit.Emitter         // optional — nil-safe
+	resolver *plangate.PlanResolver // optional — enables plan-tier gating on paid-tier branding fields
 	logger   *slog.Logger
 }
 
@@ -36,6 +38,11 @@ func NewBrandingHandler(svc *branding.Service, logger *slog.Logger) *BrandingHan
 // SetUploader wires the media uploader for the upload-url endpoint.
 // Separate setter so main.go can keep existing call sites unchanged.
 func (h *BrandingHandler) SetUploader(u media.Uploader) { h.uploader = u }
+
+// SetPlanResolver wires the plan resolver used to gate paid-tier branding
+// fields (e.g. custom_css on Studio+). Without a resolver, field-level
+// plan gates are skipped — production must always wire this.
+func (h *BrandingHandler) SetPlanResolver(r *plangate.PlanResolver) { h.resolver = r }
 
 // WithAudit attaches an audit emitter so branding changes are recorded.
 // Nil-safe.
@@ -218,6 +225,27 @@ func (h *BrandingHandler) Update(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondErr(c, apperrors.ValidationFailed("body", "invalid request body"), h.logger)
 		return
+	}
+
+	// Field-level plan gate: CustomCSS is Studio+. A field-level (not
+	// route-level) gate is used because this PUT mutates many fields at
+	// once and Starter merchants must still be able to update non-paid
+	// fields (logo, colors, social links). Clearing the value is always
+	// permitted — only non-empty writes require the feature.
+	if h.resolver != nil && req.CustomCSS != nil && strings.TrimSpace(*req.CustomCSS) != "" {
+		plan := h.resolver.Resolve(c.Request.Context(), tenantID, storeID)
+		if !plangate.IsAllowed(plan, plangate.FeatureCustomCSS) {
+			minPlan := plangate.MinPlanForFeature(plangate.FeatureCustomCSS)
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":    "plan_required",
+				"message":  fmt.Sprintf("Custom CSS requires the %s plan or higher", minPlan),
+				"required": string(minPlan),
+				"current":  string(plan),
+				"feature":  string(plangate.FeatureCustomCSS),
+				"field":    "custom_css",
+			})
+			return
+		}
 	}
 
 	b, err := h.svc.Update(c.Request.Context(), branding.UpdateInput{

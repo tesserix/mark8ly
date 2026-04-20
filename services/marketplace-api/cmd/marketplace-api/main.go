@@ -668,6 +668,16 @@ func main() {
 
 		// B2 — Plan gate resolver (shared between admin and storefront).
 		planResolver := plangate.NewPlanResolver(conn, subscriptionRepo)
+		// Field-level plan gate for paid-tier branding fields (custom_css
+		// requires Studio+). The branding handler was constructed above
+		// before the resolver existed — wire it now via setter so the
+		// gate is active before any request handler runs.
+		brandingHandler.SetPlanResolver(planResolver)
+		// Per-plan images-per-product cap (plangate.ImagesAllowed) on the
+		// product-media Create handler. Also constructed before the
+		// resolver, so wired via setter; see apps/onboarding plan doc
+		// 2026-04-20-plangate-enforcement-gaps.md §P1.1.
+		mediaHandler.SetPlanGate(planResolver, subscriptionRepo, conn)
 
 		// P5 — Trial billing subscribe handler (deferred-charge card-add §5.3).
 		var trialBillingHandler *admin.TrialBillingHandler

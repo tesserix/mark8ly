@@ -686,8 +686,9 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		}
 
 		// P14 — enterprise API keys (§18.4). List is gated FeatureReadAPI
-		// (Studio+); create/rotate/revoke also gated FeatureReadAPI but the
-		// service layer enforces FeatureFullAPI for write scopes (Pro+).
+		// (Studio+); create/rotate/revoke are gated FeatureFullAPI (Pro+).
+		// The service layer also rejects write-scoped key creation when
+		// the resolved plan does not permit FeatureFullAPI.
 		if deps.APIKeysHandler != nil {
 			RegisterAPIKeys(storeRoute, deps.APIKeysHandler, deps.AuthzMiddleware, deps.APIKeysLogger)
 		}

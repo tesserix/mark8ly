@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/billing/appcreds"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
@@ -71,7 +72,19 @@ func (h *AppCredentialsHandler) appAddOnGate(c *gin.Context) (tenantID, storeID 
 		c.JSON(http.StatusForbidden, gin.H{"error": "add_on_not_active"})
 		return uuid.Nil, uuid.Nil, false
 	}
-	if sub.Plan != subscription.PlanPro || !sub.HasWhiteLabelAppAddOn {
+	// Single source of truth for white-label app eligibility: Pro plan
+	// with has_white_label_app_add_on=true. Delegates to the centralised
+	// plangate helper so any future change (e.g. a Marketplace tier
+	// gaining the capability) only has to be made in one place.
+	//
+	// TODO(plangate-gap: add-on-cancel-flip): no code path flips
+	// has_white_label_app_add_on → false today. When an add-on is
+	// cancelled, the gate relies on the Pro plan lapsing to deny access,
+	// but a merchant who cancels only the add-on while staying on Pro
+	// keeps credentials access. Wire the Stripe subscription.deleted
+	// webhook for the add-on SKU to flip this flag. See
+	// docs/superpowers/plans/2026-04-20-plangate-enforcement-gaps.md §P1.2.
+	if !plangate.WhiteLabelAppEnabled(sub.Plan, sub.HasWhiteLabelAppAddOn) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "add_on_not_active"})
 		return uuid.Nil, uuid.Nil, false
 	}

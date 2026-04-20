@@ -59,10 +59,35 @@ type StoreInfo struct {
 	IsSoftDeleted bool `json:"is_soft_deleted"`
 }
 
+// LimitDeltaKind discriminates the shape of a LimitDelta so the UI can
+// render "Unlimited" vs "Contact Sales" vs a concrete numeric delta
+// without guessing from sentinel ints.
+type LimitDeltaKind string
+
+const (
+	// LimitDeltaNumeric — Value is the concrete target − current.
+	LimitDeltaNumeric LimitDeltaKind = "numeric"
+	// LimitDeltaUnlimited — one or both sides is Unlimited; the UI
+	// should render "Unlimited" rather than a numeric difference.
+	LimitDeltaUnlimited LimitDeltaKind = "unlimited"
+	// LimitDeltaNegotiated — at least one side is Negotiated; the UI
+	// should render "Contact Sales" (enterprise tier).
+	LimitDeltaNegotiated LimitDeltaKind = "negotiated"
+)
+
+// LimitDelta carries both a numeric delta and a discriminator. The
+// legacy *Delta int fields on PlanDiff are preserved for backward
+// compat; new consumers should read the *DeltaTagged fields instead.
+type LimitDelta struct {
+	Kind  LimitDeltaKind `json:"kind"`
+	Value int            `json:"value,omitempty"` // only meaningful when Kind=numeric
+}
+
 // PlanDiff describes the feature-limit changes between the current plan and
-// the target plan. Positive deltas are gains; negative are reductions.
-// A delta of plangate.Unlimited (-1) means one or both sides is uncapped —
-// the UI should render "Unlimited" rather than a numeric difference.
+// the target plan. Positive numeric deltas are gains; negative are reductions.
+// A legacy numeric delta of plangate.Unlimited (-1) means one or both sides
+// is uncapped or negotiated — see the *DeltaTagged fields for a richer
+// representation that distinguishes the two.
 type PlanDiff struct {
 	// StoresDelta is the change in the stores limit (target − current).
 	StoresDelta int `json:"stores_delta"`
@@ -72,6 +97,12 @@ type PlanDiff struct {
 	// CampaignEmailsDelta is the change in campaign emails per month.
 	// Set to plangate.Unlimited (-1) if either side is Unlimited or Negotiated.
 	CampaignEmailsDelta int `json:"campaign_emails_delta"`
+
+	// Tagged deltas — preferred. Let the UI render "Unlimited" vs
+	// "Contact Sales" correctly without inspecting sentinel ints.
+	StoresDeltaTagged           LimitDelta `json:"stores_delta_tagged"`
+	ImagesPerProductDeltaTagged LimitDelta `json:"images_per_product_delta_tagged"`
+	CampaignEmailsDeltaTagged   LimitDelta `json:"campaign_emails_delta_tagged"`
 }
 
 // PreflightReport is the full read-only summary returned to the UI before the
@@ -194,25 +225,49 @@ func (o *Orchestrator) Preflight(ctx context.Context, in Input) (PreflightReport
 }
 
 // buildPlanDiff computes the feature-limit deltas between fromPlan and toPlan.
-// When either side of a numeric feature is a non-positive sentinel (Unlimited,
-// Negotiated, or Disabled), the delta is plangate.Unlimited (-1) — the UI
-// should render "Unlimited" / "Contact Sales" rather than a raw number.
+// Populates both the legacy numeric fields and the tagged fields so new
+// consumers can distinguish "Unlimited" from "Contact Sales" without
+// inspecting sentinel ints.
 func buildPlanDiff(from, to subscription.SubscriptionPlan) PlanDiff {
+	storesFrom, storesTo := plangate.Limit(from, plangate.FeatureStores), plangate.Limit(to, plangate.FeatureStores)
+	imagesFrom, imagesTo := plangate.Limit(from, plangate.FeatureImagesPerProduct), plangate.Limit(to, plangate.FeatureImagesPerProduct)
+	emailsFrom, emailsTo := plangate.Limit(from, plangate.FeatureCampaignEmailsPerMonth), plangate.Limit(to, plangate.FeatureCampaignEmailsPerMonth)
 	return PlanDiff{
-		StoresDelta:           limitDelta(plangate.Limit(from, plangate.FeatureStores), plangate.Limit(to, plangate.FeatureStores)),
-		ImagesPerProductDelta: limitDelta(plangate.Limit(from, plangate.FeatureImagesPerProduct), plangate.Limit(to, plangate.FeatureImagesPerProduct)),
-		CampaignEmailsDelta:   limitDelta(plangate.Limit(from, plangate.FeatureCampaignEmailsPerMonth), plangate.Limit(to, plangate.FeatureCampaignEmailsPerMonth)),
+		StoresDelta:                 limitDelta(storesFrom, storesTo),
+		ImagesPerProductDelta:       limitDelta(imagesFrom, imagesTo),
+		CampaignEmailsDelta:         limitDelta(emailsFrom, emailsTo),
+		StoresDeltaTagged:           taggedDelta(storesFrom, storesTo),
+		ImagesPerProductDeltaTagged: taggedDelta(imagesFrom, imagesTo),
+		CampaignEmailsDeltaTagged:   taggedDelta(emailsFrom, emailsTo),
 	}
 }
 
 // limitDelta returns (to - from). When either value is non-positive (sentinel:
 // Unlimited = -1, Negotiated = -2, Disabled = 0), the result is
 // plangate.Unlimited (-1) to signal the UI should not render a raw number.
+// Preserved for backward compatibility with the numeric *Delta fields; new
+// callers should use taggedDelta.
 func limitDelta(from, to int) int {
 	if from <= 0 || to <= 0 {
 		return plangate.Unlimited
 	}
 	return to - from
+}
+
+// taggedDelta returns a LimitDelta whose Kind distinguishes Unlimited from
+// Negotiated. Negotiated trumps Unlimited (enterprise > uncapped) so that
+// a numeric → negotiated transition is rendered as "Contact Sales".
+// Disabled is collapsed into LimitDeltaUnlimited today because no current
+// surface transitions across a Disabled numeric feature — revisit when one
+// does.
+func taggedDelta(from, to int) LimitDelta {
+	if from == plangate.Negotiated || to == plangate.Negotiated {
+		return LimitDelta{Kind: LimitDeltaNegotiated}
+	}
+	if from <= 0 || to <= 0 {
+		return LimitDelta{Kind: LimitDeltaUnlimited}
+	}
+	return LimitDelta{Kind: LimitDeltaNumeric, Value: to - from}
 }
 
 // buildStoreInfos constructs a []StoreInfo from stores.Store rows, enriching

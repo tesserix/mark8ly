@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
@@ -96,7 +97,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (CreateResult, err
 	if ceiling == 0 {
 		return CreateResult{}, ErrPlanDoesNotAllowAPI
 	}
-	if !AllReadOnly(in.Scopes) && in.Plan != subscription.PlanPro && in.Plan != subscription.PlanMarketplace {
+	if !AllReadOnly(in.Scopes) && !plangate.IsAllowed(in.Plan, plangate.FeatureFullAPI) {
 		return CreateResult{}, ErrWriteScopeRequiresPro
 	}
 	if in.RateLimitPerMin <= 0 {

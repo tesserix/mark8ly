@@ -16,6 +16,7 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
@@ -37,6 +38,11 @@ type ShipmentsHandler struct {
 	// receives the ciphertext as the bearer token and rejects every request,
 	// which is exactly how this flow silently broke before.
 	encryptor crypto.Encryptor
+	// secretStore, when non-nil, resolves gsm:// references as well as
+	// legacy inline ciphertext. When SHIPPING_SECRET_STORE=gcpsm, it also
+	// rewrites legacy rows to gsm:// on read via MaybeRewrap so the
+	// migration is lazy and zero-downtime.
+	secretStore carriersecrets.Store
 	// labelMailer sends the shipping-label PDF as an email attachment. Optional —
 	// when nil, the email endpoint returns a 503 so the admin can see that
 	// label email is not wired in this deployment.
@@ -70,6 +76,14 @@ func (h *ShipmentsHandler) WithEncryptor(enc crypto.Encryptor) *ShipmentsHandler
 	return h
 }
 
+// WithSecretStore attaches the carrier secret Store. When set, read
+// paths resolve gsm:// references via GCP SM and automatically
+// rewrite legacy noop:/aes: rows to gsm:// references. Chainable.
+func (h *ShipmentsHandler) WithSecretStore(s carriersecrets.Store) *ShipmentsHandler {
+	h.secretStore = s
+	return h
+}
+
 // WithLabelMailer attaches a mailer that delivers the label PDF as an
 // email attachment. Optional — without it, POST /shipments/:id/label/email
 // returns 503.
@@ -98,6 +112,72 @@ func (h *ShipmentsHandler) decryptCarrierCreds(cfg *shipping.CarrierConfig) (api
 		}
 	}
 	return apiKey, secretKey, nil
+}
+
+// resolveCarrierCreds is the store-aware sibling of decryptCarrierCreds.
+// Uses the carriersecrets.Store when wired (handles both gsm:// and
+// legacy inline refs) and falls back to the Encryptor path so
+// existing tests and deployments continue to work.
+func (h *ShipmentsHandler) resolveCarrierCreds(ctx context.Context, cfg *shipping.CarrierConfig) (apiKey, secretKey string, err error) {
+	if h.secretStore == nil {
+		return h.decryptCarrierCreds(cfg)
+	}
+	apiKey, err = h.secretStore.Get(ctx, cfg.APIKey)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve api_key: %w", err)
+	}
+	if cfg.SecretKey != "" {
+		secretKey, err = h.secretStore.Get(ctx, cfg.SecretKey)
+		if err != nil {
+			return "", "", fmt.Errorf("resolve secret_key: %w", err)
+		}
+	}
+	return apiKey, secretKey, nil
+}
+
+// maybeRewrapCarrierCreds lazily migrates legacy inline refs to gsm://.
+// Safe to call on every successful resolve — the Store's MaybeRewrap
+// is a no-op for refs that are already gsm:// or empty. Any write
+// errors are logged and swallowed; the read already succeeded and
+// the next call will retry.
+func (h *ShipmentsHandler) maybeRewrapCarrierCreds(ctx context.Context, cfg *shipping.CarrierConfig, apiKey, secretKey string) {
+	if h.secretStore == nil {
+		return
+	}
+	rw, ok := h.secretStore.(carriersecrets.Rewrapper)
+	if !ok {
+		return
+	}
+	tenantID := cfg.TenantID.String()
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.APIKey, carriersecrets.Scope{
+		TenantID: tenantID,
+		Domain:   "shipping",
+		Provider: cfg.Provider,
+		Field:    "api_key",
+	}, apiKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("shipping_carrier_configs").
+			Where("id = ?", cfg.ID).
+			Update("api_key_encrypted", newRef).Error; err != nil && h.logger != nil {
+			h.logger.Warn("shipments: rewrap api_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
+	if cfg.SecretKey == "" {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.SecretKey, carriersecrets.Scope{
+		TenantID: tenantID,
+		Domain:   "shipping",
+		Provider: cfg.Provider,
+		Field:    "secret_key",
+	}, secretKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("shipping_carrier_configs").
+			Where("id = ?", cfg.ID).
+			Update("secret_key_encrypted", newRef).Error; err != nil && h.logger != nil {
+			h.logger.Warn("shipments: rewrap secret_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
 }
 
 // dispatchReceiptEmail fires the receipt email on a detached background
@@ -233,15 +313,16 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	// land in the carrier as "Authorization: Token <ciphertext>" and every
 	// request would fail auth — which is how the Delhivery dashboard was
 	// showing zero orders despite this endpoint reporting success.
-	apiKey, secretKey, err := h.decryptCarrierCreds(carrierCfg)
+	apiKey, secretKey, err := h.resolveCarrierCreds(ctx, carrierCfg)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Error("shipments: decrypt carrier creds",
+			h.logger.Error("shipments: resolve carrier creds",
 				"store_id", storeID, "provider", provider, "err", err)
 		}
 		RespondErr(c, fmt.Errorf("shipments: %w", err), h.logger)
 		return
 	}
+	h.maybeRewrapCarrierCreds(ctx, carrierCfg, apiKey, secretKey)
 
 	// Create the carrier instance.
 	carrier, err := shipping.NewCarrier(provider, apiKey, secretKey, carrierCfg.Mode)
@@ -668,10 +749,11 @@ func (h *ShipmentsHandler) fetchLabelBytes(ctx context.Context, storeID string, 
 		return nil, nil, "", apperrors.ValidationFailed("provider",
 			fmt.Sprintf("no active carrier config for %q", rec.Carrier))
 	}
-	apiKey, secretKey, err := h.decryptCarrierCreds(carrierCfg)
+	apiKey, secretKey, err := h.resolveCarrierCreds(ctx, carrierCfg)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("shipments: %w", err)
 	}
+	h.maybeRewrapCarrierCreds(ctx, carrierCfg, apiKey, secretKey)
 	carrier, err := shipping.NewCarrier(rec.Carrier, apiKey, secretKey, carrierCfg.Mode)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("shipments: create carrier: %w", err)
@@ -835,11 +917,12 @@ func (h *ShipmentsHandler) RefreshTracking(c *gin.Context) {
 			fmt.Sprintf("no active carrier config for %q", rec.Carrier)), h.logger)
 		return
 	}
-	apiKey, secretKey, err := h.decryptCarrierCreds(carrierCfg)
+	apiKey, secretKey, err := h.resolveCarrierCreds(ctx, carrierCfg)
 	if err != nil {
 		RespondErr(c, fmt.Errorf("shipments: %w", err), h.logger)
 		return
 	}
+	h.maybeRewrapCarrierCreds(ctx, carrierCfg, apiKey, secretKey)
 	carrier, err := shipping.NewCarrier(rec.Carrier, apiKey, secretKey, carrierCfg.Mode)
 	if err != nil {
 		RespondErr(c, fmt.Errorf("shipments: create carrier: %w", err), h.logger)

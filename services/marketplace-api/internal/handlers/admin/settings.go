@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -53,6 +55,26 @@ func maskEncryptedKey(enc crypto.Encryptor, ciphertext string) string {
 		return "****"
 	}
 	plaintext, err := enc.Decrypt(ciphertext)
+	if err != nil || plaintext == "" {
+		return "****"
+	}
+	return maskKey(plaintext)
+}
+
+// maskStoredKey resolves a carriersecrets Store reference (either
+// "gsm://..." or a legacy inline ciphertext) back to plaintext and
+// returns the masked tail. Fall back to a neutral "****" on any
+// resolution failure — missing IAM, transient GCP error, malformed
+// ref — so we never leak a reference string into the admin UI where
+// the merchant would treat it as their real key.
+func maskStoredKey(ctx context.Context, store carriersecrets.Store, reference string) string {
+	if reference == "" {
+		return ""
+	}
+	if store == nil {
+		return "****"
+	}
+	plaintext, err := store.Get(ctx, reference)
 	if err != nil || plaintext == "" {
 		return "****"
 	}
@@ -122,12 +144,26 @@ type PaymentSettingsHandler struct {
 	countryRepo country.Repository
 	audit       *audit.Emitter // optional — nil-safe
 	encryptor   crypto.Encryptor
+	// secretStore, when non-nil, short-circuits the Encryptor-based
+	// write path and persists per-tenant credentials to GCP Secret
+	// Manager (HybridStore) or an inline fallback (InlineStore). Nil
+	// keeps legacy Encryptor-only behaviour so `make dev` and older
+	// deployments remain buildable.
+	secretStore carriersecrets.Store
 	logger      *slog.Logger
 }
 
 // NewPaymentSettingsHandler constructs a PaymentSettingsHandler.
 func NewPaymentSettingsHandler(db *gorm.DB, countryRepo country.Repository, enc crypto.Encryptor, logger *slog.Logger) *PaymentSettingsHandler {
 	return &PaymentSettingsHandler{db: db, countryRepo: countryRepo, encryptor: enc, logger: logger}
+}
+
+// WithSecretStore wires a carriersecrets.Store so PaymentSettings
+// writes go to GCP Secret Manager (HybridStore) instead of returning
+// an inline ciphertext. Chainable.
+func (h *PaymentSettingsHandler) WithSecretStore(s carriersecrets.Store) *PaymentSettingsHandler {
+	h.secretStore = s
+	return h
 }
 
 // WithAudit attaches an audit emitter so payment provider changes land
@@ -149,17 +185,31 @@ type paymentConfigResponse struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-func toPaymentResponse(cfg PaymentGatewayConfig, enc crypto.Encryptor) paymentConfigResponse {
+// toPaymentResponse serializes a row for the wire. When the handler
+// has a secretStore wired, mask resolution goes through it (so
+// gsm:// references and legacy ciphertext both work); otherwise we
+// fall back to the Encryptor-based masker.
+func (h *PaymentSettingsHandler) toPaymentResponse(ctx context.Context, cfg PaymentGatewayConfig) paymentConfigResponse {
 	return paymentConfigResponse{
 		ID:        cfg.ID.String(),
 		Provider:  cfg.Provider,
-		APIKey:    maskEncryptedKey(enc, cfg.APIKeyEncrypted),
-		SecretKey: maskEncryptedKey(enc, cfg.SecretKeyEncrypted),
+		APIKey:    h.maskKeyField(ctx, cfg.APIKeyEncrypted),
+		SecretKey: h.maskKeyField(ctx, cfg.SecretKeyEncrypted),
 		Mode:      cfg.Mode,
 		IsActive:  cfg.IsActive,
 		CreatedAt: cfg.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: cfg.UpdatedAt.Format(time.RFC3339),
 	}
+}
+
+// maskKeyField resolves a ref/ciphertext through the wired store or
+// encryptor. Keeps the two surfaces in one place so a future field
+// addition (webhook_secret etc.) doesn't forget either path.
+func (h *PaymentSettingsHandler) maskKeyField(ctx context.Context, ref string) string {
+	if h.secretStore != nil {
+		return maskStoredKey(ctx, h.secretStore, ref)
+	}
+	return maskEncryptedKey(h.encryptor, ref)
 }
 
 // List handles GET /settings/payments — returns all payment configs for the store.
@@ -185,7 +235,7 @@ func (h *PaymentSettingsHandler) List(c *gin.Context) {
 
 	resp := make([]paymentConfigResponse, 0, len(configs))
 	for _, cfg := range configs {
-		resp = append(resp, toPaymentResponse(cfg, h.encryptor))
+		resp = append(resp, h.toPaymentResponse(c.Request.Context(), cfg))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": resp})
@@ -245,10 +295,13 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 	storeUUID, _ := uuid.Parse(store.ID)
 	tenantUUID, _ := uuid.Parse(store.TenantID)
 
-	// Encrypt API keys before storage.
-	apiKeyEnc, err := h.encryptor.Encrypt(req.APIKey)
+	// Route credentials through the carriersecrets.Store when wired
+	// (production: GCP SM via HybridStore; dev/CI fallback: inline
+	// ciphertext via InlineStore). Without a store, the legacy
+	// Encryptor path keeps old deployments building.
+	apiKeyEnc, err := h.putCredential(c.Request.Context(), store.TenantID, provider, "api_key", req.APIKey)
 	if err != nil {
-		h.logger.Error("encrypt api_key", "store_id", store.ID, "provider", provider, "err", err)
+		h.logger.Error("persist payment api_key", "store_id", store.ID, "provider", provider, "err", err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 			"error":   "internal",
 			"message": "failed to secure payment configuration",
@@ -257,9 +310,9 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 	}
 	var secretKeyEnc string
 	if req.SecretKey != "" {
-		secretKeyEnc, err = h.encryptor.Encrypt(req.SecretKey)
+		secretKeyEnc, err = h.putCredential(c.Request.Context(), store.TenantID, provider, "secret_key", req.SecretKey)
 		if err != nil {
-			h.logger.Error("encrypt secret_key", "store_id", store.ID, "provider", provider, "err", err)
+			h.logger.Error("persist payment secret_key", "store_id", store.ID, "provider", provider, "err", err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 				"error":   "internal",
 				"message": "failed to secure payment configuration",
@@ -335,7 +388,23 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 			"is_active": req.IsActive,
 		},
 	})
-	c.JSON(http.StatusOK, gin.H{"data": toPaymentResponse(cfg, h.encryptor)})
+	c.JSON(http.StatusOK, gin.H{"data": h.toPaymentResponse(c.Request.Context(), cfg)})
+}
+
+// putCredential routes a plaintext credential through the wired Store,
+// falling back to the envelope encryptor when no store is configured.
+// Returns the opaque reference the caller persists to
+// api_key_encrypted / secret_key_encrypted.
+func (h *PaymentSettingsHandler) putCredential(ctx context.Context, tenantID, provider, field, plaintext string) (string, error) {
+	if h.secretStore != nil {
+		return h.secretStore.Put(ctx, carriersecrets.Scope{
+			TenantID: tenantID,
+			Domain:   "payment",
+			Provider: provider,
+			Field:    field,
+		}, plaintext)
+	}
+	return h.encryptor.Encrypt(plaintext)
 }
 
 // Delete handles DELETE /settings/payments/:provider — removes the config row.
@@ -354,6 +423,13 @@ func (h *PaymentSettingsHandler) Delete(c *gin.Context) {
 	}
 
 	storeUUID, _ := uuid.Parse(store.ID)
+	// Load existing row first so we can destroy the detached GCP SM
+	// secrets after the DB row is dropped. Lookup failure falls
+	// through to the Delete below — the 404 path is still correct.
+	var existing PaymentGatewayConfig
+	_ = h.db.WithContext(c.Request.Context()).
+		Where("store_id = ? AND provider = ?", storeUUID, provider).
+		First(&existing).Error
 	res := h.db.WithContext(c.Request.Context()).
 		Where("store_id = ? AND provider = ?", storeUUID, provider).
 		Delete(&PaymentGatewayConfig{})
@@ -371,6 +447,18 @@ func (h *PaymentSettingsHandler) Delete(c *gin.Context) {
 			"message": "payment configuration not found for provider " + provider,
 		})
 		return
+	}
+
+	// Destroy the underlying GCP SM secrets (no-op when the column
+	// held an inline ciphertext). Errors only log — the DB row is
+	// already gone and the merchant action succeeded.
+	if h.secretStore != nil {
+		if err := h.secretStore.Destroy(c.Request.Context(), existing.APIKeyEncrypted); err != nil {
+			h.logger.Warn("destroy payment api_key secret", "store_id", store.ID, "provider", provider, "err", err)
+		}
+		if err := h.secretStore.Destroy(c.Request.Context(), existing.SecretKeyEncrypted); err != nil {
+			h.logger.Warn("destroy payment secret_key secret", "store_id", store.ID, "provider", provider, "err", err)
+		}
 	}
 
 	h.audit.Emit(c, audit.Event{
@@ -451,12 +539,43 @@ type ShippingSettingsHandler struct {
 	db          *gorm.DB
 	countryRepo country.Repository
 	encryptor   crypto.Encryptor
+	secretStore carriersecrets.Store
 	logger      *slog.Logger
 }
 
 // NewShippingSettingsHandler constructs a ShippingSettingsHandler.
 func NewShippingSettingsHandler(db *gorm.DB, countryRepo country.Repository, enc crypto.Encryptor, logger *slog.Logger) *ShippingSettingsHandler {
 	return &ShippingSettingsHandler{db: db, countryRepo: countryRepo, encryptor: enc, logger: logger}
+}
+
+// WithSecretStore wires a carriersecrets.Store so carrier credential
+// writes go to GCP Secret Manager when available. Chainable.
+func (h *ShippingSettingsHandler) WithSecretStore(s carriersecrets.Store) *ShippingSettingsHandler {
+	h.secretStore = s
+	return h
+}
+
+// putCredential is the shipping-side equivalent of the payment handler's
+// helper: Store when wired, Encryptor otherwise.
+func (h *ShippingSettingsHandler) putCredential(ctx context.Context, tenantID, provider, field, plaintext string) (string, error) {
+	if h.secretStore != nil {
+		return h.secretStore.Put(ctx, carriersecrets.Scope{
+			TenantID: tenantID,
+			Domain:   "shipping",
+			Provider: provider,
+			Field:    field,
+		}, plaintext)
+	}
+	return h.encryptor.Encrypt(plaintext)
+}
+
+// maskKeyField resolves a ref/ciphertext through the wired store or
+// encryptor.
+func (h *ShippingSettingsHandler) maskKeyField(ctx context.Context, ref string) string {
+	if h.secretStore != nil {
+		return maskStoredKey(ctx, h.secretStore, ref)
+	}
+	return maskEncryptedKey(h.encryptor, ref)
 }
 
 // shippingConfigResponse is the safe wire DTO for carrier configs.
@@ -509,12 +628,12 @@ type ShippingCarrierConfigRow struct {
 
 func (ShippingCarrierConfigRow) TableName() string { return "shipping_carrier_configs" }
 
-func toShippingResponse(cfg ShippingCarrierConfigRow, enc crypto.Encryptor) shippingConfigResponse {
+func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg ShippingCarrierConfigRow) shippingConfigResponse {
 	return shippingConfigResponse{
 		ID:                    cfg.ID.String(),
 		Provider:              cfg.Provider,
-		APIKey:                maskEncryptedKey(enc, cfg.APIKeyEncrypted),
-		SecretKey:             maskEncryptedKey(enc, cfg.SecretKeyEncrypted),
+		APIKey:                h.maskKeyField(ctx, cfg.APIKeyEncrypted),
+		SecretKey:             h.maskKeyField(ctx, cfg.SecretKeyEncrypted),
 		Mode:                  cfg.Mode,
 		Enabled:               cfg.IsActive,
 		HandlingFee:           cfg.HandlingFee.String(),
@@ -555,7 +674,7 @@ func (h *ShippingSettingsHandler) List(c *gin.Context) {
 
 	resp := make([]shippingConfigResponse, 0, len(configs))
 	for _, cfg := range configs {
-		resp = append(resp, toShippingResponse(cfg, h.encryptor))
+		resp = append(resp, h.toShippingResponse(c.Request.Context(), cfg))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": resp})
@@ -655,13 +774,14 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		return
 	}
 
-	// Encrypt only when the caller supplied a new credential. Blank =
-	// preserve what's already stored.
+	// Persist only when the caller supplied a new credential. Blank =
+	// preserve what's already stored. Route through the Store when
+	// wired so the DB column holds a gsm:// reference in production.
 	apiKeyEnc := existing.APIKeyEncrypted
 	if strings.TrimSpace(req.APIKey) != "" {
-		apiKeyEnc, err = h.encryptor.Encrypt(strings.TrimSpace(req.APIKey))
+		apiKeyEnc, err = h.putCredential(c.Request.Context(), store.TenantID, provider, "api_key", strings.TrimSpace(req.APIKey))
 		if err != nil {
-			h.logger.Error("encrypt api_key", "store_id", store.ID, "provider", provider, "err", err)
+			h.logger.Error("persist shipping api_key", "store_id", store.ID, "provider", provider, "err", err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 				"error":   "internal",
 				"message": "failed to secure shipping configuration",
@@ -671,9 +791,9 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 	}
 	secretKeyEnc := existing.SecretKeyEncrypted
 	if strings.TrimSpace(req.SecretKey) != "" {
-		secretKeyEnc, err = h.encryptor.Encrypt(strings.TrimSpace(req.SecretKey))
+		secretKeyEnc, err = h.putCredential(c.Request.Context(), store.TenantID, provider, "secret_key", strings.TrimSpace(req.SecretKey))
 		if err != nil {
-			h.logger.Error("encrypt secret_key", "store_id", store.ID, "provider", provider, "err", err)
+			h.logger.Error("persist shipping secret_key", "store_id", store.ID, "provider", provider, "err", err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 				"error":   "internal",
 				"message": "failed to secure shipping configuration",
@@ -746,7 +866,7 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 			First(&cfg)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": toShippingResponse(cfg, h.encryptor)})
+	c.JSON(http.StatusOK, gin.H{"data": h.toShippingResponse(c.Request.Context(), cfg)})
 }
 
 // Delete handles DELETE /settings/shipping/:provider — removes the config row.
@@ -765,6 +885,10 @@ func (h *ShippingSettingsHandler) Delete(c *gin.Context) {
 	}
 
 	storeUUID, _ := uuid.Parse(store.ID)
+	var existing ShippingCarrierConfigRow
+	_ = h.db.WithContext(c.Request.Context()).
+		Where("store_id = ? AND provider = ?", storeUUID, provider).
+		First(&existing).Error
 	res := h.db.WithContext(c.Request.Context()).
 		Where("store_id = ? AND provider = ?", storeUUID, provider).
 		Delete(&ShippingCarrierConfigRow{})
@@ -784,6 +908,15 @@ func (h *ShippingSettingsHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	if h.secretStore != nil {
+		if err := h.secretStore.Destroy(c.Request.Context(), existing.APIKeyEncrypted); err != nil {
+			h.logger.Warn("destroy shipping api_key secret", "store_id", store.ID, "provider", provider, "err", err)
+		}
+		if err := h.secretStore.Destroy(c.Request.Context(), existing.SecretKeyEncrypted); err != nil {
+			h.logger.Warn("destroy shipping secret_key secret", "store_id", store.ID, "provider", provider, "err", err)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"deleted": true}})
 }
 
@@ -796,12 +929,40 @@ type TaxSettingsHandler struct {
 	db          *gorm.DB
 	countryRepo country.Repository
 	encryptor   crypto.Encryptor
+	secretStore carriersecrets.Store
 	logger      *slog.Logger
 }
 
 // NewTaxSettingsHandler constructs a TaxSettingsHandler.
 func NewTaxSettingsHandler(db *gorm.DB, countryRepo country.Repository, enc crypto.Encryptor, logger *slog.Logger) *TaxSettingsHandler {
 	return &TaxSettingsHandler{db: db, countryRepo: countryRepo, encryptor: enc, logger: logger}
+}
+
+// WithSecretStore wires a carriersecrets.Store for TaxJar credentials.
+// Chainable.
+func (h *TaxSettingsHandler) WithSecretStore(s carriersecrets.Store) *TaxSettingsHandler {
+	h.secretStore = s
+	return h
+}
+
+// putCredential is the tax-side equivalent of the shipping/payment helpers.
+func (h *TaxSettingsHandler) putCredential(ctx context.Context, tenantID, provider, field, plaintext string) (string, error) {
+	if h.secretStore != nil {
+		return h.secretStore.Put(ctx, carriersecrets.Scope{
+			TenantID: tenantID,
+			Domain:   "tax",
+			Provider: provider,
+			Field:    field,
+		}, plaintext)
+	}
+	return h.encryptor.Encrypt(plaintext)
+}
+
+func (h *TaxSettingsHandler) maskKeyField(ctx context.Context, ref string) string {
+	if h.secretStore != nil {
+		return maskStoredKey(ctx, h.secretStore, ref)
+	}
+	return maskEncryptedKey(h.encryptor, ref)
 }
 
 // TaxProviderConfigRow mirrors tax.TaxProviderConfig but is local to avoid
@@ -875,7 +1036,7 @@ func (h *TaxSettingsHandler) Get(c *gin.Context) {
 		tj := &taxJarStatus{Configured: false, IsActive: false}
 		if lookupErr == nil {
 			tj.Configured = true
-			tj.APIKey = maskEncryptedKey(h.encryptor, cfg.APIKeyEncrypted)
+			tj.APIKey = h.maskKeyField(c.Request.Context(), cfg.APIKeyEncrypted)
 			tj.Mode = cfg.Mode
 			tj.IsActive = cfg.IsActive
 		} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
@@ -938,10 +1099,11 @@ func (h *TaxSettingsHandler) UpsertTaxJar(c *gin.Context) {
 	storeUUID, _ := uuid.Parse(store.ID)
 	tenantUUID, _ := uuid.Parse(store.TenantID)
 
-	// Encrypt API key before storage.
-	apiKeyEnc, err := h.encryptor.Encrypt(req.APIKey)
+	// Route through the carriersecrets.Store when wired, falling
+	// back to the envelope encryptor for dev/CI.
+	apiKeyEnc, err := h.putCredential(c.Request.Context(), store.TenantID, "taxjar", "api_key", req.APIKey)
 	if err != nil {
-		h.logger.Error("encrypt api_key", "store_id", store.ID, "err", err)
+		h.logger.Error("persist taxjar api_key", "store_id", store.ID, "err", err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 			"error":   "internal",
 			"message": "failed to secure TaxJar configuration",
@@ -1005,7 +1167,7 @@ func (h *TaxSettingsHandler) UpsertTaxJar(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"provider":  "taxjar",
-			"api_key":   maskEncryptedKey(h.encryptor, cfg.APIKeyEncrypted),
+			"api_key":   h.maskKeyField(c.Request.Context(), cfg.APIKeyEncrypted),
 			"mode":      cfg.Mode,
 			"is_active": cfg.IsActive,
 		},

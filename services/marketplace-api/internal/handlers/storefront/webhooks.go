@@ -18,6 +18,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
@@ -28,7 +29,11 @@ import (
 
 // webhookGatewayConfigRow is a read-only projection of payment_gateway_configs
 // used to look up the webhook secret for signature verification.
+// ID + TenantID are loaded so MaybeRewrap can scope the lazy migration
+// and we know which row to UPDATE when rewriting a legacy inline reference.
 type webhookGatewayConfigRow struct {
+	ID                 string `gorm:"column:id"`
+	TenantID           string `gorm:"column:tenant_id"`
 	Provider           string `gorm:"column:provider"`
 	APIKey             string `gorm:"column:api_key_encrypted"`
 	SecretKeyEncrypted string `gorm:"column:secret_key_encrypted"`
@@ -46,6 +51,10 @@ type WebhookHandler struct {
 	loyaltySvc  *loyalty.Service      // optional — when set, awards points after payment success
 	notify      *notification.Service // optional — nil-safe; emits payment_received on success
 	encryptor   crypto.Encryptor      // optional — decrypts payment gateway secret_key_encrypted
+	// secretStore, when non-nil, resolves gsm:// references as well as
+	// legacy inline ciphertext. The Encryptor path stays as a fallback
+	// so inline-mode deployments and tests keep working.
+	secretStore carriersecrets.Store
 	logger      *slog.Logger
 }
 
@@ -65,15 +74,83 @@ func (h *WebhookHandler) WithEncryptor(enc crypto.Encryptor) *WebhookHandler {
 	return h
 }
 
-// resolveWebhookSecret decrypts the stored secret key when an encryptor is
-// wired. If no encryptor is configured the value is returned verbatim, which
-// covers legacy/local dev that stores plaintext. Exposed as a method so
-// storefront-adjacent handlers (payment_verify) share the same unwrap path.
+// WithSecretStore wires a carriersecrets.Store so webhook signature
+// verification can resolve gsm:// references and lazily rewrite legacy
+// noop:/aes: rows to gsm://. Chainable.
+func (h *WebhookHandler) WithSecretStore(s carriersecrets.Store) *WebhookHandler {
+	h.secretStore = s
+	return h
+}
+
+// decryptAPIKey resolves a stored carrier-config reference to plaintext.
+// Prefers the carriersecrets.Store when wired (handles gsm:// + legacy
+// inline) and falls back to the Encryptor path for inline-mode
+// deployments. An empty input is passed through so tests that stub
+// plaintext columns keep working.
+func (h *WebhookHandler) decryptAPIKey(ctx context.Context, stored string) (string, error) {
+	if stored == "" {
+		return "", nil
+	}
+	if h.secretStore != nil {
+		return h.secretStore.Get(ctx, stored)
+	}
+	if h.encryptor == nil {
+		return stored, nil
+	}
+	return h.encryptor.Decrypt(stored)
+}
+
+// resolveWebhookSecret is the legacy (non-context) wrapper kept for
+// compatibility with storefront-adjacent callers (payment_verify) that
+// don't thread context through. New call sites should prefer
+// decryptAPIKey, which routes via the Store when wired.
 func (h *WebhookHandler) resolveWebhookSecret(stored string) (string, error) {
 	if h.encryptor == nil || stored == "" {
 		return stored, nil
 	}
 	return h.encryptor.Decrypt(stored)
+}
+
+// maybeRewrapWebhookRow migrates legacy inline references on a
+// payment_gateway_configs row to gsm://. Best-effort — failures only
+// log because the read already succeeded.
+func (h *WebhookHandler) maybeRewrapWebhookRow(ctx context.Context, cfg webhookGatewayConfigRow, apiKey, secretKey string) {
+	if h.secretStore == nil || cfg.ID == "" || cfg.TenantID == "" {
+		return
+	}
+	rw, ok := h.secretStore.(carriersecrets.Rewrapper)
+	if !ok {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.APIKey, carriersecrets.Scope{
+		TenantID: cfg.TenantID,
+		Domain:   "payment",
+		Provider: cfg.Provider,
+		Field:    "api_key",
+	}, apiKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("payment_gateway_configs").
+			Where("id = ?", cfg.ID).
+			Update("api_key_encrypted", newRef).Error; err != nil {
+			h.logError("webhook: rewrap api_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
+	if cfg.SecretKeyEncrypted == "" {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.SecretKeyEncrypted, carriersecrets.Scope{
+		TenantID: cfg.TenantID,
+		Domain:   "payment",
+		Provider: cfg.Provider,
+		Field:    "secret_key",
+	}, secretKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("payment_gateway_configs").
+			Where("id = ?", cfg.ID).
+			Update("secret_key_encrypted", newRef).Error; err != nil {
+			h.logError("webhook: rewrap secret_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
 }
 
 // WithNotifier attaches the notification service so payment-succeeded
@@ -134,24 +211,28 @@ func (h *WebhookHandler) HandleWebhook(c *gin.Context) {
 		return
 	}
 
-	// Decrypt api_key + secret_key before handing them to the gateway — the
+	// Resolve api_key + secret_key before handing them to the gateway — the
 	// DB columns are encrypted at write time (admin/settings.go). Passing
 	// ciphertext to the gateway would make every signature check 401 and
-	// silently drop real provider callbacks.
-	apiKey, err := h.resolveWebhookSecret(cfg.APIKey)
+	// silently drop real provider callbacks. Routes through the
+	// carriersecrets.Store when wired (handles gsm:// + legacy inline).
+	apiKey, err := h.decryptAPIKey(ctx, cfg.APIKey)
 	if err != nil {
 		h.logError("webhook: api_key decrypt failed",
 			"provider", provider, "err", err)
 		c.JSON(http.StatusOK, gin.H{"status": "error"})
 		return
 	}
-	secretKey, err := h.resolveWebhookSecret(cfg.SecretKeyEncrypted)
+	secretKey, err := h.decryptAPIKey(ctx, cfg.SecretKeyEncrypted)
 	if err != nil {
 		h.logError("webhook: secret_key decrypt failed",
 			"provider", provider, "err", err)
 		c.JSON(http.StatusOK, gin.H{"status": "error"})
 		return
 	}
+
+	// Lazy migration: rewrite legacy inline refs to gsm://.
+	h.maybeRewrapWebhookRow(ctx, cfg, apiKey, secretKey)
 
 	// Instantiate the gateway for verification.
 	gateway, err := payment.NewGateway(provider, apiKey, secretKey, cfg.Mode)

@@ -43,6 +43,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/apikeys"
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
@@ -237,6 +238,42 @@ func main() {
 		apiKeyEncryptor = crypto.NewNoopEncryptor()
 		log.Info("crypto: noop encryptor (dev mode)")
 	}
+
+	// Per-tenant carrier credential store. In "gcpsm" mode we stand up
+	// a real Secret Manager client (workload-identity ADC) and fall
+	// back to the inline encryptor if the client constructor errors
+	// out — loud warning plus a boot flag so ops can spot the
+	// mismatch without the service refusing to start. "inline" mode
+	// keeps local dev working without GCP creds.
+	var carrierSecretStore carriersecrets.Store
+	carrierSecretStoreDegraded := false
+	switch cfg.ShippingSecretStore {
+	case "gcpsm":
+		if cfg.GCPProjectID == "" {
+			log.Error("GCP_PROJECT_ID required when SHIPPING_SECRET_STORE=gcpsm")
+			os.Exit(1)
+		}
+		smClient, smErr := secretmanagerclient.NewClient(context.Background())
+		if smErr != nil {
+			log.Error("carriersecrets: secret manager client init failed — falling back to inline",
+				"err", smErr)
+			carrierSecretStore = carriersecrets.NewInlineStore(apiKeyEncryptor)
+			carrierSecretStoreDegraded = true
+		} else {
+			carrierSecretStore = carriersecrets.NewHybridStore(carriersecrets.HybridConfig{
+				Client:    carriersecrets.NewGCPStore(smClient, cfg.GCPProjectID),
+				Encryptor: apiKeyEncryptor,
+				ProjectID: cfg.GCPProjectID,
+				Prefix:    cfg.SecretNamePrefix,
+			})
+			log.Info("carriersecrets: hybrid store online",
+				"project_id", cfg.GCPProjectID, "prefix", cfg.SecretNamePrefix)
+		}
+	default:
+		carrierSecretStore = carriersecrets.NewInlineStore(apiKeyEncryptor)
+		log.Info("carriersecrets: inline store (dev mode)")
+	}
+	_ = carrierSecretStoreDegraded // readiness wiring is a downstream concern; flag kept in scope so future health-check hooks can read it.
 
 	// OpenFGA client — read-only per spec §13.1.1.
 	discoverCtx, discoverCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -478,8 +515,10 @@ func main() {
 
 		// Settings handlers (P5a).
 		countryRepoAdmin := country.NewRepository(conn)
-		paymentSettingsHandler := admin.NewPaymentSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log)
-		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log)
+		paymentSettingsHandler := admin.NewPaymentSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log).
+			WithSecretStore(carrierSecretStore)
+		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log).
+			WithSecretStore(carrierSecretStore)
 		shippingRepo := shipping.NewRepository(conn)
 		shippingService := shipping.NewShippingService(shippingRepo)
 		// Label email: SendGrid when configured, log-only fallback
@@ -493,8 +532,10 @@ func main() {
 		}
 		shipmentsHandler := admin.NewShipmentsHandler(conn, shippingService, shippingRepo, orderDocSvc, log).
 			WithEncryptor(apiKeyEncryptor).
+			WithSecretStore(carrierSecretStore).
 			WithLabelMailer(labelMailer)
-		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log)
+		taxSettingsHandler := admin.NewTaxSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log).
+			WithSecretStore(carrierSecretStore)
 		settingsMetaHandler := admin.NewSettingsMetaHandler(countryRepoAdmin, log)
 
 		// Coupon handler (Marketing M1).
@@ -952,13 +993,18 @@ func main() {
 		sfPagesHandler := storefront.NewPagesHandler(pageSvcSF, log)
 
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
-		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, apiKeyEncryptor, log).WithAudit(auditEmitter)
+		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, apiKeyEncryptor, log).
+			WithAudit(auditEmitter).
+			WithSecretStore(carrierSecretStore)
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
-		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, apiKeyEncryptor, log)
-		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, apiKeyEncryptor, log)
+		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, apiKeyEncryptor, log).
+			WithSecretStore(carrierSecretStore)
+		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, apiKeyEncryptor, log).
+			WithSecretStore(carrierSecretStore)
 		shippingOptionsHandler := storefront.NewShippingOptionsHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
 			WithEncryptor(apiKeyEncryptor).
+			WithSecretStore(carrierSecretStore).
 			WithGiftCardService(giftCardSvcSF).
 			WithLoyaltyService(loyaltySvcSF).
 			WithNotifier(notificationSvc)

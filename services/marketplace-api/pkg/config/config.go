@@ -146,6 +146,22 @@ type Config struct {
 	NinjaVanVNAPIKey           string `envconfig:"NINJAVAN_VN_API_KEY" default:""`
 	NinjaVanVNClientID         string `envconfig:"NINJAVAN_VN_CLIENT_ID" default:""`
 	NinjaVanVNClientSecret     string `envconfig:"NINJAVAN_VN_CLIENT_SECRET" default:""`
+
+	// Per-tenant carrier credential store (Delhivery, Razorpay, TaxJar,
+	// future providers). "gcpsm" → one GCP Secret Manager secret per
+	// (tenant, domain, provider, field); "inline" → stores envelope-
+	// encrypted ciphertext in the DB column (legacy behaviour). Default
+	// is "inline" so local dev without GCP creds still boots.
+	ShippingSecretStore string `envconfig:"SHIPPING_SECRET_STORE" default:"inline"`
+	// GCPProjectID is the project that hosts the per-tenant carrier
+	// secrets. Required when ShippingSecretStore=gcpsm; unused
+	// otherwise.
+	GCPProjectID string `envconfig:"GCP_PROJECT_ID" default:""`
+	// SecretNamePrefix goes at the head of every per-tenant secret ID,
+	// e.g. "mark8ly-prod", "mark8ly-test". Isolates dev and prod
+	// clusters that share the same GCP project by scoping IAM
+	// bindings via resource.name.startsWith.
+	SecretNamePrefix string `envconfig:"SECRET_NAME_PREFIX" default:"mark8ly-dev"`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

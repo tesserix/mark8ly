@@ -19,6 +19,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
@@ -45,6 +46,11 @@ type CheckoutExtHandler struct {
 	loyaltySvc  *loyalty.Service   // nil-safe: no-ops when nil
 	audit       *audit.Emitter     // optional — nil-safe
 	encryptor   crypto.Encryptor   // decrypts API keys for payment/tax/shipping
+	// secretStore, when non-nil, resolves gsm:// references as well as
+	// legacy inline ciphertext. Tracks the same pattern as shipments /
+	// shipping_rates: the store is preferred, the encryptor remains the
+	// fallback so unit tests and inline-mode deployments keep working.
+	secretStore carriersecrets.Store
 	logger      *slog.Logger
 }
 
@@ -58,6 +64,136 @@ func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coup
 func (h *CheckoutExtHandler) WithAudit(e *audit.Emitter) *CheckoutExtHandler {
 	h.audit = e
 	return h
+}
+
+// WithSecretStore wires a carriersecrets.Store so the extended checkout
+// resolves gsm:// references and lazily rewrites legacy noop:/aes: rows
+// to gsm://. Chainable.
+func (h *CheckoutExtHandler) WithSecretStore(s carriersecrets.Store) *CheckoutExtHandler {
+	h.secretStore = s
+	return h
+}
+
+// resolveCred routes a stored credential reference to plaintext. Uses
+// the Store when wired (handles both gsm:// and legacy inline refs),
+// falling back to the Encryptor path so inline-mode deployments and
+// tests that only supply an Encryptor continue to work.
+func (h *CheckoutExtHandler) resolveCred(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
+	}
+	if h.secretStore != nil {
+		return h.secretStore.Get(ctx, ref)
+	}
+	return h.encryptor.Decrypt(ref)
+}
+
+// maybeRewrapPaymentRow lazily migrates a legacy inline reference on a
+// payment_gateway_configs row to gsm://. Best-effort — persist failures
+// only log; the read already succeeded.
+func (h *CheckoutExtHandler) maybeRewrapPaymentRow(ctx context.Context, rowID, tenantID, provider string, cfg paymentGatewayConfigRow, apiKey, secretKey string) {
+	if h.secretStore == nil || rowID == "" || tenantID == "" {
+		return
+	}
+	rw, ok := h.secretStore.(carriersecrets.Rewrapper)
+	if !ok {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.APIKey, carriersecrets.Scope{
+		TenantID: tenantID,
+		Domain:   "payment",
+		Provider: provider,
+		Field:    "api_key",
+	}, apiKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("payment_gateway_configs").
+			Where("id = ?", rowID).
+			Update("api_key_encrypted", newRef).Error; err != nil {
+			h.logWarn("checkout_ext: rewrap payment api_key persist failed", "id", rowID, "err", err)
+		}
+	}
+	if cfg.SecretKey == "" {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.SecretKey, carriersecrets.Scope{
+		TenantID: tenantID,
+		Domain:   "payment",
+		Provider: provider,
+		Field:    "secret_key",
+	}, secretKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("payment_gateway_configs").
+			Where("id = ?", rowID).
+			Update("secret_key_encrypted", newRef).Error; err != nil {
+			h.logWarn("checkout_ext: rewrap payment secret_key persist failed", "id", rowID, "err", err)
+		}
+	}
+}
+
+// maybeRewrapShippingRow migrates legacy inline refs on a shipping_carrier_configs
+// row to gsm://. Mirrors maybeRewrapPaymentRow for the shipping domain.
+func (h *CheckoutExtHandler) maybeRewrapShippingRow(ctx context.Context, cfg carrierConfigRow, apiKey, secretKey string) {
+	if h.secretStore == nil || cfg.ID == "" || cfg.TenantID == "" {
+		return
+	}
+	rw, ok := h.secretStore.(carriersecrets.Rewrapper)
+	if !ok {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.APIKey, carriersecrets.Scope{
+		TenantID: cfg.TenantID,
+		Domain:   "shipping",
+		Provider: cfg.Provider,
+		Field:    "api_key",
+	}, apiKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("shipping_carrier_configs").
+			Where("id = ?", cfg.ID).
+			Update("api_key_encrypted", newRef).Error; err != nil {
+			h.logWarn("checkout_ext: rewrap shipping api_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
+	if cfg.SecretKey == "" {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.SecretKey, carriersecrets.Scope{
+		TenantID: cfg.TenantID,
+		Domain:   "shipping",
+		Provider: cfg.Provider,
+		Field:    "secret_key",
+	}, secretKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("shipping_carrier_configs").
+			Where("id = ?", cfg.ID).
+			Update("secret_key_encrypted", newRef).Error; err != nil {
+			h.logWarn("checkout_ext: rewrap shipping secret_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
+}
+
+// maybeRewrapTaxRow migrates the tax_provider_configs api_key to gsm://.
+// Tax configs don't carry a secret_key, so only the api_key field is checked.
+func (h *CheckoutExtHandler) maybeRewrapTaxRow(ctx context.Context, cfg *tax.TaxProviderConfig, apiKey string) {
+	if h.secretStore == nil || cfg == nil || cfg.ID == uuid.Nil {
+		return
+	}
+	rw, ok := h.secretStore.(carriersecrets.Rewrapper)
+	if !ok {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.APIKeyEncrypted, carriersecrets.Scope{
+		TenantID: cfg.TenantID.String(),
+		Domain:   "tax",
+		Provider: cfg.Provider,
+		Field:    "api_key",
+	}, apiKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("tax_provider_configs").
+			Where("id = ?", cfg.ID).
+			Update("api_key_encrypted", newRef).Error; err != nil {
+			h.logWarn("checkout_ext: rewrap tax api_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
 }
 
 // SetLoyaltyService wires the loyalty service for post-checkout point awards.
@@ -538,18 +674,25 @@ func (h *CheckoutExtHandler) calculateShipping(
 		return decimal.Zero, fmt.Errorf("no active carrier config: %w", err)
 	}
 
-	// Decrypt API keys before passing to carrier.
-	apiKey, err := h.encryptor.Decrypt(cfg.APIKey)
+	// Resolve API keys before passing to carrier. Routes through the
+	// carriersecrets.Store when wired (handles gsm:// + legacy inline),
+	// otherwise falls back to the Encryptor-only path.
+	apiKey, err := h.resolveCred(ctx, cfg.APIKey)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("decrypt carrier api_key: %w", err)
+		return decimal.Zero, fmt.Errorf("resolve carrier api_key: %w", err)
 	}
 	var secretKey string
 	if cfg.SecretKey != "" {
-		secretKey, err = h.encryptor.Decrypt(cfg.SecretKey)
+		secretKey, err = h.resolveCred(ctx, cfg.SecretKey)
 		if err != nil {
-			return decimal.Zero, fmt.Errorf("decrypt carrier secret_key: %w", err)
+			return decimal.Zero, fmt.Errorf("resolve carrier secret_key: %w", err)
 		}
 	}
+
+	// Lazy migration: if the stored references are legacy inline and
+	// we're on a gcpsm-configured store, rewrite them as gsm://
+	// references in the DB.
+	h.maybeRewrapShippingRow(ctx, cfg, apiKey, secretKey)
 
 	carrier, err := shipping.NewCarrier(cfg.Provider, apiKey, secretKey, cfg.Mode)
 	if err != nil {
@@ -627,12 +770,15 @@ func (h *CheckoutExtHandler) calculateTax(
 		if err == nil {
 			taxRepo := tax.NewRepository()
 			if cfg, err := taxRepo.GetProviderConfig(ctx, h.db, storeUUID); err == nil {
-				// Decrypt the API key before use.
-				decryptedKey, decErr := h.encryptor.Decrypt(cfg.APIKeyEncrypted)
-				if decErr != nil {
-					return nil, fmt.Errorf("decrypt taxjar api_key: %w", decErr)
+				// Resolve the API key before use. Routes through the
+				// carriersecrets.Store when wired and lazily rewrites
+				// legacy inline refs to gsm://.
+				resolvedKey, resErr := h.resolveCred(ctx, cfg.APIKeyEncrypted)
+				if resErr != nil {
+					return nil, fmt.Errorf("resolve taxjar api_key: %w", resErr)
 				}
-				taxjarAPIKey = decryptedKey
+				h.maybeRewrapTaxRow(ctx, cfg, resolvedKey)
+				taxjarAPIKey = resolvedKey
 				taxjarMode = cfg.Mode
 			}
 		}
@@ -739,18 +885,22 @@ func (h *CheckoutExtHandler) createPaymentIntent(
 		return "", fmt.Errorf("no active payment config for %s: %w", providerName, err)
 	}
 
-	// Decrypt API keys before passing to gateway.
-	apiKey, err := h.encryptor.Decrypt(cfg.APIKey)
+	// Resolve API keys before passing to gateway. Same Store-first /
+	// Encryptor-fallback pattern as shipping.
+	apiKey, err := h.resolveCred(ctx, cfg.APIKey)
 	if err != nil {
-		return "", fmt.Errorf("decrypt payment api_key: %w", err)
+		return "", fmt.Errorf("resolve payment api_key: %w", err)
 	}
 	var secretKey string
 	if cfg.SecretKey != "" {
-		secretKey, err = h.encryptor.Decrypt(cfg.SecretKey)
+		secretKey, err = h.resolveCred(ctx, cfg.SecretKey)
 		if err != nil {
-			return "", fmt.Errorf("decrypt payment secret_key: %w", err)
+			return "", fmt.Errorf("resolve payment secret_key: %w", err)
 		}
 	}
+
+	// Lazy migration: rewrite legacy inline refs to gsm://.
+	h.maybeRewrapPaymentRow(ctx, cfg.ID, cfg.TenantID, providerName, cfg, apiKey, secretKey)
 
 	gateway, err := payment.NewGateway(providerName, apiKey, secretKey, cfg.Mode)
 	if err != nil {
@@ -793,7 +943,11 @@ func (h *CheckoutExtHandler) createPaymentIntent(
 
 // paymentGatewayConfigRow is a read-only projection of payment_gateway_configs
 // for the checkout ext handler. Includes the secret key for gateway init.
+// ID + TenantID are loaded so MaybeRewrap can scope the lazy migration
+// and we know which row to UPDATE when rewriting a legacy inline reference.
 type paymentGatewayConfigRow struct {
+	ID        string `gorm:"column:id"`
+	TenantID  string `gorm:"column:tenant_id"`
 	Provider  string `gorm:"column:provider"`
 	APIKey    string `gorm:"column:api_key_encrypted"`
 	SecretKey string `gorm:"column:secret_key_encrypted"`

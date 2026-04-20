@@ -5,6 +5,7 @@
 package storefront
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
@@ -20,14 +22,35 @@ import (
 
 // ShippingRatesHandler serves shipping rate quotes for a store.
 type ShippingRatesHandler struct {
-	db        *gorm.DB
-	encryptor crypto.Encryptor
-	logger    *slog.Logger
+	db          *gorm.DB
+	encryptor   crypto.Encryptor
+	secretStore carriersecrets.Store
+	logger      *slog.Logger
 }
 
 // NewShippingRatesHandler constructs a ShippingRatesHandler.
 func NewShippingRatesHandler(db *gorm.DB, enc crypto.Encryptor, logger *slog.Logger) *ShippingRatesHandler {
 	return &ShippingRatesHandler{db: db, encryptor: enc, logger: logger}
+}
+
+// WithSecretStore wires a carriersecrets.Store so the storefront
+// rate endpoint can resolve gsm:// references and rewrite legacy
+// rows on read. Chainable.
+func (h *ShippingRatesHandler) WithSecretStore(s carriersecrets.Store) *ShippingRatesHandler {
+	h.secretStore = s
+	return h
+}
+
+// resolveCredential routes one stored reference/ciphertext to
+// plaintext via the Store when wired, or the Encryptor otherwise.
+func (h *ShippingRatesHandler) resolveCredential(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
+	}
+	if h.secretStore != nil {
+		return h.secretStore.Get(ctx, ref)
+	}
+	return h.encryptor.Decrypt(ref)
 }
 
 // shippingRateItemRequest is a single item in the rate request body.
@@ -65,7 +88,13 @@ type shippingRateResponse struct {
 // carrierConfigRow mirrors the shipping_carrier_configs table for direct
 // DB reads. The shipping.CarrierConfig GORM model uses uuid.UUID fields
 // which don't match a string store_id lookup, so we use a local projection.
+//
+// ID + TenantID are loaded so MaybeRewrap can scope the lazy migration
+// and we know which row to UPDATE when we rewrite a legacy inline
+// reference to a gsm:// reference.
 type carrierConfigRow struct {
+	ID                string          `gorm:"column:id"`
+	TenantID          string          `gorm:"column:tenant_id"`
 	Provider          string          `gorm:"column:provider"`
 	APIKey            string          `gorm:"column:api_key_encrypted"`
 	SecretKey         string          `gorm:"column:secret_key_encrypted"`
@@ -143,11 +172,13 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 		return
 	}
 
-	// Decrypt API keys before passing to carrier.
-	apiKey, err := h.encryptor.Decrypt(cfg.APIKey)
+	// Resolve API keys before passing to carrier. Routes through the
+	// carriersecrets.Store when wired (handles gsm:// + legacy inline),
+	// otherwise falls back to the Encryptor-only path.
+	apiKey, err := h.resolveCredential(ctx, cfg.APIKey)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Error("shipping_rates: decrypt api_key failed", "err", err)
+			h.logger.Error("shipping_rates: resolve api_key failed", "err", err)
 		}
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 			"error":   "internal",
@@ -155,20 +186,23 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 		})
 		return
 	}
-	var secretKey string
-	if cfg.SecretKey != "" {
-		secretKey, err = h.encryptor.Decrypt(cfg.SecretKey)
-		if err != nil {
-			if h.logger != nil {
-				h.logger.Error("shipping_rates: decrypt secret_key failed", "err", err)
-			}
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-				"error":   "internal",
-				"message": "internal server error",
-			})
-			return
+	secretKey, err := h.resolveCredential(ctx, cfg.SecretKey)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("shipping_rates: resolve secret_key failed", "err", err)
 		}
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal",
+			"message": "internal server error",
+		})
+		return
 	}
+
+	// Lazy migration: if the stored references are legacy inline and
+	// we're on a gcpsm-configured store, rewrite them as gsm://
+	// references in the DB. MaybeRewrap is a no-op for refs that are
+	// already gsm:// or empty.
+	h.maybeRewrapRow(ctx, cfg, apiKey, secretKey)
 
 	// Instantiate the carrier.
 	carrier, err := shipping.NewCarrier(cfg.Provider, apiKey, secretKey, cfg.Mode)
@@ -256,6 +290,49 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+// maybeRewrapRow rewrites legacy inline references on the
+// shipping_carrier_configs row to gsm:// references. Safe to call
+// every resolve — the Store's MaybeRewrap skips already-migrated
+// refs. Persist failures only log; the read already succeeded.
+func (h *ShippingRatesHandler) maybeRewrapRow(ctx context.Context, cfg carrierConfigRow, apiKey, secretKey string) {
+	if h.secretStore == nil || cfg.ID == "" || cfg.TenantID == "" {
+		return
+	}
+	rw, ok := h.secretStore.(carriersecrets.Rewrapper)
+	if !ok {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.APIKey, carriersecrets.Scope{
+		TenantID: cfg.TenantID,
+		Domain:   "shipping",
+		Provider: cfg.Provider,
+		Field:    "api_key",
+	}, apiKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("shipping_carrier_configs").
+			Where("id = ?", cfg.ID).
+			Update("api_key_encrypted", newRef).Error; err != nil && h.logger != nil {
+			h.logger.Warn("shipping_rates: rewrap api_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
+	if cfg.SecretKey == "" {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.SecretKey, carriersecrets.Scope{
+		TenantID: cfg.TenantID,
+		Domain:   "shipping",
+		Provider: cfg.Provider,
+		Field:    "secret_key",
+	}, secretKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("shipping_carrier_configs").
+			Where("id = ?", cfg.ID).
+			Update("secret_key_encrypted", newRef).Error; err != nil && h.logger != nil {
+			h.logger.Warn("shipping_rates: rewrap secret_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
 }
 
 // warehouseAddress builds a shipping.Address from the carrier config's

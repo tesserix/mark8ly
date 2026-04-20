@@ -4,12 +4,14 @@
 package storefront
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -17,7 +19,11 @@ import (
 
 // paymentGatewayConfig is the read-only projection of the
 // payment_gateway_configs table used to check which providers are configured.
+// ID + TenantID are loaded so MaybeRewrap can scope the lazy migration
+// and we know which row to UPDATE when rewriting a legacy inline reference.
 type paymentGatewayConfig struct {
+	ID       string `gorm:"column:id"`
+	TenantID string `gorm:"column:tenant_id"`
 	Provider string `gorm:"column:provider"`
 	IsActive bool   `gorm:"column:is_active"`
 	// APIKey is the public-facing key (e.g. rzp_test_*** for Razorpay).
@@ -30,14 +36,61 @@ func (paymentGatewayConfig) TableName() string { return "payment_gateway_configs
 
 // PaymentMethodsHandler serves available payment methods for a store.
 type PaymentMethodsHandler struct {
-	db        *gorm.DB
-	encryptor crypto.Encryptor
-	logger    *slog.Logger
+	db          *gorm.DB
+	encryptor   crypto.Encryptor
+	secretStore carriersecrets.Store
+	logger      *slog.Logger
 }
 
 // NewPaymentMethodsHandler constructs a PaymentMethodsHandler.
 func NewPaymentMethodsHandler(db *gorm.DB, enc crypto.Encryptor, logger *slog.Logger) *PaymentMethodsHandler {
 	return &PaymentMethodsHandler{db: db, encryptor: enc, logger: logger}
+}
+
+// WithSecretStore wires a carriersecrets.Store so the payment methods
+// endpoint resolves gsm:// references and lazily rewrites legacy
+// noop:/aes: rows to gsm://. Chainable.
+func (h *PaymentMethodsHandler) WithSecretStore(s carriersecrets.Store) *PaymentMethodsHandler {
+	h.secretStore = s
+	return h
+}
+
+// resolveCred routes a stored reference to plaintext via the Store
+// when wired, falling back to the Encryptor path otherwise.
+func (h *PaymentMethodsHandler) resolveCred(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
+	}
+	if h.secretStore != nil {
+		return h.secretStore.Get(ctx, ref)
+	}
+	return h.encryptor.Decrypt(ref)
+}
+
+// maybeRewrapRow lazily migrates a legacy inline api_key_encrypted on a
+// payment_gateway_configs row to gsm://. Best-effort; persist failures
+// only log because the read has already succeeded.
+func (h *PaymentMethodsHandler) maybeRewrapRow(ctx context.Context, cfg paymentGatewayConfig, apiKey string) {
+	if h.secretStore == nil || cfg.ID == "" || cfg.TenantID == "" {
+		return
+	}
+	rw, ok := h.secretStore.(carriersecrets.Rewrapper)
+	if !ok {
+		return
+	}
+	if newRef, changed := rw.MaybeRewrap(ctx, cfg.APIKey, carriersecrets.Scope{
+		TenantID: cfg.TenantID,
+		Domain:   "payment",
+		Provider: cfg.Provider,
+		Field:    "api_key",
+	}, apiKey); changed {
+		if err := h.db.WithContext(ctx).
+			Table("payment_gateway_configs").
+			Where("id = ?", cfg.ID).
+			Update("api_key_encrypted", newRef).Error; err != nil && h.logger != nil {
+			h.logger.Warn("payment_methods: rewrap api_key persist failed", "id", cfg.ID, "err", err)
+		}
+	}
 }
 
 // paymentMethodResponse is a single provider entry in the response.
@@ -103,12 +156,18 @@ func (h *PaymentMethodsHandler) ListPaymentMethods(c *gin.Context) {
 	// Provider-specific methods can be expanded later.
 	result := make([]paymentMethodResponse, 0, len(configs))
 	for _, cfg := range configs {
-		// Decrypt the public key before exposing to the client.
-		pubKey, err := h.encryptor.Decrypt(cfg.APIKey)
+		// Resolve the public key before exposing to the client. Routes
+		// through the carriersecrets.Store when wired (handles gsm:// +
+		// legacy inline), otherwise falls back to the Encryptor path.
+		pubKey, err := h.resolveCred(ctx, cfg.APIKey)
 		if err != nil {
-			h.logger.Error("decrypt payment public_key", "provider", cfg.Provider, "err", err)
-			continue // skip this provider on decryption error
+			if h.logger != nil {
+				h.logger.Error("resolve payment public_key", "provider", cfg.Provider, "err", err)
+			}
+			continue // skip this provider on resolution error
 		}
+		// Lazy migration: rewrite legacy inline refs to gsm://.
+		h.maybeRewrapRow(ctx, cfg, pubKey)
 		result = append(result, paymentMethodResponse{
 			Provider:  cfg.Provider,
 			Methods:   methodsForProvider(cfg.Provider),

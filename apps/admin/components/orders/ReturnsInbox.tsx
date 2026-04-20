@@ -166,9 +166,12 @@ export function ReturnsInbox({ storeId, initialReturns }: Props) {
     }
   }
 
+  const fieldClass =
+    "w-full resize-y rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated)] px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary transition-colors focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]";
+
   return (
-    <div className="grid min-h-[520px] grid-cols-[320px_1fr] overflow-hidden rounded-lg border border-border-subtle bg-background">
-      <aside className="border-r border-border-subtle bg-background-elevated">
+    <div className="grid min-h-[640px] grid-cols-1 overflow-hidden rounded-md border border-border-subtle bg-[color:var(--background-elevated)] lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+      <aside className="flex flex-col border-b border-border-subtle lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap gap-1 border-b border-border-subtle p-2">
           {TABS.map((t) => {
             const count = returns.filter((r) => t.match.includes(r.status)).length;
@@ -178,15 +181,23 @@ export function ReturnsInbox({ storeId, initialReturns }: Props) {
                 key={t.key}
                 type="button"
                 onClick={() => setTab(t.key)}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                  active
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-foreground-tertiary hover:text-foreground"
-                }`}
+                className={
+                  "rounded-sm px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] " +
+                  (active
+                    ? "bg-[color:var(--ink-900)] text-[color:var(--primary-foreground)]"
+                    : "text-foreground-secondary hover:bg-[color:var(--ink-900)]/[0.06] hover:text-foreground")
+                }
               >
                 {t.label}
                 {count > 0 && (
-                  <span className="ml-1.5 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums">
+                  <span
+                    className={
+                      "ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums " +
+                      (active
+                        ? "bg-[color:var(--primary-foreground)]/20"
+                        : "bg-[color:var(--ink-900)]/10")
+                    }
+                  >
                     {count}
                   </span>
                 )}
@@ -194,7 +205,7 @@ export function ReturnsInbox({ storeId, initialReturns }: Props) {
             );
           })}
         </div>
-        <div className="max-h-[520px] overflow-y-auto">
+        <div className="max-h-[640px] overflow-y-auto">
           {visible.length === 0 ? (
             <p className="p-6 text-center text-xs text-foreground-tertiary">
               No returns in this bucket yet.
@@ -208,23 +219,18 @@ export function ReturnsInbox({ storeId, initialReturns }: Props) {
                   setSelectedId(r.id);
                   refresh().catch(() => {});
                 }}
-                className={`w-full border-b border-border-subtle px-4 py-3 text-left transition-colors ${
-                  selectedId === r.id
-                    ? "bg-background"
-                    : "hover:bg-background"
-                }`}
+                className={
+                  "w-full border-b border-border-subtle px-4 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)] " +
+                  (selectedId === r.id
+                    ? "bg-[color:var(--ink-900)]/[0.04]"
+                    : "hover:bg-[color:var(--ink-900)]/[0.03]")
+                }
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[11px] text-foreground-tertiary">
                     {r.return_number}
                   </span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${
-                      r.type === "replace"
-                        ? "bg-indigo-100 text-indigo-800"
-                        : "bg-slate-100 text-slate-700"
-                    }`}
-                  >
+                  <span className="rounded-sm bg-[color:var(--ink-900)]/[0.08] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-foreground-secondary">
                     {r.type}
                   </span>
                 </div>
@@ -248,35 +254,34 @@ export function ReturnsInbox({ storeId, initialReturns }: Props) {
           </div>
         ) : (
           <>
-            <header className="flex items-start justify-between gap-4 border-b border-border-subtle p-5">
-              <div>
-                <div className="flex items-center gap-2 text-xs font-mono text-foreground-tertiary">
-                  <span>{selected.return_number}</span>
-                  <span className="opacity-50">·</span>
-                  <span className="uppercase">{selected.type}</span>
+            <header className="flex items-start justify-between gap-4 border-b border-border-subtle p-6">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs text-foreground-tertiary">
+                  <span className="font-mono">{selected.return_number}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="uppercase tracking-wider">{selected.type}</span>
                 </div>
-                <h3 className="mt-1 text-lg font-medium text-foreground">
+                <h3 className="mt-1.5 font-serif text-lg font-medium text-foreground">
                   {selected.reason ?? "(no reason given)"}
                 </h3>
                 {selected.notes && (
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-foreground-secondary">
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-foreground-secondary">
                     {selected.notes}
                   </p>
                 )}
               </div>
-              <StatusPill status={selected.status} />
             </header>
 
-            <div className="grid gap-4 p-5">
-              <div className="grid gap-1">
-                <h4 className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
+            <div className="flex flex-col gap-6 p-6">
+              <div className="flex flex-col gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
                   Items requested
                 </h4>
-                <ul className="space-y-1 text-sm text-foreground">
+                <ul className="flex flex-col gap-1 text-sm text-foreground">
                   {selected.items.map((it) => (
                     <li
                       key={it.id}
-                      className="rounded-md bg-background-elevated px-3 py-2 font-mono text-xs"
+                      className="rounded-md bg-[color:var(--ink-900)]/[0.04] px-3 py-2 font-mono text-xs"
                     >
                       {it.quantity}× {it.order_item_id}
                       {it.reason && (
@@ -290,59 +295,66 @@ export function ReturnsInbox({ storeId, initialReturns }: Props) {
               </div>
 
               {selected.status === "requested" && (
-                <ActionBlock>
-                  <label
-                    htmlFor="pickup"
-                    className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary"
-                  >
-                    Pickup / logistics (customer sees this)
-                  </label>
-                  <textarea
-                    id="pickup"
-                    value={pickupDetails}
-                    onChange={(e) => setPickupDetails(e.target.value)}
-                    rows={3}
-                    placeholder={selected.type === "replace"
-                      ? "e.g. Replacement ships via Delhivery on Monday, tracking added shortly."
-                      : "e.g. Delhivery will collect on Monday 10am–2pm, no packing required."}
-                    className="w-full resize-y rounded-md border border-border-subtle bg-background px-3 py-2 text-sm"
-                  />
-                  <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-col gap-5">
+                  <div className="flex flex-col gap-2">
+                    <label
+                      htmlFor="pickup"
+                      className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
+                    >
+                      Pickup / logistics <span className="font-normal normal-case tracking-normal text-foreground-tertiary">— customer sees this</span>
+                    </label>
+                    <textarea
+                      id="pickup"
+                      value={pickupDetails}
+                      onChange={(e) => setPickupDetails(e.target.value)}
+                      rows={3}
+                      placeholder={selected.type === "replace"
+                        ? "e.g. Replacement ships via Delhivery on Monday, tracking added shortly."
+                        : "e.g. Delhivery will collect on Monday 10am–2pm, no packing required."}
+                      className={fieldClass}
+                    />
                     <button
                       type="button"
                       onClick={handleApprove}
                       disabled={busy}
-                      className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
+                      className="inline-flex w-fit items-center rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Approve
+                      {busy ? "Working..." : "Approve"}
                     </button>
-                    <span className="mx-2 text-xs text-foreground-tertiary">
-                      or
-                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-2 border-t border-border-subtle pt-5">
+                    <label
+                      htmlFor="reject"
+                      className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
+                    >
+                      Reject with reason
+                    </label>
                     <input
+                      id="reject"
                       type="text"
                       value={rejectReason}
                       onChange={(e) => setRejectReason(e.target.value)}
-                      placeholder="Rejection reason"
-                      className="flex-1 min-w-[200px] rounded-md border border-border-subtle bg-background px-3 py-2 text-sm"
+                      placeholder="Reason shown to the customer"
+                      className={fieldClass}
                     />
                     <button
                       type="button"
                       onClick={handleReject}
                       disabled={busy}
-                      className="rounded-md border border-border-subtle bg-background px-4 py-2 text-sm text-foreground hover:bg-background-elevated disabled:opacity-50"
+                      className="inline-flex w-fit items-center rounded-md border border-[color:var(--danger)] px-4 py-2 text-sm font-medium text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       Reject
                     </button>
                   </div>
-                </ActionBlock>
+                </div>
               )}
 
               {selected.status === "approved" && (
-                <ActionBlock>
+                <div className="flex flex-col gap-2">
                   <label
                     htmlFor="pickup-edit"
-                    className="text-xs font-medium uppercase tracking-wider text-foreground-tertiary"
+                    className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
                   >
                     Update pickup / logistics
                   </label>
@@ -351,27 +363,27 @@ export function ReturnsInbox({ storeId, initialReturns }: Props) {
                     value={pickupDetails}
                     onChange={(e) => setPickupDetails(e.target.value)}
                     rows={3}
-                    className="w-full resize-y rounded-md border border-border-subtle bg-background px-3 py-2 text-sm"
+                    className={fieldClass}
                   />
                   <button
                     type="button"
                     onClick={handleUpdatePickup}
                     disabled={busy}
-                    className="self-start rounded-md border border-border-subtle bg-background px-4 py-2 text-sm hover:bg-background-elevated disabled:opacity-50"
+                    className="inline-flex w-fit items-center rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated)] px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-[color:var(--ink-900)]/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Save pickup details
                   </button>
-                </ActionBlock>
+                </div>
               )}
 
               {selected.status === "rejected" && selected.reject_reason && (
-                <div className="rounded-md border border-amber-300/40 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  <strong>Rejected:</strong> {selected.reject_reason}
+                <div className="rounded-md border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.06] px-4 py-3 text-sm text-[color:var(--warning)]">
+                  <strong className="font-semibold">Rejected:</strong> {selected.reject_reason}
                 </div>
               )}
 
               {error && (
-                <p role="alert" className="text-xs text-red-600">
+                <p role="alert" className="text-xs text-[color:var(--danger)]">
                   {error}
                 </p>
               )}
@@ -380,34 +392,6 @@ export function ReturnsInbox({ storeId, initialReturns }: Props) {
         )}
       </section>
     </div>
-  );
-}
-
-function ActionBlock({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="grid gap-2 rounded-lg border border-border-subtle bg-background-elevated p-4">
-      {children}
-    </div>
-  );
-}
-
-function StatusPill({ status }: { status: AdminReturnStatus }) {
-  const cls =
-    status === "requested"
-      ? "bg-amber-100 text-amber-900"
-      : status === "approved"
-        ? "bg-emerald-100 text-emerald-800"
-        : status === "received"
-          ? "bg-sky-100 text-sky-800"
-          : status === "refunded"
-            ? "bg-violet-100 text-violet-800"
-            : "bg-slate-200 text-slate-700";
-  return (
-    <span
-      className={`rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wider ${cls}`}
-    >
-      {status}
-    </span>
   );
 }
 

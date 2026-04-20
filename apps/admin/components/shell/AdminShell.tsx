@@ -130,6 +130,7 @@ const navigation: NavSection[] = [
     icon: Megaphone,
     children: [
       { label: "Campaigns", href: "/marketing/campaigns" },
+      { label: "Segments", href: "/marketing/segments" },
       { label: "Coupons", href: "/marketing/coupons" },
       { label: "Gift Cards", href: "/marketing/gift-cards" },
       { label: "Loyalty", href: "/marketing/loyalty" },
@@ -647,6 +648,9 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/marketing/loyalty")) {
     return { eyebrow: "Marketing", title: "Loyalty" };
+  }
+  if (pathname.startsWith("/marketing/segments")) {
+    return { eyebrow: "Marketing", title: "Segments" };
   }
   if (pathname.startsWith("/marketing")) {
     return { eyebrow: "Growth", title: "Marketing" };

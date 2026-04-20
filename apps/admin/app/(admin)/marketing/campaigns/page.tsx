@@ -1,8 +1,10 @@
+import Link from "next/link";
+
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { listCampaigns, type ListCampaignsQuery } from "@/lib/api/campaigns-api";
+import { AdminPage } from "@/components/layout";
 import { CampaignsList } from "@/components/marketing/campaigns/CampaignsList";
 import { CampaignsListEmpty } from "@/components/marketing/campaigns/CampaignsListEmpty";
-import Link from "next/link";
 
 interface CampaignsPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -38,15 +40,9 @@ export default async function CampaignsPage({
 
   if (!currentStore) {
     return (
-              <main className="space-y-10">
-          <header className="space-y-3">
-            <p className="eyebrow">Marketing</p>
-            <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
-              Campaigns
-            </h1>
-          </header>
-          <CampaignsListEmpty variant="no-store" />
-        </main>
+      <AdminPage eyebrow="Marketing" title="Campaigns">
+        <CampaignsListEmpty variant="no-store" />
+      </AdminPage>
     );
   }
 
@@ -60,38 +56,30 @@ export default async function CampaignsPage({
   const meta = result?.meta;
 
   return (
-          <main className="space-y-10">
-        <header className="flex items-center justify-between">
-          <div className="space-y-3">
-            <p className="eyebrow">Marketing</p>
-            <h1 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-5xl font-medium tracking-tight text-foreground">
-              Campaigns
-            </h1>
-            <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
-              Reach your customers with targeted email campaigns.
-            </p>
-          </div>
-          {canCreate && (
-            <Link
-              href="/marketing/campaigns/new"
-              className="inline-flex items-center gap-2 rounded-md bg-ink-900 px-4 py-2 text-sm font-medium text-paper-200 transition hover:bg-ink-800"
-            >
-              Create campaign
-            </Link>
-          )}
-        </header>
-
-        <hr className="border-ink-200" />
-
-        {campaigns.length === 0 && !query.status ? (
-          <CampaignsListEmpty variant="no-campaigns" />
-        ) : (
-          <CampaignsList
-            campaigns={campaigns}
-            meta={meta}
-            storeId={currentStore.id}
-          />
-        )}
-      </main>
+    <AdminPage
+      eyebrow="Marketing"
+      title="Campaigns"
+      description="Reach your customers with targeted email campaigns."
+      actions={
+        canCreate ? (
+          <Link
+            href="/marketing/campaigns/new"
+            className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          >
+            Create campaign
+          </Link>
+        ) : undefined
+      }
+    >
+      {campaigns.length === 0 && !query.status ? (
+        <CampaignsListEmpty variant="no-campaigns" />
+      ) : (
+        <CampaignsList
+          campaigns={campaigns}
+          meta={meta}
+          storeId={currentStore.id}
+        />
+      )}
+    </AdminPage>
   );
 }

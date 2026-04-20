@@ -49,7 +49,7 @@ export default async function CouponsPage({ searchParams }: CouponsPageProps) {
           <main className="flex flex-col gap-8">
         <CouponsListHeader canCreate={canCreate} />
         <CouponsListFilters />
-        <hr className="border-ink-200" />
+        <hr className="border-border-subtle" />
         {coupons.length === 0 ? (
           <CouponsListEmpty variant="no-coupons" />
         ) : (

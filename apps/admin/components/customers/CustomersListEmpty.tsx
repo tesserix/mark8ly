@@ -12,10 +12,10 @@ export function CustomersListEmpty({
   if (variant === "no-customers") {
     return (
       <div className="flex flex-col items-start gap-4 py-16">
-        <h2 className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-3xl text-[color:var(--ink-900)]">
+        <h2 className="font-serif text-3xl font-medium text-foreground">
           No customers yet
         </h2>
-        <p className="max-w-prose text-[color:var(--ink-900)] opacity-70">
+        <p className="max-w-prose text-sm text-foreground-secondary">
           When customers create accounts or place orders on your storefront,
           their profiles will appear here.
         </p>
@@ -24,10 +24,10 @@ export function CustomersListEmpty({
   }
   return (
     <div className="flex flex-col items-start gap-3 py-12">
-      <h2 className="font-[family-name:var(--font-serif,'Source_Serif_4',serif)] text-2xl text-[color:var(--ink-900)]">
+      <h2 className="font-serif text-2xl font-medium text-foreground">
         No customers match your filters
       </h2>
-      <p className="max-w-prose text-[color:var(--ink-900)] opacity-70">
+      <p className="max-w-prose text-sm text-foreground-secondary">
         Try adjusting the search or filters, or clear them to start over.
       </p>
       {clearFiltersHref && (

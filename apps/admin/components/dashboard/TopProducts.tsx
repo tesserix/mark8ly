@@ -3,23 +3,11 @@
 import Link from "next/link";
 
 import type { TopProduct } from "@/lib/api/marketplace-api";
+import { formatMoney } from "@/lib/format";
 
 interface TopProductsProps {
   products: TopProduct[];
   currencyCode: string;
-}
-
-function formatMoney(amount: number, currencyCode: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currencyCode,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  } catch {
-    return `${currencyCode} ${amount.toFixed(0)}`;
-  }
 }
 
 export function TopProducts({ products, currencyCode }: TopProductsProps) {
@@ -36,50 +24,47 @@ export function TopProducts({ products, currencyCode }: TopProductsProps) {
 
   return (
     <div>
-      <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-foreground">
+      <h3 className="font-serif text-lg font-medium text-foreground">
         Top products
       </h3>
       <div className="overflow-x-auto">
-      <ul className="mt-4 divide-y divide-border-subtle" role="list">
-        {products.map((product) => (
-          <li key={product.id}>
-            <Link
-              href={`/products/${product.id}`}
-              className="flex min-h-[44px] items-center gap-4 py-3 transition-colors hover:bg-paper-100"
-            >
-              <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-paper-100">
-                {product.image_url ? (
-                  <img
-                    src={product.image_url}
-                    alt={product.title}
-                    className="h-full w-full object-cover"
-                    width={32}
-                    height={32}
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[10px] text-foreground-tertiary">
-                    --
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {product.title}
-                </p>
-                <p className="text-xs text-foreground-secondary">
-                  {product.units_sold} units sold
-                </p>
-              </div>
-              <p
-                className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-sm font-medium text-foreground"
-                style={{ fontFeatureSettings: '"tnum" 1' }}
+        <ul className="mt-4 divide-y divide-border-subtle" role="list">
+          {products.map((product) => (
+            <li key={product.id}>
+              <Link
+                href={`/products/${product.id}`}
+                className="flex min-h-[44px] items-center gap-4 px-4 py-3 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
               >
-                {formatMoney(product.revenue, currencyCode)}
-              </p>
-            </Link>
-          </li>
-        ))}
-      </ul>
+                <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-[color:var(--paper-300)]">
+                  {product.image_url ? (
+                    <img
+                      src={product.image_url}
+                      alt={product.title}
+                      className="h-full w-full object-cover"
+                      width={32}
+                      height={32}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[10px] text-foreground-tertiary">
+                      —
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {product.title}
+                  </p>
+                  <p className="text-xs text-foreground-secondary">
+                    {product.units_sold} units sold
+                  </p>
+                </div>
+                <p className="font-serif text-sm font-medium tabular-nums text-foreground">
+                  {formatMoney(product.revenue, currencyCode)}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

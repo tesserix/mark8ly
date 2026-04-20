@@ -27,10 +27,7 @@ export function StatCard({
       </p>
       <div className="mt-3 flex items-end justify-between gap-4">
         <div className="space-y-1">
-          <p
-            className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-4xl font-medium text-foreground"
-            style={{ fontFeatureSettings: '"tnum" 1' }}
-          >
+          <p className="font-serif text-4xl font-medium tabular-nums text-foreground">
             {value}
           </p>
           <div className="flex items-center gap-2">
@@ -62,7 +59,7 @@ export function StatCard({
     return (
       <Link
         href={href}
-        className="block px-6 py-5 border-b border-border-subtle transition-colors hover:bg-paper-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+        className="block border-b border-border-subtle px-6 py-5 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
       >
         {body}
       </Link>

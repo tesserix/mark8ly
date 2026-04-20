@@ -2,6 +2,7 @@
 
 import { Fragment, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +22,14 @@ import type {
   CreateCampaignBody,
 } from "@/lib/api/campaigns-api";
 import { useToast } from "@/components/feedback/Toaster";
-import { CampaignEditor } from "./CampaignEditor";
+
+// CampaignEditor wraps TipTap (~120KB gzipped). Lazy-load so it only
+// loads when the user lands on step 2 of the wizard, not when the
+// campaigns list page simply renders the "New campaign" CTA.
+const CampaignEditor = dynamic(
+  () => import("./CampaignEditor").then((m) => ({ default: m.CampaignEditor })),
+  { ssr: false },
+);
 
 // ---------- Templates ----------
 

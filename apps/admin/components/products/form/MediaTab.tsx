@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useCallback, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useFieldArray, useFormContext } from "react-hook-form";
 import type {
   AdminMediaResponse,
@@ -16,7 +17,6 @@ import {
 } from "@/lib/api/marketplace-api";
 import { uploadMediaFile as defaultUploadMediaFile } from "@/components/products/media/mediaUploadClient";
 import type { ProductFormValues } from "@/lib/validation/product-form";
-import { MediaGrid } from "@/components/products/media/MediaGrid";
 import {
   MediaUploader,
   type MediaUploaderProgressItem,
@@ -24,6 +24,17 @@ import {
 import type { MediaAction } from "@/components/products/media/MediaCard";
 import { MediaCropDialog } from "@/components/products/media/MediaCropDialog";
 import type { CropBox } from "@/components/products/media/cropImage";
+
+// MediaGrid pulls in dnd-kit (~50KB gzipped). Lazy-load so it only loads
+// on the Media tab of the product edit flow, not on every product list
+// mount or create-product flow.
+const MediaGrid = dynamic(
+  () =>
+    import("@/components/products/media/MediaGrid").then((m) => ({
+      default: m.MediaGrid,
+    })),
+  { ssr: false },
+);
 
 type MutationResult<T> = { ok: true; data: T } | { ok: false; error: { message: string } };
 

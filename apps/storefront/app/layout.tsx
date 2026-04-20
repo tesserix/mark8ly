@@ -104,6 +104,15 @@ export const metadata: Metadata = {
       "max-image-preview": "large",
     },
   },
+  // Default favicon for any page not wrapped by generateMetadata
+  // (error boundary, 404, sign-out). Per-tenant pages override via
+  // makeTenantMetadata → branding.favicon_url → fallback to the
+  // same /favicon.ico shipped here.
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/icon-192.png",
+  },
   applicationName: "Mark8ly Storefront",
 };
 

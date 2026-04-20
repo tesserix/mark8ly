@@ -286,6 +286,11 @@ export interface FooterSection {
 export interface StorefrontBranding {
   // identity
   logo_url?: string | null;
+  // Browser-tab favicon. PNG or ICO, uploaded by the merchant in
+  // admin → Settings → Branding. Rendered by makeTenantMetadata as
+  // the <link rel="icon"> for every storefront page. Falls back to
+  // the mark8ly-branded default in /public/favicon.ico when null.
+  favicon_url?: string | null;
 
   // announcement (existing)
   announcement_text?: string;

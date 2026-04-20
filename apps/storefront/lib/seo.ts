@@ -73,6 +73,21 @@ export function makeTenantMetadata(
       follow: true,
       ...(aiPolicy === "deny" && { nocache: true }),
     },
+    // Merchant-owned favicon when uploaded in admin → Settings →
+    // Branding; otherwise the built-in default ships from
+    // /public/favicon.ico. Apple touch icon falls back to the same
+    // asset — browsers tolerate a .ico there, and keeping one URL
+    // avoids a separate upload surface for something 99% of merchants
+    // won't customise.
+    icons: (() => {
+      const custom = branding?.favicon_url?.trim();
+      const src = custom || "/favicon.ico";
+      return {
+        icon: src,
+        shortcut: src,
+        apple: custom || "/icon-192.png",
+      };
+    })(),
     other: {
       "store:slug": store.slug,
       "store:currency": store.currency_code,

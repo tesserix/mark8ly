@@ -150,14 +150,68 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
     };
   }, [orderId, latestKey]);
 
+  // Last event is the "current" step — every event before it is done,
+  // every event after (there are none until a new one arrives) is
+  // future. Terminal states (delivered / exception / cancelled) still
+  // render as the current step so the operator sees the final state
+  // explicitly instead of a quiet green-on-green chain.
+  const lastIdx = events.length - 1;
+  const shortLabelFor = (kind: string, description?: string): string => {
+    if (description && description.length > 0 && description.length <= 28) {
+      // Use the backend-provided copy when it fits on one line of a
+      // stepper pill; fall back to a predictable short label otherwise.
+      return description.replace(/\.$/, "");
+    }
+    switch (kind) {
+      case "order_placed":
+        return "Placed";
+      case "payment_recorded":
+        return "Paid";
+      case "status_changed":
+      case "confirmed":
+        return "Confirmed";
+      case "fulfilled":
+        return "Fulfilled";
+      case "shipment_created":
+        return "Label created";
+      case "pickup_scheduled":
+        return "Pickup scheduled";
+      case "shipment_in_transit":
+        return "In transit";
+      case "shipment_out_for_delivery":
+        return "Out for delivery";
+      case "shipment_delivered":
+        return "Delivered";
+      case "shipment_exception":
+        return "Exception";
+      case "cancelled":
+        return "Cancelled";
+      default:
+        return kind.replace(/_/g, " ");
+    }
+  };
+
   return (
     <section aria-labelledby="timeline-heading" className="mt-8">
-      <h2
-        id="timeline-heading"
-        className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
-      >
-        Delivery timeline
-      </h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2
+          id="timeline-heading"
+          className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60"
+        >
+          Delivery timeline
+        </h2>
+        {(() => {
+          const last = events[lastIdx];
+          if (!last) return null;
+          return (
+            <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
+              Latest: {shortLabelFor(last.kind, last.description)}
+              {" · "}
+              {fmtDate(last.occurred_at)}
+            </p>
+          );
+        })()}
+      </div>
 
       {shipment && (
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
@@ -184,25 +238,62 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
           We&apos;ll post updates here the moment your order is on the way.
         </p>
       ) : (
-        <ol className="mt-4 space-y-3">
-          {events.map((e, i) => (
-            <li
-              key={`${e.kind}-${e.occurred_at}-${i}`}
-              className={`flex items-start gap-3 rounded-md border px-3 py-2 text-sm ${toneFor(e.kind)}`}
-            >
-              <span
-                aria-hidden
-                className="mt-0.5 grid h-5 w-5 place-items-center rounded-full border border-current text-[11px] font-semibold"
-              >
-                {iconFor(e.kind)}
-              </span>
-              <div className="flex-1">
-                <p className="font-medium">{e.description || e.kind}</p>
-                <p className="mt-0.5 text-xs opacity-70">{fmtDate(e.occurred_at)}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
+        // Horizontal stepper. The `overflow-x-auto` wrapper scrolls on
+        // narrow viewports; the inner min-width keeps each pill
+        // legible instead of wrapping to a squashed grid. The
+        // connecting line sits behind the circles via an ::before
+        // gradient on the <ol> so it animates past every node.
+        <div className="mt-5 -mx-4 overflow-x-auto px-4 pb-2 sm:-mx-0 sm:px-0">
+          <ol
+            className="relative flex min-w-max items-start gap-0"
+            role="list"
+          >
+            {/* connecting line. Grows from the first to the last
+                completed step; future hops render muted. */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute left-5 right-5 top-4 h-px bg-[color:var(--storefront-text,var(--ink-900))]/15"
+            />
+            {events.map((e, i) => {
+              const isLast = i === lastIdx;
+              const done = i < lastIdx;
+              const isError =
+                e.kind === "shipment_exception" || e.kind === "cancelled";
+              const circleTone = isError
+                ? "border-red-400 bg-red-50 text-red-700"
+                : isLast
+                  ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))] text-white shadow-sm ring-4 ring-[color:var(--storefront-accent,var(--moss-700))]/15"
+                  : done
+                    ? "border-[color:var(--storefront-accent,var(--moss-700))]/80 bg-[color:var(--storefront-accent,var(--moss-700))]/90 text-white"
+                    : "border-[color:var(--storefront-text,var(--ink-900))]/25 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]/60";
+              const labelTone = isError
+                ? "text-red-700"
+                : isLast
+                  ? "text-[color:var(--storefront-text,var(--ink-900))] font-semibold"
+                  : "text-[color:var(--storefront-text,var(--ink-900))]/80";
+              return (
+                <li
+                  key={`${e.kind}-${e.occurred_at}-${i}`}
+                  className="relative flex w-[148px] shrink-0 flex-col items-center text-center"
+                  aria-current={isLast ? "step" : undefined}
+                >
+                  <span
+                    aria-hidden
+                    className={`relative z-10 grid h-9 w-9 place-items-center rounded-full border text-sm font-semibold transition-colors ${circleTone}`}
+                  >
+                    {done ? "✓" : iconFor(e.kind)}
+                  </span>
+                  <p className={`mt-2 px-1 text-xs leading-tight ${labelTone}`}>
+                    {shortLabelFor(e.kind, e.description)}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-tight text-[color:var(--storefront-text,var(--ink-900))]/55">
+                    {fmtDate(e.occurred_at)}
+                  </p>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       )}
     </section>
   );

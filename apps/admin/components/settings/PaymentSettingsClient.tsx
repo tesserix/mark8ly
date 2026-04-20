@@ -47,7 +47,7 @@ export function PaymentSettingsClient({
       {/* Payment providers — one card per country-supported provider */}
       <section className="space-y-3">
         {supported.payment_providers.length === 0 ? (
-          <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-10 text-center">
+          <div className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-10 text-center">
             <p className="text-sm text-foreground-tertiary">
               No payment providers are currently available for{" "}
               {supported.country_name} ({supported.country_code}).
@@ -143,13 +143,13 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
       </div>
 
       {!taxConfig ? (
-        <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5 text-sm text-foreground-tertiary">
+        <div className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5 text-sm text-foreground-tertiary">
           Unable to load tax configuration. Please try again later.
         </div>
       ) : (
         <div className="space-y-3">
           {/* Strategy summary pill */}
-          <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5">
+          <div className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5">
             <div className="flex items-start gap-4">
               <div className="space-y-1.5">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-foreground-tertiary">
@@ -167,7 +167,7 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
 
           {/* Flat-rate countries */}
           {taxConfig.strategy === "flat_rate" && taxConfig.rate != null && (
-            <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5">
+            <div className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5">
               <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-foreground-tertiary mb-3">
                 Rate
               </h3>
@@ -182,7 +182,7 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
 
           {/* India GST */}
           {taxConfig.strategy === "india_gst" && taxConfig.india_gst && (
-            <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5 space-y-3">
+            <div className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5 space-y-3">
               <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-foreground-tertiary">
                 India GST (automatic)
               </h3>
@@ -198,7 +198,7 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
 
           {/* US: TaxJar form */}
           {taxConfig.strategy === "taxjar" && (
-            <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5 space-y-4">
+            <div className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-foreground-tertiary">
                   TaxJar configuration

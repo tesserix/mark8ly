@@ -89,7 +89,7 @@ export function PaymentConfigForm({
             placeholder="pk_test_..."
             required
             disabled={pending}
-            className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+            className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
           />
         </FieldGroup>
 
@@ -102,7 +102,7 @@ export function PaymentConfigForm({
             onChange={(e) => { setSecretKey(e.target.value); setSuccess(false); }}
             placeholder="sk_test_..."
             disabled={pending}
-            className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+            className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
           />
           <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
             Leave blank to keep the existing secret key.
@@ -126,7 +126,7 @@ export function PaymentConfigForm({
           }}
           placeholder={webhookSecretPlaceholder(provider)}
           disabled={pending}
-          className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+          className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
         />
         <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
           {webhookSecretHelpText(provider, hasWebhookSecret)}
@@ -168,7 +168,7 @@ export function PaymentConfigForm({
       {error && (
         <div
           role="alert"
-          className="rounded-[6px] border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800"
+          className="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800"
         >
           {error}
         </div>
@@ -176,7 +176,7 @@ export function PaymentConfigForm({
       {success && (
         <div
           role="status"
-          className="animate-in fade-in duration-300 rounded-[6px] border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-2.5 text-sm text-[color:var(--moss-700)]"
+          className="animate-in fade-in duration-300 rounded-md border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-2.5 text-sm text-[color:var(--moss-700)]"
         >
           Configuration saved.
         </div>
@@ -186,7 +186,7 @@ export function PaymentConfigForm({
         <button
           type="submit"
           disabled={pending || !apiKey.trim()}
-          className="rounded-[6px] bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           {pending ? "Saving..." : "Save configuration"}
         </button>

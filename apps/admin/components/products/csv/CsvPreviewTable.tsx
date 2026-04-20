@@ -15,7 +15,7 @@ export function CsvPreviewTable({ headers, rows }: CsvPreviewTableProps) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-[6px] border border-[var(--ink-900)]/10">
+    <div className="overflow-x-auto rounded-md border border-[var(--ink-900)]/10">
       <table className="w-full text-left font-[var(--font-body)] text-sm">
         <thead>
           <tr className="border-b border-[var(--ink-900)]/10 bg-[var(--paper-200)]">

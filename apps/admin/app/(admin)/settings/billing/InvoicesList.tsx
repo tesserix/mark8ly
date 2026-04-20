@@ -102,9 +102,9 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
 function InvoicesTableSkeleton() {
   return (
     <div className="mt-6 space-y-3" aria-label={copy.loadingAriaLabel}>
-      <Skeleton className="h-4 w-full rounded-[6px]" />
-      <Skeleton className="h-4 w-full rounded-[6px]" />
-      <Skeleton className="h-4 w-3/4 rounded-[6px]" />
+      <Skeleton className="h-4 w-full rounded-md" />
+      <Skeleton className="h-4 w-full rounded-md" />
+      <Skeleton className="h-4 w-3/4 rounded-md" />
     </div>
   )
 }

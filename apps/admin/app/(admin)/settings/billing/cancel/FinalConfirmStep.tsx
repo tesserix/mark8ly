@@ -52,8 +52,8 @@ export function FinalConfirmStep({ storeId, reason, feedback }: FinalConfirmStep
   if (submit.isPending) {
     return (
       <section aria-live="polite" aria-label="Processing cancellation">
-        <div className="h-8 w-48 animate-pulse rounded-[6px] bg-[var(--paper-200)]" />
-        <div className="mt-3 h-4 w-72 animate-pulse rounded-[6px] bg-[var(--paper-200)]" />
+        <div className="h-8 w-48 animate-pulse rounded-md bg-[var(--paper-200)]" />
+        <div className="mt-3 h-4 w-72 animate-pulse rounded-md bg-[var(--paper-200)]" />
         <p className="sr-only">{cancellationCopy.processing}</p>
       </section>
     )
@@ -80,7 +80,7 @@ export function FinalConfirmStep({ storeId, reason, feedback }: FinalConfirmStep
             firedRef.current = false
             submit.mutate({ survey_reason: reason || undefined, accept_save_offer: false })
           }}
-          className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--paper-200)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+          className="inline-flex h-10 items-center rounded-md bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--paper-200)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
         >
           {cancellationCopy.retryLabel}
         </button>
@@ -110,7 +110,7 @@ export function FinalConfirmStep({ storeId, reason, feedback }: FinalConfirmStep
         <button
           type="button"
           onClick={() => router.push('/settings/billing')}
-          className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--paper-200)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+          className="inline-flex h-10 items-center rounded-md bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--paper-200)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
         >
           {copy.doneCta}
         </button>

@@ -216,7 +216,7 @@ function FailureNotice({ failedStoreNames }: FailureNoticeProps) {
   return (
     <div
       role="alert"
-      className="rounded-[6px] border border-[var(--signal,#C23B22)]/30 bg-[var(--background-elevated)] px-5 py-4"
+      className="rounded-md border border-[var(--signal,#C23B22)]/30 bg-[var(--background-elevated)] px-5 py-4"
     >
       <p className="text-sm font-medium text-[var(--ink-900)]">
         {failedStoreNames.length === 1
@@ -506,7 +506,7 @@ export function CloseBeforeDowngradeClient() {
             disabled={!allResolved || isApplying}
             onClick={() => void handleApply()}
             aria-busy={isApplying}
-            className="inline-flex h-11 items-center justify-center rounded-[6px] bg-[var(--ink-900)] px-7 text-sm font-medium text-[var(--paper-200)] transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-11 items-center justify-center rounded-md bg-[var(--ink-900)] px-7 text-sm font-medium text-[var(--paper-200)] transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {isApplying ? 'Applying\u2026' : copy.confirmCta}
           </button>

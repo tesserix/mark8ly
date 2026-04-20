@@ -114,7 +114,7 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
               clearTimeout(searchTimeoutRef.current);
               searchTimeoutRef.current = setTimeout(() => updateFilters({ search: value }), 300);
             }}
-            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] pl-9 pr-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+            className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] pl-9 pr-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
             placeholder="Search audit logs..."
           />
         </div>
@@ -122,7 +122,7 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
           type="button"
           onClick={handleExportCSV}
           disabled={isExporting}
-          className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-4 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+          className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-[color:var(--background-elevated)] px-4 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
         >
           <Download className="h-4 w-4" aria-hidden="true" />
           {isExporting ? "Exporting..." : "Export CSV"}
@@ -220,7 +220,7 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
               type="button"
               disabled={meta.page <= 1}
               onClick={() => updateFilters({ page: String(meta.page - 1) })}
-              className="h-8 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-xs font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+              className="h-8 rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-xs font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
             >
               Previous
             </button>
@@ -228,7 +228,7 @@ export function AuditLogsClient({ initialData }: AuditLogsClientProps) {
               type="button"
               disabled={meta.page >= meta.total_pages}
               onClick={() => updateFilters({ page: String(meta.page + 1) })}
-              className="h-8 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-xs font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+              className="h-8 rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-xs font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
             >
               Next
             </button>
@@ -316,7 +316,7 @@ function AuditLogRow({
               {Object.keys(entry.metadata).length > 0 && (
                 <div className="sm:col-span-2">
                   <span className="font-medium text-foreground-secondary">Metadata:</span>
-                  <pre className="mt-1 overflow-x-auto rounded-[6px] bg-[color:var(--background-elevated)] p-3 text-xs text-foreground">
+                  <pre className="mt-1 overflow-x-auto rounded-md bg-[color:var(--background-elevated)] p-3 text-xs text-foreground">
                     {JSON.stringify(entry.metadata, null, 2)}
                   </pre>
                 </div>
@@ -364,7 +364,7 @@ function FilterInput({
           clearTimeout(timeoutRef.current);
           timeoutRef.current = setTimeout(() => onChange(v), 300);
         }}
-        className="h-8 w-full sm:w-36 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-2 text-xs text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+        className="h-8 w-full sm:w-36 rounded-md border border-border bg-[color:var(--background-elevated)] px-2 text-xs text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
       />
     </div>
   );

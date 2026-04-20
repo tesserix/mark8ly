@@ -102,7 +102,7 @@ export function SurveyStep({ onContinue }: SurveyStepProps) {
             rows={3}
             placeholder={copy.feedbackPlaceholder}
             {...register('feedback')}
-            className="w-full resize-none rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-3 py-2 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-400)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+            className="w-full resize-none rounded-md border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-3 py-2 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-400)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
           />
           {errors.feedback && (
             <p role="alert" className="mt-1 text-xs text-[var(--danger)]">
@@ -114,7 +114,7 @@ export function SurveyStep({ onContinue }: SurveyStepProps) {
         <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
           <button
             type="submit"
-            className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--paper-200)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+            className="inline-flex h-10 items-center rounded-md bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--paper-200)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
           >
             {copy.submitCta}
           </button>
@@ -122,7 +122,7 @@ export function SurveyStep({ onContinue }: SurveyStepProps) {
           <button
             type="button"
             onClick={() => router.push('/settings/billing')}
-            className="inline-flex h-10 items-center rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-6 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+            className="inline-flex h-10 items-center rounded-md border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-6 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
           >
             Keep my subscription
           </button>

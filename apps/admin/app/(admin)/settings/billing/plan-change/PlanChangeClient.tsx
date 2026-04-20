@@ -78,7 +78,7 @@ function PeriodToggle({ value, onChange }: PeriodToggleProps) {
     <div
       role="group"
       aria-label="Billing period"
-      className="inline-flex rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] p-0.5"
+      className="inline-flex rounded-md border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] p-0.5"
     >
       {(['monthly', 'annual'] as BillingPeriod[]).map((period) => {
         const isActive = value === period
@@ -378,8 +378,8 @@ export function PlanChangeClient({ storeId }: PlanChangeClientProps) {
   if (planLoading) {
     return (
       <div className="space-y-3">
-        <div className="h-7 w-40 rounded-[6px] bg-[var(--paper-200)] animate-pulse" />
-        <div className="h-4 w-72 rounded-[6px] bg-[var(--paper-200)] animate-pulse" />
+        <div className="h-7 w-40 rounded-md bg-[var(--paper-200)] animate-pulse" />
+        <div className="h-4 w-72 rounded-md bg-[var(--paper-200)] animate-pulse" />
       </div>
     )
   }
@@ -444,7 +444,7 @@ export function PlanChangeClient({ storeId }: PlanChangeClientProps) {
           onClick={() => void handleApply()}
           disabled={isNoOp || Boolean(isBlocked) || applyMutation.isPending}
           className={[
-            'inline-flex h-10 items-center rounded-[6px] px-5 text-sm font-medium',
+            'inline-flex h-10 items-center rounded-md px-5 text-sm font-medium',
             'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]',
             isNoOp || isBlocked
               ? 'cursor-not-allowed bg-[var(--ink-200)] text-[var(--ink-500)]'

@@ -288,7 +288,7 @@ function LabelActions({
     refreshStartTransition(async () => {
       const r = await refreshShipmentTrackingAction(storeId, orderId, shipment.id);
       if (!r.ok) {
-        toast.error("Tracking refresh failed", r.error?.message);
+        toast.error("Tracking refresh failed", r.error?.message ?? "Please try again.");
         return;
       }
       if (r.data) {
@@ -348,7 +348,7 @@ function LabelActions({
           slot_start: rescheduleSlot || undefined,
         });
         if (!r.ok) {
-          toast.error("Reschedule failed", r.error?.message);
+          toast.error("Reschedule failed", r.error?.message ?? "Please try again.");
           return;
         }
         if (r.data) {
@@ -462,7 +462,7 @@ function LabelActions({
             <button
               type="submit"
               disabled={reschedulePending}
-              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[color:var(--moss-800)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {reschedulePending ? "Scheduling…" : "Schedule pickup"}
             </button>
@@ -486,7 +486,7 @@ function LabelActions({
             <button
               type="submit"
               disabled={emailPending || !recipient}
-              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[color:var(--moss-800)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {emailPending ? "Sending…" : "Send label"}
             </button>
@@ -537,7 +537,7 @@ function AdvanceStatusBar({
         onUpdated(r.data);
         toast.success("Shipment updated", `Marked as ${labelMap[status] ?? status}.`);
       } else if (!r.ok) {
-        toast.error("Couldn't update shipment", r.error?.message);
+        toast.error("Couldn't update shipment", r.error?.message ?? "Please try again.");
       }
     });
   }
@@ -735,7 +735,7 @@ function CreateShipmentForm({
         });
         if (!r.ok) {
           setError(r.error);
-          toast.error("Couldn't generate label", r.error?.message);
+          toast.error("Couldn't generate label", r.error?.message ?? "Please try again.");
           return;
         }
         if (r.data) {
@@ -807,7 +807,7 @@ function CreateShipmentForm({
           <button
             type="submit"
             disabled={pending || !provider || !service}
-            className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[color:var(--moss-800)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? "Generating…" : "Approve & generate label"}
           </button>

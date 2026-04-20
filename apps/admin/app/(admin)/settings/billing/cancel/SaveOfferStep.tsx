@@ -57,7 +57,7 @@ export function SaveOfferStep({ storeId, onDecline }: SaveOfferStepProps) {
       </p>
 
       <div
-        className="mb-8 rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] p-5"
+        className="mb-8 rounded-md border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] p-5"
       >
         <p className="text-sm font-medium text-[var(--ink-900)]">
           50% off your next 3 months
@@ -73,7 +73,7 @@ export function SaveOfferStep({ storeId, onDecline }: SaveOfferStepProps) {
           type="button"
           onClick={handleAccept}
           disabled={revert.isPending}
-          className="inline-flex h-10 items-center rounded-[6px] bg-[var(--moss-700)] px-6 text-sm font-medium text-white transition-colors hover:bg-[var(--moss-800,var(--moss-700))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] disabled:opacity-50"
+          className="inline-flex h-10 items-center rounded-md bg-[var(--moss-700)] px-6 text-sm font-medium text-white transition-colors hover:bg-[var(--moss-800,var(--moss-700))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] disabled:opacity-50"
         >
           {revert.isPending ? cancellationCopy.processing : copy.acceptCta}
         </button>
@@ -82,7 +82,7 @@ export function SaveOfferStep({ storeId, onDecline }: SaveOfferStepProps) {
           type="button"
           onClick={onDecline}
           disabled={revert.isPending}
-          className="inline-flex h-10 items-center rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-6 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] disabled:opacity-50"
+          className="inline-flex h-10 items-center rounded-md border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-6 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] disabled:opacity-50"
         >
           {copy.declineCta}
         </button>

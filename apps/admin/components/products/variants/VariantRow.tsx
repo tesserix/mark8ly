@@ -109,7 +109,7 @@ export function VariantRow({
           type="button"
           aria-label="Variant image"
           onClick={() => setPickerOpen((o) => !o)}
-          className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-[6px] border border-[var(--ink-100)] bg-[var(--background-elevated)] text-[var(--ink-500)] focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+          className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] text-[var(--ink-500)] focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
         >
           {currentMedia ? (
             // eslint-disable-next-line @next/next/no-img-element

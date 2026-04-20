@@ -91,7 +91,7 @@ export function CsvJobProgress({
             type="button"
             onClick={onCancel}
             className={[
-              "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5",
+              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5",
               "font-[var(--font-body)] text-sm text-[var(--ink-900)]/70",
               "border border-[var(--ink-900)]/10 transition-colors",
               "hover:border-[var(--danger)] hover:text-[var(--danger)]",

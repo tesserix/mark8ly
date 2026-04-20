@@ -87,7 +87,7 @@ export function UserMenu({ email, name, avatarUrl }: UserMenuProps) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-[6px] border border-border bg-[color:var(--background-elevated)] shadow-lg"
+          className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-md border border-border bg-[color:var(--background-elevated)] shadow-lg"
         >
           <div className="flex items-center gap-3 border-b border-border px-4 py-3">
             {avatarUrl ? (

@@ -186,7 +186,7 @@ function ProfileSection({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={avatarUploading || isPending}
-                className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
               >
                 <Upload className="h-4 w-4" aria-hidden="true" />
                 {avatarUploading ? "Uploading..." : "Upload new picture"}
@@ -217,7 +217,7 @@ function ProfileSection({
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={!editable || isPending}
-            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             placeholder="Your name"
           />
         </div>
@@ -232,7 +232,7 @@ function ProfileSection({
             readOnly
             disabled
             aria-readonly="true"
-            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary disabled:opacity-60 disabled:cursor-not-allowed"
+            className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary disabled:opacity-60 disabled:cursor-not-allowed"
             placeholder="you@example.com"
           />
         </div>
@@ -246,7 +246,7 @@ function ProfileSection({
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             disabled={!editable || isPending}
-            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             placeholder="+1 555 123 4567"
           />
         </div>
@@ -256,7 +256,7 @@ function ProfileSection({
           type="button"
           onClick={handleSave}
           disabled={isPending || avatarUploading}
-          className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
+          className="h-10 rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
         >
           {isPending ? "Saving..." : "Save changes"}
         </button>
@@ -352,7 +352,7 @@ function MFASection({
       </div>
 
       {enrolling && (
-        <div className="max-w-md space-y-4 rounded-[6px] border border-border bg-[color:var(--background-elevated)] p-5">
+        <div className="max-w-md space-y-4 rounded-md border border-border bg-[color:var(--background-elevated)] p-5">
           <div className="space-y-2">
             <p className="text-sm font-medium text-foreground">
               1. Scan this QR code with your authenticator app
@@ -364,7 +364,7 @@ function MFASection({
             <img
               src={qrUrl!}
               alt="MFA QR code"
-              className="h-48 w-48 rounded-[6px] border border-border bg-background-elevated"
+              className="h-48 w-48 rounded-md border border-border bg-background-elevated"
             />
             {secret && (
               <details className="text-xs text-foreground-secondary">
@@ -392,7 +392,7 @@ function MFASection({
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               disabled={isPending}
-              className="h-10 w-40 rounded-[6px] border border-border bg-background-elevated px-3 font-mono text-lg tracking-[0.4em] text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+              className="h-10 w-40 rounded-md border border-border bg-background-elevated px-3 font-mono text-lg tracking-[0.4em] text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
               placeholder="000000"
             />
           </div>
@@ -402,7 +402,7 @@ function MFASection({
               type="button"
               onClick={handleConfirm}
               disabled={isPending || code.length !== 6}
-              className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
+              className="h-10 rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
             >
               {isPending ? "Verifying..." : "Verify & enable"}
             </button>
@@ -410,7 +410,7 @@ function MFASection({
               type="button"
               onClick={handleCancelEnroll}
               disabled={isPending}
-              className="h-10 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
+              className="h-10 rounded-md border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
             >
               Cancel
             </button>
@@ -423,7 +423,7 @@ function MFASection({
           type="button"
           onClick={mfaEnabled ? handleDisable : handleEnroll}
           disabled={isPending}
-          className={`h-10 rounded-[6px] px-5 text-sm font-medium transition-colors disabled:opacity-50 ${
+          className={`h-10 rounded-md px-5 text-sm font-medium transition-colors disabled:opacity-50 ${
             mfaEnabled
               ? "border border-border bg-[color:var(--background-elevated)] text-foreground hover:bg-[color:var(--paper-200)]"
               : "bg-[color:var(--ink-900)] text-white hover:bg-[color:var(--ink-900)]/90"
@@ -548,7 +548,7 @@ function DangerZone({ editable }: { editable: boolean }) {
       <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[color:var(--danger)]">
         Danger zone
       </h2>
-      <div className="rounded-[6px] border border-[color:var(--danger)]/30 p-6 space-y-4">
+      <div className="rounded-md border border-[color:var(--danger)]/30 p-6 space-y-4">
         <div className="flex items-start gap-3">
           <Trash2 className="mt-0.5 h-5 w-5 text-[color:var(--danger)]" aria-hidden="true" />
           <div className="space-y-1">
@@ -565,7 +565,7 @@ function DangerZone({ editable }: { editable: boolean }) {
           <button
             type="button"
             onClick={() => setShowConfirm(true)}
-            className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90"
+            className="h-10 rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90"
           >
             Reset my profile
           </button>
@@ -579,7 +579,7 @@ function DangerZone({ editable }: { editable: boolean }) {
               value={confirmation}
               onChange={(e) => setConfirmation(e.target.value)}
               disabled={isPending}
-              className="h-10 w-full max-w-xs rounded-[6px] border border-[color:var(--danger)]/30 bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--danger)] focus:outline-none focus:ring-1 focus:ring-[color:var(--danger)] disabled:opacity-50"
+              className="h-10 w-full max-w-xs rounded-md border border-[color:var(--danger)]/30 bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--danger)] focus:outline-none focus:ring-1 focus:ring-[color:var(--danger)] disabled:opacity-50"
               placeholder="reset my profile"
             />
             <div className="flex gap-3">
@@ -587,7 +587,7 @@ function DangerZone({ editable }: { editable: boolean }) {
                 type="button"
                 onClick={handleDelete}
                 disabled={isPending || confirmation !== "reset my profile"}
-                className="h-10 rounded-[6px] bg-[color:var(--danger)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--danger)]/90 disabled:opacity-50"
+                className="h-10 rounded-md bg-[color:var(--danger)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--danger)]/90 disabled:opacity-50"
               >
                 {isPending ? "Resetting..." : "Reset and sign out"}
               </button>
@@ -597,7 +597,7 @@ function DangerZone({ editable }: { editable: boolean }) {
                   setShowConfirm(false);
                   setConfirmation("");
                 }}
-                className="h-10 rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)]"
+                className="h-10 rounded-md border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)]"
               >
                 Cancel
               </button>

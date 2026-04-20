@@ -26,7 +26,7 @@ export function MediaCard({ media, isPrimary, onAction }: MediaCardProps): React
 
   return (
     <div
-      className="group relative h-40 w-40 overflow-hidden rounded-[6px] border border-[var(--ink-100)] bg-[var(--background-elevated)] shadow-[var(--shadow-1)] transition-shadow hover:shadow-[var(--shadow-2)]"
+      className="group relative h-40 w-40 overflow-hidden rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] shadow-[var(--shadow-1)] transition-shadow hover:shadow-[var(--shadow-2)]"
       data-primary={isPrimary ? "true" : undefined}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -52,7 +52,7 @@ export function MediaCard({ media, isPrimary, onAction }: MediaCardProps): React
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         onClick={() => setMenuOpen((s) => !s)}
-        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-[6px] bg-[var(--background-elevated)]/90 text-[var(--ink-700)] opacity-0 shadow-[var(--shadow-1)] transition-opacity focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)] group-hover:opacity-100 group-focus-within:opacity-100"
+        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md bg-[var(--background-elevated)]/90 text-[var(--ink-700)] opacity-0 shadow-[var(--shadow-1)] transition-opacity focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)] group-hover:opacity-100 group-focus-within:opacity-100"
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </button>
@@ -60,7 +60,7 @@ export function MediaCard({ media, isPrimary, onAction }: MediaCardProps): React
       {menuOpen ? (
         <div
           role="menu"
-          className="absolute right-2 top-11 z-10 flex min-w-[10rem] flex-col rounded-[6px] border border-[var(--ink-100)] bg-[var(--background-elevated)] py-1 shadow-[var(--shadow-2)]"
+          className="absolute right-2 top-11 z-10 flex min-w-[10rem] flex-col rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] py-1 shadow-[var(--shadow-2)]"
         >
           {MENU.map(({ action, label }) => (
             <button

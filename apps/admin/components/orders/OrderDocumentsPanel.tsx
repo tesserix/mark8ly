@@ -110,7 +110,7 @@ function DocumentRow({
       if (r.ok) {
         toast.success(`${label} emailed`, `Delivered to ${recipient}.`);
       } else {
-        toast.error(`Couldn't send ${label.toLowerCase()}`, r.error?.message);
+        toast.error(`Couldn't send ${label.toLowerCase()}`, r.error?.message ?? "Please try again.");
       }
     });
   }

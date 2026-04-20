@@ -50,7 +50,7 @@ export function CsvColumnMapping({
         {csvHeaders.map((csvHeader) => (
           <div
             key={csvHeader}
-            className="flex items-center gap-4 rounded-[6px] border border-[var(--ink-900)]/5 bg-[var(--background-elevated)] px-3 py-2"
+            className="flex items-center gap-4 rounded-md border border-[var(--ink-900)]/5 bg-[var(--background-elevated)] px-3 py-2"
           >
             <span className="w-40 shrink-0 truncate font-[var(--font-body)] text-sm text-[var(--ink-900)]">
               {csvHeader}

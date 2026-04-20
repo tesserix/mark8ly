@@ -145,7 +145,7 @@ function PlatformRow({ platform, state, updatedAt }: PlatformRowProps) {
         {state === 'pending_credentials' && (
           <Link
             href="/settings/billing/pro-app-purchase/credentials"
-            className="inline-flex h-8 items-center rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-3 text-xs font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+            className="inline-flex h-8 items-center rounded-md border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-3 text-xs font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
             data-testid={`lifecycle-cta-credentials-${platform}`}
           >
             {copy.ctaUploadCredentials}
@@ -158,7 +158,7 @@ function PlatformRow({ platform, state, updatedAt }: PlatformRowProps) {
             type="button"
             disabled
             aria-disabled="true"
-            className="inline-flex h-8 cursor-not-allowed items-center rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--paper-200)] px-3 text-xs font-medium text-[var(--ink-400)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+            className="inline-flex h-8 cursor-not-allowed items-center rounded-md border border-[var(--hairline,var(--ink-100))] bg-[var(--paper-200)] px-3 text-xs font-medium text-[var(--ink-400)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
             data-testid={`lifecycle-cta-build-${platform}`}
           >
             {copy.ctaBuildNewVersion}

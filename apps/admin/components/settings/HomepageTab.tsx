@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { RotateCcw, Sparkles } from "lucide-react";
+import { AlertDialog } from "@tesserix/web";
 
 import type {
   AdminCategory,
@@ -44,6 +46,7 @@ export function HomepageTab({
   const hero: HomepageHero = content.hero ?? defaultHero();
   const sections: HomepageSection[] = content.sections ?? [];
   const isEmpty = sections.length === 0;
+  const [resetOpen, setResetOpen] = useState(false);
 
   const setContent = (next: HomepageContent) => {
     patch({ homepage_content: next });
@@ -55,13 +58,11 @@ export function HomepageTab({
   };
 
   const resetToDefaults = () => {
-    if (
-      !window.confirm(
-        "Replace your homepage content with the theme defaults? This can't be undone once you save.",
-      )
-    ) {
-      return;
-    }
+    setResetOpen(true);
+  };
+
+  const confirmReset = () => {
+    setResetOpen(false);
     applyDefaults();
   };
 
@@ -171,6 +172,18 @@ export function HomepageTab({
           storeId={form.store_id}
         />
       </div>
+
+      <AlertDialog
+        isOpen={resetOpen}
+        onClose={() => setResetOpen(false)}
+        title="Reset to theme defaults?"
+        message="Your current homepage content will be replaced. You can still undo by reloading before saving."
+        type="confirm"
+        confirmLabel="Reset"
+        cancelLabel="Keep my content"
+        onConfirm={confirmReset}
+        onCancel={() => setResetOpen(false)}
+      />
     </div>
   );
 }

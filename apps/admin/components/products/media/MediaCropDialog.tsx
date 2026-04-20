@@ -103,7 +103,7 @@ export function MediaCropDialog({
           <button
             type="button"
             onClick={() => setRotation((r) => (r - 90 + 360) % 360)}
-            className="rounded-[6px] border border-[var(--ink-200)] px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+            className="rounded-md border border-[var(--ink-200)] px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
             aria-label="Rotate left"
           >
             Rotate left
@@ -111,7 +111,7 @@ export function MediaCropDialog({
           <button
             type="button"
             onClick={() => setRotation((r) => (r + 90) % 360)}
-            className="rounded-[6px] border border-[var(--ink-200)] px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+            className="rounded-md border border-[var(--ink-200)] px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
             aria-label="Rotate right"
           >
             Rotate right
@@ -128,7 +128,7 @@ export function MediaCropDialog({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-[6px] px-4 py-2 text-sm text-[var(--ink-700)] hover:text-[var(--ink-900)] focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+          className="rounded-md px-4 py-2 text-sm text-[var(--ink-700)] hover:text-[var(--ink-900)] focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
         >
           Cancel
         </button>
@@ -136,7 +136,7 @@ export function MediaCropDialog({
           type="button"
           onClick={() => void handleApply()}
           disabled={!pixelCrop || busy}
-          className="rounded-[6px] bg-[var(--ink-900)] px-5 py-2 text-sm text-[var(--paper-200)] hover:bg-[var(--moss-700)] disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)] focus:ring-offset-2"
+          className="rounded-md bg-[var(--ink-900)] px-5 py-2 text-sm text-[var(--paper-200)] hover:bg-[var(--moss-700)] disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)] focus:ring-offset-2"
         >
           {busy ? "Applying…" : "Apply"}
         </button>

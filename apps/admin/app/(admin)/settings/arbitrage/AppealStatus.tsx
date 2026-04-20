@@ -175,7 +175,7 @@ export function AppealStatus({ storeId }: AppealStatusProps) {
         </p>
         <Link
           href="/settings/arbitrage"
-          className="inline-flex h-9 items-center rounded-[6px] bg-[var(--ink-900)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+          className="inline-flex h-9 items-center rounded-md bg-[var(--ink-900)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
         >
           Submit an appeal
         </Link>

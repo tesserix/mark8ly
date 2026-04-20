@@ -33,7 +33,7 @@ export function MediaAltTextInput({
         onBlur={() => {
           if (draft !== value) onCommit(draft);
         }}
-        className="rounded-[6px] border border-[var(--ink-200)] bg-[var(--background-elevated)] px-3 py-2 text-sm text-[var(--ink-900)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+        className="rounded-md border border-[var(--ink-200)] bg-[var(--background-elevated)] px-3 py-2 text-sm text-[var(--ink-900)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
       />
     </div>
   );

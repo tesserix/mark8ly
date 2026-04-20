@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { AlertDialog } from "@tesserix/web";
 
 import type {
   AdminCategory,
@@ -60,6 +61,7 @@ export function HomepageSectionsEditor({
 }: HomepageSectionsEditorProps) {
   const canAdd = sections.length < MAX_SECTIONS;
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [pendingRemoveIndex, setPendingRemoveIndex] = useState<number | null>(null);
 
   const updateAt = (i: number, next: HomepageSection) => {
     onChange(sections.map((s, idx) => (idx === i ? next : s)));
@@ -119,9 +121,7 @@ export function HomepageSectionsEditor({
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-md text-foreground-secondary hover:bg-danger/10 hover:text-danger"
-                    onClick={() => {
-                      if (window.confirm("Delete this section?")) removeAt(i);
-                    }}
+                    onClick={() => setPendingRemoveIndex(i)}
                     aria-label="Delete section"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -183,6 +183,21 @@ export function HomepageSectionsEditor({
           ) : null}
         </div>
       ) : null}
+
+      <AlertDialog
+        isOpen={pendingRemoveIndex !== null}
+        onClose={() => setPendingRemoveIndex(null)}
+        title="Delete section?"
+        message="This section will be removed from your homepage."
+        type="confirm"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          if (pendingRemoveIndex !== null) removeAt(pendingRemoveIndex);
+          setPendingRemoveIndex(null);
+        }}
+        onCancel={() => setPendingRemoveIndex(null)}
+      />
     </div>
   );
 }

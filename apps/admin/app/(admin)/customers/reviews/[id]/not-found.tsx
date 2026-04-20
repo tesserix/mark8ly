@@ -15,7 +15,7 @@ export default async function ReviewNotFound() {
         </p>
         <Link
           href="/customers/reviews"
-          className="mt-6 inline-flex items-center gap-2 rounded-sm bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="mt-6 inline-flex items-center gap-2 rounded-sm bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--paper-200)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           Back to reviews
         </Link>

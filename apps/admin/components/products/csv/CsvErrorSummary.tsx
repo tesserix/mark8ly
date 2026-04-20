@@ -16,7 +16,7 @@ export function CsvErrorSummary({
   if (errorCount === 0) return null;
 
   return (
-    <div className="flex items-center gap-4 rounded-[6px] border border-[var(--ink-900)]/10 bg-[var(--background-elevated)] px-4 py-3">
+    <div className="flex items-center gap-4 rounded-md border border-[var(--ink-900)]/10 bg-[var(--background-elevated)] px-4 py-3">
       <FileWarning
         className="h-5 w-5 shrink-0 text-[var(--danger,#8B1A1A)]"
         aria-hidden="true"
@@ -32,7 +32,7 @@ export function CsvErrorSummary({
           href={`/api/products/csv-imports/${jobId}/errors.csv`}
           download={`import-errors-${jobId}.csv`}
           className={[
-            "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5",
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5",
             "font-[var(--font-body)] text-sm font-medium text-[var(--moss-700)]",
             "border border-[var(--moss-700)]/20 transition-colors",
             "hover:bg-[var(--moss-700)]/5",

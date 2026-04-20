@@ -278,7 +278,7 @@ export function AttestationForm({ storeId }: AttestationFormProps) {
             isSubmitting ||
             signMutation.isPending
           }
-          className="inline-flex h-11 items-center justify-center rounded-[6px] bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--background-elevated)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-11 items-center justify-center rounded-md bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--background-elevated)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
           style={{ fontFamily: "'Source Sans 3', sans-serif" }}
         >
           {signMutation.isPending ? 'Saving\u2026' : copy.submitCta}

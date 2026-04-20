@@ -15,7 +15,7 @@ export function VariantImagePicker({
   onSelect,
 }: VariantImagePickerProps): React.ReactElement {
   return (
-    <div className="flex flex-col gap-3 rounded-[6px] border border-[var(--ink-100)] bg-[var(--background-elevated)] p-4 shadow-[var(--shadow-1)]">
+    <div className="flex flex-col gap-3 rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] p-4 shadow-[var(--shadow-1)]">
       <div
         role="radiogroup"
         aria-label="Variant image"

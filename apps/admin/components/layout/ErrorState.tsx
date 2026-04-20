@@ -51,7 +51,7 @@ export function ErrorState({
         </p>
       </header>
 
-      <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] p-6">
+      <div className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)] p-6">
         <div className="flex items-start gap-4">
           <AlertCircle
             className="mt-1 h-5 w-5 shrink-0 text-danger"
@@ -74,7 +74,7 @@ export function ErrorState({
                 <button
                   type="button"
                   onClick={onRetry}
-                  className="inline-flex items-center gap-2 rounded-[6px] bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
                 >
                   <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
                   Try again
@@ -83,7 +83,7 @@ export function ErrorState({
               {backHref && (
                 <Link
                   href={backHref}
-                  className="inline-flex items-center gap-2 rounded-[6px] border border-[color:var(--ink-900)]/10 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-[color:var(--ink-900)]/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  className="inline-flex items-center gap-2 rounded-md border border-[color:var(--ink-900)]/10 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-[color:var(--ink-900)]/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
                   {backLabel}

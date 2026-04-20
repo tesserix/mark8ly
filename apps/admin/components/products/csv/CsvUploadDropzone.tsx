@@ -78,7 +78,7 @@ export function CsvUploadDropzone({
           }
         }}
         className={[
-          "flex flex-col items-center justify-center gap-3 rounded-[6px] border border-dashed px-8 py-12",
+          "flex flex-col items-center justify-center gap-3 rounded-md border border-dashed px-8 py-12",
           "cursor-pointer transition-colors",
           "bg-[var(--paper-200)]",
           dragOver

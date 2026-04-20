@@ -31,7 +31,7 @@ export function TicketReplyForm({ ticketId }: TicketReplyFormProps) {
       formRef.current?.reset();
       router.refresh();
     } else {
-      toast.error("Couldn't send reply", state.error);
+      toast.error("Couldn't send reply", state.error ?? "Please try again.");
     }
   }, [state, toast, router]);
 

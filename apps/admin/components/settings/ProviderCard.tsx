@@ -92,7 +92,7 @@ export function ProviderCard({
       : "Add credentials";
 
   return (
-    <article className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)]">
+    <article className="rounded-md border border-border-subtle bg-[color:var(--background-elevated)]">
       {/* Header row */}
       <div className="flex items-start justify-between gap-4 px-6 py-5">
         <div className="flex flex-col gap-1.5">
@@ -128,7 +128,7 @@ export function ProviderCard({
               type="button"
               onClick={handleTest}
               disabled={testing || !isActive}
-              className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:border-[color:var(--ink-900)]/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-md border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:border-[color:var(--ink-900)]/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {testing ? "Testing..." : "Test connection"}
             </button>
@@ -136,7 +136,7 @@ export function ProviderCard({
           <button
             type="button"
             onClick={handleConfigure}
-            className="rounded-[6px] bg-[color:var(--ink-900)] px-3 py-1.5 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="rounded-md bg-[color:var(--ink-900)] px-3 py-1.5 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
             {configureLabel}
           </button>
@@ -146,7 +146,7 @@ export function ProviderCard({
               type="button"
               onClick={handleRemove}
               disabled={removing}
-              className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-[color:var(--danger)] transition-colors hover:border-[color:var(--danger)]/30 hover:bg-[color:var(--danger)]/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-md border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-[color:var(--danger)] transition-colors hover:border-[color:var(--danger)]/30 hover:bg-[color:var(--danger)]/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {removing
                 ? "Removing..."
@@ -165,14 +165,14 @@ export function ProviderCard({
             {testResult.success ? (
               <div
                 role="status"
-                className="animate-in fade-in duration-300 rounded-[6px] border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-2.5 text-sm text-[color:var(--moss-700)]"
+                className="animate-in fade-in duration-300 rounded-md border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-2.5 text-sm text-[color:var(--moss-700)]"
               >
                 Connection successful.
               </div>
             ) : (
               <div
                 role="alert"
-                className="rounded-[6px] border border-[color:var(--danger)]/20 bg-[color:var(--danger)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--danger)]"
+                className="rounded-md border border-[color:var(--danger)]/20 bg-[color:var(--danger)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--danger)]"
               >
                 Connection failed{testResult.error ? `: ${testResult.error}` : "."}
               </div>
@@ -186,7 +186,7 @@ export function ProviderCard({
         <div className="px-6 pb-4">
           <div
             role="alert"
-            className="rounded-[6px] border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--warning)]"
+            className="rounded-md border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--warning)]"
           >
             Remove {formatProviderName(providerName)}? You&rsquo;ll need to add it
             again to re-enable. Click &quot;Confirm remove&quot; to proceed, or

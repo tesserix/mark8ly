@@ -66,7 +66,7 @@ export function ImageLimitGrandfatheredBadge({
         <span
           id={`grandfathered-tooltip-${_productId}`}
           role="tooltip"
-          className="absolute bottom-full left-0 z-10 mb-1.5 w-64 rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated,#fff)] px-3 py-2 text-xs leading-5 text-[var(--ink-700)] shadow-[var(--shadow-1)]"
+          className="absolute bottom-full left-0 z-10 mb-1.5 w-64 rounded-md border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated,#fff)] px-3 py-2 text-xs leading-5 text-[var(--ink-700)] shadow-[var(--shadow-1)]"
           data-testid="grandfathered-tooltip"
         >
           {tooltipText}

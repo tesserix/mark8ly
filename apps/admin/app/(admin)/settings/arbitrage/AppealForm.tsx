@@ -155,7 +155,7 @@ export function AppealForm({ storeId }: AppealFormProps) {
       {errors.root?.message && (
         <div
           role="alert"
-          className="mb-8 rounded-[6px] border border-[var(--hairline)] bg-[var(--paper-200)] px-4 py-3 text-sm text-[var(--ink-700)]"
+          className="mb-8 rounded-md border border-[var(--hairline)] bg-[var(--paper-200)] px-4 py-3 text-sm text-[var(--ink-700)]"
           style={{ fontFamily: "'Source Sans 3', sans-serif" }}
         >
           {errors.root.message}
@@ -218,7 +218,7 @@ export function AppealForm({ storeId }: AppealFormProps) {
             rows={5}
             aria-invalid={Boolean(errors.justification)}
             {...register('justification')}
-            className="w-full rounded-[6px] border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 py-3 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-700)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[var(--moss-700)]"
+            className="w-full rounded-md border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 py-3 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-700)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[var(--moss-700)]"
             style={{ fontFamily: "'Source Sans 3', sans-serif" }}
             placeholder="Optional — describe anything unusual about your customer distribution."
           />
@@ -254,7 +254,7 @@ export function AppealForm({ storeId }: AppealFormProps) {
             type="url"
             aria-invalid={Boolean(errors.document_url)}
             {...register('document_url')}
-            className="h-11 w-full rounded-[6px] border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-700)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[var(--moss-700)]"
+            className="h-11 w-full rounded-md border border-[var(--hairline)] bg-[var(--background-elevated)] px-4 text-sm text-[var(--ink-900)] placeholder:text-[var(--ink-700)] focus:border-[var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[var(--moss-700)]"
             style={{ fontFamily: "'Source Sans 3', sans-serif" }}
             placeholder="https://storage.googleapis.com/…"
           />
@@ -268,7 +268,7 @@ export function AppealForm({ storeId }: AppealFormProps) {
         <button
           type="submit"
           disabled={isSubmitting || submit.isPending}
-          className="inline-flex h-11 items-center justify-center rounded-[6px] bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--background-elevated)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-11 items-center justify-center rounded-md bg-[var(--ink-900)] px-6 text-sm font-medium text-[var(--background-elevated)] transition-colors hover:bg-[var(--ink-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
           style={{ fontFamily: "'Source Sans 3', sans-serif" }}
         >
           {submit.isPending ? 'Submitting\u2026' : copy.submitCta}

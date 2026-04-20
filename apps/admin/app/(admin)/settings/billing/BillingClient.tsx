@@ -29,10 +29,10 @@ function PanelSkeleton() {
       aria-label={copy.loadingAriaLabel}
       className="space-y-3 border-b border-[var(--hairline,var(--ink-100))] pb-10"
     >
-      <Skeleton className="h-7 w-40 rounded-[6px]" />
-      <Skeleton className="h-4 w-72 rounded-[6px]" />
-      <Skeleton className="h-4 w-52 rounded-[6px]" />
-      <Skeleton className="h-10 w-32 rounded-[6px]" />
+      <Skeleton className="h-7 w-40 rounded-md" />
+      <Skeleton className="h-4 w-72 rounded-md" />
+      <Skeleton className="h-4 w-52 rounded-md" />
+      <Skeleton className="h-10 w-32 rounded-md" />
     </div>
   )
 }
@@ -69,7 +69,7 @@ function SetupPanel({ onSetup, isPending, errorMessage }: SetupPanelProps) {
           onClick={onSetup}
           disabled={isPending}
           aria-busy={isPending}
-          className="inline-flex h-10 items-center rounded-[6px] bg-[var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-10 items-center rounded-md bg-[var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--ink-900)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? copy.setupInProgress : copy.setupCta}
         </button>
@@ -100,7 +100,7 @@ function ErrorPanel({ message, onRetry }: ErrorPanelProps) {
       <button
         type="button"
         onClick={onRetry}
-        className="mt-4 inline-flex h-10 items-center rounded-[6px] border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-5 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
+        className="mt-4 inline-flex h-10 items-center rounded-md border border-[var(--hairline,var(--ink-100))] bg-[var(--background-elevated)] px-5 text-sm font-medium text-[var(--ink-900)] transition-colors hover:bg-[var(--paper-200)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)]"
       >
         {copy.retryLabel}
       </button>

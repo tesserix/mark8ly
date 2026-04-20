@@ -149,7 +149,7 @@ export function NotificationSettingsClient({
           type="button"
           onClick={handleSave}
           disabled={isPending || !hasChanges}
-          className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
+          className="h-10 rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
         >
           {isPending ? "Saving..." : "Save preferences"}
         </button>

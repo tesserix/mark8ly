@@ -31,7 +31,7 @@ export function MediaUploader({
     <div className="flex flex-col gap-4">
       <label
         htmlFor="media-uploader-input"
-        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[6px] border border-dashed border-[var(--ink-200)] bg-[var(--paper-200)] px-8 py-12 text-center text-[var(--ink-700)] transition-colors hover:border-[var(--moss-700)] focus-within:border-[var(--moss-700)] focus-within:ring-2 focus-within:ring-[var(--moss-700)]"
+        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[var(--ink-200)] bg-[var(--paper-200)] px-8 py-12 text-center text-[var(--ink-700)] transition-colors hover:border-[var(--moss-700)] focus-within:border-[var(--moss-700)] focus-within:ring-2 focus-within:ring-[var(--moss-700)]"
       >
         <span className="font-[var(--font-serif)] text-xl text-[var(--ink-900)]">
           Drop images or click to browse

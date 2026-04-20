@@ -126,7 +126,7 @@ export default function ImportPage() {
               onClick={handleSubmit}
               disabled={isPending || !hasTitleMapping}
               className={[
-                "rounded-[6px] px-5 py-2 font-[var(--font-body)] text-sm font-medium transition-colors",
+                "rounded-md px-5 py-2 font-[var(--font-body)] text-sm font-medium transition-colors",
                 "bg-[var(--ink-900)] text-[var(--background-elevated)]",
                 "hover:bg-[var(--ink-900)]/85",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--moss-700)]",

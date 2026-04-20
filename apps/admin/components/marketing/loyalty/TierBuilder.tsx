@@ -46,7 +46,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
           <button
             type="button"
             onClick={addTier}
-            className="rounded-[6px] bg-[color:var(--ink-900)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90"
+            className="rounded-md bg-[color:var(--ink-900)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90"
           >
             Add tier
           </button>
@@ -63,7 +63,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
         {value.map((tier, index) => (
           <div
             key={index}
-            className="flex items-end gap-3 rounded-[6px] bg-[color:var(--paper-200)] px-4 py-3"
+            className="flex items-end gap-3 rounded-md bg-[color:var(--paper-200)] px-4 py-3"
           >
             <div className="flex-1 space-y-1">
               <label className="text-xs font-medium text-ink-600">
@@ -75,7 +75,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
                 onChange={(e) => updateTier(index, "name", e.target.value)}
                 disabled={disabled}
                 placeholder="e.g. Silver"
-                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
               />
             </div>
             <div className="w-32 space-y-1">
@@ -90,7 +90,7 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
                 }
                 disabled={disabled}
                 min={0}
-                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2.5 text-sm text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2.5 text-sm text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
               />
             </div>
             <div className="w-28 space-y-1">
@@ -105,14 +105,14 @@ export function TierBuilder({ value, onChange, disabled }: TierBuilderProps) {
                 }
                 disabled={disabled}
                 placeholder="1.5"
-                className="w-full rounded-[6px] border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-background-elevated px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
               />
             </div>
             {!disabled && (
               <button
                 type="button"
                 onClick={() => removeTier(index)}
-                className="mb-0.5 rounded-[6px] px-2 py-1.5 text-xs text-ink-500 transition-colors hover:bg-[color:var(--ink-900)]/5 hover:text-[color:var(--ink-900)]/70"
+                className="mb-0.5 rounded-md px-2 py-1.5 text-xs text-ink-500 transition-colors hover:bg-[color:var(--ink-900)]/5 hover:text-[color:var(--ink-900)]/70"
                 aria-label={`Remove tier ${tier.name || `tier ${index + 1}`}`}
               >
                 Remove

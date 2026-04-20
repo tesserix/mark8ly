@@ -78,7 +78,7 @@ export function TicketStatusStepper({
       toast.success("Ticket updated", "Status change saved.");
       router.refresh();
     } else {
-      toast.error("Couldn't update status", state.error);
+      toast.error("Couldn't update status", state.error ?? "Please try again.");
     }
   }, [state, toast, router]);
 

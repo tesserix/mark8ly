@@ -139,7 +139,7 @@ function AddDomainForm() {
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
             disabled={isPending}
-            className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
             placeholder="shop.example.com"
           />
         </div>
@@ -155,7 +155,7 @@ function AddDomainForm() {
               value={cfToken}
               onChange={(e) => setCfToken(e.target.value)}
               disabled={isPending}
-              className="h-10 w-full rounded-[6px] border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+              className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
               placeholder="Your Cloudflare API token"
             />
           </div>
@@ -165,7 +165,7 @@ function AddDomainForm() {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="h-10 w-fit rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
+          className="h-10 w-fit rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-50"
         >
           {isPending ? "Adding..." : "Add domain"}
         </button>

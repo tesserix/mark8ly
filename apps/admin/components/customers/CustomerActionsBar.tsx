@@ -101,7 +101,7 @@ export function CustomerActionsBar({
               type="button"
               onClick={handleBlock}
               disabled={isPending || !blockReason.trim()}
-              className="rounded-md bg-[color:var(--danger)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
+              className="rounded-md bg-[color:var(--danger)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--danger)]/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
             >
               {isPending ? "Blocking..." : "Confirm block"}
             </button>
@@ -125,7 +125,7 @@ export function CustomerActionsBar({
           type="button"
           onClick={handleUnblock}
           disabled={isPending}
-          className="inline-flex w-fit items-center rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
+          className="inline-flex w-fit items-center rounded-md bg-[color:var(--moss-700)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-800)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-40"
         >
           {isPending ? "Unblocking..." : "Unblock customer"}
         </button>

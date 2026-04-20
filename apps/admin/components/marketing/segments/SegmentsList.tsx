@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AlertDialog } from "@tesserix/web";
 import type { AdminSegment, SessionHeaders } from "@/lib/api/campaigns-api";
 import { deleteSegment } from "@/lib/api/campaigns-api";
 
@@ -52,19 +53,23 @@ export function SegmentsList({
 }: SegmentsListProps) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<AdminSegment | null>(null);
 
-  const handleDelete = useCallback(
-    async (segmentId: string) => {
-      if (!confirm("Delete this segment? This cannot be undone.")) return;
-      setDeletingId(segmentId);
-      const ok = await deleteSegment(storeId, segmentId, session);
-      if (ok) {
-        router.refresh();
-      }
-      setDeletingId(null);
-    },
-    [storeId, session, router],
-  );
+  const requestDelete = useCallback((segment: AdminSegment) => {
+    setPendingDelete(segment);
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    const segmentId = pendingDelete.id;
+    setPendingDelete(null);
+    setDeletingId(segmentId);
+    const ok = await deleteSegment(storeId, segmentId, session);
+    if (ok) {
+      router.refresh();
+    }
+    setDeletingId(null);
+  }, [pendingDelete, storeId, session, router]);
 
   if (segments.length === 0) {
     return (
@@ -126,7 +131,7 @@ export function SegmentsList({
               </td>
               <td className="py-3 pr-4 text-right">
                 <button
-                  onClick={() => handleDelete(seg.id)}
+                  onClick={() => requestDelete(seg)}
                   disabled={deletingId === seg.id}
                   aria-label={`Delete segment ${seg.name}`}
                   className="text-xs text-[color:var(--danger)] underline-offset-4 opacity-0 transition-opacity hover:underline group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50"
@@ -138,6 +143,18 @@ export function SegmentsList({
           ))}
         </tbody>
       </table>
+
+      <AlertDialog
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        title={pendingDelete ? `Delete "${pendingDelete.name}"?` : "Delete segment?"}
+        message="This can't be undone."
+        type="confirm"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

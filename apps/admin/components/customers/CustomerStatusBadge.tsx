@@ -7,15 +7,15 @@ interface CustomerStatusBadgeProps {
 
 const statusConfig: Record<
   CustomerStatus,
-  { label: string; colorClass: string }
+  { label: string; chipClass: string }
 > = {
   active: {
     label: "Active",
-    colorClass: "text-[color:var(--moss-700)]",
+    chipClass: "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]",
   },
   blocked: {
     label: "Blocked",
-    colorClass: "text-[color:var(--danger)]",
+    chipClass: "bg-[color:var(--danger)]/10 text-[color:var(--danger)]",
   },
 };
 
@@ -25,7 +25,9 @@ export function CustomerStatusBadge({
 }: CustomerStatusBadgeProps) {
   const config = statusConfig[status] ?? statusConfig.active;
   return (
-    <span className={`font-medium ${config.colorClass} ${className}`}>
+    <span
+      className={`inline-flex items-center rounded-sm px-2.5 py-0.5 text-xs font-medium ${config.chipClass} ${className}`}
+    >
       {config.label}
     </span>
   );

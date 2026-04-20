@@ -11,21 +11,22 @@ export function CustomerDetailHeader({ customer }: CustomerDetailHeaderProps) {
 
   return (
     <header className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <h1
-            id="customer-heading"
-            className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl"
-          >
-            {name}
-          </h1>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1
+              id="customer-heading"
+              className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl"
+            >
+              {name}
+            </h1>
+            <CustomerStatusBadge status={customer.status} />
+          </div>
           <p className="text-sm text-foreground-secondary">
             {customer.email}
             {customer.phone ? ` \u00b7 ${customer.phone}` : ""}
           </p>
         </div>
-
-        <CustomerStatusBadge status={customer.status} className="text-base" />
       </div>
 
       {customer.status === "blocked" && customer.block_reason && (

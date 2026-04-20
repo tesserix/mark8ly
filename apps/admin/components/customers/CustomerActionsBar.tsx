@@ -53,10 +53,10 @@ export function CustomerActionsBar({
 
   return (
     <section aria-labelledby="actions-heading" className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
         <h2
           id="actions-heading"
-          className="font-serif text-2xl font-medium text-foreground"
+          className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
         >
           Actions
         </h2>

@@ -36,7 +36,7 @@ export function CustomerNotesEditor({
     <section aria-labelledby="notes-heading" className="flex flex-col gap-4">
       <h2
         id="notes-heading"
-        className="font-serif text-2xl font-medium text-foreground"
+        className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
       >
         Notes
       </h2>

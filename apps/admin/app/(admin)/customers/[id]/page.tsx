@@ -50,30 +50,37 @@ export default async function CustomerDetailPage({ params }: PageProps) {
 
       <CustomerDetailHeader customer={customer} />
 
-      <div className="flex flex-col gap-10">
-        <CustomerOverviewCard
-          customer={customer}
-          currency={currentStore.currency_code}
-        />
-        <CustomerAddressesCard addresses={customer.addresses} />
-        <CustomerTagsEditor
-          customerId={customer.id}
-          initialTags={customer.tags}
-          updateAction={updateTagsAction}
-        />
-        <CustomerNotesEditor
-          customerId={customer.id}
-          initialNotes={customer.notes ?? ""}
-          updateAction={updateNotesAction}
-        />
-        <div className="border-t border-border-subtle pt-8">
-          <CustomerActionsBar
-            customerId={customer.id}
-            status={customer.status}
-            blockAction={blockCustomerAction}
-            unblockAction={unblockCustomerAction}
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="flex min-w-0 flex-col gap-10">
+          <CustomerOverviewCard
+            customer={customer}
+            currency={currentStore.currency_code}
           />
+          <CustomerAddressesCard addresses={customer.addresses} />
         </div>
+
+        <aside className="flex flex-col gap-8 lg:sticky lg:top-8 lg:self-start">
+          <CustomerTagsEditor
+            customerId={customer.id}
+            initialTags={customer.tags}
+            updateAction={updateTagsAction}
+          />
+          <div className="border-t border-border-subtle pt-8">
+            <CustomerNotesEditor
+              customerId={customer.id}
+              initialNotes={customer.notes ?? ""}
+              updateAction={updateNotesAction}
+            />
+          </div>
+          <div className="border-t border-border-subtle pt-8">
+            <CustomerActionsBar
+              customerId={customer.id}
+              status={customer.status}
+              blockAction={blockCustomerAction}
+              unblockAction={unblockCustomerAction}
+            />
+          </div>
+        </aside>
       </div>
     </main>
   );

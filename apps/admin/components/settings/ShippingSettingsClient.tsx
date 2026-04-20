@@ -34,8 +34,8 @@ export function ShippingSettingsClient({
 
   if (supported.shipping_carriers.length === 0) {
     return (
-      <div className="rounded-[6px] bg-white px-6 py-10 text-center">
-        <p className="text-sm text-[color:var(--ink-900)]/50">
+      <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-10 text-center">
+        <p className="text-sm text-foreground-tertiary">
           No shipping carriers are currently available for{" "}
           {supported.country_name} ({supported.country_code}).
         </p>
@@ -70,7 +70,7 @@ export function ShippingSettingsClient({
             {editable ? (
               <ShippingConfigForm provider={carrier} existing={cfg} />
             ) : (
-              <p className="text-sm text-[color:var(--ink-900)]/50">
+              <p className="text-sm text-foreground-tertiary">
                 You do not have permission to edit this configuration.
               </p>
             )}

@@ -47,8 +47,8 @@ export function PaymentSettingsClient({
       {/* Payment providers — one card per country-supported provider */}
       <section className="space-y-3">
         {supported.payment_providers.length === 0 ? (
-          <div className="rounded-[6px] bg-white px-6 py-10 text-center">
-            <p className="text-sm text-[color:var(--ink-900)]/50">
+          <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-10 text-center">
+            <p className="text-sm text-foreground-tertiary">
               No payment providers are currently available for{" "}
               {supported.country_name} ({supported.country_code}).
             </p>
@@ -98,7 +98,7 @@ export function PaymentSettingsClient({
                     hasWebhookSecret={Boolean(cfg?.webhook_secret)}
                   />
                 ) : (
-                  <p className="text-sm text-[color:var(--ink-900)]/50">
+                  <p className="text-sm text-foreground-tertiary">
                     You do not have permission to edit this configuration.
                   </p>
                 )}
@@ -133,29 +133,29 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
     <section className="space-y-3">
       <div className="space-y-2">
         <p className="eyebrow">Tax</p>
-        <h2 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-2xl font-medium tracking-tight text-[color:var(--ink-900)]">
+        <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
           Tax strategy
         </h2>
-        <p className="text-sm text-[color:var(--ink-900)]/60">
+        <p className="text-sm text-foreground-tertiary">
           Tax calculation is determined by your store&apos;s country (
           {countryCode}) and cannot be changed here.
         </p>
       </div>
 
       {!taxConfig ? (
-        <div className="rounded-[6px] bg-white px-6 py-5 text-sm text-[color:var(--ink-900)]/50">
+        <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5 text-sm text-foreground-tertiary">
           Unable to load tax configuration. Please try again later.
         </div>
       ) : (
         <div className="space-y-3">
           {/* Strategy summary pill */}
-          <div className="rounded-[6px] bg-white px-6 py-5">
+          <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5">
             <div className="flex items-start gap-4">
               <div className="space-y-1.5">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-foreground-tertiary">
                   Strategy
                 </h3>
-                <p className="text-sm text-[color:var(--ink-900)]/70">
+                <p className="text-sm text-foreground-secondary">
                   {strategyLabel(taxConfig.strategy, countryCode)}
                 </p>
               </div>
@@ -167,14 +167,14 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
 
           {/* Flat-rate countries */}
           {taxConfig.strategy === "flat_rate" && taxConfig.rate != null && (
-            <div className="rounded-[6px] bg-white px-6 py-5">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50 mb-3">
+            <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-foreground-tertiary mb-3">
                 Rate
               </h3>
-              <p className="text-2xl font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-[color:var(--ink-900)]">
+              <p className="font-serif text-2xl text-foreground">
                 {taxConfig.rate}%
               </p>
-              <p className="mt-2 text-sm text-[color:var(--ink-900)]/50">
+              <p className="mt-2 text-sm text-foreground-tertiary">
                 Applied automatically to all orders from {countryCode}.
               </p>
             </div>
@@ -182,14 +182,14 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
 
           {/* India GST */}
           {taxConfig.strategy === "india_gst" && taxConfig.india_gst && (
-            <div className="rounded-[6px] bg-white px-6 py-5 space-y-3">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+            <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5 space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-foreground-tertiary">
                 India GST (automatic)
               </h3>
-              <p className="text-sm text-[color:var(--ink-900)]/70 leading-6">
+              <p className="text-sm text-foreground-secondary leading-6">
                 {taxConfig.india_gst.description}
               </p>
-              <p className="text-sm text-[color:var(--ink-900)]/50">
+              <p className="text-sm text-foreground-tertiary">
                 Set the HSN code and GST rate on each product to ensure correct
                 tax at checkout.
               </p>
@@ -198,9 +198,9 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
 
           {/* US: TaxJar form */}
           {taxConfig.strategy === "taxjar" && (
-            <div className="rounded-[6px] bg-white px-6 py-5 space-y-4">
+            <div className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)] px-6 py-5 space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-foreground-tertiary">
                   TaxJar configuration
                 </h3>
                 {taxConfig.taxjar?.configured && (
@@ -208,7 +208,7 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
                       taxConfig.taxjar.is_active
                         ? "bg-[color:var(--moss-700)]/10 text-[color:var(--moss-700)]"
-                        : "bg-[color:var(--ink-900)]/5 text-[color:var(--ink-900)]/50"
+                        : "bg-[color:var(--ink-900)]/5 text-foreground-tertiary"
                     }`}
                   >
                     <span
@@ -224,7 +224,7 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
                 )}
               </div>
 
-              <p className="text-sm text-[color:var(--ink-900)]/50 leading-6">
+              <p className="text-sm text-foreground-tertiary leading-6">
                 US stores use TaxJar for sales tax calculation. Enter your
                 TaxJar API key to enable automatic rates at checkout.
               </p>
@@ -238,7 +238,7 @@ function TaxSection({ countryCode, taxConfig, editable }: TaxSectionProps) {
                   isConfigured={taxConfig.taxjar?.configured ?? false}
                 />
               ) : (
-                <p className="text-sm text-[color:var(--ink-900)]/50">
+                <p className="text-sm text-foreground-tertiary">
                   You do not have permission to edit tax configuration.
                 </p>
               )}

@@ -92,12 +92,12 @@ export function ProviderCard({
       : "Add credentials";
 
   return (
-    <article className="rounded-[6px] bg-white">
+    <article className="rounded-[6px] border border-border-subtle bg-[color:var(--background-elevated)]">
       {/* Header row */}
       <div className="flex items-start justify-between gap-4 px-6 py-5">
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-3">
-            <h3 className="font-[family-name:var(--font-source-serif),'Source_Serif_4',serif] text-lg font-medium text-[color:var(--ink-900)]">
+            <h3 className="font-serif text-lg font-medium text-foreground">
               {formatProviderName(providerName)}
             </h3>
             {configured ? (
@@ -106,7 +106,7 @@ export function ProviderCard({
                 <ModeBadge mode={mode} />
               </>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--ink-900)]/5 px-2.5 py-0.5 text-xs font-medium text-[color:var(--ink-900)]/50">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--ink-900)]/5 px-2.5 py-0.5 text-xs font-medium text-foreground-tertiary">
                 <span
                   className="h-1.5 w-1.5 rounded-full bg-[color:var(--ink-900)]/30"
                   aria-hidden="true"
@@ -116,19 +116,19 @@ export function ProviderCard({
             )}
           </div>
           {configured && maskedKey && (
-            <p className="text-sm text-[color:var(--ink-900)]/60 font-mono">
+            <p className="font-mono text-sm text-foreground-secondary">
               {maskedKey}
             </p>
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
           {onTest && configured && (
             <button
               type="button"
               onClick={handleTest}
               disabled={testing || !isActive}
-              className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--ink-900)]/25 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:border-[color:var(--ink-900)]/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {testing ? "Testing..." : "Test connection"}
             </button>
@@ -136,7 +136,7 @@ export function ProviderCard({
           <button
             type="button"
             onClick={handleConfigure}
-            className="rounded-[6px] bg-[color:var(--ink-900)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            className="rounded-[6px] bg-[color:var(--ink-900)] px-3 py-1.5 text-sm font-medium text-[color:var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
             {configureLabel}
           </button>
@@ -146,7 +146,7 @@ export function ProviderCard({
               type="button"
               onClick={handleRemove}
               disabled={removing}
-              className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="rounded-[6px] border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-[color:var(--danger)] transition-colors hover:border-[color:var(--danger)]/30 hover:bg-[color:var(--danger)]/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {removing
                 ? "Removing..."
@@ -172,7 +172,7 @@ export function ProviderCard({
             ) : (
               <div
                 role="alert"
-                className="rounded-[6px] border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800"
+                className="rounded-[6px] border border-[color:var(--danger)]/20 bg-[color:var(--danger)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--danger)]"
               >
                 Connection failed{testResult.error ? `: ${testResult.error}` : "."}
               </div>
@@ -186,7 +186,7 @@ export function ProviderCard({
         <div className="px-6 pb-4">
           <div
             role="alert"
-            className="rounded-[6px] border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
+            className="rounded-[6px] border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--warning)]"
           >
             Are you sure? This will remove the {formatProviderName(providerName)}{" "}
             configuration. Click &quot;Confirm remove&quot; again to proceed, or
@@ -244,7 +244,7 @@ function ModeBadge({ mode }: { mode: string }) {
       className={`inline-block rounded-[4px] px-2 py-0.5 text-[11px] uppercase tracking-wider ${
         isLive
           ? "bg-[color:var(--moss-700)]/10 font-bold text-[color:var(--moss-700)]"
-          : "bg-amber-50 font-semibold text-amber-700"
+          : "bg-[color:var(--warning)]/10 font-semibold text-[color:var(--warning)]"
       }`}
     >
       {isLive ? "Live mode" : "Test mode"}

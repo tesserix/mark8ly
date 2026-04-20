@@ -24,9 +24,13 @@ export function PaymentMethodCard({ plan, storeId }: PaymentMethodCardProps) {
   const openPortal = useOpenPortal(storeId)
   const { toast } = useToast()
 
-  const hasBrand = Boolean(plan.paymentMethodBrand)
-  const hasLast4 = Boolean(plan.paymentMethodLast4)
-  const hasCard = hasBrand && hasLast4
+  const pmType = plan.paymentMethodType
+  const hasPaymentMethod =
+    pmType === 'card' || pmType === 'link' ||
+    // Legacy rows from before Type shipped: derive from brand/last4.
+    (Boolean(plan.paymentMethodBrand) && Boolean(plan.paymentMethodLast4))
+  const isCard = pmType === 'card' || (!pmType && hasPaymentMethod)
+  const isLink = pmType === 'link'
 
   const renewalDate = plan.periodEnd ? formatBillingDate(plan.periodEnd) : null
 
@@ -51,10 +55,21 @@ export function PaymentMethodCard({ plan, storeId }: PaymentMethodCardProps) {
       </h2>
 
       <div className="mt-4 space-y-1">
-        {hasCard ? (
+        {isCard && plan.paymentMethodBrand && plan.paymentMethodLast4 ? (
           <>
             <p className="text-sm text-[var(--ink-900)]">
-              {copy.cardEnding(plan.paymentMethodBrand!, plan.paymentMethodLast4!)}
+              {copy.cardEnding(plan.paymentMethodBrand, plan.paymentMethodLast4)}
+            </p>
+            {renewalDate && (
+              <p className="text-sm text-[var(--ink-700)]">
+                {copy.renewsAutomatically(renewalDate)}
+              </p>
+            )}
+          </>
+        ) : isLink ? (
+          <>
+            <p className="text-sm text-[var(--ink-900)]">
+              {copy.linkPaymentMethod(plan.paymentMethodLast4 ?? '')}
             </p>
             {renewalDate && (
               <p className="text-sm text-[var(--ink-700)]">
@@ -79,7 +94,7 @@ export function PaymentMethodCard({ plan, storeId }: PaymentMethodCardProps) {
         >
           {openPortal.isPending
             ? copy.openingPortal
-            : hasCard
+            : hasPaymentMethod
               ? copy.updateCard
               : copy.addPaymentMethod}
         </button>

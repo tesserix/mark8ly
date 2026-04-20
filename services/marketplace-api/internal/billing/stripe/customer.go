@@ -52,21 +52,24 @@ func CreateCustomer(ctx context.Context, c *Client, in CreateCustomerInput) (*Cu
 // DeleteCustomer permanently deletes a Stripe customer. This is irreversible
 // and is only called as part of the hard-delete pipeline (§15.2 — 150-day step).
 //
-// PaymentMethodSummary captures just the card-brand + last4 surfaced to the
-// billing page. Returned from GetCustomerDefaultCard. Both fields empty means
-// the customer has no payment method on file yet.
+// PaymentMethodSummary captures the card-brand + last4 (or Link email)
+// surfaced to the billing page. Empty Type + Brand means no PM on file.
+// For Type="card" the UI renders "<Brand> ending in ···· <Last4>".
+// For Type="link" Last4 holds the Link account email (for display only).
 type PaymentMethodSummary struct {
-	Brand string
-	Last4 string
+	Type  string // "card" | "link" | "" (none)
+	Brand string // card brand (visa/mastercard/...) or "link"
+	Last4 string // card last-4 digits, or Link account email for Type=link
 }
 
-// GetCustomerDefaultCard returns the brand + last4 of the customer's current
-// billing card. Prefers invoice_settings.default_payment_method; falls back to
-// the most recently attached card PaymentMethod so portal-added methods surface
-// even when Stripe hasn't promoted them to default yet.
+// GetCustomerDefaultPaymentMethod returns a summary of the customer's current
+// billing method. Prefers invoice_settings.default_payment_method; falls back
+// to the most recently attached PaymentMethod of any type so portal-added
+// methods surface even when Stripe hasn't promoted them to default yet.
 //
-// Missing PM is not an error — returns (PaymentMethodSummary{}, false, nil).
-func GetCustomerDefaultCard(ctx context.Context, c *Client, customerID string) (PaymentMethodSummary, bool, error) {
+// Handles both card and Stripe Link payment methods. Missing PM is not an
+// error — returns (PaymentMethodSummary{}, false, nil).
+func GetCustomerDefaultPaymentMethod(ctx context.Context, c *Client, customerID string) (PaymentMethodSummary, bool, error) {
 	if customerID == "" {
 		return PaymentMethodSummary{}, false, nil
 	}
@@ -78,29 +81,59 @@ func GetCustomerDefaultCard(ctx context.Context, c *Client, customerID string) (
 	if err != nil {
 		return PaymentMethodSummary{}, false, toAPIError(err)
 	}
-	if cu != nil && cu.InvoiceSettings != nil &&
-		cu.InvoiceSettings.DefaultPaymentMethod != nil &&
-		cu.InvoiceSettings.DefaultPaymentMethod.Card != nil {
-		card := cu.InvoiceSettings.DefaultPaymentMethod.Card
-		return PaymentMethodSummary{Brand: string(card.Brand), Last4: card.Last4}, true, nil
+	if cu != nil && cu.InvoiceSettings != nil && cu.InvoiceSettings.DefaultPaymentMethod != nil {
+		if sum, ok := summariseSDKPaymentMethod(cu.InvoiceSettings.DefaultPaymentMethod); ok {
+			return sum, true, nil
+		}
 	}
 
-	// Fallback — list attached card payment methods and take the first.
+	// Fallback — list attached payment methods of any type and take the
+	// first. Stripe Link PMs don't get listed under type=card, so don't
+	// filter by type.
 	listParams := &sdk.PaymentMethodListParams{
 		Customer: sdk.String(customerID),
-		Type:     sdk.String("card"),
 	}
 	listParams.Context = ctx
-	listParams.Limit = sdk.Int64(1)
+	listParams.Limit = sdk.Int64(5)
 	for pm, err := range c.sdk.V1PaymentMethods.List(ctx, listParams) {
 		if err != nil {
 			return PaymentMethodSummary{}, false, toAPIError(err)
 		}
-		if pm != nil && pm.Card != nil {
-			return PaymentMethodSummary{Brand: string(pm.Card.Brand), Last4: pm.Card.Last4}, true, nil
+		if pm == nil {
+			continue
+		}
+		if sum, ok := summariseSDKPaymentMethod(pm); ok {
+			return sum, true, nil
 		}
 	}
 	return PaymentMethodSummary{}, false, nil
+}
+
+func summariseSDKPaymentMethod(pm *sdk.PaymentMethod) (PaymentMethodSummary, bool) {
+	if pm == nil {
+		return PaymentMethodSummary{}, false
+	}
+	switch string(pm.Type) {
+	case "card":
+		if pm.Card != nil {
+			return PaymentMethodSummary{
+				Type:  "card",
+				Brand: string(pm.Card.Brand),
+				Last4: pm.Card.Last4,
+			}, true
+		}
+	case "link":
+		email := ""
+		if pm.Link != nil {
+			email = pm.Link.Email
+		}
+		return PaymentMethodSummary{
+			Type:  "link",
+			Brand: "link",
+			Last4: email,
+		}, true
+	}
+	return PaymentMethodSummary{}, false
 }
 
 // Idempotent: if the customer is already deleted in Stripe (HTTP 404), the

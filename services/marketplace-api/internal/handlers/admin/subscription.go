@@ -95,9 +95,12 @@ type SubscriptionResponse struct {
 	// LatestArbitrageAudit is null when no flag has ever been raised.
 	ArbitrageFlag        bool                   `json:"arbitrage_flag"`
 	LatestArbitrageAudit *ArbitrageAuditSummary `json:"latest_arbitrage_audit,omitempty"`
-	// Billing UI — card brand + last4 for the customer's default payment
-	// method. Populated lazily by GetSubscription when WithStripe is wired.
-	// Empty string when the customer has no PM on file yet.
+	// Billing UI — summary of the customer's default payment method.
+	// PaymentMethodType is "card" | "link" | "" when present; callers render
+	// differently per type. For Type=card, Last4 is the card's last 4 digits;
+	// for Type=link, Last4 carries the Link account email (display only).
+	// All three fields omitted when the customer has no PM on file yet.
+	PaymentMethodType  *string `json:"payment_method_type,omitempty"`
 	PaymentMethodBrand *string `json:"payment_method_brand,omitempty"`
 	PaymentMethodLast4 *string `json:"payment_method_last4,omitempty"`
 }
@@ -197,17 +200,20 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 		}
 	}
 
-	// Enrich with the customer's default card when Stripe is wired. Degrade
-	// gracefully on error — payment method display is not load-bearing.
+	// Enrich with the customer's default payment method when Stripe is wired.
+	// Handles both card and Stripe Link payment methods. Degrade gracefully
+	// on error — payment method display is not load-bearing.
 	if h.stripe != nil && sub.StripeCustomerID != "" {
-		pm, ok, pmErr := billingstripe.GetCustomerDefaultCard(c.Request.Context(), h.stripe, sub.StripeCustomerID)
+		pm, ok, pmErr := billingstripe.GetCustomerDefaultPaymentMethod(c.Request.Context(), h.stripe, sub.StripeCustomerID)
 		if pmErr != nil {
 			h.logger.Warn("payment method load failed; omitting from response", "err", pmErr)
 		} else if ok {
 			brand := pm.Brand
 			last4 := pm.Last4
+			pmType := pm.Type
 			resp.PaymentMethodBrand = &brand
 			resp.PaymentMethodLast4 = &last4
+			resp.PaymentMethodType = &pmType
 		}
 	}
 

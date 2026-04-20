@@ -137,6 +137,8 @@ export const subscriptionCopy = {
     paymentMethodDescription: 'The card charged at each renewal.',
     cardEnding: (brand: string, last4: string) =>
       `${brand.charAt(0).toUpperCase()}${brand.slice(1)} ending in \u2022\u2022\u2022\u2022 ${last4}`,
+    linkPaymentMethod: (email: string) =>
+      email ? `Link \u2022 ${email}` : 'Link payments',
     renewsAutomatically: (date: string) =>
       `Renewed automatically on ${date}`,
     updateCard: 'Update card',

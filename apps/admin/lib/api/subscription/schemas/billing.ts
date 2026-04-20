@@ -104,10 +104,13 @@ export const subscriptionResponseSchema = z.object({
   /** Amount due on the next invoice, in minor units (cents). */
   next_invoice_amount_minor: z.number().int().nullable().optional(),
 
-  /** Stripe card brand, e.g. "visa", "mastercard". */
+  /** Payment method kind: "card" | "link" | null. Renders conditionally. */
+  payment_method_type: z.string().nullable().optional(),
+
+  /** Stripe card brand (visa, mastercard, ...) or "link" for Stripe Link. */
   payment_method_brand: z.string().nullable().optional(),
 
-  /** Last 4 digits of the card on file. */
+  /** Card last 4 digits, or Link account email for Type=link. */
   payment_method_last4: z.string().nullable().optional(),
 
   /**
@@ -168,6 +171,7 @@ export interface CurrentPlan {
   createdAt: string
   trialEndsAt: string | null
   nextInvoiceAmountMinor: number | null
+  paymentMethodType: 'card' | 'link' | null
   paymentMethodBrand: string | null
   paymentMethodLast4: string | null
   /** White-label app lifecycle info. Null until P13/P14 backend ships. */
@@ -192,6 +196,10 @@ export function toCurrentPlan(raw: SubscriptionResponse): CurrentPlan {
     createdAt: raw.created_at,
     trialEndsAt: raw.trial_ends_at ?? null,
     nextInvoiceAmountMinor: raw.next_invoice_amount_minor ?? null,
+    paymentMethodType:
+      raw.payment_method_type === 'card' || raw.payment_method_type === 'link'
+        ? raw.payment_method_type
+        : null,
     paymentMethodBrand: raw.payment_method_brand ?? null,
     paymentMethodLast4: raw.payment_method_last4 ?? null,
     whiteLabelApp: raw.white_label_app

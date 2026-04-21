@@ -701,7 +701,7 @@ export default function CheckoutPage() {
                 {shippingRates.map((rate) => (
                   <label
                     key={rate.service}
-                    className={`flex cursor-pointer items-center justify-between rounded-md border px-4 py-3 transition-all duration-150 ${
+                    className={`flex cursor-pointer items-center justify-between rounded-md border px-4 py-3 transition-colors duration-150 ${
                       selectedShipping === rate.service
                         ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/5"
                         : "border-[color:var(--storefront-text,var(--ink-900))]/15 hover:border-[color:var(--storefront-text,var(--ink-900))]/30"
@@ -758,7 +758,7 @@ export default function CheckoutPage() {
                 {paymentMethods.map((pm) => (
                   <label
                     key={pm.provider}
-                    className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 transition-all duration-150 ${
+                    className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 transition-colors duration-150 ${
                       selectedProvider === pm.provider
                         ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/5"
                         : "border-[color:var(--storefront-text,var(--ink-900))]/15 hover:border-[color:var(--storefront-text,var(--ink-900))]/30"

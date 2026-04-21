@@ -74,10 +74,14 @@ export function UserMenu({ email, name, avatarUrl }: UserMenuProps) {
           <img
             src={avatarUrl}
             alt=""
+            aria-hidden="true"
             className="h-9 w-9 rounded-full object-cover"
           />
         ) : (
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--ink-900)] text-xs font-semibold text-[color:var(--primary-foreground)]">
+          <span
+            aria-hidden="true"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--ink-900)] text-xs font-semibold text-[color:var(--primary-foreground)]"
+          >
             {initial}
           </span>
         )}
@@ -95,10 +99,14 @@ export function UserMenu({ email, name, avatarUrl }: UserMenuProps) {
               <img
                 src={avatarUrl}
                 alt=""
+                aria-hidden="true"
                 className="h-10 w-10 shrink-0 rounded-full object-cover"
               />
             ) : (
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color:var(--ink-900)] text-sm font-semibold text-[color:var(--primary-foreground)]">
+              <span
+                aria-hidden="true"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color:var(--ink-900)] text-sm font-semibold text-[color:var(--primary-foreground)]"
+              >
                 {initial}
               </span>
             )}

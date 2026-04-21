@@ -135,7 +135,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
       {error && (
         <p
           role="alert"
-          className="text-sm text-[color:var(--danger,#5a1010)]"
+          className="text-sm text-[color:var(--danger)]"
         >
           {error}
         </p>
@@ -259,7 +259,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 function FormError({ error }: { error: OrderActionResult["error"] | undefined }) {
   if (!error) return null;
   return (
-    <p role="alert" className="text-sm text-[color:var(--danger,#5a1010)]">
+    <p role="alert" className="text-sm text-[color:var(--danger)]">
       {error.message || "Something went wrong. Please try again."}
     </p>
   );
@@ -474,7 +474,7 @@ function RefundForm({
             <strong>{currencyCode} {amount}</strong> to {customerEmail}.
             The order will be marked <strong>{label}</strong>.
           </p>
-          <p className="text-[color:var(--danger,#5a1010)]">
+          <p className="text-[color:var(--danger)]">
             This cannot be undone.
           </p>
           {reason && <p className="opacity-70">Note: {reason}</p>}

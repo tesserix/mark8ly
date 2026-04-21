@@ -70,7 +70,7 @@ export function LoyaltyRedemption({
           className="peer sr-only"
           aria-label={`Redeem ${pointsBalance} ${pointsCurrency}`}
         />
-        <div className="h-6 w-11 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))]/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-md after:bg-[color:var(--storefront-surface,#ffffff)] after:transition-all peer-checked:bg-[color:var(--storefront-accent,var(--moss-700))] peer-checked:after:translate-x-full" />
+        <div className="h-6 w-11 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))]/10 transition-colors after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-md after:bg-[color:var(--storefront-surface,#ffffff)] after:shadow-sm after:transition-transform peer-checked:bg-[color:var(--storefront-accent,var(--moss-700))] peer-checked:after:translate-x-full" />
       </label>
     </div>
   );

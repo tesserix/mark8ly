@@ -37,7 +37,7 @@ declare global {
 }
 
 const RZP_SCRIPT = "https://checkout.razorpay.com/v1/checkout.js";
-const DEFAULT_ACCENT_HEX = "#2C5530";
+const DEFAULT_ACCENT_HEX = "#2D4A2B";
 
 /**
  * Razorpay's `theme.color` API accepts a hex string. Read the live

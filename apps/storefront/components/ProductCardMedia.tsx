@@ -82,7 +82,12 @@ function ProductCardMediaImpl({ media, alt }: Props) {
                 setIndex(i);
               }}
               className={[
-                "h-1.5 rounded-full transition-all duration-300",
+                // Active/inactive width snaps rather than animating —
+                // width is a layout property, and a grid of 12 cards ×
+                // ~5 dots × 4fps ticker would otherwise force 240+
+                // layout recalcs per second during cycle. The bg
+                // opacity still transitions for hover feedback.
+                "h-1.5 rounded-full transition-colors duration-200",
                 "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
                 i === index
                   ? "w-5 bg-[color:var(--storefront-background,var(--paper-200))]"

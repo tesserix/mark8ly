@@ -254,7 +254,7 @@ export function ProgramConfigForm({
             className="peer sr-only"
             aria-label="Toggle loyalty program"
           />
-          <div className="h-6 w-11 rounded-full bg-[color:var(--ink-900)]/15 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-background-elevated after:shadow-sm after:transition-all peer-checked:bg-[color:var(--moss-700)] peer-checked:after:translate-x-full" />
+          <div className="h-6 w-11 rounded-full bg-[color:var(--ink-900)]/15 transition-colors after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-background-elevated after:shadow-sm after:transition-transform peer-checked:bg-[color:var(--moss-700)] peer-checked:after:translate-x-full" />
         </label>
       </section>
 

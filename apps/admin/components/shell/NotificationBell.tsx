@@ -80,7 +80,11 @@ export function NotificationBell({
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Poll unread count every 30 seconds
+  // Poll unread count every 30 seconds — but only while the tab is
+  // visible. A backgrounded admin tab left open all day would otherwise
+  // hit the unread-count endpoint ~2,880×/day per user for data that
+  // won't paint until the tab is foregrounded again. Mirror the pattern
+  // used in storefront OrderTimeline so both apps behave consistently.
   const fetchUnreadCount = useCallback(async () => {
     try {
       const res = await fetch(
@@ -97,9 +101,40 @@ export function NotificationBell({
   }, [storeId]);
 
   useEffect(() => {
-    fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 30_000);
-    return () => clearInterval(interval);
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (intervalId !== null) return;
+      intervalId = setInterval(fetchUnreadCount, 30_000);
+    }
+    function stopPolling() {
+      if (intervalId === null) return;
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+
+    // Prime once on mount so a freshly-opened tab shows current count.
+    void fetchUnreadCount();
+    if (document.visibilityState === "visible") startPolling();
+
+    // On visibility/focus change: hidden → stop polling; visible →
+    // re-pull immediately (catches up on what was missed) then resume.
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        void fetchUnreadCount();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+    window.addEventListener("focus", onVisibilityOrFocus);
+    document.addEventListener("visibilitychange", onVisibilityOrFocus);
+
+    return () => {
+      stopPolling();
+      window.removeEventListener("focus", onVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus);
+    };
   }, [fetchUnreadCount]);
 
   // Fetch notifications when dropdown opens

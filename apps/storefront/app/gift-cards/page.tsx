@@ -23,13 +23,9 @@ export default function GiftCardsPage() {
         <hr className="my-12 border-[color:var(--storefront-text,var(--ink-900))]/20" />
 
         <section
-          aria-labelledby="gift-card-options"
+          aria-label="Gift card options"
           className="grid gap-6 sm:grid-cols-2"
         >
-          <h2 id="gift-card-options" className="sr-only">
-            Gift card options
-          </h2>
-
           <Link
             href="/gift-cards/purchase"
             className="group flex flex-col justify-between gap-8 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] p-8 transition-colors hover:border-[color:var(--storefront-accent,var(--moss-700))]"
@@ -38,9 +34,9 @@ export default function GiftCardsPage() {
               <p className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--storefront-text,var(--ink-900))]/60">
                 Purchase
               </p>
-              <h3 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+              <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                 Buy a gift card
-              </h3>
+              </h2>
               <p className="text-sm leading-6 text-[color:var(--storefront-text,var(--ink-900))]/80">
                 Choose an amount, write a message, and we'll email it to the
                 recipient immediately after payment clears.
@@ -59,9 +55,9 @@ export default function GiftCardsPage() {
               <p className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--storefront-text,var(--ink-900))]/60">
                 Balance
               </p>
-              <h3 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+              <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-2xl font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                 Check a balance
-              </h3>
+              </h2>
               <p className="text-sm leading-6 text-[color:var(--storefront-text,var(--ink-900))]/80">
                 Hold a gift card already? Enter the code to see how much is
                 left and when it expires.

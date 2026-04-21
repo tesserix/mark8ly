@@ -24,7 +24,7 @@ export function CategoryFilter({
       <Link
         href="/products"
         className={[
-          "inline-flex min-h-[44px] items-center rounded-full border px-4 py-2 text-sm transition-all",
+          "inline-flex min-h-[44px] items-center rounded-full border px-4 py-2 text-sm transition-colors",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
           isAll
             ? "border-[color:var(--storefront-text,var(--ink-900))] bg-[color:var(--storefront-accent,var(--ink-900))] text-[color:var(--storefront-on-accent,var(--paper-200))]"
@@ -40,7 +40,7 @@ export function CategoryFilter({
             key={cat.slug}
             href={`/categories/${encodeURIComponent(cat.slug)}`}
             className={[
-              "inline-flex min-h-[44px] items-center rounded-full border px-4 py-2 text-sm transition-all",
+              "inline-flex min-h-[44px] items-center rounded-full border px-4 py-2 text-sm transition-colors",
               "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
               active
                 ? "border-[color:var(--storefront-text,var(--ink-900))] bg-[color:var(--storefront-accent,var(--ink-900))] text-[color:var(--storefront-on-accent,var(--paper-200))]"

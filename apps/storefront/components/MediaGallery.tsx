@@ -147,7 +147,10 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
               aria-label={`Image ${i + 1} of ${media.length}`}
               onClick={() => setIndex(i)}
               className={[
-                "relative h-16 w-16 shrink-0 overflow-hidden rounded-md transition-all duration-150",
+                // Only opacity animates here — ring-2 is a box-shadow
+                // state change that snaps on selection (editorial
+                // "decisive state" over mushy transitions).
+                "relative h-16 w-16 shrink-0 overflow-hidden rounded-md transition-opacity duration-150",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
                 i === activeIndex
                   ? "ring-2 ring-[color:var(--storefront-text,var(--ink-900))]"

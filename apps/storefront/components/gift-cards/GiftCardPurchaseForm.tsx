@@ -134,7 +134,7 @@ export function GiftCardPurchaseForm({
             onChange={(e) => setAmount(e.target.value)}
             required
             placeholder="50.00"
-            className="flex-1 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-4 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/40 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+            className="flex-1 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-4 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/40 focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
           <span className="inline-flex items-center rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-background,var(--paper-200))] px-3 font-mono text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]/80">
             {currency}
@@ -157,7 +157,7 @@ export function GiftCardPurchaseForm({
               value={purchaserName}
               onChange={(e) => setPurchaserName(e.target.value)}
               placeholder="For your receipt"
-              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
           <label className="block">
@@ -168,7 +168,7 @@ export function GiftCardPurchaseForm({
               onChange={(e) => setPurchaserEmail(e.target.value)}
               required
               placeholder="you@example.com"
-              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
         </div>
@@ -189,7 +189,7 @@ export function GiftCardPurchaseForm({
               value={recipientName}
               onChange={(e) => setRecipientName(e.target.value)}
               placeholder="Optional — shown in the email"
-              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
           <label className="block">
@@ -202,7 +202,7 @@ export function GiftCardPurchaseForm({
               onChange={(e) => setRecipientEmail(e.target.value)}
               required
               placeholder="gift-recipient@example.com"
-              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+              className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
         </div>
@@ -215,7 +215,7 @@ export function GiftCardPurchaseForm({
             value={senderName}
             onChange={(e) => setSenderName(e.target.value)}
             placeholder='Appears as "From …" in the email'
-            className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+            className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
         </label>
         <label className="block">
@@ -228,7 +228,7 @@ export function GiftCardPurchaseForm({
             rows={3}
             maxLength={500}
             placeholder="Write a short note for the recipient"
-            className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+            className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
         </label>
       </section>
@@ -245,7 +245,7 @@ export function GiftCardPurchaseForm({
             type="date"
             value={expiresAt}
             onChange={(e) => setExpiresAt(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+            className="mt-1 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
         </label>
       </section>

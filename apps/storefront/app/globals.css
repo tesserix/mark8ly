@@ -270,7 +270,10 @@ main#main .rounded-3xl { border-radius: calc(1.5rem  * var(--storefront-radius-s
   background-color: var(--storefront-surface, #fff) !important;
   border: 1px solid color-mix(in oklab, var(--storefront-text, #0e0e0c) 12%, transparent) !important;
   border-radius: var(--storefront-radius, 6px) !important;
-  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.18) !important;
+  /* Derive shadow from merchant ink with low alpha so it remains visible
+     in both light and dark themes — a fixed rgba black disappears on
+     an obsidian/ember background. */
+  box-shadow: 0 8px 24px -8px color-mix(in oklab, var(--storefront-text, #0e0e0c) 20%, transparent) !important;
   color: var(--storefront-text, #0e0e0c) !important;
   padding: 0.25rem !important;
   min-width: var(--radix-select-trigger-width);

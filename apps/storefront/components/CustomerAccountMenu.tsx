@@ -155,7 +155,7 @@ export function CustomerAccountMenu() {
         ref={menuContainerRef}
         role="menu"
         className={[
-          "absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-[6px] bg-[color:var(--storefront-surface)] shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))] border border-[color:var(--storefront-text,var(--ink-900))]/10",
+          "absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-[6px] bg-[color:var(--storefront-surface)] shadow-[0_4px_12px_color-mix(in_oklab,_var(--storefront-text,#0e0e0c)_12%,_transparent)] border border-[color:var(--storefront-text,var(--ink-900))]/10",
           open ? "" : "hidden",
         ].join(" ")}
       >

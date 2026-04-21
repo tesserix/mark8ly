@@ -74,10 +74,7 @@ function StoreLanding({
       data-storefront-home=""
       className="min-h-screen"
       style={{
-        background:
-          theme.mode === "dark"
-            ? theme.colors.background
-            : `radial-gradient(circle at top left, ${theme.colors.accent}18, transparent 24%), radial-gradient(circle at top right, ${theme.colors.primary}12, transparent 28%), ${theme.colors.background}`,
+        background: theme.colors.background,
         color: theme.colors.text,
         fontFamily: "var(--storefront-body-font)",
         ...style,

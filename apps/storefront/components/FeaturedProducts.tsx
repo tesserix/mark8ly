@@ -37,15 +37,15 @@ export async function FeaturedProducts({ storeSlug, max = 8 }: FeaturedProductsP
         </Link>
       </header>
       <ul className="grid grid-cols-2 gap-x-4 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
-        {products.map((p) => (
-          <ProductCard key={p.id} product={p} />
+        {products.map((p, i) => (
+          <ProductCard key={p.id} product={p} priority={i === 0} />
         ))}
       </ul>
     </section>
   );
 }
 
-function ProductCard({ product }: { product: StorefrontProduct }) {
+function ProductCard({ product, priority }: { product: StorefrontProduct; priority?: boolean }) {
   const cover = product.media[0];
   const min = formatPrice(
     product.price_range.min,
@@ -73,6 +73,7 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
               alt={cover.alt ?? product.title}
               fill
               sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+              priority={priority}
               className="object-cover transition-opacity duration-300 group-hover:opacity-90"
             />
           ) : (

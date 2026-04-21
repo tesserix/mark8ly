@@ -43,10 +43,10 @@ function iconFor(kind: string): string {
 
 function toneFor(kind: string): string {
   if (kind === "shipment_delivered" || kind === "fulfilled") {
-    return "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]";
+    return "border-[color:var(--storefront-success)] bg-[color:var(--storefront-success-bg)] text-[color:var(--storefront-success)]";
   }
   if (kind === "shipment_exception" || kind === "cancelled") {
-    return "border-red-300 bg-red-50 text-red-700";
+    return "border-[color:var(--storefront-danger-border)] bg-[color:var(--storefront-danger-bg)] text-[color:var(--storefront-danger)]";
   }
   if (kind.startsWith("shipment_")) {
     return "border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]";
@@ -260,14 +260,14 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
               const isError =
                 e.kind === "shipment_exception" || e.kind === "cancelled";
               const circleTone = isError
-                ? "border-red-400 bg-red-50 text-red-700"
+                ? "border-[color:var(--storefront-danger)] bg-[color:var(--storefront-danger-bg)] text-[color:var(--storefront-danger)]"
                 : isLast
-                  ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))] text-white shadow-sm ring-4 ring-[color:var(--storefront-accent,var(--moss-700))]/15"
+                  ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))] text-[color:var(--storefront-on-accent,#fff)] shadow-sm ring-4 ring-[color:var(--storefront-accent,var(--moss-700))]/15"
                   : done
-                    ? "border-[color:var(--storefront-accent,var(--moss-700))]/80 bg-[color:var(--storefront-accent,var(--moss-700))]/90 text-white"
+                    ? "border-[color:var(--storefront-accent,var(--moss-700))]/80 bg-[color:var(--storefront-accent,var(--moss-700))]/90 text-[color:var(--storefront-on-accent,#fff)]"
                     : "border-[color:var(--storefront-text,var(--ink-900))]/25 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]/60";
               const labelTone = isError
-                ? "text-red-700"
+                ? "text-[color:var(--storefront-danger)]"
                 : isLast
                   ? "text-[color:var(--storefront-text,var(--ink-900))] font-semibold"
                   : "text-[color:var(--storefront-text,var(--ink-900))]/80";

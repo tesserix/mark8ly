@@ -46,6 +46,14 @@ import "./globals.css";
    helper in @repo/ui/storefront-theme can reference them.
    ============================================================ */
 
+// Only Source Sans + Source Serif preload on every request — these
+// are the house defaults and are already in the render path for most
+// tenants. Merchant-specialty fonts (Inter / Manrope / Newsreader /
+// Space Grotesk) register their CSS vars but ship with preload: false
+// so they don't block FCP for tenants who never reference them. When
+// the tenant theme points at one, next/font still serves it with
+// font-display: swap once that tenant's CSS actually needs the stack.
+
 const sourceSans = Source_Sans_3({
   subsets: ["latin"],
   variable: "--font-source-sans",
@@ -62,24 +70,28 @@ const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
   display: "swap",
+  preload: false,
 });
 
 const manrope = Manrope({
   subsets: ["latin"],
   variable: "--font-manrope",
   display: "swap",
+  preload: false,
 });
 
 const newsreader = Newsreader({
   subsets: ["latin"],
   variable: "--font-newsreader",
   display: "swap",
+  preload: false,
 });
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
   variable: "--font-space-grotesk",
   display: "swap",
+  preload: false,
 });
 
 /* ============================================================

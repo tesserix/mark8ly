@@ -140,7 +140,9 @@ export function CouponInput({
             }
           }}
           placeholder="Enter promo code"
-          className="flex-1 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2 text-sm font-mono uppercase text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/50 placeholder:normal-case focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "coupon-code-error" : undefined}
+          className="flex-1 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2 text-sm font-mono uppercase text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/50 placeholder:normal-case focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
         />
         <button
           type="button"
@@ -151,7 +153,15 @@ export function CouponInput({
           {loading ? "..." : "Apply"}
         </button>
       </div>
-      {error && <p className="text-xs text-signal-700">{error}</p>}
+      {error && (
+        <p
+          id="coupon-code-error"
+          role="alert"
+          className="text-xs text-[color:var(--storefront-danger)]"
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }

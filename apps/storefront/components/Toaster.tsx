@@ -4,6 +4,7 @@
 // `mark8ly:toast` CustomEvents and renders stacked notifications that
 // auto-dismiss. Tone → colour, keyboard & aria handled.
 
+import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { TOAST_EVENT, type ToastInput, type ToastTone } from "@/lib/toast";
 
@@ -11,11 +12,30 @@ interface ToastRecord extends ToastInput {
   id: string;
 }
 
-const TONE_STYLES: Record<ToastTone, string> = {
-  success: "border-[color:var(--storefront-accent,var(--moss-700))]/30 bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]",
-  error: "border-red-300 bg-red-50 text-red-800",
-  info: "border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]",
-  warn: "border-amber-300 bg-amber-50 text-amber-800",
+// Each tone reads from the storefront semantic status tokens, so toast
+// notifications follow the merchant's theme instead of leaking the raw
+// Tailwind palette.
+const TONE_STYLES: Record<ToastTone, CSSProperties> = {
+  success: {
+    color: "var(--storefront-success)",
+    backgroundColor: "var(--storefront-success-bg)",
+    borderColor: "var(--storefront-success-border)",
+  },
+  error: {
+    color: "var(--storefront-danger)",
+    backgroundColor: "var(--storefront-danger-bg)",
+    borderColor: "var(--storefront-danger-border)",
+  },
+  warn: {
+    color: "var(--storefront-warning)",
+    backgroundColor: "var(--storefront-warning-bg)",
+    borderColor: "var(--storefront-warning-border)",
+  },
+  info: {
+    color: "var(--storefront-text, var(--ink-900))",
+    backgroundColor: "var(--storefront-surface)",
+    borderColor: "var(--storefront-neutral-border)",
+  },
 };
 
 export function Toaster() {
@@ -51,7 +71,8 @@ export function Toaster() {
         <div
           key={t.id}
           role={t.tone === "error" ? "alert" : "status"}
-          className={`pointer-events-auto w-full max-w-sm rounded-md border px-4 py-3 shadow-sm backdrop-blur transition-opacity ${TONE_STYLES[t.tone ?? "info"]}`}
+          className="pointer-events-auto w-full max-w-sm rounded-md border px-4 py-3 shadow-sm transition-opacity"
+          style={TONE_STYLES[t.tone ?? "info"]}
         >
           <p className="text-sm font-medium">{t.title}</p>
           {t.description && (

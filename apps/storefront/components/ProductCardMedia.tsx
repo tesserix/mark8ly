@@ -1,12 +1,18 @@
 "use client";
 
 // Product card image — auto-cycles through all product media
-// every 3s with a soft cross-fade. Pauses on hover so the shopper
-// can inspect a specific shot. Falls back to a "No image" tile.
+// every 3s with a soft cross-fade. Falls back to a "No image" tile.
+//
+// Accessibility: the rotation honours `prefers-reduced-motion` (no
+// cycling), pauses on pointer + focus, and exposes each indicator as
+// a real button so keyboard and touch users can navigate directly
+// (WCAG 2.2.2). All timers share a module-level ticker so a grid of
+// 8 product cards runs one interval, not eight.
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { memo, useState } from "react";
 import type { StorefrontMedia } from "@/lib/api/marketplace-api";
+import { useCarouselRotation } from "@/lib/useCarouselRotation";
 
 interface Props {
   media: StorefrontMedia[];
@@ -15,18 +21,14 @@ interface Props {
 
 const INTERVAL_MS = 3000;
 
-export function ProductCardMedia({ media, alt }: Props) {
-  const [index, setIndex] = useState(0);
-  const pausedRef = useRef(false);
-
-  useEffect(() => {
-    if (media.length <= 1) return;
-    const id = window.setInterval(() => {
-      if (pausedRef.current) return;
-      setIndex((i) => (i + 1) % media.length);
-    }, INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, [media.length]);
+function ProductCardMediaImpl({ media, alt }: Props) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const { index, setIndex, prefersReducedMotion } = useCarouselRotation({
+    count: media.length,
+    intervalMs: INTERVAL_MS,
+    paused: hovered || focused,
+  });
 
   if (media.length === 0) {
     return (
@@ -41,8 +43,10 @@ export function ProductCardMedia({ media, alt }: Props) {
   return (
     <div
       className="relative aspect-square overflow-hidden rounded-md bg-[color:var(--storefront-background,var(--paper-200))]"
-      onMouseEnter={() => (pausedRef.current = true)}
-      onMouseLeave={() => (pausedRef.current = false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
     >
       {media.map((m, i) => (
         <Image
@@ -60,15 +64,29 @@ export function ProductCardMedia({ media, alt }: Props) {
       ))}
 
       {media.length > 1 && (
-        <div className="pointer-events-none absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
+        <div
+          className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5"
+          role="group"
+          aria-label={prefersReducedMotion ? "Product images" : "Product images — select to view"}
+        >
           {media.map((_, i) => (
-            <span
+            <button
               key={i}
+              type="button"
+              aria-label={`Show image ${i + 1} of ${media.length}`}
+              aria-current={i === index ? "true" : undefined}
+              onClick={(e) => {
+                // Don't trigger the parent product link.
+                e.preventDefault();
+                e.stopPropagation();
+                setIndex(i);
+              }}
               className={[
                 "h-1.5 rounded-full transition-all duration-300",
+                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
                 i === index
                   ? "w-5 bg-[color:var(--storefront-background,var(--paper-200))]"
-                  : "w-1.5 bg-[color:var(--storefront-background,var(--paper-200))]/60",
+                  : "w-1.5 bg-[color:var(--storefront-background,var(--paper-200))]/60 hover:bg-[color:var(--storefront-background,var(--paper-200))]/90",
               ].join(" ")}
             />
           ))}
@@ -77,3 +95,8 @@ export function ProductCardMedia({ media, alt }: Props) {
     </div>
   );
 }
+
+// Memoize so that parent re-renders (from the shared ticker at 250ms
+// cadence in sibling cards) don't force every card in the grid to
+// reconcile.
+export const ProductCardMedia = memo(ProductCardMediaImpl);

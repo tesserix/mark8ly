@@ -106,13 +106,13 @@ function StoreNotFound({ slug }: { slug: string }) {
       id="main"
       className="mx-auto flex min-h-screen max-w-2xl flex-col items-start justify-center gap-6 px-6 py-20"
     >
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-neutral-500">
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--storefront-text,var(--ink-900))]/60">
         Store not found
       </p>
-      <h1 className="text-5xl font-medium tracking-tight text-neutral-900">
+      <h1 className="text-3xl font-medium tracking-tight text-[color:var(--storefront-text,var(--ink-900))] sm:text-4xl md:text-5xl">
         Nothing here yet
       </h1>
-      <p className="max-w-xl text-lg leading-8 text-neutral-600">
+      <p className="max-w-xl text-lg leading-8 text-[color:var(--storefront-text,var(--ink-900))]/70">
         {slug
           ? `We couldn't find a store at "${slug}". The URL may be wrong, or the store isn't live yet.`
           : "This domain isn't pointed at a live store yet."}

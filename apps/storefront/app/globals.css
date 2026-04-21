@@ -29,7 +29,10 @@
   --storefront-primary: var(--ink-900);
   --storefront-accent: var(--moss-700);
   --storefront-background: var(--paper-200);
-  --storefront-surface: #ffffff;
+  /* Elevated surface — derived from background so dark merchant themes
+     get a lifted surface instead of a jarring pure-white card. Merchants
+     can still override --storefront-surface explicitly via theme vars. */
+  --storefront-surface: color-mix(in oklab, var(--storefront-background, #F7F6F2) 94%, var(--storefront-text, #0E0E0C) 6%);
   --storefront-text: var(--ink-900);
   --storefront-heading-font: var(--font-source-serif), Georgia, serif;
   --storefront-body-font: var(--font-source-sans), system-ui, sans-serif;
@@ -37,6 +40,40 @@
   --storefront-radius-scale: 1;
   --storefront-density-scale: 1;
   --storefront-motion-scale: 1;
+
+  /* ==========================================================
+     Semantic status tokens — used for order/ticket/stock state.
+     Merchants configure the five *source* colours in admin theme
+     settings; bg/border/dot variants are derived via color-mix so
+     every chip stays legible on whatever surface it lands on, and
+     every tone follows the merchant's chosen palette without more
+     knobs to tune.
+     ========================================================== */
+  --storefront-success: #15603D;
+  --storefront-warning: #B77A00;
+  --storefront-danger: #C23B22;
+  --storefront-info: #3457B2;
+  --storefront-neutral: color-mix(in oklab, var(--storefront-text, #0E0E0C) 60%, transparent);
+}
+
+/* Derived status surfaces + borders — all computed from the single
+   source colour per tone. Isolated from :root so they re-compute
+   if a merchant overrides any source colour inline. */
+:root {
+  --storefront-success-bg: color-mix(in oklab, var(--storefront-success) 10%, var(--storefront-background, #F7F6F2));
+  --storefront-success-border: color-mix(in oklab, var(--storefront-success) 30%, transparent);
+
+  --storefront-warning-bg: color-mix(in oklab, var(--storefront-warning) 12%, var(--storefront-background, #F7F6F2));
+  --storefront-warning-border: color-mix(in oklab, var(--storefront-warning) 32%, transparent);
+
+  --storefront-danger-bg: color-mix(in oklab, var(--storefront-danger) 10%, var(--storefront-background, #F7F6F2));
+  --storefront-danger-border: color-mix(in oklab, var(--storefront-danger) 30%, transparent);
+
+  --storefront-info-bg: color-mix(in oklab, var(--storefront-info) 10%, var(--storefront-background, #F7F6F2));
+  --storefront-info-border: color-mix(in oklab, var(--storefront-info) 28%, transparent);
+
+  --storefront-neutral-bg: color-mix(in oklab, var(--storefront-text, #0E0E0C) 4%, var(--storefront-background, #F7F6F2));
+  --storefront-neutral-border: color-mix(in oklab, var(--storefront-text, #0E0E0C) 15%, transparent);
 }
 
 /* ============================================================

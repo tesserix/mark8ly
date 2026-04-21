@@ -15,6 +15,7 @@ import { updateStorefrontTheme } from "@/app/(admin)/settings/themes/actions";
 import { useToast } from "@/components/feedback/Toaster";
 import type { Store } from "@/lib/api/platform-api";
 import {
+  defaultStatusColorsFor,
   defaultStorefrontTheme,
   normalizeStorefrontTheme,
   storefrontBackgroundOptions,
@@ -25,6 +26,8 @@ import {
   withColorOverride,
   withMode,
   withPalette,
+  withStatusColorOverride,
+  type StatusColors,
   type StorefrontBackground,
   type StorefrontDensity,
   type StorefrontFont,
@@ -185,25 +188,79 @@ export function StorefrontThemeForm({
             {advancedOpen ? "Hide" : "Show"} advanced colour overrides
           </button>
           {advancedOpen ? (
-            <div className="mt-5 grid gap-5 sm:grid-cols-3">
-              <ColorField
-                label="Primary"
-                value={theme.colors.primary}
-                disabled={disabled}
-                onChange={(v) => updateTheme(withColorOverride(theme, "primary", v))}
-              />
-              <ColorField
-                label="Accent"
-                value={theme.colors.accent}
-                disabled={disabled}
-                onChange={(v) => updateTheme(withColorOverride(theme, "accent", v))}
-              />
-              <ColorField
-                label="Background"
-                value={theme.colors.background}
-                disabled={disabled}
-                onChange={(v) => updateTheme(withColorOverride(theme, "background", v))}
-              />
+            <div className="mt-5 space-y-8">
+              <div className="grid gap-5 sm:grid-cols-3">
+                <ColorField
+                  label="Primary"
+                  value={theme.colors.primary}
+                  disabled={disabled}
+                  onChange={(v) => updateTheme(withColorOverride(theme, "primary", v))}
+                />
+                <ColorField
+                  label="Accent"
+                  value={theme.colors.accent}
+                  disabled={disabled}
+                  onChange={(v) => updateTheme(withColorOverride(theme, "accent", v))}
+                />
+                <ColorField
+                  label="Background"
+                  value={theme.colors.background}
+                  disabled={disabled}
+                  onChange={(v) => updateTheme(withColorOverride(theme, "background", v))}
+                />
+              </div>
+
+              <div className="space-y-4 border-t border-border-subtle pt-6">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">Status colours</p>
+                  <p className="text-xs text-foreground-secondary">
+                    Used for stock availability, order status, tickets, toasts, and return
+                    banners. Backgrounds and borders are derived automatically from each source
+                    colour so chips stay legible on any surface.
+                  </p>
+                </div>
+                <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {(
+                    [
+                      { tone: "success", label: "Success" },
+                      { tone: "warning", label: "Warning" },
+                      { tone: "danger", label: "Danger" },
+                      { tone: "info", label: "Info" },
+                      { tone: "neutral", label: "Neutral" },
+                    ] as Array<{ tone: keyof StatusColors; label: string }>
+                  ).map(({ tone, label }) => (
+                    <ColorField
+                      key={tone}
+                      label={label}
+                      value={theme.statusColors[tone]}
+                      disabled={disabled}
+                      onChange={(v) => updateTheme(withStatusColorOverride(theme, tone, v))}
+                      onReset={
+                        theme.customStatusColors?.[tone]
+                          ? () => updateTheme(withStatusColorOverride(theme, tone, null))
+                          : undefined
+                      }
+                      resetLabel={`Reset ${label.toLowerCase()} to default`}
+                      preview={<StatusSwatch tone={tone} theme={theme} />}
+                    />
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  disabled={disabled || !theme.customStatusColors}
+                  onClick={() => {
+                    const defaults = defaultStatusColorsFor(theme.mode);
+                    updateTheme({
+                      ...theme,
+                      customStatusColors: undefined,
+                      statusColors: defaults,
+                    });
+                  }}
+                  className="text-xs font-medium text-foreground-secondary underline-offset-4 hover:text-foreground hover:underline disabled:opacity-40 disabled:no-underline"
+                >
+                  Reset all status colours to {theme.mode}-mode defaults
+                </button>
+              </div>
             </div>
           ) : null}
         </div>
@@ -506,11 +563,19 @@ function ColorField({
   value,
   disabled,
   onChange,
+  onReset,
+  resetLabel,
+  preview,
 }: {
   label: string;
   value: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  /** When set, an inline "reset" button appears. Intended for fields with a default value. */
+  onReset?: () => void;
+  resetLabel?: string;
+  /** Optional live-preview node rendered to the right of the hex value. */
+  preview?: React.ReactNode;
 }) {
   const id = `color-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
@@ -525,8 +590,52 @@ function ColorField({
           className="h-10 w-10 rounded-sm border-0 bg-transparent p-0"
         />
         <span className="font-mono text-sm text-foreground">{value}</span>
+        {preview ? <span className="ml-auto">{preview}</span> : null}
+        {onReset ? (
+          <button
+            type="button"
+            onClick={onReset}
+            disabled={disabled}
+            aria-label={resetLabel ?? `Reset ${label} to default`}
+            title={resetLabel ?? `Reset ${label} to default`}
+            className={`text-xs font-medium text-foreground-secondary underline-offset-4 hover:text-foreground hover:underline disabled:opacity-40 ${preview ? "" : "ml-auto"}`}
+          >
+            Reset
+          </button>
+        ) : null}
       </div>
     </Field>
+  );
+}
+
+/** Live preview of a StatusChip so merchants can see exactly how each
+ *  tone will render on the storefront surface. Reads the same CSS-
+ *  derived logic as the customer-facing chip. */
+function StatusSwatch({
+  tone,
+  theme,
+}: {
+  tone: keyof StatusColors;
+  theme: StorefrontTheme;
+}) {
+  const source = theme.statusColors[tone];
+  const bg = theme.colors.background;
+  return (
+    <span
+      aria-hidden
+      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium"
+      style={{
+        color: source,
+        backgroundColor: `color-mix(in oklab, ${source} 10%, ${bg})`,
+        borderColor: `color-mix(in oklab, ${source} 28%, transparent)`,
+      }}
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: source }}
+      />
+      {tone}
+    </span>
   );
 }
 

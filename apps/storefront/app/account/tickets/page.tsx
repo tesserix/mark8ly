@@ -40,18 +40,19 @@ function statusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
-function statusClasses(status: string): string {
+import { StatusChip, type StatusTone } from "@/components/ui/StatusChip";
+
+function statusTone(status: string): StatusTone {
   switch (status) {
     case "open":
-      return "bg-emerald-50 text-emerald-800 border-emerald-200";
+      return "success";
     case "in_progress":
-      return "bg-amber-50 text-amber-800 border-amber-200";
+      return "warning";
     case "resolved":
-      return "bg-blue-50 text-blue-800 border-blue-200";
+      return "info";
     case "closed":
-      return "bg-neutral-100 text-neutral-500 border-neutral-200";
     default:
-      return "bg-neutral-100 text-neutral-600 border-neutral-200";
+      return "neutral";
   }
 }
 
@@ -149,13 +150,9 @@ export default async function TicketsPage() {
                     <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                       {t.ticket_number}
                     </span>
-                    <span
-                      className={`inline-block rounded-sm border px-2 py-0.5 text-xs font-medium leading-tight ${statusClasses(
-                        t.status,
-                      )}`}
-                    >
+                    <StatusChip tone={statusTone(t.status)} size="md">
                       {statusLabel(t.status)}
-                    </span>
+                    </StatusChip>
                   </div>
                   <p className="truncate text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
                     {t.subject}

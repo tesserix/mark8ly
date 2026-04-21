@@ -209,6 +209,9 @@ export function ReviewForm({ productHandle, isAuthenticated }: ReviewFormProps) 
           onMouseLeave={() => setHoveredRating(0)}
           role="radiogroup"
           aria-label="Rating"
+          aria-required="true"
+          aria-invalid={error && !rating ? true : undefined}
+          aria-describedby={error ? "review-form-error" : undefined}
         >
           {[1, 2, 3, 4, 5].map((star) => (
             <button
@@ -248,7 +251,8 @@ export function ReviewForm({ productHandle, isAuthenticated }: ReviewFormProps) 
               required
               autoComplete="name"
               placeholder="Your name"
-              className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+              aria-describedby={error ? "review-form-error" : undefined}
+              className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
           <label className="flex flex-col gap-1.5">
@@ -263,7 +267,8 @@ export function ReviewForm({ productHandle, isAuthenticated }: ReviewFormProps) 
               required
               autoComplete="email"
               placeholder="you@example.com"
-              className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+              aria-describedby={error ? "review-form-error" : undefined}
+              className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
             />
           </label>
         </div>
@@ -283,7 +288,7 @@ export function ReviewForm({ productHandle, isAuthenticated }: ReviewFormProps) 
           onChange={(e) => setTitle(e.target.value)}
           maxLength={MAX_TITLE_LENGTH}
           placeholder="Summarise your experience"
-          className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+          className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
         />
       </label>
 
@@ -299,13 +304,19 @@ export function ReviewForm({ productHandle, isAuthenticated }: ReviewFormProps) 
           rows={4}
           required
           placeholder="Share details of your experience with this product"
-          className="resize-y rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm leading-6 text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+          aria-describedby={error ? "review-form-error" : undefined}
+          aria-invalid={error ? true : undefined}
+          className="resize-y rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-3 py-2 text-sm leading-6 text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/30 focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
         />
       </label>
 
       {/* Error */}
       {error && (
-        <p className="text-sm text-[color:var(--signal,#C23B22)]" role="alert">
+        <p
+          id="review-form-error"
+          className="text-sm text-[color:var(--storefront-danger)]"
+          role="alert"
+        >
           {error}
         </p>
       )}

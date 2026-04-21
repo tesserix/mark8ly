@@ -77,7 +77,7 @@ export default async function CategoryLandingPage({
           >
             ← Shop all
           </Link>
-          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
+          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))] sm:text-4xl md:text-5xl">
             {prettify(categorySlug)}
           </h1>
           <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
@@ -134,7 +134,7 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
               alt={cover.alt ?? product.title}
               fill
               sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+              className="object-cover transition-opacity duration-300 group-hover:opacity-90"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-30">

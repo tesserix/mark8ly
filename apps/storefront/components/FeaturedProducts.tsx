@@ -8,6 +8,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { listProducts, type StorefrontProduct } from "@/lib/api/marketplace-api";
+import { StatusChip, type StatusTone } from "@/components/ui/StatusChip";
 
 export interface FeaturedProductsProps {
   storeSlug: string;
@@ -72,7 +73,7 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
               alt={cover.alt ?? product.title}
               fill
               sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+              className="object-cover transition-opacity duration-300 group-hover:opacity-90"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-[10px] uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-30">
@@ -98,23 +99,12 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
 }
 
 function FeaturedStockBadge({ tone, text }: { tone: "ok" | "warn" | "danger"; text: string }) {
-  const toneClass =
-    tone === "ok"
-      ? "bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]"
-      : tone === "warn"
-        ? "bg-amber-50 text-amber-700"
-        : "bg-red-50 text-red-700";
-  const dotClass =
-    tone === "ok"
-      ? "bg-[color:var(--storefront-accent,var(--moss-700))]"
-      : tone === "warn"
-        ? "bg-amber-500"
-        : "bg-red-500";
+  const chipTone: StatusTone =
+    tone === "ok" ? "success" : tone === "warn" ? "warning" : "danger";
   return (
-    <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium ${toneClass}`}>
-      <span className={`h-1 w-1 rounded-full ${dotClass}`} aria-hidden />
+    <StatusChip tone={chipTone} withDot size="sm" className="mt-2">
       {text}
-    </span>
+    </StatusChip>
   );
 }
 

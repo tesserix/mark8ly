@@ -49,21 +49,22 @@ function statusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
-function statusClasses(status: string): string {
+import { StatusChip, type StatusTone } from "@/components/ui/StatusChip";
+
+function statusTone(status: string): StatusTone {
   switch (status) {
     case "pending":
-      return "bg-amber-50 text-amber-800 border-amber-200";
+      return "warning";
     case "confirmed":
     case "processing":
-      return "bg-blue-50 text-blue-800 border-blue-200";
+      return "info";
     case "fulfilled":
-      return "bg-emerald-50 text-emerald-800 border-emerald-200";
-    case "cancelled":
-      return "bg-neutral-100 text-neutral-500 border-neutral-200";
+      return "success";
     case "refunded":
-      return "bg-red-50 text-red-700 border-red-200";
+      return "danger";
+    case "cancelled":
     default:
-      return "bg-neutral-100 text-neutral-600 border-neutral-200";
+      return "neutral";
   }
 }
 
@@ -234,11 +235,9 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                     <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                       #{order.order_number}
                     </span>
-                    <span
-                      className={`inline-block rounded-sm border px-2 py-0.5 text-xs font-medium leading-tight ${statusClasses(order.status)}`}
-                    >
+                    <StatusChip tone={statusTone(order.status)} size="md">
                       {statusLabel(order.status)}
-                    </span>
+                    </StatusChip>
                   </div>
                   <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
                     {formatDate(order.placed_at)}

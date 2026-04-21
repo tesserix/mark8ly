@@ -125,6 +125,18 @@ export type StorefrontMotion = "none" | "subtle" | "expressive";
 export type StorefrontDensity = "compact" | "balanced" | "airy";
 export type StorefrontRadius = "sharp" | "soft" | "rounded";
 
+/** Semantic status source colours. One hex per tone — the bg/border
+ *  variants are derived in CSS via color-mix. Configurable by the
+ *  merchant in admin theme settings so stock badges, order/ticket
+ *  status chips, and toast tones all follow the brand. */
+export interface StatusColors {
+  success: string;
+  warning: string;
+  danger: string;
+  info: string;
+  neutral: string;
+}
+
 export interface StorefrontTheme {
   layout: StorefrontLayout;
   mode: StorefrontMode;
@@ -136,6 +148,9 @@ export interface StorefrontTheme {
   customPrimary?: string;
   // Used when `background === "custom"`. Ignored otherwise.
   customBackground?: string;
+  // Optional per-tone status-colour overrides. Any tone left undefined
+  // falls back to the mode-scoped default in defaultStatusColors.
+  customStatusColors?: Partial<StatusColors>;
   // Resolved render tokens. Populated by normalize() from the structured
   // fields above. Downstream render consumers should read these.
   colors: {
@@ -145,6 +160,8 @@ export interface StorefrontTheme {
     surface: string;
     text: string;
   };
+  // Resolved semantic status colours — derived from defaults + customStatusColors.
+  statusColors: StatusColors;
   typography: {
     headingFont: StorefrontFont;
     bodyFont: StorefrontFont;
@@ -362,6 +379,53 @@ export function defaultBackgroundFor(
 }
 
 /* ============================================================
+   Semantic status defaults
+   ------------------------------------------------------------
+   Sensible conventional signals per mode. Light-mode tones are
+   saturated for contrast on pale paper; dark-mode tones are
+   brightened so they read on near-black surfaces. Merchants
+   override any subset via theme.customStatusColors.
+   ============================================================ */
+
+const defaultStatusColors: Record<StorefrontMode, StatusColors> = {
+  light: {
+    success: "#15603D",
+    warning: "#B77A00",
+    danger: "#C23B22",
+    info: "#3457B2",
+    neutral: "#5A5A58",
+  },
+  dark: {
+    success: "#7FD494",
+    warning: "#F5C74A",
+    danger: "#F08670",
+    info: "#8FAFF0",
+    neutral: "#A8A8A5",
+  },
+};
+
+/** Returns the default status colours for a given mode. */
+export function defaultStatusColorsFor(mode: StorefrontMode): StatusColors {
+  return { ...defaultStatusColors[mode] };
+}
+
+/** Resolve the final status palette by merging mode defaults with
+ *  any merchant overrides. */
+export function resolveStatusColors(
+  mode: StorefrontMode,
+  overrides?: Partial<StatusColors>,
+): StatusColors {
+  const base = defaultStatusColors[mode];
+  return {
+    success: overrides?.success ?? base.success,
+    warning: overrides?.warning ?? base.warning,
+    danger: overrides?.danger ?? base.danger,
+    info: overrides?.info ?? base.info,
+    neutral: overrides?.neutral ?? base.neutral,
+  };
+}
+
+/* ============================================================
    Theme resolver — mode × palette × background → colors
    ============================================================ */
 
@@ -557,6 +621,7 @@ export const defaultStorefrontTheme: StorefrontTheme = {
     surface: "#FFFFFF",
     text: "#0E0E0C",
   },
+  statusColors: defaultStatusColors.light,
   typography: {
     headingFont: "newsreader",
     bodyFont: "source",
@@ -687,6 +752,20 @@ export function normalizeStorefrontTheme(value: unknown): StorefrontTheme {
     customBackground,
   });
 
+  // ── Status colour overrides ───────────────────────────────
+  // Accept individual tone overrides from untrusted input; keep
+  // only valid hex values, drop the rest.
+  const rawStatus = (raw.customStatusColors ?? {}) as Record<string, unknown>;
+  const customStatusColors: Partial<StatusColors> = {};
+  (["success", "warning", "danger", "info", "neutral"] as const).forEach((key) => {
+    const hex = optionalHex(rawStatus[key]);
+    if (hex) customStatusColors[key] = hex;
+  });
+  const statusColors = resolveStatusColors(
+    mode,
+    Object.keys(customStatusColors).length > 0 ? customStatusColors : undefined,
+  );
+
   return {
     layout: isLayout(raw.layout) ? raw.layout : defaultStorefrontTheme.layout,
     mode,
@@ -695,6 +774,8 @@ export function normalizeStorefrontTheme(value: unknown): StorefrontTheme {
     customAccent,
     customPrimary,
     customBackground: background === "custom" ? customBackground : undefined,
+    customStatusColors:
+      Object.keys(customStatusColors).length > 0 ? customStatusColors : undefined,
     colors: {
       // Still accept hard-overrides from legacy records via top-level `colors`.
       primary: sanitizeHex((raw.colors as Record<string, unknown> | undefined)?.primary, colors.primary),
@@ -703,6 +784,7 @@ export function normalizeStorefrontTheme(value: unknown): StorefrontTheme {
       surface: sanitizeHex((raw.colors as Record<string, unknown> | undefined)?.surface, colors.surface),
       text: sanitizeHex((raw.colors as Record<string, unknown> | undefined)?.text, colors.text),
     },
+    statusColors,
     typography: {
       headingFont: isFont(raw.typography?.headingFont)
         ? raw.typography.headingFont
@@ -714,6 +796,27 @@ export function normalizeStorefrontTheme(value: unknown): StorefrontTheme {
     motion: isMotion(raw.motion) ? raw.motion : defaultStorefrontTheme.motion,
     density: isDensity(raw.density) ? raw.density : defaultStorefrontTheme.density,
     radius: isRadius(raw.radius) ? raw.radius : defaultStorefrontTheme.radius,
+  };
+}
+
+/** Apply a single status-tone colour override. Passing null clears
+ *  the override so the tone reverts to its mode-scoped default. */
+export function withStatusColorOverride(
+  theme: StorefrontTheme,
+  tone: keyof StatusColors,
+  value: string | null,
+): StorefrontTheme {
+  const nextOverrides: Partial<StatusColors> = { ...(theme.customStatusColors ?? {}) };
+  if (value === null || value === "") {
+    delete nextOverrides[tone];
+  } else {
+    nextOverrides[tone] = value;
+  }
+  const hasOverrides = Object.keys(nextOverrides).length > 0;
+  return {
+    ...theme,
+    customStatusColors: hasOverrides ? nextOverrides : undefined,
+    statusColors: resolveStatusColors(theme.mode, hasOverrides ? nextOverrides : undefined),
   };
 }
 
@@ -736,7 +839,9 @@ export function withPalette(
 
 /** Switch between light and dark mode. Picks a sensible default
  *  background for the new mode+palette combo. Clears custom bg (it was
- *  hex'd for the old mode; mode changes likely invalidate it). */
+ *  hex'd for the old mode; mode changes likely invalidate it). Status
+ *  overrides are cleared on mode flip — tones that read well on paper
+ *  rarely read well on obsidian, so we fall back to the mode defaults. */
 export function withMode(
   theme: StorefrontTheme,
   mode: StorefrontMode,
@@ -752,6 +857,8 @@ export function withMode(
     mode,
     background,
     customBackground: undefined,
+    customStatusColors: undefined,
+    statusColors: resolveStatusColors(mode),
   };
   next.colors = resolveThemeColors(next);
   return next;
@@ -838,6 +945,7 @@ export function themeCssVariables(
   theme: StorefrontTheme,
 ): Record<string, string> {
   const { primary, accent, background, surface, text } = theme.colors;
+  const { success, warning, danger, info, neutral } = theme.statusColors;
   // "On-X" contrast colours — used by buttons / chips where bg is the
   // brand colour and text needs legible contrast. Light mode: white
   // text on saturated accent; dark mode: dark text because dark-mode
@@ -852,6 +960,14 @@ export function themeCssVariables(
     "--storefront-text": text,
     "--storefront-on-accent": onAccent,
     "--storefront-on-primary": onPrimary,
+    // Semantic status sources — bg/border variants are derived from
+    // these in the storefront's globals.css via color-mix, so merchants
+    // only configure five values.
+    "--storefront-success": success,
+    "--storefront-warning": warning,
+    "--storefront-danger": danger,
+    "--storefront-info": info,
+    "--storefront-neutral": neutral,
     "--storefront-heading-font": fontStacks[theme.typography.headingFont],
     "--storefront-body-font": fontStacks[theme.typography.bodyFont],
     "--storefront-radius": themeRadius(theme),

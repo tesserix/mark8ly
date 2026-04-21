@@ -176,7 +176,7 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
         {busy ? "Opening…" : "Pay now"}
       </button>
       {error && (
-        <p role="alert" className="mt-3 text-sm text-red-700">
+        <p role="alert" className="mt-3 text-sm text-[color:var(--storefront-danger)]">
           {error}
         </p>
       )}

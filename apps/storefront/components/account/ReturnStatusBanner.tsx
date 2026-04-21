@@ -174,15 +174,27 @@ function ShellBanner({
   tone: "neutral" | "success" | "warn";
   children: React.ReactNode;
 }) {
-  const bg =
-    tone === "success"
-      ? "border-emerald-600/20 bg-emerald-50/70"
-      : tone === "warn"
-        ? "border-amber-600/30 bg-amber-50/70"
-        : "border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-text,var(--ink-900))]/[0.02]";
+  // Each banner tone reads from the shell's semantic status tokens —
+  // merchants configure these in admin theme settings, so dark/brand
+  // themes no longer collide with raw emerald/amber Tailwind palette.
+  const styleByTone: Record<"neutral" | "success" | "warn", React.CSSProperties> = {
+    success: {
+      borderColor: "var(--storefront-success-border)",
+      backgroundColor: "var(--storefront-success-bg)",
+    },
+    warn: {
+      borderColor: "var(--storefront-warning-border)",
+      backgroundColor: "var(--storefront-warning-bg)",
+    },
+    neutral: {
+      borderColor: "var(--storefront-neutral-border)",
+      backgroundColor: "var(--storefront-neutral-bg)",
+    },
+  };
   return (
     <section
-      className={`rounded-md border ${bg} px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]`}
+      className="rounded-md border px-4 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]"
+      style={styleByTone[tone]}
       aria-live="polite"
     >
       <div className="space-y-1">{children}</div>

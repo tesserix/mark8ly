@@ -22,6 +22,7 @@ import { ProductSearchInput } from "@/components/ProductSearchInput";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { Pagination } from "@/components/Pagination";
 import { ProductCardMedia } from "@/components/ProductCardMedia";
+import { StatusChip, type StatusTone } from "@/components/ui/StatusChip";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,7 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
           >
             ← {store.name}
           </Link>
-          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-5xl text-[color:var(--storefront-text,var(--ink-900))]">
+          <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))] sm:text-4xl md:text-5xl">
             Shop
           </h1>
           <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
@@ -175,23 +176,12 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
 }
 
 function StockBadge({ tone, text }: { tone: "ok" | "warn" | "danger"; text: string }) {
-  const toneClass =
-    tone === "ok"
-      ? "bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]"
-      : tone === "warn"
-        ? "bg-amber-50 text-amber-700"
-        : "bg-red-50 text-red-700";
-  const dotClass =
-    tone === "ok"
-      ? "bg-[color:var(--storefront-accent,var(--moss-700))]"
-      : tone === "warn"
-        ? "bg-amber-500"
-        : "bg-red-500";
+  const chipTone: StatusTone =
+    tone === "ok" ? "success" : tone === "warn" ? "warning" : "danger";
   return (
-    <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${toneClass}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} aria-hidden />
+    <StatusChip tone={chipTone} withDot size="md" className="mt-2">
       {text}
-    </span>
+    </StatusChip>
   );
 }
 

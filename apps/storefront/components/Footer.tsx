@@ -134,11 +134,17 @@ function BrandHero({
     return (
       // Logo display uses a plain <img> intentionally — merchants upload
       // arbitrary remote URLs, and Next's <Image> would require whitelisting
-      // every tenant domain.
+      // every tenant domain. We still set explicit intrinsic dimensions +
+      // lazy-load attributes so the browser can reserve space (no CLS) and
+      // skip the fetch on mount when the footer is below the fold.
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={logoUrl}
         alt={storeName ?? "Store logo"}
+        width={240}
+        height={48}
+        loading="lazy"
+        decoding="async"
         className="h-12 w-auto max-w-[240px] object-contain object-left"
       />
     );

@@ -237,14 +237,38 @@ function DocumentsSection({
 }
 
 function StatusBadge({ label, value }: { label: string; value: string }) {
-  const tone =
-    value === "paid" || value === "captured" || value === "confirmed" || value === "fulfilled"
-      ? "bg-[color:var(--storefront-accent,var(--moss-700))]/10 text-[color:var(--storefront-accent,var(--moss-700))]"
+  const tone: "success" | "warning" | "neutral" =
+    value === "paid" ||
+    value === "captured" ||
+    value === "confirmed" ||
+    value === "fulfilled"
+      ? "success"
       : value === "pending"
-        ? "bg-amber-50 text-amber-700"
-        : "bg-[color:var(--storefront-accent,var(--ink-900))]/5 text-[color:var(--storefront-text,var(--ink-900))]/70";
+        ? "warning"
+        : "neutral";
+  const toneStyle =
+    tone === "success"
+      ? {
+          color: "var(--storefront-success)",
+          backgroundColor: "var(--storefront-success-bg)",
+          borderColor: "var(--storefront-success-border)",
+        }
+      : tone === "warning"
+        ? {
+            color: "var(--storefront-warning)",
+            backgroundColor: "var(--storefront-warning-bg)",
+            borderColor: "var(--storefront-warning-border)",
+          }
+        : {
+            color: "var(--storefront-text, var(--ink-900))",
+            backgroundColor: "var(--storefront-neutral-bg)",
+            borderColor: "var(--storefront-neutral-border)",
+          };
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`}>
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
+      style={toneStyle}
+    >
       <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
       {label}: {value}
     </span>

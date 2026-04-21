@@ -155,7 +155,7 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
       <dialog
         ref={dialogRef}
         onClose={handleClose}
-        className="m-auto w-full max-w-md rounded-lg border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-white p-0 shadow-xl backdrop:bg-black/40"
+        className="m-auto w-full max-w-md rounded-lg border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface)] p-0 shadow-md backdrop:bg-[color:var(--storefront-text,var(--ink-900))]/30"
       >
         <div className="px-6 py-5">
           <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))]">
@@ -239,7 +239,7 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
           </fieldset>
 
           {error && (
-            <p role="alert" className="mt-3 text-xs text-red-600">
+            <p role="alert" className="mt-3 text-xs text-[color:var(--storefront-danger)]">
               {error}
             </p>
           )}
@@ -249,7 +249,7 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
               type="button"
               onClick={handleSubmit}
               disabled={pending}
-              className="flex-1 rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-1 rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-4 py-2.5 text-sm font-medium text-[color:var(--storefront-background,var(--paper-200))] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {pending
                 ? "Processing..."

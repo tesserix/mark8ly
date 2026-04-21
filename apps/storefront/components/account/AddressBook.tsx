@@ -286,7 +286,7 @@ export function AddressBook() {
               <button
                 type="button"
                 onClick={() => void remove(a.id)}
-                className="text-red-700 underline-offset-2 hover:underline"
+                className="text-[color:var(--storefront-danger)] underline-offset-2 hover:underline"
               >
                 Remove
               </button>

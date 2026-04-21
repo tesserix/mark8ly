@@ -111,6 +111,8 @@ export function GiftCardInput({
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="Enter gift card code"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "gift-card-code-error" : undefined}
               className="flex-1 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
             />
             <button
@@ -123,7 +125,14 @@ export function GiftCardInput({
             </button>
           </div>
           {error && (
-            <p role="alert" aria-live="polite" className="text-sm text-[color:var(--danger,#8B2500)]">{error}</p>
+            <p
+              id="gift-card-code-error"
+              role="alert"
+              aria-live="polite"
+              className="text-sm text-[color:var(--storefront-danger)]"
+            >
+              {error}
+            </p>
           )}
           {balance && !applied && (
             <div className="flex items-center justify-between rounded-md bg-[color:var(--storefront-accent,theme(colors.moss.700))]/8 px-3 py-2">

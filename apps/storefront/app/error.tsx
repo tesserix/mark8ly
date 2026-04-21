@@ -7,7 +7,7 @@ interface ErrorProps {
 
 export default function Error({ error, reset }: ErrorProps) {
   return (
-    <main className="grid min-h-[70vh] grid-rows-[1fr_auto]">
+    <main id="main" className="grid min-h-[70vh] grid-rows-[1fr_auto]">
       <div className="flex items-end px-6 pb-16 pt-24 sm:px-12 lg:px-24">
         <div className="w-full max-w-xl space-y-6 motion-safe:animate-[fadeInUp_0.4s_ease-out]">
           <div className="space-y-1">
@@ -33,7 +33,7 @@ export default function Error({ error, reset }: ErrorProps) {
             <button
               type="button"
               onClick={reset}
-              className="inline-flex h-10 items-center rounded-[var(--radius)] bg-[color:var(--storefront-primary,var(--ink-900))] px-5 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-colors duration-200 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--storefront-background,var(--background))]"
+              className="inline-flex h-11 items-center rounded-[var(--radius)] bg-[color:var(--storefront-primary,var(--ink-900))] px-5 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-colors duration-200 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--storefront-background,var(--background))]"
             >
               Try again
             </button>

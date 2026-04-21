@@ -203,7 +203,7 @@ export function ProductReviews({
       )}
 
       {error && (
-        <p className="mt-6 text-sm text-[color:var(--signal,#C23B22)]" role="alert">
+        <p className="mt-6 text-sm text-[color:var(--storefront-danger)]" role="alert">
           {error}
         </p>
       )}
@@ -464,7 +464,7 @@ function CommentsThread({
                 disabled={submitting}
               />
               {error && (
-                <p className="text-xs text-[color:var(--signal,#C23B22)]" role="alert">
+                <p className="text-xs text-[color:var(--storefront-danger)]" role="alert">
                   {error}
                 </p>
               )}

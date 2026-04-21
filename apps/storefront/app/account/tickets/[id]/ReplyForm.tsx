@@ -73,7 +73,7 @@ export function ReplyForm({
         className="w-full rounded-[6px] border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]/20 disabled:opacity-60"
       />
       {error && (
-        <p role="alert" className="text-sm text-[color:var(--signal)]">
+        <p role="alert" className="text-sm text-[color:var(--storefront-danger)]">
           {error}
         </p>
       )}

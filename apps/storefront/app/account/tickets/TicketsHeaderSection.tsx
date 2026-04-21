@@ -227,7 +227,7 @@ export function TicketsHeaderSection({
                 {status.kind === "error" && (
                   <p
                     role="alert"
-                    className="text-sm text-[color:var(--signal,#b91c1c)]"
+                    className="text-sm text-[color:var(--storefront-danger)]"
                   >
                     {status.message}
                   </p>

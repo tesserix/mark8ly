@@ -60,19 +60,28 @@ export async function FeaturedProductsSection({
           "grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4"
         }
       >
-        {products.slice(0, limit).map((p) => (
+        {products.slice(0, limit).map((p, i) => (
           <Link
             key={p.handle}
             href={`/products/${encodeURIComponent(p.handle)}`}
             className="group block"
           >
             {p.media?.[0]?.url ? (
+              // Plain <img> rather than <Image>: merchant-authored
+              // remote URLs would require whitelisting every tenant CDN
+              // in next.config.ts. Explicit intrinsic dimensions + aspect-
+              // ratio prevent CLS, lazy + async keep the first card
+              // render-path clean without blocking layout.
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={p.media[0].url}
                 alt={p.media[0].alt ?? p.title}
+                width={800}
+                height={800}
+                loading={i === 0 ? "eager" : "lazy"}
+                decoding="async"
+                fetchPriority={i === 0 ? "high" : "auto"}
                 className="aspect-square w-full rounded-md object-cover"
-                loading="lazy"
               />
             ) : (
               <div className="aspect-square w-full rounded-md bg-muted" />

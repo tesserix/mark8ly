@@ -73,7 +73,7 @@ export function GiftCardBalanceForm({ storeSlug }: GiftCardBalanceFormProps) {
           <p
             role="alert"
             aria-live="polite"
-            className="rounded-md bg-[color:var(--signal)]/5 px-4 py-3 text-sm text-[color:var(--signal)]"
+            className="rounded-md bg-[color:var(--storefront-danger)]/5 px-4 py-3 text-sm text-[color:var(--storefront-danger)]"
           >
             {error}
           </p>

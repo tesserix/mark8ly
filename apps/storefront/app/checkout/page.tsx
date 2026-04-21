@@ -872,7 +872,7 @@ export default function CheckoutPage() {
 
         {/* Error */}
         {error && (
-          <div role="alert" className="mt-6 rounded-md border border-[color:var(--danger,#8B2500)]/20 bg-[color:var(--danger,#8B2500)]/5 px-4 py-3 text-sm text-[color:var(--danger,#8B2500)]">
+          <div role="alert" className="mt-6 rounded-md border border-[color:var(--storefront-danger)]/20 bg-[color:var(--storefront-danger)]/5 px-4 py-3 text-sm text-[color:var(--storefront-danger)]">
             {error}
           </div>
         )}
@@ -883,7 +883,7 @@ export default function CheckoutPage() {
             type="button"
             disabled={!canSubmit}
             onClick={handleSubmit}
-            className="w-full rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+            className="w-full rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity duration-150 hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
           >
             {submitting ? "Placing order..." : "Place order"}
           </button>

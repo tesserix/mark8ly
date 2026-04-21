@@ -41,6 +41,16 @@ function stopTicker(): void {
   intervalId = null;
 }
 
+/**
+ * Install a single process-wide visibilitychange listener that pauses
+ * the shared ticker while the tab is hidden. Installed lazily on the
+ * first `subscribe()` call and intentionally never torn down — the
+ * module-level `listeners` set is the source of truth for whether the
+ * ticker is running, and the handler is a no-op once that set is empty.
+ * Guarded by `visibilityHandlerInstalled` so repeat mounts don't
+ * stack multiple handlers, and by the `document === undefined` check so
+ * this stays safe to import in server modules.
+ */
 function installVisibilityHandler(): void {
   if (visibilityHandlerInstalled || typeof document === "undefined") return;
   visibilityHandlerInstalled = true;

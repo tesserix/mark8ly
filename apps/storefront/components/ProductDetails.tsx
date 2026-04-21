@@ -94,7 +94,7 @@ export function ProductDetails({ product }: ProductDetailsProps) {
 
       <div aria-live="polite">
         {!inStock && (
-          <p className="text-sm text-[color:var(--signal,#C23B22)]" role="status">
+          <p className="text-sm text-[color:var(--storefront-danger)]" role="status">
             Out of stock
           </p>
         )}

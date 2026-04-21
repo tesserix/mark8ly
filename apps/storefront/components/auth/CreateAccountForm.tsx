@@ -173,7 +173,7 @@ export function CreateAccountForm({
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-[color:var(--signal)]">
+        <p role="alert" className="text-sm text-[color:var(--storefront-danger)]">
           {error}
         </p>
       )}

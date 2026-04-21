@@ -32,7 +32,7 @@ export default function Error({ error, reset }: ErrorProps) {
             <button
               type="button"
               onClick={reset}
-              className="inline-flex h-11 items-center rounded-[var(--radius)] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-[color:var(--paper-50,#fff)] transition-colors duration-200 hover:bg-[color:var(--ink-800)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--moss-700)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--background)]"
+              className="inline-flex h-11 items-center rounded-[var(--radius)] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-[color:var(--paper-50,#fff)] transition-opacity duration-150 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
             >
               Try again
             </button>

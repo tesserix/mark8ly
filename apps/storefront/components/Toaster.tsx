@@ -5,7 +5,7 @@
 // auto-dismiss. Tone → colour, keyboard & aria handled.
 
 import type { CSSProperties } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TOAST_EVENT, type ToastInput, type ToastTone } from "@/lib/toast";
 
 interface ToastRecord extends ToastInput {
@@ -40,8 +40,13 @@ const TONE_STYLES: Record<ToastTone, CSSProperties> = {
 
 export function Toaster() {
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
+  // Track each active auto-dismiss timer by toast id so the effect
+  // cleanup can cancel them on unmount — otherwise a rapid burst of
+  // toasts fired right before navigation leaves stale timers hanging.
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
+    const timers = timersRef.current;
     function onToast(evt: Event) {
       const ce = evt as CustomEvent<ToastInput>;
       const record: ToastRecord = {
@@ -51,12 +56,18 @@ export function Toaster() {
         ...ce.detail,
       };
       setToasts((prev) => [...prev, record]);
-      window.setTimeout(() => {
+      const id = setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== record.id));
+        timers.delete(record.id);
       }, record.duration ?? 3500);
+      timers.set(record.id, id);
     }
     window.addEventListener(TOAST_EVENT, onToast);
-    return () => window.removeEventListener(TOAST_EVENT, onToast);
+    return () => {
+      window.removeEventListener(TOAST_EVENT, onToast);
+      timers.forEach((id) => clearTimeout(id));
+      timers.clear();
+    };
   }, []);
 
   if (toasts.length === 0) return null;

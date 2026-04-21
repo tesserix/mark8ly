@@ -6,7 +6,7 @@
 // product detail page. Receives product + variant data as props from
 // the server component. On click, calls useCart().add().
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "./CartProvider";
 
 export interface AddToCartButtonProps {
@@ -36,8 +36,19 @@ export function AddToCartButton({
 }: AddToCartButtonProps) {
   const { add } = useCart();
   const [justAdded, setJustAdded] = useState(false);
+  // Track the "Added ✓" revert timer so rapid clicks or unmount during
+  // the 1.5s feedback window don't leak timers or stomp on fresh state.
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function handleClick() {
+  useEffect(() => {
+    return () => {
+      if (feedbackTimerRef.current !== null) {
+        clearTimeout(feedbackTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleClick = useCallback(() => {
     add({
       productId,
       variantId,
@@ -49,12 +60,18 @@ export function AddToCartButton({
       imageUrl,
     });
     setJustAdded(true);
-    setTimeout(() => setJustAdded(false), 1500);
+    if (feedbackTimerRef.current !== null) {
+      clearTimeout(feedbackTimerRef.current);
+    }
+    feedbackTimerRef.current = setTimeout(() => {
+      setJustAdded(false);
+      feedbackTimerRef.current = null;
+    }, 1500);
     // Lazy-import to keep the button dep-light on SSR.
     import("@/lib/toast").then(({ toast }) =>
       toast({ title: `${title} added to cart`, tone: "success" }),
     );
-  }
+  }, [add, productId, variantId, handle, title, priceAmount, currencyCode, imageUrl]);
 
   if (!inStock) {
     return (

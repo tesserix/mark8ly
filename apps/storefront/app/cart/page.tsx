@@ -169,7 +169,7 @@ function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
                 const n = Number.parseInt(e.target.value, 10);
                 if (Number.isFinite(n) && n > 0) onQtyChange(n);
               }}
-              className="w-10 bg-transparent text-center text-sm text-[color:var(--storefront-text,var(--ink-900))] [appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              className="w-10 bg-transparent text-center text-sm text-[color:var(--storefront-text,var(--ink-900))] [appearance:textfield] focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
             <button
               type="button"

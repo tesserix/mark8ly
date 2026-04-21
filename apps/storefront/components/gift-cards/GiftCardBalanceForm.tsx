@@ -57,7 +57,7 @@ export function GiftCardBalanceForm({ storeSlug }: GiftCardBalanceFormProps) {
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
-            className="mt-2 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-4 py-3 font-mono text-sm uppercase tracking-wider text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/40 focus:border-[color:var(--storefront-accent,var(--moss-700))] focus:outline-none focus:ring-1 focus:ring-[color:var(--storefront-accent,var(--moss-700))]"
+            className="mt-2 block w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface,#ffffff)] px-4 py-3 font-mono text-sm uppercase tracking-wider text-[color:var(--storefront-text,var(--ink-900))] placeholder:text-[color:var(--storefront-text,var(--ink-900))]/40 focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]"
           />
         </label>
 

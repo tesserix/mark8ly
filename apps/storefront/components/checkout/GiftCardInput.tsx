@@ -82,7 +82,7 @@ export function GiftCardInput({
           type="button"
           onClick={handleRemove}
           aria-label="Remove gift card"
-          className="text-sm text-[color:var(--storefront-text,var(--ink-900))]/60 transition-colors hover:text-[color:var(--storefront-text,var(--ink-900))]/90"
+          className="rounded text-sm text-[color:var(--storefront-text,var(--ink-900))]/60 transition-colors hover:text-[color:var(--storefront-text,var(--ink-900))]/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         >
           Remove
         </button>
@@ -95,7 +95,7 @@ export function GiftCardInput({
       <button
         type="button"
         onClick={() => setShowInput((v) => !v)}
-        className="text-sm text-[color:var(--storefront-accent,theme(colors.moss.700))] transition-colors hover:text-[color:var(--storefront-accent,theme(colors.moss.800))]"
+        className="rounded text-sm text-[color:var(--storefront-accent,theme(colors.moss.700))] transition-colors hover:text-[color:var(--storefront-accent,theme(colors.moss.800))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       >
         Have a gift card?
       </button>
@@ -119,7 +119,7 @@ export function GiftCardInput({
               type="button"
               onClick={handleCheckBalance}
               disabled={checking || !code.trim()}
-              className="rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-4 py-2.5 text-sm text-[color:var(--storefront-background,var(--paper-200))] transition-colors disabled:opacity-40"
+              className="rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-4 py-2.5 text-sm text-[color:var(--storefront-background,var(--paper-200))] transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] disabled:opacity-40"
             >
               {checking ? "Checking..." : "Check"}
             </button>

@@ -86,6 +86,8 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
   useEffect(() => {
     let stopped = false;
     let seenKey = latestKey;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let kickId: ReturnType<typeof setTimeout> | null = null;
 
     async function pull() {
       try {
@@ -123,30 +125,42 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
     }
     pullRef.current = pull;
 
-    const id = window.setInterval(pull, POLL_MS);
-    // Prime once after mount so a tab reopened hours later catches up fast.
-    const kick = window.setTimeout(pull, 750);
+    function startPolling() {
+      if (intervalId !== null) return;
+      intervalId = setInterval(pull, POLL_MS);
+    }
+    function stopPolling() {
+      if (intervalId === null) return;
+      clearInterval(intervalId);
+      intervalId = null;
+    }
 
-    // Re-pull the moment the tab regains focus or visibility — the
-    // interval keeps running in the background on modern browsers,
-    // but a suspended mobile Safari tab may have missed several
-    // ticks, so an explicit trigger on resume avoids the customer
-    // seeing a stale "In transit" when their package was actually
-    // delivered hours ago.
-    const onFocus = () => {
+    // Prime once after mount so a tab reopened hours later catches up fast.
+    kickId = setTimeout(pull, 750);
+
+    // Only poll while the tab is visible — no point hitting the API
+    // every 5s for a tab the user has backgrounded. Focus/visibility
+    // listener re-pulls once on resume to catch up, then resumes the
+    // interval. Covers the iOS Safari suspended-tab edge case too.
+    if (document.visibilityState === "visible") startPolling();
+
+    const onVisibilityOrFocus = () => {
       if (document.visibilityState === "visible") {
         void pull();
+        startPolling();
+      } else {
+        stopPolling();
       }
     };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onVisibilityOrFocus);
+    document.addEventListener("visibilitychange", onVisibilityOrFocus);
 
     return () => {
       stopped = true;
-      window.clearInterval(id);
-      window.clearTimeout(kick);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
+      stopPolling();
+      if (kickId !== null) clearTimeout(kickId);
+      window.removeEventListener("focus", onVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus);
     };
   }, [orderId, latestKey]);
 

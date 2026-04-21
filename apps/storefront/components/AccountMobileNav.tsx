@@ -23,7 +23,11 @@ export function AccountMobileNav() {
 
   return (
     <nav
-      className="flex gap-2 overflow-x-auto border-b border-[color:var(--storefront-text,var(--ink-900))]/10 pb-3 md:hidden"
+      /* Horizontal scroll strip. `snap-x snap-mandatory` + `snap-start`
+         on each item so fingers land on whole pills instead of mid-
+         bleed. End padding keeps the last pill from clipping when the
+         user scrolls to the right edge (WCAG 2.5.5 + scroll UX). */
+      className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto border-b border-[color:var(--storefront-text,var(--ink-900))]/10 px-4 pb-3 [scroll-padding-inline:1rem] md:hidden"
       aria-label="Account"
     >
       {NAV_ITEMS.map((item) => {
@@ -37,7 +41,7 @@ export function AccountMobileNav() {
             key={item.href}
             href={item.href}
             className={[
-              "shrink-0 rounded-[6px] px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
+              "inline-flex min-h-[44px] shrink-0 snap-start items-center whitespace-nowrap rounded-[6px] px-3 text-sm transition-colors",
               "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
               isActive
                 ? "bg-[color:var(--storefront-background,var(--paper-200))] font-medium text-[color:var(--storefront-text,var(--ink-900))]"

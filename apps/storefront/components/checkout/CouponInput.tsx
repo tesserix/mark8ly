@@ -90,7 +90,7 @@ export function CouponInput({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-sm text-[color:var(--storefront-accent,theme(colors.moss.700))] underline-offset-2 hover:underline"
+        className="rounded text-sm text-[color:var(--storefront-accent,theme(colors.moss.700))] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       >
         Have a promo code?
       </button>
@@ -114,7 +114,7 @@ export function CouponInput({
           type="button"
           onClick={remove}
           aria-label="Remove coupon"
-          className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/60 hover:text-[color:var(--storefront-text,var(--ink-900))]/90"
+          className="rounded text-xs text-[color:var(--storefront-text,var(--ink-900))]/60 transition-colors hover:text-[color:var(--storefront-text,var(--ink-900))]/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
         >
           Remove
         </button>

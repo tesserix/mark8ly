@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   LoyaltyProgramPublic,
   CustomerLoyalty,
@@ -106,6 +106,18 @@ function ReferralCard({
   pointsCurrency: string;
 }) {
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
+  // Track the "Copied" revert timer so rapid consecutive copies don't
+  // leak timers and unmount-mid-feedback doesn't leave a stray callback
+  // trying to setState on a dead component.
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
 
   // Server passes the live host so the share link is always correct for
   // the tenant the customer is viewing. Fallback to window.location at
@@ -122,7 +134,13 @@ function ReferralCard({
     try {
       await navigator.clipboard.writeText(fallback);
       setCopied(kind);
-      setTimeout(() => setCopied(null), 1500);
+      if (copiedTimerRef.current !== null) {
+        clearTimeout(copiedTimerRef.current);
+      }
+      copiedTimerRef.current = setTimeout(() => {
+        setCopied(null);
+        copiedTimerRef.current = null;
+      }, 1500);
     } catch {
       // Ignore — surface area for toast wiring later.
     }

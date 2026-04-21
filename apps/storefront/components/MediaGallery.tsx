@@ -114,7 +114,7 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
                 onClick={togglePaused}
                 aria-pressed={isPaused}
                 aria-label={isPaused ? "Play image slideshow" : "Pause image slideshow"}
-                className="absolute bottom-3 left-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--storefront-accent,var(--ink-900))]/60 text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+                className="absolute bottom-3 left-3 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[color:var(--storefront-accent,var(--ink-900))]/60 text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
               >
                 {isPaused ? (
                   <Play className="size-4" aria-hidden="true" />

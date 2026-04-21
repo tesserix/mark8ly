@@ -49,21 +49,19 @@ export function CustomerAccountMenu() {
     [getMenuItems]
   );
 
-  // Close dropdown on outside click
+  // Single effect owns every document-level listener tied to the menu
+  // being open: outside-click close + keyboard navigation. Collapsing
+  // these into one effect means we re-attach listeners only when the
+  // open state flips, not on every render from parent nav updates.
   useEffect(() => {
     if (!open) return;
-    function handleClick(e: MouseEvent) {
+
+    function handleMouseDown(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         close();
       }
     }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open, close]);
 
-  // Keyboard navigation inside the menu
-  useEffect(() => {
-    if (!open) return;
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         close();
@@ -104,8 +102,13 @@ export function CustomerAccountMenu() {
         }
       }
     }
+
+    document.addEventListener("mousedown", handleMouseDown);
     document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, [open, close, getMenuItems]);
 
   // Focus first menuitem when menu opens
@@ -146,7 +149,11 @@ export function CustomerAccountMenu() {
         aria-expanded={open}
         aria-haspopup="true"
         aria-label={`Account menu for ${displayName ?? "your account"}`}
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--storefront-accent,var(--moss-700))] text-xs font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+        /* Visual avatar stays 32px so it sits proportionally next to 14px
+           nav links, but an invisible before: pseudo-element expands the
+           tap area to 44×44 for WCAG 2.5.5 compliance without inflating
+           the chrome. */
+        className="relative flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--storefront-accent,var(--moss-700))] text-xs font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 before:absolute before:inset-[-6px] before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       >
         {initial}
       </button>

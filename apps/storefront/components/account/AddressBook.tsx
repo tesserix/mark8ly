@@ -222,7 +222,7 @@ export function AddressBook() {
           type="button"
           onClick={startAdd}
           disabled={addresses.length >= MAX_ADDRESSES}
-          className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-4 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] transition-colors hover:border-[color:var(--storefront-accent,var(--moss-700))] hover:text-[color:var(--storefront-accent,var(--moss-700))] disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-4 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] transition-colors hover:border-[color:var(--storefront-accent,var(--moss-700))] hover:text-[color:var(--storefront-accent,var(--moss-700))] disabled:cursor-not-allowed disabled:opacity-40"
         >
           + Add address
         </button>
@@ -238,7 +238,7 @@ export function AddressBook() {
         {addresses.map((a) => (
           <li
             key={a.id}
-            className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-white p-4"
+            className="rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface)] p-4"
           >
             <div className="flex items-center justify-between gap-3">
               <p className="flex items-center gap-2 text-sm font-semibold text-[color:var(--storefront-text,var(--ink-900))]">
@@ -298,7 +298,7 @@ export function AddressBook() {
       {showForm && (
         <form
           onSubmit={save}
-          className="space-y-4 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white p-5"
+          className="space-y-4 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] p-5"
         >
           <h3 className="text-sm font-semibold uppercase tracking-wider text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
             {form.id ? "Edit address" : "Add address"}
@@ -403,7 +403,7 @@ export function AddressBook() {
             <button
               type="submit"
               disabled={saving}
-              className="rounded-md bg-[color:var(--storefront-accent,var(--moss-700))] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-[color:var(--storefront-accent,var(--moss-700))] px-4 py-2 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? "Saving…" : form.id ? "Update address" : "Save address"}
             </button>
@@ -422,7 +422,7 @@ export function AddressBook() {
 }
 
 const inputClass =
-  "w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]";
+  "w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

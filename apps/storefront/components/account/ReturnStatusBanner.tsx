@@ -115,7 +115,7 @@ function Banner({ r, orderId }: { r: StorefrontReturn; orderId: string }) {
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <Link
               href={`/account/orders/${encodeURIComponent(orderId)}/returns/${encodeURIComponent(r.id)}/label`}
-              className="inline-flex items-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+              className="inline-flex items-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-3 py-1.5 text-xs font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] hover:opacity-90"
             >
               Print return label
             </Link>

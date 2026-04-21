@@ -48,7 +48,7 @@ export function TicketStatusStepper({ status }: TicketStatusStepperProps) {
         const circleClass = isActive
           ? "bg-[color:var(--storefront-surface,white)] border-[color:var(--storefront-accent,var(--moss-700))] text-[color:var(--storefront-accent,var(--moss-700))]"
           : isPast
-            ? "bg-[color:var(--storefront-accent,var(--moss-700))] border-[color:var(--storefront-accent,var(--moss-700))] text-white"
+            ? "bg-[color:var(--storefront-accent,var(--moss-700))] border-[color:var(--storefront-accent,var(--moss-700))] text-[color:var(--storefront-on-accent,var(--paper-200))]"
             : "bg-[color:var(--storefront-surface,white)] border-[color:var(--storefront-text,var(--ink-900))]/15 text-[color:var(--storefront-text,var(--ink-900))]/40";
 
         const labelClass = isActive

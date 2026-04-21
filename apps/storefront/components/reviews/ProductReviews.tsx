@@ -472,7 +472,7 @@ function CommentsThread({
                 <button
                   type="submit"
                   disabled={submitting || !composer.trim()}
-                  className="inline-flex items-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-3 py-1.5 text-xs font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting ? "Posting..." : "Post comment"}
                 </button>
@@ -574,7 +574,7 @@ function CommentNode({
             <button
               type="submit"
               disabled={submitting || !replyBody.trim()}
-              className="inline-flex items-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center rounded-md bg-[color:var(--storefront-text,var(--ink-900))] px-3 py-1.5 text-xs font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "Posting..." : "Post reply"}
             </button>

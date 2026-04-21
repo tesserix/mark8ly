@@ -177,7 +177,7 @@ export function ContactForm({
       <button
         type="submit"
         disabled={disabled}
-        className="h-11 rounded-[6px] bg-[color:var(--ink-900)] px-6 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-60"
+        className="h-11 rounded-[6px] bg-[color:var(--ink-900)] px-6 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-60"
       >
         {disabled ? "Sending..." : "Send message"}
       </button>

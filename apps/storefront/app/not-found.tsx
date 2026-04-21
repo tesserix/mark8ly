@@ -21,7 +21,7 @@ export default function NotFound() {
           <nav className="flex items-center gap-6 pt-2">
             <Link
               href="/"
-              className="inline-flex h-10 items-center rounded-[var(--radius)] bg-[color:var(--storefront-primary,var(--ink-900))] px-5 text-sm font-medium text-white transition-colors duration-200 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--storefront-background,var(--background))]"
+              className="inline-flex h-10 items-center rounded-[var(--radius)] bg-[color:var(--storefront-primary,var(--ink-900))] px-5 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-colors duration-200 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--storefront-background,var(--background))]"
             >
               Continue shopping
             </Link>

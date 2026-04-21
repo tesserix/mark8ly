@@ -79,8 +79,12 @@ export function StatusChip({
   return (
     <span
       {...rest}
-      className={`inline-flex items-center gap-1.5 rounded-full border font-medium ${SIZE_CLASSES[size]} ${className}`}
-      style={{ ...baseStyle, ...style }}
+      className={`inline-flex items-center gap-1.5 border font-medium ${SIZE_CLASSES[size]} ${className}`}
+      style={{
+        borderRadius: "var(--storefront-radius)",
+        ...baseStyle,
+        ...style,
+      }}
     >
       {withDot ? (
         <span

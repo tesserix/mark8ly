@@ -23,7 +23,7 @@ export function LoyaltyDashboard({
     // (network blip, transient backend error). Surface that instead of a
     // broken "Join" button — the next page load will likely recover.
     return (
-      <div className="rounded-[6px] bg-white px-6 py-6">
+      <div className="rounded-[6px] border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface)] px-6 py-6">
         <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))]/70">
           We couldn&apos;t fetch your loyalty balance right now. Refresh in
           a moment and it should appear.
@@ -35,7 +35,7 @@ export function LoyaltyDashboard({
   return (
     <div className="space-y-6">
       {/* Balance card */}
-      <div className="rounded-[6px] bg-white px-6 py-6">
+      <div className="rounded-[6px] border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface)] px-6 py-6">
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))]/60">
@@ -64,7 +64,7 @@ export function LoyaltyDashboard({
 
       {/* Tiers */}
       {program.tiers.length > 0 && (
-        <div className="rounded-[6px] bg-white px-6 py-5">
+        <div className="rounded-[6px] border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface)] px-6 py-5">
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))]/60">
             Tiers
           </h3>
@@ -129,7 +129,7 @@ function ReferralCard({
   };
 
   return (
-    <div className="rounded-[6px] bg-white px-6 py-5 space-y-3">
+    <div className="rounded-[6px] border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface)] px-6 py-5 space-y-3">
       <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))]/60">
         Invite friends
       </h3>

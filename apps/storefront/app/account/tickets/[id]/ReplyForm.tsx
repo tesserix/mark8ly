@@ -70,7 +70,7 @@ export function ReplyForm({
         rows={5}
         placeholder="Write a reply..."
         disabled={isPending}
-        className="w-full rounded-[6px] border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-white px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]/20 disabled:opacity-60"
+        className="w-full rounded-[6px] border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-3 py-2.5 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:border-[color:var(--storefront-accent,var(--moss-700))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--storefront-accent,var(--moss-700))]/20 disabled:opacity-60"
       />
       {error && (
         <p role="alert" className="text-sm text-[color:var(--signal)]">
@@ -80,7 +80,7 @@ export function ReplyForm({
       <button
         type="submit"
         disabled={isPending}
-        className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-60"
+        className="h-10 rounded-[6px] bg-[color:var(--ink-900)] px-5 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-60"
       >
         {isPending ? "Sending..." : "Send reply"}
       </button>

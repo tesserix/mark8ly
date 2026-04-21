@@ -122,11 +122,13 @@ const jsonLd = {
         "https://instagram.com/mark8ly",
         "https://linkedin.com/company/mark8ly",
       ],
+      // Tesserix is an Australian entity. No specific locality
+      // is emitted here until the legal registration address is
+      // confirmed — fabricating a city to fill the schema shape is
+      // worse than a narrower-but-accurate address.
       address: {
         "@type": "PostalAddress",
-        addressLocality: "Mumbai",
-        addressRegion: "Maharashtra",
-        addressCountry: "IN",
+        addressCountry: "AU",
       },
     },
     {

@@ -107,6 +107,26 @@
 }
 
 /* ============================================================
+   Keyframes
+   ------------------------------------------------------------
+   `fadeInUp` is consumed by `app/error.tsx` via
+   `motion-safe:animate-[fadeInUp_0.4s_ease-out]`. Gate is
+   `motion-safe`, so the prefers-reduced-motion override above
+   already wins for users who opt out.
+   ============================================================ */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================================
    Component-layer helpers
    ============================================================ */
 

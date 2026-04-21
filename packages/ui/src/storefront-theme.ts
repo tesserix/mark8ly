@@ -903,9 +903,12 @@ export function withColorOverride(
    ============================================================ */
 
 export function themeRadius(theme: StorefrontTheme): string {
-  if (theme.radius === "sharp") return "1.1rem";
-  if (theme.radius === "rounded") return "2rem";
-  return "1.5rem";
+  // Editorial scale — sharp is visibly crisp, soft is a restrained
+  // modern default, rounded is confidently round without tipping into
+  // cartoon territory.
+  if (theme.radius === "sharp") return "0.125rem";
+  if (theme.radius === "rounded") return "0.875rem";
+  return "0.375rem";
 }
 
 /**
@@ -913,10 +916,13 @@ export function themeRadius(theme: StorefrontTheme): string {
  * inside the storefront. Multiplies the default Tailwind radius so
  * choosing "sharp" / "soft" / "rounded" flows through every product
  * card, image, button, and chip without touching component code.
+ * Tightened alongside themeRadius() — soft = 1× baseline Tailwind,
+ * sharp pulls everything crisper, rounded lifts modestly instead of
+ * doubling.
  */
 export function themeRadiusScale(theme: StorefrontTheme): number {
   if (theme.radius === "sharp") return 0.25;
-  if (theme.radius === "rounded") return 2;
+  if (theme.radius === "rounded") return 1.5;
   return 1;
 }
 

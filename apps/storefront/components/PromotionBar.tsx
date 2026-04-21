@@ -54,8 +54,8 @@ function CampaignStrip({ promotion }: { promotion: ActivePromotion }) {
     <div
       className="bg-[color:var(--storefront-text)] text-[color:var(--storefront-background)]"
     >
-      <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 py-2.5 text-sm">
-        <p className="text-center">{promotion.label}</p>
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-sm">
+        <p className="flex-1 min-w-0">{promotion.label}</p>
 
         {promotion.coupon_code && (
           <button
@@ -88,7 +88,7 @@ function AnnouncementStrip({
 }) {
   const style = bg ? { backgroundColor: bg } : undefined;
   const content = (
-    <p className="text-center text-sm">
+    <p className="text-sm">
       {text}
     </p>
   );

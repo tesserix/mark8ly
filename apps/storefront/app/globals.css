@@ -36,10 +36,26 @@
   --storefront-text: var(--ink-900);
   --storefront-heading-font: var(--font-source-serif), Georgia, serif;
   --storefront-body-font: var(--font-source-sans), system-ui, sans-serif;
-  --storefront-radius: 1.5rem;
+  /* Editorial-crisp default. Merchants override via the radius setting
+     (sharp / soft / rounded) which maps to themeRadius() in
+     @repo/ui/storefront-theme. */
+  --storefront-radius: 0.375rem;
   --storefront-radius-scale: 1;
   --storefront-density-scale: 1;
   --storefront-motion-scale: 1;
+
+  /* ==========================================================
+     Transition tokens — consumed by shell chrome (links, buttons,
+     overlays, and any animated state change). Merchants control
+     overall tempo via the motion setting (none / subtle / expressive)
+     which drives --storefront-motion-scale; the tokens below multiply
+     through that scale so one knob governs every transition.
+     `none` mode zeroes the scale, which collapses every duration to
+     0ms without needing to unplug individual rules.
+     ========================================================== */
+  --storefront-duration-fast: calc(120ms * var(--storefront-motion-scale, 1));
+  --storefront-duration-base: calc(220ms * var(--storefront-motion-scale, 1));
+  --storefront-duration-slow: calc(360ms * var(--storefront-motion-scale, 1));
 
   /* ==========================================================
      Semantic status tokens — used for order/ticket/stock state.
@@ -149,9 +165,9 @@
 
   a, button {
     transition:
-      color var(--duration-fast) var(--ease-out),
-      background-color var(--duration-fast) var(--ease-out),
-      border-color var(--duration-fast) var(--ease-out);
+      color var(--storefront-duration-fast) var(--ease-out),
+      background-color var(--storefront-duration-fast) var(--ease-out),
+      border-color var(--storefront-duration-fast) var(--ease-out);
   }
 }
 
@@ -232,10 +248,10 @@ main#main .rounded-3xl { border-radius: calc(1.5rem  * var(--storefront-radius-s
   animation: none !important;
 }
 
-[data-motion="expressive"] a,
-[data-motion="expressive"] button {
-  transition-duration: calc(var(--duration-fast, 150ms) * 2.4);
-}
+/* Expressive no longer needs an inline transition-duration override —
+   --storefront-duration-* already scale through --storefront-motion-scale
+   (themeMotionScale returns 1.4 for expressive). Any component using the
+   --storefront-duration-* tokens picks up the slower tempo automatically. */
 [data-motion="expressive"] .animate-marquee[data-speed="slow"]   { animation-duration: 84s; }
 [data-motion="expressive"] .animate-marquee[data-speed="normal"] { animation-duration: 42s; }
 [data-motion="expressive"] .animate-marquee[data-speed="fast"]   { animation-duration: 25s; }

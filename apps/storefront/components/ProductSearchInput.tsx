@@ -33,7 +33,7 @@ export function ProductSearchInput() {
   }, [draft]);
 
   return (
-    <label className="relative block w-full max-w-md">
+    <label className="relative block w-full max-w-xs sm:max-w-md lg:max-w-lg">
       <Search
         className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--storefront-text,var(--ink-900))] opacity-50"
         aria-hidden="true"

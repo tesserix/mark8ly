@@ -89,7 +89,7 @@ export default async function ReturnLabelPage({ params }: PageProps) {
     <div className="min-h-screen bg-white p-8 font-sans text-[13px] text-black print:p-0">
       <div className="mx-auto max-w-2xl space-y-6 border border-black/20 bg-white p-8 shadow-sm print:border-0 print:shadow-none">
         {/* Header */}
-        <header className="flex items-start justify-between border-b-2 border-black pb-4">
+        <header className="flex flex-col items-start justify-between gap-4 border-b-2 border-black pb-4 sm:flex-row sm:items-start">
           <div>
             <p className="text-xs uppercase tracking-[0.25em] text-black/60">
               {typeLabel} AUTHORIZATION
@@ -113,7 +113,7 @@ export default async function ReturnLabelPage({ params }: PageProps) {
         </header>
 
         {/* Addresses */}
-        <section className="grid grid-cols-2 gap-6">
+        <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 print:grid-cols-2">
           <AddressCard
             label="FROM (CUSTOMER)"
             name={ship?.name ?? ""}
@@ -141,24 +141,26 @@ export default async function ReturnLabelPage({ params }: PageProps) {
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-black/60">
             Items in this {r.type === "replace" ? "replacement" : "return"}
           </p>
-          <table className="w-full border-collapse text-left">
-            <thead>
-              <tr className="border-b border-black/20 text-[11px] uppercase tracking-wider text-black/60">
-                <th className="py-2">SKU</th>
-                <th className="py-2 text-right">Qty</th>
-              </tr>
-            </thead>
-            <tbody>
-              {order.items.map((it, i) => (
-                <tr key={i} className="border-b border-black/10">
-                  <td className="py-2 font-mono text-[11px]">
-                    {it.sku_snapshot}
-                  </td>
-                  <td className="py-2 text-right tabular-nums">{it.quantity}</td>
+          <div className="-mx-2 overflow-x-auto px-2 print:overflow-visible">
+            <table className="w-full min-w-[320px] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-black/20 text-[11px] uppercase tracking-wider text-black/60">
+                  <th className="py-2">SKU</th>
+                  <th className="py-2 text-right">Qty</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {order.items.map((it, i) => (
+                  <tr key={i} className="border-b border-black/10">
+                    <td className="py-2 font-mono text-[11px] break-all">
+                      {it.sku_snapshot}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">{it.quantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         {/* Pickup / logistics */}

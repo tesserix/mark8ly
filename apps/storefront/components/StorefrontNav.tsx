@@ -38,7 +38,8 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4 sm:px-8">
         <Link
           href="/"
-          className="truncate font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+          className="max-w-[45%] truncate font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] sm:max-w-[55%] md:max-w-none"
+          title={storeName ?? undefined}
         >
           {storeName ?? "Store"}
         </Link>

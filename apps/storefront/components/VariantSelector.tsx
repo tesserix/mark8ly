@@ -109,24 +109,33 @@ export function VariantSelector({
             {opt.values.map((v) => {
               const isSelected = selected[opt.name] === v.value;
               const available = isValueAvailable(opt.name, v.value);
+              const unavailable = !available && !isSelected;
               return (
                 <button
                   key={v.value}
                   type="button"
                   onClick={() => handleSelect(opt.name, v.value)}
-                  disabled={!available && !isSelected}
+                  disabled={unavailable}
                   aria-pressed={isSelected}
+                  aria-disabled={unavailable || undefined}
+                  aria-label={
+                    unavailable
+                      ? `${opt.name} ${v.value}, out of stock`
+                      : `${opt.name} ${v.value}`
+                  }
+                  title={unavailable ? "Out of stock" : undefined}
                   className={[
-                    "rounded-md border px-4 py-2 text-sm transition-all duration-150",
+                    "relative rounded-md border px-4 py-2 text-sm transition-colors duration-150",
                     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]",
                     isSelected
-                      ? "border-[color:var(--storefront-text,var(--ink-900))] bg-[color:var(--storefront-accent,var(--ink-900))] text-[color:var(--storefront-on-accent,var(--paper-200))] scale-[1.02]"
+                      ? "border-[color:var(--storefront-text,var(--ink-900))] bg-[color:var(--storefront-accent,var(--ink-900))] text-[color:var(--storefront-on-accent,var(--paper-200))]"
                       : available
-                        ? "border-[color:var(--storefront-text,var(--ink-900))]/20 text-[color:var(--storefront-text,var(--ink-900))] hover:border-[color:var(--storefront-text,var(--ink-900))]/50 active:scale-95"
-                        : "border-[color:var(--storefront-text,var(--ink-900))]/10 text-[color:var(--storefront-text,var(--ink-900))] opacity-30 line-through cursor-not-allowed",
+                        ? "border-[color:var(--storefront-text,var(--ink-900))]/20 text-[color:var(--storefront-text,var(--ink-900))] hover:border-[color:var(--storefront-text,var(--ink-900))]/50"
+                        : "border-[color:var(--storefront-text,var(--ink-900))]/10 text-[color:var(--storefront-text,var(--ink-900))]/50 line-through cursor-not-allowed",
                   ].join(" ")}
                 >
-                  {v.value}
+                  <span aria-hidden={unavailable ? "true" : undefined}>{v.value}</span>
+                  {unavailable ? <span className="sr-only">Out of stock</span> : null}
                 </button>
               );
             })}
@@ -134,7 +143,11 @@ export function VariantSelector({
         </fieldset>
       ))}
       {resolvedVariant && !resolvedVariant.in_stock && (
-        <p className="text-sm text-[color:var(--signal,#C23B22)]">
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-sm text-[color:var(--storefront-danger)]"
+        >
           This combination is out of stock
         </p>
       )}

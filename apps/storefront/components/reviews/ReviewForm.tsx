@@ -219,7 +219,7 @@ export function ReviewForm({ productHandle, isAuthenticated }: ReviewFormProps) 
               type="button"
               onClick={() => setRating(star)}
               onMouseEnter={() => setHoveredRating(star)}
-              className={`cursor-pointer transition-colors ${
+              className={`inline-flex h-11 w-11 cursor-pointer items-center justify-center transition-colors ${
                 star <= activeRating
                   ? "text-[color:var(--storefront-text,var(--ink-900))]"
                   : "text-[color:var(--storefront-text,var(--ink-900))]/20"

@@ -146,7 +146,7 @@ export function CustomerAccountMenu() {
         aria-expanded={open}
         aria-haspopup="true"
         aria-label={`Account menu for ${displayName ?? "your account"}`}
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--storefront-accent,var(--moss-700))] text-xs font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--storefront-accent,var(--moss-700))] text-xs font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       >
         {initial}
       </button>
@@ -155,7 +155,7 @@ export function CustomerAccountMenu() {
         ref={menuContainerRef}
         role="menu"
         className={[
-          "absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-[6px] bg-white shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))] border border-[color:var(--storefront-text,var(--ink-900))]/10",
+          "absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-[6px] bg-[color:var(--storefront-surface)] shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))] border border-[color:var(--storefront-text,var(--ink-900))]/10",
           open ? "" : "hidden",
         ].join(" ")}
       >

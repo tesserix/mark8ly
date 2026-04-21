@@ -28,17 +28,52 @@ const SANS_BOLD = "Helvetica-Bold";
 const SERIF = "Times-Roman";
 const SERIF_BOLD = "Times-Bold";
 
-const INK = "#0E0E0C";
-const PAPER = "#FFFFFF";
-const SUBDUED = "#5A5A55";
-const HAIRLINE = "#D9D7CF";
-const SUBTLE_FILL = "#F7F6F2";
+// Default invoice palette. PAPER, SUBTLE_FILL, HAIRLINE stay print-safe
+// (white paper, light gray hairlines) even when the merchant's live
+// storefront runs in dark mode — a dark invoice would waste ink and
+// look awful printed. Only the INK tone honours the merchant's
+// color_text when provided, so a warm or cool tenant can match their
+// print tone without losing legibility.
+const DEFAULT_INK = "#0E0E0C";
+const DEFAULT_PAPER = "#FFFFFF";
+const DEFAULT_SUBDUED = "#5A5A55";
+const DEFAULT_HAIRLINE = "#D9D7CF";
+const DEFAULT_SUBTLE_FILL = "#F7F6F2";
+
+interface InvoiceTheme {
+  ink: string;
+  paper: string;
+  subdued: string;
+  hairline: string;
+  subtleFill: string;
+  accent: string;
+}
+
+const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+function coerceHex(value: string | undefined, fallback: string): string {
+  return value && HEX_RE.test(value) ? value : fallback;
+}
+
+function resolveInvoiceTheme(store: InvoiceDocument["store"]): InvoiceTheme {
+  return {
+    ink: coerceHex(store.color_text, DEFAULT_INK),
+    paper: DEFAULT_PAPER,
+    subdued: DEFAULT_SUBDUED,
+    hairline: DEFAULT_HAIRLINE,
+    subtleFill: DEFAULT_SUBTLE_FILL,
+    accent: coerceHex(store.color_accent, DEFAULT_INK),
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────
-// Styles
+// Styles — factory rather than module-level so the merchant's ink tone
+// flows through every text node. react-pdf's StyleSheet.create is just
+// identity-with-typing, so re-creating per-render is cheap.
 // ─────────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+function createStyles(theme: InvoiceTheme) {
+  const { ink: INK, paper: PAPER, subdued: SUBDUED, hairline: HAIRLINE, subtleFill: SUBTLE_FILL } = theme;
+  return StyleSheet.create({
   page: {
     paddingTop: 48,
     paddingBottom: 56,
@@ -252,7 +287,10 @@ const styles = StyleSheet.create({
     color: SUBDUED,
   },
   pageNum: { fontSize: 7.5, color: SUBDUED },
-});
+  });
+}
+
+type InvoiceStyles = ReturnType<typeof createStyles>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -289,7 +327,15 @@ function isPaid(status: string): boolean {
   return status === "paid" || status === "captured" || status === "partially_refunded";
 }
 
-function ItemRow({ line, currency }: { line: DocumentLine; currency: string }) {
+function ItemRow({
+  line,
+  currency,
+  styles,
+}: {
+  line: DocumentLine;
+  currency: string;
+  styles: InvoiceStyles;
+}) {
   return (
     <View style={styles.tableRow} wrap={false}>
       <View style={styles.colDescription}>
@@ -307,10 +353,12 @@ function PartyBlock({
   label,
   address,
   email,
+  styles,
 }: {
   label: string;
   address: DocumentAddress;
   email?: string;
+  styles: InvoiceStyles;
 }) {
   return (
     <View style={styles.partyBlock}>
@@ -330,7 +378,15 @@ function PartyBlock({
   );
 }
 
-function Totals({ totals }: { totals: DocumentTotals }) {
+function Totals({
+  totals,
+  styles,
+  ink,
+}: {
+  totals: DocumentTotals;
+  styles: InvoiceStyles;
+  ink: string;
+}) {
   const refunded = totals.refunded_amount ? Number.parseFloat(totals.refunded_amount) : 0;
   const ccy = totals.currency_code;
   const hasBreakdown = !!(totals.tax_lines && totals.tax_lines.length > 0);
@@ -368,7 +424,7 @@ function Totals({ totals }: { totals: DocumentTotals }) {
             <Text style={styles.totalsValue}>−{formatCurrency(totals.discount_total, ccy)}</Text>
           </View>
         )}
-        <View style={[styles.grandRule, { backgroundColor: INK }]} />
+        <View style={[styles.grandRule, { backgroundColor: ink }]} />
         <View style={styles.grandLine}>
           <Text style={styles.grandLabel}>Total</Text>
           <Text style={styles.grandValue}>{formatCurrency(totals.grand_total, ccy)}</Text>
@@ -392,10 +448,12 @@ function TaxBreakdownBlock({
   totals,
   countryCode,
   accent,
+  styles,
 }: {
   totals: DocumentTotals;
   countryCode?: string;
   accent: string;
+  styles: InvoiceStyles;
 }) {
   if (!totals.tax_lines || totals.tax_lines.length === 0) return null;
   const heading = countryCode === "IN" ? "GST breakdown" : "Tax breakdown";
@@ -439,7 +497,9 @@ interface PdfProps {
 }
 
 export function InvoicePdf({ doc }: PdfProps) {
-  const accent = doc.store.color_accent || INK;
+  const theme = resolveInvoiceTheme(doc.store);
+  const styles = createStyles(theme);
+  const { ink: INK, accent } = theme;
   const isReceipt = doc.kind === "receipt";
   const titleText = isReceipt ? "RECEIPT" : "INVOICE";
   // Invoice statuses pivot on whether the customer has settled payment.
@@ -506,8 +566,8 @@ export function InvoicePdf({ doc }: PdfProps) {
 
         {/* Parties */}
         <View style={styles.partiesRow}>
-          <PartyBlock label="Bill to" address={doc.bill_to} email={doc.customer_email} />
-          {showShipBlock && <PartyBlock label="Ship to" address={ship} />}
+          <PartyBlock label="Bill to" address={doc.bill_to} email={doc.customer_email} styles={styles} />
+          {showShipBlock && <PartyBlock label="Ship to" address={ship} styles={styles} />}
         </View>
 
         {/* Line items */}
@@ -519,15 +579,20 @@ export function InvoicePdf({ doc }: PdfProps) {
             <Text style={[styles.th, styles.colTotal]}>Amount</Text>
           </View>
           {doc.lines.map((line, i) => (
-            <ItemRow key={i} line={line} currency={doc.totals.currency_code} />
+            <ItemRow key={i} line={line} currency={doc.totals.currency_code} styles={styles} />
           ))}
         </View>
 
         {/* Per-jurisdiction tax breakdown — GST/VAT/sales-tax detail. */}
-        <TaxBreakdownBlock totals={doc.totals} countryCode={doc.store.country_code} accent={accent} />
+        <TaxBreakdownBlock
+          totals={doc.totals}
+          countryCode={doc.store.country_code}
+          accent={accent}
+          styles={styles}
+        />
 
         {/* Totals */}
-        <Totals totals={doc.totals} />
+        <Totals totals={doc.totals} styles={styles} ink={INK} />
 
         {/* Status banner — receipts get a filled accent banner so the
             document reads as the official "delivered & paid" record at

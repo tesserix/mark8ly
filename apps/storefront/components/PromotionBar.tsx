@@ -61,9 +61,10 @@ function CampaignStrip({ promotion }: { promotion: ActivePromotion }) {
           <button
             type="button"
             onClick={copyCode}
-            className="inline-flex items-center gap-1.5 rounded border border-[color:var(--storefront-background)]/20 bg-[color:var(--storefront-background)]/10 px-2.5 py-1 font-mono text-xs font-medium tracking-wider transition hover:bg-[color:var(--storefront-background)]/20"
+            aria-label={copied ? `Copied promo code ${promotion.coupon_code}` : `Copy promo code ${promotion.coupon_code}`}
+            className="inline-flex items-center gap-1.5 rounded border border-[color:var(--storefront-background)]/20 bg-[color:var(--storefront-background)]/10 px-2.5 py-1 text-xs font-medium transition hover:bg-[color:var(--storefront-background)]/20"
           >
-            {promotion.coupon_code}
+            <span className="font-mono tracking-wider">{promotion.coupon_code}</span>
             {copied ? (
               <Check className="size-3" aria-hidden="true" />
             ) : (

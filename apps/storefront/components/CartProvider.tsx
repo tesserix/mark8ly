@@ -11,7 +11,10 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
+  useRef,
+  useState,
   type ReactNode,
 } from "react";
 import {
@@ -106,18 +109,61 @@ export interface CartProviderProps {
   children: ReactNode;
 }
 
+const PERSIST_DEBOUNCE_MS = 250;
+
 export function CartProvider({ storeSlug, children }: CartProviderProps) {
   const [items, dispatch] = useReducer(reducer, []);
+  // Gate the persist effect until after hydration has run — otherwise
+  // the first render (items=[]) overwrites a non-empty stored cart in
+  // the milliseconds before HYDRATE lands.
+  const [hydrated, setHydrated] = useState(false);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Hydrate from localStorage on mount (client-only).
   useEffect(() => {
     dispatch({ type: "HYDRATE", items: readFromStorage(storeSlug) });
+    setHydrated(true);
   }, [storeSlug]);
 
-  // Persist every change back to localStorage.
+  // Persist every change back to localStorage, debounced so rapid
+  // edits (qty stepper, bulk add) collapse into a single write.
   useEffect(() => {
-    writeToStorage(storeSlug, items);
-  }, [storeSlug, items]);
+    if (!hydrated) return;
+    if (persistTimerRef.current !== null) {
+      clearTimeout(persistTimerRef.current);
+    }
+    persistTimerRef.current = setTimeout(() => {
+      writeToStorage(storeSlug, items);
+      persistTimerRef.current = null;
+    }, PERSIST_DEBOUNCE_MS);
+    return () => {
+      if (persistTimerRef.current !== null) {
+        clearTimeout(persistTimerRef.current);
+      }
+    };
+  }, [storeSlug, items, hydrated]);
+
+  // Flush any pending write when the tab is being hidden/closed so a
+  // last-minute mutation before navigation isn't lost to the debounce.
+  useEffect(() => {
+    if (!hydrated) return;
+    const flush = () => {
+      if (persistTimerRef.current !== null) {
+        clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+        writeToStorage(storeSlug, items);
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [storeSlug, items, hydrated]);
 
   const add = useCallback(
     (item: CartItem) => dispatch({ type: "ADD", item }),
@@ -135,15 +181,18 @@ export function CartProvider({ storeSlug, children }: CartProviderProps) {
   );
   const clear = useCallback(() => dispatch({ type: "CLEAR" }), []);
 
-  const value: CartContextValue = {
-    items,
-    add,
-    remove,
-    updateQty,
-    clear,
-    count: count(items),
-    subtotal: subtotal(items),
-  };
+  const value = useMemo<CartContextValue>(
+    () => ({
+      items,
+      add,
+      remove,
+      updateQty,
+      clear,
+      count: count(items),
+      subtotal: subtotal(items),
+    }),
+    [items, add, remove, updateQty, clear],
+  );
 
   return <CartContext value={value}>{children}</CartContext>;
 }

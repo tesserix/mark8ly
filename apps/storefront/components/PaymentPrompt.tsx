@@ -37,6 +37,27 @@ declare global {
 }
 
 const RZP_SCRIPT = "https://checkout.razorpay.com/v1/checkout.js";
+const DEFAULT_ACCENT_HEX = "#2C5530";
+
+/**
+ * Razorpay's `theme.color` API accepts a hex string. Read the live
+ * `--storefront-accent` CSS var off <body> (where the theme style is
+ * injected from layout.tsx) so the merchant's brand accent flows
+ * through to the Razorpay widget — instead of shipping every customer
+ * the hardcoded Mark8ly moss green. Falls back to the default hex if
+ * the var resolves to something Razorpay wouldn't accept.
+ */
+function resolveAccentHex(): string {
+  if (typeof window === "undefined") return DEFAULT_ACCENT_HEX;
+  const source = document.body ?? document.documentElement;
+  const raw = getComputedStyle(source)
+    .getPropertyValue("--storefront-accent")
+    .trim();
+  // Razorpay only reliably renders #RGB or #RRGGBB. Other formats
+  // (oklch, color-mix, named colors) would silently render black.
+  if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return raw;
+  return DEFAULT_ACCENT_HEX;
+}
 
 function loadRazorpay(): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false);
@@ -147,7 +168,7 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
       modal: {
         ondismiss: () => setBusy(false),
       },
-      theme: { color: "#2C5530" },
+      theme: { color: resolveAccentHex() },
     });
     rzp.open();
   }

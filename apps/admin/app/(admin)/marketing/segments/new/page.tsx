@@ -38,11 +38,7 @@ export default async function NewSegmentPage() {
         </p>
       </header>
 
-      <SegmentForm
-        storeId={currentStore.id}
-        session={{ userId, tenantId }}
-        tiers={tiers}
-      />
+      <SegmentForm tiers={tiers} />
     </main>
   );
 }

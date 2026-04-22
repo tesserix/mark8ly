@@ -52,12 +52,7 @@ export default async function EditSegmentPage({
         </p>
       </header>
 
-      <SegmentForm
-        storeId={currentStore.id}
-        session={sessionHeaders}
-        tiers={tiers}
-        initialSegment={segment}
-      />
+      <SegmentForm tiers={tiers} initialSegment={segment} />
     </main>
   );
 }

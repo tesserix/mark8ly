@@ -10,18 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@tesserix/web";
-import type {
-  AdminSegment,
-  SessionHeaders,
-} from "@/lib/api/campaigns-api";
-import { createSegment, updateSegment } from "@/lib/api/campaigns-api";
+import type { AdminSegment } from "@/lib/api/campaigns-api";
 import type { LoyaltyTier } from "@/lib/api/loyalty-api";
 
 type Mode = "create" | "edit";
 
 interface SegmentFormProps {
-  storeId: string;
-  session: SessionHeaders;
   tiers: LoyaltyTier[];
   initialSegment?: AdminSegment;
 }
@@ -39,10 +33,6 @@ const RULE_TYPE_OPTIONS: { value: RuleType; label: string }[] = [
   { value: "has_ordered", label: "Has placed an order" },
   { value: "inactive_days", label: "Inactive for N days" },
 ];
-
-function ruleNeedsValue(type: RuleType): boolean {
-  return type === "loyalty_tier" || type === "inactive_days";
-}
 
 function parseInitialRules(rulesJson: string | undefined): RuleRow[] {
   if (!rulesJson) return [{ type: "all", value: "" }];
@@ -65,8 +55,6 @@ function parseInitialRules(rulesJson: string | undefined): RuleRow[] {
 }
 
 export function SegmentForm({
-  storeId,
-  session,
   tiers,
   initialSegment,
 }: SegmentFormProps) {
@@ -121,17 +109,25 @@ export function SegmentForm({
       };
 
       try {
-        const result =
+        const url =
           mode === "edit" && initialSegment
-            ? await updateSegment(storeId, initialSegment.id, body, session)
-            : await createSegment(storeId, body, session);
+            ? `/api/marketing/segments/${initialSegment.id}`
+            : "/api/marketing/segments";
+        const method = mode === "edit" ? "PATCH" : "POST";
 
-        if (!result) {
-          setError(
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          const json = await res.json().catch(() => null);
+          const fallback =
             mode === "edit"
               ? "Failed to update segment. Please check your rules and try again."
-              : "Failed to create segment. Please check your rules and try again.",
-          );
+              : "Failed to create segment. Please check your rules and try again.";
+          setError(json?.message ?? fallback);
           setSubmitting(false);
           return;
         }
@@ -142,7 +138,7 @@ export function SegmentForm({
         setSubmitting(false);
       }
     },
-    [mode, name, description, rules, storeId, session, router, initialSegment],
+    [mode, name, description, rules, router, initialSegment],
   );
 
   return (

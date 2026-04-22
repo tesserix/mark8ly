@@ -79,6 +79,60 @@ func (h *SegmentHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"data": ToSegmentResponse(seg)})
 }
 
+// Get handles GET /admin/stores/:storeId/segments/:id.
+func (h *SegmentHandler) Get(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+		return
+	}
+
+	seg, err := h.svc.GetSegment(c.Request.Context(), id)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": ToSegmentResponse(seg)})
+}
+
+// Update handles PATCH /admin/stores/:storeId/segments/:id.
+func (h *SegmentHandler) Update(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+		return
+	}
+
+	var req UpdateSegmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+
+	existing, err := h.svc.GetSegment(c.Request.Context(), id)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	var desc *string
+	if req.Description != "" {
+		desc = &req.Description
+	}
+
+	existing.Name = req.Name
+	existing.Description = desc
+	existing.Rules = []byte(req.Rules)
+
+	if err := h.svc.UpdateSegment(c.Request.Context(), existing); err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": ToSegmentResponse(existing)})
+}
+
 // Delete handles DELETE /admin/stores/:storeId/segments/:id.
 func (h *SegmentHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))

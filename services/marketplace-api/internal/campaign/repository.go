@@ -19,6 +19,7 @@ type Repository interface {
 	CreateSegment(tx *gorm.DB, s *CustomerSegment) error
 	ListSegmentsByStore(ctx context.Context, db *gorm.DB, storeID uuid.UUID) ([]CustomerSegment, error)
 	GetSegmentByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*CustomerSegment, error)
+	UpdateSegment(tx *gorm.DB, s *CustomerSegment) error
 	DeleteSegment(tx *gorm.DB, id uuid.UUID) error
 	UpdateSegmentMemberCount(tx *gorm.DB, id uuid.UUID, count int) error
 
@@ -94,6 +95,23 @@ func (r *gormRepository) GetSegmentByID(ctx context.Context, db *gorm.DB, id uui
 		return nil, err
 	}
 	return &seg, nil
+}
+
+func (r *gormRepository) UpdateSegment(tx *gorm.DB, s *CustomerSegment) error {
+	res := tx.Model(&CustomerSegment{}).
+		Where("id = ?", s.ID).
+		Updates(map[string]interface{}{
+			"name":        s.Name,
+			"description": s.Description,
+			"rules":       s.Rules,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.New(apperrors.CodeSegmentNotFound, "segment not found")
+	}
+	return nil
 }
 
 func (r *gormRepository) DeleteSegment(tx *gorm.DB, id uuid.UUID) error {

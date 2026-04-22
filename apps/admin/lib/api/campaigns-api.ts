@@ -106,6 +106,12 @@ export interface CreateSegmentBody {
   rules: string;
 }
 
+export interface UpdateSegmentBody {
+  name: string;
+  description?: string;
+  rules: string;
+}
+
 // ---------- Campaign API functions ----------
 
 export async function listCampaigns(
@@ -308,6 +314,45 @@ export async function createSegment(
   try {
     const res = await fetch(url, {
       method: "POST",
+      headers: authHeaders(session),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { data: AdminSegment };
+  } catch {
+    return null;
+  }
+}
+
+export async function getSegment(
+  storeId: string,
+  segmentId: string,
+  session: SessionHeaders,
+): Promise<AdminSegment | null> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/segments/${segmentId}`;
+  try {
+    const res = await fetch(url, {
+      headers: authHeaders(session),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json.data ?? null) as AdminSegment | null;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateSegment(
+  storeId: string,
+  segmentId: string,
+  body: UpdateSegmentBody,
+  session: SessionHeaders,
+): Promise<{ data: AdminSegment } | null> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/segments/${segmentId}`;
+  try {
+    const res = await fetch(url, {
+      method: "PATCH",
       headers: authHeaders(session),
       body: JSON.stringify(body),
     });

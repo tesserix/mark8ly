@@ -130,14 +130,23 @@ export function SegmentsList({
                 {formatDate(seg.created_at)}
               </td>
               <td className="py-3 pr-4 text-right">
-                <button
-                  onClick={() => requestDelete(seg)}
-                  disabled={deletingId === seg.id}
-                  aria-label={`Delete segment ${seg.name}`}
-                  className="text-xs text-[color:var(--danger)] underline-offset-4 opacity-0 transition-opacity hover:underline group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50"
-                >
-                  {deletingId === seg.id ? "Deleting…" : "Delete"}
-                </button>
+                <div className="flex items-center justify-end gap-3 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                  <Link
+                    href={`/marketing/segments/${seg.id}/edit`}
+                    aria-label={`Edit segment ${seg.name}`}
+                    className="text-xs text-foreground-secondary underline-offset-4 hover:text-foreground hover:underline"
+                  >
+                    Edit
+                  </Link>
+                  <button
+                    onClick={() => requestDelete(seg)}
+                    disabled={deletingId === seg.id}
+                    aria-label={`Delete segment ${seg.name}`}
+                    className="text-xs text-[color:var(--danger)] underline-offset-4 hover:underline disabled:opacity-50"
+                  >
+                    {deletingId === seg.id ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

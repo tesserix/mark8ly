@@ -622,6 +622,12 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				segments.POST("",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
 					deps.SegmentHandler.Create)
+				segments.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsViewRole),
+					deps.SegmentHandler.Get)
+				segments.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.SegmentHandler.Update)
 				segments.DELETE("/:id",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
 					deps.SegmentHandler.Delete)

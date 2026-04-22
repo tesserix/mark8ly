@@ -1,8 +1,17 @@
+import { notFound } from "next/navigation";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { SegmentForm } from "@/components/marketing/segments/SegmentForm";
+import { getSegment } from "@/lib/api/campaigns-api";
 import { getLoyaltyProgram } from "@/lib/api/loyalty-api";
 
-export default async function NewSegmentPage() {
+interface EditSegmentPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function EditSegmentPage({
+  params,
+}: EditSegmentPageProps) {
+  const { id } = await params;
   const session = await getServerSessionContext();
   const { tenantId, userId, currentStore } = session;
 
@@ -13,16 +22,22 @@ export default async function NewSegmentPage() {
           No store selected
         </h1>
         <p className="text-sm text-ink-500">
-          Set up a store before creating segments.
+          Set up a store before editing segments.
         </p>
       </main>
     );
   }
 
-  const program = await getLoyaltyProgram(currentStore.id, {
-    userId,
-    tenantId,
-  });
+  const sessionHeaders = { userId, tenantId };
+  const [segment, program] = await Promise.all([
+    getSegment(currentStore.id, id, sessionHeaders),
+    getLoyaltyProgram(currentStore.id, sessionHeaders),
+  ]);
+
+  if (!segment) {
+    notFound();
+  }
+
   const tiers = program?.tiers ?? [];
 
   return (
@@ -30,18 +45,18 @@ export default async function NewSegmentPage() {
       <header className="space-y-3">
         <p className="eyebrow">Marketing</p>
         <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground">
-          New segment
+          Edit segment
         </h1>
         <p className="max-w-2xl text-base leading-7 text-foreground-secondary">
-          Define rules to create a reusable audience segment for your
-          campaigns.
+          Update the name, description, or rules for this audience segment.
         </p>
       </header>
 
       <SegmentForm
         storeId={currentStore.id}
-        session={{ userId, tenantId }}
+        session={sessionHeaders}
         tiers={tiers}
+        initialSegment={segment}
       />
     </main>
   );

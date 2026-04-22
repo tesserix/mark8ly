@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Select,
   SelectContent,
@@ -9,12 +10,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@tesserix/web";
-import type { SessionHeaders } from "@/lib/api/campaigns-api";
-import { createSegment } from "@/lib/api/campaigns-api";
+import type {
+  AdminSegment,
+  SessionHeaders,
+} from "@/lib/api/campaigns-api";
+import { createSegment, updateSegment } from "@/lib/api/campaigns-api";
+import type { LoyaltyTier } from "@/lib/api/loyalty-api";
 
-interface CreateSegmentFormProps {
+type Mode = "create" | "edit";
+
+interface SegmentFormProps {
   storeId: string;
   session: SessionHeaders;
+  tiers: LoyaltyTier[];
+  initialSegment?: AdminSegment;
 }
 
 type RuleType = "all" | "loyalty_tier" | "has_ordered" | "inactive_days";
@@ -35,27 +44,46 @@ function ruleNeedsValue(type: RuleType): boolean {
   return type === "loyalty_tier" || type === "inactive_days";
 }
 
-function valuePlaceholder(type: RuleType): string {
-  switch (type) {
-    case "loyalty_tier":
-      return "e.g. gold, silver";
-    case "inactive_days":
-      return "e.g. 90";
-    default:
-      return "";
+function parseInitialRules(rulesJson: string | undefined): RuleRow[] {
+  if (!rulesJson) return [{ type: "all", value: "" }];
+  try {
+    const parsed = JSON.parse(rulesJson) as { type: string; value?: string }[];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return [{ type: "all", value: "" }];
+    }
+    return parsed.map((r) => ({
+      type: (["all", "loyalty_tier", "has_ordered", "inactive_days"].includes(
+        r.type,
+      )
+        ? r.type
+        : "all") as RuleType,
+      value: r.value ?? "",
+    }));
+  } catch {
+    return [{ type: "all", value: "" }];
   }
 }
 
-export function CreateSegmentForm({
+export function SegmentForm({
   storeId,
   session,
-}: CreateSegmentFormProps) {
+  tiers,
+  initialSegment,
+}: SegmentFormProps) {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [rules, setRules] = useState<RuleRow[]>([{ type: "all", value: "" }]);
+  const mode: Mode = initialSegment ? "edit" : "create";
+
+  const [name, setName] = useState(initialSegment?.name ?? "");
+  const [description, setDescription] = useState(
+    initialSegment?.description ?? "",
+  );
+  const [rules, setRules] = useState<RuleRow[]>(() =>
+    parseInitialRules(initialSegment?.rules),
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const hasTiers = tiers.length > 0;
 
   function addRule() {
     setRules((prev) => [...prev, { type: "all", value: "" }]);
@@ -67,9 +95,7 @@ export function CreateSegmentForm({
 
   function updateRule(index: number, field: "type" | "value", val: string) {
     setRules((prev) =>
-      prev.map((r, i) =>
-        i === index ? { ...r, [field]: val } : r,
-      ),
+      prev.map((r, i) => (i === index ? { ...r, [field]: val } : r)),
     );
   }
 
@@ -88,18 +114,24 @@ export function CreateSegmentForm({
         })),
       );
 
+      const body = {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        rules: rulesJson,
+      };
+
       try {
-        const result = await createSegment(
-          storeId,
-          {
-            name: name.trim(),
-            description: description.trim() || undefined,
-            rules: rulesJson,
-          },
-          session,
-        );
+        const result =
+          mode === "edit" && initialSegment
+            ? await updateSegment(storeId, initialSegment.id, body, session)
+            : await createSegment(storeId, body, session);
+
         if (!result) {
-          setError("Failed to create segment. Please check your rules and try again.");
+          setError(
+            mode === "edit"
+              ? "Failed to update segment. Please check your rules and try again."
+              : "Failed to create segment. Please check your rules and try again.",
+          );
           setSubmitting(false);
           return;
         }
@@ -110,7 +142,7 @@ export function CreateSegmentForm({
         setSubmitting(false);
       }
     },
-    [name, description, rules, storeId, session, router],
+    [mode, name, description, rules, storeId, session, router, initialSegment],
   );
 
   return (
@@ -146,7 +178,6 @@ export function CreateSegmentForm({
 
       <hr className="border-ink-200" />
 
-      {/* Rules builder */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-ink-700">Rules</h3>
@@ -168,9 +199,7 @@ export function CreateSegmentForm({
             <div className="flex-1 space-y-2">
               <Select
                 value={rule.type}
-                onValueChange={(value) =>
-                  updateRule(index, "type", value)
-                }
+                onValueChange={(value) => updateRule(index, "type", value)}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -184,14 +213,44 @@ export function CreateSegmentForm({
                 </SelectContent>
               </Select>
 
-              {ruleNeedsValue(rule.type) && (
-                <input
-                  type="text"
+              {rule.type === "loyalty_tier" && hasTiers && (
+                <Select
                   value={rule.value}
-                  onChange={(e) =>
-                    updateRule(index, "value", e.target.value)
-                  }
-                  placeholder={valuePlaceholder(rule.type)}
+                  onValueChange={(value) => updateRule(index, "value", value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a tier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tiers.map((tier) => (
+                      <SelectItem key={tier.name} value={tier.name}>
+                        {tier.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {rule.type === "loyalty_tier" && !hasTiers && (
+                <div className="rounded-md border border-dashed border-ink-200 px-3 py-2 text-xs text-ink-500">
+                  No loyalty tiers configured.{" "}
+                  <Link
+                    href="/marketing/loyalty"
+                    className="font-medium text-moss-700 underline-offset-2 hover:underline"
+                  >
+                    Set up your loyalty program
+                  </Link>{" "}
+                  first.
+                </div>
+              )}
+
+              {rule.type === "inactive_days" && (
+                <input
+                  type="number"
+                  min={1}
+                  value={rule.value}
+                  onChange={(e) => updateRule(index, "value", e.target.value)}
+                  placeholder="e.g. 90"
                   className="block w-full rounded-md border border-ink-200 bg-background-elevated px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:border-moss-700 focus:outline-none focus:ring-1 focus:ring-moss-700"
                 />
               )}
@@ -230,7 +289,13 @@ export function CreateSegmentForm({
           disabled={submitting || !name.trim()}
           className="inline-flex items-center gap-2 rounded-md bg-ink-900 px-4 py-2 text-sm font-medium text-paper-200 transition hover:bg-ink-800 disabled:opacity-50"
         >
-          {submitting ? "Creating..." : "Create segment"}
+          {submitting
+            ? mode === "edit"
+              ? "Saving..."
+              : "Creating..."
+            : mode === "edit"
+              ? "Save changes"
+              : "Create segment"}
         </button>
       </div>
     </form>

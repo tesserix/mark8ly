@@ -225,6 +225,24 @@ func (s *Service) ListSegments(ctx context.Context, storeID uuid.UUID) ([]Custom
 	return s.repo.ListSegmentsByStore(ctx, s.db, storeID)
 }
 
+// GetSegment returns a single segment by ID.
+func (s *Service) GetSegment(ctx context.Context, segmentID uuid.UUID) (*CustomerSegment, error) {
+	return s.repo.GetSegmentByID(ctx, s.db, segmentID)
+}
+
+// UpdateSegment validates and persists changes to a segment's name,
+// description, and rules.
+func (s *Service) UpdateSegment(ctx context.Context, seg *CustomerSegment) error {
+	if seg.Name == "" {
+		return apperrors.ValidationFailed("name", "name is required")
+	}
+	var rules []SegmentRule
+	if err := parseRulesJSON(seg.Rules, &rules); err != nil {
+		return apperrors.New(apperrors.CodeSegmentInvalidRules, fmt.Sprintf("invalid rules: %v", err))
+	}
+	return s.repo.UpdateSegment(s.db, seg)
+}
+
 // DeleteSegment removes a segment by ID.
 func (s *Service) DeleteSegment(ctx context.Context, segmentID uuid.UUID) error {
 	return s.repo.DeleteSegment(s.db, segmentID)

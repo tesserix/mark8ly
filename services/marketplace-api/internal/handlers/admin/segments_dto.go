@@ -13,6 +13,13 @@ type CreateSegmentRequest struct {
 	Rules       string `json:"rules" binding:"required"` // JSON array string
 }
 
+// UpdateSegmentRequest is the JSON body for PATCH /segments/:id.
+type UpdateSegmentRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
+	Rules       string `json:"rules" binding:"required"`
+}
+
 // SegmentResponse is the JSON response for a customer segment.
 type SegmentResponse struct {
 	ID          string  `json:"id"`

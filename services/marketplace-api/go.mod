@@ -19,7 +19,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mr-tron/base58 v1.3.0
 	github.com/openfga/go-sdk v0.8.0
-	github.com/pquerna/otp v1.4.0
+	github.com/pquerna/otp v1.5.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/redis/go-redis/v9 v9.18.0

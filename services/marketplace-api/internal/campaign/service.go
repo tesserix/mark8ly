@@ -220,9 +220,27 @@ func (s *Service) CreateSegment(ctx context.Context, seg *CustomerSegment) error
 	return s.repo.CreateSegment(s.db, seg)
 }
 
-// ListSegments returns all segments for a store.
+// ListSegments returns all segments for a store with live member counts.
+// Each segment's cached MemberCount is replaced with a freshly-resolved
+// count from the segment engine so the admin UI never shows stale numbers
+// when customer tiers shift between campaign sends.
 func (s *Service) ListSegments(ctx context.Context, storeID uuid.UUID) ([]CustomerSegment, error) {
-	return s.repo.ListSegmentsByStore(ctx, s.db, storeID)
+	segments, err := s.repo.ListSegmentsByStore(ctx, s.db, storeID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range segments {
+		emails, resolveErr := s.segmentEngine.ResolveEmails(
+			ctx, segments[i].TenantID, segments[i].StoreID, segments[i].Rules,
+		)
+		if resolveErr != nil {
+			// Resolution failure (e.g. malformed legacy rules) shouldn't
+			// hide the segment — keep the cached count and move on.
+			continue
+		}
+		segments[i].MemberCount = len(emails)
+	}
+	return segments, nil
 }
 
 // GetSegment returns a single segment by ID.

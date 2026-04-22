@@ -95,11 +95,11 @@ export function SegmentsList({
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-[color:var(--ink-900)]/15 text-xs font-medium uppercase tracking-wider text-foreground-tertiary">
-            <th className="pb-3 pr-4">Name</th>
-            <th className="pb-3 pr-4 text-right">Members</th>
-            <th className="pb-3 pr-4">Rules</th>
-            <th className="pb-3 pr-4">Created</th>
-            <th className="pb-3 pr-4">
+            <th className="pb-3 pl-4 pr-3">Name</th>
+            <th className="pb-3 px-3 text-right">Members</th>
+            <th className="pb-3 px-3">Rules</th>
+            <th className="pb-3 px-3">Created</th>
+            <th className="pb-3 px-3 pr-4">
               <span className="sr-only">Actions</span>
             </th>
           </tr>
@@ -110,7 +110,7 @@ export function SegmentsList({
               key={seg.id}
               className="group border-b border-[color:var(--ink-900)]/10 transition-colors hover:bg-[color:var(--ink-900)]/[0.03]"
             >
-              <td className="py-3 pr-4">
+              <td className="py-3 pl-4 pr-3">
                 <span className="font-serif text-base text-foreground">
                   {seg.name}
                 </span>
@@ -120,16 +120,16 @@ export function SegmentsList({
                   </p>
                 )}
               </td>
-              <td className="py-3 pr-4 text-right font-serif text-base tabular-nums text-foreground">
+              <td className="py-3 px-3 text-right font-serif text-base tabular-nums text-foreground">
                 {seg.member_count.toLocaleString()}
               </td>
-              <td className="py-3 pr-4 text-foreground-secondary">
+              <td className="py-3 px-3 text-foreground-secondary">
                 {summarizeRules(seg.rules)}
               </td>
-              <td className="py-3 pr-4 text-foreground-tertiary tabular-nums">
+              <td className="py-3 px-3 text-foreground-tertiary tabular-nums">
                 {formatDate(seg.created_at)}
               </td>
-              <td className="py-3 pr-4 text-right">
+              <td className="py-3 px-3 pr-4 text-right">
                 <div className="flex items-center justify-end gap-3 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                   <Link
                     href={`/marketing/segments/${seg.id}/edit`}

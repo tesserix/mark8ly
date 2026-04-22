@@ -188,7 +188,7 @@ func (s *Service) Enroll(ctx context.Context, req EnrollRequest) (*CustomerLoyal
 		CustomerEmail: req.CustomerEmail,
 		CustomerName:  req.CustomerName,
 		PointsBalance: 0,
-		Tier:          "bronze",
+		Tier:          s.calculateTier(program, 0),
 		ReferralCode:  code,
 		ReferredBy:    referredBy,
 		EnrolledAt:    time.Now(),
@@ -282,6 +282,37 @@ func (s *Service) Enroll(ctx context.Context, req EnrollRequest) (*CustomerLoyal
 			// Complete the referral
 			if err := s.repo.CompleteReferral(tx, referral.ID); err != nil {
 				return err
+			}
+		}
+
+		// Recompute tier for the new member based on total lifetime
+		// points earned during enrollment (signup + referee bonus).
+		// Re-fetch inside the tx so LifetimePoints reflects every
+		// CreditPoints call above without relying on the in-memory
+		// struct staying in sync.
+		memberNow, err := s.repo.GetCustomerByID(ctx, tx, customer.ID)
+		if err != nil {
+			return err
+		}
+		if newTier := s.calculateTier(program, memberNow.LifetimePoints); newTier != memberNow.Tier {
+			if err := s.repo.UpdateTier(tx, memberNow.ID, newTier); err != nil {
+				return err
+			}
+			customer.Tier = newTier
+		}
+		customer.PointsBalance = memberNow.PointsBalance
+		customer.LifetimePoints = memberNow.LifetimePoints
+
+		// Recompute tier for the referrer if they received a bonus.
+		if referrer != nil && program.ReferralBonus > 0 {
+			refreshed, err := s.repo.GetCustomerByID(ctx, tx, referrer.ID)
+			if err != nil {
+				return err
+			}
+			if newTier := s.calculateTier(program, refreshed.LifetimePoints); newTier != refreshed.Tier {
+				if err := s.repo.UpdateTier(tx, refreshed.ID, newTier); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -440,7 +471,7 @@ func (s *Service) AdjustPoints(ctx context.Context, tenantID uuid.UUID, loyaltyI
 		if err != nil {
 			return err
 		}
-		return s.repo.CreateTransaction(tx, &LoyaltyTransaction{
+		if err := s.repo.CreateTransaction(tx, &LoyaltyTransaction{
 			TenantID:     tenantID,
 			LoyaltyID:    loyaltyID,
 			Type:         TxTypeAdjust,
@@ -449,7 +480,27 @@ func (s *Service) AdjustPoints(ctx context.Context, tenantID uuid.UUID, loyaltyI
 			Description:  &description,
 			AdjustedBy:   &adjustedBy,
 			CreatedAt:    time.Now(),
-		})
+		}); err != nil {
+			return err
+		}
+
+		// Recompute tier against the customer's current lifetime points
+		// (CreditPoints increments lifetime; DebitPoints doesn't, so a
+		// negative adjust won't change lifetime or tier).
+		customer, err := s.repo.GetCustomerByID(ctx, tx, loyaltyID)
+		if err != nil {
+			return err
+		}
+		program, err := s.repo.GetProgram(ctx, tx, customer.StoreID)
+		if err != nil || program == nil {
+			return err
+		}
+		if newTier := s.calculateTier(program, customer.LifetimePoints); newTier != customer.Tier {
+			if err := s.repo.UpdateTier(tx, customer.ID, newTier); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -475,12 +526,15 @@ func (s *Service) getTierMultiplier(program *LoyaltyProgram, lifetimePoints int)
 }
 
 // calculateTier returns the tier name for the given lifetime points.
+// If tiers are defined on the program, returns the matched tier name, or
+// the lowest-min tier name when the customer hasn't hit the entry
+// threshold. Returns "" when the program has no tiers configured.
 func (s *Service) calculateTier(program *LoyaltyProgram, lifetimePoints int) string {
 	tiers := s.parseTiers(program)
 	if len(tiers) == 0 {
-		return "bronze"
+		return ""
 	}
-	// Amendment FIX 6: sort descending by MinPoints before iterating
+	// Sort descending by MinPoints before iterating.
 	sort.Slice(tiers, func(i, j int) bool {
 		return tiers[i].MinPoints > tiers[j].MinPoints
 	})
@@ -489,7 +543,10 @@ func (s *Service) calculateTier(program *LoyaltyProgram, lifetimePoints int) str
 			return t.Name
 		}
 	}
-	return "bronze"
+	// Below entry threshold — return the lowest-min tier name so the
+	// customer is visible against their own program's tier list rather
+	// than a hardcoded placeholder.
+	return tiers[len(tiers)-1].Name
 }
 
 func (s *Service) parseTiers(program *LoyaltyProgram) []Tier {

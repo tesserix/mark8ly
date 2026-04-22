@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/secretmanager v1.19.0
 	cloud.google.com/go/storage v1.62.1
 	firebase.google.com/go/v4 v4.19.0
-	github.com/coreos/go-oidc/v3 v3.11.0
+	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/crewjam/saml v0.4.14
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-jose/go-jose/v4 v4.1.4

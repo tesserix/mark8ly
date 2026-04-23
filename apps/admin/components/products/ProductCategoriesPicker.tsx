@@ -80,6 +80,7 @@ export function ProductCategoriesPicker({
           image_url: null,
           position: 0,
           is_active: true,
+          featured: false,
         };
         setLocalCategories((prev) => [...prev, newCat]);
         onChange([...selectedIds, newCat.id]);

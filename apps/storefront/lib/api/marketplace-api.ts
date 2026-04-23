@@ -85,6 +85,7 @@ export interface StorefrontCategory {
   name: string;
   slug: string;
   position: number;
+  featured: boolean;
 }
 
 export interface ListMeta {

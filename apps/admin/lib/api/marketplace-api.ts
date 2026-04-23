@@ -255,6 +255,7 @@ export interface AdminCategory {
   image_url: string | null;
   position: number;
   is_active: boolean;
+  featured: boolean;
 }
 
 export interface ListCategoriesResponse {
@@ -457,6 +458,44 @@ export async function createCategory(
       },
     };
   }
+  return { ok: true, data };
+}
+
+export interface UpdateCategoryInput {
+  name?: string;
+  slug?: string;
+  description?: string | null;
+  image_url?: string | null;
+  position?: number;
+  is_active?: boolean;
+  featured?: boolean;
+}
+
+export async function updateCategory(
+  storeId: string,
+  categoryId: string,
+  input: UpdateCategoryInput,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminCategory>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/categories/${categoryId}`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  const raw = (await res.json()) as
+    | { data: AdminCategory }
+    | AdminCategory;
+  const data =
+    raw && typeof raw === "object" && "data" in raw && raw.data
+      ? (raw as { data: AdminCategory }).data
+      : (raw as AdminCategory);
   return { ok: true, data };
 }
 

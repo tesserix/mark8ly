@@ -1,7 +1,12 @@
 "use server";
 
 import { headers } from "next/headers";
-import { createCategory, listCategories } from "@/lib/api/marketplace-api";
+import { revalidatePath } from "next/cache";
+import {
+  createCategory,
+  listCategories,
+  updateCategory,
+} from "@/lib/api/marketplace-api";
 
 export interface CreateCategoryResult {
   ok: boolean;
@@ -93,4 +98,41 @@ export async function createCategoryInline(
       slug: result.data.slug,
     },
   };
+}
+
+export interface ToggleFeaturedResult {
+  ok: boolean;
+  error?: string;
+}
+
+// Toggle a category's `featured` flag. Surfaces the flag to the
+// storefront's /products filter grid. All other category fields are
+// untouched.
+export async function setCategoryFeatured(
+  storeId: string,
+  categoryId: string,
+  featured: boolean,
+): Promise<ToggleFeaturedResult> {
+  const h = await headers();
+  const userId = h.get("x-session-user-id") ?? "";
+  const tenantId = h.get("x-session-tenant-id") ?? "";
+  if (!userId || !tenantId || !storeId || !categoryId) {
+    return { ok: false, error: "Session expired." };
+  }
+
+  const result = await updateCategory(
+    storeId,
+    categoryId,
+    { featured },
+    { userId, tenantId },
+  );
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.error?.message ?? "Failed to update category.",
+    };
+  }
+
+  revalidatePath("/products/categories");
+  return { ok: true };
 }

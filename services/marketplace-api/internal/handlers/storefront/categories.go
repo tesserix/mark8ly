@@ -31,6 +31,7 @@ func (h *StorefrontHandler) ListCategories(c *gin.Context) {
 			Name:     cat.Name,
 			Slug:     cat.Slug,
 			Position: cat.Position,
+			Featured: cat.Featured,
 		})
 	}
 	setCacheHeaders(c, store, watermark)

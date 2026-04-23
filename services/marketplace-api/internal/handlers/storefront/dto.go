@@ -83,6 +83,7 @@ type StorefrontCategoryResponse struct {
 	Name     string `json:"name"`
 	Slug     string `json:"slug"`
 	Position int    `json:"position"`
+	Featured bool   `json:"featured"`
 }
 
 // StorefrontPriceRange is the min/max price across a product's variants.

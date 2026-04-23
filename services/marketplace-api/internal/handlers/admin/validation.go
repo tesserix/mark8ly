@@ -24,6 +24,7 @@ type CreateCategoryRequest struct {
 	ImageURL    *string `json:"image_url,omitempty"`
 	Position    int     `json:"position"`
 	IsActive    *bool   `json:"is_active,omitempty"`
+	Featured    *bool   `json:"featured,omitempty"`
 }
 
 // UpdateCategoryRequest is the wire body for PATCH admin update category.
@@ -35,6 +36,7 @@ type UpdateCategoryRequest struct {
 	ImageURL    *string `json:"image_url,omitempty"`
 	Position    *int    `json:"position,omitempty"`
 	IsActive    *bool   `json:"is_active,omitempty"`
+	Featured    *bool   `json:"featured,omitempty"`
 }
 
 // UpdateVariantRequest is the wire body for the variant quick-PATCH.
@@ -116,11 +118,16 @@ type RecropMediaResponse struct {
 }
 
 // toServiceCreateCategory maps the wire create body to the category
-// service CreateRequest. IsActive defaults to true when not supplied.
+// service CreateRequest. IsActive defaults to true when not supplied;
+// Featured defaults to false (merchants opt categories in explicitly).
 func toServiceCreateCategory(req CreateCategoryRequest, tenantID, storeID string) category.CreateRequest {
 	active := true
 	if req.IsActive != nil {
 		active = *req.IsActive
+	}
+	featured := false
+	if req.Featured != nil {
+		featured = *req.Featured
 	}
 	return category.CreateRequest{
 		StoreID:     storeID,
@@ -132,6 +139,7 @@ func toServiceCreateCategory(req CreateCategoryRequest, tenantID, storeID string
 		ImageURL:    req.ImageURL,
 		Position:    req.Position,
 		IsActive:    active,
+		Featured:    featured,
 	}
 }
 
@@ -149,6 +157,7 @@ func toServiceUpdateCategory(req UpdateCategoryRequest, id, tenantID, storeID st
 		ImageURL:    req.ImageURL,
 		Position:    req.Position,
 		IsActive:    req.IsActive,
+		Featured:    req.Featured,
 	}
 }
 

@@ -64,6 +64,7 @@ type CreateRequest struct {
 	ImageURL    *string
 	Position    int
 	IsActive    bool
+	Featured    bool
 }
 
 // UpdateRequest is the service-level DTO for category update; only
@@ -79,6 +80,7 @@ type UpdateRequest struct {
 	ImageURL    *string
 	Position    *int
 	IsActive    *bool
+	Featured    *bool
 }
 
 // Create inserts a new category and enqueues a category.created outbox
@@ -106,6 +108,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Category, err
 		ImageURL:    req.ImageURL,
 		Position:    req.Position,
 		IsActive:    req.IsActive,
+		Featured:    req.Featured,
 	}
 
 	// NOTE: Repository.Create is kept for future non-tx callers, but for
@@ -172,6 +175,9 @@ func (s *Service) Update(ctx context.Context, req UpdateRequest) (*Category, err
 	}
 	if req.IsActive != nil {
 		fields["is_active"] = *req.IsActive
+	}
+	if req.Featured != nil {
+		fields["featured"] = *req.Featured
 	}
 	if req.ParentID != nil {
 		fields["parent_id"] = *req.ParentID

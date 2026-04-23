@@ -21,6 +21,7 @@ type AdminCategoryResponse struct {
 	ImageURL    *string   `json:"image_url,omitempty"`
 	Position    int       `json:"position"`
 	IsActive    bool      `json:"is_active"`
+	Featured    bool      `json:"featured"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -37,6 +38,7 @@ func ToAdminCategoryResponse(c *category.Category) AdminCategoryResponse {
 		ImageURL:    c.ImageURL,
 		Position:    c.Position,
 		IsActive:    c.IsActive,
+		Featured:    c.Featured,
 		CreatedAt:   c.CreatedAt,
 		UpdatedAt:   c.UpdatedAt,
 	}

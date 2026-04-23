@@ -82,15 +82,23 @@ export default async function ProductsPage({
       title="Products"
       description={description}
       actions={
-        canCreate ? (
+        <div className="flex items-center gap-3">
           <Link
-            href="/products/new"
-            className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            href="/products/categories"
+            className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            New product
+            Categories
           </Link>
-        ) : undefined
+          {canCreate ? (
+            <Link
+              href="/products/new"
+              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              New product
+            </Link>
+          ) : null}
+        </div>
       }
     >
       <div className="flex flex-col gap-4">

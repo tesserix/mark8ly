@@ -18,6 +18,7 @@ type Category struct {
 	ImageURL    *string    `gorm:"column:image_url;type:text"                               json:"image_url,omitempty"`
 	Position    int        `gorm:"column:position;not null;default:0"                       json:"position"`
 	IsActive    bool       `gorm:"column:is_active;not null;default:true"                   json:"is_active"`
+	Featured    bool       `gorm:"column:featured;not null;default:false"                   json:"featured"`
 	CreatedAt   time.Time  `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
 	UpdatedAt   time.Time  `gorm:"column:updated_at;not null;default:now()"                 json:"updated_at"`
 	DeletedAt   *time.Time `gorm:"column:deleted_at;index"                                  json:"deleted_at,omitempty"`

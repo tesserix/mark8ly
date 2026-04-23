@@ -17,8 +17,20 @@
 
 import * as React from "react";
 import { useFormContext } from "react-hook-form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import type { ProductFormValues } from "@/lib/validation/product-form";
+
+// Radix Select cannot accept empty string as a value — use a sentinel
+// for the "unset / use country default" option and translate at the
+// form boundary so the Zod schema still sees "" when nothing is picked.
+const UNSET = "__default__";
 
 export interface TaxTabProps {
   storeCountryCode: string;
@@ -169,27 +181,39 @@ function IndiaGSTForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="tax-rate" className={LABEL_CLASS}>
+        <span id="tax-rate-label" className={LABEL_CLASS}>
           GST rate
-        </label>
-        <select
-          id="tax-rate"
-          className={FIELD_CLASS}
+        </span>
+        <Select
+          value={
+            taxRateOverride && taxRateOverride.length > 0
+              ? taxRateOverride
+              : UNSET
+          }
           disabled={exempt}
-          value={taxRateOverride ?? ""}
-          onChange={(e) =>
-            setValue("taxRateOverride", e.target.value, {
-              shouldDirty: true,
-            })
+          onValueChange={(next) =>
+            setValue(
+              "taxRateOverride",
+              next === UNSET ? "" : next,
+              { shouldDirty: true },
+            )
           }
         >
-          <option value="">Use country default</option>
-          {INDIA_GST_RATES.map((r) => (
-            <option key={r} value={r}>
-              {r}%
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            aria-labelledby="tax-rate-label"
+            className="w-full"
+          >
+            <SelectValue placeholder="Use country default" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={UNSET}>Use country default</SelectItem>
+            {INDIA_GST_RATES.map((r) => (
+              <SelectItem key={r} value={String(r)}>
+                {r}%
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <p className={HELP_CLASS}>
           Applied per product. Same-state sales split into CGST + SGST;
           inter-state sales produce a single IGST line.
@@ -283,26 +307,36 @@ function FlatRateForm({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="tax-category" className={LABEL_CLASS}>
+        <span id="tax-category-label" className={LABEL_CLASS}>
           Tax category
-        </label>
-        <select
-          id="tax-category"
-          className={FIELD_CLASS}
+        </span>
+        <Select
           value={taxCategory ?? "standard"}
-          onChange={(e) => {
-            const next = e.target.value as ProductFormValues["taxCategory"];
-            setValue("taxCategory", next, { shouldDirty: true });
-            if (next === "exempt" || next === "zero_rated") {
+          onValueChange={(next) => {
+            const nextCat = next as NonNullable<
+              ProductFormValues["taxCategory"]
+            >;
+            setValue("taxCategory", nextCat, { shouldDirty: true });
+            if (nextCat === "exempt" || nextCat === "zero_rated") {
               setValue("taxRateOverride", "", { shouldDirty: true });
             }
           }}
         >
-          <option value="standard">Standard (country default)</option>
-          <option value="reduced">Reduced</option>
-          <option value="zero_rated">Zero-rated</option>
-          <option value="exempt">Exempt</option>
-        </select>
+          <SelectTrigger
+            aria-labelledby="tax-category-label"
+            className="w-full"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="standard">
+              Standard (country default)
+            </SelectItem>
+            <SelectItem value="reduced">Reduced</SelectItem>
+            <SelectItem value="zero_rated">Zero-rated</SelectItem>
+            <SelectItem value="exempt">Exempt</SelectItem>
+          </SelectContent>
+        </Select>
         <p className={HELP_CLASS}>
           Picks the tier applied at checkout. Standard uses the country
           default; Reduced honours the rate override below.

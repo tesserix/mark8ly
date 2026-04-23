@@ -1,8 +1,18 @@
 "use client";
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
+
 import type { AdminCategory, HomepageSection } from "@/lib/api/marketplace-api";
 import { FieldLabel, TextInput } from "../BrandingSettingsClient";
 import { ProductSlugPicker } from "../ProductSlugPicker";
+
+const COLLECTION_UNSET = "__pick__";
 
 type FeaturedSection = Extract<HomepageSection, { type: "featured_products" }>;
 
@@ -104,20 +114,33 @@ export function FeaturedProductsSectionForm({
               No collections yet. Create one under <strong>Catalog → Collections</strong>.
             </p>
           ) : (
-            <select
-              id="section_featured_collection"
-              className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
-              value={section.collection_slug ?? ""}
-              onChange={(e) => patch({ collection_slug: e.target.value })}
+            <Select
+              value={
+                section.collection_slug && section.collection_slug.length > 0
+                  ? section.collection_slug
+                  : COLLECTION_UNSET
+              }
               disabled={!editable}
+              onValueChange={(next) =>
+                patch({
+                  collection_slug: next === COLLECTION_UNSET ? "" : next,
+                })
+              }
             >
-              <option value="">Pick a collection…</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.slug}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="section_featured_collection" className="w-full">
+                <SelectValue placeholder="Pick a collection…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={COLLECTION_UNSET}>
+                  Pick a collection…
+                </SelectItem>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.slug}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           {section.collection_slug && !known ? (
             <p className="mt-1 text-xs text-danger">

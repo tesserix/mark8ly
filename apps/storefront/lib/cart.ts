@@ -3,6 +3,12 @@
 // Pure cart helpers. No React, no DOM, no localStorage.
 // Every function returns a new array — never mutates.
 
+export type CartItemTaxCategory =
+  | "standard"
+  | "reduced"
+  | "zero_rated"
+  | "exempt";
+
 export interface CartItem {
   productId: string;
   variantId: string;
@@ -12,6 +18,13 @@ export interface CartItem {
   currencyCode: string;
   qty: number;
   imageUrl?: string;
+  // Tax classification snapshot taken when the item was added — lets
+  // the checkout request carry the right per-product rate/category
+  // without a re-fetch. Optional because products created before the
+  // tax feature shipped don't have these fields.
+  taxCode?: string;
+  taxRateOverride?: string; // percentage as decimal string, e.g. "18.00"
+  taxCategory?: CartItemTaxCategory;
 }
 
 export function addItem(items: readonly CartItem[], item: CartItem): CartItem[] {

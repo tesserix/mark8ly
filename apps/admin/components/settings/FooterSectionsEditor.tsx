@@ -1,6 +1,13 @@
 "use client";
 
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import type {
   AdminPageSummary,
@@ -175,39 +182,51 @@ export function FooterSectionsEditor({
                 />
 
                 {/* Kind select */}
-                <select
-                  value={item.kind}
-                  onChange={(e) =>
-                    updateItem(secIdx, itemIdx, {
-                      kind: e.target.value as "page" | "url",
-                      page_slug: e.target.value === "page" ? (pages[0]?.slug ?? "") : undefined,
-                      url: e.target.value === "url" ? "" : undefined,
-                    })
-                  }
-                  disabled={!editable}
-                  className="h-9 flex-[1] rounded-md border border-border bg-[color:var(--background-elevated)] px-2 text-sm text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
-                >
-                  <option value="page">Page</option>
-                  <option value="url">URL</option>
-                </select>
+                <div className="flex-[1]">
+                  <Select
+                    value={item.kind}
+                    disabled={!editable}
+                    onValueChange={(next) =>
+                      updateItem(secIdx, itemIdx, {
+                        kind: next as "page" | "url",
+                        page_slug: next === "page" ? (pages[0]?.slug ?? "") : undefined,
+                        url: next === "url" ? "" : undefined,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="page">Page</SelectItem>
+                      <SelectItem value="url">URL</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Value: page select or URL input */}
                 {item.kind === "page" ? (
                   pages.length > 0 ? (
-                    <select
-                      value={item.page_slug ?? ""}
-                      onChange={(e) =>
-                        updateItem(secIdx, itemIdx, { page_slug: e.target.value })
-                      }
-                      disabled={!editable}
-                      className="h-9 w-0 flex-[2] rounded-md border border-border bg-[color:var(--background-elevated)] px-2 text-sm text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
-                    >
-                      {pages.map((p) => (
-                        <option key={p.id} value={p.slug}>
-                          {p.title}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="w-0 flex-[2]">
+                      <Select
+                        value={item.page_slug && item.page_slug.length > 0 ? item.page_slug : (pages[0]?.slug ?? "")}
+                        disabled={!editable}
+                        onValueChange={(next) =>
+                          updateItem(secIdx, itemIdx, { page_slug: next })
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Pick a page" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {pages.map((p) => (
+                            <SelectItem key={p.id} value={p.slug}>
+                              {p.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   ) : (
                     <p className="w-0 flex-[2] px-2 text-xs text-[color:var(--signal)]">
                       No pages yet — create one in Settings → Pages

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "./CartProvider";
+import type { CartItemTaxCategory } from "@/lib/cart";
 
 export interface AddToCartButtonProps {
   productId: string;
@@ -20,6 +21,11 @@ export interface AddToCartButtonProps {
   inStock: boolean;
   disabled?: boolean;
   disabledReason?: string;
+  // Tax classification copied from the product so the cart item carries
+  // it through to checkout without a re-fetch.
+  taxCode?: string;
+  taxRateOverride?: string;
+  taxCategory?: CartItemTaxCategory;
 }
 
 export function AddToCartButton({
@@ -33,6 +39,9 @@ export function AddToCartButton({
   inStock,
   disabled = false,
   disabledReason,
+  taxCode,
+  taxRateOverride,
+  taxCategory,
 }: AddToCartButtonProps) {
   const { add } = useCart();
   const [justAdded, setJustAdded] = useState(false);
@@ -58,6 +67,9 @@ export function AddToCartButton({
       currencyCode,
       qty: 1,
       imageUrl,
+      taxCode,
+      taxRateOverride,
+      taxCategory,
     });
     setJustAdded(true);
     if (feedbackTimerRef.current !== null) {
@@ -71,7 +83,19 @@ export function AddToCartButton({
     import("@/lib/toast").then(({ toast }) =>
       toast({ title: `${title} added to cart`, tone: "success" }),
     );
-  }, [add, productId, variantId, handle, title, priceAmount, currencyCode, imageUrl]);
+  }, [
+    add,
+    productId,
+    variantId,
+    handle,
+    title,
+    priceAmount,
+    currencyCode,
+    imageUrl,
+    taxCode,
+    taxRateOverride,
+    taxCategory,
+  ]);
 
   if (!inStock) {
     return (

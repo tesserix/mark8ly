@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 import type { HomepageHero, AdminPage } from "@/lib/api/marketplace-api";
 import {
   FieldLabel,
@@ -9,6 +16,8 @@ import {
   ToggleSwitch,
 } from "./BrandingSettingsClient";
 import { ImageUploadInput } from "./ImageUploadInput";
+
+const PAGE_PICK_UNSET = "__pick__";
 
 // Mirrors the storefront heroStylesFor() matrix — intentionally duplicated
 // to keep the admin bundle free of storefront imports.
@@ -246,7 +255,7 @@ export function HeroEditor({ value, onChange, pages, editable, layoutVariant, st
   );
 }
 
-// CtaUrlPicker — a hybrid control: a <select> of pages plus a freeform
+// CtaUrlPicker — a hybrid control: a Select of pages plus a freeform
 // URL field. Picking a page sets /pages/{slug}; typing in the freeform
 // field overrides. Mirrors the UX of FooterSectionsEditor's item pickers.
 function CtaUrlPicker({
@@ -267,22 +276,27 @@ function CtaUrlPicker({
   return (
     <div className="space-y-2">
       {pages.length > 0 ? (
-        <select
-          className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
-          value={matched ? matched.slug : ""}
-          onChange={(e) => {
-            const slug = e.target.value;
-            if (slug) onChange(`/pages/${slug}`);
-          }}
+        <Select
+          value={matched ? matched.slug : PAGE_PICK_UNSET}
           disabled={disabled}
+          onValueChange={(next) => {
+            if (next && next !== PAGE_PICK_UNSET) {
+              onChange(`/pages/${next}`);
+            }
+          }}
         >
-          <option value="">Pick a page…</option>
-          {pages.map((p) => (
-            <option key={p.id} value={p.slug}>
-              {p.title}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Pick a page…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={PAGE_PICK_UNSET}>Pick a page…</SelectItem>
+            {pages.map((p) => (
+              <SelectItem key={p.id} value={p.slug}>
+                {p.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       ) : (
         <p className="text-xs text-foreground-secondary">
           No pages yet. Create one under Settings → Pages, or paste a URL below.

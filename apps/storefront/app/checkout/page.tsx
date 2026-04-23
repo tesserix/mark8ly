@@ -335,6 +335,9 @@ export default function CheckoutPage() {
       line_total: (Number.parseFloat(i.priceAmount) * i.qty).toFixed(2),
       currency_code: i.currencyCode,
       image_url: i.imageUrl,
+      tax_code: i.taxCode,
+      tax_rate_override: i.taxRateOverride,
+      tax_category: i.taxCategory,
     }));
 
     const body: CheckoutBody = {

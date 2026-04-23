@@ -816,16 +816,24 @@ func (h *CheckoutExtHandler) calculateTax(
 
 	// Build taxable items from checkout lines. Per-item fields win when
 	// set; otherwise fall back to the country default from
-	// supported_countries.tax_rate (stored as percentage, e.g. 18.0).
+	// supported_countries.tax_rate.
+	//
+	// Both sources store the rate as a PERCENTAGE (e.g. 18.00 = 18%) —
+	// the admin Tax tab writes percentages, and supported_countries
+	// seeds them that way. The calculator expects a FRACTION (0.18), so
+	// divide by 100 on the way in.
+	hundred := decimal.NewFromInt(100)
 	defaultRate := decimal.Zero
 	if sc.TaxRate != nil && *sc.TaxRate > 0 {
-		defaultRate = decimal.NewFromFloat(*sc.TaxRate).Div(decimal.NewFromInt(100))
+		defaultRate = decimal.NewFromFloat(*sc.TaxRate).Div(hundred)
 	}
 
 	taxItems := make([]tax.TaxableItem, 0, len(req.Items))
 	for _, it := range req.Items {
-		rate := derefDecimal(it.TaxRateOverride)
-		if rate.IsZero() && !defaultRate.IsZero() {
+		rate := decimal.Zero
+		if it.TaxRateOverride != nil && it.TaxRateOverride.GreaterThan(decimal.Zero) {
+			rate = it.TaxRateOverride.Div(hundred)
+		} else if !defaultRate.IsZero() {
 			rate = defaultRate
 		}
 		ti := tax.TaxableItem{

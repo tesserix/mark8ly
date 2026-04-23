@@ -26,10 +26,19 @@
  */
 
 import { useId } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { z } from 'zod'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@tesserix/web'
+
+const SELECT_UNSET = '__unset__'
 import {
   proContactRequestSchema,
   type ProContactRequest,
@@ -135,6 +144,7 @@ export function ProContactForm({ storeId }: ProContactFormProps) {
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
@@ -338,24 +348,39 @@ export function ProContactForm({ storeId }: ProContactFormProps) {
           label={copy.labels.migrationTimeline}
           error={errors.migration_timeline?.message}
         >
-          <select
-            id={ids.migrationTimeline}
-            aria-invalid={errors.migration_timeline ? true : undefined}
-            aria-describedby={
-              errors.migration_timeline
-                ? `${ids.migrationTimeline}-error`
-                : undefined
-            }
-            className="h-9 w-full rounded-md border border-[var(--hairline)] bg-[var(--background-elevated)] px-3 text-sm text-[var(--ink-900)] focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)] focus:ring-offset-1 disabled:opacity-50"
-            {...register('migration_timeline')}
-          >
-            <option value="">Select an option</option>
-            {copy.timelineOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+          <Controller
+            control={control}
+            name="migration_timeline"
+            render={({ field }) => (
+              <Select
+                value={field.value && field.value.length > 0 ? field.value : SELECT_UNSET}
+                onValueChange={(next) =>
+                  field.onChange(next === SELECT_UNSET ? '' : next)
+                }
+              >
+                <SelectTrigger
+                  id={ids.migrationTimeline}
+                  aria-invalid={errors.migration_timeline ? true : undefined}
+                  aria-describedby={
+                    errors.migration_timeline
+                      ? `${ids.migrationTimeline}-error`
+                      : undefined
+                  }
+                  className="w-full"
+                >
+                  <SelectValue placeholder="Select an option" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SELECT_UNSET}>Select an option</SelectItem>
+                  {copy.timelineOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
         </Field>
       </fieldset>
 

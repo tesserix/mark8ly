@@ -2,6 +2,13 @@
 
 import { useState, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@tesserix/web";
 
 import type { HomepageSection } from "@/lib/api/marketplace-api";
 import { FieldLabel } from "../BrandingSettingsClient";
@@ -92,19 +99,22 @@ export function MarqueeSectionForm({ section, onChange, editable }: Props) {
 
       <div className="space-y-1.5">
         <FieldLabel htmlFor="section_marquee_speed">Speed</FieldLabel>
-        <select
-          id="section_marquee_speed"
+        <Select
           value={section.speed ?? "normal"}
-          onChange={(e) =>
-            patch({ speed: e.target.value as MarqueeSection["speed"] })
-          }
           disabled={!editable}
-          className="h-10 w-40 rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground disabled:opacity-50"
+          onValueChange={(next) =>
+            patch({ speed: next as MarqueeSection["speed"] })
+          }
         >
-          <option value="slow">Slow</option>
-          <option value="normal">Normal</option>
-          <option value="fast">Fast</option>
-        </select>
+          <SelectTrigger id="section_marquee_speed" className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="slow">Slow</SelectItem>
+            <SelectItem value="normal">Normal</SelectItem>
+            <SelectItem value="fast">Fast</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

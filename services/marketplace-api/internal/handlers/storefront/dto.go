@@ -28,7 +28,13 @@ type StorefrontProductResponse struct {
 	Variants       []StorefrontVariantResponse `json:"variants"`
 	Media          []StorefrontMediaResponse   `json:"media"`
 	PriceRange     StorefrontPriceRange        `json:"price_range"`
-	PublishedAt    time.Time                   `json:"published_at"`
+	// Tax classification surfaced for the cart — the storefront
+	// echoes these values back on checkout line items so the server
+	// can apply the right per-product rate/category.
+	TaxCode         *string          `json:"tax_code,omitempty"`
+	TaxRateOverride *decimal.Decimal `json:"tax_rate_override,omitempty"`
+	TaxCategory     *string          `json:"tax_category,omitempty"`
+	PublishedAt     time.Time        `json:"published_at"`
 }
 
 // StorefrontProductOption is one option axis on a product.
@@ -195,6 +201,9 @@ func ToStorefrontProductResponse(a *product.Aggregate, categories []StorefrontCa
 			Max:          maxPrice,
 			CurrencyCode: currency,
 		},
-		PublishedAt: publishedAt,
+		TaxCode:         a.Product.TaxCode,
+		TaxRateOverride: a.Product.TaxRateOverride,
+		TaxCategory:     a.Product.TaxCategory,
+		PublishedAt:     publishedAt,
 	}
 }

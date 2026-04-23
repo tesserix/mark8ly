@@ -445,18 +445,25 @@ function LabelActions({
                 className="rounded-md border border-[color:var(--ink-900)]/30 px-3 py-2 text-sm normal-case tracking-normal text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-foreground-tertiary">
-              Slot
-              <select
+            <div className="flex flex-col gap-1 text-xs uppercase tracking-wider text-foreground-tertiary">
+              <span id="reschedule-slot-label">Slot</span>
+              <Select
                 value={rescheduleSlot}
-                onChange={(e) => setRescheduleSlot(e.target.value)}
-                className="rounded-md border border-[color:var(--ink-900)]/30 px-3 py-2 text-sm normal-case tracking-normal text-[color:var(--ink-900)] focus:border-[color:var(--moss-700)] focus:outline-none"
+                onValueChange={(next) => setRescheduleSlot(next)}
               >
-                <option value="10:00:00">Morning (10–14)</option>
-                <option value="14:00:00">Afternoon (14–18)</option>
-                <option value="16:00:00">Evening (16–20)</option>
-              </select>
-            </label>
+                <SelectTrigger
+                  aria-labelledby="reschedule-slot-label"
+                  className="normal-case tracking-normal"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10:00:00">Morning (10–14)</SelectItem>
+                  <SelectItem value="14:00:00">Afternoon (14–18)</SelectItem>
+                  <SelectItem value="16:00:00">Evening (16–20)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button

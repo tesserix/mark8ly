@@ -91,6 +91,12 @@ export interface CheckoutItemBody {
   line_total: string;
   currency_code: string;
   image_url?: string;
+  // Tax classification copied from the product at the time the item was
+  // added to cart. The backend interprets these per the store's country
+  // tax strategy (india_gst / flat_rate / taxjar).
+  tax_code?: string;
+  tax_rate_override?: string; // percentage as decimal string, e.g. "18.00"
+  tax_category?: "standard" | "reduced" | "zero_rated" | "exempt";
 }
 
 export interface CheckoutAddressBody {

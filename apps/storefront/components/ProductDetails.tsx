@@ -121,6 +121,9 @@ export function ProductDetails({ product }: ProductDetailsProps) {
           product.price_range.currency_code
         }
         imageUrl={product.media[0]?.url}
+        taxCode={product.tax_code ?? undefined}
+        taxRateOverride={product.tax_rate_override ?? undefined}
+        taxCategory={product.tax_category ?? undefined}
         inStock={selectedVariant ? selectedVariant.in_stock : inStock}
         disabled={hasOptions && !selectedVariant}
         disabledReason={

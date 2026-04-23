@@ -65,6 +65,12 @@ export interface StorefrontPriceRange {
   currency_code: string;
 }
 
+export type StorefrontTaxCategory =
+  | "standard"
+  | "reduced"
+  | "zero_rated"
+  | "exempt";
+
 export interface StorefrontProduct {
   id: string;
   handle: string;
@@ -78,6 +84,13 @@ export interface StorefrontProduct {
   variants: StorefrontVariant[];
   media: StorefrontMedia[];
   price_range: StorefrontPriceRange;
+  // Tax classification surfaced to the cart — echoed back on checkout
+  // line items so the backend applies the right per-product rate and
+  // category. Values may be null for products created before the tax
+  // feature shipped (treated as country-default / standard).
+  tax_code: string | null;
+  tax_rate_override: string | null; // percentage as decimal string, e.g. "18.00"
+  tax_category: StorefrontTaxCategory | null;
   published_at: string;
 }
 

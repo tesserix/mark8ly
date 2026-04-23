@@ -40,7 +40,7 @@ import {
   generateVariants,
   type OptionDraft as GenOptionDraft,
 } from "@/lib/products/generateVariants";
-import { parseVariantKey } from "@/lib/products/variantKey";
+import { buildVariantKey, parseVariantKey } from "@/lib/products/variantKey";
 import type { VariantDraft as MatrixVariantDraft } from "@/components/products/variants/VariantMatrixTable";
 
 import { useToast } from "@/components/feedback/Toaster";
@@ -104,8 +104,37 @@ export function ProductForm({
       : "0",
     sku: firstVariant?.sku ?? "",
     categoryIds: initialProduct?.categories.map((c) => c.id) ?? [],
-    options: [],
-    variants: [],
+    // Hydrate options/variants from the server payload so a refresh after
+    // save doesn't show an empty Options/Variants tab. Without this the
+    // form resets to [] and the derivation effect then blows away variants
+    // on mount because no options → no matrix.
+    options: (initialProduct?.options ?? []).map((o) => ({
+      id: o.id,
+      name: o.name,
+      values: o.values.map((v) => ({ id: v.id, value: v.value })),
+    })),
+    variants: (initialProduct?.variants ?? []).map((v) => {
+      const pairs = v.option_values.map((ov) => ({
+        name: ov.option_name,
+        value: ov.value,
+      }));
+      const variantMedia = (initialProduct?.media ?? []).find(
+        (m) => m.variant_id === v.id,
+      );
+      return {
+        id: v.id,
+        key: buildVariantKey(pairs),
+        price: v.price,
+        sku: v.sku,
+        stock: v.inventory_quantity,
+        weight: (v.weight_grams ?? 0) / 1000,
+        variantImageId: variantMedia?.id ?? null,
+        optionValues: v.option_values.map((ov) => ({
+          optionName: ov.option_name,
+          value: ov.value,
+        })),
+      };
+    }),
     // Hydrate media from the server payload so a title/price-only edit
     // doesn't submit `media: []` and wipe the product's existing images.
     media: (initialProduct?.media ?? []).map((m) => ({

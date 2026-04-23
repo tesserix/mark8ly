@@ -160,7 +160,22 @@ export async function updateProductAction(
     })),
   }));
 
-  const hasOptions = (parsed.data.options ?? []).length > 0;
+  // Drop incomplete options (empty name or no values) before computing
+  // hasOptions — otherwise an abandoned half-filled option makes us skip
+  // the simple-variant synth below, and we ship `options: [], variants: []`
+  // which the backend rejects. Mirrors the frontend variant-derivation
+  // effect in ProductForm.tsx which filters the same way.
+  const filteredOptions = (parsed.data.options ?? [])
+    .map((o) => ({
+      id: o.id,
+      name: o.name.trim(),
+      values: o.values
+        .map((v) => ({ id: v.id, value: v.value.trim() }))
+        .filter((v) => v.value.length > 0),
+    }))
+    .filter((o) => o.name.length > 0 && o.values.length > 0);
+
+  const hasOptions = filteredOptions.length > 0;
   if (!hasOptions && variants.length === 0) {
     const existing = await getProduct(ctx.storeId, productId, {
       userId: ctx.userId,
@@ -190,11 +205,7 @@ export async function updateProductAction(
     description: parsed.data.description && parsed.data.description.length > 0 ? parsed.data.description : undefined,
     status: parsed.data.status,
     category_ids: parsed.data.categoryIds,
-    options: (parsed.data.options ?? []).map((o) => ({
-      id: o.id,
-      name: o.name,
-      values: o.values.map((v) => ({ id: v.id, value: v.value })),
-    })),
+    options: filteredOptions,
     variants,
     media: (parsed.data.media ?? []).map((m) => ({
       id: m.id,

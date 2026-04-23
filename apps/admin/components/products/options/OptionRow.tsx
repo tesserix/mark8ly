@@ -77,6 +77,7 @@ export function OptionRow({
               commitValue();
             }
           }}
+          onBlur={commitValue}
           placeholder={option.values.length === 0 ? "Add a value" : "Add another"}
           className="min-w-[8rem] flex-1 bg-transparent px-1.5 py-0.5 text-sm text-foreground placeholder:text-foreground-tertiary outline-none"
         />

@@ -46,6 +46,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
         initialProduct={product}
         categories={categories}
         currencyCode={currentStore.currency_code}
+        storeCountryCode={currentStore.country_code}
         canDelete={role === "owner"}
         canArchive={role === "owner" || role === "admin"}
         session={{ userId, tenantId }}

@@ -66,9 +66,11 @@ type CheckoutItemRequest struct {
 	LineTotal     decimal.Decimal  `json:"line_total"     binding:"required"`
 	CurrencyCode  string           `json:"currency_code"  binding:"required,len=3"`
 	ImageURL      *string          `json:"image_url"`
-	HSNCode       *string          `json:"hsn_code"`       // India GST — H11 fix
-	GSTRate       *decimal.Decimal `json:"gst_rate"`       // India GST — H11 fix
-	TaxCode       *string          `json:"tax_code"`       // TaxJar product tax code
+	// Tax classification copied from the product. Interpretation depends
+	// on the store's country tax strategy (india_gst / flat_rate / taxjar).
+	TaxCode         *string          `json:"tax_code"`
+	TaxRateOverride *decimal.Decimal `json:"tax_rate_override"`
+	TaxCategory     *string          `json:"tax_category"`
 }
 
 // CheckoutAddressRequest is a shipping/billing address.

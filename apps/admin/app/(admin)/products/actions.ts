@@ -121,6 +121,15 @@ export async function createProductAction(
     title: parsed.data.title,
     description: parsed.data.description && parsed.data.description.length > 0 ? parsed.data.description : undefined,
     status: parsed.data.status,
+    tax_code:
+      parsed.data.taxCode && parsed.data.taxCode.length > 0
+        ? parsed.data.taxCode
+        : undefined,
+    tax_rate_override:
+      parsed.data.taxRateOverride && parsed.data.taxRateOverride.length > 0
+        ? parsed.data.taxRateOverride
+        : undefined,
+    tax_category: parsed.data.taxCategory,
     options: [],
     variants: buildVariants(parsed.data, ctx.currencyCode),
     category_ids: parsed.data.categoryIds.length > 0 ? parsed.data.categoryIds : undefined,
@@ -224,6 +233,15 @@ export async function updateProductAction(
     title: parsed.data.title,
     description: parsed.data.description && parsed.data.description.length > 0 ? parsed.data.description : undefined,
     status: parsed.data.status,
+    tax_code:
+      parsed.data.taxCode && parsed.data.taxCode.length > 0
+        ? parsed.data.taxCode
+        : undefined,
+    tax_rate_override:
+      parsed.data.taxRateOverride && parsed.data.taxRateOverride.length > 0
+        ? parsed.data.taxRateOverride
+        : undefined,
+    tax_category: parsed.data.taxCategory,
     category_ids: parsed.data.categoryIds,
     options: filteredOptions,
     variants,

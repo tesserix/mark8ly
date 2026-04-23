@@ -95,13 +95,17 @@ type AdminProductResponse struct {
 	SEODescription      *string                `json:"seo_description,omitempty"`
 	PrimaryCategoryID   *string                `json:"primary_category_id,omitempty"`
 	CopySourceProductID *string                `json:"copy_source_product_id,omitempty"`
-	Categories          []AdminCategoryRef     `json:"categories"`
-	Options             []AdminProductOption   `json:"options"`
-	Variants            []AdminVariantResponse `json:"variants"`
-	Media               []AdminMediaResponse   `json:"media"`
-	PublishedAt         *time.Time             `json:"published_at,omitempty"`
-	CreatedAt           time.Time              `json:"created_at"`
-	UpdatedAt           time.Time              `json:"updated_at"`
+	// Tax classification. See product.Product for interpretation.
+	TaxCode         *string          `json:"tax_code,omitempty"`
+	TaxRateOverride *decimal.Decimal `json:"tax_rate_override,omitempty"`
+	TaxCategory     *string          `json:"tax_category,omitempty"`
+	Categories      []AdminCategoryRef     `json:"categories"`
+	Options         []AdminProductOption   `json:"options"`
+	Variants        []AdminVariantResponse `json:"variants"`
+	Media           []AdminMediaResponse   `json:"media"`
+	PublishedAt     *time.Time             `json:"published_at,omitempty"`
+	CreatedAt       time.Time              `json:"created_at"`
+	UpdatedAt       time.Time              `json:"updated_at"`
 }
 
 type AdminProductOption struct {
@@ -231,6 +235,9 @@ func ToAdminProductResponse(a *product.Aggregate, categories []AdminCategoryRef)
 		SEODescription:      a.Product.SEODescription,
 		PrimaryCategoryID:   a.Product.PrimaryCategoryID,
 		CopySourceProductID: a.Product.CopySourceProductID,
+		TaxCode:             a.Product.TaxCode,
+		TaxRateOverride:     a.Product.TaxRateOverride,
+		TaxCategory:         a.Product.TaxCategory,
 		Categories:          categories,
 		Options:             options,
 		Variants:            variants,

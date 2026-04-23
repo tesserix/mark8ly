@@ -48,14 +48,14 @@ func (c *IndiaGSTCalculator) Calculate(_ context.Context, in TaxRequest) (*TaxBr
 	two := decimal.NewFromInt(2)
 
 	for _, item := range in.Items {
-		if item.GSTRate.IsZero() {
+		if item.IsExempt() || item.TaxRate.IsZero() {
 			continue
 		}
 
 		lineTotal := item.Amount.Mul(decimal.NewFromInt(int64(item.Quantity)))
 
 		if intraState {
-			halfRate := item.GSTRate.Div(two)
+			halfRate := item.TaxRate.Div(two)
 			halfTax := lineTotal.Mul(halfRate).Round(2)
 
 			for _, taxType := range []string{"CGST", "SGST"} {
@@ -73,15 +73,15 @@ func (c *IndiaGSTCalculator) Calculate(_ context.Context, in TaxRequest) (*TaxBr
 				}
 			}
 		} else {
-			igstTax := lineTotal.Mul(item.GSTRate).Round(2)
-			key := taxLineKey{taxType: "IGST", rate: item.GSTRate.String()}
+			igstTax := lineTotal.Mul(item.TaxRate).Round(2)
+			key := taxLineKey{taxType: "IGST", rate: item.TaxRate.String()}
 			if a, ok := grouped[key]; ok {
 				a.amount = a.amount.Add(igstTax)
 			} else {
-				pctLabel := item.GSTRate.Mul(decimal.NewFromInt(100)).String()
+				pctLabel := item.TaxRate.Mul(decimal.NewFromInt(100)).String()
 				grouped[key] = &accum{
 					description:  fmt.Sprintf("IGST %s%%", pctLabel),
-					rate:         item.GSTRate,
+					rate:         item.TaxRate,
 					amount:       igstTax,
 					jurisdiction: in.BuyerAddress.Region,
 				}

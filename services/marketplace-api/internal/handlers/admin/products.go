@@ -177,8 +177,9 @@ func (h *ProductHandler) Patch(c *gin.Context) {
 		}
 	} else if req.Title != nil || req.Handle != nil || req.Description != nil ||
 		req.Status != nil || req.Tags != nil || req.SEOTitle != nil ||
-		req.SEODescription != nil || req.PrimaryCategoryID != nil {
-		// 1. Basics-only path — any scalar/SEO/handle field present triggers this.
+		req.SEODescription != nil || req.PrimaryCategoryID != nil ||
+		req.TaxCode != nil || req.TaxRateOverride != nil || req.TaxCategory != nil {
+		// 1. Basics-only path — any scalar/SEO/handle/tax field present triggers this.
 		basicsReq := toServiceUpdateBasicsRequest(req, id, tenantID, storeID, userID)
 		if _, err := h.svc.UpdateBasics(ctx, basicsReq); err != nil {
 			RespondErr(c, err, h.logger)

@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/outbox"
@@ -52,6 +53,9 @@ type UpdateAggregateRequest struct {
 	SEOTitle          *string
 	SEODescription    *string
 	PrimaryCategoryID *string
+	TaxCode           *string
+	TaxRateOverride   *decimal.Decimal
+	TaxCategory       *string
 	UpdatedBy         *string
 
 	// Aggregate sub-sections — nil means "leave alone".
@@ -145,6 +149,15 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 	}
 	if req.PrimaryCategoryID != nil {
 		fields["primary_category_id"] = *req.PrimaryCategoryID
+	}
+	if req.TaxCode != nil {
+		fields["tax_code"] = *req.TaxCode
+	}
+	if req.TaxRateOverride != nil {
+		fields["tax_rate_override"] = *req.TaxRateOverride
+	}
+	if req.TaxCategory != nil {
+		fields["tax_category"] = *req.TaxCategory
 	}
 	if req.UpdatedBy != nil {
 		fields["updated_by"] = *req.UpdatedBy

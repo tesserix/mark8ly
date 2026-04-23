@@ -118,10 +118,15 @@ type CreateRequest struct {
 	PrimaryCategoryID *string
 	VendorID          *string
 	CategoryIDs       []string
-	Options           []OptionSpec
-	Variants          []VariantInput
-	Media             []MediaInput
-	CreatedBy         *string
+	// Tax classification — see product.Product struct for strategy-
+	// specific interpretation.
+	TaxCode         *string
+	TaxRateOverride *decimal.Decimal
+	TaxCategory     *string
+	Options         []OptionSpec
+	Variants        []VariantInput
+	Media           []MediaInput
+	CreatedBy       *string
 }
 
 // VariantInput is the service-layer shape of a variant on Create/Update.
@@ -171,6 +176,9 @@ type UpdateBasicsRequest struct {
 	SEOTitle          *string
 	SEODescription    *string
 	PrimaryCategoryID *string
+	TaxCode           *string
+	TaxRateOverride   *decimal.Decimal
+	TaxCategory       *string
 	UpdatedBy         *string
 }
 
@@ -299,6 +307,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Aggregate, er
 			SEOTitle:          req.SEOTitle,
 			SEODescription:    req.SEODescription,
 			PrimaryCategoryID: req.PrimaryCategoryID,
+			TaxCode:           req.TaxCode,
+			TaxRateOverride:   req.TaxRateOverride,
+			TaxCategory:       req.TaxCategory,
 			VendorID:          req.VendorID,
 			CreatedBy:         req.CreatedBy,
 			UpdatedBy:         req.CreatedBy,
@@ -376,6 +387,15 @@ func (s *Service) UpdateBasics(ctx context.Context, req UpdateBasicsRequest) (*A
 	}
 	if req.PrimaryCategoryID != nil {
 		fields["primary_category_id"] = *req.PrimaryCategoryID
+	}
+	if req.TaxCode != nil {
+		fields["tax_code"] = *req.TaxCode
+	}
+	if req.TaxRateOverride != nil {
+		fields["tax_rate_override"] = *req.TaxRateOverride
+	}
+	if req.TaxCategory != nil {
+		fields["tax_category"] = *req.TaxCategory
 	}
 	if req.UpdatedBy != nil {
 		fields["updated_by"] = *req.UpdatedBy

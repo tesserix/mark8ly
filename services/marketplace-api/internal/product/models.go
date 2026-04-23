@@ -55,7 +55,16 @@ type Product struct {
 	SEODescription      *string    `gorm:"column:seo_description;type:varchar(500)"                 json:"seo_description,omitempty"`
 	PrimaryCategoryID   *string    `gorm:"column:primary_category_id;type:uuid"                     json:"primary_category_id,omitempty"`
 	CopySourceProductID *string    `gorm:"column:copy_source_product_id;type:uuid"                  json:"copy_source_product_id,omitempty"`
-	PublishedAt         *time.Time `gorm:"column:published_at"                                      json:"published_at,omitempty"`
+	// Tax classification — interpreted by the store's country tax strategy.
+	// `TaxCode` holds HSN for IN, TaxJar TIC for US, or any EU/AU tax
+	// category string. `TaxRateOverride` is a per-product percentage
+	// (e.g. 18.00) that wins over the country default when non-nil.
+	// `TaxCategory` picks the tier for flat-rate countries:
+	// standard / reduced / zero_rated / exempt. Nil treats as standard.
+	TaxCode         *string          `gorm:"column:tax_code;type:varchar(32)"                 json:"tax_code,omitempty"`
+	TaxRateOverride *decimal.Decimal `gorm:"column:tax_rate_override;type:numeric(5,2)"       json:"tax_rate_override,omitempty"`
+	TaxCategory     *string          `gorm:"column:tax_category;type:varchar(32)"             json:"tax_category,omitempty"`
+	PublishedAt     *time.Time       `gorm:"column:published_at"                              json:"published_at,omitempty"`
 	CreatedBy           *string    `gorm:"column:created_by;type:uuid"                              json:"created_by,omitempty"`
 	UpdatedBy           *string    `gorm:"column:updated_by;type:uuid"                              json:"updated_by,omitempty"`
 	CreatedAt           time.Time  `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`

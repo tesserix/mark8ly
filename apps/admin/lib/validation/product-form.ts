@@ -42,6 +42,22 @@ export const productFormSchema = z.object({
     .optional()
     .or(z.literal("")),
   categoryIds: z.array(z.string().uuid()),
+  // Tax classification. Interpretation depends on the store's country
+  // tax strategy — see TaxTab for the country-specific form.
+  taxCode: z
+    .string()
+    .trim()
+    .max(32, "Tax code is too long")
+    .optional()
+    .or(z.literal("")),
+  taxRateOverride: z
+    .string()
+    .regex(/^(\d+(\.\d{1,2})?)?$/, "Enter a valid rate, e.g. 18 or 18.00")
+    .optional()
+    .or(z.literal("")),
+  taxCategory: z
+    .enum(["standard", "reduced", "zero_rated", "exempt"])
+    .optional(),
   // M7c: full aggregate fields — all optional with `.default([])` so M7b
   // callers that omit them parse successfully.
   options: z

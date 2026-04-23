@@ -2,7 +2,12 @@
 
 import type { KeyboardEvent } from "react";
 
-export type ProductFormTabId = "general" | "media" | "options" | "variants";
+export type ProductFormTabId =
+  | "general"
+  | "media"
+  | "options"
+  | "variants"
+  | "tax";
 
 export interface ProductFormTabsProps {
   active: ProductFormTabId;
@@ -16,6 +21,7 @@ const TABS: Array<{ id: ProductFormTabId; label: string }> = [
   { id: "media", label: "Media" },
   { id: "options", label: "Options" },
   { id: "variants", label: "Variants" },
+  { id: "tax", label: "Tax" },
 ];
 
 export function ProductFormTabs({

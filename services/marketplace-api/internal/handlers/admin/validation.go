@@ -230,10 +230,15 @@ type CreateProductRequest struct {
 	SEOTitle          *string                     `json:"seo_title,omitempty"`
 	SEODescription    *string                     `json:"seo_description,omitempty"`
 	PrimaryCategoryID *string                     `json:"primary_category_id,omitempty"`
-	Options           []CreateProductOptionInput  `json:"options"`
-	Variants          []CreateProductVariantInput `json:"variants" binding:"required,min=1"`
-	Media             []CreateProductMediaInput   `json:"media"`
-	CategoryIDs       []string                    `json:"category_ids"`
+	// Tax classification. Strategy-specific interpretation — see
+	// product.Product field comments.
+	TaxCode         *string                     `json:"tax_code,omitempty" binding:"omitempty,max=32"`
+	TaxRateOverride *decimal.Decimal            `json:"tax_rate_override,omitempty"`
+	TaxCategory     *string                     `json:"tax_category,omitempty" binding:"omitempty,oneof=standard reduced zero_rated exempt"`
+	Options         []CreateProductOptionInput  `json:"options"`
+	Variants        []CreateProductVariantInput `json:"variants" binding:"required,min=1"`
+	Media           []CreateProductMediaInput   `json:"media"`
+	CategoryIDs     []string                    `json:"category_ids"`
 }
 
 type CreateProductOptionInput struct {
@@ -287,6 +292,9 @@ type UpdateProductRequest struct {
 	SEOTitle          *string                      `json:"seo_title,omitempty"`
 	SEODescription    *string                      `json:"seo_description,omitempty"`
 	PrimaryCategoryID *string                      `json:"primary_category_id,omitempty"`
+	TaxCode           *string                      `json:"tax_code,omitempty" binding:"omitempty,max=32"`
+	TaxRateOverride   *decimal.Decimal             `json:"tax_rate_override,omitempty"`
+	TaxCategory       *string                      `json:"tax_category,omitempty" binding:"omitempty,oneof=standard reduced zero_rated exempt"`
 	Options           *[]CreateProductOptionInput  `json:"options,omitempty"`
 	Variants          *[]CreateProductVariantInput `json:"variants,omitempty"`
 	Media             *[]CreateProductMediaInput   `json:"media,omitempty"`
@@ -339,6 +347,9 @@ func toServiceCreateRequest(req CreateProductRequest, tenantID, storeID, created
 		SEOTitle:          req.SEOTitle,
 		SEODescription:    req.SEODescription,
 		PrimaryCategoryID: req.PrimaryCategoryID,
+		TaxCode:           req.TaxCode,
+		TaxRateOverride:   req.TaxRateOverride,
+		TaxCategory:       req.TaxCategory,
 		CategoryIDs:       req.CategoryIDs,
 	}
 	// Only set CreatedBy when the value is a valid UUID. Post-GIP migration,
@@ -399,6 +410,9 @@ func toServiceUpdateBasicsRequest(req UpdateProductRequest, id, tenantID, storeI
 		SEOTitle:          req.SEOTitle,
 		SEODescription:    req.SEODescription,
 		PrimaryCategoryID: req.PrimaryCategoryID,
+		TaxCode:           req.TaxCode,
+		TaxRateOverride:   req.TaxRateOverride,
+		TaxCategory:       req.TaxCategory,
 	}
 	if updatedBy != "" && isValidUUID(updatedBy) {
 		out.UpdatedBy = &updatedBy
@@ -423,6 +437,9 @@ func toServiceUpdateAggregateRequest(req UpdateProductRequest, id, tenantID, sto
 		SEOTitle:          req.SEOTitle,
 		SEODescription:    req.SEODescription,
 		PrimaryCategoryID: req.PrimaryCategoryID,
+		TaxCode:           req.TaxCode,
+		TaxRateOverride:   req.TaxRateOverride,
+		TaxCategory:       req.TaxCategory,
 		CategoryIDs:       req.CategoryIDs,
 		RemovedVariantIDs: req.RemovedVariantIDs,
 	}

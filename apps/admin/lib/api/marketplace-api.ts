@@ -41,6 +41,11 @@ export interface AdminProduct {
   seo_description: string | null;
   primary_category_id: string | null;
   copy_source_product_id: string | null;
+  // Tax classification. Interpretation depends on the store's country
+  // tax strategy (india_gst / flat_rate / taxjar).
+  tax_code: string | null;
+  tax_rate_override: string | null; // decimal as string
+  tax_category: TaxCategory | null;
   categories: AdminCategoryRef[];
   options: AdminProductOption[];
   variants: AdminVariantResponse[];
@@ -49,6 +54,8 @@ export interface AdminProduct {
   created_at: string;
   updated_at: string;
 }
+
+export type TaxCategory = "standard" | "reduced" | "zero_rated" | "exempt";
 
 export interface AdminCategoryRef {
   id: string;
@@ -202,6 +209,9 @@ export interface CreateProductRequest {
   seo_title?: string;
   seo_description?: string;
   primary_category_id?: string;
+  tax_code?: string;
+  tax_rate_override?: string; // decimal as string
+  tax_category?: TaxCategory;
   options?: Array<{ name: string; values: string[] }>;
   variants: CreateProductVariantInput[];
   media?: Array<{

@@ -44,6 +44,7 @@ export default async function NewProductPage() {
         storeId={currentStore.id}
         categories={categories}
         currencyCode={currentStore.currency_code}
+        storeCountryCode={currentStore.country_code}
         canDelete={false}
         canArchive={role === "owner" || role === "admin"}
         session={{ userId, tenantId }}

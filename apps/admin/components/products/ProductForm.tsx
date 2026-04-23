@@ -53,6 +53,7 @@ import { GeneralTab } from "./form/GeneralTab";
 import { OptionsTab } from "./form/OptionsTab";
 import { VariantsTab } from "./form/VariantsTab";
 import { MediaTab } from "./form/MediaTab";
+import { TaxTab } from "./form/TaxTab";
 
 // RHF-side option shape (matches zod + OptionsEditor).
 interface RhfOptionDraft {
@@ -67,6 +68,8 @@ export interface ProductFormProps {
   initialProduct?: AdminProduct;
   categories: AdminCategory[];
   currencyCode: string;
+  /** ISO 3166-1 alpha-2 code of the store, drives the Tax tab strategy. */
+  storeCountryCode: string;
   canDelete: boolean;
   canArchive: boolean;
   session: SessionHeaders;
@@ -79,6 +82,7 @@ export function ProductForm({
   initialProduct,
   categories,
   currencyCode,
+  storeCountryCode,
   canDelete,
   session,
   storeSlug,
@@ -104,6 +108,9 @@ export function ProductForm({
       : "0",
     sku: firstVariant?.sku ?? "",
     categoryIds: initialProduct?.categories.map((c) => c.id) ?? [],
+    taxCode: initialProduct?.tax_code ?? "",
+    taxRateOverride: initialProduct?.tax_rate_override ?? "",
+    taxCategory: initialProduct?.tax_category ?? undefined,
     // Hydrate options/variants from the server payload so a refresh after
     // save doesn't show an empty Options/Variants tab. Without this the
     // form resets to [] and the derivation effect then blows away variants
@@ -445,6 +452,9 @@ export function ProductForm({
           {currentTab === "options" && <OptionsTab />}
           {currentTab === "variants" && (
             <VariantsTab currencyCode={currencyCode} />
+          )}
+          {currentTab === "tax" && (
+            <TaxTab storeCountryCode={storeCountryCode} />
           )}
         </div>
 

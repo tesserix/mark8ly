@@ -50,37 +50,42 @@ export function OptionRow({
           className={fieldClass}
         />
       </div>
-      <div className="flex min-h-10 flex-1 flex-wrap items-center gap-1.5 rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated)] px-2 py-1.5 focus-within:border-[color:var(--moss-700)] focus-within:ring-1 focus-within:ring-[color:var(--moss-700)]">
-        {option.values.map((v, i) => (
-          <span
-            key={v.id ?? `${i}-${v.value}`}
-            className="inline-flex items-center gap-1 rounded-full bg-[color:var(--ink-900)]/[0.06] px-2.5 py-1 text-xs text-foreground"
-          >
-            {v.value}
-            <button
-              type="button"
-              aria-label={`Remove value ${v.value}`}
-              onClick={() => removeValue(i)}
-              className="text-foreground-tertiary transition-colors hover:text-foreground focus:text-foreground focus:outline-none"
+      <div className="flex flex-1 flex-col gap-1">
+        <div className="flex min-h-10 flex-wrap items-center gap-1.5 rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated)] px-2 py-1.5 focus-within:border-[color:var(--moss-700)] focus-within:ring-1 focus-within:ring-[color:var(--moss-700)]">
+          {option.values.map((v, i) => (
+            <span
+              key={v.id ?? `${i}-${v.value}`}
+              className="inline-flex items-center gap-1 rounded-full bg-[color:var(--ink-900)]/[0.06] px-2.5 py-1 text-xs text-foreground"
             >
-              <X className="h-3 w-3" />
-            </button>
-          </span>
-        ))}
-        <input
-          type="text"
-          value={inflight}
-          onChange={(e) => setInflight(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              commitValue();
-            }
-          }}
-          onBlur={commitValue}
-          placeholder={option.values.length === 0 ? "Add a value" : "Add another"}
-          className="min-w-[8rem] flex-1 bg-transparent px-1.5 py-0.5 text-sm text-foreground placeholder:text-foreground-tertiary outline-none"
-        />
+              {v.value}
+              <button
+                type="button"
+                aria-label={`Remove value ${v.value}`}
+                onClick={() => removeValue(i)}
+                className="text-foreground-tertiary transition-colors hover:text-foreground focus:text-foreground focus:outline-none"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <input
+            type="text"
+            value={inflight}
+            onChange={(e) => setInflight(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitValue();
+              }
+            }}
+            onBlur={commitValue}
+            placeholder={option.values.length === 0 ? "Add a value" : "Add another"}
+            className="min-w-[8rem] flex-1 bg-transparent px-1.5 py-0.5 text-sm text-foreground placeholder:text-foreground-tertiary outline-none"
+          />
+        </div>
+        <p className="text-[11px] text-foreground-tertiary">
+          Press Enter to add each value
+        </p>
       </div>
       <button
         type="button"

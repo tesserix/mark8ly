@@ -69,6 +69,22 @@ function slugFromTitle(title: string): string {
     .slice(0, 60) || "product";
 }
 
+// Auto-generate a unique SKU for a variant whose user-supplied SKU is
+// empty. Without this, every freshly-generated variant ships `sku: ""`
+// and collides on the store's unique-SKU constraint as soon as the user
+// adds more than one option value.
+function autoVariantSku(
+  title: string,
+  optionValues: ReadonlyArray<{ value: string }>,
+): string {
+  const base = slugFromTitle(title);
+  const suffix = optionValues
+    .map((ov) => ov.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""))
+    .filter((s) => s.length > 0)
+    .join("-");
+  return suffix ? `${base}-${suffix}` : `${base}-default`;
+}
+
 function buildVariants(
   values: ProductFormValues,
   currencyCode: string,
@@ -149,7 +165,9 @@ export async function updateProductAction(
   // than creating a duplicate.
   let variants = (parsed.data.variants ?? []).map((v) => ({
     id: v.id,
-    sku: v.sku,
+    sku: v.sku && v.sku.length > 0
+      ? v.sku
+      : autoVariantSku(parsed.data.title, v.optionValues),
     price: v.price,
     inventory_quantity: v.stock,
     weight_grams: Math.round(v.weight * 1000),

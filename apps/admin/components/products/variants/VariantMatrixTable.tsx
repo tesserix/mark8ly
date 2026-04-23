@@ -48,7 +48,11 @@ export function VariantMatrixTable({
   }, [currencyCode]);
 
   return (
-    <div className="overflow-x-auto">
+    // overflow-x-auto handles narrow viewports (mobile / small split panes),
+    // but on md+ we need overflow-visible so the VariantImagePicker popover
+    // can spill below the row. Otherwise CSS coerces overflow-y to auto and
+    // the absolute popover triggers a vertical scrollbar on the wrapper.
+    <div className="overflow-x-auto md:overflow-visible">
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="border-b border-[var(--ink-100)] text-xs uppercase tracking-widest text-[var(--ink-500)]">

@@ -164,14 +164,16 @@ export async function updateProductAction(
   // hasOptions — otherwise an abandoned half-filled option makes us skip
   // the simple-variant synth below, and we ship `options: [], variants: []`
   // which the backend rejects. Mirrors the frontend variant-derivation
-  // effect in ProductForm.tsx which filters the same way.
+  // effect in ProductForm.tsx which filters the same way. Values flatten
+  // to `string[]` because the backend's CreateProductOptionInput expects
+  // `values: []string` — ids on options/values aren't part of the wire
+  // shape and would fail JSON unmarshal.
   const filteredOptions = (parsed.data.options ?? [])
     .map((o) => ({
-      id: o.id,
       name: o.name.trim(),
       values: o.values
-        .map((v) => ({ id: v.id, value: v.value.trim() }))
-        .filter((v) => v.value.length > 0),
+        .map((v) => v.value.trim())
+        .filter((v) => v.length > 0),
     }))
     .filter((o) => o.name.length > 0 && o.values.length > 0);
 

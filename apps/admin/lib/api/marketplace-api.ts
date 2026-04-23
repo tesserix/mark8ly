@@ -218,13 +218,10 @@ export type UpdateProductRequest = Partial<
   Omit<CreateProductRequest, "options" | "variants" | "media">
 > & {
   // M7c aggregate PATCH fields — forwarded as-is to the backend
-  // PATCH /products/:id endpoint. Wider shapes than the M7b create
-  // endpoint to accommodate option-value ids and media ids.
-  options?: Array<{
-    id?: string;
-    name: string;
-    values: Array<{ id?: string; value: string }>;
-  }>;
+  // PATCH /products/:id endpoint. The backend reuses CreateProductOptionInput
+  // for PATCH, which is `{name, values: []string}` — no ids on options or
+  // values. Media keeps id so the aggregate service can match existing rows.
+  options?: Array<{ name: string; values: string[] }>;
   variants?: Array<{
     id?: string;
     sku?: string;

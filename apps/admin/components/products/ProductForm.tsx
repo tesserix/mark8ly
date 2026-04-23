@@ -40,6 +40,7 @@ import {
   generateVariants,
   type OptionDraft as GenOptionDraft,
 } from "@/lib/products/generateVariants";
+import { parseVariantKey } from "@/lib/products/variantKey";
 import type { VariantDraft as MatrixVariantDraft } from "@/components/products/variants/VariantMatrixTable";
 
 import { useToast } from "@/components/feedback/Toaster";
@@ -187,13 +188,10 @@ export function ProductForm({
         if (prior && prior.optionValues) {
           return { ...v, optionValues: prior.optionValues } as MatrixVariantDraft;
         }
-        // Derive optionValues by parsing the key "name::value|name::value"
-        const optionValues = v.key
-          .split("|")
-          .map((pair) => {
-            const [optionName, value] = pair.split("::");
-            return { optionName: optionName ?? "", value: value ?? "" };
-          })
+        // Derive optionValues by parsing the canonical variant key format
+        // (Name1=Value1|Name2=Value2, see lib/products/variantKey.ts).
+        const optionValues = parseVariantKey(v.key)
+          .map((p) => ({ optionName: p.name, value: p.value }))
           .filter((ov) => ov.optionName.length > 0);
         return { ...v, optionValues } as MatrixVariantDraft;
       });

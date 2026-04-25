@@ -128,4 +128,17 @@ export const tenants = {
     ),
 };
 
+export interface Membership {
+  tenant_id: string;
+  name: string;
+  role: string;
+}
+
+export const users = {
+  listMemberTenants: (uid: string) =>
+    request<Membership[]>(
+      `/api/v1/users/me/tenants?uid=${encodeURIComponent(uid)}`,
+    ),
+};
+
 export { PlatformApiError };

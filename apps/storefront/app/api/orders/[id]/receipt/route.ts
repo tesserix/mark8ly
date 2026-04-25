@@ -10,7 +10,7 @@ import { pdf } from "@react-pdf/renderer";
 import { fetchOrder } from "@/lib/api/checkout-api";
 import { fetchBranding } from "@/lib/api/marketplace-api";
 import { resolveStoreSlug } from "@/lib/slug";
-import { decodeSession } from "@/lib/session";
+import { decodeSessionForScope } from "@/lib/session";
 import { InvoicePdf } from "@/lib/invoices/InvoicePdf";
 import { receiptNumberFromOrder } from "@/lib/invoices/numbering";
 import { buildDocument } from "@/lib/invoices/build";
@@ -28,17 +28,17 @@ export async function GET(
     return NextResponse.json({ error: "missing_id" }, { status: 400 });
   }
 
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
-  const session = decodeSession(sessionCookie);
-  if (!session) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-
   const h = await headers();
   const slug = await resolveStoreSlug(h.get("host"));
   if (!slug) {
     return NextResponse.json({ error: "missing_store" }, { status: 400 });
+  }
+
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
+  const session = decodeSessionForScope(sessionCookie, { storeSlug: slug });
+  if (!session) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const [order, branding] = await Promise.all([

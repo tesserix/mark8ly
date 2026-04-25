@@ -46,6 +46,29 @@ func TestVendorClient_EnsureSelfVendor_Success(t *testing.T) {
 	require.True(t, v.IsSelf)
 }
 
+func TestVendorClient_EnsureSelfVendor_SendsInternalAuth(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "shared-secret", r.Header.Get("X-Internal-Auth"))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id":        "vendor-1",
+				"tenant_id": "tenant-abc",
+				"name":      "Acme",
+				"slug":      "acme",
+				"is_self":   true,
+				"status":    "active",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := NewVendorClient(srv.URL, "shared-secret")
+	_, err := c.EnsureSelfVendor(context.Background(), "tenant-abc", "Acme", "acme")
+	require.NoError(t, err)
+}
+
 func TestVendorClient_EnsureSelfVendor_BadStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

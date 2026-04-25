@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -31,7 +32,7 @@ func RequireStorefrontKey(secret string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if c.GetHeader("X-Storefront-Key") != secret {
+		if !constantTimeEqual(c.GetHeader("X-Storefront-Key"), secret) {
 			respondNotFound(c)
 			return
 		}
@@ -95,10 +96,14 @@ const (
 
 // sessionClaims represents the decoded auth-bff session cookie payload.
 type sessionClaims struct {
+	UID       string `json:"uid"`
 	GipUID    string `json:"gip_uid"`
 	Email     string `json:"email"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
+	StoreSlug string `json:"store_slug"`
+	StoreID   string `json:"store_id"`
+	TenantID  string `json:"tenant_id"`
 	Exp       int64  `json:"exp"`
 }
 
@@ -149,6 +154,15 @@ func OptionalCustomerAuth(secret string, customerSvc *customer.Service, logger *
 			c.Next()
 			return
 		}
+		if !claims.MatchesStore(store) {
+			logger.Debug("customer session scoped to a different store",
+				"email", claims.Email,
+				"session_store_slug", claims.StoreSlug,
+				"request_store_slug", store.Slug,
+			)
+			c.Next()
+			return
+		}
 
 		storeID, err := uuid.Parse(store.ID)
 		if err != nil {
@@ -164,7 +178,7 @@ func OptionalCustomerAuth(secret string, customerSvc *customer.Service, logger *
 		profile, err := customerSvc.EnsureProfile(c.Request.Context(), customer.EnsureProfileInput{
 			StoreID:   storeID,
 			TenantID:  tenantID,
-			GipUID:    claims.GipUID,
+			GipUID:    claims.UIDOrGipUID(),
 			Email:     claims.Email,
 			FirstName: claims.FirstName,
 			LastName:  claims.LastName,
@@ -231,11 +245,36 @@ func validateSessionCookie(cookie, secret string) (*sessionClaims, error) {
 		return nil, fmt.Errorf("malformed cookie: %w", err)
 	}
 
-	if claims.Email == "" {
-		return nil, errors.New("malformed cookie: missing email")
+	if claims.Email == "" || claims.UIDOrGipUID() == "" {
+		return nil, errors.New("malformed cookie: missing identity")
 	}
 
 	return &claims, nil
+}
+
+func (s sessionClaims) UIDOrGipUID() string {
+	if s.UID != "" {
+		return s.UID
+	}
+	return s.GipUID
+}
+
+func (s sessionClaims) MatchesStore(store *stores.Store) bool {
+	if store == nil {
+		return false
+	}
+	return s.StoreSlug == store.Slug &&
+		s.StoreID == store.ID &&
+		s.TenantID == store.TenantID
+}
+
+func constantTimeEqual(got, want string) bool {
+	if got == "" || want == "" {
+		return false
+	}
+	gotSum := sha256.Sum256([]byte(got))
+	wantSum := sha256.Sum256([]byte(want))
+	return subtle.ConstantTimeCompare(gotSum[:], wantSum[:]) == 1
 }
 
 // RequireCustomerAuth returns 401 if no customer context was set by

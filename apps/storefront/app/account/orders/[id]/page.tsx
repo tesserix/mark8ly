@@ -9,7 +9,7 @@ import { notFound } from "next/navigation";
 import { cookies, headers } from "next/headers";
 
 import { resolveStoreSlug } from "@/lib/slug";
-import { decodeSession } from "@/lib/session";
+import { decodeSessionForScope } from "@/lib/session";
 import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { OrderTimeline } from "@/components/OrderTimeline";
 import { CancelOrderButton } from "@/components/account/CancelOrderButton";
@@ -27,10 +27,15 @@ export const metadata = { title: "Order" };
 
 export default async function AccountOrderPage({ params }: PageProps) {
   const { id } = await params;
+  const h = await headers();
+  const host = h.get("host");
+  const slug =
+    await resolveStoreSlug(host);
+  if (!slug || !id) notFound();
 
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
-  const session = decodeSession(sessionCookie);
+  const session = decodeSessionForScope(sessionCookie, { storeSlug: slug });
   if (!session) {
     return (
       <div className="space-y-2">
@@ -43,12 +48,6 @@ export default async function AccountOrderPage({ params }: PageProps) {
       </div>
     );
   }
-
-  const h = await headers();
-  const host = h.get("host");
-  const slug =
-    await resolveStoreSlug(host);
-  if (!slug || !id) notFound();
 
   const order = await fetchOrder(slug, id);
   if (!order) notFound();

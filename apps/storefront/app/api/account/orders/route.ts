@@ -7,7 +7,7 @@
 
 import { cookies, headers } from "next/headers";
 import { resolveStoreSlug } from "@/lib/slug";
-import { decodeSession } from "@/lib/session";
+import { decodeSessionForScope } from "@/lib/session";
 import { marketplaceStoreUrl, proxyJson } from "../../checkout/_proxy";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export async function GET(): Promise<Response> {
 
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
-  const session = decodeSession(sessionCookie);
+  const session = decodeSessionForScope(sessionCookie, { storeSlug: slug });
 
   if (!session) {
     return Response.json(

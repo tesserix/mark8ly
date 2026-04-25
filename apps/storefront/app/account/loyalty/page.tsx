@@ -1,6 +1,6 @@
 import { cookies, headers } from "next/headers";
 import { resolveStoreSlug } from "@/lib/slug";
-import { decodeSession } from "@/lib/auth";
+import { decodeSessionForScope } from "@/lib/session";
 import { LoyaltyDashboard } from "@/components/loyalty/LoyaltyDashboard";
 import { getProgram, getMe } from "@/lib/api/loyalty";
 
@@ -9,14 +9,15 @@ export const metadata = {
 };
 
 export default async function LoyaltyAccountPage() {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
-  const session = decodeSession(sessionCookie);
-
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
     await resolveStoreSlug(host);
+
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
+  const session = decodeSessionForScope(sessionCookie, { storeSlug });
+
   const storefrontKey = process.env.MARKETPLACE_STOREFRONT_KEY ?? "";
 
   const program = await getProgram(storeSlug, storefrontKey);

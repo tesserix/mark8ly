@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +28,7 @@ const (
 // the proxy and hitting the service directly.
 func StaffAuth(internalSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if internalSecret != "" && c.GetHeader("X-Internal-Auth") != internalSecret {
+		if internalSecret != "" && !constantTimeEqual(c.GetHeader("X-Internal-Auth"), internalSecret) {
 			respondUnauthorized(c)
 			return
 		}
@@ -83,7 +85,7 @@ func StoreResolver() gin.HandlerFunc {
 // InternalAuth shared secret prevents bypassing the proxy.
 func CustomerContext(internalSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if internalSecret != "" && c.GetHeader("X-Internal-Auth") != internalSecret {
+		if internalSecret != "" && !constantTimeEqual(c.GetHeader("X-Internal-Auth"), internalSecret) {
 			respondUnauthorized(c)
 			return
 		}
@@ -108,6 +110,15 @@ func CustomerContext(internalSecret string) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func constantTimeEqual(got, want string) bool {
+	if got == "" || want == "" {
+		return false
+	}
+	gotSum := sha256.Sum256([]byte(got))
+	wantSum := sha256.Sum256([]byte(want))
+	return subtle.ConstantTimeCompare(gotSum[:], wantSum[:]) == 1
 }
 
 // RequireCustomerSession validates the otto_session cookie (or an explicit

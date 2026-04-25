@@ -12,7 +12,7 @@
 
 import { cookies, headers } from "next/headers";
 
-import { decodeSession } from "@/lib/session";
+import { decodeSessionForScope } from "@/lib/session";
 import { resolveStoreSlug } from "@/lib/slug";
 
 const OTTO_URL = process.env.OTTO_URL ?? "http://localhost:8089";
@@ -91,7 +91,13 @@ export async function forwardToOtto(
   // mp_customer_session cookie is HMAC-signed; decodeSession rejects any
   // forgery, so we trust the fields it returns.
   const customerCookie = c.get(CUSTOMER_SESSION_COOKIE)?.value;
-  const customer = customerCookie ? decodeSession(customerCookie) : null;
+  const customer = customerCookie
+    ? decodeSessionForScope(customerCookie, {
+        storeSlug: scope.slug,
+        storeId: scope.storeId,
+        tenantId: scope.tenantId,
+      })
+    : null;
 
   const outgoing: Record<string, string> = {
     "Content-Type": "application/json",

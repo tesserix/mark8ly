@@ -3,7 +3,7 @@ import { cookies, headers } from "next/headers";
 import { AccountSidebar } from "@/components/AccountSidebar";
 import { AccountMobileNav } from "@/components/AccountMobileNav";
 import { StorefrontNav } from "@/components/StorefrontNav";
-import { decodeSession } from "@/lib/auth";
+import { decodeSessionForScope } from "@/lib/session";
 import { resolveStoreSlug } from "@/lib/slug";
 import { enrollCustomer } from "@/lib/api/loyalty";
 
@@ -20,11 +20,13 @@ export default async function AccountLayout({ children }: AccountLayoutProps) {
   // the loyalty program went live and never passed through /account/loyalty.
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("mp_customer_session")?.value;
-  const session = sessionCookie ? decodeSession(sessionCookie) : null;
+  const h = await headers();
+  const storeSlug = await resolveStoreSlug(h.get("host"));
+  const session = sessionCookie
+    ? decodeSessionForScope(sessionCookie, { storeSlug })
+    : null;
 
   if (session) {
-    const h = await headers();
-    const storeSlug = await resolveStoreSlug(h.get("host"));
     const referralCode = cookieStore.get("mp_referral")?.value;
     await enrollCustomer(
       storeSlug,

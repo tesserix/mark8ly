@@ -5,6 +5,8 @@
 package internalsvc
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -183,7 +185,7 @@ func RequireInternalAuth(secret string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if c.GetHeader("X-Internal-Auth") != secret {
+		if !constantTimeEqual(c.GetHeader("X-Internal-Auth"), secret) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "unauthorized",
 				"message": "internal auth required",
@@ -192,4 +194,13 @@ func RequireInternalAuth(secret string) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func constantTimeEqual(got, want string) bool {
+	if got == "" || want == "" {
+		return false
+	}
+	gotSum := sha256.Sum256([]byte(got))
+	wantSum := sha256.Sum256([]byte(want))
+	return subtle.ConstantTimeCompare(gotSum[:], wantSum[:]) == 1
 }

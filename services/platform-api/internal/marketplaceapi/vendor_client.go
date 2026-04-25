@@ -28,18 +28,24 @@ type Vendor struct {
 // VendorClient is a thin HTTP client for marketplace-api's
 // /internal/tenants/:tenantID/ensure-self-vendor endpoint.
 type VendorClient struct {
-	baseURL string
-	http    *http.Client
+	baseURL            string
+	internalAuthSecret string
+	http               *http.Client
 }
 
 // NewVendorClient constructs a client pointed at the given base URL
 // (e.g. "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080").
 // A 10-second default timeout is applied; the caller can swap the client
 // by assigning to the embedded field if a different policy is needed.
-func NewVendorClient(baseURL string) *VendorClient {
+func NewVendorClient(baseURL string, internalAuthSecret ...string) *VendorClient {
+	secret := ""
+	if len(internalAuthSecret) > 0 {
+		secret = internalAuthSecret[0]
+	}
 	return &VendorClient{
-		baseURL: baseURL,
-		http:    &http.Client{Timeout: 10 * time.Second},
+		baseURL:            baseURL,
+		internalAuthSecret: secret,
+		http:               &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -57,6 +63,7 @@ func (c *VendorClient) EnsureSelfVendor(ctx context.Context, tenantID, name, slu
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.addInternalAuth(req)
 
 	res, err := c.http.Do(req)
 	if err != nil {
@@ -92,6 +99,7 @@ func (c *VendorClient) UpdateSelfVendor(ctx context.Context, tenantID, name, slu
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.addInternalAuth(req)
 
 	res, err := c.http.Do(req)
 	if err != nil {
@@ -111,4 +119,10 @@ func (c *VendorClient) UpdateSelfVendor(ctx context.Context, tenantID, name, slu
 		return nil, fmt.Errorf("marketplace-api update-self-vendor: decode: %w", err)
 	}
 	return &resp.Data, nil
+}
+
+func (c *VendorClient) addInternalAuth(req *http.Request) {
+	if c.internalAuthSecret != "" {
+		req.Header.Set("X-Internal-Auth", c.internalAuthSecret)
+	}
 }

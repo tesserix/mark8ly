@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
 
@@ -64,7 +66,7 @@ func (h *InternalUsersHandler) deleteUser(c *gin.Context) {
 		})
 		return
 	}
-	if c.GetHeader("X-Internal-Auth") != h.secret {
+	if !constantTimeEqual(c.GetHeader("X-Internal-Auth"), h.secret) {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":   "unauthorized",
 			"message": "missing or invalid internal auth",
@@ -109,4 +111,13 @@ func (h *InternalUsersHandler) deleteUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{"user_id": userID, "erased": true},
 	})
+}
+
+func constantTimeEqual(got, want string) bool {
+	if got == "" || want == "" {
+		return false
+	}
+	gotSum := sha256.Sum256([]byte(got))
+	wantSum := sha256.Sum256([]byte(want))
+	return subtle.ConstantTimeCompare(gotSum[:], wantSum[:]) == 1
 }

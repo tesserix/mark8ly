@@ -1,7 +1,7 @@
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { resolveStoreSlug } from "@/lib/slug";
-import { decodeSession } from "@/lib/auth";
+import { decodeSessionForScope } from "@/lib/session";
 
 export const metadata = {
   title: "My Orders",
@@ -98,9 +98,14 @@ interface OrdersPageProps {
 export default async function OrdersPage({ searchParams }: OrdersPageProps) {
   const { q: searchRaw } = await searchParams;
   const search = (searchRaw ?? "").trim().toLowerCase();
+  const h = await headers();
+  const host = h.get("host");
+  const storeSlug =
+    await resolveStoreSlug(host);
+
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
-  const session = decodeSession(sessionCookie);
+  const session = decodeSessionForScope(sessionCookie, { storeSlug });
 
   if (!session) {
     return (
@@ -114,11 +119,6 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
       </div>
     );
   }
-
-  const h = await headers();
-  const host = h.get("host");
-  const storeSlug =
-    await resolveStoreSlug(host);
 
   let orders: OrderSummary[] = [];
   let fetchError = false;

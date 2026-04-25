@@ -4,24 +4,24 @@
 //
 // Customer auth skips auth-bff entirely — auth-bff's auto-login checks
 // OpenFGA tenant membership which customers don't have. Instead we:
-//   1. Verify the GIP id_token came from the mp-customer tenant pool
-//   2. Set a simple `mp_customer_session` cookie with uid + email
-//   3. Ensure the customer profile exists in marketplace-api
-//
-// The cookie is a base64-encoded JSON payload. Not signed yet (v0) —
-// a proper HMAC signature or encrypted cookie lands in a follow-up.
-// For now the cookie carries enough for the storefront layout to
-// render the authenticated state and for marketplace-api calls to
-// include the customer's identity.
+//   1. Verify the GIP id_token signature, project, tenant, and expiry.
+//   2. Set an HMAC-signed `mp_customer_session` cookie.
+//   3. Ensure the customer profile exists in marketplace-api.
 
 import { cookies } from "next/headers";
 import { encodeSession } from "@/lib/session";
+import {
+  GIPTokenVerificationError,
+  verifyGIPIdToken,
+} from "@/lib/gip/verify-id-token";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 const STOREFRONT_KEY = process.env.MARKETPLACE_STOREFRONT_KEY ?? "";
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
+const GIP_PROJECT_ID = process.env.GIP_PROJECT_ID ?? "";
+const GIP_CUSTOMER_TENANT_ID = process.env.GIP_CUSTOMER_TENANT_ID ?? "";
 
 type Result =
   | { ok: true }
@@ -29,8 +29,10 @@ type Result =
 
 interface CustomerSignInInput {
   idToken: string;
+  /** Deprecated: ignored. The trusted UID comes from the verified idToken. */
   uid: string;
   storeSlug: string;
+  /** Deprecated: ignored. The trusted email comes from the verified idToken. */
   email?: string;
 }
 
@@ -48,23 +50,6 @@ async function resolveStore(
     };
     if (!body.data?.tenant_id || !body.data?.id) return null;
     return { tenant_id: body.data.tenant_id, store_id: body.data.id };
-  } catch {
-    return null;
-  }
-}
-
-// Decode the GIP id_token payload (JWT part 1) to extract email.
-// We trust this token because we obtained it from our own GIP call
-// moments ago — full signature verification is overkill here but
-// should be added for production hardening.
-function decodeIdTokenEmail(idToken: string): string | null {
-  try {
-    const parts = idToken.split(".");
-    if (parts.length < 2) return null;
-    const payload = JSON.parse(
-      Buffer.from(parts[1]!, "base64url").toString(),
-    ) as { email?: string };
-    return payload.email ?? null;
   } catch {
     return null;
   }
@@ -150,15 +135,18 @@ export async function customerSignIn(
       };
     }
 
-    const email =
-      input.email || decodeIdTokenEmail(input.idToken) || "";
+    const verified = await verifyGIPIdToken(
+      input.idToken,
+      GIP_PROJECT_ID,
+      GIP_CUSTOMER_TENANT_ID,
+    );
 
     // Set the HMAC-signed customer session cookie. The storefront
     // layout decodes and verifies this on every request to hydrate
     // the authenticated state.
     const cookieValue = encodeSession({
-      uid: input.uid,
-      email,
+      uid: verified.uid,
+      email: verified.email,
       store_slug: input.storeSlug,
       store_id: store.store_id,
       tenant_id: store.tenant_id,
@@ -185,7 +173,7 @@ export async function customerSignIn(
     // Reads the mp_referral cookie captured by middleware on a prior
     // page hit, so referral attribution survives the GIP signup dance.
     const referralCode = c.get("mp_referral")?.value;
-    await ensureLoyaltyEnrollment(input.storeSlug, email, referralCode);
+    await ensureLoyaltyEnrollment(input.storeSlug, verified.email, referralCode);
     if (referralCode) {
       // Burn the cookie so the same invite link can't be replayed by
       // the same browser for another account.
@@ -194,6 +182,13 @@ export async function customerSignIn(
 
     return { ok: true };
   } catch (err) {
+    if (err instanceof GIPTokenVerificationError) {
+      return {
+        ok: false,
+        code: "invalid_token",
+        message: "Your sign-in session could not be verified. Please sign in again.",
+      };
+    }
     return {
       ok: false,
       code: "unknown",

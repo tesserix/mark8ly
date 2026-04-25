@@ -146,7 +146,7 @@ func main() {
 	)
 	verifHandler := verification.NewHandler(verifSvc)
 
-	vendorClient := marketplaceapi.NewVendorClient(cfg.MarketplaceAPIURL)
+	vendorClient := marketplaceapi.NewVendorClient(cfg.MarketplaceAPIURL, cfg.MarketplaceInternalAuthSecret)
 
 	onboardingSvc := onboarding.NewService(onboarding.Config{
 		DB:                    conn,

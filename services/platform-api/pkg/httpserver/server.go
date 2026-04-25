@@ -19,11 +19,26 @@ func New(env string, log *slog.Logger) *gin.Engine {
 	}
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(securityHeaders(env))
 	r.Use(requestLogger(log))
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 	return r
+}
+
+func securityHeaders(env string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-XSS-Protection", "0")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		if env != "dev" {
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		c.Next()
+	}
 }
 
 func requestLogger(log *slog.Logger) gin.HandlerFunc {

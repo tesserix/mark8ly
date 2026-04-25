@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 
-import { decodeSession } from "@/lib/session";
+import { decodeSessionForScope } from "@/lib/session";
 import { resolveStoreSlug } from "@/lib/slug";
 import { ContactForm } from "./ContactForm";
 
@@ -20,7 +20,9 @@ export default async function ContactPage() {
   const storeSlug = await resolveStoreSlug(h.get("host"));
   const c = await cookies();
   const sessionCookie = c.get("mp_customer_session")?.value;
-  const session = sessionCookie ? decodeSession(sessionCookie) : null;
+  const session = sessionCookie
+    ? decodeSessionForScope(sessionCookie, { storeSlug })
+    : null;
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-16 sm:px-6 sm:py-24">

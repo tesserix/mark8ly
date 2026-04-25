@@ -2,7 +2,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { decodeSession } from "@/lib/auth";
+import { decodeSessionForScope } from "@/lib/session";
 import { resolveStoreSlug } from "@/lib/slug";
 
 import { ReplyForm } from "./ReplyForm";
@@ -59,9 +59,12 @@ export default async function TicketDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const h = await headers();
+  const storeSlug = await resolveStoreSlug(h.get("host"));
+
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
-  const session = decodeSession(sessionCookie);
+  const session = decodeSessionForScope(sessionCookie, { storeSlug });
 
   if (!session) {
     return (
@@ -75,9 +78,6 @@ export default async function TicketDetailPage({
       </div>
     );
   }
-
-  const h = await headers();
-  const storeSlug = await resolveStoreSlug(h.get("host"));
 
   const apiHeaders: Record<string, string> = {
     Accept: "application/json",

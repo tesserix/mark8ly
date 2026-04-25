@@ -12,7 +12,7 @@ import { notFound } from "next/navigation";
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { getProductByHandle } from "@/lib/api/marketplace-api";
 import { resolveStoreSlug } from "@/lib/slug";
-import { hasSessionCookie } from "@/lib/auth";
+import { decodeSessionForScope } from "@/lib/session";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { MediaGallery } from "@/components/MediaGallery";
 import { ProductDetails } from "@/components/ProductDetails";
@@ -64,6 +64,12 @@ export default async function StorefrontProductPage({
   const product = await getProductByHandle(slug, handle);
   if (!product) notFound();
 
+  const sessionCookie = (await cookies()).get("mp_customer_session")?.value ?? "";
+  const session = decodeSessionForScope(sessionCookie, {
+    storeSlug: slug,
+    storeId: store.id,
+  });
+
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
@@ -82,7 +88,7 @@ export default async function StorefrontProductPage({
 
         <ProductReviews
           productHandle={handle}
-          isAuthenticated={hasSessionCookie((await cookies()).toString())}
+          isAuthenticated={Boolean(session)}
         />
       </div>
     </main>

@@ -24,7 +24,7 @@
 
 import { cookies } from "next/headers";
 
-import { onboarding, tenants, PlatformApiError } from "@/lib/api/platform-api";
+import { onboarding, tenants, users, PlatformApiError } from "@/lib/api/platform-api";
 import { autoLogin as bffAutoLogin, AuthBffError } from "@/lib/auth/auth-bff";
 import { config, publicConfig } from "@/lib/config";
 
@@ -200,6 +200,16 @@ export async function completeOnboarding(
         code: "draft_incomplete",
         message:
           "We couldn't recover your store details. Please start onboarding again.",
+      };
+    }
+
+    const existingTenants = await users.listMemberTenants(input.gipUid);
+    if (existingTenants.length > 0) {
+      return {
+        ok: false,
+        code: "identity_already_has_store",
+        message:
+          "This admin identity is already connected to a store. Use a different email for a separate admin identity, or sign in to the existing account and add a store from Settings.",
       };
     }
 

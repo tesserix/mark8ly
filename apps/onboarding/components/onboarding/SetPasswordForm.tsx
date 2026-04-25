@@ -24,7 +24,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Input, Label } from "@tesserix/web";
 
-import { signUp, signIn, signInWithGoogle, GIPSignupError } from "@/lib/gip/signup";
+import { signUp, signInWithGoogle, GIPSignupError } from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
 import { completeOnboarding } from "@/app/onboarding/actions";
 import { useOnboardingStore } from "@/lib/store/onboarding-store";
@@ -82,34 +82,14 @@ export function SetPasswordForm({ sessionId, email }: Props) {
           });
           return;
         }
-        // User already has a GIP account from a previous onboarding.
-        // Sign them in instead — they're creating a new tenant/store.
         if (
           err instanceof GIPSignupError &&
           /EMAIL_EXISTS/.test(err.message)
         ) {
-          try {
-            const gip = await signIn(email, values.password);
-            uid = gip.uid;
-            idToken = gip.idToken;
-          } catch (signInErr) {
-            if (
-              signInErr instanceof GIPSignupError &&
-              /INVALID_PASSWORD|INVALID_LOGIN_CREDENTIALS/.test(signInErr.message)
-            ) {
-              setError("password", {
-                type: "server",
-                message: "Incorrect password for your existing account.",
-              });
-              return;
-            }
-            setSubmitError(
-              signInErr instanceof Error
-                ? `Sign-in failed: ${signInErr.message}`
-                : "Sign-in failed.",
-            );
-            return;
-          }
+          setSubmitError(
+            "An admin account already exists for this email. Use a different email for a separate admin identity, or sign in to that existing account and add a store from Settings.",
+          );
+          return;
         } else {
           setSubmitError(
             err instanceof Error

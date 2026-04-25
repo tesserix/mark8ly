@@ -1,7 +1,7 @@
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 
-import { decodeSession } from "@/lib/auth";
+import { decodeSessionForScope } from "@/lib/session";
 import { resolveStoreSlug } from "@/lib/slug";
 import { TicketsHeaderSection } from "./TicketsHeaderSection";
 
@@ -69,9 +69,12 @@ function formatDate(iso: string): string {
 }
 
 export default async function TicketsPage() {
+  const h = await headers();
+  const storeSlug = await resolveStoreSlug(h.get("host"));
+
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
-  const session = decodeSession(sessionCookie);
+  const session = decodeSessionForScope(sessionCookie, { storeSlug });
 
   if (!session) {
     return (
@@ -85,9 +88,6 @@ export default async function TicketsPage() {
       </div>
     );
   }
-
-  const h = await headers();
-  const storeSlug = await resolveStoreSlug(h.get("host"));
 
   let tickets: TicketSummary[] = [];
   let fetchError = false;

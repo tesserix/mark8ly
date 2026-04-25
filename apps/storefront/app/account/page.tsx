@@ -1,6 +1,6 @@
 import { cookies, headers } from "next/headers";
 import { resolveStoreSlug } from "@/lib/slug";
-import { decodeSession } from "@/lib/auth";
+import { decodeSessionForScope } from "@/lib/session";
 import { ProfileForm } from "@/components/account/ProfileForm";
 
 export const metadata = {
@@ -18,7 +18,7 @@ export default async function AccountDashboardPage() {
 
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
-  const session = decodeSession(sessionCookie);
+  const session = decodeSessionForScope(sessionCookie, { storeSlug });
 
   if (!session) {
     return (

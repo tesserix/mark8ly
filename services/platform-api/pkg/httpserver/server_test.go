@@ -40,3 +40,23 @@ func TestNew_DevMode_LogsAtDebugLevel(t *testing.T) {
 	_ = New("dev", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	_ = New("prod", slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
+
+func TestNew_AddsSecurityHeaders(t *testing.T) {
+	r := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assertHeader(t, rec, "X-Content-Type-Options", "nosniff")
+	assertHeader(t, rec, "X-Frame-Options", "DENY")
+	assertHeader(t, rec, "Referrer-Policy", "strict-origin-when-cross-origin")
+	assertHeader(t, rec, "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+}
+
+func assertHeader(t *testing.T, rec *httptest.ResponseRecorder, key, want string) {
+	t.Helper()
+	if got := rec.Header().Get(key); got != want {
+		t.Fatalf("%s = %q, want %q", key, got, want)
+	}
+}

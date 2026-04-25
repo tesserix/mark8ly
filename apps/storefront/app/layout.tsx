@@ -28,7 +28,8 @@ import { PromotionBar } from "@/components/PromotionBar";
 // import { OttoSupportChat } from "@/components/OttoSupportChat";
 import { Toaster } from "@/components/Toaster";
 import { resolveStoreSlug } from "@/lib/slug";
-import { buildLoginUrl, buildLogoutUrl, hasSessionCookie, decodeSession } from "@/lib/auth";
+import { buildLoginUrl, buildLogoutUrl } from "@/lib/auth";
+import { decodeSessionForScope } from "@/lib/session";
 import { fetchBranding } from "@/lib/api/marketplace-api";
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 
@@ -156,9 +157,6 @@ export default async function RootLayout({ children }: RootLayoutProps) {
 
   // --- Customer auth state ---
   const cookieStore = await cookies();
-  const cookieHeader = cookieStore.toString();
-  const authenticated = hasSessionCookie(cookieHeader);
-
   const protocol = h.get("x-forwarded-proto") ?? "https";
   const origin = host ? `${protocol}://${host}` : "";
   const loginUrl = buildLoginUrl(`${origin}/`);
@@ -167,27 +165,25 @@ export default async function RootLayout({ children }: RootLayoutProps) {
   let displayName: string | null = null;
   let email: string | null = null;
 
-  if (authenticated) {
-    const sessionCookie = cookieStore.get("mp_customer_session");
-    const session = sessionCookie
-      ? decodeSession(sessionCookie.value)
-      : null;
-    if (session) {
-      email = session.email;
-      // Derive a display name from the email for now. Once the
-      // customer profile has first_name/last_name populated, we can
-      // fetch those from marketplace-api.
-      const local = session.email.split("@")[0] ?? "";
-      const first = local.split(/[+.\-_]/)[0] ?? "";
-      displayName =
-        first && /^[a-z]+$/i.test(first)
-          ? first.charAt(0).toUpperCase() + first.slice(1).toLowerCase()
-          : null;
-    }
+  const sessionCookie = cookieStore.get("mp_customer_session");
+  const session = sessionCookie
+    ? decodeSessionForScope(sessionCookie.value, { storeSlug })
+    : null;
+  if (session) {
+    email = session.email;
+    // Derive a display name from the email for now. Once the
+    // customer profile has first_name/last_name populated, we can
+    // fetch those from marketplace-api.
+    const local = session.email.split("@")[0] ?? "";
+    const first = local.split(/[+.\-_]/)[0] ?? "";
+    displayName =
+      first && /^[a-z]+$/i.test(first)
+        ? first.charAt(0).toUpperCase() + first.slice(1).toLowerCase()
+        : null;
   }
 
   const authState = {
-    isAuthenticated: authenticated,
+    isAuthenticated: Boolean(email),
     displayName,
     email,
     loginUrl,

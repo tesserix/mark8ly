@@ -10,7 +10,7 @@
 // prefix) so client components can't hit platform-api directly. The
 // admin's /api/locations/* routes do the SSR-side fetch and forward.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -20,6 +20,15 @@ import {
 } from "@tesserix/web";
 
 import type { Country, State } from "@/lib/api/platform-api";
+
+interface AddressSuggestion {
+  description: string;
+  line1: string;
+  city: string;
+  region: string;
+  postal: string;
+  country: string;
+}
 
 export interface AddressValue {
   name: string;
@@ -64,6 +73,12 @@ interface AddressFieldsetProps {
    * targets billing-address autofill. Default "shipping".
    */
   autocompleteSection?: "shipping" | "billing";
+  /**
+   * When true, render the country as a read-only badge instead of a
+   * Select. Use for surfaces where the country is fixed by upstream
+   * context (e.g. shipping settings inherits the store's country).
+   */
+  lockCountry?: boolean;
 }
 
 const inputClass =
@@ -88,10 +103,17 @@ export function AddressFieldset({
   idPrefix = "addr",
   hideName = false,
   autocompleteSection = "shipping",
+  lockCountry = false,
 }: AddressFieldsetProps) {
   const [countries, setCountries] = useState<Country[]>([]);
   const [states, setStates] = useState<State[]>([]);
   const [statesLoading, setStatesLoading] = useState(false);
+
+  // Photon-backed address autocomplete on Address line 1.
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // One-shot fetch of the country reference list via admin proxy.
   useEffect(() => {
@@ -143,6 +165,48 @@ export function AddressFieldset({
   };
 
   const stateInUse = states.length > 0;
+  const selectedCountry = countries.find((c) => c.code === value.country);
+
+  function onLine1Change(text: string) {
+    update("line1", text);
+    if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
+    if (text.trim().length < 3) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    fetchTimerRef.current = setTimeout(async () => {
+      const params = new URLSearchParams({ q: text });
+      if (value.country) params.set("country", value.country);
+      try {
+        const res = await fetch(
+          `/api/locations/autocomplete?${params.toString()}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const body = (await res.json()) as { data: AddressSuggestion[] };
+        setSuggestions(body.data ?? []);
+        setShowSuggestions(true);
+      } catch {
+        // Silent — autocomplete is best-effort.
+      }
+    }, 250);
+  }
+
+  function selectSuggestion(s: AddressSuggestion) {
+    onChange({
+      ...value,
+      line1: s.line1 || value.line1,
+      city: s.city || value.city,
+      region: s.region || value.region,
+      postal: s.postal || value.postal,
+      // When the country is locked by the parent, never overwrite it
+      // from a Photon hit — the merchant picked the wrong row.
+      country: lockCountry ? value.country : s.country || value.country,
+    });
+    setSuggestions([]);
+    setShowSuggestions(false);
+  }
 
   // Browser autofill works best when each input has a `name` attribute
   // matching the autocomplete value (some Chromium versions ignore
@@ -169,16 +233,57 @@ export function AddressFieldset({
       )}
 
       <Field label="Address line 1" htmlFor={`${idPrefix}-line1`}>
-        <input
-          id={`${idPrefix}-line1`}
-          name="address-line1"
-          type="text"
-          autoComplete={ac("address-line1")}
-          value={value.line1}
-          disabled={disabled}
-          onChange={(e) => update("line1", e.target.value)}
-          className={inputClass}
-        />
+        <div className="relative">
+          <input
+            id={`${idPrefix}-line1`}
+            name="address-line1"
+            type="text"
+            autoComplete={ac("address-line1")}
+            value={value.line1}
+            disabled={disabled}
+            onChange={(e) => onLine1Change(e.target.value)}
+            onFocus={() => {
+              if (suggestions.length > 0) setShowSuggestions(true);
+            }}
+            onBlur={() => {
+              // Delay so onMouseDown on a suggestion fires before the
+              // popover is removed.
+              if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+              blurTimerRef.current = setTimeout(
+                () => setShowSuggestions(false),
+                150,
+              );
+            }}
+            className={inputClass}
+          />
+          {showSuggestions && suggestions.length > 0 && (
+            <ul
+              role="listbox"
+              className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--background-elevated,#FFFFFF)] shadow-[0_8px_24px_-12px_rgba(14,14,12,0.18)]"
+            >
+              {suggestions.map((s, i) => (
+                <li
+                  key={`${s.description}-${i}`}
+                  role="option"
+                  aria-selected="false"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    selectSuggestion(s);
+                  }}
+                  className="cursor-pointer px-3 py-2 text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--moss-700)]/[0.06]"
+                >
+                  {s.description}
+                </li>
+              ))}
+              <li
+                aria-hidden
+                className="border-t border-[color:var(--ink-900)]/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-[color:var(--ink-900)]/40"
+              >
+                Suggestions by Photon · OpenStreetMap contributors
+              </li>
+            </ul>
+          )}
+        </div>
       </Field>
 
       <Field label="Address line 2" htmlFor={`${idPrefix}-line2`}>
@@ -197,29 +302,51 @@ export function AddressFieldset({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Country" htmlFor={`${idPrefix}-country`}>
-          <Select
-            value={value.country || undefined}
-            onValueChange={updateCountry}
-            disabled={disabled || countries.length === 0}
-          >
-            <SelectTrigger id={`${idPrefix}-country`} className="w-full">
-              <SelectValue
-                placeholder={
-                  countries.length === 0 ? "Loading…" : "Select country"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {countries.map((c) => (
-                <SelectItem key={c.code} value={c.code}>
-                  <span aria-hidden className="mr-2">
-                    {c.flag_emoji}
-                  </span>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {lockCountry ? (
+            <div
+              id={`${idPrefix}-country`}
+              aria-readonly
+              className={`${inputClass} flex cursor-not-allowed items-center gap-2 bg-[color:var(--ink-900)]/[0.03]`}
+            >
+              {selectedCountry ? (
+                <>
+                  <span aria-hidden>{selectedCountry.flag_emoji}</span>
+                  <span>{selectedCountry.name}</span>
+                </>
+              ) : value.country ? (
+                <span>{value.country}</span>
+              ) : (
+                <span className="text-[color:var(--ink-900)]/30">—</span>
+              )}
+              <span className="ml-auto text-[10px] uppercase tracking-[0.12em] text-[color:var(--ink-900)]/40">
+                Set by store
+              </span>
+            </div>
+          ) : (
+            <Select
+              value={value.country || undefined}
+              onValueChange={updateCountry}
+              disabled={disabled || countries.length === 0}
+            >
+              <SelectTrigger id={`${idPrefix}-country`} className="w-full">
+                <SelectValue
+                  placeholder={
+                    countries.length === 0 ? "Loading…" : "Select country"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {countries.map((c) => (
+                  <SelectItem key={c.code} value={c.code}>
+                    <span aria-hidden className="mr-2">
+                      {c.flag_emoji}
+                    </span>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </Field>
 
         <Field label="State / Region" htmlFor={`${idPrefix}-region`}>

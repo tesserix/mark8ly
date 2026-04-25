@@ -199,6 +199,7 @@ export function ShippingConfigForm({
           value={address}
           onChange={setAddress}
           defaultCountryCode={defaultCountryCode}
+          lockCountry={Boolean(defaultCountryCode)}
           disabled={pending}
           idPrefix={`${provider}-wh`}
         />

@@ -87,6 +87,40 @@ func TestIntegration_ProductService_Create_SimpleProduct_HappyPath(t *testing.T)
 	}
 }
 
+// TestIntegration_ProductService_Create_StatusActive_SetsPublishedAt
+// guards the products_published_requires_active CHECK constraint.
+// Without an explicit published_at on Create with status='active', the
+// row insert fails at the DB layer with a 500. Repro of the prod 500
+// hit on australia-store 2026-04-25.
+func TestIntegration_ProductService_Create_StatusActive_SetsPublishedAt(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID := seedStore(t, tx)
+	svc := buildService(tx, media.NewFakeUploader())
+
+	active := product.StatusActive
+	agg, err := svc.Create(context.Background(), product.CreateRequest{
+		StoreID:  storeID,
+		TenantID: tenantID,
+		Title:    "Live Now",
+		Status:   active,
+		Variants: []product.VariantInput{{
+			SKU:          "LIVE-1",
+			Price:        decimal.NewFromFloat(9.99),
+			CurrencyCode: "USD",
+			InitialStock: 1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("create active: %v", err)
+	}
+	if agg.Product.Status != product.StatusActive {
+		t.Fatalf("status = %q, want active", agg.Product.Status)
+	}
+	if agg.Product.PublishedAt == nil {
+		t.Fatal("PublishedAt is nil for status=active — would violate products_published_requires_active CHECK")
+	}
+}
+
 func TestIntegration_ProductService_Create_EmptyTitle_ReturnsValidationFailed(t *testing.T) {
 	tx := testdb.NewTx(t)
 	storeID, tenantID := seedStore(t, tx)

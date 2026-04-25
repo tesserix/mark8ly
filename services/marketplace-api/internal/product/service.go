@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -294,6 +295,16 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Aggregate, er
 		descPtr = &description
 	}
 
+	// products_published_requires_active CHECK enforces that any row
+	// with status='active' has a non-null published_at. Update mirrors
+	// this via coalesce(published_at, now()); Create has to set it
+	// explicitly to avoid leaking the constraint violation as a 500.
+	var publishedAt *time.Time
+	if status == StatusActive {
+		now := time.Now().UTC()
+		publishedAt = &now
+	}
+
 	agg := &Aggregate{
 		Product: Product{
 			ID:                productID,
@@ -303,6 +314,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Aggregate, er
 			Title:             title,
 			Description:       descPtr,
 			Status:            status,
+			PublishedAt:       publishedAt,
 			Tags:              req.Tags,
 			SEOTitle:          req.SEOTitle,
 			SEODescription:    req.SEODescription,

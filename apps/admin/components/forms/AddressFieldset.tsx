@@ -1,17 +1,14 @@
 "use client";
 
 // AddressFieldset — shared warehouse / shipping address inputs backed by
-// platform-api's /locations reference data. Country comes from the seeded
-// countries list; State/Region is a dropdown when subdivisions are seeded
-// for the chosen country, otherwise a free-form text input.
+// platform-api's /locations reference data via admin proxy routes.
+// Country comes from the seeded countries list; State/Region is a
+// dropdown when subdivisions are seeded for the chosen country,
+// otherwise a free-form text input.
 //
-// Why this exists: ShippingConfigForm previously held 8 separate useStates
-// for the address fields (one per input) and a free-form 2-letter country
-// box that produced "Au" instead of "AU" in prod. Consolidating into a
-// single value/onChange contract + driving country from /locations
-// eliminates both class of bugs and gives every future address surface
-// (storefront checkout, store-general settings, etc.) a single component
-// to depend on.
+// Why proxy: PLATFORM_API_URL is a server-only env var (no NEXT_PUBLIC_
+// prefix) so client components can't hit platform-api directly. The
+// admin's /api/locations/* routes do the SSR-side fetch and forward.
 
 import { useEffect, useState } from "react";
 import {
@@ -22,12 +19,7 @@ import {
   SelectValue,
 } from "@tesserix/web";
 
-import {
-  listCountries,
-  listStatesByCountry,
-  type Country,
-  type State,
-} from "@/lib/api/platform-api";
+import type { Country, State } from "@/lib/api/platform-api";
 
 export interface AddressValue {
   name: string;
@@ -55,20 +47,38 @@ interface AddressFieldsetProps {
   value: AddressValue;
   onChange: (next: AddressValue) => void;
   /**
-   * ISO 3166 alpha-2 country code used to pre-select the country dropdown
-   * when `value.country` is empty. Typically `currentStore.country_code`.
+   * ISO 3166 alpha-2 country code used to pre-select the country
+   * dropdown when `value.country` is empty. Typically the store's
+   * `country_code`.
    */
   defaultCountryCode?: string;
   /** Disables every input. Useful while a server action is pending. */
   disabled?: boolean;
-  /** Prefix for input ids/labels so multiple fieldsets can coexist on the page. */
+  /** Prefix for input ids/labels so multiple fieldsets can coexist. */
   idPrefix?: string;
   /** Suppresses the "Warehouse name" row when the consumer manages it elsewhere. */
   hideName?: boolean;
+  /**
+   * Section token for browser autofill. "shipping" lets browsers /
+   * password managers offer the user's shipping address; "billing"
+   * targets billing-address autofill. Default "shipping".
+   */
+  autocompleteSection?: "shipping" | "billing";
 }
 
 const inputClass =
   "w-full rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50";
+
+async function fetchJSON<T>(url: string): Promise<T[]> {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data: T[] };
+    return body.data ?? [];
+  } catch {
+    return [];
+  }
+}
 
 export function AddressFieldset({
   value,
@@ -77,15 +87,16 @@ export function AddressFieldset({
   disabled = false,
   idPrefix = "addr",
   hideName = false,
+  autocompleteSection = "shipping",
 }: AddressFieldsetProps) {
   const [countries, setCountries] = useState<Country[]>([]);
   const [states, setStates] = useState<State[]>([]);
   const [statesLoading, setStatesLoading] = useState(false);
 
-  // One-shot fetch of the country reference list.
+  // One-shot fetch of the country reference list via admin proxy.
   useEffect(() => {
     let cancelled = false;
-    listCountries().then((data) => {
+    fetchJSON<Country>("/api/locations/countries").then((data) => {
       if (!cancelled) setCountries(data);
     });
     return () => {
@@ -94,8 +105,7 @@ export function AddressFieldset({
   }, []);
 
   // Pre-populate country from defaultCountryCode the first time the
-  // fieldset mounts with an empty value. Only fires once and only when
-  // there's nothing to overwrite.
+  // fieldset mounts with an empty value.
   useEffect(() => {
     if (!value.country && defaultCountryCode) {
       onChange({ ...value, country: defaultCountryCode });
@@ -103,9 +113,7 @@ export function AddressFieldset({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultCountryCode]);
 
-  // Re-fetch states whenever the chosen country changes. Empty list is a
-  // valid "no subdivisions seeded yet" signal — the consumer falls back
-  // to a text input below.
+  // Re-fetch states whenever the chosen country changes.
   useEffect(() => {
     let cancelled = false;
     if (!value.country) {
@@ -113,7 +121,9 @@ export function AddressFieldset({
       return;
     }
     setStatesLoading(true);
-    listStatesByCountry(value.country)
+    fetchJSON<State>(
+      `/api/locations/countries/${encodeURIComponent(value.country)}/states`,
+    )
       .then((data) => {
         if (!cancelled) setStates(data);
       })
@@ -129,14 +139,16 @@ export function AddressFieldset({
     onChange({ ...value, [field]: fieldValue });
 
   const updateCountry = (countryCode: string) => {
-    // Clear region: a subdivision code from the previous country is
-    // never valid for the new one and stale region values silently
-    // break carrier rate calls (e.g. ShipEngine rejects "NSW" with
-    // country=US).
     onChange({ ...value, country: countryCode, region: "" });
   };
 
   const stateInUse = states.length > 0;
+
+  // Browser autofill works best when each input has a `name` attribute
+  // matching the autocomplete value (some Chromium versions ignore
+  // autocomplete without a name) AND a section token so 1Password /
+  // iCloud / Chrome can distinguish shipping vs billing.
+  const ac = (token: string) => `${autocompleteSection} ${token}`;
 
   return (
     <div className="space-y-4">
@@ -144,8 +156,9 @@ export function AddressFieldset({
         <Field label="Warehouse name" htmlFor={`${idPrefix}-name`}>
           <input
             id={`${idPrefix}-name`}
+            name="organization"
             type="text"
-            autoComplete="organization"
+            autoComplete={ac("organization")}
             value={value.name}
             disabled={disabled}
             onChange={(e) => update("name", e.target.value)}
@@ -158,8 +171,9 @@ export function AddressFieldset({
       <Field label="Address line 1" htmlFor={`${idPrefix}-line1`}>
         <input
           id={`${idPrefix}-line1`}
+          name="address-line1"
           type="text"
-          autoComplete="address-line1"
+          autoComplete={ac("address-line1")}
           value={value.line1}
           disabled={disabled}
           onChange={(e) => update("line1", e.target.value)}
@@ -170,8 +184,9 @@ export function AddressFieldset({
       <Field label="Address line 2" htmlFor={`${idPrefix}-line2`}>
         <input
           id={`${idPrefix}-line2`}
+          name="address-line2"
           type="text"
-          autoComplete="address-line2"
+          autoComplete={ac("address-line2")}
           value={value.line2}
           disabled={disabled}
           onChange={(e) => update("line2", e.target.value)}
@@ -228,8 +243,9 @@ export function AddressFieldset({
           ) : (
             <input
               id={`${idPrefix}-region`}
+              name="address-level1"
               type="text"
-              autoComplete="address-level1"
+              autoComplete={ac("address-level1")}
               value={value.region}
               disabled={disabled || statesLoading}
               onChange={(e) => update("region", e.target.value)}
@@ -238,8 +254,8 @@ export function AddressFieldset({
                 !value.country
                   ? "Select a country first"
                   : statesLoading
-                  ? "Loading…"
-                  : "Enter state or region"
+                    ? "Loading…"
+                    : "Enter state or region"
               }
             />
           )}
@@ -250,8 +266,9 @@ export function AddressFieldset({
         <Field label="City / Suburb" htmlFor={`${idPrefix}-city`}>
           <input
             id={`${idPrefix}-city`}
+            name="address-level2"
             type="text"
-            autoComplete="address-level2"
+            autoComplete={ac("address-level2")}
             value={value.city}
             disabled={disabled}
             onChange={(e) => update("city", e.target.value)}
@@ -262,8 +279,9 @@ export function AddressFieldset({
         <Field label="Postal code" htmlFor={`${idPrefix}-postal`}>
           <input
             id={`${idPrefix}-postal`}
+            name="postal-code"
             type="text"
-            autoComplete="postal-code"
+            autoComplete={ac("postal-code")}
             value={value.postal}
             disabled={disabled}
             onChange={(e) => update("postal", e.target.value)}
@@ -274,8 +292,9 @@ export function AddressFieldset({
         <Field label="Phone" htmlFor={`${idPrefix}-phone`}>
           <input
             id={`${idPrefix}-phone`}
+            name="tel"
             type="tel"
-            autoComplete="tel"
+            autoComplete={ac("tel")}
             value={value.phone}
             disabled={disabled}
             onChange={(e) => update("phone", e.target.value)}

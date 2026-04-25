@@ -60,7 +60,10 @@ export function ShippingConfigForm({
 
   // Single object for the entire warehouse address. Replaces 8 separate
   // useStates that each forced a full-form rerender on every keystroke
-  // and made the country box accept "Au" instead of "AU".
+  // and made the country box accept "Au" instead of "AU". For a brand
+  // new carrier card (no existing config) the country starts pre-selected
+  // to the store's country, so the merchant only types the street/city
+  // bits — no scroll-and-pick through 240+ countries to find their own.
   const [address, setAddress] = useState<AddressValue>({
     name: existing?.warehouse_name ?? "",
     line1: existing?.warehouse_line1 ?? "",
@@ -68,7 +71,8 @@ export function ShippingConfigForm({
     city: existing?.warehouse_city ?? "",
     region: existing?.warehouse_region ?? "",
     postal: existing?.warehouse_postal ?? "",
-    country: existing?.warehouse_country ?? "",
+    country:
+      existing?.warehouse_country ?? defaultCountryCode ?? "",
     phone: existing?.warehouse_phone ?? "",
   });
 

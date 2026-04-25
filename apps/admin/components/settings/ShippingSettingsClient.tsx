@@ -19,12 +19,20 @@ interface ShippingSettingsClientProps {
   supported: SupportedProviders;
   configs: ShippingConfig[];
   editable: boolean;
+  /**
+   * ISO 3166 alpha-2 country code from the active store's session
+   * context. Used to pre-select the warehouse country dropdown. We
+   * trust this over `supported.country_code` because the session
+   * context is the canonical source.
+   */
+  storeCountry: string;
 }
 
 export function ShippingSettingsClient({
   supported,
   configs,
   editable,
+  storeCountry,
 }: ShippingSettingsClientProps) {
   const router = useRouter();
 
@@ -69,7 +77,7 @@ export function ShippingSettingsClient({
               <ShippingConfigForm
                 provider={carrier}
                 existing={cfg}
-                defaultCountryCode={supported.country_code}
+                defaultCountryCode={storeCountry || supported.country_code}
               />
             ) : (
               <p className="text-sm text-foreground-tertiary">

@@ -39,6 +39,7 @@ export default async function ShippingSettingsPage() {
             userId={userId}
             tenantId={tenantId}
             editable={editable}
+            storeCountry={(currentStore.country_code ?? "").toUpperCase()}
           />
         ) : (
           <p className="text-sm text-danger">
@@ -54,11 +55,13 @@ async function ShippingSettingsContent({
   userId,
   tenantId,
   editable,
+  storeCountry,
 }: {
   storeId: string;
   userId: string;
   tenantId: string;
   editable: boolean;
+  storeCountry: string;
 }) {
   const session = { userId, tenantId };
   const [supported, configs] = await Promise.all([
@@ -80,6 +83,7 @@ async function ShippingSettingsContent({
       supported={supported}
       configs={configs}
       editable={editable}
+      storeCountry={storeCountry}
     />
   );
 }

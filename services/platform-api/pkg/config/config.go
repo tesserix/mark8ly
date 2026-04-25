@@ -53,7 +53,7 @@ type Config struct {
 	// onboarding to create a tenant's self-vendor. Phase 1 of the
 	// tenant/vendor/store refactor. Default targets the in-cluster
 	// Knative admin revision; override with an env var for local dev.
-	MarketplaceAPIURL string `envconfig:"MARKETPLACE_API_URL" default:"http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8086"`
+	MarketplaceAPIURL string `envconfig:"MARKETPLACE_API_URL" default:"http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080"`
 
 	// MarketplaceInternalAuthSecret is the shared secret used to sign
 	// service-to-service calls to marketplace-api's HeaderTrustAuth

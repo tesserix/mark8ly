@@ -33,7 +33,7 @@ type VendorClient struct {
 }
 
 // NewVendorClient constructs a client pointed at the given base URL
-// (e.g. "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8086").
+// (e.g. "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080").
 // A 10-second default timeout is applied; the caller can swap the client
 // by assigning to the embedded field if a different policy is needed.
 func NewVendorClient(baseURL string) *VendorClient {

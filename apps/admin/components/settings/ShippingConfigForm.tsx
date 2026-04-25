@@ -15,15 +15,26 @@ import {
 
 import { saveShippingConfig } from "@/app/(admin)/settings/shipping/actions";
 import type { ShippingConfig } from "@/lib/api/settings-api";
+import {
+  AddressFieldset,
+  type AddressValue,
+} from "@/components/forms/AddressFieldset";
 
 interface ShippingConfigFormProps {
   provider: string;
   existing?: ShippingConfig;
+  /**
+   * ISO 3166 alpha-2 country code of the store, used to pre-select the
+   * warehouse country dropdown when the merchant first opens the form.
+   * Plumbed from `supported.country_code` in ShippingSettingsClient.
+   */
+  defaultCountryCode?: string;
 }
 
 export function ShippingConfigForm({
   provider,
   existing,
+  defaultCountryCode,
 }: ShippingConfigFormProps) {
   const router = useRouter();
   const [apiKey, setApiKey] = useState("");
@@ -47,15 +58,19 @@ export function ShippingConfigForm({
     existing?.default_pickup_slot_start ?? "14:00:00",
   );
 
-  // Warehouse address
-  const [whName, setWhName] = useState(existing?.warehouse_name ?? "");
-  const [whLine1, setWhLine1] = useState(existing?.warehouse_line1 ?? "");
-  const [whLine2, setWhLine2] = useState(existing?.warehouse_line2 ?? "");
-  const [whCity, setWhCity] = useState(existing?.warehouse_city ?? "");
-  const [whRegion, setWhRegion] = useState(existing?.warehouse_region ?? "");
-  const [whPostal, setWhPostal] = useState(existing?.warehouse_postal ?? "");
-  const [whCountry, setWhCountry] = useState(existing?.warehouse_country ?? "");
-  const [whPhone, setWhPhone] = useState(existing?.warehouse_phone ?? "");
+  // Single object for the entire warehouse address. Replaces 8 separate
+  // useStates that each forced a full-form rerender on every keystroke
+  // and made the country box accept "Au" instead of "AU".
+  const [address, setAddress] = useState<AddressValue>({
+    name: existing?.warehouse_name ?? "",
+    line1: existing?.warehouse_line1 ?? "",
+    line2: existing?.warehouse_line2 ?? "",
+    city: existing?.warehouse_city ?? "",
+    region: existing?.warehouse_region ?? "",
+    postal: existing?.warehouse_postal ?? "",
+    country: existing?.warehouse_country ?? "",
+    phone: existing?.warehouse_phone ?? "",
+  });
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -74,14 +89,14 @@ export function ShippingConfigForm({
         is_active: isActive,
         handling_fee: parseFloat(handlingFee) || 0,
         free_shipping_min: parseFloat(freeShippingMin) || 0,
-        warehouse_name: whName || undefined,
-        warehouse_line1: whLine1 || undefined,
-        warehouse_line2: whLine2 || undefined,
-        warehouse_city: whCity || undefined,
-        warehouse_region: whRegion || undefined,
-        warehouse_postal: whPostal || undefined,
-        warehouse_country: whCountry || undefined,
-        warehouse_phone: whPhone || undefined,
+        warehouse_name: address.name || undefined,
+        warehouse_line1: address.line1 || undefined,
+        warehouse_line2: address.line2 || undefined,
+        warehouse_city: address.city || undefined,
+        warehouse_region: address.region || undefined,
+        warehouse_postal: address.postal || undefined,
+        warehouse_country: address.country || undefined,
+        warehouse_phone: address.phone || undefined,
         auto_schedule_pickup: autoSchedulePickup,
         default_pickup_slot_start: defaultPickupSlotStart,
         // Slot end mirrors the start + 4h — kept implicit because the UI
@@ -176,34 +191,13 @@ export function ShippingConfigForm({
         <legend className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50 mb-2">
           Warehouse address
         </legend>
-        <Field label="Warehouse name" htmlFor={`${provider}-wh-name`}>
-          <input id={`${provider}-wh-name`} type="text" autoComplete="organization" value={whName} onChange={(e) => setWhName(e.target.value)} disabled={pending} className={inputClass} />
-        </Field>
-        <Field label="Address line 1" htmlFor={`${provider}-wh-line1`}>
-          <input id={`${provider}-wh-line1`} type="text" autoComplete="address-line1" value={whLine1} onChange={(e) => setWhLine1(e.target.value)} disabled={pending} className={inputClass} />
-        </Field>
-        <Field label="Address line 2" htmlFor={`${provider}-wh-line2`}>
-          <input id={`${provider}-wh-line2`} type="text" autoComplete="address-line2" value={whLine2} onChange={(e) => setWhLine2(e.target.value)} disabled={pending} className={inputClass} />
-        </Field>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="City" htmlFor={`${provider}-wh-city`}>
-            <input id={`${provider}-wh-city`} type="text" autoComplete="address-level2" value={whCity} onChange={(e) => setWhCity(e.target.value)} disabled={pending} className={inputClass} />
-          </Field>
-          <Field label="Region / State" htmlFor={`${provider}-wh-region`}>
-            <input id={`${provider}-wh-region`} type="text" autoComplete="address-level1" value={whRegion} onChange={(e) => setWhRegion(e.target.value)} disabled={pending} className={inputClass} />
-          </Field>
-          <Field label="Postal code" htmlFor={`${provider}-wh-postal`}>
-            <input id={`${provider}-wh-postal`} type="text" autoComplete="postal-code" value={whPostal} onChange={(e) => setWhPostal(e.target.value)} disabled={pending} className={inputClass} />
-          </Field>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Country" htmlFor={`${provider}-wh-country`}>
-            <input id={`${provider}-wh-country`} type="text" autoComplete="country" value={whCountry} onChange={(e) => setWhCountry(e.target.value)} disabled={pending} maxLength={2} placeholder="US" className={inputClass} />
-          </Field>
-          <Field label="Phone" htmlFor={`${provider}-wh-phone`}>
-            <input id={`${provider}-wh-phone`} type="tel" autoComplete="tel" value={whPhone} onChange={(e) => setWhPhone(e.target.value)} disabled={pending} className={inputClass} />
-          </Field>
-        </div>
+        <AddressFieldset
+          value={address}
+          onChange={setAddress}
+          defaultCountryCode={defaultCountryCode}
+          disabled={pending}
+          idPrefix={`${provider}-wh`}
+        />
       </fieldset>
 
       {/* Pickup automation — Delhivery only, but the form is

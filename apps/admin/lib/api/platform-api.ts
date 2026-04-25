@@ -682,6 +682,14 @@ export interface Country {
   region: string;
 }
 
+export interface State {
+  id: string;
+  country_code: string;
+  code: string;
+  name: string;
+  type: string;
+}
+
 export interface Currency {
   code: string;
   name: string;
@@ -703,6 +711,21 @@ export async function listCountries(): Promise<Country[]> {
     );
     if (!res.ok) return [];
     const body = (await res.json()) as { data: Country[] };
+    return body.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function listStatesByCountry(code: string): Promise<State[]> {
+  if (!code) return [];
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/api/v1/locations/countries/${encodeURIComponent(code)}/states`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data: State[] };
     return body.data ?? [];
   } catch {
     return [];

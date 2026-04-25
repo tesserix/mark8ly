@@ -66,7 +66,11 @@ export function ShippingSettingsClient({
             }
           >
             {editable ? (
-              <ShippingConfigForm provider={carrier} existing={cfg} />
+              <ShippingConfigForm
+                provider={carrier}
+                existing={cfg}
+                defaultCountryCode={supported.country_code}
+              />
             ) : (
               <p className="text-sm text-foreground-tertiary">
                 You do not have permission to edit this configuration.

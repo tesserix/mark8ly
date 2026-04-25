@@ -80,7 +80,19 @@ type seRateRequest struct {
 }
 
 type seRateOptions struct {
-	CarrierIDs []string `json:"carrier_ids,omitempty"`
+	// CarrierIDs is REQUIRED by ShipEngine /v1/rates — without it the
+	// server responds 400 (`carrier_ids is required`). We auto-fetch
+	// from /v1/carriers (the merchant's connected carriers) so the
+	// admin form doesn't need a per-carrier picker.
+	CarrierIDs []string `json:"carrier_ids"`
+}
+
+type seCarriersResponse struct {
+	Carriers []struct {
+		CarrierID   string `json:"carrier_id"`
+		CarrierCode string `json:"carrier_code"`
+		Disabled    bool   `json:"disabled_by_billing_plan"`
+	} `json:"carriers"`
 }
 
 type seShipment struct {
@@ -142,7 +154,18 @@ func (c *ShipEngineCarrier) GetRates(ctx context.Context, in RateRequest) ([]Rat
 		totalWeightGrams += item.WeightGrams * item.Quantity
 	}
 
+	carrierIDs, err := c.fetchCarrierIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("shipengine: get rates: %w", err)
+	}
+	if len(carrierIDs) == 0 {
+		return nil, fmt.Errorf(
+			"shipengine: get rates: ShipEngine account has no enabled carriers — connect at least one carrier (UPS / USPS / FedEx / sandbox carriers) in the ShipEngine dashboard before quoting rates",
+		)
+	}
+
 	body := seRateRequest{
+		RateOptions: seRateOptions{CarrierIDs: carrierIDs},
 		Shipment: seShipment{
 			ShipFrom: toSEAddress(in.FromAddress),
 			ShipTo:   toSEAddress(in.ToAddress),
@@ -159,7 +182,10 @@ func (c *ShipEngineCarrier) GetRates(ctx context.Context, in RateRequest) ([]Rat
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("shipengine: get rates: unexpected status %d", resp.StatusCode)
+		return nil, fmt.Errorf(
+			"shipengine: get rates: unexpected status %d: %s",
+			resp.StatusCode, readBodyTrimmed(resp.Body),
+		)
 	}
 
 	var rr seRateResponse
@@ -276,6 +302,52 @@ func (c *ShipEngineCarrier) CancelShipment(ctx context.Context, shipmentID strin
 }
 
 // --- helpers ---
+
+// fetchCarrierIDs lists the carriers connected to the merchant's
+// ShipEngine account. ShipEngine /v1/rates rejects requests without
+// carrier_ids, so we have to ask the API which carriers to quote.
+// Filters out carriers disabled by billing plan.
+func (c *ShipEngineCarrier) fetchCarrierIDs(ctx context.Context) ([]string, error) {
+	resp, err := c.doJSON(ctx, http.MethodGet, "/v1/carriers", nil)
+	if err != nil {
+		return nil, fmt.Errorf("list carriers: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(
+			"list carriers: unexpected status %d: %s",
+			resp.StatusCode, readBodyTrimmed(resp.Body),
+		)
+	}
+
+	var body seCarriersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("list carriers: decode: %w", err)
+	}
+
+	ids := make([]string, 0, len(body.Carriers))
+	for _, ca := range body.Carriers {
+		if ca.Disabled || ca.CarrierID == "" {
+			continue
+		}
+		ids = append(ids, ca.CarrierID)
+	}
+	return ids, nil
+}
+
+// readBodyTrimmed reads up to 1 KiB of the response body and returns
+// it as a string. Used in error messages so an unexpected ShipEngine
+// status code surfaces ShipEngine's own error explanation instead of a
+// bare "unexpected status 400".
+func readBodyTrimmed(r io.Reader) string {
+	const cap = 1024
+	b, err := io.ReadAll(io.LimitReader(r, cap))
+	if err != nil {
+		return ""
+	}
+	return string(bytes.TrimSpace(b))
+}
 
 func (c *ShipEngineCarrier) doJSON(ctx context.Context, method, path string, payload any) (*http.Response, error) {
 	var bodyReader io.Reader

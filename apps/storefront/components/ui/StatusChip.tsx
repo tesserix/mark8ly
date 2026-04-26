@@ -47,7 +47,11 @@ const TONE_VARS: Record<StatusTone, { fg: string; bg: string; border: string }> 
     border: "var(--storefront-info-border)",
   },
   neutral: {
-    fg: "var(--storefront-text)",
+    // Hardcoded dark fg — `--storefront-text` is overridden to a light
+    // colour on dark merchant themes, which produced an invisible
+    // light-on-light pill (#M-AUS-260426-00001 rendered as a blank
+    // white box on the dark theme). Same lock as the bg side.
+    fg: "#0E0E0C",
     bg: "var(--storefront-neutral-bg)",
     border: "var(--storefront-neutral-border)",
   },

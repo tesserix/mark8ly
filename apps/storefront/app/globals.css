@@ -73,23 +73,30 @@
 }
 
 /* Derived status surfaces + borders — all computed from the single
-   source colour per tone. Isolated from :root so they re-compute
-   if a merchant overrides any source colour inline. */
+   source colour per tone. Pinned to paper white instead of
+   var(--storefront-background) on purpose: when a merchant configures
+   a dark theme, mixing 10% green against near-black still produces
+   near-black, and the chip's dark-on-dark text is unreadable (live
+   incident: "Confirmed" pill on a dark theme rendered as a faint
+   bluish smudge). Anchoring against paper guarantees a light tint
+   regardless of theme, which keeps the source-colour foreground text
+   high-contrast on both light and dark surfaces. Mix percentage bumped
+   from 10–12% → 22% so the chip itself stands out from the page. */
 :root {
-  --storefront-success-bg: color-mix(in oklab, var(--storefront-success) 10%, var(--storefront-background, #F7F6F2));
-  --storefront-success-border: color-mix(in oklab, var(--storefront-success) 30%, transparent);
+  --storefront-success-bg: color-mix(in oklab, var(--storefront-success) 22%, #F7F6F2);
+  --storefront-success-border: color-mix(in oklab, var(--storefront-success) 45%, transparent);
 
-  --storefront-warning-bg: color-mix(in oklab, var(--storefront-warning) 12%, var(--storefront-background, #F7F6F2));
-  --storefront-warning-border: color-mix(in oklab, var(--storefront-warning) 32%, transparent);
+  --storefront-warning-bg: color-mix(in oklab, var(--storefront-warning) 22%, #F7F6F2);
+  --storefront-warning-border: color-mix(in oklab, var(--storefront-warning) 45%, transparent);
 
-  --storefront-danger-bg: color-mix(in oklab, var(--storefront-danger) 10%, var(--storefront-background, #F7F6F2));
-  --storefront-danger-border: color-mix(in oklab, var(--storefront-danger) 30%, transparent);
+  --storefront-danger-bg: color-mix(in oklab, var(--storefront-danger) 22%, #F7F6F2);
+  --storefront-danger-border: color-mix(in oklab, var(--storefront-danger) 45%, transparent);
 
-  --storefront-info-bg: color-mix(in oklab, var(--storefront-info) 10%, var(--storefront-background, #F7F6F2));
-  --storefront-info-border: color-mix(in oklab, var(--storefront-info) 28%, transparent);
+  --storefront-info-bg: color-mix(in oklab, var(--storefront-info) 22%, #F7F6F2);
+  --storefront-info-border: color-mix(in oklab, var(--storefront-info) 45%, transparent);
 
-  --storefront-neutral-bg: color-mix(in oklab, var(--storefront-text, #0E0E0C) 4%, var(--storefront-background, #F7F6F2));
-  --storefront-neutral-border: color-mix(in oklab, var(--storefront-text, #0E0E0C) 15%, transparent);
+  --storefront-neutral-bg: #ECEAE3;
+  --storefront-neutral-border: color-mix(in oklab, #0E0E0C 25%, transparent);
 }
 
 /* ============================================================

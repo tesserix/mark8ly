@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -1066,6 +1067,20 @@ func (h *ShipmentsHandler) fetchLabelBytes(ctx context.Context, storeID string, 
 			"this shipment has a mock tracking number from an earlier test run and will never produce a real label — delete it and click 'Create shipping label' again")
 	}
 
+	// If the carrier returned a public download URL on create
+	// (ShipEngine /v1/downloads/..., Sendle's S3 link, etc.), just GET
+	// that URL and stream the bytes back. Saves a round-trip through
+	// the carrier API, and unblocks carriers that don't implement
+	// LabelFetcher (anything other than Delhivery today). Skip our own
+	// proxy URL — that recurses.
+	if strings.HasPrefix(rec.LabelURL, "https://") || strings.HasPrefix(rec.LabelURL, "http://") {
+		pdf, ct, err := fetchLabelByURL(ctx, rec.LabelURL)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("shipments: fetch label url: %w", err)
+		}
+		return rec, pdf, ct, nil
+	}
+
 	carrierCfg, err := h.repo.GetCarrierConfig(ctx, storeID, rec.Carrier)
 	if err != nil {
 		return nil, nil, "", apperrors.ValidationFailed("provider",
@@ -1090,6 +1105,34 @@ func (h *ShipmentsHandler) fetchLabelBytes(ctx context.Context, storeID string, 
 		return nil, nil, "", fmt.Errorf("shipments: fetch label: %w", err)
 	}
 	return rec, pdf, ct, nil
+}
+
+// fetchLabelByURL streams a public label URL back as bytes. Used for
+// carriers (ShipEngine, Sendle) that return a downloadable URL on
+// CreateShipment instead of requiring a separate authenticated call.
+func fetchLabelByURL(ctx context.Context, url string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("upstream label fetch returned %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "application/pdf"
+	}
+	return body, ct, nil
 }
 
 // DownloadLabel handles GET /admin/stores/:storeId/orders/:id/shipments/:shipmentId/label.

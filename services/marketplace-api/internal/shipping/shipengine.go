@@ -531,7 +531,7 @@ func toSEAddress(a Address) seAddress {
 		region = strings.ToUpper(strings.TrimSpace(region))
 	}
 	return seAddress{
-		Name:          a.Name,
+		Name:          ensureFirstLastName(a.Name),
 		AddressLine1:  a.Line1,
 		AddressLine2:  a.Line2,
 		CityLocality:  city,
@@ -540,6 +540,28 @@ func toSEAddress(a Address) seAddress {
 		CountryCode:   country,
 		Phone:         a.Phone,
 	}
+}
+
+// ensureFirstLastName guarantees the name string has at least two
+// whitespace-separated tokens. CouriersPlease (and a few other
+// ShipEngine carriers) require a separate "last name" and reject the
+// label with "Please enter value contact/pickup/destination last name"
+// when only one token is present. We duplicate the single token so the
+// printed label still reads the original name, just twice — better
+// than dead-ending the merchant with a label that won't generate.
+//
+// Doesn't touch already-multi-token names. The proper fix is to
+// require first+last name at checkout/warehouse-settings input time;
+// this padding is the defensive last line so existing data still works.
+func ensureFirstLastName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.Contains(trimmed, " ") {
+		return trimmed
+	}
+	return trimmed + " " + trimmed
 }
 
 func mapSEStatus(code string) string {

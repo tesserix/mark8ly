@@ -58,7 +58,7 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
-      <ClearCartOnPaymentSuccess shouldClear={paymentSuccess} />
+      <ClearCartOnPaymentSuccess shouldClear={paymentSuccess} storeSlug={slug} />
       <div className="mx-auto max-w-6xl px-6 pt-8 sm:px-8">
         <StorefrontNav storeName={store?.name ?? ""} />
       </div>

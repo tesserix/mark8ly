@@ -988,12 +988,6 @@ export default function CheckoutPage() {
                 </dd>
               </div>
             )}
-            <div className="flex justify-between">
-              <dt className="opacity-60">Tax</dt>
-              <dd className="opacity-40" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
-                Calculated at checkout
-              </dd>
-            </div>
             <div className="flex justify-between border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-2 font-medium">
               <dt>Estimated total</dt>
               <dd
@@ -1003,6 +997,15 @@ export default function CheckoutPage() {
                 {formatPrice(total, currencyCode)}
               </dd>
             </div>
+            {/* Tax is computed server-side from your address at place-order
+                time and shown on the order confirmation page. We used to
+                render a "Calculated at checkout" placeholder line that
+                stayed there forever and confused buyers — replaced with a
+                short note under the total. */}
+            <p className="text-[11px] text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
+              Tax (if applicable) is calculated from your shipping address
+              when you place the order.
+            </p>
           </dl>
         </section>
 

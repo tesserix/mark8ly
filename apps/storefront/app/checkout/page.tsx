@@ -97,8 +97,14 @@ const EMPTY_ADDRESS: AddressFields = {
 const IN_PHONE_RE = /^[6-9]\d{9}$/;
 
 function isAddressFilled(a: AddressFields): boolean {
+  // Require both first and last name (two whitespace-separated tokens)
+  // — single-word names previously got duplicated to satisfy carriers
+  // like CouriersPlease, which then printed on the label as "Mahesh
+  // Mahesh". Enforcing first+last at input time makes the duplication
+  // unnecessary.
+  const nameTokens = a.name.trim().split(/\s+/).filter(Boolean);
   const basicsOk =
-    a.name.trim() !== "" &&
+    nameTokens.length >= 2 &&
     a.line1.trim() !== "" &&
     a.city.trim() !== "" &&
     a.country_code.trim().length === 2;
@@ -1132,24 +1138,59 @@ function AddressForm({ address, onChange, shipsToCountries }: AddressFormProps) 
   const update = (field: keyof AddressFields, value: string) =>
     onChange({ ...address, [field]: value });
 
+  // Split address.name into first/last on render and recombine on edit.
+  // CouriersPlease (and several Aramex variants) require a non-empty
+  // last_name on every address, so accepting "Mahesh" as a single-word
+  // full name forced us to pad the carrier payload with "Mahesh Mahesh"
+  // — which then printed on the label. Capturing first + last as
+  // distinct fields fixes it at the source.
+  const firstSpace = address.name.indexOf(" ");
+  const firstName = firstSpace === -1 ? address.name : address.name.slice(0, firstSpace);
+  const lastName = firstSpace === -1 ? "" : address.name.slice(firstSpace + 1);
+  const setFirst = (v: string) => {
+    const f = v.trim();
+    const l = lastName.trim();
+    onChange({ ...address, name: l ? `${f} ${l}` : f });
+  };
+  const setLast = (v: string) => {
+    const f = firstName.trim();
+    const l = v.trim();
+    onChange({ ...address, name: l ? `${f} ${l}` : f });
+  };
+
   const inputClass =
     "mt-1 w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]";
 
   return (
     <div className="mt-4 grid gap-4 sm:grid-cols-2">
-      <div className="sm:col-span-2">
-        <label htmlFor="ship-name" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
-          Full name
+      <div>
+        <label htmlFor="ship-first-name" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
+          First name
         </label>
         <input
-          id="ship-name"
+          id="ship-first-name"
           type="text"
           required
-          autoComplete="shipping name"
-          value={address.name}
-          onChange={(e) => update("name", e.target.value)}
+          autoComplete="shipping given-name"
+          value={firstName}
+          onChange={(e) => setFirst(e.target.value)}
           className={inputClass}
-          placeholder="Jane Doe"
+          placeholder="Jane"
+        />
+      </div>
+      <div>
+        <label htmlFor="ship-last-name" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
+          Last name
+        </label>
+        <input
+          id="ship-last-name"
+          type="text"
+          required
+          autoComplete="shipping family-name"
+          value={lastName}
+          onChange={(e) => setLast(e.target.value)}
+          className={inputClass}
+          placeholder="Doe"
         />
       </div>
       <div className="sm:col-span-2">

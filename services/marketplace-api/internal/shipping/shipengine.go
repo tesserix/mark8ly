@@ -105,6 +105,35 @@ func defaultPackageDimensions() seDimensions {
 	}
 }
 
+// resolvePackageDimensions picks the largest-of-each-axis across items
+// that carry per-variant dims, falling back to the default envelope
+// when nothing is set. Single-package shipment for now — multi-package
+// optimisation is a future enhancement.
+func resolvePackageDimensions(items []ParcelItem) seDimensions {
+	d := seDimensions{Unit: "centimeter"}
+	for _, it := range items {
+		if it.LengthCM > d.Length {
+			d.Length = it.LengthCM
+		}
+		if it.WidthCM > d.Width {
+			d.Width = it.WidthCM
+		}
+		if it.HeightCM > d.Height {
+			d.Height = it.HeightCM
+		}
+	}
+	if d.Length == 0 {
+		d.Length = defaultLengthCM
+	}
+	if d.Width == 0 {
+		d.Width = defaultWidthCM
+	}
+	if d.Height == 0 {
+		d.Height = defaultHeightCM
+	}
+	return d
+}
+
 type seRateRequest struct {
 	RateOptions seRateOptions `json:"rate_options"`
 	Shipment    seShipment    `json:"shipment"`
@@ -214,7 +243,7 @@ func (c *ShipEngineCarrier) GetRates(ctx context.Context, in RateRequest) ([]Rat
 			Packages: []sePackage{
 				{
 				Weight:     seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"},
-				Dimensions: defaultPackageDimensions(),
+				Dimensions: resolvePackageDimensions(in.Items),
 			},
 			},
 		},
@@ -296,7 +325,7 @@ func (c *ShipEngineCarrier) CreateShipment(ctx context.Context, in ShipmentReque
 			Packages: []sePackage{
 				{
 				Weight:     seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"},
-				Dimensions: defaultPackageDimensions(),
+				Dimensions: resolvePackageDimensions(in.Items),
 			},
 			},
 		},

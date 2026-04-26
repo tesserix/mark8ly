@@ -42,6 +42,10 @@ export interface StorefrontVariant {
   currency_code: string;
   in_stock: boolean;
   low_stock: boolean;
+  weight_grams?: number;
+  length_cm?: string; // decimal string from Go
+  width_cm?: string;
+  height_cm?: string;
   option_values: StorefrontVariantOptionRef[];
 }
 

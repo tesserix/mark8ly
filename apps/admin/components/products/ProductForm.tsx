@@ -135,6 +135,9 @@ export function ProductForm({
         sku: v.sku,
         stock: v.inventory_quantity,
         weight: (v.weight_grams ?? 0) / 1000,
+        lengthCm: v.length_cm ? Number(v.length_cm) : undefined,
+        widthCm: v.width_cm ? Number(v.width_cm) : undefined,
+        heightCm: v.height_cm ? Number(v.height_cm) : undefined,
         variantImageId: variantMedia?.id ?? null,
         optionValues: v.option_values.map((ov) => ({
           optionName: ov.option_name,

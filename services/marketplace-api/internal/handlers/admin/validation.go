@@ -48,6 +48,9 @@ type UpdateVariantRequest struct {
 	CostPrice         *decimal.Decimal `json:"cost_price,omitempty"`
 	CurrencyCode      *string          `json:"currency_code,omitempty"`
 	WeightGrams       *int             `json:"weight_grams,omitempty"`
+	LengthCM          *decimal.Decimal `json:"length_cm,omitempty"`
+	WidthCM           *decimal.Decimal `json:"width_cm,omitempty"`
+	HeightCM          *decimal.Decimal `json:"height_cm,omitempty"`
 	InventoryQuantity *int             `json:"inventory_quantity,omitempty"`
 	InventoryPolicy   *string          `json:"inventory_policy,omitempty" binding:"omitempty,oneof=deny continue"`
 	LowStockThreshold *int             `json:"low_stock_threshold,omitempty"`
@@ -176,6 +179,9 @@ func toServiceUpdateVariantBasics(req UpdateVariantRequest, productID, variantID
 		CompareAtPrice:    req.CompareAtPrice,
 		CostPrice:         req.CostPrice,
 		WeightGrams:       req.WeightGrams,
+		LengthCM:          req.LengthCM,
+		WidthCM:           req.WidthCM,
+		HeightCM:          req.HeightCM,
 		InventoryQuantity: req.InventoryQuantity,
 		InventoryPolicy:   req.InventoryPolicy,
 		LowStockThreshold: req.LowStockThreshold,
@@ -258,6 +264,9 @@ type CreateProductVariantInput struct {
 	CostPrice         *decimal.Decimal              `json:"cost_price,omitempty"`
 	CurrencyCode      string                        `json:"currency_code"`
 	WeightGrams       *int                          `json:"weight_grams,omitempty"`
+	LengthCM          *decimal.Decimal              `json:"length_cm,omitempty"`
+	WidthCM           *decimal.Decimal              `json:"width_cm,omitempty"`
+	HeightCM          *decimal.Decimal              `json:"height_cm,omitempty"`
 	InventoryQuantity int                           `json:"inventory_quantity"`
 	InventoryPolicy   string                        `json:"inventory_policy" binding:"omitempty,oneof=deny continue"`
 	LowStockThreshold *int                          `json:"low_stock_threshold,omitempty"`
@@ -374,6 +383,7 @@ func toServiceCreateRequest(req CreateProductRequest, tenantID, storeID, created
 			SKU: v.SKU, Barcode: v.Barcode,
 			Price: v.Price, CompareAtPrice: v.CompareAtPrice, CostPrice: v.CostPrice,
 			CurrencyCode: v.CurrencyCode, WeightGrams: v.WeightGrams,
+			LengthCM: v.LengthCM, WidthCM: v.WidthCM, HeightCM: v.HeightCM,
 			InitialStock:      v.InventoryQuantity,
 			InventoryPolicy:   v.InventoryPolicy,
 			LowStockThreshold: v.LowStockThreshold,
@@ -469,6 +479,7 @@ func toServiceUpdateAggregateRequest(req UpdateProductRequest, id, tenantID, sto
 				SKU: v.SKU, Barcode: v.Barcode,
 				Price: v.Price, CompareAtPrice: v.CompareAtPrice, CostPrice: v.CostPrice,
 				CurrencyCode: v.CurrencyCode, WeightGrams: v.WeightGrams,
+				LengthCM: v.LengthCM, WidthCM: v.WidthCM, HeightCM: v.HeightCM,
 				InitialStock:      v.InventoryQuantity,
 				InventoryPolicy:   v.InventoryPolicy,
 				LowStockThreshold: v.LowStockThreshold,

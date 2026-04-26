@@ -276,7 +276,12 @@ export default function CheckoutPage() {
         product_id: i.productId,
         variant_id: i.variantId,
         quantity: i.qty,
-        weight_grams: 500, // Default weight — real weight comes from product data in a follow-up
+        // Real weight + dims from the variant the buyer selected.
+        // Server falls back to default envelope when these are 0/missing.
+        weight_grams: i.weightGrams && i.weightGrams > 0 ? i.weightGrams : 500,
+        length_cm: i.lengthCm,
+        width_cm: i.widthCm,
+        height_cm: i.heightCm,
       })),
       ship_to: {
         line1: address.line1.trim(),

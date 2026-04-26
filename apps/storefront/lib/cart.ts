@@ -25,6 +25,14 @@ export interface CartItem {
   taxCode?: string;
   taxRateOverride?: string; // percentage as decimal string, e.g. "18.00"
   taxCategory?: CartItemTaxCategory;
+  // Shipping snapshot — same idea as the tax fields. Lets the
+  // /shipping-rates request carry the variant's actual weight +
+  // package dimensions instead of falling back to a hardcoded
+  // 500 g / 30 × 20 × 10 cm envelope.
+  weightGrams?: number;
+  lengthCm?: number;
+  widthCm?: number;
+  heightCm?: number;
 }
 
 export function addItem(items: readonly CartItem[], item: CartItem): CartItem[] {

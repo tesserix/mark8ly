@@ -85,6 +85,9 @@ export interface AdminVariantResponse {
   cost_price: string | null;
   currency_code: string;
   weight_grams: number | null;
+  length_cm: string | null;
+  width_cm: string | null;
+  height_cm: string | null;
   inventory_quantity: number;
   inventory_policy: "deny" | "continue";
   low_stock_threshold: number | null;
@@ -193,6 +196,9 @@ export interface CreateProductVariantInput {
   cost_price?: string;
   currency_code: string;
   weight_grams?: number;
+  length_cm?: number;
+  width_cm?: number;
+  height_cm?: number;
   inventory_quantity: number;
   inventory_policy?: "deny" | "continue";
   low_stock_threshold?: number;

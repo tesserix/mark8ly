@@ -83,6 +83,13 @@ export const productFormSchema = z.object({
         sku: z.string(),
         stock: z.number().int().min(0),
         weight: z.number().min(0),
+        // Optional package dimensions in centimetres. Used by the
+        // storefront /shipping-rates request so carriers (Australia
+        // Post / ShipEngine / etc.) can quote real prices instead of
+        // rejecting on missing dimensions.
+        lengthCm: z.number().min(0).optional(),
+        widthCm: z.number().min(0).optional(),
+        heightCm: z.number().min(0).optional(),
         variantImageId: z.string().nullable().optional(),
         optionValues: z.array(
           z.object({

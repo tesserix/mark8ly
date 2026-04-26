@@ -124,6 +124,24 @@ export function ProductDetails({ product }: ProductDetailsProps) {
         taxCode={product.tax_code ?? undefined}
         taxRateOverride={product.tax_rate_override ?? undefined}
         taxCategory={product.tax_category ?? undefined}
+        weightGrams={
+          selectedVariant?.weight_grams ?? defaultVariant?.weight_grams
+        }
+        lengthCm={
+          (selectedVariant?.length_cm ?? defaultVariant?.length_cm)
+            ? Number(selectedVariant?.length_cm ?? defaultVariant?.length_cm)
+            : undefined
+        }
+        widthCm={
+          (selectedVariant?.width_cm ?? defaultVariant?.width_cm)
+            ? Number(selectedVariant?.width_cm ?? defaultVariant?.width_cm)
+            : undefined
+        }
+        heightCm={
+          (selectedVariant?.height_cm ?? defaultVariant?.height_cm)
+            ? Number(selectedVariant?.height_cm ?? defaultVariant?.height_cm)
+            : undefined
+        }
         inStock={selectedVariant ? selectedVariant.in_stock : inStock}
         disabled={hasOptions && !selectedVariant}
         disabledReason={

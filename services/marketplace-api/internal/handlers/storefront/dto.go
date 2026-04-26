@@ -58,6 +58,10 @@ type StorefrontVariantResponse struct {
 	CurrencyCode   string                       `json:"currency_code"`
 	InStock        bool                         `json:"in_stock"`
 	LowStock       bool                         `json:"low_stock"`
+	WeightGrams    *int                         `json:"weight_grams,omitempty"`
+	LengthCM       *decimal.Decimal             `json:"length_cm,omitempty"`
+	WidthCM        *decimal.Decimal             `json:"width_cm,omitempty"`
+	HeightCM       *decimal.Decimal             `json:"height_cm,omitempty"`
 	OptionValues   []StorefrontVariantOptionRef `json:"option_values"`
 }
 
@@ -142,6 +146,10 @@ func ToStorefrontProductResponse(a *product.Aggregate, categories []StorefrontCa
 			CurrencyCode:   v.CurrencyCode,
 			InStock:        inStock,
 			LowStock:       lowStock,
+			WeightGrams:    v.WeightGrams,
+			LengthCM:       v.LengthCM,
+			WidthCM:        v.WidthCM,
+			HeightCM:       v.HeightCM,
 			OptionValues:   ovs,
 		})
 		if !havePrice {

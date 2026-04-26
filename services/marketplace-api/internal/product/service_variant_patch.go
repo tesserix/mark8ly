@@ -29,6 +29,9 @@ type UpdateVariantBasicsRequest struct {
 	CompareAtPrice    *decimal.Decimal
 	CostPrice         *decimal.Decimal
 	WeightGrams       *int
+	LengthCM          *decimal.Decimal
+	WidthCM           *decimal.Decimal
+	HeightCM          *decimal.Decimal
 	InventoryQuantity *int
 	InventoryPolicy   *string
 	LowStockThreshold *int
@@ -69,6 +72,15 @@ func (s *Service) UpdateVariantBasics(ctx context.Context, req UpdateVariantBasi
 	}
 	if req.WeightGrams != nil {
 		fields["weight_grams"] = *req.WeightGrams
+	}
+	if req.LengthCM != nil {
+		fields["length_cm"] = *req.LengthCM
+	}
+	if req.WidthCM != nil {
+		fields["width_cm"] = *req.WidthCM
+	}
+	if req.HeightCM != nil {
+		fields["height_cm"] = *req.HeightCM
 	}
 	if req.InventoryPolicy != nil {
 		fields["inventory_policy"] = *req.InventoryPolicy

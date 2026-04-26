@@ -26,6 +26,12 @@ export interface AddToCartButtonProps {
   taxCode?: string;
   taxRateOverride?: string;
   taxCategory?: CartItemTaxCategory;
+  // Shipping snapshot — variant weight + package dims so /shipping-rates
+  // can quote real numbers instead of using the server's default envelope.
+  weightGrams?: number;
+  lengthCm?: number;
+  widthCm?: number;
+  heightCm?: number;
 }
 
 export function AddToCartButton({
@@ -42,6 +48,10 @@ export function AddToCartButton({
   taxCode,
   taxRateOverride,
   taxCategory,
+  weightGrams,
+  lengthCm,
+  widthCm,
+  heightCm,
 }: AddToCartButtonProps) {
   const { add } = useCart();
   const [justAdded, setJustAdded] = useState(false);
@@ -70,6 +80,10 @@ export function AddToCartButton({
       taxCode,
       taxRateOverride,
       taxCategory,
+      weightGrams,
+      lengthCm,
+      widthCm,
+      heightCm,
     });
     setJustAdded(true);
     if (feedbackTimerRef.current !== null) {
@@ -95,6 +109,10 @@ export function AddToCartButton({
     taxCode,
     taxRateOverride,
     taxCategory,
+    weightGrams,
+    lengthCm,
+    widthCm,
+    heightCm,
   ]);
 
   if (!inStock) {

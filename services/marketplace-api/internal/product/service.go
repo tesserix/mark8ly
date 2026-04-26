@@ -141,6 +141,9 @@ type VariantInput struct {
 	CostPrice         *decimal.Decimal
 	CurrencyCode      string // must equal store currency
 	WeightGrams       *int
+	LengthCM          *decimal.Decimal
+	WidthCM           *decimal.Decimal
+	HeightCM          *decimal.Decimal
 	InitialStock      int
 	InventoryPolicy   string
 	LowStockThreshold *int
@@ -684,6 +687,9 @@ func buildVariants(
 			CostPrice:         in.CostPrice,
 			CurrencyCode:      in.CurrencyCode,
 			WeightGrams:       in.WeightGrams,
+			LengthCM:          in.LengthCM,
+			WidthCM:           in.WidthCM,
+			HeightCM:          in.HeightCM,
 			InventoryPolicy:   policy,
 			LowStockThreshold: in.LowStockThreshold,
 			Position:          in.Position,

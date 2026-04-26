@@ -180,6 +180,12 @@ export async function updateProductAction(
     price: v.price,
     inventory_quantity: v.stock,
     weight_grams: Math.round(v.weight * 1000),
+    // Pass through optional package dimensions so backfilled / future
+    // merchant-entered values aren't dropped on save. The form schema
+    // accepts them but the variant matrix UI doesn't yet show inputs.
+    length_cm: v.lengthCm,
+    width_cm: v.widthCm,
+    height_cm: v.heightCm,
     currency_code: ctx.currencyCode,
     option_values: v.optionValues.map((ov) => ({
       option_name: ov.optionName,
@@ -222,6 +228,15 @@ export async function updateProductAction(
         price: parsed.data.price,
         inventory_quantity: Number.isFinite(qty) ? qty : 0,
         weight_grams: firstVariant?.weight_grams ?? 0,
+        length_cm: firstVariant?.length_cm
+          ? Number(firstVariant.length_cm)
+          : undefined,
+        width_cm: firstVariant?.width_cm
+          ? Number(firstVariant.width_cm)
+          : undefined,
+        height_cm: firstVariant?.height_cm
+          ? Number(firstVariant.height_cm)
+          : undefined,
         currency_code: ctx.currencyCode,
         option_values: [],
       },

@@ -118,6 +118,9 @@ type Variant struct {
 	CostPrice         *decimal.Decimal `gorm:"column:cost_price;type:numeric(12,2)"                    json:"cost_price,omitempty"`
 	CurrencyCode      string          `gorm:"column:currency_code;type:char(3);not null"               json:"currency_code"`
 	WeightGrams       *int            `gorm:"column:weight_grams"                                      json:"weight_grams,omitempty"`
+	LengthCM          *decimal.Decimal `gorm:"column:length_cm;type:numeric(8,2)"                      json:"length_cm,omitempty"`
+	WidthCM           *decimal.Decimal `gorm:"column:width_cm;type:numeric(8,2)"                       json:"width_cm,omitempty"`
+	HeightCM          *decimal.Decimal `gorm:"column:height_cm;type:numeric(8,2)"                      json:"height_cm,omitempty"`
 	InventoryQuantity int             `gorm:"column:inventory_quantity;not null;default:0"             json:"inventory_quantity"`
 	InventoryPolicy   string          `gorm:"column:inventory_policy;type:varchar(20);not null;default:deny" json:"inventory_policy"`
 	LowStockThreshold *int            `gorm:"column:low_stock_threshold"                               json:"low_stock_threshold,omitempty"`

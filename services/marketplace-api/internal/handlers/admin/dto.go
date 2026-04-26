@@ -57,6 +57,9 @@ func ToAdminVariantResponse(v *product.Variant) AdminVariantResponse {
 		CostPrice:         v.CostPrice,
 		CurrencyCode:      v.CurrencyCode,
 		WeightGrams:       v.WeightGrams,
+		LengthCM:          v.LengthCM,
+		WidthCM:           v.WidthCM,
+		HeightCM:          v.HeightCM,
 		InventoryQuantity: v.InventoryQuantity,
 		InventoryPolicy:   v.InventoryPolicy,
 		LowStockThreshold: v.LowStockThreshold,
@@ -130,6 +133,9 @@ type AdminVariantResponse struct {
 	CostPrice         *decimal.Decimal        `json:"cost_price,omitempty"`
 	CurrencyCode      string                  `json:"currency_code"`
 	WeightGrams       *int                    `json:"weight_grams,omitempty"`
+	LengthCM          *decimal.Decimal        `json:"length_cm,omitempty"`
+	WidthCM           *decimal.Decimal        `json:"width_cm,omitempty"`
+	HeightCM          *decimal.Decimal        `json:"height_cm,omitempty"`
 	InventoryQuantity int                     `json:"inventory_quantity"`
 	InventoryPolicy   string                  `json:"inventory_policy"`
 	LowStockThreshold *int                    `json:"low_stock_threshold,omitempty"`
@@ -200,6 +206,7 @@ func ToAdminProductResponse(a *product.Aggregate, categories []AdminCategoryRef)
 			ID: v.ID, SKU: v.SKU, Barcode: v.Barcode,
 			Price: v.Price, CompareAtPrice: v.CompareAtPrice, CostPrice: v.CostPrice,
 			CurrencyCode: v.CurrencyCode, WeightGrams: v.WeightGrams,
+			LengthCM: v.LengthCM, WidthCM: v.WidthCM, HeightCM: v.HeightCM,
 			InventoryQuantity: v.InventoryQuantity, InventoryPolicy: v.InventoryPolicy,
 			LowStockThreshold: v.LowStockThreshold, OptionValues: ovs, Position: v.Position,
 		})

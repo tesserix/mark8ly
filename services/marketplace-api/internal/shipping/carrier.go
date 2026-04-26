@@ -104,11 +104,18 @@ type Address struct {
 }
 
 // ParcelItem describes a single item in the shipment for rate calculation.
+// Length/Width/Height are optional per-variant package dimensions in
+// centimetres. ShipEngineCarrier folds multi-item shipments into a
+// single envelope by taking the max along each axis (good enough until
+// real packing-cube logic lands).
 type ParcelItem struct {
 	Title       string
 	SKU         string
 	Quantity    int
 	WeightGrams int
+	LengthCM    float64
+	WidthCM     float64
+	HeightCM    float64
 }
 
 // RateRequest is sent to the carrier to get available shipping rates.

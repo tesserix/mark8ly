@@ -57,6 +57,14 @@ export interface ShippingRateItem {
   variant_id: string;
   quantity: number;
   weight_grams: number;
+  /**
+   * Optional package dimensions in centimetres. The carrier (Australia
+   * Post via ShipEngine, etc.) requires these — if any are missing the
+   * server falls back to a default 30 × 20 × 10 cm envelope.
+   */
+  length_cm?: number;
+  width_cm?: number;
+  height_cm?: number;
 }
 
 export interface ShippingRateAddress {

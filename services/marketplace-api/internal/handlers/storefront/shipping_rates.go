@@ -55,10 +55,13 @@ func (h *ShippingRatesHandler) resolveCredential(ctx context.Context, ref string
 
 // shippingRateItemRequest is a single item in the rate request body.
 type shippingRateItemRequest struct {
-	ProductID   string `json:"product_id"`
-	VariantID   string `json:"variant_id"`
-	Quantity    int    `json:"quantity"     binding:"required,min=1"`
-	WeightGrams int   `json:"weight_grams" binding:"required,min=1"`
+	ProductID   string  `json:"product_id"`
+	VariantID   string  `json:"variant_id"`
+	Quantity    int     `json:"quantity"     binding:"required,min=1"`
+	WeightGrams int     `json:"weight_grams" binding:"required,min=1"`
+	LengthCM    float64 `json:"length_cm,omitempty"`
+	WidthCM     float64 `json:"width_cm,omitempty"`
+	HeightCM    float64 `json:"height_cm,omitempty"`
 }
 
 // shippingRateAddressRequest is the destination address.
@@ -228,6 +231,9 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 		parcels = append(parcels, shipping.ParcelItem{
 			Quantity:    it.Quantity,
 			WeightGrams: it.WeightGrams,
+			LengthCM:    it.LengthCM,
+			WidthCM:     it.WidthCM,
+			HeightCM:    it.HeightCM,
 		})
 	}
 

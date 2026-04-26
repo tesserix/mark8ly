@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -63,8 +64,16 @@ type DocumentInput struct {
 	DocumentNumber string
 
 	// Order context — used in subject line + email body.
+	OrderID      string // uuid string — needed for the storefront PDF fetch
+	StoreSlug    string // also for the PDF fetch (URL templating)
 	OrderNumber  string
 	OrderURL     string // deep link to /account/orders/:id on the storefront
+	// DocumentURL is the direct PDF download URL on the storefront
+	// (/api/orders/:id/invoice or /api/orders/:id/receipt). Used as the
+	// CTA on invoice + receipt emails so a single click downloads the
+	// file instead of routing through the account page. Also kept
+	// around as a fallback when PDF attach fails.
+	DocumentURL  string
 	PlacedAt     time.Time
 	DeliveredAt  *time.Time // populated for receipts only
 
@@ -162,7 +171,13 @@ type renderData struct {
 	CTAButtonLabel  string
 	DocumentNumber  string
 	OrderNumber     string
+	// OrderURL points at the storefront's /account/orders/:id page —
+	// used by Cancellation/Refund emails. Invoice + Receipt emails
+	// override the CTA with DocumentURL (a direct PDF link) so a single
+	// click downloads the file instead of dropping the buyer on the
+	// account page.
 	OrderURL        string
+	DocumentURL     string
 	PlacedAt        string
 	DeliveredAt     string
 	GrandTotal      string
@@ -260,6 +275,7 @@ func render(kind Kind, in DocumentInput) (subject, html, text string, err error)
 		DocumentNumber:     in.DocumentNumber,
 		OrderNumber:        in.OrderNumber,
 		OrderURL:           in.OrderURL,
+		DocumentURL:        in.DocumentURL,
 		PlacedAt:           in.PlacedAt.Format("January 2, 2006"),
 		DeliveredAt:        deliveredAt,
 		GrandTotal:         in.GrandTotal.StringFixed(2),
@@ -342,10 +358,11 @@ func (m *LogMailer) log(kind Kind, in DocumentInput) error {
 // SendGridMailer sends order document emails via SendGrid v3. Mirrors
 // the giftcard mailer pattern (thin HTTP, no SDK).
 type SendGridMailer struct {
-	apiKey string
-	from   string
-	client *http.Client
-	logger *slog.Logger
+	apiKey     string
+	from       string
+	client     *http.Client
+	logger     *slog.Logger
+	pdfFetcher StorefrontPDFFetcher
 }
 
 // NewSendGridMailer constructs a SendGrid-backed Mailer.
@@ -356,6 +373,26 @@ func NewSendGridMailer(apiKey, from string, logger *slog.Logger) *SendGridMailer
 		client: &http.Client{Timeout: 15 * time.Second},
 		logger: logger,
 	}
+}
+
+// WithStorefrontPDFFetcher wires a fetcher that retrieves the rendered
+// PDF (invoice / receipt) from the storefront over the internal-auth
+// channel. When set, SendInvoice and SendReceipt attach the PDF to the
+// outgoing email — the canonical document arrives directly in the
+// buyer's inbox instead of asking them to click through to download it.
+func (m *SendGridMailer) WithStorefrontPDFFetcher(f StorefrontPDFFetcher) *SendGridMailer {
+	m.pdfFetcher = f
+	return m
+}
+
+// StorefrontPDFFetcher retrieves a rendered invoice or receipt PDF
+// from the storefront for the given order. Implementations call the
+// storefront's /api/internal/orders/:id/{invoice,receipt} routes with
+// the shared MARKETPLACE_INTERNAL_AUTH_SECRET so they can render PDFs
+// without a customer session cookie.
+type StorefrontPDFFetcher interface {
+	FetchInvoicePDF(ctx context.Context, in DocumentInput) ([]byte, error)
+	FetchReceiptPDF(ctx context.Context, in DocumentInput) ([]byte, error)
 }
 
 // SendInvoice renders + dispatches the invoice envelope.
@@ -390,6 +427,41 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 		return err
 	}
 
+	// Best-effort PDF attachment — when the fetcher is wired and we're
+	// sending an invoice or receipt, fetch the rendered PDF from the
+	// storefront and attach. Failures here are logged but don't block
+	// the email — the buyer still receives the HTML body and can view
+	// the document on their account page if a re-fetch is needed.
+	var attachments []sgAttachment
+	if (kind == KindInvoice || kind == KindReceipt) && m.pdfFetcher != nil {
+		var pdfBytes []byte
+		var pdfErr error
+		if kind == KindInvoice {
+			pdfBytes, pdfErr = m.pdfFetcher.FetchInvoicePDF(ctx, in)
+		} else {
+			pdfBytes, pdfErr = m.pdfFetcher.FetchReceiptPDF(ctx, in)
+		}
+		if pdfErr != nil {
+			if m.logger != nil {
+				m.logger.Warn("orderdoc: pdf fetch failed; sending email without attachment",
+					"kind", string(kind),
+					"order_number", in.OrderNumber,
+					"err", pdfErr)
+			}
+		} else if len(pdfBytes) > 0 {
+			filename := in.DocumentNumber + ".pdf"
+			if in.DocumentNumber == "" {
+				filename = "document-" + in.OrderNumber + ".pdf"
+			}
+			attachments = []sgAttachment{{
+				Content:     base64.StdEncoding.EncodeToString(pdfBytes),
+				Filename:    filename,
+				Type:        "application/pdf",
+				Disposition: "attachment",
+			}}
+		}
+	}
+
 	falsePtr := false
 	payload := sgRequest{
 		Personalizations: []sgPersonalization{{To: []sgAddress{{Email: in.Recipient}}}},
@@ -399,6 +471,7 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 			{Type: "text/plain", Value: textBody},
 			{Type: "text/html", Value: htmlBody},
 		},
+		Attachments: attachments,
 		TrackingSettings: &sgTrackingSettings{
 			ClickTracking:        &sgClickTracking{Enable: &falsePtr, EnableText: &falsePtr},
 			OpenTracking:         &sgOpenTracking{Enable: &falsePtr},
@@ -436,7 +509,17 @@ type sgRequest struct {
 	From             sgAddress           `json:"from"`
 	Subject          string              `json:"subject"`
 	Content          []sgContent         `json:"content"`
+	Attachments      []sgAttachment      `json:"attachments,omitempty"`
 	TrackingSettings *sgTrackingSettings `json:"tracking_settings,omitempty"`
+}
+
+// sgAttachment is SendGrid's attachment wire shape. Content MUST be
+// base64-encoded; SendGrid rejects raw bytes with a 400.
+type sgAttachment struct {
+	Content     string `json:"content"`
+	Filename    string `json:"filename"`
+	Type        string `json:"type,omitempty"`
+	Disposition string `json:"disposition,omitempty"`
 }
 
 type sgTrackingSettings struct {

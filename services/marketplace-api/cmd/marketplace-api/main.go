@@ -497,7 +497,14 @@ func main() {
 		// so local dev still exercises the dispatch path.
 		var orderDocMailer orderdoc.Mailer
 		if cfg.SendGridAPIKey != "" {
-			orderDocMailer = orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+			sg := orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+			// Wire the storefront PDF fetcher so invoice + receipt
+			// emails carry the rendered PDF as an attachment instead
+			// of asking the buyer to click through to download.
+			if pf := orderdoc.NewHTTPStorefrontPDFFetcher(cfg.StorefrontBaseURLTemplate, cfg.InternalAuthSecret); pf != nil {
+				sg = sg.WithStorefrontPDFFetcher(pf)
+			}
+			orderDocMailer = sg
 		} else {
 			orderDocMailer = &orderdoc.LogMailer{Logger: log}
 		}
@@ -1037,7 +1044,11 @@ func main() {
 		// only runs when the admin route was hit).
 		var orderDocMailerSF orderdoc.Mailer
 		if cfg.SendGridAPIKey != "" {
-			orderDocMailerSF = orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+			sg := orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+			if pf := orderdoc.NewHTTPStorefrontPDFFetcher(cfg.StorefrontBaseURLTemplate, cfg.InternalAuthSecret); pf != nil {
+				sg = sg.WithStorefrontPDFFetcher(pf)
+			}
+			orderDocMailerSF = sg
 		} else {
 			orderDocMailerSF = &orderdoc.LogMailer{Logger: log}
 		}

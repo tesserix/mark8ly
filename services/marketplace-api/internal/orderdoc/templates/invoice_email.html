@@ -97,27 +97,17 @@
             </td>
           </tr>
 
-          <!-- CTA -->
-          {{if .OrderURL}}
+          <!-- Invoice PDF is attached to this email; we surface that
+               instead of the old "View invoice" CTA which routed
+               buyers through the account page for the same file. -->
           <tr>
-            <td class="m8-pad" style="padding:28px 40px 36px 40px;">
-              <table cellspacing="0" cellpadding="0" border="0">
-                <tr>
-                  <td>
-                    <a href="{{.OrderURL}}" style="display:inline-block;background-color:{{.Theme.ColorButtonBg}};color:{{.Theme.ColorButtonText}};text-decoration:none;font-weight:600;padding:14px 28px;font-size:14px;letter-spacing:0.02em;border-radius:6px;">
-                      {{.CTAButtonLabel}}
-                    </a>
-                  </td>
-                </tr>
-              </table>
-              <p style="margin:14px 0 0 0;font-size:12px;color:{{.MutedCopy}};line-height:1.6;">
-                The button above opens your order page where you can download the full PDF invoice.
+            <td class="m8-pad" style="padding:18px 40px 36px 40px;">
+              <p style="margin:0;font-size:13px;color:{{.SupportingCopy}};line-height:1.6;">
+                Your invoice PDF is attached to this email — no need to log in to download it.
+                {{if .OrderURL}}You can also <a href="{{.OrderURL}}" style="color:{{.Theme.ColorAccent}};text-decoration:underline;">open the order online</a>.{{end}}
               </p>
             </td>
           </tr>
-          {{else}}
-          <tr><td style="padding:0 0 28px 0;"></td></tr>
-          {{end}}
 
           <!-- Footer -->
           <tr>

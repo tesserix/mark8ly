@@ -140,16 +140,29 @@ func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt b
 	// Deep link to the customer's account order page on the storefront.
 	// Falls back to empty so the email template can suppress the CTA.
 	orderURL := ""
+	documentURL := ""
 	if store.Slug != "" && s.storefrontURLBase != "" {
-		base := strings.ReplaceAll(s.storefrontURLBase, "{slug}", store.Slug)
-		orderURL = strings.TrimRight(base, "/") + "/account/orders/" + orderID.String()
+		base := strings.TrimRight(strings.ReplaceAll(s.storefrontURLBase, "{slug}", store.Slug), "/")
+		orderURL = base + "/account/orders/" + orderID.String()
+		// Direct PDF download endpoints on the storefront (rendered by
+		// React-PDF in apps/storefront/lib/invoices). Used as the CTA
+		// on invoice + receipt emails for a one-click download instead
+		// of dropping the buyer on the account page.
+		if asReceipt {
+			documentURL = base + "/api/orders/" + orderID.String() + "/receipt"
+		} else {
+			documentURL = base + "/api/orders/" + orderID.String() + "/invoice"
+		}
 	}
 
 	in := DocumentInput{
 		Recipient:      o.CustomerEmail,
 		DocumentNumber: documentNumber(asReceipt, o.OrderNumber),
+		OrderID:        orderID.String(),
+		StoreSlug:      store.Slug,
 		OrderNumber:    o.OrderNumber,
 		OrderURL:       orderURL,
+		DocumentURL:    documentURL,
 		PlacedAt:       o.PlacedAt,
 		GrandTotal:     o.GrandTotal,
 		CurrencyCode:   o.CurrencyCode,

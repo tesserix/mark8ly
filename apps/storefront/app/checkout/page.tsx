@@ -68,9 +68,15 @@ interface AddressFields {
 interface SavedAddress {
   id: string;
   label?: string;
+  name?: string;
   line1: string;
+  line2?: string;
+  city?: string;
+  region?: string;
   postal_code?: string;
   country_code: string;
+  phone?: string;
+  is_default?: boolean;
 }
 
 const EMPTY_ADDRESS: AddressFields = {
@@ -645,6 +651,31 @@ export default function CheckoutPage() {
           >
             Shipping address
           </h2>
+          {savedAddresses.length > 0 &&
+            savedAddresses.some((a) =>
+              shipsToCountries.length === 0 ||
+              shipsToCountries.includes(a.country_code.toUpperCase()),
+            ) && (
+            <SavedAddressPicker
+              addresses={savedAddresses}
+              shipsToCountries={shipsToCountries}
+              currentLine1={address.line1}
+              currentPostal={address.postal_code}
+              onSelect={(a) =>
+                setAddress({
+                  name: a.name ?? "",
+                  line1: a.line1 ?? "",
+                  line2: a.line2 ?? "",
+                  city: a.city ?? "",
+                  region: a.region ?? "",
+                  postal_code: a.postal_code ?? "",
+                  country_code: a.country_code.toUpperCase(),
+                  phone: a.phone ?? "",
+                })
+              }
+              onUseNew={() => setAddress(EMPTY_ADDRESS)}
+            />
+          )}
           <AddressForm
             address={address}
             onChange={setAddress}
@@ -1138,6 +1169,126 @@ function providerLabel(provider: string): string {
     case "paypal": return "PayPal";
     default: return provider.charAt(0).toUpperCase() + provider.slice(1);
   }
+}
+
+// SavedAddressPicker — radio list of the customer's saved addresses
+// rendered above the AddressForm. Picking one fills the entire form so
+// returning customers don't have to re-type their home / office address.
+// Filtered to addresses in the store's ship-to country (an address in
+// US is useless to a buyer checking out at an AU-only store).
+function SavedAddressPicker({
+  addresses,
+  shipsToCountries,
+  currentLine1,
+  currentPostal,
+  onSelect,
+  onUseNew,
+}: {
+  addresses: SavedAddress[];
+  shipsToCountries: string[];
+  currentLine1: string;
+  currentPostal: string;
+  onSelect: (a: SavedAddress) => void;
+  onUseNew: () => void;
+}) {
+  const usable =
+    shipsToCountries.length === 0
+      ? addresses
+      : addresses.filter((a) =>
+          shipsToCountries.includes(a.country_code.toUpperCase()),
+        );
+
+  // "selected" mirrors the form state — exact-compare on line1+postal so
+  // the radio updates when the AddressForm is edited by hand below.
+  const selectedId =
+    usable.find(
+      (a) =>
+        a.line1.trim().toLowerCase() === currentLine1.trim().toLowerCase() &&
+        (a.postal_code ?? "").trim() === currentPostal.trim() &&
+        currentLine1.trim() !== "",
+    )?.id ?? null;
+  const usingNew = selectedId === null && currentLine1.trim() !== "";
+
+  if (usable.length === 0) return null;
+
+  return (
+    <div className="mt-4 space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
+        Use a saved address
+      </p>
+      <ul className="space-y-2">
+        {usable.map((a) => {
+          const active = a.id === selectedId;
+          return (
+            <li key={a.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(a)}
+                className={`flex w-full items-start gap-3 rounded-md border px-4 py-3 text-left text-sm transition-colors ${
+                  active
+                    ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/[0.06]"
+                    : "border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] hover:border-[color:var(--storefront-text,var(--ink-900))]/30"
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className={`mt-0.5 inline-block h-4 w-4 flex-shrink-0 rounded-full border ${
+                    active
+                      ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]"
+                      : "border-[color:var(--storefront-text,var(--ink-900))]/30"
+                  }`}
+                />
+                <span className="flex-1">
+                  <span className="flex flex-wrap items-baseline gap-2">
+                    <span className="font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+                      {a.label || "Home"}
+                    </span>
+                    {a.is_default && (
+                      <span className="rounded-full bg-[color:var(--storefront-accent,var(--moss-700))]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[color:var(--storefront-accent,var(--moss-700))]">
+                        Default
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-1 block text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
+                    {a.name && <>{a.name} · </>}
+                    {a.line1}
+                    {a.line2 ? `, ${a.line2}` : ""}
+                    {a.city ? `, ${a.city}` : ""}
+                    {a.region ? `, ${a.region}` : ""}
+                    {a.postal_code ? ` ${a.postal_code}` : ""}
+                    {`, ${a.country_code}`}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+        <li>
+          <button
+            type="button"
+            onClick={onUseNew}
+            className={`flex w-full items-start gap-3 rounded-md border px-4 py-3 text-left text-sm transition-colors ${
+              usingNew
+                ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/[0.06]"
+                : "border-dashed border-[color:var(--storefront-text,var(--ink-900))]/20 bg-transparent hover:border-[color:var(--storefront-text,var(--ink-900))]/40"
+            }`}
+          >
+            <span
+              aria-hidden
+              className={`mt-0.5 inline-block h-4 w-4 flex-shrink-0 rounded-full border ${
+                usingNew
+                  ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]"
+                  : "border-[color:var(--storefront-text,var(--ink-900))]/30"
+              }`}
+            />
+            <span className="font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+              Use a new address
+            </span>
+          </button>
+        </li>
+      </ul>
+    </div>
+  );
 }
 
 // prettyCarrier maps a lowercase carrier slug (shipengine, delhivery, …)

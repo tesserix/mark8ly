@@ -46,7 +46,12 @@ function statusLabel(status: string): string {
     cancelled: "Cancelled",
     refunded: "Refunded",
   };
-  return labels[status] ?? status;
+  // Empty / unrecognised values used to render a blank pill — invisible
+  // on dark themes. Always show something readable: capitalize the raw
+  // value, fall back to "Awaiting payment" when truly empty.
+  if (!status || !status.trim()) return "Awaiting payment";
+  if (labels[status]) return labels[status];
+  return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ");
 }
 
 import { StatusChip, type StatusTone } from "@/components/ui/StatusChip";

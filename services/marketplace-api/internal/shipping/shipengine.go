@@ -339,7 +339,15 @@ func (c *ShipEngineCarrier) CreateShipment(ctx context.Context, in ShipmentReque
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("shipengine: create shipment: unexpected status %d", resp.StatusCode)
+		// Surface the response body in the error so admin staff (and the
+		// admin UI's verbose error surface) see ShipEngine's actual
+		// rejection reason — bare "unexpected status 400" makes label
+		// failures impossible to debug.
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf(
+			"shipengine: create shipment: unexpected status %d: %s",
+			resp.StatusCode, strings.TrimSpace(string(bodyBytes)),
+		)
 	}
 
 	var lr seLabelResponse

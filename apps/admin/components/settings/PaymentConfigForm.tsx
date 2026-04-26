@@ -78,37 +78,64 @@ export function PaymentConfigForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="grid gap-5 sm:grid-cols-2">
-        <FieldGroup label="API key" htmlFor={`${provider}-api-key`}>
+      {/* Stripe has only ONE non-webhook secret (the "Secret key", sk_…),
+          and the REST API explicitly rejects publishable keys (pk_…).
+          So we relabel the API key field as "Secret API key" and hide
+          the redundant Secret key field. Razorpay/PayPal both genuinely
+          have a separate Key + Secret, so they keep the two-field layout. */}
+      {provider.toLowerCase() === "stripe" ? (
+        <FieldGroup label="Secret API key" htmlFor={`${provider}-api-key`}>
           <input
             id={`${provider}-api-key`}
             type="password"
             autoComplete="off"
             value={apiKey}
             onChange={(e) => { setApiKey(e.target.value); setSuccess(false); }}
-            placeholder="pk_test_..."
+            placeholder="sk_test_… or sk_live_…"
             required
             disabled={pending}
             className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
           />
-        </FieldGroup>
-
-        <FieldGroup label="Secret key" htmlFor={`${provider}-secret-key`}>
-          <input
-            id={`${provider}-secret-key`}
-            type="password"
-            autoComplete="off"
-            value={secretKey}
-            onChange={(e) => { setSecretKey(e.target.value); setSuccess(false); }}
-            placeholder="sk_test_..."
-            disabled={pending}
-            className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
-          />
-          <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
-            Leave blank to keep the existing secret key.
+          <p className="text-xs text-[color:var(--ink-900)]/50 mt-1">
+            Use the <strong>Secret key</strong> from Stripe → Developers → API keys
+            (starts with <code>sk_</code>). The Publishable key (<code>pk_</code>)
+            is for client-side widgets only and Stripe will reject it for
+            checkout — placing an order fails with <code>secret_key_required</code>.
           </p>
         </FieldGroup>
-      </div>
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-2">
+          <FieldGroup label="API key" htmlFor={`${provider}-api-key`}>
+            <input
+              id={`${provider}-api-key`}
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => { setApiKey(e.target.value); setSuccess(false); }}
+              placeholder={apiKeyPlaceholder(provider)}
+              required
+              disabled={pending}
+              className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+            />
+          </FieldGroup>
+
+          <FieldGroup label="Secret key" htmlFor={`${provider}-secret-key`}>
+            <input
+              id={`${provider}-secret-key`}
+              type="password"
+              autoComplete="off"
+              value={secretKey}
+              onChange={(e) => { setSecretKey(e.target.value); setSuccess(false); }}
+              placeholder={secretKeyPlaceholder(provider)}
+              disabled={pending}
+              className="w-full rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)] px-3 py-2 text-sm text-[color:var(--ink-900)] placeholder:text-[color:var(--ink-900)]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+            />
+            <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
+              Leave blank to keep the existing secret key.
+            </p>
+          </FieldGroup>
+        </div>
+      )}
 
       <FieldGroup
         label="Webhook signing secret"
@@ -215,6 +242,28 @@ function FieldGroup({
       {children}
     </div>
   );
+}
+
+function apiKeyPlaceholder(provider: string): string {
+  switch (provider.toLowerCase()) {
+    case "razorpay":
+      return "rzp_test_… or rzp_live_…";
+    case "paypal":
+      return "PayPal client ID";
+    default:
+      return "API key";
+  }
+}
+
+function secretKeyPlaceholder(provider: string): string {
+  switch (provider.toLowerCase()) {
+    case "razorpay":
+      return "Razorpay key secret";
+    case "paypal":
+      return "PayPal client secret";
+    default:
+      return "Secret key";
+  }
 }
 
 function webhookSecretPlaceholder(provider: string): string {

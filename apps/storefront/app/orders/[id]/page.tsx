@@ -16,12 +16,13 @@ import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { PaymentPrompt } from "@/components/PaymentPrompt";
 import { OrderTimeline } from "@/components/OrderTimeline";
+import { ClearCartOnPaymentSuccess } from "@/components/ClearCartOnPaymentSuccess";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ slug?: string }>;
+  searchParams: Promise<{ slug?: string; payment?: string }>;
 }
 
 async function resolveSlug(query: { slug?: string }): Promise<string> {
@@ -49,8 +50,15 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
     notFound();
   }
 
+  // Stripe redirects back here with ?payment=success after a hosted
+  // checkout. That's the right moment to drop the cart — the items are
+  // now an order. The CartProvider mounts client-side so we use a small
+  // island for the side effect.
+  const paymentSuccess = query.payment === "success";
+
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
+      <ClearCartOnPaymentSuccess shouldClear={paymentSuccess} />
       <div className="mx-auto max-w-6xl px-6 pt-8 sm:px-8">
         <StorefrontNav storeName={store?.name ?? ""} />
       </div>
@@ -182,12 +190,17 @@ export default async function OrderPage({ params, searchParams }: PageProps) {
 // ---------------------------------------------------------------------------
 
 function StatusBadge({ label, value }: { label: string; value: string }) {
-  const humanized = value
+  // Defensive fallback — older orders sometimes come back with an empty
+  // status from the storefront API and would render an invisible pill
+  // (especially on dark merchant themes). Always show something so the
+  // chip isn't a blank affordance.
+  const safe = value && value.trim() ? value : "awaiting_payment";
+  const humanized = safe
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--storefront-text,var(--ink-900))]/15 px-3 py-1 text-xs text-[color:var(--storefront-text,var(--ink-900))]">
-      <span className="opacity-50">{label}:</span>
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--storefront-text,var(--ink-900))]/25 bg-[color:var(--storefront-text,var(--ink-900))]/5 px-3 py-1 text-xs text-[color:var(--storefront-text,var(--ink-900))]">
+      <span className="opacity-60">{label}:</span>
       <span className="font-medium">{humanized}</span>
     </span>
   );

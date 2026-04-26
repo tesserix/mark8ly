@@ -104,6 +104,12 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		if deps.ShippingRatesHandler != nil {
 			group.POST("/shipping-rates", deps.ShippingRatesHandler.GetRates)
 		}
+		// Tax preview — same calculator as checkout submit. Wired so the
+		// checkout page can show a real Tax line instead of a misleading
+		// "calculated at checkout" placeholder.
+		if deps.CheckoutExtHandler != nil {
+			group.POST("/tax-preview", deps.CheckoutExtHandler.TaxPreview)
+		}
 		if deps.ShippingOptionsHandler != nil {
 			// Public metadata about which carriers ship where — lets the
 			// checkout UI render a helpful fallback ("we ship to India")

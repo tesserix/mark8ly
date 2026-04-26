@@ -243,6 +243,90 @@ type CheckoutExtResponse struct {
 	PointsRedeemed     int             `json:"points_redeemed,omitempty"`
 }
 
+// TaxPreviewRequest is the wire body for the public tax preview endpoint.
+// Uses the same item shape as the checkout submit so the storefront can
+// reuse its CheckoutItemBody type. shipping_total is optional — when the
+// buyer hasn't picked a shipping method yet we treat it as zero (good
+// enough for places that don't tax shipping; merchants whose tax rule
+// includes shipping will see the breakdown move slightly once a method
+// is picked).
+type TaxPreviewRequest struct {
+	Items           []CheckoutItemRequest  `json:"items"            binding:"required,min=1"`
+	ShippingAddress CheckoutAddressRequest `json:"shipping_address" binding:"required"`
+	Subtotal        decimal.Decimal        `json:"subtotal"         binding:"required"`
+	ShippingTotal   decimal.Decimal        `json:"shipping_total"`
+}
+
+// TaxPreviewResponse mirrors the totals the buyer cares about pre-submit.
+type TaxPreviewResponse struct {
+	TaxTotal     decimal.Decimal `json:"tax_total"`
+	CurrencyCode string          `json:"currency_code"`
+}
+
+// TaxPreview handles POST /storefront/stores/:storeSlug/tax-preview.
+// Lightweight fork of Checkout that only runs the tax calculation, so
+// the cart/checkout UI can show "Tax: $X.XX" the moment the buyer's
+// shipping address is filled in instead of leaving them with a "tax
+// calculated at checkout" placeholder forever.
+func (h *CheckoutExtHandler) TaxPreview(c *gin.Context) {
+	storeVal, ok := c.Get("store")
+	if !ok {
+		respondNotFound(c)
+		return
+	}
+	store, ok := storeVal.(*stores.Store)
+	if !ok || store == nil {
+		respondNotFound(c)
+		return
+	}
+
+	var req TaxPreviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_failed",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Reuse Checkout's country-strategy lookup so behavior matches
+	// place-order time exactly (including TaxJar US flow).
+	var sc country.SupportedCountry
+	if err := h.db.WithContext(c.Request.Context()).
+		Where("country_code = ? AND is_active = true", store.CountryCode).
+		First(&sc).Error; err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error":   "country_not_supported",
+			"message": fmt.Sprintf("tax strategy lookup failed for %s", store.CountryCode),
+		})
+		return
+	}
+
+	// Reuse calculateTax — borrow its CheckoutExtRequest shape since the
+	// helper only reads Items + Subtotal off it and we have those.
+	bridged := CheckoutExtRequest{
+		Items:           req.Items,
+		ShippingAddress: req.ShippingAddress,
+		Subtotal:        req.Subtotal,
+	}
+	breakdown, err := h.calculateTax(c.Request.Context(), store, &sc, bridged, req.ShippingTotal)
+	if err != nil {
+		// Don't 500 the buyer's checkout page over a tax-preview hiccup —
+		// return zero so the UI can show "Tax: --" rather than a banner.
+		h.logWarn("checkout_ext: tax preview failed", "store_id", store.ID, "err", err)
+		c.JSON(http.StatusOK, TaxPreviewResponse{
+			TaxTotal:     decimal.Zero,
+			CurrencyCode: store.CurrencyCode,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, TaxPreviewResponse{
+		TaxTotal:     breakdown.TaxTotal,
+		CurrencyCode: store.CurrencyCode,
+	})
+}
+
 // Checkout handles POST /storefront/stores/:storeSlug/checkout (extended).
 //
 // Flow:

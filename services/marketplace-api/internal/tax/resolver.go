@@ -19,9 +19,17 @@ func NewCalculator(strategy string, rate *float64, taxjarAPIKey string, taxjarMo
 		if rate == nil {
 			return nil, fmt.Errorf("tax: flat strategy requires a rate")
 		}
-		r := decimal.NewFromFloat(*rate)
-		pctLabel := r.Mul(decimal.NewFromInt(100)).String()
-		desc := fmt.Sprintf("Tax %s%%", pctLabel)
+		// supported_countries.tax_rate is stored as a percentage (10.00
+		// for AU GST = 10%). FlatCalculator multiplies its internal rate
+		// directly into the line / shipping totals, so we must convert
+		// to a fraction here. The previous code stored the raw
+		// percentage and let checkout_ext.go pre-divide the per-item
+		// rates — but flat.go's shipping-tax branch uses the
+		// calculator's internal rate, so a $12.95 AU shipping line was
+		// being taxed at 10× (1000%) and dropping a ~$130 phantom
+		// shipping tax onto every order.
+		r := decimal.NewFromFloat(*rate).Div(decimal.NewFromInt(100))
+		desc := fmt.Sprintf("Tax %s%%", decimal.NewFromFloat(*rate).String())
 		return NewFlatCalculator(r, desc), nil
 
 	case "india_gst":

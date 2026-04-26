@@ -6,6 +6,10 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "@/lib/toast";
+import {
+  AddressFieldset,
+  type AddressValue,
+} from "@/components/forms/AddressFieldset";
 
 interface Address {
   id: string;
@@ -89,7 +93,7 @@ const EMPTY: Form = {
   city: "",
   region: "",
   postal_code: "",
-  country_code: "IN",
+  country_code: "",
   phone: "",
   is_default: false,
 };
@@ -325,71 +329,33 @@ export function AddressBook() {
               ))}
             </div>
           </div>
-          <Field label="Full name">
-            <input
-              required
-              className={inputClass}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </Field>
-          <Field label="Address line 1">
-            <input
-              required
-              className={inputClass}
-              value={form.line1}
-              onChange={(e) => setForm({ ...form, line1: e.target.value })}
-            />
-          </Field>
-          <Field label="Address line 2">
-            <input
-              className={inputClass}
-              value={form.line2}
-              onChange={(e) => setForm({ ...form, line2: e.target.value })}
-            />
-          </Field>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="City">
-              <input
-                required
-                className={inputClass}
-                value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
-              />
-            </Field>
-            <Field label="State / Region">
-              <input
-                className={inputClass}
-                value={form.region}
-                onChange={(e) => setForm({ ...form, region: e.target.value })}
-              />
-            </Field>
-            <Field label="Postal code">
-              <input
-                className={inputClass}
-                value={form.postal_code}
-                onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
-              />
-            </Field>
-            <Field label="Country (ISO)">
-              <input
-                required
-                maxLength={2}
-                className={inputClass}
-                value={form.country_code}
-                onChange={(e) =>
-                  setForm({ ...form, country_code: e.target.value.toUpperCase() })
-                }
-              />
-            </Field>
-            <Field label="Phone">
-              <input
-                className={inputClass}
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              />
-            </Field>
-          </div>
+          <AddressFieldset
+            value={{
+              name: form.name,
+              line1: form.line1,
+              line2: form.line2,
+              city: form.city,
+              region: form.region,
+              postal: form.postal_code,
+              country: form.country_code,
+              phone: form.phone,
+            }}
+            onChange={(a: AddressValue) =>
+              setForm({
+                ...form,
+                name: a.name,
+                line1: a.line1,
+                line2: a.line2,
+                city: a.city,
+                region: a.region,
+                postal_code: a.postal,
+                country_code: a.country,
+                phone: a.phone,
+              })
+            }
+            disabled={saving}
+            idPrefix={form.id ? `book-edit-${form.id}` : "book-new"}
+          />
           <label className="inline-flex items-center gap-2 text-sm">
             <input
               type="checkbox"

@@ -22,6 +22,56 @@ export interface PublicStore {
   storefront_theme: StorefrontTheme;
 }
 
+// Countries / states reference data — shared with the admin app.
+// Mirrors the /locations endpoints in platform-api.
+
+export interface Country {
+  code: string;
+  name: string;
+  native_name: string;
+  calling_code: string;
+  currency_code: string;
+  flag_emoji: string;
+  region: string;
+}
+
+export interface State {
+  id: string;
+  country_code: string;
+  code: string;
+  name: string;
+  type: string;
+}
+
+export async function listCountries(): Promise<Country[]> {
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/api/v1/locations/countries`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data: Country[] };
+    return body.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function listStatesByCountry(code: string): Promise<State[]> {
+  if (!code) return [];
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/api/v1/locations/countries/${encodeURIComponent(code)}/states`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data: State[] };
+    return body.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Resolves a store by its public slug. Returns null for any
  * non-200 response so the caller can render a "store not found"

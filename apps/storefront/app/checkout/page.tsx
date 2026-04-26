@@ -224,6 +224,29 @@ export default function CheckoutPage() {
         if (!cancelled && body?.data) setSavedAddresses(body.data);
       })
       .catch(() => { /* not signed in — ignore */ });
+    // Pre-populate Contact (email + full name) from the customer's
+    // profile so returning buyers don't retype it. Only sets the field
+    // when it's still empty so a guest checkout flow that types an
+    // email first isn't overwritten.
+    fetch("/api/account/profile", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (body: {
+          data?: {
+            email?: string;
+            first_name?: string;
+            last_name?: string;
+          };
+        } | null) => {
+          if (cancelled || !body?.data) return;
+          setEmail((prev) => prev || (body.data?.email ?? ""));
+          const full = [body.data.first_name, body.data.last_name]
+            .filter((s): s is string => Boolean(s && s.trim()))
+            .join(" ");
+          if (full) setCustomerName((prev) => prev || full);
+        },
+      )
+      .catch(() => { /* not signed in — ignore */ });
     return () => { cancelled = true; };
   }, [storeSlug]);
 

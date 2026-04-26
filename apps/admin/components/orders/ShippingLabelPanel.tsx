@@ -747,15 +747,16 @@ function CreateShipmentForm({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<ShippingActionResult["error"] | undefined>();
   // Default to whatever the customer picked at checkout (persisted on the
-  // order). Falls back to the safest catch-all (ShipEngine + Standard) for
-  // legacy orders or if the persisted value isn't in the carriers we know
-  // how to render — staff can still pick from the Override disclosure.
+  // order). The carrier value is one of CARRIERS so we can sanity-check
+  // it; the service is a carrier-specific code like
+  // "auspost_parcel_post_australia" or "usps_priority_mail" — we MUST
+  // pass it through unchanged because that's what ShipEngine's /v1/labels
+  // expects. Filtering it through SERVICE_LEVELS (only standard|express)
+  // collapsed every real code to "standard", which ShipEngine rejects
+  // with `field_value_required: 'service_code' must not be empty`.
   const initialProvider =
     customerCarrier && isKnownCarrier(customerCarrier) ? customerCarrier : "shipengine";
-  const initialService =
-    customerService && isKnownService(customerService.toLowerCase())
-      ? customerService.toLowerCase()
-      : "standard";
+  const initialService = customerService || "standard";
   const [provider, setProvider] = useState(initialProvider);
   const [service, setService] = useState(initialService);
   const [showOverride, setShowOverride] = useState(false);

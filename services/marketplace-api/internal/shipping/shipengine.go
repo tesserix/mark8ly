@@ -164,9 +164,16 @@ type seShipment struct {
 	// for it in the wrong place. Empty on rate-quote bodies (where it
 	// is omitted by `omitempty`) so /v1/rates still works.
 	ServiceCode string      `json:"service_code,omitempty"`
-	ShipFrom    seAddress   `json:"ship_from"`
-	ShipTo      seAddress   `json:"ship_to"`
-	Packages    []sePackage `json:"packages"`
+	// ShipDate is the preferred pickup date in YYYY-MM-DD form. Aramex AU
+	// (and most non-postal carriers) reject same-day pickup outside their
+	// service window — without an explicit date ShipEngine sends "today"
+	// and the carrier replies "preferred pickup date is not available".
+	// We always send the next business day to dodge weekends + after-hours.
+	// Empty on rate-quote bodies (omitempty) so /v1/rates is unchanged.
+	ShipDate string      `json:"ship_date,omitempty"`
+	ShipFrom seAddress   `json:"ship_from"`
+	ShipTo   seAddress   `json:"ship_to"`
+	Packages []sePackage `json:"packages"`
 }
 
 type seRateResponse struct {
@@ -328,6 +335,7 @@ func (c *ShipEngineCarrier) CreateShipment(ctx context.Context, in ShipmentReque
 	body := seLabelRequest{
 		Shipment: seShipment{
 			ServiceCode: in.Service,
+			ShipDate:    nextBusinessDay(time.Now().UTC()).Format("2006-01-02"),
 			ShipFrom:    toSEAddress(in.FromAddress),
 			ShipTo:      toSEAddress(in.ToAddress),
 			Packages: []sePackage{
@@ -491,6 +499,23 @@ func (c *ShipEngineCarrier) doJSON(ctx context.Context, method, path string, pay
 	req.Header.Set("Content-Type", "application/json")
 
 	return c.client.Do(req)
+}
+
+// nextBusinessDay returns the next Mon–Fri date strictly *after or
+// equal to* today. Saturday → +2 days (Mon), Sunday → +1 day (Mon),
+// any weekday → unchanged. Saves us from Aramex / FedEx / UPS rejecting
+// "preferred pickup date is not available" on weekend label-creation.
+// Conservatively uses UTC — close enough for "what's a weekday" since
+// no timezone shifts the day-of-week by more than 24h.
+func nextBusinessDay(t time.Time) time.Time {
+	switch t.Weekday() {
+	case time.Saturday:
+		return t.AddDate(0, 0, 2)
+	case time.Sunday:
+		return t.AddDate(0, 0, 1)
+	default:
+		return t
+	}
 }
 
 func toSEAddress(a Address) seAddress {

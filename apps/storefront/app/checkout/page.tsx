@@ -221,6 +221,32 @@ export default function CheckoutPage() {
     return () => { cancelled = true; };
   }, [storeSlug]);
 
+  // Unique destinations the merchant ships to, derived from the loaded
+  // shipping_options. Used both to populate the country dropdown and
+  // to lock it when the merchant only ships to one country (the typical
+  // case in v1 — `australia-store` ships to AU only).
+  const shipsToCountries = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of shippingOptions) {
+      for (const c of o.supported_countries) set.add(c);
+    }
+    return Array.from(set);
+  }, [shippingOptions]);
+
+  // Pre-populate the buyer's country from the store's single shipping
+  // destination — saves a tap and avoids the "Sorry, we don't ship to
+  // <wrong country>" dead-end on an empty form.
+  useEffect(() => {
+    if (
+      shipsToCountries.length === 1 &&
+      shipsToCountries[0] &&
+      !address.country_code
+    ) {
+      setAddress((prev) => ({ ...prev, country_code: shipsToCountries[0]! }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shipsToCountries]);
+
   // Derive whether the current address is already in the book.
   const addressKey = (line1: string, postal: string, country: string): string =>
     `${line1.trim().toLowerCase()}|${postal.trim()}|${country.trim().toUpperCase()}`;
@@ -619,7 +645,11 @@ export default function CheckoutPage() {
           >
             Shipping address
           </h2>
-          <AddressForm address={address} onChange={setAddress} />
+          <AddressForm
+            address={address}
+            onChange={setAddress}
+            shipsToCountries={shipsToCountries}
+          />
 
           {canOfferSave && (
             <div className="mt-4 rounded-md border border-[color:var(--storefront-accent,var(--moss-700))]/20 bg-[color:var(--storefront-accent,var(--moss-700))]/5 px-4 py-3">
@@ -675,7 +705,7 @@ export default function CheckoutPage() {
                   <ul className="space-y-1">
                     {shippingOptions.map((o) => (
                       <li key={o.carrier} className="flex flex-wrap items-baseline gap-1.5">
-                        <span className="font-medium capitalize">{o.carrier}</span>
+                        <span className="font-medium">{prettyCarrier(o.carrier)}</span>
                         <span className="opacity-60">
                           ({o.services.map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(" / ")})
                         </span>
@@ -903,9 +933,16 @@ export default function CheckoutPage() {
 interface AddressFormProps {
   address: AddressFields;
   onChange: (address: AddressFields) => void;
+  /**
+   * ISO alpha-2 country codes the merchant accepts shipments to,
+   * derived from the store's shipping_options. When the list has a
+   * single entry the country select is locked to it (no point letting
+   * the buyer pick a country the store can't ship to).
+   */
+  shipsToCountries?: string[];
 }
 
-function AddressForm({ address, onChange }: AddressFormProps) {
+function AddressForm({ address, onChange, shipsToCountries }: AddressFormProps) {
   const update = (field: keyof AddressFields, value: string) =>
     onChange({ ...address, [field]: value });
 
@@ -1029,19 +1066,40 @@ function AddressForm({ address, onChange }: AddressFormProps) {
         <label htmlFor="ship-country" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">
           Country
         </label>
-        <select
-          id="ship-country"
-          required
-          autoComplete="shipping country"
-          value={address.country_code}
-          onChange={(e) => update("country_code", e.target.value)}
-          className={inputClass}
-        >
-          <option value="">Select country</option>
-          {SUPPORTED_COUNTRIES.map((c) => (
-            <option key={c.code} value={c.code}>{c.name}</option>
-          ))}
-        </select>
+        {shipsToCountries && shipsToCountries.length === 1 ? (
+          <div
+            id="ship-country"
+            aria-readonly
+            className={`${inputClass} flex cursor-not-allowed items-center gap-2 bg-[color:var(--storefront-text,var(--ink-900))]/[0.04]`}
+          >
+            <span>
+              {SUPPORTED_COUNTRIES.find((c) => c.code === address.country_code)?.name ??
+                address.country_code}
+            </span>
+            <span className="ml-auto text-[10px] uppercase tracking-[0.12em] opacity-50">
+              Only destination served
+            </span>
+          </div>
+        ) : (
+          <select
+            id="ship-country"
+            required
+            autoComplete="shipping country"
+            value={address.country_code}
+            onChange={(e) => update("country_code", e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Select country</option>
+            {(shipsToCountries && shipsToCountries.length > 0
+              ? SUPPORTED_COUNTRIES.filter((c) => shipsToCountries.includes(c.code))
+              : SUPPORTED_COUNTRIES
+            ).map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
     </div>
   );
@@ -1080,6 +1138,24 @@ function providerLabel(provider: string): string {
     case "paypal": return "PayPal";
     default: return provider.charAt(0).toUpperCase() + provider.slice(1);
   }
+}
+
+// prettyCarrier maps a lowercase carrier slug (shipengine, delhivery, …)
+// to the display name the carrier uses in its own marketing. Falls
+// back to a capitalized version for unknown providers.
+function prettyCarrier(slug: string): string {
+  const map: Record<string, string> = {
+    shipengine: "ShipEngine",
+    delhivery: "Delhivery",
+    ninjavan: "Ninja Van",
+    fedex: "FedEx",
+    dhl: "DHL",
+    ups: "UPS",
+    usps: "USPS",
+    auspost: "Australia Post",
+  };
+  if (map[slug]) return map[slug];
+  return slug.charAt(0).toUpperCase() + slug.slice(1);
 }
 
 // NoShippingFallback — renders when /shipping-rates comes back empty.
@@ -1127,7 +1203,7 @@ function NoShippingFallback({
         <ul className="space-y-1">
           {options.map((o) => (
             <li key={o.carrier} className="flex flex-wrap items-baseline gap-1.5">
-              <span className="font-medium capitalize">{o.carrier}</span>
+              <span className="font-medium">{prettyCarrier(o.carrier)}</span>
               <span className="opacity-60">
                 ({o.services.map(serviceLabel).join(" / ")})
               </span>

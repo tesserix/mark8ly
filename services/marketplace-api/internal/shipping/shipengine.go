@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -103,8 +104,19 @@ type seShipment struct {
 
 type seRateResponse struct {
 	RateResponse struct {
-		Rates []seRate `json:"rates"`
+		Rates        []seRate    `json:"rates"`
+		InvalidRates []seRate    `json:"invalid_rates"`
+		Errors       []seRateErr `json:"errors"`
+		Status       string      `json:"status"`
 	} `json:"rate_response"`
+}
+
+type seRateErr struct {
+	ErrorSource string `json:"error_source"`
+	ErrorType   string `json:"error_type"`
+	ErrorCode   string `json:"error_code"`
+	Message     string `json:"message"`
+	CarrierID   string `json:"carrier_id,omitempty"`
 }
 
 type seRate struct {
@@ -191,6 +203,38 @@ func (c *ShipEngineCarrier) GetRates(ctx context.Context, in RateRequest) ([]Rat
 	var rr seRateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
 		return nil, fmt.Errorf("shipengine: get rates: decode: %w", err)
+	}
+
+	// ShipEngine returns 200 with `rate_response.errors` when individual
+	// carriers reject the route (origin not serviced, weight out of
+	// range, address invalid, etc.). Surface those as a real error
+	// when there are zero usable rates so the storefront can render a
+	// clear "carrier doesn't ship this route" instead of the generic
+	// "couldn't get a live rate".
+	if len(rr.RateResponse.Rates) == 0 {
+		if len(rr.RateResponse.Errors) > 0 {
+			msgs := make([]string, 0, len(rr.RateResponse.Errors))
+			for _, e := range rr.RateResponse.Errors {
+				m := strings.TrimSpace(e.Message)
+				if m == "" {
+					m = e.ErrorCode
+				}
+				if m != "" {
+					msgs = append(msgs, m)
+				}
+			}
+			return nil, fmt.Errorf(
+				"shipengine: get rates: no rates returned (status=%s, %d carrier(s) tried): %s",
+				rr.RateResponse.Status, len(carrierIDs), strings.Join(msgs, "; "),
+			)
+		}
+		return nil, fmt.Errorf(
+			"shipengine: get rates: no rates returned and no errors reported — "+
+				"likely the connected carriers do not service this origin/destination "+
+				"(origin=%s, dest=%s, %d carrier(s) tried, status=%s)",
+			in.FromAddress.CountryCode, in.ToAddress.CountryCode,
+			len(carrierIDs), rr.RateResponse.Status,
+		)
 	}
 
 	rates := make([]Rate, 0, len(rr.RateResponse.Rates))

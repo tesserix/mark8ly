@@ -141,6 +141,69 @@ export function GeneralTab({
           </Field>
         </div>
       )}
+
+      {!hasMultipleVariants && (
+        <fieldset className="rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--paper-200)] px-4 py-3">
+          <legend className="px-2 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60">
+            Shipping
+          </legend>
+          <p className="mb-3 mt-1 text-xs text-[color:var(--ink-900)] opacity-60">
+            Carriers (Australia Post / ShipEngine / etc.) need package
+            dimensions and weight to quote real rates. Leave blank to use
+            the default 30 × 20 × 10 cm envelope.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Field
+              label="Weight (kg)"
+              error={formState.errors.weightKg?.message}
+            >
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="1.20"
+                {...register("weightKg")}
+                className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              />
+            </Field>
+            <Field
+              label="Length (cm)"
+              error={formState.errors.lengthCm?.message}
+            >
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="30"
+                {...register("lengthCm")}
+                className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              />
+            </Field>
+            <Field
+              label="Width (cm)"
+              error={formState.errors.widthCm?.message}
+            >
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="20"
+                {...register("widthCm")}
+                className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              />
+            </Field>
+            <Field
+              label="Height (cm)"
+              error={formState.errors.heightCm?.message}
+            >
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="10"
+                {...register("heightCm")}
+                className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              />
+            </Field>
+          </div>
+        </fieldset>
+      )}
     </div>
   );
 }

@@ -11,6 +11,10 @@ export interface VariantDraft {
   sku: string;
   stock: number;
   weight: number;
+  /** Optional package dimensions in centimetres. */
+  lengthCm?: number;
+  widthCm?: number;
+  heightCm?: number;
   variantImageId?: string | null;
   optionValues: Array<{ optionName: string; value: string }>;
 }
@@ -64,7 +68,10 @@ export function VariantMatrixTable({
             <th className="px-3 py-2 font-normal">{priceHeader}</th>
             <th className="px-3 py-2 font-normal">SKU</th>
             <th className="px-3 py-2 font-normal">Stock</th>
-            <th className="px-3 py-2 font-normal">Weight</th>
+            <th className="px-3 py-2 font-normal">Weight (kg)</th>
+            <th className="px-3 py-2 font-normal" title="Length × Width × Height in centimetres">
+              L × W × H (cm)
+            </th>
             <th className="px-3 py-2 font-normal">Image</th>
           </tr>
         </thead>

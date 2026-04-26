@@ -107,6 +107,12 @@ export function ProductForm({
       ? String(firstVariant.inventory_quantity)
       : "0",
     sku: firstVariant?.sku ?? "",
+    weightKg: firstVariant?.weight_grams
+      ? String(firstVariant.weight_grams / 1000)
+      : "",
+    lengthCm: firstVariant?.length_cm ?? "",
+    widthCm: firstVariant?.width_cm ?? "",
+    heightCm: firstVariant?.height_cm ?? "",
     categoryIds: initialProduct?.categories.map((c) => c.id) ?? [],
     taxCode: initialProduct?.tax_code ?? "",
     taxRateOverride: initialProduct?.tax_rate_override ?? "",

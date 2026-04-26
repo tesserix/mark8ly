@@ -227,16 +227,28 @@ export async function updateProductAction(
           : firstVariant?.sku ?? `${slugFromTitle(parsed.data.title)}-default`,
         price: parsed.data.price,
         inventory_quantity: Number.isFinite(qty) ? qty : 0,
-        weight_grams: firstVariant?.weight_grams ?? 0,
-        length_cm: firstVariant?.length_cm
-          ? Number(firstVariant.length_cm)
-          : undefined,
-        width_cm: firstVariant?.width_cm
-          ? Number(firstVariant.width_cm)
-          : undefined,
-        height_cm: firstVariant?.height_cm
-          ? Number(firstVariant.height_cm)
-          : undefined,
+        weight_grams:
+          parsed.data.weightKg && parsed.data.weightKg.length > 0
+            ? Math.round(Number(parsed.data.weightKg) * 1000)
+            : firstVariant?.weight_grams ?? 0,
+        length_cm:
+          parsed.data.lengthCm && parsed.data.lengthCm.length > 0
+            ? Number(parsed.data.lengthCm)
+            : firstVariant?.length_cm
+              ? Number(firstVariant.length_cm)
+              : undefined,
+        width_cm:
+          parsed.data.widthCm && parsed.data.widthCm.length > 0
+            ? Number(parsed.data.widthCm)
+            : firstVariant?.width_cm
+              ? Number(firstVariant.width_cm)
+              : undefined,
+        height_cm:
+          parsed.data.heightCm && parsed.data.heightCm.length > 0
+            ? Number(parsed.data.heightCm)
+            : firstVariant?.height_cm
+              ? Number(firstVariant.height_cm)
+              : undefined,
         currency_code: ctx.currencyCode,
         option_values: [],
       },

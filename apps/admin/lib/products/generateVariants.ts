@@ -19,7 +19,12 @@ export interface VariantDefaults {
   price: string;
   sku: string;
   stock: number;
+  /** Weight in kilograms — converted to grams when saving. */
   weight: number;
+  /** Optional package dimensions in centimetres. */
+  lengthCm?: number;
+  widthCm?: number;
+  heightCm?: number;
 }
 
 export interface VariantDraft extends VariantDefaults {

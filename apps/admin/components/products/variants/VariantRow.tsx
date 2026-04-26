@@ -29,12 +29,33 @@ export function VariantRow({
   const [sku, setSku] = React.useState(variant.sku);
   const [stock, setStock] = React.useState(String(variant.stock));
   const [weight, setWeight] = React.useState(String(variant.weight));
+  const [lengthCm, setLengthCm] = React.useState(
+    variant.lengthCm ? String(variant.lengthCm) : "",
+  );
+  const [widthCm, setWidthCm] = React.useState(
+    variant.widthCm ? String(variant.widthCm) : "",
+  );
+  const [heightCm, setHeightCm] = React.useState(
+    variant.heightCm ? String(variant.heightCm) : "",
+  );
   const [pickerOpen, setPickerOpen] = React.useState(false);
 
   React.useEffect(() => setPrice(variant.price), [variant.price]);
   React.useEffect(() => setSku(variant.sku), [variant.sku]);
   React.useEffect(() => setStock(String(variant.stock)), [variant.stock]);
   React.useEffect(() => setWeight(String(variant.weight)), [variant.weight]);
+  React.useEffect(
+    () => setLengthCm(variant.lengthCm ? String(variant.lengthCm) : ""),
+    [variant.lengthCm],
+  );
+  React.useEffect(
+    () => setWidthCm(variant.widthCm ? String(variant.widthCm) : ""),
+    [variant.widthCm],
+  );
+  React.useEffect(
+    () => setHeightCm(variant.heightCm ? String(variant.heightCm) : ""),
+    [variant.heightCm],
+  );
 
   const currentMedia = media.find((m) => m.id === variant.variantImageId) ?? null;
 
@@ -51,6 +72,17 @@ export function VariantRow({
   const commitWeight = (): void => {
     const n = Number.parseFloat(weight);
     if (!Number.isNaN(n) && n !== variant.weight) onPatch({ weight: n });
+  };
+  const commitDim = (
+    raw: string,
+    field: "lengthCm" | "widthCm" | "heightCm",
+  ): void => {
+    if (raw.trim() === "") {
+      if (variant[field] !== undefined) onPatch({ [field]: undefined });
+      return;
+    }
+    const n = Number.parseFloat(raw);
+    if (!Number.isNaN(n) && n !== variant[field]) onPatch({ [field]: n });
   };
 
   return (
@@ -103,6 +135,42 @@ export function VariantRow({
           style={tabularNum}
           className="w-20 bg-transparent px-2 py-1 text-sm text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
         />
+      </td>
+      <td className="px-3 py-2">
+        <div className="flex items-center gap-1" style={tabularNum}>
+          <input
+            aria-label="Length (cm)"
+            type="number"
+            step="0.01"
+            placeholder="L"
+            value={lengthCm}
+            onChange={(e) => setLengthCm(e.target.value)}
+            onBlur={() => commitDim(lengthCm, "lengthCm")}
+            className="w-14 bg-transparent px-2 py-1 text-sm text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+          />
+          <span className="text-xs text-[var(--ink-500)]">×</span>
+          <input
+            aria-label="Width (cm)"
+            type="number"
+            step="0.01"
+            placeholder="W"
+            value={widthCm}
+            onChange={(e) => setWidthCm(e.target.value)}
+            onBlur={() => commitDim(widthCm, "widthCm")}
+            className="w-14 bg-transparent px-2 py-1 text-sm text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+          />
+          <span className="text-xs text-[var(--ink-500)]">×</span>
+          <input
+            aria-label="Height (cm)"
+            type="number"
+            step="0.01"
+            placeholder="H"
+            value={heightCm}
+            onChange={(e) => setHeightCm(e.target.value)}
+            onBlur={() => commitDim(heightCm, "heightCm")}
+            className="w-14 bg-transparent px-2 py-1 text-sm text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+          />
+        </div>
       </td>
       <td className="relative px-3 py-2">
         <button

@@ -41,6 +41,31 @@ export const productFormSchema = z.object({
     .max(100, "SKU is too long")
     .optional()
     .or(z.literal("")),
+  // Shipping data for the synthesized single variant on no-option
+  // products. For products WITH options the per-variant matrix table
+  // owns these — these scalars are ignored. Empty string means "leave
+  // unset", which is a valid state (server falls back to default
+  // envelope and the storefront sends no value).
+  weightKg: z
+    .string()
+    .regex(/^(\d+(\.\d{1,3})?)?$/, "Enter a weight in kilograms, e.g. 1.2")
+    .optional()
+    .or(z.literal("")),
+  lengthCm: z
+    .string()
+    .regex(/^(\d+(\.\d{1,2})?)?$/, "Enter a length in centimetres")
+    .optional()
+    .or(z.literal("")),
+  widthCm: z
+    .string()
+    .regex(/^(\d+(\.\d{1,2})?)?$/, "Enter a width in centimetres")
+    .optional()
+    .or(z.literal("")),
+  heightCm: z
+    .string()
+    .regex(/^(\d+(\.\d{1,2})?)?$/, "Enter a height in centimetres")
+    .optional()
+    .or(z.literal("")),
   categoryIds: z.array(z.string().uuid()),
   // Tax classification. Interpretation depends on the store's country
   // tax strategy — see TaxTab for the country-specific form.

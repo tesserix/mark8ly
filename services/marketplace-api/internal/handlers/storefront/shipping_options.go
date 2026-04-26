@@ -10,6 +10,7 @@ package storefront
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -86,15 +87,26 @@ func (h *ShippingOptionsHandler) GetOptions(c *gin.Context) {
 		return
 	}
 
+	storeCountry := strings.ToUpper(strings.TrimSpace(store.CountryCode))
+
 	out := make([]shippingOptionResponse, 0, len(cfgs))
 	for _, cfg := range cfgs {
 		services := serviceLevelsByCarrier[cfg.Provider]
 		if services == nil {
 			services = []string{"standard"}
 		}
-		countries := carrierSupportedCountries[cfg.Provider]
-		if countries == nil {
-			countries = []string{}
+		// Restrict the advertised destinations to the merchant's own
+		// store country — v1 only supports intra-country shipping
+		// (admin has no per-store ship-to-countries setting yet).
+		// Result: storefront's checkout locks the buyer's country to
+		// the store's country instead of letting them pick any of the
+		// carrier's regional capabilities.
+		countries := []string{}
+		for _, c := range carrierSupportedCountries[cfg.Provider] {
+			if c == storeCountry {
+				countries = []string{storeCountry}
+				break
+			}
 		}
 		out = append(out, shippingOptionResponse{
 			Carrier:            cfg.Provider,

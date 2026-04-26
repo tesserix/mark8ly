@@ -105,8 +105,33 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
   }, [orderId]);
 
   if (paymentStatus === "paid" || paymentStatus === "captured") return null;
-  if (!pending) return null;
-  if (pending.provider !== "razorpay") return null;
+
+  // Hosted-checkout providers (Stripe) bring the buyer back here from
+  // an off-domain payment page. Payment is captured asynchronously via
+  // webhook, so the order may briefly show pending after redirect — say
+  // so explicitly instead of rendering blank, and tell the buyer how to
+  // recover if they cancelled mid-flow.
+  if (!pending || pending.provider !== "razorpay") {
+    return (
+      <section
+        aria-labelledby="payment-status-heading"
+        className="mt-8 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))] px-6 py-5"
+      >
+        <h2
+          id="payment-status-heading"
+          className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--storefront-text,var(--ink-900))] opacity-70"
+        >
+          Payment status
+        </h2>
+        <p className="mt-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-80">
+          We&apos;re confirming your payment. This usually takes a few seconds —
+          refresh in a moment to see the latest status. If you closed the
+          payment window without paying, your card was not charged; please
+          contact the store to retry.
+        </p>
+      </section>
+    );
+  }
 
   async function handlePay() {
     if (!pending) return;

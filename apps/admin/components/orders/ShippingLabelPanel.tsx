@@ -38,6 +38,14 @@ interface ShippingLabelPanelProps {
   storeId: string;
   orderId: string;
   orderStatus: string;
+  /**
+   * The carrier + service the customer picked at checkout (resolved from
+   * the store's configured carrier list and persisted on the order). Used
+   * as the form default so an AU store on ShipEngine doesn't pre-fill
+   * Delhivery. Undefined for orders pre-dating migration 82.
+   */
+  customerCarrier?: string;
+  customerService?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -50,6 +58,8 @@ export function ShippingLabelPanel({
   storeId,
   orderId,
   orderStatus,
+  customerCarrier,
+  customerService,
 }: ShippingLabelPanelProps) {
   const [shipment, setShipment] = useState<ShipmentResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -130,6 +140,8 @@ export function ShippingLabelPanel({
         <CreateShipmentForm
           storeId={storeId}
           orderId={orderId}
+          customerCarrier={customerCarrier}
+          customerService={customerService}
           onCreated={(s) => {
             setShipment(s);
             setShowForm(false);
@@ -698,6 +710,8 @@ function TextLink({
 interface CreateShipmentFormProps {
   storeId: string;
   orderId: string;
+  customerCarrier?: string;
+  customerService?: string;
   onCreated: (shipment: ShipmentResponse) => void;
   onCancel: () => void;
 }
@@ -713,23 +727,39 @@ const SERVICE_LEVELS = [
   { value: "express", label: "Express" },
 ] as const;
 
+function isKnownCarrier(value: string): boolean {
+  return CARRIERS.some((c) => c.value === value);
+}
+
+function isKnownService(value: string): boolean {
+  return SERVICE_LEVELS.some((s) => s.value === value);
+}
+
 function CreateShipmentForm({
   storeId,
   orderId,
+  customerCarrier,
+  customerService,
   onCreated,
   onCancel,
 }: CreateShipmentFormProps) {
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<ShippingActionResult["error"] | undefined>();
-  // The customer already picked a carrier + service level at checkout;
-  // the admin step is just "approve and generate the label". Defaults
-  // reflect the most common case (Delhivery + Standard) so staff can
-  // click through in one action. An "Override" disclosure lets ops pick
-  // a different carrier when needed.
-  const [provider, setProvider] = useState("delhivery");
-  const [service, setService] = useState("standard");
+  // Default to whatever the customer picked at checkout (persisted on the
+  // order). Falls back to the safest catch-all (ShipEngine + Standard) for
+  // legacy orders or if the persisted value isn't in the carriers we know
+  // how to render — staff can still pick from the Override disclosure.
+  const initialProvider =
+    customerCarrier && isKnownCarrier(customerCarrier) ? customerCarrier : "shipengine";
+  const initialService =
+    customerService && isKnownService(customerService.toLowerCase())
+      ? customerService.toLowerCase()
+      : "standard";
+  const [provider, setProvider] = useState(initialProvider);
+  const [service, setService] = useState(initialService);
   const [showOverride, setShowOverride] = useState(false);
+  const haveCustomerChoice = Boolean(customerCarrier);
 
   const submit = useCallback(
     (e: React.FormEvent) => {
@@ -761,7 +791,8 @@ function CreateShipmentForm({
           Approve &amp; generate label
         </h3>
         <p className="text-xs text-foreground-tertiary">
-          Picked by customer: {CARRIERS.find((c) => c.value === provider)?.label ?? provider}
+          {haveCustomerChoice ? "Picked by customer" : "Default"}:{" "}
+          {CARRIERS.find((c) => c.value === provider)?.label ?? provider}
           {" · "}
           {SERVICE_LEVELS.find((s) => s.value === service)?.label ?? service}
         </p>

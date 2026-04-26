@@ -425,6 +425,50 @@ export default function CheckoutPage() {
       setSubmitting(false);
       return;
     }
+
+    // Safety net: every checkout response must give us a way to actually
+    // collect payment. Hosted providers (Stripe) ship a redirect URL;
+    // embedded providers (Razorpay) ship a payment_token + a known
+    // client integration. Without one of those, the buyer has nowhere to
+    // pay — bail out before clearing the cart so the merchant doesn't
+    // end up with an unpaid "completed" order.
+    const KNOWN_EMBEDDED_PROVIDERS = new Set(["razorpay"]);
+    const hasRedirect =
+      typeof result.payment_redirect_url === "string" &&
+      result.payment_redirect_url.length > 0;
+    const hasEmbeddedPath =
+      KNOWN_EMBEDDED_PROVIDERS.has(result.provider) &&
+      typeof result.payment_token === "string" &&
+      result.payment_token.length > 0;
+    if (!hasRedirect && !hasEmbeddedPath) {
+      setError(
+        "We couldn't start the payment for this order. Please contact the store — your card was not charged.",
+      );
+      toast({
+        title: "Couldn't start payment",
+        description: `Provider ${result.provider} is not fully configured.`,
+        tone: "error",
+      });
+      setSubmitting(false);
+      return;
+    }
+
+    // Hosted checkout (Stripe): redirect immediately and let the
+    // provider's success_url bring the buyer back to /orders/[id]. Don't
+    // clear the cart yet — if the buyer cancels mid-flow the items
+    // should still be there. The webhook flips payment_status to paid.
+    if (hasRedirect) {
+      toast({
+        title: `Order ${result.order_number} reserved`,
+        description: "Redirecting to secure payment…",
+        tone: "success",
+      });
+      if (typeof window !== "undefined") {
+        window.location.assign(result.payment_redirect_url!);
+      }
+      return;
+    }
+
     toast({
       title: `Order ${result.order_number} placed`,
       description: "Complete payment to confirm.",

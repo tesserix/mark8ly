@@ -75,6 +75,13 @@ type CreateInput struct {
 	DiscountTotal  decimal.Decimal
 	GrandTotal     decimal.Decimal
 	CurrencyCode   string
+	// ShippingService and ShippingCarrier are the customer's checkout choice
+	// — the carrier provider name (resolved from store config) and the
+	// service level (standard / express / etc). Persisted so the admin
+	// label-creation form can default to what the buyer paid for instead
+	// of a hardcoded fallback.
+	ShippingService *string
+	ShippingCarrier *string
 	Notes          *string
 	PlacedAt       time.Time
 }
@@ -134,6 +141,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		GrandTotal:        in.GrandTotal,
 		RefundedAmount:    decimal.Zero,
 		CurrencyCode:      in.CurrencyCode,
+		ShippingService:   in.ShippingService,
+		ShippingCarrier:   in.ShippingCarrier,
 		Notes:             in.Notes,
 		PlacedAt:          in.PlacedAt,
 	}

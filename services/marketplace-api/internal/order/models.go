@@ -35,6 +35,8 @@ type Order struct {
 	CurrencyCode      string          `gorm:"column:currency_code;type:char(3);not null"`
 	PaymentProvider   *string         `gorm:"column:payment_provider;type:varchar(40)"`
 	PaymentIntentID   *string         `gorm:"column:payment_intent_id;type:varchar(200)"`
+	ShippingService   *string         `gorm:"column:shipping_service;type:varchar(40)"`
+	ShippingCarrier   *string         `gorm:"column:shipping_carrier;type:varchar(40)"`
 	Notes             *string         `gorm:"column:notes;type:text"`
 	PlacedAt          time.Time       `gorm:"column:placed_at;not null;default:now()"`
 	CancelledAt       *time.Time      `gorm:"column:cancelled_at"`

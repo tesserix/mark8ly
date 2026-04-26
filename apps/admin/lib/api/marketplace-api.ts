@@ -1051,6 +1051,13 @@ export interface AdminOrder {
   grand_total: string;
   refunded_amount: string;
   currency_code: string;
+  /**
+   * shipping_service / shipping_carrier are the customer's checkout choice,
+   * persisted on the order so the admin label panel can default to what
+   * the buyer paid for. Undefined for orders pre-dating migration 82.
+   */
+  shipping_service?: string;
+  shipping_carrier?: string;
   items: AdminOrderItem[];
   addresses: AdminOrderAddress[];
   placed_at: string;

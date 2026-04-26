@@ -221,19 +221,26 @@ type CheckoutExtRequest struct {
 
 // CheckoutExtResponse is the extended checkout response including payment
 // token and computed totals.
+//
+// PaymentRedirectURL is set when the order's payment provider exposes a
+// hosted checkout page (Stripe Checkout). The storefront should redirect
+// the buyer to that URL instead of opening a JS widget — there is no
+// payment_token in that path. PaymentToken is set when the provider uses
+// an embedded SDK flow (Razorpay's checkout.js, Stripe Elements).
 type CheckoutExtResponse struct {
-	OrderID         string          `json:"order_id"`
-	OrderNumber     string          `json:"order_number"`
-	PaymentToken    string          `json:"payment_token"`
-	Provider        string          `json:"provider"`
-	TaxTotal        decimal.Decimal `json:"tax_total"`
-	ShippingTotal   decimal.Decimal `json:"shipping_total"`
-	DiscountTotal   decimal.Decimal `json:"discount_total"`
-	Total           decimal.Decimal `json:"total"`
-	GiftCardApplied decimal.Decimal `json:"gift_card_applied"`
-	CouponCode      *string         `json:"coupon_code,omitempty"`
-	LoyaltyDiscount decimal.Decimal `json:"loyalty_discount,omitempty"`
-	PointsRedeemed  int             `json:"points_redeemed,omitempty"`
+	OrderID            string          `json:"order_id"`
+	OrderNumber        string          `json:"order_number"`
+	PaymentToken       string          `json:"payment_token"`
+	PaymentRedirectURL string          `json:"payment_redirect_url,omitempty"`
+	Provider           string          `json:"provider"`
+	TaxTotal           decimal.Decimal `json:"tax_total"`
+	ShippingTotal      decimal.Decimal `json:"shipping_total"`
+	DiscountTotal      decimal.Decimal `json:"discount_total"`
+	Total              decimal.Decimal `json:"total"`
+	GiftCardApplied    decimal.Decimal `json:"gift_card_applied"`
+	CouponCode         *string         `json:"coupon_code,omitempty"`
+	LoyaltyDiscount    decimal.Decimal `json:"loyalty_discount,omitempty"`
+	PointsRedeemed     int             `json:"points_redeemed,omitempty"`
 }
 
 // Checkout handles POST /storefront/stores/:storeSlug/checkout (extended).
@@ -397,7 +404,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	}
 
 	// ── Step 2: Calculate shipping ──────────────────────────────────────
-	shippingTotal, err := h.calculateShipping(ctx, store, &sc, req)
+	shippingTotal, shippingCarrier, err := h.calculateShipping(ctx, store, &sc, req)
 	if err != nil {
 		// M8 fix: return error instead of silently falling back to zero.
 		h.respondErr(c, fmt.Errorf("shipping calculation failed: %w", err))
@@ -477,26 +484,39 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		}
 	}
 
+	// Persist the customer's checkout-time shipping choice so the admin
+	// label panel can default to the right carrier+service. Non-empty
+	// only — empty strings stay NULL on the order.
+	var shippingServicePtr, shippingCarrierPtr *string
+	if s := strings.TrimSpace(req.ShippingService); s != "" {
+		shippingServicePtr = &s
+	}
+	if s := strings.TrimSpace(shippingCarrier); s != "" {
+		shippingCarrierPtr = &s
+	}
+
 	// Sequence allocation happens inside Service.Create's transaction
 	// (C6 fix: atomic with order insert to prevent burned numbers).
 	in := order.CreateInput{
-		TenantID:       tenantID,
-		StoreID:        storeID,
-		StorePrefix:    prefix,
-		OrderNumberSeq: 0, // allocated inside Create tx
-		IdempotencyKey: req.IdempotencyKey,
-		CustomerID:     customerID,
-		CustomerEmail:  req.CustomerEmail,
-		CustomerName:   req.CustomerName,
-		Items:          checkoutToServiceItems(req.Items),
-		Shipping:       checkoutToServiceAddress(req.ShippingAddress),
-		Billing:        checkoutToServiceAddress(billing),
-		Subtotal:       req.Subtotal,
-		ShippingTotal:  shippingTotal,
-		TaxTotal:       taxBreakdown.TaxTotal,
-		DiscountTotal:  effectiveDiscount,
-		GrandTotal:     grandTotal,
-		CurrencyCode:   store.CurrencyCode,
+		TenantID:        tenantID,
+		StoreID:         storeID,
+		StorePrefix:     prefix,
+		OrderNumberSeq:  0, // allocated inside Create tx
+		IdempotencyKey:  req.IdempotencyKey,
+		CustomerID:      customerID,
+		CustomerEmail:   req.CustomerEmail,
+		CustomerName:    req.CustomerName,
+		Items:           checkoutToServiceItems(req.Items),
+		Shipping:        checkoutToServiceAddress(req.ShippingAddress),
+		Billing:         checkoutToServiceAddress(billing),
+		Subtotal:        req.Subtotal,
+		ShippingTotal:   shippingTotal,
+		TaxTotal:        taxBreakdown.TaxTotal,
+		DiscountTotal:   effectiveDiscount,
+		GrandTotal:      grandTotal,
+		CurrencyCode:    store.CurrencyCode,
+		ShippingService: shippingServicePtr,
+		ShippingCarrier: shippingCarrierPtr,
 	}
 
 	result, err := h.orderSvc.Create(ctx, in)
@@ -623,8 +643,12 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		}
 	}
 
-	// ── Step 6: Create payment intent ───────────────────────────────────
-	paymentToken, err := h.createPaymentIntent(ctx, store, req.PaymentProvider, result.Order, grandTotal)
+	// ── Step 6: Create payment intent / hosted session ────────────────
+	// Use the buyer's storefront Origin to build hosted-checkout return
+	// URLs. Origin is a browser-set header so it's the right source of
+	// truth here even when the request goes through Cloudflare / Istio.
+	returnBase := strings.TrimRight(c.GetHeader("Origin"), "/")
+	paymentToken, paymentRedirect, err := h.createPaymentIntent(ctx, store, req.PaymentProvider, result.Order, grandTotal, returnBase)
 	if err != nil {
 		h.logWarn("checkout_ext: payment intent creation failed",
 			"order_id", result.Order.ID.String(), "err", err)
@@ -657,16 +681,17 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, CheckoutExtResponse{
-		OrderID:         result.Order.ID.String(),
-		OrderNumber:     result.Order.OrderNumber,
-		PaymentToken:    paymentToken,
-		Provider:        req.PaymentProvider,
-		TaxTotal:        taxBreakdown.TaxTotal,
-		ShippingTotal:   shippingTotal,
-		DiscountTotal:   effectiveDiscount,
-		Total:           grandTotal,
-		GiftCardApplied: giftCardApplied,
-		CouponCode:      appliedCouponCode,
+		OrderID:            result.Order.ID.String(),
+		OrderNumber:        result.Order.OrderNumber,
+		PaymentToken:       paymentToken,
+		PaymentRedirectURL: paymentRedirect,
+		Provider:           req.PaymentProvider,
+		TaxTotal:           taxBreakdown.TaxTotal,
+		ShippingTotal:      shippingTotal,
+		DiscountTotal:      effectiveDiscount,
+		Total:              grandTotal,
+		GiftCardApplied:    giftCardApplied,
+		CouponCode:         appliedCouponCode,
 	})
 }
 
@@ -675,22 +700,24 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // calculateShipping resolves the carrier config and gets the rate for the
-// selected service. Returns the final price including handling fee.
+// selected service. Returns the final price including handling fee plus
+// the resolved carrier provider name so the order can persist what the
+// customer actually picked (e.g. "shipengine" for an AU store).
 func (h *CheckoutExtHandler) calculateShipping(
 	ctx context.Context,
 	store *stores.Store,
 	sc *country.SupportedCountry,
 	req CheckoutExtRequest,
-) (decimal.Decimal, error) {
+) (decimal.Decimal, string, error) {
 	if len(sc.ShippingCarriers) == 0 {
-		return decimal.Zero, nil
+		return decimal.Zero, "", nil
 	}
 
 	var cfg carrierConfigRow
 	if err := h.db.WithContext(ctx).
 		Where("store_id = ? AND is_active = true AND provider IN ?", store.ID, []string(sc.ShippingCarriers)).
 		First(&cfg).Error; err != nil {
-		return decimal.Zero, fmt.Errorf("no active carrier config: %w", err)
+		return decimal.Zero, "", fmt.Errorf("no active carrier config: %w", err)
 	}
 
 	// Resolve API keys before passing to carrier. Routes through the
@@ -698,13 +725,13 @@ func (h *CheckoutExtHandler) calculateShipping(
 	// otherwise falls back to the Encryptor-only path.
 	apiKey, err := h.resolveCred(ctx, cfg.APIKey)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("resolve carrier api_key: %w", err)
+		return decimal.Zero, "", fmt.Errorf("resolve carrier api_key: %w", err)
 	}
 	var secretKey string
 	if cfg.SecretKey != "" {
 		secretKey, err = h.resolveCred(ctx, cfg.SecretKey)
 		if err != nil {
-			return decimal.Zero, fmt.Errorf("resolve carrier secret_key: %w", err)
+			return decimal.Zero, "", fmt.Errorf("resolve carrier secret_key: %w", err)
 		}
 	}
 
@@ -715,7 +742,7 @@ func (h *CheckoutExtHandler) calculateShipping(
 
 	carrier, err := shipping.NewCarrier(cfg.Provider, apiKey, secretKey, cfg.Mode)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("carrier init: %w", err)
+		return decimal.Zero, "", fmt.Errorf("carrier init: %w", err)
 	}
 
 	// Fetch per-variant weight + dims so the carrier rate request gets
@@ -790,7 +817,7 @@ func (h *CheckoutExtHandler) calculateShipping(
 
 	rates, err := carrier.GetRates(ctx, rateReq)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("carrier.GetRates: %w", err)
+		return decimal.Zero, "", fmt.Errorf("carrier.GetRates: %w", err)
 	}
 
 	// Find the rate matching the requested service.
@@ -801,10 +828,10 @@ func (h *CheckoutExtHandler) calculateShipping(
 			// Apply free shipping threshold.
 			if cfg.FreeShippingMin != nil && !cfg.FreeShippingMin.IsZero() &&
 				req.Subtotal.GreaterThanOrEqual(*cfg.FreeShippingMin) {
-				return decimal.Zero, nil
+				return decimal.Zero, cfg.Provider, nil
 			}
 
-			return price, nil
+			return price, cfg.Provider, nil
 		}
 	}
 
@@ -813,12 +840,12 @@ func (h *CheckoutExtHandler) calculateShipping(
 		price := rates[0].Price.Add(cfg.HandlingFee)
 		if cfg.FreeShippingMin != nil && !cfg.FreeShippingMin.IsZero() &&
 			req.Subtotal.GreaterThanOrEqual(*cfg.FreeShippingMin) {
-			return decimal.Zero, nil
+			return decimal.Zero, cfg.Provider, nil
 		}
-		return price, nil
+		return price, cfg.Provider, nil
 	}
 
-	return decimal.Zero, nil
+	return decimal.Zero, cfg.Provider, nil
 }
 
 // calculateTax resolves the tax strategy for the store's country and
@@ -938,34 +965,45 @@ func (h *CheckoutExtHandler) calculateTax(
 	return breakdown, nil
 }
 
-// createPaymentIntent creates a payment intent and persists the transaction.
-// Returns the client token for the storefront SDK.
+// createPaymentIntent provisions the provider-side payment object and
+// persists the transaction. Branches on gateway capability:
+//
+//   - If the gateway implements payment.CheckoutGateway and we know the
+//     storefront origin, create a hosted Checkout Session and return its
+//     URL as redirectURL. The customer is redirected off-site to pay.
+//     Used by Stripe for AU/global stores — there is no storefront-side
+//     widget for Stripe, so the only safe path is hosted.
+//   - Otherwise fall back to CreateIntent and return the client_token /
+//     order_id the storefront's embedded JS SDK uses (Razorpay).
+//
+// Exactly one of (clientToken, redirectURL) is set on the success path.
 func (h *CheckoutExtHandler) createPaymentIntent(
 	ctx context.Context,
 	store *stores.Store,
 	providerName string,
 	ord *order.Order,
 	amount decimal.Decimal,
-) (string, error) {
+	returnBase string,
+) (string, string, error) {
 	// Look up the payment gateway config for this provider + store.
 	var cfg paymentGatewayConfigRow
 	if err := h.db.WithContext(ctx).
 		Where("store_id = ? AND provider = ? AND is_active = true", store.ID, providerName).
 		First(&cfg).Error; err != nil {
-		return "", fmt.Errorf("no active payment config for %s: %w", providerName, err)
+		return "", "", fmt.Errorf("no active payment config for %s: %w", providerName, err)
 	}
 
 	// Resolve API keys before passing to gateway. Same Store-first /
 	// Encryptor-fallback pattern as shipping.
 	apiKey, err := h.resolveCred(ctx, cfg.APIKey)
 	if err != nil {
-		return "", fmt.Errorf("resolve payment api_key: %w", err)
+		return "", "", fmt.Errorf("resolve payment api_key: %w", err)
 	}
 	var secretKey string
 	if cfg.SecretKey != "" {
 		secretKey, err = h.resolveCred(ctx, cfg.SecretKey)
 		if err != nil {
-			return "", fmt.Errorf("resolve payment secret_key: %w", err)
+			return "", "", fmt.Errorf("resolve payment secret_key: %w", err)
 		}
 	}
 
@@ -974,7 +1012,51 @@ func (h *CheckoutExtHandler) createPaymentIntent(
 
 	gateway, err := payment.NewGateway(providerName, apiKey, secretKey, cfg.Mode)
 	if err != nil {
-		return "", fmt.Errorf("gateway init: %w", err)
+		return "", "", fmt.Errorf("gateway init: %w", err)
+	}
+
+	metadata := map[string]string{
+		"order_id":     ord.ID.String(),
+		"order_number": ord.OrderNumber,
+		"store_id":     store.ID,
+	}
+
+	// Hosted-checkout path (Stripe). Only taken when the gateway
+	// implements CheckoutGateway AND the storefront sent an Origin so
+	// we can build absolute return URLs. checkout.session.completed →
+	// handlePaymentSucceeded → order.Confirm marks the order paid.
+	if cg, ok := gateway.(payment.CheckoutGateway); ok && returnBase != "" {
+		successURL := fmt.Sprintf("%s/orders/%s?payment=success", returnBase, ord.ID.String())
+		cancelURL := fmt.Sprintf("%s/orders/%s?payment=cancelled", returnBase, ord.ID.String())
+		session, err := cg.CreateCheckoutSession(ctx, payment.CreateCheckoutSessionInput{
+			ReferenceID:   ord.ID.String(),
+			Amount:        amount,
+			CurrencyCode:  ord.CurrencyCode,
+			CustomerEmail: ord.CustomerEmail,
+			Description:   fmt.Sprintf("Order %s", ord.OrderNumber),
+			Name:          fmt.Sprintf("Order %s", ord.OrderNumber),
+			SuccessURL:    successURL,
+			CancelURL:     cancelURL,
+			Metadata:      metadata,
+		})
+		if err != nil {
+			return "", "", fmt.Errorf("create checkout session: %w", err)
+		}
+
+		txRecord := payment.PaymentTransaction{
+			TenantID:         store.TenantID,
+			StoreID:          store.ID,
+			OrderID:          ord.ID.String(),
+			Provider:         providerName,
+			ProviderIntentID: session.ID,
+			Amount:           amount,
+			CurrencyCode:     ord.CurrencyCode,
+			Status:           "pending",
+		}
+		if err := h.db.WithContext(ctx).Create(&txRecord).Error; err != nil {
+			return "", "", fmt.Errorf("persist payment transaction: %w", err)
+		}
+		return "", session.URL, nil
 	}
 
 	intent, err := gateway.CreateIntent(ctx, payment.CreateIntentInput{
@@ -983,14 +1065,10 @@ func (h *CheckoutExtHandler) createPaymentIntent(
 		CurrencyCode:  ord.CurrencyCode,
 		CustomerEmail: ord.CustomerEmail,
 		Description:   fmt.Sprintf("Order %s", ord.OrderNumber),
-		Metadata: map[string]string{
-			"order_id":     ord.ID.String(),
-			"order_number": ord.OrderNumber,
-			"store_id":     store.ID,
-		},
+		Metadata:      metadata,
 	})
 	if err != nil {
-		return "", fmt.Errorf("create intent: %w", err)
+		return "", "", fmt.Errorf("create intent: %w", err)
 	}
 
 	// Persist payment transaction record.
@@ -1005,10 +1083,10 @@ func (h *CheckoutExtHandler) createPaymentIntent(
 		Status:           intent.Status,
 	}
 	if err := h.db.WithContext(ctx).Create(&txRecord).Error; err != nil {
-		return "", fmt.Errorf("persist payment transaction: %w", err)
+		return "", "", fmt.Errorf("persist payment transaction: %w", err)
 	}
 
-	return intent.ClientToken, nil
+	return intent.ClientToken, "", nil
 }
 
 // paymentGatewayConfigRow is a read-only projection of payment_gateway_configs

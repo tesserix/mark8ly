@@ -88,6 +88,8 @@ export default async function OrderDetailPage({ params }: PageProps) {
               storeId={currentStore.id}
               orderId={order.id}
               orderStatus={order.status}
+              customerCarrier={order.shipping_carrier}
+              customerService={order.shipping_service}
             />
           </div>
           <div className="border-t border-border-subtle pt-8">

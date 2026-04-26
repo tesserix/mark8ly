@@ -157,6 +157,11 @@ type AdminOrderResponse struct {
 	GrandTotal        decimal.Decimal          `json:"grand_total"`
 	RefundedAmount    decimal.Decimal          `json:"refunded_amount"`
 	CurrencyCode      string                   `json:"currency_code"`
+	// ShippingService / ShippingCarrier are the customer's checkout choice
+	// — captured so the admin "Approve & generate label" panel can default
+	// to what the buyer paid for. Empty for orders pre-dating migration 82.
+	ShippingService   *string                  `json:"shipping_service,omitempty"`
+	ShippingCarrier   *string                  `json:"shipping_carrier,omitempty"`
 	Items             []AdminOrderItemResponse `json:"items"`
 	Addresses         []AdminAddressResponse   `json:"addresses"`
 	PlacedAt          time.Time                `json:"placed_at"`
@@ -195,6 +200,8 @@ func ToAdminOrderResponse(o *order.Order, items []order.OrderItem, addrs []order
 		GrandTotal:        o.GrandTotal,
 		RefundedAmount:    o.RefundedAmount,
 		CurrencyCode:      o.CurrencyCode,
+		ShippingService:   o.ShippingService,
+		ShippingCarrier:   o.ShippingCarrier,
 		Items:             make([]AdminOrderItemResponse, 0, len(items)),
 		Addresses:         make([]AdminAddressResponse, 0, len(addrs)),
 		PlacedAt:          o.PlacedAt,

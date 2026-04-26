@@ -138,7 +138,18 @@ export interface CheckoutBody {
 export interface CheckoutResult {
   order_id: string;
   order_number: string;
+  /**
+   * Embedded-SDK token (Razorpay order_id, etc.) — set when the buyer
+   * completes payment on a JS widget rendered on the order page.
+   */
   payment_token: string;
+  /**
+   * Hosted-checkout redirect URL (Stripe Checkout). When set, the
+   * storefront should redirect the browser straight to this URL after
+   * placing the order — the buyer pays on the provider's domain and is
+   * sent back via success_url. payment_token is empty in this path.
+   */
+  payment_redirect_url?: string;
   provider: string;
   tax_total: string;
   shipping_total: string;

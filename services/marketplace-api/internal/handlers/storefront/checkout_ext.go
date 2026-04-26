@@ -718,11 +718,60 @@ func (h *CheckoutExtHandler) calculateShipping(
 		return decimal.Zero, fmt.Errorf("carrier init: %w", err)
 	}
 
+	// Fetch per-variant weight + dims so the carrier rate request gets
+	// real numbers. Without this every shipment looks like a 0-gram
+	// envelope to ShipEngine, which Australia Post rejects with
+	// "weight must be greater than or equal to 0.01 kg".
+	variantIDs := make([]string, 0, len(req.Items))
+	for _, it := range req.Items {
+		if it.VariantID != nil && *it.VariantID != "" {
+			variantIDs = append(variantIDs, *it.VariantID)
+		}
+	}
+	type variantShipRow struct {
+		ID          string
+		WeightGrams *int
+		LengthCM    *decimal.Decimal
+		WidthCM     *decimal.Decimal
+		HeightCM    *decimal.Decimal
+	}
+	shipByVariant := map[string]variantShipRow{}
+	if len(variantIDs) > 0 {
+		var rows []variantShipRow
+		if err := h.db.WithContext(ctx).
+			Table("product_variants").
+			Select("id", "weight_grams", "length_cm", "width_cm", "height_cm").
+			Where("id IN ?", variantIDs).
+			Find(&rows).Error; err == nil {
+			for _, r := range rows {
+				shipByVariant[r.ID] = r
+			}
+		}
+	}
+
 	parcels := make([]shipping.ParcelItem, 0, len(req.Items))
 	for _, it := range req.Items {
-		parcels = append(parcels, shipping.ParcelItem{
-			Quantity: it.Quantity,
-		})
+		p := shipping.ParcelItem{Quantity: it.Quantity}
+		if it.VariantID != nil {
+			if vs, ok := shipByVariant[*it.VariantID]; ok {
+				if vs.WeightGrams != nil {
+					p.WeightGrams = *vs.WeightGrams
+				}
+				if vs.LengthCM != nil {
+					f, _ := vs.LengthCM.Float64()
+					p.LengthCM = f
+				}
+				if vs.WidthCM != nil {
+					f, _ := vs.WidthCM.Float64()
+					p.WidthCM = f
+				}
+				if vs.HeightCM != nil {
+					f, _ := vs.HeightCM.Float64()
+					p.HeightCM = f
+				}
+			}
+		}
+		parcels = append(parcels, p)
 	}
 
 	fromAddr := warehouseAddress(cfg)

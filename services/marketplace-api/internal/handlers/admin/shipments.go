@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
@@ -384,14 +385,71 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		toAddress.Phone = *shippingAddr.Phone
 	}
 
-	// Build parcel items from order items.
+	// Build parcel items from order items. ShipEngine (and every other
+	// real carrier) rejects label creation when total weight is 0 —
+	// "Weight is required for the package." So look up per-variant
+	// weight + dims from product_variants and stamp them on the parcel
+	// items. Mirrors the same lookup the storefront checkout does in
+	// services/marketplace-api/internal/handlers/storefront/checkout_ext.go
+	// (commit 8acdf31). Falls back to a 500g default per unit when the
+	// merchant left weight blank, so we still produce a label rather
+	// than dead-end the merchant.
+	variantIDs := make([]string, 0, len(items))
+	for _, it := range items {
+		if it.VariantID != nil {
+			variantIDs = append(variantIDs, it.VariantID.String())
+		}
+	}
+	type variantShipRow struct {
+		ID          string
+		WeightGrams *int
+		LengthCM    *decimal.Decimal
+		WidthCM     *decimal.Decimal
+		HeightCM    *decimal.Decimal
+	}
+	shipByVariant := map[string]variantShipRow{}
+	if len(variantIDs) > 0 {
+		var rows []variantShipRow
+		if err := h.db.WithContext(ctx).
+			Table("product_variants").
+			Select("id", "weight_grams", "length_cm", "width_cm", "height_cm").
+			Where("id IN ?", variantIDs).
+			Find(&rows).Error; err == nil {
+			for _, r := range rows {
+				shipByVariant[r.ID] = r
+			}
+		}
+	}
+
+	const defaultWeightGramsPerUnit = 500
 	parcelItems := make([]shipping.ParcelItem, 0, len(items))
 	for _, it := range items {
-		parcelItems = append(parcelItems, shipping.ParcelItem{
-			Title:    it.TitleSnapshot,
-			SKU:      it.SKUSnapshot,
-			Quantity: it.Quantity,
-		})
+		p := shipping.ParcelItem{
+			Title:       it.TitleSnapshot,
+			SKU:         it.SKUSnapshot,
+			Quantity:    it.Quantity,
+			WeightGrams: defaultWeightGramsPerUnit,
+		}
+		if it.VariantID != nil {
+			if vs, ok := shipByVariant[it.VariantID.String()]; ok {
+				if vs.WeightGrams != nil && *vs.WeightGrams > 0 {
+					p.WeightGrams = *vs.WeightGrams
+				}
+				if vs.LengthCM != nil {
+					f, _ := vs.LengthCM.Float64()
+					p.LengthCM = f
+				}
+				if vs.WidthCM != nil {
+					f, _ := vs.WidthCM.Float64()
+					p.WidthCM = f
+				}
+				if vs.HeightCM != nil {
+					f, _ := vs.HeightCM.Float64()
+					p.HeightCM = f
+				}
+			}
+		}
+		parcelItems = append(parcelItems, p)
 	}
 
 	// Call the carrier to create shipment.

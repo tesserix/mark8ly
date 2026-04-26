@@ -9,6 +9,13 @@ import type { SessionHeaders, MutationResult, MutationError } from "./marketplac
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 
+// MARKETPLACE_INTERNAL_AUTH_SECRET, when set on the marketplace-api side,
+// requires every admin request to carry a matching X-Internal-Auth header.
+// Without this, settings endpoints 401 with "authentication required".
+// Mirrors the wiring already in marketplace-api.ts and shipping-api.ts.
+const MARKETPLACE_INTERNAL_AUTH =
+  process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
+
 // ─────────────────────────────────────────────────────────────────────────
 // Wire DTOs — match the backend JSON shapes in settings.go
 // ─────────────────────────────────────────────────────────────────────────
@@ -127,20 +134,28 @@ export interface SupportedProviders {
 // ─────────────────────────────────────────────────────────────────────────
 
 function commonHeaders(session: SessionHeaders): HeadersInit {
-  return {
+  const headers: Record<string, string> = {
     "X-User-Id": session.userId,
     "X-Tenant-Id": session.tenantId,
     Accept: "application/json",
     "Content-Type": "application/json",
   };
+  if (MARKETPLACE_INTERNAL_AUTH) {
+    headers["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
+  }
+  return headers;
 }
 
 function readHeaders(session: SessionHeaders): HeadersInit {
-  return {
+  const headers: Record<string, string> = {
     "X-User-Id": session.userId,
     "X-Tenant-Id": session.tenantId,
     Accept: "application/json",
   };
+  if (MARKETPLACE_INTERNAL_AUTH) {
+    headers["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
+  }
+  return headers;
 }
 
 interface ApiError {

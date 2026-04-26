@@ -67,12 +67,42 @@ type seAddress struct {
 }
 
 type sePackage struct {
-	Weight seWeight `json:"weight"`
+	Weight     seWeight     `json:"weight"`
+	Dimensions seDimensions `json:"dimensions"`
 }
 
 type seWeight struct {
 	Value float64 `json:"value"`
 	Unit  string  `json:"unit"`
+}
+
+// seDimensions is required by most carriers ShipEngine fronts —
+// Australia Post returns 400 / VAL_DIMENSION_MAX without it. We
+// default to a reasonable parcel envelope (30 × 20 × 10 cm) until
+// per-variant dimensions land on the product model. The defaults
+// are well within every carrier's max (≤180 cm / 200 cm).
+type seDimensions struct {
+	Unit   string  `json:"unit"`
+	Length float64 `json:"length"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+// Default rate-quote package dimensions in centimeters. Used until
+// the product model carries per-variant dimensions.
+const (
+	defaultLengthCM = 30.0
+	defaultWidthCM  = 20.0
+	defaultHeightCM = 10.0
+)
+
+func defaultPackageDimensions() seDimensions {
+	return seDimensions{
+		Unit:   "centimeter",
+		Length: defaultLengthCM,
+		Width:  defaultWidthCM,
+		Height: defaultHeightCM,
+	}
 }
 
 type seRateRequest struct {
@@ -182,7 +212,10 @@ func (c *ShipEngineCarrier) GetRates(ctx context.Context, in RateRequest) ([]Rat
 			ShipFrom: toSEAddress(in.FromAddress),
 			ShipTo:   toSEAddress(in.ToAddress),
 			Packages: []sePackage{
-				{Weight: seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"}},
+				{
+				Weight:     seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"},
+				Dimensions: defaultPackageDimensions(),
+			},
 			},
 		},
 	}
@@ -261,7 +294,10 @@ func (c *ShipEngineCarrier) CreateShipment(ctx context.Context, in ShipmentReque
 			ShipFrom: toSEAddress(in.FromAddress),
 			ShipTo:   toSEAddress(in.ToAddress),
 			Packages: []sePackage{
-				{Weight: seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"}},
+				{
+				Weight:     seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"},
+				Dimensions: defaultPackageDimensions(),
+			},
 			},
 		},
 		ServiceCode: in.Service,

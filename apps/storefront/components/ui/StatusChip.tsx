@@ -25,32 +25,36 @@ export interface StatusChipProps
   children: ReactNode;
 }
 
+// Both fg AND bg pinned to fixed hex values. Previously fg was
+// `var(--storefront-success/warning/info)` so the merchant could re-
+// theme it — but on a dark merchant theme they override those source
+// colours to LIGHT shades for visibility, which then rendered light
+// fg on the light paper-tinted bg my earlier fix introduced. Result:
+// "Confirmed" and "Pending" pills became unreadable smudges.
+// Hex values are intentionally darker than the AA contrast threshold
+// against the 22% paper bgs in globals.css.
 const TONE_VARS: Record<StatusTone, { fg: string; bg: string; border: string }> = {
   success: {
-    fg: "var(--storefront-success)",
+    fg: "#0E3F22",
     bg: "var(--storefront-success-bg)",
     border: "var(--storefront-success-border)",
   },
   warning: {
-    fg: "var(--storefront-warning)",
+    fg: "#5A3D00",
     bg: "var(--storefront-warning-bg)",
     border: "var(--storefront-warning-border)",
   },
   danger: {
-    fg: "var(--storefront-danger)",
+    fg: "#7A2615",
     bg: "var(--storefront-danger-bg)",
     border: "var(--storefront-danger-border)",
   },
   info: {
-    fg: "var(--storefront-info)",
+    fg: "#1F356E",
     bg: "var(--storefront-info-bg)",
     border: "var(--storefront-info-border)",
   },
   neutral: {
-    // Hardcoded dark fg — `--storefront-text` is overridden to a light
-    // colour on dark merchant themes, which produced an invisible
-    // light-on-light pill (#M-AUS-260426-00001 rendered as a blank
-    // white box on the dark theme). Same lock as the bg side.
     fg: "#0E0E0C",
     bg: "var(--storefront-neutral-bg)",
     border: "var(--storefront-neutral-border)",

@@ -21,6 +21,7 @@ import {
   fetchPaymentMethods,
   fetchShippingOptions,
   fetchShippingRates,
+  fetchTaxPreview,
   submitCheckout,
   type PaymentMethod,
   type ShippingOption,
@@ -185,12 +186,23 @@ export default function CheckoutPage() {
   const [loyaltyPointsCurrency, setLoyaltyPointsCurrency] = useState("points");
   const [loyaltyMinRedeem, setLoyaltyMinRedeem] = useState(100);
 
+  // Tax preview state. Fetched from /tax-preview whenever the buyer's
+  // shipping address + items + shipping_total are all known. Same
+  // calculator runs at order-submit time, so the number here is what
+  // they'll be charged.
+  const [taxTotal, setTaxTotal] = useState<number | null>(null);
+  const [taxLoading, setTaxLoading] = useState(false);
+
   // Computed totals
   const selectedRate = shippingRates.find((r) => r.service === selectedShipping);
   const shippingTotal = selectedRate ? Number.parseFloat(selectedRate.price) : 0;
-  // Tax is computed server-side at checkout; show 0 until order is placed.
   const loyaltyDiscount = redeemPoints ? redeemPoints * parseFloat(loyaltyPointsValue) : 0;
-  const totalBeforeGC = subtotal + (couponFreeShipping ? 0 : shippingTotal) - couponDiscount - loyaltyDiscount;
+  const totalBeforeGC =
+    subtotal +
+    (couponFreeShipping ? 0 : shippingTotal) +
+    (taxTotal ?? 0) -
+    couponDiscount -
+    loyaltyDiscount;
   const giftCardDeduction = Math.min(giftCardAmount, Math.max(0, totalBeforeGC));
   const total = totalBeforeGC - giftCardDeduction;
 
@@ -325,6 +337,55 @@ export default function CheckoutPage() {
       return () => clearTimeout(timer);
     }
   }, [address, fetchRates]);
+
+  // Fetch a tax preview whenever the buyer's address + items + selected
+  // shipping rate are known. Re-runs on shippingTotal change so the GST
+  // line tracks the rate they pick. Debounced so we don't hammer the
+  // backend while they're typing the address.
+  useEffect(() => {
+    if (!isAddressFilled(address) || items.length === 0) {
+      setTaxTotal(null);
+      return;
+    }
+    let cancelled = false;
+    setTaxLoading(true);
+    const timer = setTimeout(async () => {
+      const checkoutItems: CheckoutItemBody[] = items.map((i) => ({
+        product_id: i.productId,
+        variant_id: i.variantId,
+        title_snapshot: i.title,
+        sku_snapshot: i.variantId,
+        unit_price: i.priceAmount,
+        quantity: i.qty,
+        line_total: (Number.parseFloat(i.priceAmount) * i.qty).toFixed(2),
+        currency_code: i.currencyCode,
+        image_url: i.imageUrl,
+        tax_code: i.taxCode,
+        tax_rate_override: i.taxRateOverride,
+        tax_category: i.taxCategory,
+      }));
+      const result = await fetchTaxPreview(storeSlug, {
+        items: checkoutItems,
+        shipping_address: toCheckoutAddress(address),
+        subtotal: subtotal.toFixed(2),
+        shipping_total: (couponFreeShipping ? 0 : shippingTotal).toFixed(2),
+      });
+      if (cancelled) return;
+      if (result) {
+        const parsed = Number.parseFloat(result.tax_total);
+        setTaxTotal(Number.isFinite(parsed) ? parsed : 0);
+      } else {
+        setTaxTotal(null);
+      }
+      setTaxLoading(false);
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      setTaxLoading(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, items, shippingTotal, couponFreeShipping, storeSlug, subtotal]);
 
   // Fetch loyalty program + balance when email is entered. Debounced so we
   // don't hammer the API while the user is still typing. Clears redemption
@@ -988,6 +1049,34 @@ export default function CheckoutPage() {
                 </dd>
               </div>
             )}
+            {/* Tax — live from /tax-preview. Same calculator runs at
+                submit time so this number IS what they pay. We render
+                three states: "Enter address" before address is filled,
+                "Calculating…" while in flight, and the actual value
+                otherwise. Hidden entirely when address is filled and
+                the resolved tax is zero (US no-tax states, etc.). */}
+            {!isAddressFilled(address) ? (
+              <div className="flex justify-between">
+                <dt className="opacity-60">Tax</dt>
+                <dd className="opacity-40" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                  Enter address
+                </dd>
+              </div>
+            ) : taxLoading && taxTotal === null ? (
+              <div className="flex justify-between">
+                <dt className="opacity-60">Tax</dt>
+                <dd className="opacity-40" style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                  Calculating…
+                </dd>
+              </div>
+            ) : taxTotal !== null && taxTotal > 0 ? (
+              <div className="flex justify-between">
+                <dt className="opacity-60">Tax</dt>
+                <dd style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}>
+                  {formatPrice(taxTotal, currencyCode)}
+                </dd>
+              </div>
+            ) : null}
             <div className="flex justify-between border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-2 font-medium">
               <dt>Estimated total</dt>
               <dd
@@ -997,15 +1086,6 @@ export default function CheckoutPage() {
                 {formatPrice(total, currencyCode)}
               </dd>
             </div>
-            {/* Tax is computed server-side from your address at place-order
-                time and shown on the order confirmation page. We used to
-                render a "Calculated at checkout" placeholder line that
-                stayed there forever and confused buyers — replaced with a
-                short note under the total. */}
-            <p className="text-[11px] text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
-              Tax (if applicable) is calculated from your shipping address
-              when you place the order.
-            </p>
           </dl>
         </section>
 

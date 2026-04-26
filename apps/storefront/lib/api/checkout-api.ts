@@ -312,6 +312,44 @@ export async function fetchShippingRates(
   }
 }
 
+export interface TaxPreviewBody {
+  items: CheckoutItemBody[];
+  shipping_address: CheckoutAddressBody;
+  subtotal: string;
+  shipping_total?: string;
+}
+
+export interface TaxPreviewResult {
+  tax_total: string;
+  currency_code: string;
+}
+
+/**
+ * Fetches an authoritative tax estimate from the marketplace-api so the
+ * checkout page can show "Tax: A$24.99" before submit instead of asking
+ * the buyer to trust an "Estimated total" without a breakdown. Same
+ * calculator runs at submit time, so the number here is what they pay.
+ */
+export async function fetchTaxPreview(
+  storeSlug: string,
+  body: TaxPreviewBody,
+): Promise<TaxPreviewResult | null> {
+  const url = IS_BROWSER
+    ? proxyUrl("tax-preview", storeSlug)
+    : `${storeUrl(storeSlug)}/tax-preview`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: commonHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as TaxPreviewResult;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Submits the checkout. Returns the checkout result with payment token
  * and computed totals. Returns null on failure.

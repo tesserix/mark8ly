@@ -156,9 +156,17 @@ type seCarriersResponse struct {
 }
 
 type seShipment struct {
-	ShipFrom seAddress   `json:"ship_from"`
-	ShipTo   seAddress   `json:"ship_to"`
-	Packages []sePackage `json:"packages"`
+	// ServiceCode is REQUIRED on POST /v1/labels and lives INSIDE the
+	// shipment object, not at the root of the body. Putting it at the
+	// root caused ShipEngine to fail validation with
+	// `field_value_required: 'service_code' must not be empty.` even
+	// though we did pass a valid code in the request — they just looked
+	// for it in the wrong place. Empty on rate-quote bodies (where it
+	// is omitted by `omitempty`) so /v1/rates still works.
+	ServiceCode string      `json:"service_code,omitempty"`
+	ShipFrom    seAddress   `json:"ship_from"`
+	ShipTo      seAddress   `json:"ship_to"`
+	Packages    []sePackage `json:"packages"`
 }
 
 type seRateResponse struct {
@@ -189,8 +197,7 @@ type seRate struct {
 }
 
 type seLabelRequest struct {
-	Shipment    seShipment `json:"shipment"`
-	ServiceCode string     `json:"service_code"`
+	Shipment seShipment `json:"shipment"`
 }
 
 type seLabelResponse struct {
@@ -320,16 +327,16 @@ func (c *ShipEngineCarrier) CreateShipment(ctx context.Context, in ShipmentReque
 
 	body := seLabelRequest{
 		Shipment: seShipment{
-			ShipFrom: toSEAddress(in.FromAddress),
-			ShipTo:   toSEAddress(in.ToAddress),
+			ServiceCode: in.Service,
+			ShipFrom:    toSEAddress(in.FromAddress),
+			ShipTo:      toSEAddress(in.ToAddress),
 			Packages: []sePackage{
 				{
-				Weight:     seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"},
-				Dimensions: resolvePackageDimensions(in.Items),
-			},
+					Weight:     seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"},
+					Dimensions: resolvePackageDimensions(in.Items),
+				},
 			},
 		},
-		ServiceCode: in.Service,
 	}
 
 	resp, err := c.doJSON(ctx, http.MethodPost, "/v1/labels", body)

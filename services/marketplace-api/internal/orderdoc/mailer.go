@@ -104,12 +104,15 @@ type Theme struct {
 }
 
 // Editorial defaults — same palette as the giftcard mailer so unbranded
-// stores still feel like the platform.
+// stores still feel like the platform. Contrast bumped so the
+// supporting / muted / faint copy stays readable on the white email
+// canvas — the previous values (#7A766E and #A09C92) reduced the body
+// text to a near-invisible grey on Gmail's whitewashed render.
 const (
-	emailHairline      = "#ECEAE3"
-	emailSupporting    = "#45433E"
-	emailMuted         = "#7A766E"
-	emailFaint         = "#A09C92"
+	emailHairline      = "#D7D4CB"
+	emailSupporting    = "#1F1E1B"
+	emailMuted         = "#3C3A35"
+	emailFaint         = "#55524C"
 	defaultBackground  = "#F7F6F2"
 	defaultText        = "#0E0E0C"
 	defaultAccent      = "#2D4A2B"

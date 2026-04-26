@@ -479,14 +479,25 @@ func (c *ShipEngineCarrier) doJSON(ctx context.Context, method, path string, pay
 }
 
 func toSEAddress(a Address) seAddress {
+	city := a.City
+	region := a.Region
+	country := strings.ToUpper(strings.TrimSpace(a.CountryCode))
+	// Australia Post (and a few other ShipEngine carriers) match the
+	// city against an internal suburb table that's case-sensitive on
+	// AU addresses — "Sydney" returns PSC_PC_NF, "SYDNEY" works.
+	// Cheap-but-correct normalisation: uppercase the city for AU.
+	if country == "AU" {
+		city = strings.ToUpper(strings.TrimSpace(city))
+		region = strings.ToUpper(strings.TrimSpace(region))
+	}
 	return seAddress{
 		Name:          a.Name,
 		AddressLine1:  a.Line1,
 		AddressLine2:  a.Line2,
-		CityLocality:  a.City,
-		StateProvince: a.Region,
+		CityLocality:  city,
+		StateProvince: region,
 		PostalCode:    a.PostalCode,
-		CountryCode:   a.CountryCode,
+		CountryCode:   country,
 		Phone:         a.Phone,
 	}
 }

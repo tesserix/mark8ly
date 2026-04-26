@@ -353,7 +353,12 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Build origin address from warehouse config.
+	// Build origin address from warehouse config. Email defaults to the
+	// buyer's order email so CouriersPlease (and any other carrier that
+	// validates pickup_email format) accepts the label. Long-term we
+	// should add a dedicated warehouse_email column on
+	// shipping_carrier_configs and surface it in admin → Settings →
+	// Shipping; this fallback unblocks label generation in the meantime.
 	fromAddress := shipping.Address{
 		Name:        carrierCfg.WarehouseName,
 		Line1:       carrierCfg.WarehouseLine1,
@@ -363,14 +368,18 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		PostalCode:  carrierCfg.WarehousePostal,
 		CountryCode: carrierCfg.WarehouseCountry,
 		Phone:       carrierCfg.WarehousePhone,
+		Email:       o.CustomerEmail,
 	}
 
-	// Build destination address from order.
+	// Build destination address from order. Email comes from the order
+	// (always present — required at checkout) so the destination contact
+	// validation passes.
 	toAddress := shipping.Address{
 		Name:        shippingAddr.Name,
 		Line1:       shippingAddr.Line1,
 		City:        shippingAddr.City,
 		CountryCode: shippingAddr.CountryCode,
+		Email:       o.CustomerEmail,
 	}
 	if shippingAddr.Line2 != nil {
 		toAddress.Line2 = *shippingAddr.Line2

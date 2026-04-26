@@ -56,14 +56,18 @@ func (c *ShipEngineCarrier) SupportedCountries() []string {
 // --- request / response types (private, match ShipEngine JSON schema) ---
 
 type seAddress struct {
-	Name        string `json:"name"`
-	AddressLine1 string `json:"address_line1"`
-	AddressLine2 string `json:"address_line2,omitempty"`
-	CityLocality string `json:"city_locality"`
+	Name          string `json:"name"`
+	AddressLine1  string `json:"address_line1"`
+	AddressLine2  string `json:"address_line2,omitempty"`
+	CityLocality  string `json:"city_locality"`
 	StateProvince string `json:"state_province"`
-	PostalCode   string `json:"postal_code"`
-	CountryCode  string `json:"country_code"`
-	Phone        string `json:"phone,omitempty"`
+	PostalCode    string `json:"postal_code"`
+	CountryCode   string `json:"country_code"`
+	Phone         string `json:"phone,omitempty"`
+	// Email — required by CouriersPlease (and parts of Aramex). Empty
+	// string is fine for carriers that don't validate it; ShipEngine
+	// drops it from the wire when the field is omitted via omitempty.
+	Email string `json:"email,omitempty"`
 }
 
 type sePackage struct {
@@ -539,6 +543,7 @@ func toSEAddress(a Address) seAddress {
 		PostalCode:    a.PostalCode,
 		CountryCode:   country,
 		Phone:         a.Phone,
+		Email:         a.Email,
 	}
 }
 

@@ -92,6 +92,11 @@ type Pickup struct {
 }
 
 // Address represents a physical address for shipping origin/destination.
+//
+// Email is optional but required by some carriers (CouriersPlease, parts
+// of Aramex) for pickup + destination contact. Populate from the buyer's
+// order email for ship_to, and from a configured warehouse email (or the
+// buyer's email as a defensive fallback) for ship_from.
 type Address struct {
 	Name        string
 	Line1       string
@@ -101,6 +106,7 @@ type Address struct {
 	PostalCode  string
 	CountryCode string
 	Phone       string
+	Email       string
 }
 
 // ParcelItem describes a single item in the shipment for rate calculation.

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyAdminHost,
   isCanonicalAllowedPath,
+  isValidSlugReturnUrl,
 } from "./host-policy";
 
 describe("classifyAdminHost", () => {
@@ -120,5 +121,63 @@ describe("isCanonicalAllowedPath", () => {
     expect(isCanonicalAllowedPath("/loginx")).toBe(false);
     expect(isCanonicalAllowedPath("/orders/dashboard")).toBe(false);
     expect(isCanonicalAllowedPath("/api/healthcheck")).toBe(false);
+  });
+});
+
+describe("isValidSlugReturnUrl", () => {
+  it("accepts middleware-bounced returnUrls back to a slug-admin host", () => {
+    expect(isValidSlugReturnUrl("https://playwrite-test-admin.mark8ly.com/")).toBe(true);
+    expect(isValidSlugReturnUrl("https://playwrite-test-admin.mark8ly.com/orders")).toBe(true);
+    expect(isValidSlugReturnUrl("https://my-store-admin.mark8ly.dev/dashboard")).toBe(true);
+  });
+
+  it("accepts returnUrls back to an admin custom domain", () => {
+    expect(isValidSlugReturnUrl("https://admin.acme.com/")).toBe(true);
+    expect(isValidSlugReturnUrl("https://admin.shop.example.org/orders")).toBe(true);
+  });
+
+  it("rejects null / empty / non-URL inputs — REGRESSION GUARD", () => {
+    expect(isValidSlugReturnUrl(null)).toBe(false);
+    expect(isValidSlugReturnUrl(undefined)).toBe(false);
+    expect(isValidSlugReturnUrl("")).toBe(false);
+    expect(isValidSlugReturnUrl("not a url")).toBe(false);
+  });
+
+  it("rejects http (non-https) returnUrls so we don't downgrade", () => {
+    expect(isValidSlugReturnUrl("http://playwrite-test-admin.mark8ly.com/")).toBe(false);
+  });
+
+  it("rejects the canonical host itself — prevents self-recursion (REGRESSION GUARD)", () => {
+    // If anyone ever crafts ?returnUrl=https://admin.mark8ly.com/ to
+    // smuggle past the gate, the canonical host should NOT pass.
+    expect(isValidSlugReturnUrl("https://admin.mark8ly.com/")).toBe(false);
+    expect(isValidSlugReturnUrl("https://admin.mark8ly.com/login")).toBe(false);
+  });
+
+  it("rejects mark8ly subdomains that aren't slug-admin shaped", () => {
+    expect(isValidSlugReturnUrl("https://www.mark8ly.com/")).toBe(false);
+    expect(isValidSlugReturnUrl("https://api.mark8ly.com/")).toBe(false);
+    expect(isValidSlugReturnUrl("https://playwrite-test.mark8ly.com/")).toBe(false); // storefront
+  });
+
+  it("rejects malformed slug-admin shapes", () => {
+    // -admin.mark8ly.com (empty slug) — the regex requires a non-empty
+    // slug starting+ending with alphanumeric.
+    expect(isValidSlugReturnUrl("https://-admin.mark8ly.com/")).toBe(false);
+    // admin-admin.mark8ly.com would actually match (slug=admin), which
+    // is fine — slug-existence is checked downstream when the user
+    // reaches the actual host. This test just pins the regex shape.
+    expect(isValidSlugReturnUrl("https://admin-admin.mark8ly.com/")).toBe(true);
+  });
+
+  it("rejects javascript: / data: / file: URLs to prevent open-redirect abuse", () => {
+    expect(isValidSlugReturnUrl("javascript:alert(1)")).toBe(false);
+    expect(isValidSlugReturnUrl("data:text/html,<h1>hi</h1>")).toBe(false);
+    expect(isValidSlugReturnUrl("file:///etc/passwd")).toBe(false);
+  });
+
+  it("rejects off-mark8ly hosts that aren't admin custom domains", () => {
+    expect(isValidSlugReturnUrl("https://evil.com/")).toBe(false);
+    expect(isValidSlugReturnUrl("https://shop.acme.com/")).toBe(false);
   });
 });

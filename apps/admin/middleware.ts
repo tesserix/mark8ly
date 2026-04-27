@@ -3,6 +3,7 @@ import { applyGeoCookie } from "./lib/geo/geoMiddleware";
 import {
   classifyAdminHost,
   isCanonicalAllowedPath,
+  isValidSlugReturnUrl,
 } from "./lib/auth/host-policy";
 
 /**
@@ -127,6 +128,28 @@ export async function middleware(req: NextRequest) {
     const response = NextResponse.next();
     applyGeoCookie(req, response);
     return response;
+  }
+
+  // Canonical /login isn't meant for direct visits. The merchant logs
+  // in via THEIR slug-admin URL (`{slug}-admin.mark8ly.com`); the form
+  // only ends up on canonical because that's the host registered as
+  // a Google OAuth Authorized JavaScript origin, and middleware
+  // bounces unauthenticated slug-admin traffic here mid-flow with a
+  // `returnUrl` pointing back at the slug. Without that returnUrl
+  // there's no legitimate reason to be on this URL — 404 instead of
+  // rendering a discoverable login form.
+  //
+  // Same reasoning for /forgot-password, /reset-password,
+  // /accept-invite, /pick-tenant, /logout: they're either
+  // email-link landings (carry a token in the path/query and don't
+  // need a returnUrl gate) or post-auth utilities. Login is the only
+  // one a casual visitor could "just type" and expect a form.
+  if (
+    hostKind.kind === "canonical" &&
+    (pathname === "/login" || pathname === "/login/") &&
+    !isValidSlugReturnUrl(req.nextUrl.searchParams.get("returnUrl"))
+  ) {
+    return new NextResponse(null, { status: 404 });
   }
 
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {

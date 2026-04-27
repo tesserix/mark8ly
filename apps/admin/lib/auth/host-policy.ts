@@ -95,3 +95,47 @@ const CANONICAL_ALLOWED_PREFIXES: string[] = [
   "/favicon",
   "/icon-",
 ];
+
+/**
+ * isValidSlugReturnUrl checks whether a `?returnUrl=…` value points at a
+ * legitimate slug-admin or admin custom-domain URL. The middleware
+ * uses this to gate the canonical /login page: only middleware-bounced
+ * traffic from a real slug-admin carries a returnUrl, and direct
+ * visits to admin.mark8ly.com/login fall through to a 404 instead of
+ * rendering a discoverable login form.
+ *
+ * Required shape:
+ *   • parseable absolute URL
+ *   • https
+ *   • host matches `{slug}-admin.mark8ly.{com,dev}` with non-empty slug
+ *     OR `admin.<off-mark8ly-host>` with at least three labels
+ *
+ * We deliberately do NOT verify here that the slug is onboarded — the
+ * slug-existence check fires later in middleware when the user reaches
+ * the slug-admin URL itself; adding a platform-api fetch on every
+ * /login render would slow the auth path. A crafted-but-fake returnUrl
+ * gets a login form, but logging in bounces to a slug-admin that 404s,
+ * so nothing data-leaks.
+ */
+export function isValidSlugReturnUrl(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "https:") return false;
+    const host = u.host.toLowerCase();
+    if (/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-admin\.mark8ly\.(?:com|dev)$/.test(host)) {
+      return true;
+    }
+    if (
+      host.startsWith("admin.") &&
+      host.split(".").length >= 3 &&
+      !host.endsWith(".mark8ly.com") &&
+      !host.endsWith(".mark8ly.dev")
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}

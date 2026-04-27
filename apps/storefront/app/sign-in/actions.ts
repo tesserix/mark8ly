@@ -127,6 +127,20 @@ export async function customerSignIn(
   input: CustomerSignInInput,
 ): Promise<Result> {
   try {
+    // Resolve and validate the customer-facing host first — it gates
+    // the cookie Domain, so an invalid host means we cannot complete
+    // sign-in regardless of token validity.
+    const h = await headers();
+    const rawHost = h.get("x-forwarded-host") ?? h.get("host");
+    const cookieHost = sanitizeHost(rawHost);
+    if (!cookieHost) {
+      return {
+        ok: false,
+        code: "invalid_host",
+        message: "Could not validate the host for sign-in. Please try again.",
+      };
+    }
+
     const store = await resolveStore(input.storeSlug);
     if (!store) {
       return {
@@ -153,23 +167,12 @@ export async function customerSignIn(
       tenant_id: store.tenant_id,
     });
 
-    const h = await headers();
-    const rawHost = h.get("x-forwarded-host") ?? h.get("host");
-    const cookieHost = sanitizeHost(rawHost);
-    if (!cookieHost) {
-      return {
-        ok: false,
-        code: "invalid_host",
-        message: "Could not validate the host for sign-in. Please try again.",
-      };
-    }
-
     const c = await cookies();
     c.set({
       name: "mp_customer_session",
       value: cookieValue,
       path: "/",
-      domain: cookieHost, // per-host: browser refuses to send to other stores
+      domain: cookieHost, // scoped to exact host so store-a's session can't be sent to store-b
       httpOnly: true,
       secure: true,
       sameSite: "lax",

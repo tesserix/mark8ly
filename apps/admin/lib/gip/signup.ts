@@ -23,6 +23,15 @@ export interface GipResult {
   expiresIn: number;
 }
 
+export type GoogleSignInResult =
+  | { kind: "ok"; uid: string; idToken: string; refreshToken: string; expiresIn: number }
+  | {
+      kind: "needConfirmation";
+      email: string;
+      pendingIdpCredential: string;
+      verifiedProvider: string[];
+    };
+
 export class GIPError extends Error {
   constructor(
     public code: string,
@@ -93,7 +102,7 @@ export async function signInWithPassword(
 
 export async function signInWithGoogle(
   googleIdToken: string,
-): Promise<GipResult> {
+): Promise<GoogleSignInResult> {
   if (!publicConfig.gipApiKey) {
     throw new GIPError("config_missing", "GIP Web API key is not configured");
   }
@@ -128,18 +137,36 @@ export async function signInWithGoogle(
     );
   }
 
-  const body = (await res.json()) as {
-    localId: string;
-    idToken: string;
-    refreshToken: string;
-    expiresIn: string;
+  const data = (await res.json()) as {
+    localId?: string;
+    idToken?: string;
+    refreshToken?: string;
+    expiresIn?: string;
+    needConfirmation?: boolean;
+    email?: string;
+    oauthIdToken?: string;
+    verifiedProvider?: string[];
   };
 
+  if (data.needConfirmation && data.email && data.oauthIdToken) {
+    return {
+      kind: "needConfirmation",
+      email: data.email,
+      pendingIdpCredential: data.oauthIdToken,
+      verifiedProvider: data.verifiedProvider ?? [],
+    };
+  }
+
+  if (!data.localId || !data.idToken || !data.refreshToken || !data.expiresIn) {
+    throw new GIPError("malformed_response", "GIP response missing required fields");
+  }
+
   return {
-    uid: body.localId,
-    idToken: body.idToken,
-    refreshToken: body.refreshToken,
-    expiresIn: parseInt(body.expiresIn, 10),
+    kind: "ok",
+    uid: data.localId,
+    idToken: data.idToken,
+    refreshToken: data.refreshToken,
+    expiresIn: parseInt(data.expiresIn, 10),
   };
 }
 

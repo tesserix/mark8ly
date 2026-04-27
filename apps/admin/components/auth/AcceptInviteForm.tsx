@@ -115,8 +115,17 @@ export function AcceptInviteForm({
     setGooglePending(true);
     try {
       const { credential } = await getGoogleCredential();
-      const auth = await signInWithGoogle(credential);
-      const googleEmail = decodeJwtEmail(auth.idToken);
+      const result = await signInWithGoogle(credential);
+      if (result.kind === "needConfirmation") {
+        // Invite flow: the account must already exist with this email.
+        // needConfirmation means it's a password account — tell the user
+        // to sign in with password instead of Google.
+        setSubmitError(
+          "This account uses a password. Please sign in with email and password above.",
+        );
+        return;
+      }
+      const googleEmail = decodeJwtEmail(result.idToken);
       if (
         googleEmail &&
         googleEmail.toLowerCase() !== invitation.email.toLowerCase()
@@ -126,7 +135,7 @@ export function AcceptInviteForm({
         );
         return;
       }
-      complete(auth.idToken, auth.uid, invitation.email);
+      complete(result.idToken, result.uid, invitation.email);
     } catch (err) {
       setSubmitError(describeGoogleError(err));
     } finally {

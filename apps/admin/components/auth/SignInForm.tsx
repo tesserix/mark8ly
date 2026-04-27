@@ -22,7 +22,9 @@ import { GoogleMark } from "@repo/ui/google-mark";
 
 import { signInWithPassword, signInWithGoogle, GIPError } from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
+import { linkGoogleToInternalPassword } from "@/lib/gip/link";
 import { signIn, confirmMFALogin } from "@/app/login/actions";
+import { LinkProviderPrompt } from "@repo/ui/auth/link-provider-prompt";
 
 const MARKETING_URL =
   process.env.NEXT_PUBLIC_MARKETING_URL ?? "http://localhost:4201";
@@ -68,6 +70,11 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [googlePending, setGooglePending] = useState(false);
+  const [needConfirmation, setNeedConfirmation] = useState<{
+    email: string;
+    pendingIdpCredential: string;
+  } | null>(null);
+  const [linkPromptError, setLinkPromptError] = useState<string | null>(null);
 
   // MFA challenge state — when the signIn server action reports
   // mfaRequired, we switch the form to a 6-digit challenge instead
@@ -138,27 +145,38 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
     });
   }
 
+  async function completeSignIn(idToken: string, uid: string) {
+    const r = await signIn({ idToken, uid });
+    if (!r.ok) {
+      setSubmitError(
+        r.code === "tenant_not_found"
+          ? "No store found for this Google account. Start a new store from the home page."
+          : r.message,
+      );
+      return;
+    }
+    if (r.data.mfaRequired) {
+      setMfaMultipleTenants(r.data.multipleTenants);
+      setMfaStep(true);
+      return;
+    }
+    goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
+  }
+
   async function handleGoogle() {
     setSubmitError(null);
     setGooglePending(true);
     try {
       const { credential } = await getGoogleCredential();
-      const gip = await signInWithGoogle(credential);
-      const r = await signIn({ idToken: gip.idToken, uid: gip.uid });
-      if (!r.ok) {
-        setSubmitError(
-          r.code === "tenant_not_found"
-            ? "No store found for this Google account. Start a new store from the home page."
-            : r.message,
-        );
+      const result = await signInWithGoogle(credential);
+      if (result.kind === "needConfirmation") {
+        setNeedConfirmation({
+          email: result.email,
+          pendingIdpCredential: result.pendingIdpCredential,
+        });
         return;
       }
-      if (r.data.mfaRequired) {
-        setMfaMultipleTenants(r.data.multipleTenants);
-        setMfaStep(true);
-        return;
-      }
-      goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
+      await completeSignIn(result.idToken, result.uid);
     } catch (err) {
       setSubmitError(
         err instanceof Error
@@ -168,6 +186,37 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
     } finally {
       setGooglePending(false);
     }
+  }
+
+  async function handleLinkConfirm(password: string) {
+    if (!needConfirmation) return;
+    setLinkPromptError(null);
+    try {
+      const linked = await linkGoogleToInternalPassword(
+        needConfirmation.email,
+        password,
+        needConfirmation.pendingIdpCredential,
+      );
+      setNeedConfirmation(null);
+      await completeSignIn(linked.idToken, linked.uid);
+    } catch (err) {
+      if (err instanceof GIPError && err.code === "invalid_credentials") {
+        setLinkPromptError("That password is incorrect. Please try again.");
+        return;
+      }
+      setLinkPromptError(
+        err instanceof Error
+          ? err.message
+          : "Could not link Google. Please try again.",
+      );
+    }
+  }
+
+  function handleLinkCancel() {
+    setNeedConfirmation(null);
+    setSubmitError(
+      "Linking cancelled. Sign in with email and password instead.",
+    );
   }
 
   async function handleMFA(e: React.FormEvent) {
@@ -343,6 +392,16 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
           .
         </p>
       </form>
+
+      {needConfirmation && (
+        <LinkProviderPrompt
+          email={needConfirmation.email}
+          variant="admin"
+          error={linkPromptError}
+          onConfirm={handleLinkConfirm}
+          onCancel={handleLinkCancel}
+        />
+      )}
     </div>
   );
 }

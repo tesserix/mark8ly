@@ -71,15 +71,40 @@ export async function middleware(req: NextRequest) {
   const hostKind = classifyAdminHost(hostHeader);
 
   // Edge guard: reject hosts the admin app should never serve. This is
-  // the wildcard-subdomain check — `abc-admin.mark8ly.com` for an
-  // unknown `abc` slug, `random.mark8ly.com`, off-domain hosts, etc.
-  // We respond 404 BEFORE any auth or rendering so the wildcard never
-  // serves the canonical login form (which would invite phishing /
-  // brand impersonation: a victim sees a Mark8ly-branded login on a
-  // host that isn't actually theirs). Static assets are exempt because
-  // CDNs / probes hit them on whatever host they were warmed against.
+  // the wildcard-subdomain check — structurally-malformed hosts get an
+  // immediate 404 before any rendering so the wildcard never serves
+  // the canonical login form (which would invite phishing / brand
+  // impersonation: a victim sees a Mark8ly-branded login on a host
+  // that isn't actually theirs). Static assets + health probes are
+  // exempt because CDNs / kubelet hit them on whatever host they were
+  // warmed against.
   if (hostKind.kind === "unknown" && !isStaticOrHealthPath(pathname)) {
     return new NextResponse(null, { status: 404 });
+  }
+
+  // Same wildcard block, semantic flavour: the host is structurally a
+  // slug subdomain (`{slug}-admin.mark8ly.com`) or admin custom domain,
+  // but the slug isn't an onboarded store. Validate against
+  // platform-api / marketplace-api-resolve-domain BEFORE the public-
+  // prefix short-circuit below, so `abc-admin.mark8ly.com/login` 404s
+  // instead of rendering the canonical login form. Static + health
+  // paths skip the lookup so probes don't fail closed during a
+  // platform-api blip.
+  if (
+    (hostKind.kind === "slug" || hostKind.kind === "custom_admin") &&
+    !isStaticOrHealthPath(pathname)
+  ) {
+    const exists =
+      hostKind.kind === "slug"
+        ? await slugExists(hostKind.slug)
+        : await customDomainExists(hostKind.domain);
+    if (exists === false) {
+      return new NextResponse(null, { status: 404 });
+    }
+    // exists === null → platform-api unreachable. Fail open: continue
+    // to the auth flow rather than 404 a real merchant during an
+    // outage. The role check downstream still fails closed if the
+    // session genuinely has no membership.
   }
 
   // Public pricing page — geo-localize currency from CF-IPCountry before RSC
@@ -351,6 +376,45 @@ function redirectToLogin(req: NextRequest): NextResponse {
   );
   loginUrl.searchParams.set("returnUrl", externalUrl(req));
   return NextResponse.redirect(loginUrl);
+}
+
+// slugExists confirms a store slug is onboarded. Returns true for 2xx,
+// false for 404, null for any other / unreachable response (caller
+// fails open in that case so a real merchant doesn't go dark during a
+// platform-api blip).
+async function slugExists(slug: string): Promise<boolean | null> {
+  if (!slug) return false;
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
+      { cache: "no-store" },
+    );
+    if (res.ok) return true;
+    if (res.status === 404) return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// customDomainExists confirms an admin custom-domain (admin.<merchant>)
+// is registered. Same true/false/null contract as slugExists.
+async function customDomainExists(domain: string): Promise<boolean | null> {
+  if (!domain) return false;
+  try {
+    const res = await fetch(
+      `${MARKETPLACE_API_URL}/api/v1/storefront/resolve-domain?domain=${encodeURIComponent(domain)}`,
+      { cache: "no-store" },
+    );
+    if (res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { slug?: string };
+      return Boolean(body.slug);
+    }
+    if (res.status === 404) return false;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // fetchPrimaryStoreSlug resolves a store_id to its slug via platform-api.

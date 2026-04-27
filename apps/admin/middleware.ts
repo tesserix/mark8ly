@@ -296,16 +296,29 @@ export async function middleware(req: NextRequest) {
   // /products, …) must live on a tenanted slug subdomain so the URL
   // bar always identifies the active store. If the user lands here
   // by typing `admin.mark8ly.com/orders` directly, redirect them to
-  // `{slug}-admin.mark8ly.com/orders` using the session's primary
-  // store slug. /pick-tenant + auth utility paths render here as
-  // designed.
+  // `{slug}-admin.mark8ly.com/orders`. /pick-tenant + auth utility
+  // paths render on canonical as designed.
+  //
+  // Slug resolution falls back through:
+  //   1. session.store_id (when auth-bff embeds it on the cookie)
+  //   2. listStoresByTenant(session.tenant_id)[0] — the user's primary
+  //      store on the active tenant; this is the path that fires for
+  //      sessions that only carry tenant_id (the common case today).
+  // If both resolve nothing, redirect to /pick-tenant rather than
+  // render tenant data on the canonical host — the picker is the
+  // single sanctioned recovery surface.
   if (
     hostKind.kind === "canonical" &&
     !isCanonicalAllowedPath(pathname) &&
-    !isStaticOrHealthPath(pathname) &&
-    session.store_id
+    !isStaticOrHealthPath(pathname)
   ) {
-    const slug = await fetchPrimaryStoreSlug(session.store_id);
+    let slug: string | null = null;
+    if (session.store_id) {
+      slug = await fetchPrimaryStoreSlug(session.store_id);
+    }
+    if (!slug && session.tenant_id) {
+      slug = await fetchFirstSlugForTenant(session.tenant_id);
+    }
     if (slug) {
       const target = new URL(req.nextUrl);
       target.host = `${slug}-admin.mark8ly.com`;
@@ -313,8 +326,6 @@ export async function middleware(req: NextRequest) {
       target.port = "";
       return NextResponse.redirect(target);
     }
-    // Couldn't resolve a slug — send them to /pick-tenant as a
-    // fallback rather than rendering tenant data on the canonical host.
     return NextResponse.redirect(new URL("/pick-tenant", req.nextUrl));
   }
 
@@ -453,10 +464,9 @@ async function customDomainExists(domain: string): Promise<boolean | null> {
 }
 
 // fetchPrimaryStoreSlug resolves a store_id to its slug via platform-api.
-// Used by the canonical-host redirect to send `admin.mark8ly.com/orders`
-// to the right `{slug}-admin.mark8ly.com/orders` for the user's active
-// session. Returns null on any failure — caller falls back to
-// /pick-tenant rather than rendering tenant data on the canonical host.
+// First arm of the canonical-host redirect's slug resolution chain;
+// fires when the session cookie carries a store_id. Returns null on
+// any failure — caller tries the tenant-id fallback before giving up.
 async function fetchPrimaryStoreSlug(storeID: string): Promise<string | null> {
   if (!storeID) return null;
   try {
@@ -467,6 +477,28 @@ async function fetchPrimaryStoreSlug(storeID: string): Promise<string | null> {
     if (!res.ok) return null;
     const body = (await res.json()) as { data?: { slug?: string } };
     return body.data?.slug ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// fetchFirstSlugForTenant pulls the first (oldest) store slug under
+// a tenant. Second arm of the canonical-host redirect's resolution
+// chain — fires when the session cookie carries tenant_id but not
+// store_id (the common case for sessions minted before auth-bff
+// started embedding store_id). Mirrors the platform-api endpoint at
+// `GET /internal/tenants/:tenant_id/stores`.
+async function fetchFirstSlugForTenant(tenantID: string): Promise<string | null> {
+  if (!tenantID) return null;
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/tenants/${encodeURIComponent(tenantID)}/stores`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: Array<{ slug?: string }> };
+    const stores = body.data ?? [];
+    return stores[0]?.slug ?? null;
   } catch {
     return null;
   }

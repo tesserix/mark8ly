@@ -8,7 +8,9 @@
     "start": "next start --port 4203",
     "lint": "npm run lint:layouts && eslint .",
     "lint:layouts": "eslint --max-warnings=0 components/layouts/",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.1",
@@ -31,6 +33,7 @@
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "eslint": "^9.39.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.4"
   }
 }

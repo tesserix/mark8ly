@@ -1,7 +1,8 @@
 // Builds an InvoiceDocument from the storefront's Order + branding.
 // Storefront's Order shape differs from admin's AdminOrder (single
-// shipping_address vs an addresses[] array, fewer fields), so this
-// adapter normalises both into the shared InvoiceDocument.
+// shipping_address by default plus an optional billing_address override,
+// fewer fields), so this adapter normalises both into the shared
+// InvoiceDocument so the same React-PDF generator works from either app.
 
 import type { Order } from "@/lib/api/checkout-api";
 import type { BrandingResponse } from "@/lib/api/marketplace-api";
@@ -13,6 +14,14 @@ interface BuildArgs {
   order: Order;
   branding: BrandingResponse | null;
   documentNumber: string;
+  // Optional override for the customer-facing email — pulled from the
+  // signed-in session so the bill-to contact line is correct even if
+  // the order's customer_email field is missing for any reason.
+  customerEmail?: string;
+  // paymentDate is the proof-of-delivery timestamp for receipts (the
+  // moment shipment.status flipped to delivered) or the payment-cleared
+  // timestamp for invoices. Receipt route prefers shipment.delivered_at
+  // and falls back to order.updated_at when unset.
   paymentDate?: string;
 }
 
@@ -31,6 +40,7 @@ interface BrandingExtras {
   tagline?: string | null;
   color_accent?: string | null;
   color_text?: string | null;
+  contact_email?: string | null;
 }
 
 export function buildDocument({
@@ -38,9 +48,11 @@ export function buildDocument({
   order,
   branding,
   documentNumber,
+  customerEmail,
   paymentDate,
 }: BuildArgs): InvoiceDocument {
   const ship = order.shipping_address;
+  const bill = order.billing_address ?? order.shipping_address;
   const extras = (branding?.branding as unknown as BrandingExtras) ?? {};
 
   return {
@@ -50,9 +62,13 @@ export function buildDocument({
     payment_date: paymentDate,
     payment_status: order.payment_status,
     order_number: order.order_number,
-    customer_email: branding?.store?.name ?? "", // not on the storefront Order — leave blank rather than mislead
-    bill_to: ship,
-    ship_to: ship,
+    customer_email: customerEmail ?? order.customer_email ?? "",
+    customer_name: order.customer_name,
+    bill_to: bill,
+    // Only set ship_to when it actually differs — the PDF suppresses the
+    // ship-to block when ship_to == bill_to so a single-address order
+    // doesn't print two identical columns.
+    ship_to: order.billing_address ? ship : undefined,
     lines: order.items.map((it) => ({
       description: it.title_snapshot + (it.option_summary ? ` — ${it.option_summary}` : ""),
       sku: it.sku_snapshot || undefined,
@@ -70,10 +86,9 @@ export function buildDocument({
         amount: l.amount,
         jurisdiction: l.jurisdiction,
       })),
-      // storefront Order doesn't carry discount_total — show 0 so the
-      // totals block doesn't render the discount row at all.
-      discount_total: "0",
+      discount_total: order.discount_total ?? "0",
       grand_total: order.grand_total,
+      refunded_amount: order.refunded_amount,
       currency_code: order.currency_code,
     },
     store: {
@@ -81,6 +96,7 @@ export function buildDocument({
       slug: branding?.store?.slug ?? "",
       logo_url: extras.logo_url ?? undefined,
       tagline: extras.tagline ?? undefined,
+      contact_email: extras.contact_email ?? undefined,
       country_code: branding?.store?.country_code ?? undefined,
       color_accent: extras.color_accent ?? undefined,
       color_text: extras.color_text ?? undefined,

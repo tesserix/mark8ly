@@ -91,6 +91,14 @@ type DocumentInput struct {
 	TotalRefunded   decimal.Decimal // running total after this refund
 	IsFullRefund    bool            // refunded == grand_total
 
+	// AdminNote, when set, renders a "Note from {store}" block in the
+	// email body. Used by the admin "Email to customer" resend flow so
+	// the merchant can attach a short personal message ("Thanks for the
+	// quick reorder", "We've waived the shipping fee" etc.) without
+	// editing the canonical template. Whitespace-trimmed by the caller
+	// — empty string suppresses the block entirely.
+	AdminNote string
+
 	// Brand surface
 	Theme Theme
 }
@@ -184,6 +192,18 @@ type renderData struct {
 	CurrencyCode    string
 	ItemCount       int
 
+	// HasAttachment is true when the rendered PDF was successfully
+	// fetched from the storefront and will be attached to the outgoing
+	// email. The invoice + receipt templates branch on this so the body
+	// copy never lies — when false they switch from "PDF attached" to
+	// a "Download from your account" CTA.
+	HasAttachment bool
+
+	// AdminNote is rendered as a "Note from {store}" block when the
+	// admin "Email to customer" resend flow supplies a non-empty
+	// message. Empty string suppresses the block.
+	AdminNote string
+
 	// Cancellation rendering
 	CancellationReason string
 
@@ -226,7 +246,7 @@ var (
 	)
 )
 
-func render(kind Kind, in DocumentInput) (subject, html, text string, err error) {
+func render(kind Kind, in DocumentInput, hasAttachment bool) (subject, html, text string, err error) {
 	theme := in.Theme.withDefaults()
 
 	var heading, lede, cta string
@@ -281,6 +301,8 @@ func render(kind Kind, in DocumentInput) (subject, html, text string, err error)
 		GrandTotal:         in.GrandTotal.StringFixed(2),
 		CurrencyCode:       in.CurrencyCode,
 		ItemCount:          in.ItemCount,
+		HasAttachment:      hasAttachment,
+		AdminNote:          in.AdminNote,
 		CancellationReason: in.CancellationReason,
 		RefundAmount:       in.RefundAmount.StringFixed(2),
 		TotalRefunded:      in.TotalRefunded.StringFixed(2),
@@ -422,17 +444,17 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 	if in.Recipient == "" {
 		return fmt.Errorf("orderdoc: missing recipient")
 	}
-	subject, htmlBody, textBody, err := render(kind, in)
-	if err != nil {
-		return err
-	}
 
 	// Best-effort PDF attachment — when the fetcher is wired and we're
 	// sending an invoice or receipt, fetch the rendered PDF from the
 	// storefront and attach. Failures here are logged but don't block
 	// the email — the buyer still receives the HTML body and can view
 	// the document on their account page if a re-fetch is needed.
+	// We resolve the attachment FIRST so the template can branch its
+	// "PDF attached" copy on the actual outcome instead of optimistic
+	// language that turns into a small lie when the fetch flakes.
 	var attachments []sgAttachment
+	hasAttachment := false
 	if (kind == KindInvoice || kind == KindReceipt) && m.pdfFetcher != nil {
 		var pdfBytes []byte
 		var pdfErr error
@@ -459,7 +481,13 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 				Type:        "application/pdf",
 				Disposition: "attachment",
 			}}
+			hasAttachment = true
 		}
+	}
+
+	subject, htmlBody, textBody, err := render(kind, in, hasAttachment)
+	if err != nil {
+		return err
 	}
 
 	falsePtr := false

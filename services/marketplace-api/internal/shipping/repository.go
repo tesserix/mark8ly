@@ -41,6 +41,15 @@ type ShipmentRecord struct {
 	TotalCost          decimal.Decimal `gorm:"column:total_cost;type:numeric(12,2)"`
 	CurrencyCode       string          `gorm:"column:currency_code;type:char(3);not null"`
 	EstimatedDelivery  *time.Time      `gorm:"column:estimated_delivery"`
+	// ShippedAt + DeliveredAt are stamped by the admin status update
+	// handler when the row transitions into the corresponding state.
+	// They lived in the schema (migration 000008) for a long time but
+	// weren't on the GORM model, so the values were unreadable from
+	// Go and consumers had to hit the table directly. Surfacing them
+	// here lets the receipt PDF stamp the real delivery moment instead
+	// of falling back to order.updated_at as a proxy.
+	ShippedAt          *time.Time      `gorm:"column:shipped_at"`
+	DeliveredAt        *time.Time      `gorm:"column:delivered_at"`
 	CreatedAt          time.Time       `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt          time.Time       `gorm:"column:updated_at;not null;default:now()"`
 

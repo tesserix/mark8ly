@@ -3,19 +3,15 @@
 // Authenticated via the mp_customer_session cookie. The storefront's
 // fetchOrder enforces that the customer can only read their own order
 // (server-side check in marketplace-api), so we don't need a separate
-// authorisation step here.
+// authorisation step here. PDF rendering is delegated to the shared
+// render helper.
 
 import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { pdf } from "@react-pdf/renderer";
 
-import { fetchOrder } from "@/lib/api/checkout-api";
-import { fetchBranding } from "@/lib/api/marketplace-api";
-import { resolveStoreSlug } from "@/lib/slug";
 import { decodeSessionForScope } from "@/lib/session";
-import { InvoicePdf } from "@/lib/invoices/InvoicePdf";
-import { invoiceNumberFromOrder } from "@/lib/invoices/numbering";
-import { buildDocument } from "@/lib/invoices/build";
+import { resolveStoreSlug } from "@/lib/slug";
+import { pdfResponseHeaders, renderOrderDocumentPDF } from "@/lib/invoices/render";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,30 +38,22 @@ export async function GET(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const [order, branding] = await Promise.all([
-    fetchOrder(slug, id),
-    fetchBranding(slug),
-  ]);
-  if (!order) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const result = await renderOrderDocumentPDF({
+    kind: "invoice",
+    storeSlug: slug,
+    orderId: id,
+    customerEmail: session.email,
+  });
+
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.error, message: result.message },
+      { status: result.status },
+    );
   }
 
-  const doc = buildDocument({
-    kind: "invoice",
-    order,
-    branding,
-    documentNumber: invoiceNumberFromOrder(order.order_number),
-  });
-  doc.customer_email = session.email;
-
-  const buffer = await pdf(InvoicePdf({ doc })).toBuffer();
-
-  return new Response(buffer as unknown as BodyInit, {
+  return new Response(result.pdfBytes as unknown as BodyInit, {
     status: 200,
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${doc.document_number}.pdf"`,
-      "Cache-Control": "private, no-store",
-    },
+    headers: pdfResponseHeaders(result.filename),
   });
 }

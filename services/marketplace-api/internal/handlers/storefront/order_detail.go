@@ -70,9 +70,21 @@ type storefrontOrderResponse struct {
 	OrderNumber     string                       `json:"order_number"`
 	Status          string                       `json:"status"`
 	PaymentStatus   string                       `json:"payment_status"`
+	// CustomerEmail is the email captured at checkout. Surfaced so the
+	// invoice/receipt PDF (rendered by Next.js on the storefront) can
+	// show the buyer's contact line in the bill-to block. Earlier this
+	// field was never returned, leaving customer-rendered PDFs without
+	// a contact email.
+	CustomerEmail   string                       `json:"customer_email"`
+	CustomerName    string                       `json:"customer_name,omitempty"`
 	Subtotal        string                       `json:"subtotal"`
 	ShippingTotal   string                       `json:"shipping_total"`
 	TaxTotal        string                       `json:"tax_total"`
+	// DiscountTotal is the sum of coupon + loyalty + manual discounts on
+	// the order. Surfaced so customer-rendered PDFs can show the
+	// discount line in the totals block (admin-rendered ones already
+	// do via AdminOrder.discount_total).
+	DiscountTotal   string                       `json:"discount_total"`
 	GrandTotal      string                       `json:"grand_total"`
 	// RefundedAmount surfaces partial + full refunds on the customer
 	// account page. Always present (zero-value "0.00" when no refunds).
@@ -86,6 +98,7 @@ type storefrontOrderResponse struct {
 	CurrencyCode    string                       `json:"currency_code"`
 	Items           []storefrontOrderItemResponse `json:"items"`
 	ShippingAddress *storefrontAddressResponse    `json:"shipping_address"`
+	BillingAddress  *storefrontAddressResponse    `json:"billing_address,omitempty"`
 	Shipment        *storefrontShipmentResponse   `json:"shipment,omitempty"`
 	Timeline        []storefrontTimelineEntry     `json:"timeline"`
 	PlacedAt        string                       `json:"placed_at"`
@@ -102,13 +115,17 @@ type storefrontTaxLineResponse struct {
 
 // storefrontShipmentResponse is the public view of a shipment. The
 // label_url and carrier-internal ids are kept admin-only; customers
-// get the tracking number + status only.
+// get the tracking number + status only. DeliveredAt is surfaced once
+// the shipment flips to "delivered" so receipt PDFs can stamp the
+// real delivery moment instead of falling back to order.updated_at.
 type storefrontShipmentResponse struct {
 	Carrier           string `json:"carrier"`
 	Service           string `json:"service,omitempty"`
 	TrackingNumber    string `json:"tracking_number,omitempty"`
 	Status            string `json:"status"`
 	EstimatedDelivery string `json:"estimated_delivery,omitempty"`
+	DeliveredAt       string `json:"delivered_at,omitempty"`
+	ShippedAt         string `json:"shipped_at,omitempty"`
 }
 
 // storefrontTimelineEntry is one row in the customer-facing order
@@ -219,10 +236,17 @@ type shipmentRow struct {
 	// canonical shipping.Shipment model (gorm:"-"). Earlier this struct
 	// queried non-existent columns and silently returned nil, which made
 	// every customer-side receipt download return 409 not_delivered.
+	//
+	// DeliveredAt + ShippedAt are written by the admin shipment status
+	// handler when the row transitions to delivered/in_transit and read
+	// here so the receipt PDF can stamp the real delivery moment rather
+	// than falling back to order.updated_at as a proxy.
 	Carrier           string  `gorm:"column:carrier"`
 	TrackingNumber    string  `gorm:"column:tracking_number"`
 	Status            string  `gorm:"column:status"`
 	EstimatedDelivery *string `gorm:"column:estimated_delivery"`
+	ShippedAt         *string `gorm:"column:shipped_at"`
+	DeliveredAt       *string `gorm:"column:delivered_at"`
 }
 
 func (r shipmentRow) TableName() string { return "shipments" }
@@ -231,7 +255,7 @@ func (h *OrderDetailHandler) loadShipment(ctx context.Context, orderID uuid.UUID
 	var row shipmentRow
 	err := h.db.WithContext(ctx).
 		Table("shipments").
-		Select("carrier", "tracking_number", "status", "estimated_delivery").
+		Select("carrier", "tracking_number", "status", "estimated_delivery", "shipped_at", "delivered_at").
 		Where("order_id = ?", orderID).
 		Order("created_at DESC").
 		Limit(1).
@@ -249,6 +273,12 @@ func (h *OrderDetailHandler) loadShipment(ctx context.Context, orderID uuid.UUID
 	}
 	if row.EstimatedDelivery != nil {
 		resp.EstimatedDelivery = *row.EstimatedDelivery
+	}
+	if row.ShippedAt != nil {
+		resp.ShippedAt = *row.ShippedAt
+	}
+	if row.DeliveredAt != nil {
+		resp.DeliveredAt = *row.DeliveredAt
 	}
 	return resp
 }
@@ -356,21 +386,32 @@ func mapOrderToStorefrontResponse(o *order.Order, items []order.OrderItem, addrs
 		respItems = append(respItems, ri)
 	}
 
-	var shippingAddr *storefrontAddressResponse
+	var shippingAddr, billingAddr *storefrontAddressResponse
 	for _, a := range addrs {
-		if a.Kind == "shipping" {
-			shippingAddr = &storefrontAddressResponse{
-				Name:        a.Name,
-				Line1:       a.Line1,
-				Line2:       derefStr(a.Line2),
-				City:        a.City,
-				Region:      derefStr(a.Region),
-				PostalCode:  derefStr(a.PostalCode),
-				CountryCode: a.CountryCode,
-				Phone:       derefStr(a.Phone),
-			}
-			break
+		mapped := &storefrontAddressResponse{
+			Name:        a.Name,
+			Line1:       a.Line1,
+			Line2:       derefStr(a.Line2),
+			City:        a.City,
+			Region:      derefStr(a.Region),
+			PostalCode:  derefStr(a.PostalCode),
+			CountryCode: a.CountryCode,
+			Phone:       derefStr(a.Phone),
 		}
+		switch a.Kind {
+		case "shipping":
+			shippingAddr = mapped
+		case "billing":
+			billingAddr = mapped
+		}
+	}
+	// If the order only has a single shipping address (most checkouts
+	// reuse it as the billing address) leave billing nil — the PDF
+	// builders fall back to the shipping address when bill_to is unset.
+
+	customerName := ""
+	if o.CustomerName != nil {
+		customerName = *o.CustomerName
 	}
 
 	return storefrontOrderResponse{
@@ -378,14 +419,18 @@ func mapOrderToStorefrontResponse(o *order.Order, items []order.OrderItem, addrs
 		OrderNumber:     o.OrderNumber,
 		Status:          string(o.Status),
 		PaymentStatus:   string(o.PaymentStatus),
+		CustomerEmail:   o.CustomerEmail,
+		CustomerName:    customerName,
 		Subtotal:        o.Subtotal.StringFixed(2),
 		ShippingTotal:   decimalStr(o.ShippingTotal),
 		TaxTotal:        decimalStr(o.TaxTotal),
+		DiscountTotal:   decimalStr(o.DiscountTotal),
 		GrandTotal:      o.GrandTotal.StringFixed(2),
 		RefundedAmount:  o.RefundedAmount.StringFixed(2),
 		CurrencyCode:    o.CurrencyCode,
 		Items:           respItems,
 		ShippingAddress: shippingAddr,
+		BillingAddress:  billingAddr,
 		PlacedAt:        o.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }

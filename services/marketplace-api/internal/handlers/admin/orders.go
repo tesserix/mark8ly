@@ -523,6 +523,14 @@ func (h *OrdersHandler) EmailReceipt(c *gin.Context) {
 	h.emailDocument(c, true)
 }
 
+// emailDocumentRequest is the optional body for the resend endpoints.
+// `note` is a short personal message the merchant can attach on resend
+// — rendered as a "Note from {store}" block in the email body. Empty
+// string suppresses the block, matching the canonical template.
+type emailDocumentRequest struct {
+	Note string `json:"note"`
+}
+
 func (h *OrdersHandler) emailDocument(c *gin.Context, asReceipt bool) {
 	if h.docMailer == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -539,6 +547,19 @@ func (h *OrdersHandler) emailDocument(c *gin.Context, asReceipt bool) {
 	if err := h.verifyOrderOwnership(c, id); err != nil {
 		RespondErr(c, err, h.logger)
 		return
+	}
+
+	// Optional body — admin can attach a note on resend. Body is
+	// optional so an empty POST keeps working unchanged.
+	var req emailDocumentRequest
+	_ = c.ShouldBindJSON(&req)
+	note := strings.TrimSpace(req.Note)
+	// Cap the note length so a runaway paste doesn't blow the email
+	// body envelope. 800 chars is plenty for a "thanks for shopping
+	// again" or "we've waived the shipping fee" message.
+	const maxNote = 800
+	if len(note) > maxNote {
+		note = note[:maxNote]
 	}
 
 	if asReceipt {
@@ -561,20 +582,33 @@ func (h *OrdersHandler) emailDocument(c *gin.Context, asReceipt bool) {
 		}
 	}
 
-	var sendErr error
 	o, _, _, err := h.repo.GetByID(c.Request.Context(), h.db, id)
 	if err != nil || o == nil {
 		RespondErr(c, apperrors.NotFound("order"), h.logger)
 		return
 	}
+
+	opts := orderdoc.SendOptions{AdminNote: note}
+	var sendErr error
 	if asReceipt {
-		sendErr = h.docMailer.SendReceipt(c.Request.Context(), id)
+		sendErr = h.docMailer.SendReceiptWithOptions(c.Request.Context(), id, opts)
 	} else {
-		sendErr = h.docMailer.SendInvoice(c.Request.Context(), id)
+		sendErr = h.docMailer.SendInvoiceWithOptions(c.Request.Context(), id, opts)
 	}
 	if sendErr != nil {
 		h.logger.Warn("orderdoc: manual resend failed",
 			"order_id", id, "receipt", asReceipt, "err", sendErr)
+		// Missing customer email gets a 422 with an actionable hint
+		// instead of a generic 502 — the merchant can fix it (set the
+		// email on the order) and retry, whereas a true gateway 502 is
+		// transient and they should retry as-is.
+		if orderdoc.IsMissingCustomerEmail(sendErr) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error":   "no_recipient",
+				"message": "This order has no customer email on file. Add one before resending the document.",
+			})
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error":   "send_failed",
 			"message": sendErr.Error(),

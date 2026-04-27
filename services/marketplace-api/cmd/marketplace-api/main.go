@@ -513,7 +513,8 @@ func main() {
 			Repo:   branding.NewRepository(),
 			Logger: log,
 		})
-		orderDocSvc := orderdoc.NewService(conn, orderDocMailer, orderRepo, orderDocBrandingSvc, cfg.StorefrontBaseURLTemplate)
+		orderDocSvc := orderdoc.NewService(conn, orderDocMailer, orderRepo, orderDocBrandingSvc, cfg.StorefrontBaseURLTemplate).
+			WithLogger(log)
 
 		ordersHandler := admin.NewOrdersHandler(conn, orderSvc, orderRepo, orderDocSvc, log)
 		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log)
@@ -1057,7 +1058,8 @@ func main() {
 			Repo:   branding.NewRepository(),
 			Logger: log,
 		})
-		orderDocSvcSF := orderdoc.NewService(conn, orderDocMailerSF, orderRepoSF, orderDocBrandingSvcSF, cfg.StorefrontBaseURLTemplate)
+		orderDocSvcSF := orderdoc.NewService(conn, orderDocMailerSF, orderRepoSF, orderDocBrandingSvcSF, cfg.StorefrontBaseURLTemplate).
+				WithLogger(log)
 
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log).
 			WithReturns(returnSvcSF, returnRepoSF).

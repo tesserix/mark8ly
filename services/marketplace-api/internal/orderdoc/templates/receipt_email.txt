@@ -6,14 +6,18 @@ RECEIPT · {{.DocumentNumber}}
 {{.Heading}}
 
 {{.Lede}}
-
+{{if .AdminNote}}
+A note from {{.Theme.StoreName}}:
+{{.AdminNote}}
+{{end}}
 Order:        {{.OrderNumber}}
 Placed:       {{.PlacedAt}}{{if .DeliveredAt}}
 Delivered:    {{.DeliveredAt}}{{end}}
 Items:        {{.ItemCount}}
 Total:        {{.GrandTotal}} {{.CurrencyCode}}
 
-View your receipt: {{.OrderURL}}
+{{if .HasAttachment}}Your receipt PDF is attached to this email.{{else}}Download your receipt: {{if .DocumentURL}}{{.DocumentURL}}{{else}}{{.OrderURL}}{{end}}{{end}}
+{{if .OrderURL}}View order online: {{.OrderURL}}{{end}}
 
 —
 Thank you for shopping with {{.Theme.StoreName}}.

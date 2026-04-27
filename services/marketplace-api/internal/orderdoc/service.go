@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -26,6 +27,7 @@ type Service struct {
 	orderRepo         order.Repository
 	brandingSvc       *branding.Service
 	storefrontURLBase string // template with {slug}
+	logger            *slog.Logger
 }
 
 // NewService constructs a Service. Pass empty storefrontURLBase to
@@ -40,14 +42,53 @@ func NewService(db *gorm.DB, mailer Mailer, orderRepo order.Repository, branding
 	}
 }
 
+// WithLogger attaches a structured logger so the service can emit
+// warnings when it skips a dispatch (missing customer email, missing
+// store) instead of swallowing the failure into a generic error
+// returned to the goroutine. Chainable.
+func (s *Service) WithLogger(l *slog.Logger) *Service {
+	s.logger = l
+	return s
+}
+
+// errMissingCustomerEmail is returned when an order has no recipient
+// to send to. Wrapped (errors.Is) so callers can branch on it for
+// user-facing messaging — admin "Email to customer" surfaces it as a
+// 422 instead of the generic 502.
+var errMissingCustomerEmail = errors.New("orderdoc: order has no customer email")
+
+// IsMissingCustomerEmail reports whether the error chain contains a
+// "no customer email" sentinel. Used by the admin email handler to
+// produce an actionable error message ("This order has no customer
+// email — add one and try again") instead of a generic gateway error.
+func IsMissingCustomerEmail(err error) bool {
+	return errors.Is(err, errMissingCustomerEmail)
+}
+
+// SendOptions carries optional tweaks to a manual invoice/receipt
+// dispatch. AdminNote, when non-empty, renders a "Note from {store}"
+// block in the email body so the admin can add a short personal
+// message on resend without editing the canonical template.
+type SendOptions struct {
+	AdminNote string
+}
+
 // SendInvoice loads the order context and dispatches the invoice
 // envelope. Safe to call from a fire-and-forget goroutine — failures
 // are logged via the underlying mailer but do not return upstream.
 func (s *Service) SendInvoice(ctx context.Context, orderID uuid.UUID) error {
+	return s.SendInvoiceWithOptions(ctx, orderID, SendOptions{})
+}
+
+// SendInvoiceWithOptions is the explicit-options variant used by the
+// admin "Email to customer" flow when the merchant attaches a personal
+// note. Behaviour is identical to SendInvoice for an empty SendOptions.
+func (s *Service) SendInvoiceWithOptions(ctx context.Context, orderID uuid.UUID, opts SendOptions) error {
 	in, err := s.buildInput(ctx, orderID, false)
 	if err != nil {
 		return err
 	}
+	in.AdminNote = strings.TrimSpace(opts.AdminNote)
 	return s.mailer.SendInvoice(ctx, in)
 }
 
@@ -55,10 +96,18 @@ func (s *Service) SendInvoice(ctx context.Context, orderID uuid.UUID) error {
 // envelope. Caller is responsible for ensuring the order has actually
 // been delivered before invoking — the mailer doesn't re-validate.
 func (s *Service) SendReceipt(ctx context.Context, orderID uuid.UUID) error {
+	return s.SendReceiptWithOptions(ctx, orderID, SendOptions{})
+}
+
+// SendReceiptWithOptions is the explicit-options variant used by the
+// admin "Email to customer" flow when the merchant attaches a personal
+// note.
+func (s *Service) SendReceiptWithOptions(ctx context.Context, orderID uuid.UUID, opts SendOptions) error {
 	in, err := s.buildInput(ctx, orderID, true)
 	if err != nil {
 		return err
 	}
+	in.AdminNote = strings.TrimSpace(opts.AdminNote)
 	return s.mailer.SendReceipt(ctx, in)
 }
 
@@ -102,7 +151,12 @@ func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt b
 		return DocumentInput{}, fmt.Errorf("orderdoc: order %s not found", orderID)
 	}
 	if o.CustomerEmail == "" {
-		return DocumentInput{}, fmt.Errorf("orderdoc: order %s has no customer email", orderID)
+		if s.logger != nil {
+			s.logger.Warn("orderdoc: skipping dispatch — order has no customer email",
+				"order_id", orderID,
+				"order_number", o.OrderNumber)
+		}
+		return DocumentInput{}, fmt.Errorf("%w (order_id=%s)", errMissingCustomerEmail, orderID)
 	}
 
 	var store stores.Store

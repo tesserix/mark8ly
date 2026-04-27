@@ -1,23 +1,18 @@
 // GET /api/internal/orders/:id/invoice — service-to-service PDF render.
 //
-// Same as the customer-facing /api/orders/[id]/invoice but gated by a
-// shared X-Internal-Auth secret instead of the customer session cookie,
-// because the marketplace-api invoice mailer (Go) needs to fetch the
-// rendered PDF before attaching it to SendGrid emails. Without this
-// internal endpoint we'd either have to duplicate the React-PDF
-// generator in Go or settle for a "View invoice" link in the email.
+// Same render path as /api/orders/[id]/invoice but gated by a shared
+// X-Internal-Auth secret instead of the customer session cookie. The
+// marketplace-api invoice mailer (Go) calls this so it can attach the
+// rendered PDF to SendGrid emails without duplicating the React-PDF
+// generator in Go. Without this internal endpoint we'd either ship two
+// separate generators or settle for a "View invoice" link-only email.
 //
 // Inputs: ?slug=<store-slug>&customer_email=<email>
 // Auth:   X-Internal-Auth header must equal MARKETPLACE_INTERNAL_AUTH_SECRET
 
 import { NextResponse } from "next/server";
-import { pdf } from "@react-pdf/renderer";
 
-import { fetchOrder } from "@/lib/api/checkout-api";
-import { fetchBranding } from "@/lib/api/marketplace-api";
-import { InvoicePdf } from "@/lib/invoices/InvoicePdf";
-import { invoiceNumberFromOrder } from "@/lib/invoices/numbering";
-import { buildDocument } from "@/lib/invoices/build";
+import { pdfResponseHeaders, renderOrderDocumentPDF } from "@/lib/invoices/render";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,8 +23,8 @@ export async function GET(
   req: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
-  // Constant-time-ish header check — Node's Buffer.compare is plenty
-  // safe for a same-cluster service boundary.
+  // Constant-time-ish header check — Node's strict equality is plenty
+  // safe for a same-cluster service boundary protected by Istio mTLS.
   const provided = req.headers.get("x-internal-auth") ?? "";
   if (!INTERNAL_SECRET || provided !== INTERNAL_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -45,30 +40,22 @@ export async function GET(
     return NextResponse.json({ error: "missing_slug" }, { status: 400 });
   }
 
-  const [order, branding] = await Promise.all([
-    fetchOrder(slug, id),
-    fetchBranding(slug),
-  ]);
-  if (!order) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const result = await renderOrderDocumentPDF({
+    kind: "invoice",
+    storeSlug: slug,
+    orderId: id,
+    customerEmail: customerEmail || undefined,
+  });
+
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.error, message: result.message },
+      { status: result.status },
+    );
   }
 
-  const doc = buildDocument({
-    kind: "invoice",
-    order,
-    branding,
-    documentNumber: invoiceNumberFromOrder(order.order_number),
-  });
-  doc.customer_email = customerEmail || (order as { customer_email?: string }).customer_email || "";
-
-  const buffer = await pdf(InvoicePdf({ doc })).toBuffer();
-
-  return new Response(buffer as unknown as BodyInit, {
+  return new Response(result.pdfBytes as unknown as BodyInit, {
     status: 200,
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${doc.document_number}.pdf"`,
-      "Cache-Control": "private, no-store",
-    },
+    headers: pdfResponseHeaders(result.filename),
   });
 }

@@ -29,19 +29,35 @@ export interface SendDocEmailErr {
 
 export type SendDocEmailResult = SendDocEmailOk | SendDocEmailErr;
 
+export interface SendDocEmailOptions {
+  /**
+   * Optional personal note from the merchant — rendered as a "Note from
+   * {store}" block in the email body. Empty string suppresses the block,
+   * matching the canonical template. Whitespace is trimmed server-side
+   * and the value is capped at 800 chars before render.
+   */
+  note?: string;
+}
+
 export async function sendOrderDocumentEmail(
   storeId: string,
   orderId: string,
   kind: "invoice" | "receipt",
   session: SessionHeaders,
+  options: SendDocEmailOptions = {},
 ): Promise<SendDocEmailResult> {
   const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/${kind}/email`;
+  // The marketplace-api endpoint accepts an optional JSON body with a
+  // `note` field. Send `{}` when no note is set — Gin's ShouldBindJSON
+  // tolerates missing fields, so the empty body keeps prior behaviour.
+  const body = options.note ? JSON.stringify({ note: options.note }) : "{}";
   let res: Response;
   try {
     res = await fetch(url, {
       method: "POST",
       cache: "no-store",
       headers: { ...readHeaders(session), "Content-Type": "application/json" },
+      body,
     });
   } catch (e) {
     return {

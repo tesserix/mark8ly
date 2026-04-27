@@ -189,6 +189,12 @@ export interface OrderShipment {
   tracking_number?: string;
   status: string;
   estimated_delivery?: string;
+  // delivered_at / shipped_at are stamped server-side when the merchant
+  // transitions the shipment status. Surfaced so the receipt PDF can
+  // print the real delivery moment instead of falling back to
+  // order.updated_at as a proxy.
+  delivered_at?: string;
+  shipped_at?: string;
 }
 
 export interface OrderTaxLine {
@@ -212,9 +218,18 @@ export interface Order {
   order_number: string;
   status: string;
   payment_status: string;
+  // Buyer identity captured at checkout — surfaced so the customer-
+  // rendered invoice/receipt PDF can stamp the bill-to contact line
+  // and the email subject can address the customer by name.
+  customer_email?: string;
+  customer_name?: string;
   subtotal: string;
   shipping_total: string;
   tax_total: string;
+  // discount_total: aggregate of coupon, loyalty, and manual discounts
+  // applied at checkout. "0.00" when none. Used by the totals block on
+  // the customer-rendered invoice/receipt PDF.
+  discount_total?: string;
   grand_total: string;
   // refunded_amount: total refunded against this order. "0.00" when no
   // refunds have been issued. Surfaces partial + full refund history on
@@ -227,6 +242,10 @@ export interface Order {
   currency_code: string;
   items: OrderItem[];
   shipping_address: OrderAddress;
+  // billing_address is omitted by the API when the shopper reused the
+  // shipping address at checkout. PDF builders fall back to shipping_
+  // address when this is undefined.
+  billing_address?: OrderAddress;
   shipment?: OrderShipment;
   timeline?: OrderTimelineEntry[];
   placed_at: string;

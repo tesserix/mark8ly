@@ -232,6 +232,14 @@ type ShipmentResponse struct {
 	Status             string     `json:"status"`
 	CurrencyCode       string     `json:"currency_code"`
 	EstimatedDelivery  *time.Time `json:"estimated_delivery,omitempty"`
+	// ShippedAt + DeliveredAt are stamped by the status-transition
+	// handler when the shipment moves into the corresponding state.
+	// Both omitempty — pending shipments leave them null. DeliveredAt
+	// is the canonical "package handed to buyer" timestamp consumed by
+	// the receipt PDF; the older proxy was order.updated_at, which
+	// drifted whenever any field on the order changed.
+	ShippedAt          *time.Time `json:"shipped_at,omitempty"`
+	DeliveredAt        *time.Time `json:"delivered_at,omitempty"`
 	// Pickup scheduling. PickupRequestID is Delhivery's pr_id (or the
 	// "already-scheduled" sentinel) and PickupScheduledFor combines
 	// the date + slot-start into a single UTC timestamp so the admin
@@ -255,6 +263,8 @@ func toShipmentResponse(rec *shipping.ShipmentRecord) ShipmentResponse {
 		Status:             rec.Status,
 		CurrencyCode:       rec.CurrencyCode,
 		EstimatedDelivery:  rec.EstimatedDelivery,
+		ShippedAt:          rec.ShippedAt,
+		DeliveredAt:        rec.DeliveredAt,
 		PickupRequestID:    rec.PickupRequestID,
 		PickupScheduledFor: rec.PickupScheduledFor,
 		CreatedAt:          rec.CreatedAt,

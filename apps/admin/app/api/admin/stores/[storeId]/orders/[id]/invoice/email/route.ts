@@ -1,7 +1,9 @@
 // POST /api/admin/stores/:storeId/orders/:id/invoice/email
 //
 // Same-origin proxy: forwards to marketplace-api's invoice-email endpoint
-// which renders the invoice email and dispatches it via SendGrid.
+// which renders the invoice email and dispatches it via SendGrid. An
+// optional `note` field on the request body is forwarded as the admin's
+// personal message ("Note from {store}" block in the email).
 
 import { NextResponse } from "next/server";
 
@@ -11,8 +13,12 @@ import { getServerSessionContext } from "@/lib/auth/serverSession";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+interface RequestBody {
+  note?: string;
+}
+
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ storeId: string; id: string }> },
 ): Promise<Response> {
   const { storeId, id } = await params;
@@ -24,10 +30,22 @@ export async function POST(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const result = await sendOrderDocumentEmail(storeId, id, "invoice", {
-    userId: session.userId,
-    tenantId: session.tenantId,
-  });
+  // Body is optional — empty POSTs keep the no-note behaviour.
+  let note = "";
+  try {
+    const body = (await request.json().catch(() => ({}))) as RequestBody;
+    note = (body.note ?? "").trim();
+  } catch {
+    note = "";
+  }
+
+  const result = await sendOrderDocumentEmail(
+    storeId,
+    id,
+    "invoice",
+    { userId: session.userId, tenantId: session.tenantId },
+    { note },
+  );
   if (!result.ok) {
     return NextResponse.json(
       { error: result.error.code, message: result.error.message },

@@ -59,10 +59,10 @@ export async function GET(
     store: session.currentStore,
     documentNumber: receiptNumberFromOrder(order.order_number),
     contactEmail: session.email,
-    // No `delivered_at` on the wire ShipmentResponse yet — fall back to
-    // order.updated_at, which gets touched on every shipment status
-    // transition and is therefore a tight proxy for the delivery moment.
-    paymentDate: order.updated_at,
+    // Prefer the real shipment.delivered_at timestamp so the receipt
+    // stamps the actual delivery moment. Falls back to order.updated_at
+    // on the off chance a legacy row exists with the column unset.
+    paymentDate: shipment.delivered_at ?? order.updated_at,
   });
 
   const buffer = await pdf(InvoicePdf({ doc })).toBuffer();

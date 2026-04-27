@@ -1,17 +1,11 @@
 // GET /api/internal/orders/:id/receipt — service-to-service PDF render.
 // Same idea as the invoice variant — gated by X-Internal-Auth so the
-// marketplace-api receipt mailer can attach the PDF directly.
-// Receipt is only issued after delivery; same gating as the customer
-// route.
+// marketplace-api receipt mailer can attach the PDF directly. The
+// shared render helper enforces the post-delivery gate.
 
 import { NextResponse } from "next/server";
-import { pdf } from "@react-pdf/renderer";
 
-import { fetchOrder } from "@/lib/api/checkout-api";
-import { fetchBranding } from "@/lib/api/marketplace-api";
-import { InvoicePdf } from "@/lib/invoices/InvoicePdf";
-import { receiptNumberFromOrder } from "@/lib/invoices/numbering";
-import { buildDocument } from "@/lib/invoices/build";
+import { pdfResponseHeaders, renderOrderDocumentPDF } from "@/lib/invoices/render";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,36 +31,22 @@ export async function GET(
     return NextResponse.json({ error: "missing_slug" }, { status: 400 });
   }
 
-  const [order, branding] = await Promise.all([
-    fetchOrder(slug, id),
-    fetchBranding(slug),
-  ]);
-  if (!order) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
-  }
-  if (!order.shipment || order.shipment.status !== "delivered") {
+  const result = await renderOrderDocumentPDF({
+    kind: "receipt",
+    storeSlug: slug,
+    orderId: id,
+    customerEmail: customerEmail || undefined,
+  });
+
+  if (!result.ok) {
     return NextResponse.json(
-      { error: "not_delivered", message: "Receipt is issued after delivery." },
-      { status: 409 },
+      { error: result.error, message: result.message },
+      { status: result.status },
     );
   }
 
-  const doc = buildDocument({
-    kind: "receipt",
-    order,
-    branding,
-    documentNumber: receiptNumberFromOrder(order.order_number),
-  });
-  doc.customer_email = customerEmail || (order as { customer_email?: string }).customer_email || "";
-
-  const buffer = await pdf(InvoicePdf({ doc })).toBuffer();
-
-  return new Response(buffer as unknown as BodyInit, {
+  return new Response(result.pdfBytes as unknown as BodyInit, {
     status: 200,
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${doc.document_number}.pdf"`,
-      "Cache-Control": "private, no-store",
-    },
+    headers: pdfResponseHeaders(result.filename),
   });
 }

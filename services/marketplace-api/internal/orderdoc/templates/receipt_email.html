@@ -109,13 +109,50 @@
             </td>
           </tr>
 
-          <!-- Receipt PDF is attached to this email. -->
+          {{if .AdminNote}}
+          <tr>
+            <td class="m8-pad" style="padding:0 40px 8px 40px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="border-left:3px solid {{.Theme.ColorAccent}};background-color:{{.Theme.ColorBackground}};">
+                <tr>
+                  <td style="padding:14px 18px;">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:{{.MutedCopy}};font-weight:600;">
+                      A note from {{.Theme.StoreName}}
+                    </p>
+                    <p style="margin:0;font-size:14px;line-height:1.6;color:{{.Theme.ColorText}};white-space:pre-line;">{{.AdminNote}}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {{end}}
+
+          <!-- Document delivery copy — branches on whether the PDF was
+               actually attached, so the email never claims an attachment
+               that isn't there. -->
           <tr>
             <td class="m8-pad" style="padding:18px 40px 36px 40px;">
+              {{if .HasAttachment}}
               <p style="margin:0;font-size:13px;color:{{.SupportingCopy}};line-height:1.6;">
                 Your receipt PDF is attached to this email — no need to log in to download it.
                 {{if .OrderURL}}You can also <a href="{{.OrderURL}}" style="color:{{.Theme.ColorAccent}};text-decoration:underline;">open the order online</a>.{{end}}
               </p>
+              {{else}}
+              <p style="margin:0 0 16px 0;font-size:13px;color:{{.SupportingCopy}};line-height:1.6;">
+                Download your receipt {{.DocumentNumber}} below or sign in to your account to view it any time.
+              </p>
+              {{if .DocumentURL}}
+              <p style="margin:0 0 8px 0;">
+                <a href="{{.DocumentURL}}" style="display:inline-block;background-color:{{.Theme.ColorButtonBg}};color:{{.Theme.ColorButtonText}};text-decoration:none;padding:11px 20px;font-size:13px;font-weight:600;letter-spacing:0.04em;border-radius:2px;">
+                  {{.CTAButtonLabel}}
+                </a>
+              </p>
+              {{end}}
+              {{if .OrderURL}}
+              <p style="margin:8px 0 0 0;font-size:12px;color:{{.MutedCopy}};">
+                Or <a href="{{.OrderURL}}" style="color:{{.Theme.ColorAccent}};text-decoration:underline;">open the order online</a>.
+              </p>
+              {{end}}
+              {{end}}
             </td>
           </tr>
 

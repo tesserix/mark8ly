@@ -30,6 +30,13 @@ export interface ShipmentResponse {
   status: string;
   currency_code: string;
   estimated_delivery?: string;
+  /** Stamped server-side when shipment moves into "in_transit". */
+  shipped_at?: string;
+  /**
+   * Stamped server-side when shipment transitions to "delivered".
+   * Consumed by the receipt PDF as the canonical delivery timestamp.
+   */
+  delivered_at?: string;
   /** Delhivery pr_id / pickup_id (or "already-scheduled" sentinel). */
   pickup_request_id?: string;
   /** UTC timestamp combining pickup date + slot start. */

@@ -17,6 +17,7 @@ export async function resendDocumentEmail(
   storeId: string,
   orderId: string,
   kind: "invoice" | "receipt",
+  note?: string,
 ): Promise<DocumentEmailResult> {
   const h = await headers();
   const proto = h.get("x-forwarded-proto") ?? "https";
@@ -27,13 +28,19 @@ export async function resendDocumentEmail(
   // Forward the BFF cookie so the same-origin route can authenticate.
   const cookie = h.get("cookie") ?? "";
 
+  const trimmedNote = (note ?? "").trim();
+
   try {
     const res = await fetch(
       `${proto}://${host}/api/admin/stores/${storeId}/orders/${orderId}/${kind}/email`,
       {
         method: "POST",
         cache: "no-store",
-        headers: cookie ? { cookie } : undefined,
+        headers: {
+          "Content-Type": "application/json",
+          ...(cookie ? { cookie } : {}),
+        },
+        body: JSON.stringify(trimmedNote ? { note: trimmedNote } : {}),
       },
     );
     if (res.status === 401 || res.status === 403) {
@@ -46,6 +53,20 @@ export async function resendDocumentEmail(
         error: {
           code: "not_ready",
           message: body.message ?? "Document not yet available for this order.",
+        },
+      };
+    }
+    if (res.status === 422) {
+      // The recipient is missing on the order — actionable user error,
+      // surface it verbatim so the admin sees the fix path.
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      return {
+        ok: false,
+        error: {
+          code: "no_recipient",
+          message:
+            body.message ??
+            "This order has no customer email on file. Add one before resending.",
         },
       };
     }

@@ -9,6 +9,7 @@ interface GipConfig {
   apiKey: string;
   tenantId: string;
   projectId: string;
+  googleClientId: string;
 }
 
 interface CustomerSignInFormProps {

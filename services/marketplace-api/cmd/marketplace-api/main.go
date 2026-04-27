@@ -1664,6 +1664,12 @@ func main() {
 			// + storefront middlewares can hit whichever pod is local.
 			internalsvc.NewStoreActiveDomainHandler(conn).
 				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
+			// Reverse custom-domain lookup (domain → slug). The admin
+			// middleware uses this to verify a custom-admin host
+			// (admin.<merchant>) before rendering. Originally only the
+			// storefront engine had it, so admin → admin-flavor calls
+			// 404'd and the custom-domain admin URL was unreachable.
+			engine.GET("/api/v1/storefront/resolve-domain", domainsHandler.ResolveDomain)
 			if stripeBillingWebhookHandler != nil {
 				engine.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
 			}

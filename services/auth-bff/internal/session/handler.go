@@ -37,6 +37,10 @@ type Handler struct {
 	mfa      MFAVerifier
 	audit    *audit.Client // optional — emits user.signed_out / user.mfa_completed
 	logger   *slog.Logger
+
+	// GIP REST credentials for /auth/me/providers (Phase 3).
+	gipAPIKey           string
+	gipInternalTenantID string
 }
 
 // NewHandler constructs a Handler over the given Manager.
@@ -72,6 +76,14 @@ func (h *Handler) WithAudit(c *audit.Client) *Handler {
 	return h
 }
 
+// WithGIPLookup wires GIP REST credentials for the providers endpoint.
+// Optional — when unset, /auth/me/providers returns 503.
+func (h *Handler) WithGIPLookup(apiKey, internalTenantID string) *Handler {
+	h.gipAPIKey = apiKey
+	h.gipInternalTenantID = internalTenantID
+	return h
+}
+
 // Register mounts the session routes onto the given gin.RouterGroup.
 //
 //	GET  /auth/session          — returns { user_id, email, tenant_id }
@@ -88,6 +100,7 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	r.POST("/switch-tenant", h.switchTenant)
 	r.POST("/switch-store", h.switchStore)
 	r.POST("/mfa-challenge", h.mfaChallenge)
+	r.GET("/me/providers", h.getMyProviders) // Phase 3: linked auth providers
 }
 
 // RegisterAPI mounts the /api/v1 subset of session routes. Kept separate

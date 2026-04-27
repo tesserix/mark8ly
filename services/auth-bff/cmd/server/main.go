@@ -153,7 +153,8 @@ func main() {
 	sessionHandler := session.NewHandler(sessions, fgaClient).
 		WithRegistry(sessionRegistry, log).
 		WithMFA(mfaSvc).
-		WithAudit(auditClient)
+		WithAudit(auditClient).
+		WithGIPLookup(cfg.GIPWebAPIKey, cfg.GIPInternalTenantID)
 
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)

@@ -25,7 +25,6 @@ export default async function CreateAccountPage() {
       "",
     tenantId: process.env.GIP_CUSTOMER_TENANT_ID ?? "",
     projectId: process.env.GIP_PROJECT_ID ?? "",
-    googleClientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
   };
 
   const protocol = h.get("x-forwarded-proto") ?? "https";

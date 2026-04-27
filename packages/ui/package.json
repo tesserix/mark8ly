@@ -7,6 +7,7 @@
     "./storefront-theme": "./src/storefront-theme.ts",
     "./subscription": "./src/subscription/index.ts",
     "./subscription/*": "./src/subscription/*.tsx",
+    "./auth/exchange-code": "./src/auth/exchange-code.ts",
     "./*": "./src/*.tsx"
   },
   "scripts": {

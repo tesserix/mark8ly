@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/account/loyalty", label: "Loyalty" },
   { href: "/account/gift-cards", label: "Gift cards" },
   { href: "/account/addresses", label: "Addresses" },
+  { href: "/account/security", label: "Security" }, // Phase 3
   { href: "/account/tickets", label: "Support" },
 ] as const;
 

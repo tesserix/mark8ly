@@ -130,7 +130,16 @@ export async function middleware(req: NextRequest) {
       // fall through
     }
   }
-  if (requestedSlug) {
+  // /pick-tenant is the user's escape hatch when their session is on a
+  // different tenant than the requested subdomain. Skipping the
+  // auto-switch logic for this path is critical — without the guard, a
+  // failed switch would redirect to /pick-tenant on the same subdomain,
+  // which then re-enters this block, fails the same way, and loops
+  // (ERR_TOO_MANY_REDIRECTS). The picker page renders the form that
+  // performs an explicit user-driven switch via a server action.
+  const isPickTenant =
+    pathname === "/pick-tenant" || pathname.startsWith("/pick-tenant/");
+  if (requestedSlug && !isPickTenant) {
     try {
       const storeRes = await fetch(
         `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(requestedSlug)}`,
@@ -160,8 +169,16 @@ export async function middleware(req: NextRequest) {
             return response;
           }
           // Switch failed — user has no membership on this tenant.
-          // Redirect to pick-tenant so they can choose a store they own.
-          return NextResponse.redirect(new URL("/pick-tenant", req.nextUrl));
+          // Send them to /pick-tenant on the canonical admin host
+          // (admin.mark8ly.com) when configured, so they land on a host
+          // their session naturally maps to. Falling back to the same
+          // subdomain is safe now thanks to the isPickTenant guard
+          // above, but the canonical bounce keeps the URL bar honest.
+          const pickTarget =
+            CANONICAL_LOGIN_ORIGIN
+              ? new URL("/pick-tenant", CANONICAL_LOGIN_ORIGIN)
+              : new URL("/pick-tenant", req.nextUrl);
+          return NextResponse.redirect(pickTarget);
         }
       }
     } catch {

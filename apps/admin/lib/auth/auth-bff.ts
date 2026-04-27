@@ -199,6 +199,45 @@ function readAllSetCookies(res: Response): string[] {
  * 6-digit TOTP code the user typed. On success auth-bff returns the
  * full session cookie, which the caller forwards to the browser.
  */
+export interface LinkedProvider {
+  providerId: string;
+  email?: string;
+}
+
+export async function getMyProviders(
+  cookieHeader: string,
+): Promise<{ providers: LinkedProvider[] }> {
+  const res = await fetch(`${base}/auth/me/providers`, {
+    method: "GET",
+    headers: {
+      Cookie: cookieHeader,
+    },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? `http_${res.status}`,
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+  const wrapper = (await res.json()) as {
+    data: { providers: { provider_id: string; email?: string }[] };
+  };
+  return {
+    providers: wrapper.data.providers.map((p) => ({
+      providerId: p.provider_id,
+      email: p.email,
+    })),
+  };
+}
+
 export async function completeMFAChallenge(
   code: string,
   cookieHeader: string,

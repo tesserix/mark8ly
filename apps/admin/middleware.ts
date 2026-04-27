@@ -169,16 +169,14 @@ export async function middleware(req: NextRequest) {
             return response;
           }
           // Switch failed — user has no membership on this tenant.
-          // Send them to /pick-tenant on the canonical admin host
-          // (admin.mark8ly.com) when configured, so they land on a host
-          // their session naturally maps to. Falling back to the same
-          // subdomain is safe now thanks to the isPickTenant guard
-          // above, but the canonical bounce keeps the URL bar honest.
-          const pickTarget =
-            CANONICAL_LOGIN_ORIGIN
-              ? new URL("/pick-tenant", CANONICAL_LOGIN_ORIGIN)
-              : new URL("/pick-tenant", req.nextUrl);
-          return NextResponse.redirect(pickTarget);
+          // Stay on the same subdomain and send them to /pick-tenant;
+          // the isPickTenant guard above prevents the redirect loop.
+          // Bouncing to a canonical host (admin.mark8ly.com) tears them
+          // off the slug subdomain entirely and the picker would then
+          // skip straight to /dashboard for any single-tenant user,
+          // which feels like the merchant got "kicked out" of the store
+          // they were trying to manage.
+          return NextResponse.redirect(new URL("/pick-tenant", req.nextUrl));
         }
       }
     } catch {

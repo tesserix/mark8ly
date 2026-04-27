@@ -8,6 +8,7 @@
     "./subscription": "./src/subscription/index.ts",
     "./subscription/*": "./src/subscription/*.tsx",
     "./auth/exchange-code": "./src/auth/exchange-code.ts",
+    "./auth/link-provider-prompt": "./src/auth/link-provider-prompt.tsx",
     "./*": "./src/*.tsx"
   },
   "scripts": {

@@ -130,21 +130,26 @@ export async function middleware(req: NextRequest) {
       // fall through
     }
   }
-  // Tenant-subdomain handling. When the user lands on
-  // {slug}-admin.mark8ly.com with a session for a tenant that owns that
-  // slug — perfect, no-op. When the slug belongs to a tenant the user
-  // also has membership on — opportunistically auto-switch their session
-  // so the rendered data lines up with the URL bar. When neither — let
-  // the request fall through to the normal session/role check below;
-  // the user sees their own tenant's data, the URL bar keeps the slug
-  // subdomain they typed, and they can escape via the in-app store
-  // switcher. Earlier iterations redirected the failure case to
-  // /pick-tenant, which created a /dashboard ↔ /pick-tenant ping-pong
-  // for single-tenant users (the picker auto-redirects to /dashboard
-  // when there's only one tenant, and /dashboard re-fires the
-  // auto-switch failure here). The /pick-tenant guard remains as a
-  // defensive backstop — it's reached when the user clicks the in-app
-  // "Switch store" affordance.
+  // Tenant-subdomain handling for {slug}-admin.mark8ly.com URLs.
+  //
+  // Three outcomes:
+  //   1. session.tenant_id == slug's tenant_id  →  no-op, fall through
+  //   2. user has membership on the slug's tenant →  switch session and
+  //      reload; the buyer of "auto-switch on subdomain mismatch" UX
+  //   3. user has no membership on the slug's tenant  →  redirect to
+  //      /pick-tenant on the SAME host. The /pick-tenant page is the
+  //      single source of truth for "wrong store" recovery: it renders
+  //      a picker scoped to the user's actual tenants and never
+  //      auto-redirects to /dashboard when the host's slug isn't one
+  //      they can access (which is what created the original
+  //      /dashboard ↔ /pick-tenant loop).
+  //
+  // The isPickTenant guard below prevents the /pick-tenant page itself
+  // from re-entering this block — it's the defensive bottom turtle that
+  // makes (3) safe. Earlier "fall-through" iterations silently rendered
+  // the user's own tenant data on a wrong-slug URL; that's the exact
+  // cross-tenant UI bleed 67e517bb was trying to prevent in the first
+  // place, so we don't do it.
   const isPickTenant =
     pathname === "/pick-tenant" || pathname.startsWith("/pick-tenant/");
   if (requestedSlug && !isPickTenant) {
@@ -159,9 +164,8 @@ export async function middleware(req: NextRequest) {
         };
         const requestedTenantId = body.data.tenant_id;
         if (requestedTenantId && requestedTenantId !== session.tenant_id) {
-          // Best-effort switch. Success → reload with the new cookie.
-          // Failure → fall through; the user keeps their existing
-          // tenant context on this URL.
+          // Try to switch. If the user has membership on the slug's
+          // tenant, auth-bff mints a new cookie and we reload.
           const switchRes = await fetch(`${AUTH_BFF_URL}/auth/switch-tenant`, {
             method: "POST",
             headers: {
@@ -177,11 +181,18 @@ export async function middleware(req: NextRequest) {
             if (setCookie) response.headers.set("set-cookie", setCookie);
             return response;
           }
-          // No membership on the slug's tenant — silent fall-through.
+          // Switch failed — no membership on this tenant. Hand off to
+          // /pick-tenant on the same host; the page detects the
+          // wrong-slug condition and renders the picker instead of
+          // auto-redirecting to /dashboard.
+          return NextResponse.redirect(new URL("/pick-tenant", req.nextUrl));
         }
       }
     } catch {
-      // platform-api unreachable — fall through to normal flow.
+      // platform-api unreachable — fall through to normal flow rather
+      // than redirect to /pick-tenant (which would also depend on
+      // platform-api). Better to render the page with the user's
+      // existing tenant than to send them to a broken picker.
     }
   }
 

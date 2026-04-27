@@ -1,29 +1,73 @@
-// apps/onboarding/app/auth/google/page.tsx
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { LinkProviderPrompt } from "@repo/ui/auth/link-provider-prompt";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
 import {
   signInWithGoogleCustomer,
   CustomerGIPError,
 } from "@/lib/gip/customer-signin";
+import { linkGoogleToCustomerPassword } from "@/lib/gip/customer-link";
 import { mintCustomerExchangeCode } from "./actions";
 
 /**
- * Inner component that uses useSearchParams — must be wrapped in <Suspense>.
+ * /auth/google — the cross-tenant trampoline for customer Google sign-in.
+ *
+ * Per-tenant storefront subdomains (e.g. india-store.mark8ly.com) cannot
+ * register with Google's OAuth client config (no wildcard origins, no
+ * stable Admin API). So storefronts redirect customers to this page on
+ * mark8ly.com (a fixed registered origin), we run the Google popup
+ * here, exchange the credential for a GIP id_token in the MP-Customer
+ * pool, mint a short-lived HMAC exchange code, and bounce back to the
+ * originating store's /auth/google/finish route which mints the
+ * per-host mp_customer_session cookie via the existing customerSignIn
+ * server action.
+ *
+ * Phase 3: when GIP returns needConfirmation (existing email already
+ * has password but is now signing in with Google), render the
+ * LinkProviderPrompt overlay. User enters their existing password,
+ * we link the providers via signInWithPassword + signInWithIdp, then
+ * continue with the linked id_token.
  */
 function TrampolineInner() {
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<"idle" | "popup" | "exchanging" | "redirecting">(
-    "idle",
-  );
+  const [linkPromptError, setLinkPromptError] = useState<string | null>(null);
+  const [status, setStatus] = useState<
+    "idle" | "popup" | "exchanging" | "redirecting"
+  >("idle");
+  const [needConfirmation, setNeedConfirmation] = useState<{
+    email: string;
+    pendingIdpCredential: string;
+  } | null>(null);
 
   const returnTo = params.get("return_to") ?? "";
   const storeSlug = params.get("store_slug") ?? "";
   const intentParam = params.get("intent");
-  const intent: "signin" | "signup" = intentParam === "signup" ? "signup" : "signin";
+  const intent: "signin" | "signup" | "link" =
+    intentParam === "signup"
+      ? "signup"
+      : intentParam === "link"
+        ? "link"
+        : "signin";
+
+  async function completeAndRedirect(idToken: string): Promise<void> {
+    const exchange = await mintCustomerExchangeCode({
+      idToken,
+      storeSlug,
+      returnTo,
+      // The exchange-code action only knows signin/signup; link reuses
+      // signin since the cookie mint is identical.
+      intent: intent === "link" ? "signin" : intent,
+    });
+    if (!exchange.ok) {
+      setError(exchange.error);
+      return;
+    }
+    setStatus("redirecting");
+    window.location.assign(exchange.redirectUrl);
+  }
 
   useEffect(() => {
     if (!returnTo || !storeSlug) {
@@ -40,24 +84,14 @@ function TrampolineInner() {
         const result = await signInWithGoogleCustomer(credential);
         if (cancelled) return;
         if (result.kind === "needConfirmation") {
-          setError(
-            "This email already has an account. Phase 3 link prompt is not yet wired here — please sign in with email and password instead.",
-          );
+          setNeedConfirmation({
+            email: result.email,
+            pendingIdpCredential: result.pendingIdpCredential,
+          });
+          setStatus("idle");
           return;
         }
-        const exchange = await mintCustomerExchangeCode({
-          idToken: result.idToken,
-          storeSlug,
-          returnTo,
-          intent,
-        });
-        if (cancelled) return;
-        if (!exchange.ok) {
-          setError(exchange.error);
-          return;
-        }
-        setStatus("redirecting");
-        window.location.assign(exchange.redirectUrl);
+        await completeAndRedirect(result.idToken);
       } catch (err) {
         if (cancelled) return;
         if (err instanceof CustomerGIPError) {
@@ -74,10 +108,43 @@ function TrampolineInner() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [returnTo, storeSlug, intent]);
 
+  async function handleLinkConfirm(password: string): Promise<void> {
+    if (!needConfirmation) return;
+    setLinkPromptError(null);
+    try {
+      const linked = await linkGoogleToCustomerPassword(
+        needConfirmation.email,
+        password,
+        needConfirmation.pendingIdpCredential,
+      );
+      setNeedConfirmation(null);
+      setStatus("exchanging");
+      await completeAndRedirect(linked.idToken);
+    } catch (err) {
+      if (err instanceof CustomerGIPError && err.code === "invalid_credentials") {
+        setLinkPromptError("That password is incorrect. Please try again.");
+        return;
+      }
+      setLinkPromptError(
+        err instanceof Error
+          ? err.message
+          : "Could not link Google. Please try again.",
+      );
+    }
+  }
+
+  function handleLinkCancel(): void {
+    setNeedConfirmation(null);
+    setError(
+      "Linking cancelled. Please sign in with email and password instead.",
+    );
+  }
+
   return (
-    <>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 py-16 text-center">
       <h1 className="font-serif text-2xl">
         Continuing to {storeSlug || "store"}&hellip;
       </h1>
@@ -85,40 +152,33 @@ function TrampolineInner() {
         {status === "popup" && "Opening Google sign-in…"}
         {status === "exchanging" && "Completing sign-in…"}
         {status === "redirecting" && "Returning you to the store…"}
-        {status === "idle" && !error && "Preparing…"}
+        {status === "idle" && !error && !needConfirmation && "Preparing…"}
       </p>
       {error && (
-        <p role="alert" className="mt-4 text-sm text-[color:var(--danger,#a3322a)]">
+        <p
+          role="alert"
+          className="mt-4 text-sm text-[color:var(--danger,#a3322a)]"
+        >
           {error}
         </p>
       )}
-    </>
+      {needConfirmation && (
+        <LinkProviderPrompt
+          email={needConfirmation.email}
+          variant="storefront"
+          error={linkPromptError}
+          onConfirm={handleLinkConfirm}
+          onCancel={handleLinkCancel}
+        />
+      )}
+    </main>
   );
 }
 
-/**
- * /auth/google — the cross-tenant trampoline for customer Google sign-in.
- *
- * Per-tenant storefront subdomains (e.g. india-store.mark8ly.com) cannot
- * register with Google's OAuth client config (no wildcard origins, no
- * stable Admin API). So storefronts redirect customers to this page on
- * mark8ly.com (a fixed registered origin), we run the Google popup
- * here, exchange the credential for a GIP id_token in the MP-Customer
- * pool, mint a short-lived HMAC exchange code, and bounce back to the
- * originating store's /auth/google/finish route which mints the
- * per-host mp_customer_session cookie via the existing customerSignIn
- * server action.
- */
 export default function GoogleAuthTrampolinePage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 py-16 text-center">
-      <Suspense
-        fallback={
-          <p className="text-sm opacity-70">Preparing&hellip;</p>
-        }
-      >
-        <TrampolineInner />
-      </Suspense>
-    </main>
+    <Suspense fallback={null}>
+      <TrampolineInner />
+    </Suspense>
   );
 }

@@ -89,8 +89,18 @@ func (h *StoreActiveDomainHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// Register mounts the endpoint onto the supplied /internal route
-// group with the standard X-Internal-Auth gate.
-func (h *StoreActiveDomainHandler) Register(group *gin.RouterGroup, internalSecret string) {
-	group.GET("/store-active-domain/:slug", RequireInternalAuth(internalSecret), h.Get)
+// Register mounts the endpoint onto the supplied /internal route group.
+//
+// Intentionally NOT gated by X-Internal-Auth — the response is just
+// `slug → maybe-custom-domain`, both already publicly observable
+// (the slug appears in the storefront URL bar; the active custom
+// domain is the storefront's canonical host). Matches the existing
+// platform-api `/internal/stores/by-slug/:slug` pattern, which the
+// admin middleware also calls without an auth header. Network access
+// is restricted by k8s NetworkPolicy.
+//
+// The `internalSecret` parameter is accepted for call-site symmetry
+// with the other internalsvc handlers but ignored.
+func (h *StoreActiveDomainHandler) Register(group *gin.RouterGroup, _internalSecret string) {
+	group.GET("/store-active-domain/:slug", h.Get)
 }

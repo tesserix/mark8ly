@@ -4,8 +4,6 @@ import { classifyStorefrontHost } from "./lib/host-policy";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL || "http://localhost:8080";
-const INTERNAL_AUTH_SECRET =
-  process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
 
 // Paths that must remain reachable on any host (probes, asset CDN warm
 // hits, sitemap crawlers). Everything else routes through the
@@ -121,12 +119,7 @@ async function fetchSlugStatus(slug: string): Promise<SlugStatus | null> {
   try {
     const res = await fetch(
       `${MARKETPLACE_API_URL}/internal/store-active-domain/${encodeURIComponent(slug)}`,
-      {
-        cache: "no-store",
-        headers: INTERNAL_AUTH_SECRET
-          ? { "X-Internal-Auth": INTERNAL_AUTH_SECRET }
-          : undefined,
-      },
+      { cache: "no-store" },
     );
     if (res.status === 404) return "not_found";
     if (!res.ok) return null;

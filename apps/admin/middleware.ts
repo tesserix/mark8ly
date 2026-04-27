@@ -33,8 +33,6 @@ const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
-const INTERNAL_AUTH_SECRET =
-  process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
 // Canonical sign-in host. This is the single host we register with
 // Google OAuth as an "Authorized JavaScript origin" — every per-tenant
 // subdomain ({slug}-admin.mark8ly.com) bounces here for unauthenticated
@@ -417,12 +415,7 @@ async function fetchSlugStatus(slug: string): Promise<SlugStatus | null> {
   try {
     const res = await fetch(
       `${MARKETPLACE_API_URL}/internal/store-active-domain/${encodeURIComponent(slug)}`,
-      {
-        cache: "no-store",
-        headers: INTERNAL_AUTH_SECRET
-          ? { "X-Internal-Auth": INTERNAL_AUTH_SECRET }
-          : undefined,
-      },
+      { cache: "no-store" },
     );
     if (res.status === 404) return "not_found";
     if (!res.ok) return null;

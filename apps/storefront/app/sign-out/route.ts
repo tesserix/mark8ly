@@ -48,6 +48,11 @@ export async function GET(req: Request): Promise<Response> {
       secure: !isLocal,
       sameSite: "lax",
     });
+  } else {
+    // Fallback: no validated host (dev without x-forwarded-host).
+    // Clear the host-only cookie for the current request host so dev
+    // sign-out still works without an explicit Domain.
+    c.delete("mp_customer_session");
   }
 
   // Transitional: clear the legacy parent-domain cookie set before Phase 1.

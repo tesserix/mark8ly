@@ -6,6 +6,13 @@
 // per-tenant subdomains back to the originating store. Mirrors the
 // existing onboarding/lib/gip/signup.ts but targets MP-Customer
 // instead of MP-Internal.
+//
+// Returns a discriminated union: when the email is already in use
+// with a different provider AND the GIP project has "Link accounts
+// that use the same email" enabled, GIP returns 200 with
+// needConfirmation=true plus a pending Google credential. The
+// trampoline renders LinkProviderPrompt and the user enters their
+// existing password to complete the link via customer-link.ts.
 
 import { publicConfig } from "@/lib/config";
 
@@ -18,10 +25,14 @@ export class CustomerGIPError extends Error {
   }
 }
 
-export interface CustomerSigninResult {
-  uid: string;
-  idToken: string;
-}
+export type CustomerSigninResult =
+  | { kind: "ok"; uid: string; idToken: string }
+  | {
+      kind: "needConfirmation";
+      email: string;
+      pendingIdpCredential: string;
+      verifiedProvider: string[];
+    };
 
 export async function signInWithGoogleCustomer(
   googleIdToken: string,
@@ -30,7 +41,10 @@ export async function signInWithGoogleCustomer(
     throw new CustomerGIPError("config_missing", "GIP Web API key is not configured");
   }
   if (!publicConfig.gipCustomerTenantId) {
-    throw new CustomerGIPError("config_missing", "GIP customer tenant id is not configured");
+    throw new CustomerGIPError(
+      "config_missing",
+      "GIP customer tenant id is not configured",
+    );
   }
 
   const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${encodeURIComponent(publicConfig.gipApiKey)}`;
@@ -62,6 +76,30 @@ export async function signInWithGoogleCustomer(
     );
   }
 
-  const data = (await res.json()) as { localId: string; idToken: string };
-  return { uid: data.localId, idToken: data.idToken };
+  const data = (await res.json()) as {
+    localId?: string;
+    idToken?: string;
+    needConfirmation?: boolean;
+    email?: string;
+    oauthIdToken?: string;
+    verifiedProvider?: string[];
+  };
+
+  if (data.needConfirmation && data.email && data.oauthIdToken) {
+    return {
+      kind: "needConfirmation",
+      email: data.email,
+      pendingIdpCredential: data.oauthIdToken,
+      verifiedProvider: data.verifiedProvider ?? [],
+    };
+  }
+
+  if (!data.localId || !data.idToken) {
+    throw new CustomerGIPError(
+      "malformed_response",
+      "GIP response missing required fields",
+    );
+  }
+
+  return { kind: "ok", uid: data.localId, idToken: data.idToken };
 }

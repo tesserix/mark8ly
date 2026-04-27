@@ -37,21 +37,27 @@ function TrampolineInner() {
         const { credential } = await getGoogleCredential();
         if (cancelled) return;
         setStatus("exchanging");
-        const gip = await signInWithGoogleCustomer(credential);
+        const result = await signInWithGoogleCustomer(credential);
         if (cancelled) return;
-        const result = await mintCustomerExchangeCode({
-          idToken: gip.idToken,
+        if (result.kind === "needConfirmation") {
+          setError(
+            "This email already has an account. Phase 3 link prompt is not yet wired here — please sign in with email and password instead.",
+          );
+          return;
+        }
+        const exchange = await mintCustomerExchangeCode({
+          idToken: result.idToken,
           storeSlug,
           returnTo,
           intent,
         });
         if (cancelled) return;
-        if (!result.ok) {
-          setError(result.error);
+        if (!exchange.ok) {
+          setError(exchange.error);
           return;
         }
         setStatus("redirecting");
-        window.location.assign(result.redirectUrl);
+        window.location.assign(exchange.redirectUrl);
       } catch (err) {
         if (cancelled) return;
         if (err instanceof CustomerGIPError) {

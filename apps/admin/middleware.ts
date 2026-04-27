@@ -130,13 +130,21 @@ export async function middleware(req: NextRequest) {
       // fall through
     }
   }
-  // /pick-tenant is the user's escape hatch when their session is on a
-  // different tenant than the requested subdomain. Skipping the
-  // auto-switch logic for this path is critical — without the guard, a
-  // failed switch would redirect to /pick-tenant on the same subdomain,
-  // which then re-enters this block, fails the same way, and loops
-  // (ERR_TOO_MANY_REDIRECTS). The picker page renders the form that
-  // performs an explicit user-driven switch via a server action.
+  // Tenant-subdomain handling. When the user lands on
+  // {slug}-admin.mark8ly.com with a session for a tenant that owns that
+  // slug — perfect, no-op. When the slug belongs to a tenant the user
+  // also has membership on — opportunistically auto-switch their session
+  // so the rendered data lines up with the URL bar. When neither — let
+  // the request fall through to the normal session/role check below;
+  // the user sees their own tenant's data, the URL bar keeps the slug
+  // subdomain they typed, and they can escape via the in-app store
+  // switcher. Earlier iterations redirected the failure case to
+  // /pick-tenant, which created a /dashboard ↔ /pick-tenant ping-pong
+  // for single-tenant users (the picker auto-redirects to /dashboard
+  // when there's only one tenant, and /dashboard re-fires the
+  // auto-switch failure here). The /pick-tenant guard remains as a
+  // defensive backstop — it's reached when the user clicks the in-app
+  // "Switch store" affordance.
   const isPickTenant =
     pathname === "/pick-tenant" || pathname.startsWith("/pick-tenant/");
   if (requestedSlug && !isPickTenant) {
@@ -151,7 +159,9 @@ export async function middleware(req: NextRequest) {
         };
         const requestedTenantId = body.data.tenant_id;
         if (requestedTenantId && requestedTenantId !== session.tenant_id) {
-          // Session is on a different tenant. Try to switch.
+          // Best-effort switch. Success → reload with the new cookie.
+          // Failure → fall through; the user keeps their existing
+          // tenant context on this URL.
           const switchRes = await fetch(`${AUTH_BFF_URL}/auth/switch-tenant`, {
             method: "POST",
             headers: {
@@ -162,21 +172,12 @@ export async function middleware(req: NextRequest) {
             cache: "no-store",
           });
           if (switchRes.ok) {
-            // Reload the page so the new cookie takes effect.
             const setCookie = switchRes.headers.get("set-cookie");
             const response = NextResponse.redirect(req.nextUrl);
             if (setCookie) response.headers.set("set-cookie", setCookie);
             return response;
           }
-          // Switch failed — user has no membership on this tenant.
-          // Stay on the same subdomain and send them to /pick-tenant;
-          // the isPickTenant guard above prevents the redirect loop.
-          // Bouncing to a canonical host (admin.mark8ly.com) tears them
-          // off the slug subdomain entirely and the picker would then
-          // skip straight to /dashboard for any single-tenant user,
-          // which feels like the merchant got "kicked out" of the store
-          // they were trying to manage.
-          return NextResponse.redirect(new URL("/pick-tenant", req.nextUrl));
+          // No membership on the slug's tenant — silent fall-through.
         }
       }
     } catch {

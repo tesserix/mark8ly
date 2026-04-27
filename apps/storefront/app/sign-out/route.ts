@@ -20,9 +20,22 @@ export async function GET(req: Request): Promise<Response> {
   const c = await cookies();
   c.delete("mp_customer_session");
 
-  // Redirect to the storefront root on the same host the request came in
-  // on so a per-tenant subdomain (e.g. playwrite-test.mark8ly.com) doesn't
-  // accidentally bounce to the wildcard apex.
-  const url = new URL("/", req.url);
-  return NextResponse.redirect(url, { status: 303 });
+  // Resolve the customer-facing origin. Behind Istio / Cloudflare,
+  // `req.url` reports the internal pod bind address (e.g. https://
+  // 0.0.0.0:4203) rather than the host the buyer actually used, so a
+  // naive `new URL("/", req.url)` redirected the browser straight to
+  // the pod IP and looked like a broken sign-out. Mirror the helper the
+  // admin middleware uses for the same problem: prefer x-forwarded-host
+  // / x-forwarded-proto when present.
+  const h = req.headers;
+  const forwardedHost = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+  const forwardedProto =
+    h.get("x-forwarded-proto") ??
+    (forwardedHost.startsWith("localhost") || forwardedHost.startsWith("127.")
+      ? "http"
+      : "https");
+  const origin = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : new URL(req.url).origin;
+  return NextResponse.redirect(`${origin}/`, { status: 303 });
 }

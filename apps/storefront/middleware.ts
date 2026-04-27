@@ -4,8 +4,8 @@ import { classifyStorefrontHost } from "./lib/host-policy";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL || "http://localhost:8080";
-const PLATFORM_API_URL =
-  process.env.PLATFORM_API_URL || "http://localhost:8086";
+const INTERNAL_AUTH_SECRET =
+  process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
 
 // Paths that must remain reachable on any host (probes, asset CDN warm
 // hits, sitemap crawlers). Everything else routes through the
@@ -51,14 +51,25 @@ export async function middleware(req: NextRequest) {
   // Tenanted slug or custom domain — verify the slug actually
   // resolves to an onboarded store before letting the page render.
   // This is the wildcard-subdomain block: `random.mark8ly.com` for
-  // an unonboarded `random` no longer renders anything.
+  // an unonboarded `random` no longer renders anything. Plus the
+  // custom-domain takeover: once the merchant has a verified
+  // `custom_domains.status='active'` row, the platform `*.mark8ly.com`
+  // URL 301's to the custom domain so old links still work but the
+  // canonical URL is the merchant's own.
   if (hostKind.kind === "slug") {
-    const exists = await slugExists(hostKind.slug);
-    if (exists === false) {
+    const lookup = await fetchSlugStatus(hostKind.slug);
+    if (lookup === "not_found") {
       return new NextResponse(null, { status: 404 });
     }
-    // exists === null means platform-api was unreachable — fall through
-    // rather than 404 a real merchant during a transient outage.
+    if (lookup && lookup.customDomain) {
+      const target = new URL(req.nextUrl);
+      target.host = lookup.customDomain;
+      target.protocol = "https:";
+      target.port = "";
+      return NextResponse.redirect(target, 301);
+    }
+    // lookup === null → marketplace-api unreachable. Fail open and
+    // render the platform subdomain rather than 404 a real merchant.
   } else if (hostKind.kind === "custom") {
     const resolved = await resolveCustomDomain(hostKind.domain);
     if (resolved === false) {
@@ -91,17 +102,42 @@ function passthrough(req: NextRequest): NextResponse {
   return res;
 }
 
-// slugExists returns true if platform-api confirms the slug, false on
-// 404, and null on any other error (caller fails open in that case).
-async function slugExists(slug: string): Promise<boolean | null> {
+// SlugStatus is the result of fetchSlugStatus: either the slug is
+// unknown (`"not_found"`), or the slug exists and we know whether the
+// merchant has a verified custom-domain takeover via `customDomain`.
+// `null` is a transient failure — caller fails open and renders the
+// platform subdomain rather than 404 a real merchant.
+type SlugStatus =
+  | "not_found"
+  | { kind: "ok"; customDomain: string };
+
+// fetchSlugStatus calls marketplace-api's
+// `/internal/store-active-domain/:slug`. One round trip resolves both
+// "is this slug onboarded?" (404 → not_found) and "does the merchant
+// have a verified custom-domain takeover?" (200 + non-empty
+// `custom_domain`).
+async function fetchSlugStatus(slug: string): Promise<SlugStatus | null> {
+  if (!slug) return "not_found";
   try {
     const res = await fetch(
-      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
-      { cache: "no-store" },
+      `${MARKETPLACE_API_URL}/internal/store-active-domain/${encodeURIComponent(slug)}`,
+      {
+        cache: "no-store",
+        headers: INTERNAL_AUTH_SECRET
+          ? { "X-Internal-Auth": INTERNAL_AUTH_SECRET }
+          : undefined,
+      },
     );
-    if (res.ok) return true;
-    if (res.status === 404) return false;
-    return null;
+    if (res.status === 404) return "not_found";
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => ({}))) as {
+      slug?: string;
+      custom_domain?: string;
+    };
+    return {
+      kind: "ok",
+      customDomain: (body.custom_domain ?? "").trim().toLowerCase(),
+    };
   } catch {
     return null;
   }

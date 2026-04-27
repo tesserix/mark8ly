@@ -1609,6 +1609,11 @@ func main() {
 		// the edge to decide closed-page vs pass-through (§5.4).
 		internalsvc.NewStorefrontStatusHandler(conn).
 			Register(r.Group("/internal"), cfg.AuditIngestSecret)
+		// Custom-domain takeover — admin + storefront middleware read
+		// this to decide whether `*.mark8ly.com` URLs for a slug should
+		// 301 to the merchant's verified custom domain.
+		internalsvc.NewStoreActiveDomainHandler(conn).
+			Register(r.Group("/internal"), cfg.AuditIngestSecret)
 		if stripeBillingWebhookHandler != nil {
 			r.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
 		}
@@ -1655,12 +1660,21 @@ func main() {
 			// storefront pod doesn't otherwise serve).
 			internalsvc.NewStorefrontStatusHandler(conn).
 				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
+			// Custom-domain takeover — wired on both engines so admin
+			// + storefront middlewares can hit whichever pod is local.
+			internalsvc.NewStoreActiveDomainHandler(conn).
+				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
 			if stripeBillingWebhookHandler != nil {
 				engine.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
 			}
 		}
 		if m == mode.Storefront {
 			storefront.RegisterStorefront(engine.Group("/api/v1"), storefrontDeps)
+			// Custom-domain takeover — storefront middleware queries
+			// this on every slug-host request to decide whether to 301
+			// to the merchant's verified custom domain.
+			internalsvc.NewStoreActiveDomainHandler(conn).
+				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
 		}
 		srv = &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),

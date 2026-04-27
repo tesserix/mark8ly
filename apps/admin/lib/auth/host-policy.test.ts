@@ -97,6 +97,23 @@ describe("isCanonicalAllowedPath", () => {
     expect(isCanonicalAllowedPath("/")).toBe(false);
   });
 
+  it("rejects the bare root path so anonymous traffic 404s on canonical — REGRESSION GUARD", () => {
+    // The canonical admin host isn't tenant-onboarded; the bare
+    // admin.mark8ly.com URL must not be discoverable. The middleware
+    // returns 404 for any anonymous request to a canonical path that
+    // isn't on this allow-list. Concretely:
+    //   admin.mark8ly.com/        → 404 (bare root)
+    //   admin.mark8ly.com/login   → 200 (auth entry point)
+    //   admin.mark8ly.com/orders  → 404 anon, redirect-to-slug authed
+    expect(isCanonicalAllowedPath("/")).toBe(false);
+    // Spot-check that the auth + invite + utility paths stay allowed
+    // so anonymous users with a returnUrl can still reach them.
+    expect(isCanonicalAllowedPath("/login")).toBe(true);
+    expect(isCanonicalAllowedPath("/forgot-password")).toBe(true);
+    expect(isCanonicalAllowedPath("/accept-invite/abc")).toBe(true);
+    expect(isCanonicalAllowedPath("/pick-tenant")).toBe(true);
+  });
+
   it("doesn't substring-match between sibling segments", () => {
     // `/loginx` must not be allowed just because `/login` is. The
     // implementation must check exact match or `prefix + "/"`.

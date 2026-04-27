@@ -135,6 +135,21 @@ export async function middleware(req: NextRequest) {
 
   const cookie = req.cookies.get(SESSION_COOKIE_NAME);
   if (!cookie || !cookie.value) {
+    // Strict canonical-host policy: the bare `admin.mark8ly.com` host
+    // isn't tenant-onboarded — anything that isn't an explicit auth /
+    // invite / utility path returns 404 to anonymous traffic instead
+    // of friendly-bouncing to /login. We don't want `admin.mark8ly.com`
+    // (or random sub-paths under it) showing up as discoverable URLs
+    // alongside the real slug-admin subdomains. /login itself is on
+    // the allow-list and still serves 200 — that's the explicit auth
+    // entry point and OAuth callback target.
+    if (
+      hostKind.kind === "canonical" &&
+      !isCanonicalAllowedPath(pathname) &&
+      !isStaticOrHealthPath(pathname)
+    ) {
+      return new NextResponse(null, { status: 404 });
+    }
     return redirectToLogin(req);
   }
 

@@ -22,6 +22,10 @@ export const publicConfig = {
   gipProjectId: process.env.NEXT_PUBLIC_GIP_PROJECT_ID ?? "",
   /** GIP tenant pool for marketplace internal users (admin/onboarding). */
   gipTenantId: process.env.NEXT_PUBLIC_GIP_TENANT_ID ?? "",
+  /** GIP tenant pool for marketplace customer (storefront) users.
+   *  Used only by the /auth/google trampoline page that bounces
+   *  customer sign-ins from per-tenant subdomains. */
+  gipCustomerTenantId: process.env.NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID ?? "",
   /** GIP Web API key. Public by design. */
   gipApiKey: process.env.NEXT_PUBLIC_GIP_API_KEY ?? "",
   /** Google OAuth client ID, used by the GSI library on the /login page

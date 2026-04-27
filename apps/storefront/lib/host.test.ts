@@ -38,4 +38,14 @@ describe("sanitizeHost", () => {
     // Per design, customer cookie is for hostnames only; reject IPs.
     expect(sanitizeHost("[::1]")).toBeNull();
   });
+  it("rejects labels starting or ending with hyphen (RFC 1123)", () => {
+    expect(sanitizeHost("-evil.mark8ly.com")).toBeNull();
+    expect(sanitizeHost("evil-.mark8ly.com")).toBeNull();
+    expect(sanitizeHost("store.-evil.com")).toBeNull();
+    expect(sanitizeHost("store.evil-.com")).toBeNull();
+  });
+  it("rejects IPv4 literals", () => {
+    expect(sanitizeHost("192.168.1.1")).toBeNull();
+    expect(sanitizeHost("10.0.0.1")).toBeNull();
+  });
 });

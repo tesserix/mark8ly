@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 
 import { sendOrderDocumentEmail } from "@/lib/api/order-doc-api";
-import { getServerSessionContext } from "@/lib/auth/serverSession";
+import { getServerSessionContext, resolveAuth } from "@/lib/auth/serverSession";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,11 +22,18 @@ export async function POST(
   { params }: { params: Promise<{ storeId: string; id: string }> },
 ): Promise<Response> {
   const { storeId, id } = await params;
-  const session = await getServerSessionContext();
-  if (!session.userId || !session.tenantId) {
+  // Defensive resolver — see invoice/email/route.ts for the full
+  // rationale. Same surprise-401 close.
+  const auth = await resolveAuth();
+  if (!auth) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!session.currentStore || session.currentStore.id !== storeId) {
+  const session = await getServerSessionContext();
+  const ownerStoreId =
+    session.currentStore?.id ??
+    session.stores.find((s) => s.id === storeId)?.id ??
+    null;
+  if (ownerStoreId !== storeId) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -42,7 +49,7 @@ export async function POST(
     storeId,
     id,
     "receipt",
-    { userId: session.userId, tenantId: session.tenantId },
+    { userId: auth.userId, tenantId: auth.tenantId },
     { note },
   );
   if (!result.ok) {

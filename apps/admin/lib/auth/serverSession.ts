@@ -9,6 +9,7 @@ import {
   type Tenant,
   type TenantRole,
 } from "@/lib/api/platform-api";
+import { fetchSession } from "@/lib/auth/session";
 
 /**
  * Helper used by every authenticated server component that needs to
@@ -119,6 +120,73 @@ export async function resolveStoreId(): Promise<string> {
 
   const stores = await listStoresByTenant(tenantId).catch(() => []);
   return stores[0]?.id ?? "";
+}
+
+// ─── Defensive auth resolver for route handlers ───────────────────
+//
+// Background: route handlers like /api/admin/.../invoice/email and
+// proxyAdminApi 401 when the middleware-injected x-session-* headers
+// are missing. In normal operation middleware always sets them, but
+// we've seen surprise 401s in prod ("Couldn't send invoice — Session
+// expired") that don't correspond to any /auth/session 401 in
+// auth-bff logs. Most plausible causes: a Next.js 16 quirk in
+// middleware-to-route-handler header forwarding, or a race between
+// the auto-switch flow re-minting the cookie and an in-flight client
+// fetch reading the old session.
+//
+// This helper is the bottom turtle: if middleware-injected headers are
+// present, use them (the fast path); if not, validate the cookie
+// directly against auth-bff one more time. The structured log emit
+// makes it obvious from prod logs which path resolved.
+//
+// Not a substitute for the middleware path — middleware still does the
+// role check, slug-to-tenant routing, etc. — but for routes where the
+// only need is "who is this user", this fallback closes the
+// surprise-401 gap.
+
+export interface ResolvedAuth {
+  userId: string;
+  email: string;
+  tenantId: string;
+  source: "middleware-headers" | "auth-bff-fallback";
+}
+
+export async function resolveAuth(): Promise<ResolvedAuth | null> {
+  const h = await headers();
+  const userIdHdr = h.get("x-session-user-id") ?? "";
+  const tenantIdHdr = h.get("x-session-tenant-id") ?? "";
+  const emailHdr = h.get("x-session-email") ?? "";
+
+  if (userIdHdr && tenantIdHdr) {
+    return {
+      userId: userIdHdr,
+      email: emailHdr,
+      tenantId: tenantIdHdr,
+      source: "middleware-headers",
+    };
+  }
+
+  // Headers missing — fall back to validating the cookie directly. The
+  // browser's cookie reaches the route handler via the Cookie header
+  // even when middleware-injected headers don't propagate.
+  const cookie = h.get("cookie") ?? "";
+  if (!cookie) return null;
+
+  const session = await fetchSession(cookie);
+  if (!session) return null;
+
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[serverSession] middleware headers missing; resolved via auth-bff fallback",
+    { userId: session.userId, tenantId: session.tenantId },
+  );
+
+  return {
+    userId: session.userId,
+    email: session.email,
+    tenantId: session.tenantId,
+    source: "auth-bff-fallback",
+  };
 }
 
 // ─── Permission helpers ────────────────────────────────────────────

@@ -1,5 +1,7 @@
 import { headers } from "next/headers";
 
+import { resolveAuth } from "@/lib/auth/serverSession";
+
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 
@@ -25,13 +27,15 @@ export async function proxyAdminApi(
   backendPath: string,
   options: ProxyOptions = {},
 ): Promise<Response> {
-  const h = await headers();
-  const userId = h.get("x-session-user-id") ?? "";
-  const tenantId = h.get("x-session-tenant-id") ?? "";
-  const email = h.get("x-session-email") ?? "";
-  if (!userId || !tenantId) {
+  // resolveAuth tries middleware-injected x-session-* headers first
+  // (the fast path) and falls back to validating the cookie directly
+  // against auth-bff. Closes the surprise-401 gap where headers
+  // didn't propagate from middleware to the route handler.
+  const auth = await resolveAuth();
+  if (!auth) {
     return jsonError(401, "unauthorized", "session headers missing");
   }
+  const { userId, tenantId, email } = auth;
 
   const query = options.searchParams ?? new URL(request.url).searchParams;
   const queryString = query.toString();

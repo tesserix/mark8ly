@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { applyGeoCookie } from "./lib/geo/geoMiddleware";
+import {
+  classifyAdminHost,
+  isCanonicalAllowedPath,
+} from "./lib/auth/host-policy";
 
 /**
  * Admin middleware — Phase J.
@@ -63,6 +67,20 @@ interface SessionResponse {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const hostHeader = req.headers.get("host") ?? "";
+  const hostKind = classifyAdminHost(hostHeader);
+
+  // Edge guard: reject hosts the admin app should never serve. This is
+  // the wildcard-subdomain check — `abc-admin.mark8ly.com` for an
+  // unknown `abc` slug, `random.mark8ly.com`, off-domain hosts, etc.
+  // We respond 404 BEFORE any auth or rendering so the wildcard never
+  // serves the canonical login form (which would invite phishing /
+  // brand impersonation: a victim sees a Mark8ly-branded login on a
+  // host that isn't actually theirs). Static assets are exempt because
+  // CDNs / probes hit them on whatever host they were warmed against.
+  if (hostKind.kind === "unknown" && !isStaticOrHealthPath(pathname)) {
+    return new NextResponse(null, { status: 404 });
+  }
 
   // Public pricing page — geo-localize currency from CF-IPCountry before RSC
   // render. No auth or tenant extraction needed; the page is unauthenticated.
@@ -108,26 +126,29 @@ export async function middleware(req: NextRequest) {
   // matches the tenant that owns the store with that slug. If not,
   // auto-switch the session to the correct tenant (when the user has
   // membership) instead of silently rendering an empty dashboard.
-  const host = req.headers.get("host") ?? "";
   let requestedSlug: string | null = null;
-  const mark8lyMatch = host.match(/^([^.]+)-admin\.mark8ly\.com$/);
-  if (mark8lyMatch && mark8lyMatch[1]) {
-    requestedSlug = mark8lyMatch[1];
-  } else if (host.startsWith("admin.") && !host.endsWith(".mark8ly.com")) {
-    // Custom domain pattern: admin.<merchant-domain>. Resolve via
-    // marketplace-api's custom domain resolver.
-    const customDomain = host.slice("admin.".length);
+  if (hostKind.kind === "slug") {
+    requestedSlug = hostKind.slug;
+  } else if (hostKind.kind === "custom_admin") {
+    // admin.<merchant-domain>. Resolve via marketplace-api's
+    // custom-domain resolver.
     try {
       const res = await fetch(
-        `${MARKETPLACE_API_URL}/api/v1/storefront/resolve-domain?domain=${encodeURIComponent(customDomain)}`,
+        `${MARKETPLACE_API_URL}/api/v1/storefront/resolve-domain?domain=${encodeURIComponent(hostKind.domain)}`,
         { cache: "no-store" },
       );
       if (res.ok) {
         const body = (await res.json()) as { slug?: string };
         if (body.slug) requestedSlug = body.slug;
+      } else if (res.status === 404) {
+        // Custom domain isn't registered on any store. Don't serve the
+        // admin app for it — same brand-impersonation concern as
+        // wildcard slug subdomains.
+        return new NextResponse(null, { status: 404 });
       }
     } catch {
-      // fall through
+      // platform-api / marketplace-api unreachable: fall through; the
+      // role check below will fail closed if we genuinely don't know.
     }
   }
   // Tenant-subdomain handling for {slug}-admin.mark8ly.com URLs.
@@ -158,6 +179,13 @@ export async function middleware(req: NextRequest) {
         `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(requestedSlug)}`,
         { cache: "no-store" },
       );
+      // Hard 404 when the slug isn't a known store — this is the
+      // wildcard-subdomain block: `abc-admin.mark8ly.com` for an
+      // unonboarded `abc` no longer falls through to render the
+      // canonical login form.
+      if (storeRes.status === 404) {
+        return new NextResponse(null, { status: 404 });
+      }
       if (storeRes.ok) {
         const body = (await storeRes.json()) as {
           data: { tenant_id: string };
@@ -223,6 +251,32 @@ export async function middleware(req: NextRequest) {
     // (deleted tuple, wrong tenant, FGA down). Fail closed — an
     // admin page without a role is meaningless.
     return redirectToLogin(req);
+  }
+
+  // Canonical-host policy: tenant-scoped routes (/dashboard, /orders,
+  // /products, …) must live on a tenanted slug subdomain so the URL
+  // bar always identifies the active store. If the user lands here
+  // by typing `admin.mark8ly.com/orders` directly, redirect them to
+  // `{slug}-admin.mark8ly.com/orders` using the session's primary
+  // store slug. /pick-tenant + auth utility paths render here as
+  // designed.
+  if (
+    hostKind.kind === "canonical" &&
+    !isCanonicalAllowedPath(pathname) &&
+    !isStaticOrHealthPath(pathname) &&
+    session.store_id
+  ) {
+    const slug = await fetchPrimaryStoreSlug(session.store_id);
+    if (slug) {
+      const target = new URL(req.nextUrl);
+      target.host = `${slug}-admin.mark8ly.com`;
+      target.protocol = "https:";
+      target.port = "";
+      return NextResponse.redirect(target);
+    }
+    // Couldn't resolve a slug — send them to /pick-tenant as a
+    // fallback rather than rendering tenant data on the canonical host.
+    return NextResponse.redirect(new URL("/pick-tenant", req.nextUrl));
   }
 
   // Forward the resolved session to the server component via request
@@ -297,6 +351,38 @@ function redirectToLogin(req: NextRequest): NextResponse {
   );
   loginUrl.searchParams.set("returnUrl", externalUrl(req));
   return NextResponse.redirect(loginUrl);
+}
+
+// fetchPrimaryStoreSlug resolves a store_id to its slug via platform-api.
+// Used by the canonical-host redirect to send `admin.mark8ly.com/orders`
+// to the right `{slug}-admin.mark8ly.com/orders` for the user's active
+// session. Returns null on any failure — caller falls back to
+// /pick-tenant rather than rendering tenant data on the canonical host.
+async function fetchPrimaryStoreSlug(storeID: string): Promise<string | null> {
+  if (!storeID) return null;
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/stores/${encodeURIComponent(storeID)}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: { slug?: string } };
+    return body.data?.slug ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// isStaticOrHealthPath is a narrow allow-list for paths that bypass the
+// host-classification 404 — Next static assets and the kubelet probe.
+// Everything else on an unknown host gets rejected upstream.
+function isStaticOrHealthPath(pathname: string): boolean {
+  return (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/icon-") ||
+    pathname === "/api/health"
+  );
 }
 
 export const config = {

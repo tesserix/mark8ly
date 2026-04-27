@@ -1,16 +1,84 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-// Captures `?ref=CODE` from any page load and persists it in the
-// `mp_referral` cookie (30 days). Enrollment actions read this cookie
-// so the referral attribution survives the gap between a friend clicking
-// an invite link and actually signing up + enrolling in the loyalty
-// program.
-export function middleware(req: NextRequest) {
+import { classifyStorefrontHost } from "./lib/host-policy";
+
+const MARKETPLACE_API_URL =
+  process.env.MARKETPLACE_API_URL || "http://localhost:8080";
+const PLATFORM_API_URL =
+  process.env.PLATFORM_API_URL || "http://localhost:8086";
+
+// Paths that must remain reachable on any host (probes, asset CDN warm
+// hits, sitemap crawlers). Everything else routes through the
+// host-classification gate.
+const HOST_GATE_BYPASS = [
+  "/_next",
+  "/favicon",
+  "/icon-",
+  "/api/health",
+  "/robots.txt",
+  "/sitemap",
+];
+
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  // Skip the gate for static assets + probes — CDN edges and kubelet
+  // hit these on whatever host they were warmed against.
+  if (HOST_GATE_BYPASS.some((p) => pathname === p || pathname.startsWith(p))) {
+    return passthrough(req);
+  }
+
+  const hostHeader = req.headers.get("host") ?? "";
+  const hostKind = classifyStorefrontHost(hostHeader);
+
+  // Hard 404 on hosts the storefront should never serve. Wildcard
+  // subdomains like `random.mark8ly.com` for an unonboarded slug will
+  // be rejected by the slug-existence check below; this is the
+  // structurally-malformed case (admin hosts hit storefront pod, etc.).
+  if (hostKind.kind === "unknown") {
+    return new NextResponse(null, { status: 404 });
+  }
+
+  // mark8ly.com / www.mark8ly.com / api.mark8ly.com / admin.mark8ly.com:
+  // not storefront surfaces. Marketing site is a separate app — Istio
+  // routes those hosts elsewhere in prod, so a hit here means config
+  // drift. 404 cleanly instead of rendering DEFAULT_STORE under the
+  // wrong brand.
+  if (hostKind.kind === "marketing") {
+    return passthrough(req);
+  }
+
+  // Tenanted slug or custom domain — verify the slug actually
+  // resolves to an onboarded store before letting the page render.
+  // This is the wildcard-subdomain block: `random.mark8ly.com` for
+  // an unonboarded `random` no longer renders anything.
+  if (hostKind.kind === "slug") {
+    const exists = await slugExists(hostKind.slug);
+    if (exists === false) {
+      return new NextResponse(null, { status: 404 });
+    }
+    // exists === null means platform-api was unreachable — fall through
+    // rather than 404 a real merchant during a transient outage.
+  } else if (hostKind.kind === "custom") {
+    const resolved = await resolveCustomDomain(hostKind.domain);
+    if (resolved === false) {
+      return new NextResponse(null, { status: 404 });
+    }
+    // resolved === null → API unreachable; same fail-open behaviour.
+  }
+
+  return passthrough(req);
+}
+
+// passthrough preserves the legacy referral-cookie capture while letting
+// the request continue. Captures `?ref=CODE` from any page load and
+// persists it in the `mp_referral` cookie so referral attribution
+// survives the gap between an invite click and signup + enrolment.
+function passthrough(req: NextRequest): NextResponse {
   const ref = req.nextUrl.searchParams.get("ref");
   if (!ref || !/^[A-Z0-9]{4,20}$/.test(ref)) {
     return NextResponse.next();
   }
-
   const res = NextResponse.next();
   res.cookies.set({
     name: "mp_referral",
@@ -23,8 +91,44 @@ export function middleware(req: NextRequest) {
   return res;
 }
 
+// slugExists returns true if platform-api confirms the slug, false on
+// 404, and null on any other error (caller fails open in that case).
+async function slugExists(slug: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
+      { cache: "no-store" },
+    );
+    if (res.ok) return true;
+    if (res.status === 404) return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// resolveCustomDomain returns true if marketplace-api recognises the
+// domain as a registered storefront, false on 404, and null on transient
+// errors.
+async function resolveCustomDomain(domain: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(
+      `${MARKETPLACE_API_URL}/api/v1/storefront/resolve-domain?domain=${encodeURIComponent(domain)}`,
+      { cache: "no-store" },
+    );
+    if (res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { slug?: string };
+      return Boolean(body.slug);
+    }
+    if (res.status === 404) return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export const config = {
-  // Skip Next internals, API routes (they don't need the cookie set
-  // by middleware — server actions read it directly), and static assets.
-  matcher: ["/((?!_next|api|.*\\.(?:ico|png|jpg|jpeg|svg|webp|css|js|woff2?)).*)"],
+  // Match every route except Next internals and static files. The
+  // bypass list inside middleware() handles probes, sitemap, etc.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

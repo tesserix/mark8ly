@@ -8,12 +8,13 @@
 //   2. Set an HMAC-signed `mp_customer_session` cookie.
 //   3. Ensure the customer profile exists in marketplace-api.
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { encodeSession } from "@/lib/session";
 import {
   GIPTokenVerificationError,
   verifyGIPIdToken,
 } from "@/lib/gip/verify-id-token";
+import { sanitizeHost } from "@/lib/host";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
@@ -152,12 +153,23 @@ export async function customerSignIn(
       tenant_id: store.tenant_id,
     });
 
+    const h = await headers();
+    const rawHost = h.get("x-forwarded-host") ?? h.get("host");
+    const cookieHost = sanitizeHost(rawHost);
+    if (!cookieHost) {
+      return {
+        ok: false,
+        code: "invalid_host",
+        message: "Could not validate the host for sign-in. Please try again.",
+      };
+    }
+
     const c = await cookies();
     c.set({
       name: "mp_customer_session",
       value: cookieValue,
       path: "/",
-      domain: ".mark8ly.com",
+      domain: cookieHost, // per-host: browser refuses to send to other stores
       httpOnly: true,
       secure: true,
       sameSite: "lax",

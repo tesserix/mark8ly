@@ -23,8 +23,8 @@
 - `tests/e2e/auth-isolation.spec.ts`
 
 ### Modified
-- `apps/storefront/app/sign-in/actions.ts` — cookie Domain becomes per-host
-- `apps/storefront/app/sign-out/page.tsx` — delete cookie with the same per-host Domain (plus transitional `.mark8ly.com` clear)
+- `apps/storefront/app/sign-in/actions.ts` — cookie Domain becomes per-host (prefers `x-forwarded-host` then `host`)
+- `apps/storefront/app/sign-out/route.ts` — explicit `c.set maxAge:0` with the same per-host Domain (plus transitional `.mark8ly.com` clear). **Note**: post-pull this is now a Route Handler (`route.ts`), not the original `page.tsx`.
 
 ### Untouched (intentional — design discovery)
 - `services/auth-bff/**` — admin cookie path is correct as-is
@@ -38,7 +38,7 @@
 - ✅ Latest marketplace-api migration is `000083_shipments_pickup_columns` → new migration is `000084`.
 - ✅ Storefront sets `mp_customer_session` (not `m8_session`); HMAC-signed via `apps/storefront/lib/session.ts`; scope-checked via `decodeSessionForScope`.
 - ✅ Cookie set in exactly one place: `apps/storefront/app/sign-in/actions.ts` (also reused by `create-account/actions.ts` via `customerSignUp` → `customerSignIn`).
-- ✅ Cookie deleted in exactly one place: `apps/storefront/app/sign-out/page.tsx`.
+- ✅ Cookie deleted in exactly one place: `apps/storefront/app/sign-out/route.ts` (Route Handler — converted from `page.tsx` in commit `52578fa`).
 - ✅ `headers()` from `next/headers` is reachable inside server actions (already used by `app/account/layout.tsx:23`).
 
 ---
@@ -226,18 +226,19 @@ c.set({
 
 - [ ] **Step 2: Modify the action**
 
-At the top of the file, add the import:
+At the top of the file, add the import (note: `cookies` is already imported — only add `headers` and the helper):
 
 ```ts
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { sanitizeHost } from "@/lib/host";
 ```
 
-Inside `customerSignIn`, BEFORE the cookie set call, resolve the host and fail-fast:
+Inside `customerSignIn`, BEFORE the cookie set call, resolve the host and fail-fast. Prefer `x-forwarded-host` (Cloudflare/Istio strips the original `host`), fall back to `host`:
 
 ```ts
 const h = await headers();
-const cookieHost = sanitizeHost(h.get("host"));
+const rawHost = h.get("x-forwarded-host") ?? h.get("host");
+const cookieHost = sanitizeHost(rawHost);
 if (!cookieHost) {
   return {
     ok: false,
@@ -289,46 +290,71 @@ git commit -m "fix(storefront): scope mp_customer_session cookie to request host
 ## Task 4: Storefront — `/sign-out` deletes with per-host Domain (+ transitional safety net)
 
 **Files:**
-- Modify: `apps/storefront/app/sign-out/page.tsx`
+- Modify: `apps/storefront/app/sign-out/route.ts`
 
 **Why:** Cookies must be deleted with the SAME `Domain` they were set with — otherwise the browser sets a second deletion cookie on the missing scope and leaves the original alive. After Task 3, new cookies have per-host Domain; we delete with per-host Domain. Plus a transitional `.mark8ly.com` delete for one release so any leftover stale cookies from before Phase 1 also get cleared.
 
-- [ ] **Step 1: Replace the sign-out logic**
+**Important context (post-pull):** This file was converted from `page.tsx` to a `route.ts` Route Handler in commit `52578fa` because Next.js disallows cookie mutation from server components in production. The file already does forwarded-host resolution for the redirect; we extend that same resolution to the cookie delete. The current file uses `c.delete("mp_customer_session")` which doesn't take a Domain — we need to switch to explicit `c.set` with `maxAge: 0`.
 
-```tsx
-import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
+- [ ] **Step 1: Replace the sign-out handler**
+
+Open `apps/storefront/app/sign-out/route.ts` and replace the body. Keep the existing forwarded-host resolution (it's correct), reuse it for the cookie delete:
+
+```ts
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { sanitizeHost } from "@/lib/host";
 
 /**
- * /sign-out — clears the customer session cookie and redirects home.
- * Visiting this URL (GET) is enough; no form or button needed.
+ * GET /sign-out — clears the customer session cookie and redirects home.
  *
- * Cookie was set with Domain=<request-host> in customerSignIn (Phase 1)
- * — we must delete with the same Domain or the browser leaves it alive.
- * The transitional `.mark8ly.com` delete catches any pre-Phase-1 cookies
- * still kicking around; can be removed one release after Phase 1.
+ * Lives as a Route Handler rather than a Server Component page. Next.js
+ * disallows cookie mutation from server components in production, which
+ * threw a runtime error on every visit and surfaced as the storefront
+ * "We hit a snag" page. Route Handlers are the only sanctioned home for
+ * cookie writes outside of Server Actions and middleware.
+ *
+ * Cookie was set with Domain=<request-host> in customerSignIn (Phase 1).
+ * We must delete with the same Domain or the browser leaves it alive
+ * (it would just set a second deletion cookie on the wrong scope).
+ *
+ * The transitional `.mark8ly.com` clear catches any pre-Phase-1 cookies
+ * still kicking around; drop one release after Phase 1 lands.
  */
-export default async function SignOutPage() {
-  const c = await cookies();
-  const h = await headers();
-  const host = sanitizeHost(h.get("host"));
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  if (host) {
+export async function GET(req: Request): Promise<Response> {
+  const c = await cookies();
+
+  // Resolve the customer-facing host. Behind Istio / Cloudflare,
+  // `req.url` reports the internal pod bind address (e.g. https://
+  // 0.0.0.0:4203) rather than the host the buyer actually used —
+  // prefer x-forwarded-host then host. Same helper that ships the
+  // redirect; reuse for the cookie Domain so set + delete agree.
+  const h = req.headers;
+  const forwardedHost = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+  const cookieHost = sanitizeHost(forwardedHost);
+  const isLocal =
+    forwardedHost.startsWith("localhost") || forwardedHost.startsWith("127.");
+  const forwardedProto =
+    h.get("x-forwarded-proto") ?? (isLocal ? "http" : "https");
+
+  if (cookieHost) {
     c.set({
       name: "mp_customer_session",
       value: "",
       path: "/",
-      domain: host,
+      domain: cookieHost,
       maxAge: 0,
       httpOnly: true,
-      secure: true,
+      secure: !isLocal,
       sameSite: "lax",
     });
   }
 
   // Transitional: clear the legacy parent-domain cookie set before Phase 1.
-  // Drop one release after Phase 1 lands.
+  // Drop one release after Phase 1 lands (cookie max-age was 30 days).
   c.set({
     name: "mp_customer_session",
     value: "",
@@ -340,7 +366,10 @@ export default async function SignOutPage() {
     sameSite: "lax",
   });
 
-  redirect("/");
+  const origin = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : new URL(req.url).origin;
+  return NextResponse.redirect(`${origin}/`, { status: 303 });
 }
 ```
 
@@ -349,11 +378,12 @@ export default async function SignOutPage() {
 ```bash
 cd apps/storefront && npm run build 2>&1 | tail -40
 ```
+Expected: clean build.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add apps/storefront/app/sign-out/page.tsx
+git add apps/storefront/app/sign-out/route.ts
 git commit -m "fix(storefront): delete mp_customer_session with per-host Domain (+ legacy clear)"
 ```
 
@@ -487,7 +517,7 @@ After Tasks 1-5 land and the bump-k8s job propagates:
 
 After two weeks (one full session lifetime / cookie max-age):
 
-- [ ] **Phase 1.5 cleanup**: drop the transitional `.mark8ly.com` clear from `apps/storefront/app/sign-out/page.tsx`. Commit.
+- [ ] **Phase 1.5 cleanup**: drop the transitional `.mark8ly.com` clear from `apps/storefront/app/sign-out/route.ts`. Commit.
 
 ---
 

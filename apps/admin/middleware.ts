@@ -33,13 +33,12 @@ const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
-// Canonical sign-in host. This is the single host we register with
-// Google OAuth as an "Authorized JavaScript origin" — every per-tenant
-// subdomain ({slug}-admin.mark8ly.com) bounces here for unauthenticated
-// traffic, and the session cookie (scoped to .mark8ly.com) carries
-// back across the bounce automatically. Dev falls back to same-origin.
-const CANONICAL_LOGIN_ORIGIN =
-  process.env.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN ?? "";
+// NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN was the single canonical sign-in host
+// every {slug}-admin.mark8ly.com bounced to for auth. Since each
+// slug-admin now self-hosts /login, the env var is no longer read by
+// middleware. (It's still consumed client-side for the OAuth
+// authorized-origin check on the SignInForm; that lives in
+// lib/config and isn't this middleware's concern.)
 
 // Routes that should never be gated — login redirect targets, static
 // assets, and anything that must render without a session.
@@ -392,28 +391,28 @@ function isRscPrefetch(req: NextRequest): boolean {
 }
 
 function redirectToLogin(req: NextRequest): NextResponse {
-  // If CANONICAL_LOGIN_ORIGIN is configured AND the current request is
-  // NOT already on that host, bounce the user to the canonical host
-  // for sign-in. The session cookie is scoped to .mark8ly.com so once
-  // auth-bff mints it at admin.mark8ly.com, every {slug}-admin.mark8ly.com
-  // subdomain picks it up without extra plumbing.
+  // Login lives on the slug-admin host now — the merchant signs in to
+  // their own store, not to a generic platform login. Bounce
+  // unauthenticated traffic to /login on the SAME host they came in on.
+  // The session cookie is scoped to .mark8ly.com so it still travels
+  // across subdomains once auth-bff mints it.
+  //
+  // Canonical-host anonymous traffic to a non-allowed path is already
+  // 404'd by the dedicated rule earlier in middleware() — it never
+  // reaches this helper. So in practice this only ever runs for slug
+  // subdomains and admin custom domains, both of which self-host the
+  // login form.
   const externalCurrent = externalOrigin(req);
-  const useCanonical =
-    CANONICAL_LOGIN_ORIGIN && externalCurrent !== CANONICAL_LOGIN_ORIGIN;
 
-  // Never cross-origin redirect an RSC prefetch (see isRscPrefetch
-  // above for why). Return a lightweight 401 instead — the RSC client
-  // discards the response without poisoning its cache, and the real
-  // click-driven navigation will still hit this middleware and get a
-  // proper 307 redirect.
-  if (useCanonical && isRscPrefetch(req)) {
+  // RSC prefetches never get a same-origin login redirect followed
+  // through; React's client discards 3xx on a cross-fetch RSC payload.
+  // Returning a 401 lets the prefetch fail quietly and the real
+  // user-driven navigation re-hits middleware to get a proper 307.
+  if (isRscPrefetch(req)) {
     return new NextResponse(null, { status: 401 });
   }
 
-  const loginUrl = new URL(
-    "/login",
-    useCanonical ? CANONICAL_LOGIN_ORIGIN : externalCurrent,
-  );
+  const loginUrl = new URL("/login", externalCurrent);
   loginUrl.searchParams.set("returnUrl", externalUrl(req));
   return NextResponse.redirect(loginUrl);
 }

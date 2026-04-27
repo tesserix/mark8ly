@@ -73,21 +73,31 @@ export function classifyAdminHost(hostHeader: string | null | undefined): HostCl
  * Paths that render on the canonical admin host. Everything else must
  * live on a tenanted slug subdomain — see middleware redirect.
  *
+ * Three categories live here:
+ *   - Email-link targets where the recipient is NOT yet a tenant
+ *     member, so a slug-admin URL would be wrong (`/accept-invite`,
+ *     `/forgot-password`, `/reset-password`).
+ *   - Provider callbacks registered with a fixed origin (`/webhooks/*`).
+ *   - Truly platform-scoped routes (`/api/health`, `/pricing`,
+ *     `/_next/*`, static).
+ *
+ * Login itself is NOT on the list — `/login`, `/logout`, `/pick-tenant`
+ * live on slug-admin hosts now (the merchant logs in to *their store*,
+ * not to a generic platform host). The middleware's redirectToLogin
+ * helper bounces wrong-tenant traffic back to the slug's own /login.
+ *
  * Keep this list in lockstep with admin's app/ routing. New
- * tenant-agnostic routes (auth, invites, billing-callbacks) belong
- * here; new tenant-scoped routes do not.
+ * tenant-agnostic email targets / provider callbacks belong here;
+ * everything else does not.
  */
 export function isCanonicalAllowedPath(pathname: string): boolean {
   return CANONICAL_ALLOWED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
 const CANONICAL_ALLOWED_PREFIXES: string[] = [
-  "/login",
-  "/logout",
   "/forgot-password",
   "/reset-password",
   "/accept-invite",
-  "/pick-tenant",
   "/pricing",
   "/webhooks",
   "/api/health",

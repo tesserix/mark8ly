@@ -66,19 +66,27 @@ describe("classifyAdminHost", () => {
 });
 
 describe("isCanonicalAllowedPath", () => {
-  it("allows auth + admin-shell utility paths", () => {
-    expect(isCanonicalAllowedPath("/login")).toBe(true);
-    expect(isCanonicalAllowedPath("/login/")).toBe(true);
-    expect(isCanonicalAllowedPath("/logout")).toBe(true);
+  it("allows email-link targets, provider callbacks, and platform paths", () => {
     expect(isCanonicalAllowedPath("/forgot-password")).toBe(true);
     expect(isCanonicalAllowedPath("/reset-password")).toBe(true);
     expect(isCanonicalAllowedPath("/accept-invite")).toBe(true);
     expect(isCanonicalAllowedPath("/accept-invite/abc123")).toBe(true);
-    expect(isCanonicalAllowedPath("/pick-tenant")).toBe(true);
     expect(isCanonicalAllowedPath("/pricing")).toBe(true);
     expect(isCanonicalAllowedPath("/webhooks/stripe-billing")).toBe(true);
     expect(isCanonicalAllowedPath("/api/health")).toBe(true);
     expect(isCanonicalAllowedPath("/_next/static/chunks/main.js")).toBe(true);
+  });
+
+  it("does NOT allow login/logout/pick-tenant on canonical — those live on slug-admin now (REGRESSION GUARD)", () => {
+    // The canonical host isn't tenant-onboarded; the merchant signs in
+    // to *their store*, not to a generic platform login. If this
+    // assertion ever flips back, the screenshot bug
+    // (admin.mark8ly.com/login rendering on a host the user never
+    // onboarded) is back.
+    expect(isCanonicalAllowedPath("/login")).toBe(false);
+    expect(isCanonicalAllowedPath("/login/")).toBe(false);
+    expect(isCanonicalAllowedPath("/logout")).toBe(false);
+    expect(isCanonicalAllowedPath("/pick-tenant")).toBe(false);
   });
 
   it("rejects tenant-scoped paths — REGRESSION GUARD", () => {
@@ -101,17 +109,16 @@ describe("isCanonicalAllowedPath", () => {
     // The canonical admin host isn't tenant-onboarded; the bare
     // admin.mark8ly.com URL must not be discoverable. The middleware
     // returns 404 for any anonymous request to a canonical path that
-    // isn't on this allow-list. Concretely:
+    // isn't on this allow-list. Concretely after Phase A:
     //   admin.mark8ly.com/        → 404 (bare root)
-    //   admin.mark8ly.com/login   → 200 (auth entry point)
+    //   admin.mark8ly.com/login   → 404 (login lives on slug-admin)
     //   admin.mark8ly.com/orders  → 404 anon, redirect-to-slug authed
     expect(isCanonicalAllowedPath("/")).toBe(false);
-    // Spot-check that the auth + invite + utility paths stay allowed
-    // so anonymous users with a returnUrl can still reach them.
-    expect(isCanonicalAllowedPath("/login")).toBe(true);
+    // Spot-check that the surviving canonical-allowed paths still work
+    // (email-link targets, provider callbacks, platform).
     expect(isCanonicalAllowedPath("/forgot-password")).toBe(true);
     expect(isCanonicalAllowedPath("/accept-invite/abc")).toBe(true);
-    expect(isCanonicalAllowedPath("/pick-tenant")).toBe(true);
+    expect(isCanonicalAllowedPath("/pricing")).toBe(true);
   });
 
   it("doesn't substring-match between sibling segments", () => {

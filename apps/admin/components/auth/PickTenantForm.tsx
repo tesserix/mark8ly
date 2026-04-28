@@ -6,6 +6,7 @@ import { RoleBadge } from "@repo/ui/role-badge";
 
 import type { Membership } from "@/lib/api/platform-api";
 import { switchToTenant } from "@/app/pick-tenant/actions";
+import { prepareCrossDomainNavigation } from "@/lib/auth/cross-domain-handoff";
 
 interface PickTenantFormProps {
   tenants: Membership[];
@@ -36,15 +37,32 @@ export function PickTenantForm({ tenants }: PickTenantFormProps) {
         setPendingId(null);
         return;
       }
-      // Redirect to the tenant's {slug}-admin.mark8ly.com subdomain.
-      // The session cookie is scoped to .mark8ly.com so it carries over.
-      if (result.slug && typeof window !== "undefined") {
-        const host = window.location.host;
-        const rootDomain = host.replace(/^[^.]+-admin\./, "").replace(/^admin\./, "");
-        const isProdLike = rootDomain.includes("mark8ly.com");
-        if (isProdLike) {
-          window.location.href = `https://${result.slug}-admin.${rootDomain}/dashboard`;
+
+      // If the picked tenant has a custom admin domain
+      // (admin.<merchant-tld>), we can't just navigate there — the
+      // .mark8ly.com session cookie won't ride across TLDs. Mint a
+      // short-lived handoff and bounce through the handoff route on
+      // the custom host, which lands a fresh cookie scoped there.
+      if (result.slug) {
+        const handoff = await prepareCrossDomainNavigation({
+          slug: result.slug,
+          nextPath: "/dashboard",
+        });
+        if (handoff.kind === "handoff" && typeof window !== "undefined") {
+          window.location.href = handoff.url;
           return;
+        }
+        // No custom domain → stay on .mark8ly.com.
+        if (typeof window !== "undefined") {
+          const host = window.location.host;
+          const rootDomain = host
+            .replace(/^[^.]+-admin\./, "")
+            .replace(/^admin\./, "");
+          const isProdLike = rootDomain.includes("mark8ly.com");
+          if (isProdLike) {
+            window.location.href = `https://${result.slug}-admin.${rootDomain}/dashboard`;
+            return;
+          }
         }
       }
       router.push("/dashboard");

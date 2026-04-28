@@ -15,6 +15,7 @@ import (
 	_ "github.com/lib/pq"
 
 	authbff "github.com/mark8ly/auth-bff"
+	"github.com/mark8ly/auth-bff/internal/adminhandoff"
 	"github.com/mark8ly/auth-bff/internal/audit"
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/autologin"
@@ -156,11 +157,26 @@ func main() {
 		WithAudit(auditClient).
 		WithGIPLookup(cfg.GIPWebAPIKey, cfg.GIPInternalTenantID)
 
+	// ─── Cross-TLD admin handoff ───────────────────────────────────────
+	// Mints a session cookie scoped to a custom admin domain
+	// (admin.<merchant-tld>) given a short-lived HMAC-signed handoff
+	// code from the canonical admin app. The receiving handler
+	// (apps/admin/app/auth/handoff/route.ts) POSTs the code here after
+	// verifying it locally, and forwards the resulting Set-Cookie to
+	// the browser scoped to the custom domain.
+	adminHandoffHandler := adminhandoff.NewHandler(adminhandoff.Config{
+		HMACKey:  cfg.SessionEncryptKey,
+		FGA:      fgaClient,
+		Sessions: sessions,
+		Logger:   log,
+	})
+
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)
 	v1 := r.Group("/auth")
 	autologinHandler.Register(v1)
 	sessionHandler.Register(v1)
+	adminHandoffHandler.Register(v1)
 
 	// /api/v1 surface consumed by marketplace-api's account handler,
 	// which proxies admin UI requests through to us. Kept separate from

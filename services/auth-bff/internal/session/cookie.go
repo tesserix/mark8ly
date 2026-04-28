@@ -126,6 +126,21 @@ func NewManager(cfg Config) (*Manager, error) {
 // Mint creates a session, serializes + encrypts it, and writes the cookie
 // onto the response.
 func (m *Manager) Mint(w http.ResponseWriter, s Session) error {
+	return m.MintWithDomain(w, s, "")
+}
+
+// MintWithDomain mints a session and writes the cookie with an explicit
+// Domain attribute that overrides the manager's configured domain.
+//
+// Used by the cross-TLD admin handoff: the canonical session lives on
+// `.mark8ly.com`, but custom-domain admins (e.g. `admin.primasyss.com`)
+// need a cookie scoped to their own host so it survives the cross-TLD
+// hop. domainOverride must be a host the caller has authority for —
+// validation lives in the calling handler, not here.
+//
+// Empty domainOverride falls through to the manager's configured domain
+// (the canonical .mark8ly.com path).
+func (m *Manager) MintWithDomain(w http.ResponseWriter, s Session, domainOverride string) error {
 	if s.UID == "" {
 		return errors.New("session: UID is required")
 	}
@@ -142,11 +157,16 @@ func (m *Manager) Mint(w http.ResponseWriter, s Session) error {
 		return err
 	}
 
+	domain := m.domain
+	if domainOverride != "" {
+		domain = domainOverride
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     m.cookieName,
 		Value:    encoded,
 		Path:     "/",
-		Domain:   m.domain,
+		Domain:   domain,
 		MaxAge:   int(m.maxAge.Seconds()),
 		HttpOnly: true,
 		Secure:   m.secure,

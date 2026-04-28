@@ -24,6 +24,7 @@ import { signInWithPassword, signInWithGoogle, GIPError } from "@/lib/gip/signup
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
 import { linkGoogleToInternalPassword } from "@/lib/gip/link";
 import { signIn, confirmMFALogin } from "@/app/login/actions";
+import { prepareCrossDomainNavigation } from "@/lib/auth/cross-domain-handoff";
 import { LinkProviderPrompt } from "@repo/ui/auth/link-provider-prompt";
 
 const MARKETING_URL =
@@ -57,10 +58,17 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
   // demo-store-admin.mark8ly.com). router.push only handles same-origin
   // client-side navigation, so we use window.location.assign for the
   // cross-subdomain case.
-  function goToDestination(defaultPath: string) {
+  //
+  // If the returnUrl points at a custom admin domain
+  // (admin.<merchant-tld>), the session cookie can't ride across TLDs;
+  // we mint a short-lived handoff code and bounce through the handoff
+  // route on the target host instead.
+  async function goToDestination(defaultPath: string) {
     if (returnUrl) {
+      const handoff = await prepareCrossDomainNavigation({ returnUrl });
+      const dest = handoff.kind === "handoff" ? handoff.url : returnUrl;
       if (typeof window !== "undefined") {
-        window.location.assign(returnUrl);
+        window.location.assign(dest);
       }
       return;
     }
@@ -141,7 +149,7 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
         setMfaStep(true);
         return;
       }
-      goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
+      await goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
     });
   }
 
@@ -160,7 +168,7 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
       setMfaStep(true);
       return;
     }
-    goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
+    await goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
   }
 
   async function handleGoogle() {
@@ -229,7 +237,7 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
         setSubmitError(r.message);
         return;
       }
-      goToDestination(mfaMultipleTenants ? "/pick-tenant" : "/dashboard");
+      await goToDestination(mfaMultipleTenants ? "/pick-tenant" : "/dashboard");
     } finally {
       setMfaPending(false);
     }

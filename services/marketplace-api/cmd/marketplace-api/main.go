@@ -1060,6 +1060,13 @@ func main() {
 		})
 		orderDocSvcSF := orderdoc.NewService(conn, orderDocMailerSF, orderRepoSF, orderDocBrandingSvcSF, cfg.StorefrontBaseURLTemplate).
 				WithLogger(log)
+		// Wire the docMailer onto the webhook handler so a successful
+		// payment-captured event auto-fires the buyer's invoice email
+		// (the "order placed, here's your invoice" message). Same
+		// orderdoc.Service the customer self-cancel path uses; the
+		// mailer is fire-and-forget on a detached context so a
+		// SendGrid blip never re-queues the webhook.
+		webhookHandler.WithDocMailer(orderDocSvcSF)
 
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log).
 			WithReturns(returnSvcSF, returnRepoSF).

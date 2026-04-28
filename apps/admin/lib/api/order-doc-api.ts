@@ -8,12 +8,28 @@ import type { SessionHeaders } from "./marketplace-api";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
+const MARKETPLACE_INTERNAL_AUTH =
+  process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
 
+// Match the wire shape every other admin → marketplace-api caller uses
+// (apps/admin/lib/api/marketplace-api.ts and shipping-api.ts).
+// Marketplace-api's HeaderTrustAuth middleware requires X-User-Id +
+// X-Tenant-Id AND, when MARKETPLACE_INTERNAL_AUTH_SECRET is set on the
+// Go service, a matching X-Internal-Auth as defense-in-depth (so a port-
+// forward around Istio can't impersonate). Earlier this file omitted
+// the X-Internal-Auth header — every admin "Send invoice" / "Send
+// receipt" request hit the secret check and 401'd. Surfaced as the
+// "Couldn't send invoice — Session expired" toast on the order detail
+// page even though the cookie was perfectly valid.
 function readHeaders(s: SessionHeaders): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     "X-User-Id": s.userId,
     "X-Tenant-Id": s.tenantId,
   };
+  if (MARKETPLACE_INTERNAL_AUTH) {
+    headers["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
+  }
+  return headers;
 }
 
 export interface SendDocEmailOk {

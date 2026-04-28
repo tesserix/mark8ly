@@ -4,6 +4,8 @@ import { resolveAuth } from "@/lib/auth/serverSession";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
+const MARKETPLACE_INTERNAL_AUTH =
+  process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
 
 const HOP_BY_HOP = new Set([
   "connection",
@@ -51,6 +53,16 @@ export async function proxyAdminApi(
   };
   if (email) {
     upstreamHeaders["X-User-Email"] = email;
+  }
+  // Marketplace-api's HeaderTrustAuth requires X-Internal-Auth when
+  // MARKETPLACE_INTERNAL_AUTH_SECRET is set on the Go service. Match
+  // the pattern every other admin → marketplace-api caller uses (see
+  // apps/admin/lib/api/marketplace-api.ts:300 and shipping-api.ts:86).
+  // Earlier this proxy omitted the header — every /subscription,
+  // /notifications/unread-count etc. request 401'd, surfaced as a
+  // mid-session "Session expired" toast.
+  if (MARKETPLACE_INTERNAL_AUTH) {
+    upstreamHeaders["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
   }
   const contentType = request.headers.get("content-type");
   if (contentType) {

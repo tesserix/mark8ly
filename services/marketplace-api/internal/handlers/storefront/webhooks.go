@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -37,6 +38,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
@@ -69,6 +71,7 @@ type WebhookHandler struct {
 	giftCardSvc *giftcard.Service     // optional — when set, gift card checkout events activate cards
 	loyaltySvc  *loyalty.Service      // optional — when set, awards points after payment success
 	notify      *notification.Service // optional — nil-safe; emits payment_received on success
+	docMailer   *orderdoc.Service     // optional — when set, fires the invoice email after a payment succeeds (the "order placed" customer-facing receipt for the buyer)
 	encryptor   crypto.Encryptor      // optional — decrypts payment gateway secret_key_encrypted
 	// secretStore, when non-nil, resolves gsm:// references as well as
 	// legacy inline ciphertext. The Encryptor path stays as a fallback
@@ -191,6 +194,20 @@ func (h *WebhookHandler) WithNotifier(svc *notification.Service) *WebhookHandler
 // carrying `gift_card_id` metadata can activate pending cards.
 func (h *WebhookHandler) WithGiftCardService(svc *giftcard.Service) *WebhookHandler {
 	h.giftCardSvc = svc
+	return h
+}
+
+// WithDocMailer attaches the orderdoc service so the webhook can fire
+// the customer-facing invoice email immediately after a payment is
+// captured and the order transitions to confirmed. This is the
+// "buyer placed an order, here's their invoice" receipt — distinct
+// from the post-delivery receipt PDF that fires from the shipment-
+// status handler. Nil-safe; without it the dispatch is skipped and
+// invoices only go out via the admin "Email to customer" affordance
+// or the auto-fire that the OrdersHandler.Confirm path triggers when
+// a merchant manually clicks Confirm.
+func (h *WebhookHandler) WithDocMailer(svc *orderdoc.Service) *WebhookHandler {
+	h.docMailer = svc
 	return h
 }
 
@@ -555,6 +572,26 @@ func (h *WebhookHandler) handlePaymentSucceeded(ctx context.Context, provider st
 				"order_id", evt.OrderID,
 				"err", err)
 			return
+		}
+
+		// Order placed + paid → the buyer's invoice email goes out now.
+		// Detached goroutine: a SendGrid blip must NOT make the webhook
+		// retry, because order.Confirm already committed and a retry
+		// would push the order through invalid-transition guards. Same
+		// fire-and-forget contract the admin OrdersHandler.dispatchInvoiceEmail
+		// uses on the manual-Confirm path. Nil-safe — when the docMailer
+		// isn't wired (dev without SendGrid + without LogMailer fallback)
+		// this is a no-op and the order still confirms cleanly.
+		if h.docMailer != nil {
+			go func() {
+				dctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := h.docMailer.SendInvoice(dctx, orderID); err != nil {
+					h.logError("webhook: invoice email dispatch failed",
+						"order_id", evt.OrderID,
+						"err", err)
+				}
+			}()
 		}
 
 		// Award loyalty points (idempotent — no-op if already credited or

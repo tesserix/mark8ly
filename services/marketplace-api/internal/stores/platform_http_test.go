@@ -94,7 +94,7 @@ func TestHTTPClient_GetStore_SecretHeader_Sent(t *testing.T) {
 
 func TestHTTPClient_GetStoreBySlug_HappyPath_200(t *testing.T) {
 	c, srv := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/stores/by-slug/acme" {
+		if r.URL.Path != "/api/v1/stores/by-slug/acme" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")

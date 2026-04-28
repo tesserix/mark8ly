@@ -81,8 +81,17 @@ func (c *HTTPClient) GetStore(ctx context.Context, tenantID, storeID string) (*S
 // has TenantID == "" — callers on the storefront path must not rely on
 // TenantID from this source. Returns (nil, nil) on 404 and wraps any
 // transport or 5xx error with ErrPlatformUnavailable.
+//
+// Path NOTE: the public endpoint is mounted under `/api/v1/stores/by-slug/`
+// while internal admin lookups use the unprefixed `/internal/stores/...`.
+// Earlier versions of this client expected baseURL to include `/api/v1`
+// implicitly, but the env var (`MARKETPLACE_PLATFORM_API_URL`) is also
+// used for the internal calls, so we hard-code the prefix here. Without
+// it, the storefront SlugCache failed every refresh and the Storefront
+// engine 404'd every `/api/v1/storefront/stores/:slug/*` call (account,
+// orders, branding, products, etc.).
 func (c *HTTPClient) GetStoreBySlug(ctx context.Context, slug string) (*Store, error) {
-	url := fmt.Sprintf("%s/stores/by-slug/%s", c.baseURL, slug)
+	url := fmt.Sprintf("%s/api/v1/stores/by-slug/%s", c.baseURL, slug)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("stores: platform client by-slug: new req: %w", err)

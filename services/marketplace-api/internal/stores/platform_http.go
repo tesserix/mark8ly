@@ -76,22 +76,27 @@ func (c *HTTPClient) GetStore(ctx context.Context, tenantID, storeID string) (*S
 	return &envelope.Data, nil
 }
 
-// GetStoreBySlug calls the PUBLIC by-slug endpoint on platform-api. The
-// public response intentionally omits tenant_id, so the returned Store
-// has TenantID == "" — callers on the storefront path must not rely on
-// TenantID from this source. Returns (nil, nil) on 404 and wraps any
-// transport or 5xx error with ErrPlatformUnavailable.
+// GetStoreBySlug calls the INTERNAL by-slug endpoint on platform-api.
 //
-// Path NOTE: the public endpoint is mounted under `/api/v1/stores/by-slug/`
-// while internal admin lookups use the unprefixed `/internal/stores/...`.
-// Earlier versions of this client expected baseURL to include `/api/v1`
-// implicitly, but the env var (`MARKETPLACE_PLATFORM_API_URL`) is also
-// used for the internal calls, so we hard-code the prefix here. Without
-// it, the storefront SlugCache failed every refresh and the Storefront
-// engine 404'd every `/api/v1/storefront/stores/:slug/*` call (account,
-// orders, branding, products, etc.).
+// We deliberately use `/internal/stores/by-slug/:slug` (not the public
+// `/api/v1/stores/by-slug/:slug`) because the SlugCache upserts the
+// returned struct into the marketplace-api `stores` projection table,
+// which has `tenant_id` declared NOT NULL with UUID type. The public
+// endpoint intentionally omits tenant_id, so an upsert path that
+// trusts the public shape ends up writing an empty string into a UUID
+// column and the whole storefront engine 404s every
+// `/api/v1/storefront/stores/:slug/*` call (account, orders, branding,
+// products, …) on cache miss.
+//
+// In-cluster traffic from marketplace-api → platform-api crosses no
+// trust boundary (Istio mTLS + AuthorizationPolicy already gate it),
+// so calling /internal here is fine. The X-Internal-Auth header is
+// still sent when configured.
+//
+// Returns (nil, nil) on 404. Wraps transport / 5xx errors with
+// ErrPlatformUnavailable.
 func (c *HTTPClient) GetStoreBySlug(ctx context.Context, slug string) (*Store, error) {
-	url := fmt.Sprintf("%s/api/v1/stores/by-slug/%s", c.baseURL, slug)
+	url := fmt.Sprintf("%s/internal/stores/by-slug/%s", c.baseURL, slug)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("stores: platform client by-slug: new req: %w", err)
@@ -117,10 +122,12 @@ func (c *HTTPClient) GetStoreBySlug(ctx context.Context, slug string) (*Store, e
 			resp.StatusCode, ErrPlatformUnavailable)
 	}
 
-	// The public response shape deliberately has no tenant_id field.
+	// Internal endpoint includes tenant_id, which is required for the
+	// SlugCache projection table upsert.
 	var envelope struct {
 		Data struct {
 			ID           string `json:"id"`
+			TenantID     string `json:"tenant_id"`
 			Slug         string `json:"slug"`
 			Name         string `json:"name"`
 			CountryCode  string `json:"country_code"`
@@ -134,7 +141,7 @@ func (c *HTTPClient) GetStoreBySlug(ctx context.Context, slug string) (*Store, e
 	}
 	return &Store{
 		ID:           envelope.Data.ID,
-		TenantID:     "", // not exposed on the public endpoint
+		TenantID:     envelope.Data.TenantID,
 		Slug:         envelope.Data.Slug,
 		Name:         envelope.Data.Name,
 		CountryCode:  envelope.Data.CountryCode,

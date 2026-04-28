@@ -10,6 +10,15 @@ import type { SessionHeaders, MutationResult, MutationError } from "./marketplac
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 
+// MARKETPLACE_INTERNAL_AUTH is the shared secret defense-in-depth
+// header marketplace-api requires on every admin call. Missing it
+// gets a blanket 401 from auth middleware before any handler runs —
+// which is the bug that was hiding /admin/account, /admin/account/sessions
+// and the rest of the Settings Tier 2 surface behind a stale "empty
+// profile" UI even when the DB row was complete.
+const MARKETPLACE_INTERNAL_AUTH =
+  process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
+
 // ─────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────
@@ -30,6 +39,9 @@ function commonHeaders(session: SessionHeaders): HeadersInit {
   if (session.email) {
     headers["X-User-Email"] = session.email;
   }
+  if (MARKETPLACE_INTERNAL_AUTH) {
+    headers["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
+  }
   return headers;
 }
 
@@ -41,6 +53,9 @@ function readHeaders(session: SessionHeaders): HeadersInit {
   };
   if (session.email) {
     headers["X-User-Email"] = session.email;
+  }
+  if (MARKETPLACE_INTERNAL_AUTH) {
+    headers["X-Internal-Auth"] = MARKETPLACE_INTERNAL_AUTH;
   }
   return headers;
 }

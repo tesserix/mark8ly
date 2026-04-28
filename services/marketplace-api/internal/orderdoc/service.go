@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -224,12 +225,38 @@ func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt b
 		Theme:          theme,
 	}
 	if asReceipt {
-		// Use updated_at as the delivery timestamp proxy — it gets touched
-		// on the shipment status PATCH that triggered this email.
-		t := o.UpdatedAt
-		in.DeliveredAt = &t
+		in.DeliveredAt = s.lookupDeliveredAt(ctx, orderID, o.UpdatedAt)
 	}
 	return in, nil
+}
+
+// lookupDeliveredAt returns the real shipment.delivered_at for the
+// order's most recently delivered shipment. Falls back to the order's
+// updated_at when no delivered shipment row exists (legacy orders, or
+// orders fulfilled without a shipment record). The receipt PDF on the
+// storefront already prefers shipment.delivered_at — this brings the
+// email body in line so the date that lands in the customer's inbox
+// matches the date stamped on the attached PDF.
+func (s *Service) lookupDeliveredAt(ctx context.Context, orderID uuid.UUID, fallback time.Time) *time.Time {
+	var row struct {
+		DeliveredAt *time.Time `gorm:"column:delivered_at"`
+	}
+	err := s.db.WithContext(ctx).
+		Table("shipments").
+		Select("delivered_at").
+		Where("order_id = ? AND status = ? AND delivered_at IS NOT NULL", orderID, "delivered").
+		Order("delivered_at DESC").
+		Limit(1).
+		Take(&row).Error
+	if err == nil && row.DeliveredAt != nil {
+		return row.DeliveredAt
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) && s.logger != nil {
+		s.logger.Warn("orderdoc: shipment delivered_at lookup failed; falling back to order.updated_at",
+			"order_id", orderID, "err", err)
+	}
+	t := fallback
+	return &t
 }
 
 // documentNumber derives the deterministic invoice/receipt number from

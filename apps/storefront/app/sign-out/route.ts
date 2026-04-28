@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { sanitizeHost } from "@/lib/host";
 
@@ -15,15 +14,18 @@ import { sanitizeHost } from "@/lib/host";
  * We must delete with the same Domain or the browser leaves it alive
  * (it would just set a second deletion cookie on the wrong scope).
  *
- * The transitional `.mark8ly.com` clear catches any pre-Phase-1 cookies
- * still kicking around; drop one release after Phase 1 lands.
+ * Two clears are emitted — the per-host clear for the live Phase 1
+ * cookie, and a `.mark8ly.com` transitional clear for pre-Phase-1
+ * cookies. The two writes go onto the response via Headers.append, NOT
+ * via `next/headers`'s cookies(), because that store keys by cookie
+ * NAME and silently collapses the per-host write into the legacy one
+ * (the bug we're fixing here). Drop the legacy clear one release
+ * after Phase 1 lands.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request): Promise<Response> {
-  const c = await cookies();
-
   // Resolve the customer-facing host. Behind Istio / Cloudflare,
   // `req.url` reports the internal pod bind address (e.g. https://
   // 0.0.0.0:4203) rather than the host the buyer actually used —
@@ -37,39 +39,47 @@ export async function GET(req: Request): Promise<Response> {
   const forwardedProto =
     h.get("x-forwarded-proto") ?? (isLocal ? "http" : "https");
 
+  const origin = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : new URL(req.url).origin;
+
+  const res = NextResponse.redirect(`${origin}/`, { status: 303 });
+
   if (cookieHost) {
-    c.set({
-      name: "mp_customer_session",
-      value: "",
-      path: "/",
-      domain: cookieHost,
-      maxAge: 0,
-      httpOnly: true,
-      secure: !isLocal,
-      sameSite: "lax",
-    });
+    res.headers.append(
+      "Set-Cookie",
+      buildClearCookie("mp_customer_session", cookieHost, !isLocal),
+    );
   } else {
     // Fallback: no validated host (dev without x-forwarded-host).
     // Clear the host-only cookie for the current request host so dev
     // sign-out still works without an explicit Domain.
-    c.delete("mp_customer_session");
+    res.headers.append(
+      "Set-Cookie",
+      "mp_customer_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+    );
   }
 
-  // Transitional: clear the legacy parent-domain cookie set before Phase 1.
-  // Drop one release after Phase 1 lands (cookie max-age was 30 days).
-  c.set({
-    name: "mp_customer_session",
-    value: "",
-    path: "/",
-    domain: ".mark8ly.com",
-    maxAge: 0,
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-  });
+  // Transitional: clear the legacy parent-domain cookie set before
+  // Phase 1. Drop one release after Phase 1 lands (cookie max-age was
+  // 30 days).
+  res.headers.append(
+    "Set-Cookie",
+    buildClearCookie("mp_customer_session", ".mark8ly.com", true),
+  );
 
-  const origin = forwardedHost
-    ? `${forwardedProto}://${forwardedHost}`
-    : new URL(req.url).origin;
-  return NextResponse.redirect(`${origin}/`, { status: 303 });
+  return res;
+}
+
+function buildClearCookie(name: string, domain: string, secure: boolean): string {
+  const attrs = [
+    `${name}=`,
+    "Path=/",
+    "Max-Age=0",
+    `Domain=${domain}`,
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (secure) attrs.push("Secure");
+  return attrs.join("; ");
 }

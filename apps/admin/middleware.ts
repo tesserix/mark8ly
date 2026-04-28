@@ -50,6 +50,7 @@ const PUBLIC_PREFIXES = [
   "/forgot-password",
   "/reset-password", // branded reset flow — lands here from the email link
   "/accept-invite", // Phase P: invitees must land here without a session
+  "/auth/handoff", // cross-TLD admin handoff — mints a session for this host, so it MUST render before the cookie exists
   "/webhooks", // external provider callbacks (Stripe, etc.) — never gated
   "/api/health", // kubelet probe target; must not 30x to /login
   "/_next",

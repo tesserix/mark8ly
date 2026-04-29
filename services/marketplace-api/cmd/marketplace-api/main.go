@@ -1617,6 +1617,12 @@ func main() {
 		if vendorHandler != nil {
 			vendorHandler.RegisterRoutes(r.Group("/internal"))
 		}
+		// Mirror of platform_api.stores so admin/storefront slug lookups
+		// don't cross-service-call platform-api on every request. Called
+		// by platform-api at onboarding completion (parallel to
+		// EnsureSelfVendor). See internal_handler.go for idempotency.
+		stores.NewInternalHandler(domainStoresRepo).
+			RegisterRoutes(r.Group("/internal"))
 		// Cross-service audit ingest — auth-bff posts login/logout,
 		// platform-api posts staff invite/accept/revoke. Mounted on the
 		// existing /internal namespace gated by X-Internal-Auth.
@@ -1666,6 +1672,11 @@ func main() {
 			if vendorHandler != nil {
 				vendorHandler.RegisterRoutes(engine.Group("/internal"))
 			}
+			// Mirror of platform_api.stores. See main mode-Both branch
+			// above for context. Admin engine only — storefront never
+			// writes stores.
+			stores.NewInternalHandler(domainStoresRepo).
+				RegisterRoutes(engine.Group("/internal"))
 			// Audit ingest is admin-only because the audit_logs read
 			// endpoint also lives on the admin engine — keeping write
 			// + read on the same pod simplifies ops and keeps the

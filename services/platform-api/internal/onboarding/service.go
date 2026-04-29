@@ -20,8 +20,14 @@ import (
 // VendorEnsurer lets the Service call marketplace-api without a hard
 // dependency on the concrete HTTP client. The marketplaceapi.VendorClient
 // satisfies this interface directly.
+//
+// EnsureSelfStore mirrors the authoritative platform-api store row into
+// marketplace-api's local stores projection; without it, downstream slug
+// lookups (admin dashboard, storefront, custom-domain join) 404 because
+// marketplace_api.stores is empty for the new tenant.
 type VendorEnsurer interface {
 	EnsureSelfVendor(ctx context.Context, tenantID, name, slug string) (*marketplaceapi.Vendor, error)
+	EnsureSelfStore(ctx context.Context, s marketplaceapi.Store) (*marketplaceapi.Store, error)
 }
 
 // Service is the business logic for the onboarding flow.
@@ -266,6 +272,22 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 	if s.vendorClient != nil {
 		if _, vErr := s.vendorClient.EnsureSelfVendor(ctx, t.ID, t.Name, st.Slug); vErr != nil {
 			log.Printf("onboarding.Complete: ensure self-vendor for tenant %s: %v", t.ID, vErr)
+		}
+		// Mirror the authoritative store row into marketplace_api.stores
+		// so admin/storefront slug lookups resolve. Same best-effort
+		// policy as EnsureSelfVendor — a failure logs but doesn't fail
+		// onboarding (merchant can re-trigger via store-settings update).
+		if _, sErr := s.vendorClient.EnsureSelfStore(ctx, marketplaceapi.Store{
+			ID:           st.ID,
+			TenantID:     t.ID,
+			Slug:         st.Slug,
+			Name:         st.Name,
+			CountryCode:  st.CountryCode,
+			CurrencyCode: st.CurrencyCode,
+			Timezone:     st.Timezone,
+			Status:       string(store.StatusActive),
+		}); sErr != nil {
+			log.Printf("onboarding.Complete: ensure self-store for tenant %s store %s: %v", t.ID, st.ID, sErr)
 		}
 	}
 

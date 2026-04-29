@@ -126,3 +126,59 @@ func (c *VendorClient) addInternalAuth(req *http.Request) {
 		req.Header.Set("X-Internal-Auth", c.internalAuthSecret)
 	}
 }
+
+// Store mirrors marketplace-api's local stores projection. Only the
+// fields platform-api cares about are decoded; the wire format may carry
+// more (synced_at, secret) that we ignore.
+type Store struct {
+	ID           string `json:"id"`
+	TenantID     string `json:"tenant_id"`
+	Slug         string `json:"slug"`
+	Name         string `json:"name"`
+	CountryCode  string `json:"country_code"`
+	CurrencyCode string `json:"currency_code"`
+	Timezone     string `json:"timezone"`
+	Status       string `json:"status"`
+}
+
+// EnsureSelfStore upserts the authoritative store row from platform_api
+// into marketplace_api's local stores projection. Idempotent and keyed
+// on store id — re-runs are safe and preserve any server-side fields
+// (e.g. storefront_customer_portal_secret) that aren't sent over.
+//
+// Called from onboarding.Complete right after EnsureSelfVendor. A
+// failure here is logged but does NOT fail onboarding (matching the
+// vendor client's best-effort policy); the merchant can retry by
+// updating store settings or running the platform-api backfill CLI.
+func (c *VendorClient) EnsureSelfStore(ctx context.Context, s Store) (*Store, error) {
+	body, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/internal/stores/upsert", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.addInternalAuth(req)
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace-api ensure-self-store: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode >= 300 {
+		raw, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("marketplace-api ensure-self-store %d: %s", res.StatusCode, string(raw))
+	}
+
+	var resp struct {
+		Data Store `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+		return nil, fmt.Errorf("marketplace-api ensure-self-store: decode: %w", err)
+	}
+	return &resp.Data, nil
+}

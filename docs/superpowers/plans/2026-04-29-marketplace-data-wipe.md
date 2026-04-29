@@ -57,16 +57,18 @@
 
 - [ ] **Step 0.4: Snapshot the row counts we expect to zero**
 
-  Run (per DB) and copy output for later diff:
+  Run (writes to `/tmp/mark8ly-prewipe-rowcounts.txt` for the Task 7.1 diff):
   ```
-  for DB in mark8ly_marketplace_api mark8ly_platform_api mark8ly_openfga; do
-    echo "=== $DB ==="
-    kubectl exec -n mark8ly mark8ly-postgres-2 -c postgres -- \
-      psql -U postgres -d "$DB" -t -c \
-      "SELECT relname, n_live_tup FROM pg_stat_user_tables WHERE n_live_tup > 0 ORDER BY n_live_tup DESC;"
-  done
+  {
+    for DB in mark8ly_marketplace_api mark8ly_platform_api mark8ly_openfga; do
+      echo "=== $DB ==="
+      kubectl exec -n mark8ly mark8ly-postgres-2 -c postgres -- \
+        psql -U postgres -d "$DB" -t -c \
+        "SELECT relname, n_live_tup FROM pg_stat_user_tables WHERE n_live_tup > 0 ORDER BY n_live_tup DESC;"
+    done
+  } | tee /tmp/mark8ly-prewipe-rowcounts.txt
   ```
-  Save output to `/tmp/mark8ly-prewipe-rowcounts.txt` so post-wipe verification has a baseline.
+  Verify the file is non-empty: `wc -l /tmp/mark8ly-prewipe-rowcounts.txt` should print > 10.
 
 - [ ] **Step 0.5: Snapshot GIP user counts**
 

@@ -71,6 +71,13 @@ The wipe must leave the platform in a state where:
 
 Stop background writers so nothing writes during the wipe.
 
+0. **Re-confirm Pub/Sub state** (it was 0/0 at design time; cheap to re-verify since it could have changed):
+   ```
+   gcloud pubsub subscriptions list --project=tesseracthub-480811 \
+     --format='value(name)' | grep -iE 'mark8ly|^mp-' || echo "no subs"
+   ```
+   If subscriptions exist, pause and reassess — they would write back into the wiped state on first message.
+
 1. Suspend the every-2-min sync CronJob:
    ```
    kubectl patch cronjob mark8ly-marketplace-api-admin-tracking-sync -n mark8ly \
@@ -125,14 +132,23 @@ kubectl exec -n mark8ly mark8ly-postgres-2 -c postgres -- \
   psql -U postgres -d <db> -c "<sql>"
 ```
 
-After the openfga TRUNCATE, the existing live store and authorization_model are gone. Re-run the init Job:
+After the openfga TRUNCATE, the existing live store and authorization_model are gone. Re-run the init Job via ArgoCD (the Job manifest lives in `charts/apps/mark8ly-fga-init` in the `tesserix-k8s` repo, deployed by ArgoCD app `mark8ly-fga-init`):
 
 ```
 kubectl delete job -n mark8ly -l app=mark8ly-fga-init --ignore-not-found
-# Re-apply via ArgoCD sync or kubectl apply on the manifest
+argocd app sync mark8ly-fga-init --force --replace
+# Or, if argocd CLI not available:
+kubectl -n argocd annotate application mark8ly-fga-init \
+  argocd.argoproj.io/refresh=hard --overwrite
 ```
 
-Wait for the Job to complete and log `FGA_STORE_ID=…` for the new `mark8ly-platform` store. Apps will rediscover by name on next startup (`marketplace-api/internal/authz/client.go::DiscoverStoreID`, `platform-api/internal/authz/authz.go`).
+Wait for the Job pod to reach Completed:
+```
+kubectl wait --for=condition=complete -n mark8ly job -l app=mark8ly-fga-init --timeout=120s
+kubectl logs -n mark8ly -l app=mark8ly-fga-init --tail=20 | grep -E 'FGA_STORE_ID|FGA_MODEL_ID'
+```
+
+Apps will rediscover by name on next startup (`marketplace-api/internal/authz/client.go::DiscoverStoreID`, `platform-api/internal/authz/authz.go`).
 
 ### Section 3 — External systems wipe
 
@@ -159,13 +175,18 @@ In order (least → most permanent):
 4. **GIP users — wipe in 3 active tenants** (keep tenants)
    For each tenant ID `T` in `MP-Customer-39opy`, `MP-Internal-e986p`, `Platform-9bu14`:
    - List uids: `gcloud identity-platform users list --tenant="$T" --format='value(uid)' --project=tesseracthub-480811`
-   - Batch delete via REST `accounts:batchDelete`:
+   - **Chunk uids into batches of ≤100** (the `accounts:batchDelete` endpoint enforces this; `MP-Internal-e986p` has 180 → 2 batches). Trivial bash:
      ```
-     curl -X POST \
-       -H "Authorization: Bearer $(gcloud auth print-access-token)" \
-       -H "Content-Type: application/json" \
-       -d '{"localIds":[…uids…],"force":true}' \
-       "https://identitytoolkit.googleapis.com/v1/projects/tesseracthub-480811/tenants/$T/accounts:batchDelete"
+     uids=( … list … )
+     for ((i=0; i<${#uids[@]}; i+=100)); do
+       chunk=( "${uids[@]:i:100}" )
+       json_uids=$(printf '%s\n' "${chunk[@]}" | jq -R . | jq -s .)
+       curl -X POST \
+         -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+         -H "Content-Type: application/json" \
+         -d "{\"localIds\":${json_uids},\"force\":true}" \
+         "https://identitytoolkit.googleapis.com/v1/projects/tesseracthub-480811/tenants/$T/accounts:batchDelete"
+     done
      ```
    - Verify post-delete: `users list --tenant="$T" --limit=1` returns empty.
 
@@ -211,9 +232,20 @@ Then bring apps back (reverse Section 1):
 3. `kubectl rollout status` on each.
 4. `curl /health` and `/ready` on each pod.
 
-### Stale-cookie risk
+### Stale-cookie handling
 
-Existing browser sessions hold JWTs minted before the wipe. They reference deleted GIP UIDs. `auth-bff` validates UIDs against GIP on every request; deleted UIDs will return 401 → user redirected to login. **Verify this is the actual behavior** with a smoke test using a stale cookie. If it fails open instead of failing closed, mitigation is to rotate the `mark8ly-session` Secret which invalidates all cookies cluster-wide.
+Existing browser sessions hold JWTs minted before the wipe. They reference deleted GIP UIDs. `auth-bff` validates UIDs against GIP on every request, so in theory a deleted UID returns 401 → user redirected to login. Rather than verify-then-decide-mid-wipe, **rotate the `mark8ly-session` Secret as part of the wipe** — it removes ambiguity and costs nothing (only affected user is `mahesh.sangawar@gmail.com`, who is logging in fresh anyway):
+
+```
+# Rotate the session encryption key in GCP Secret Manager, then force ESO sync
+gcloud secrets versions add mark8ly-prod-session \
+  --data-file=<(openssl rand -base64 32) --project=tesseracthub-480811
+kubectl annotate externalsecret mark8ly-session -n mark8ly \
+  force-sync=$(date +%s) --overwrite
+# Then restart auth-bff to pick up the new secret (already part of Section 4 restart)
+```
+
+This invalidates all sessions globally and removes the need for a stale-cookie smoke test.
 
 ### Onboarding-must-work guarantee
 
@@ -250,7 +282,7 @@ If 1–7 all pass, the platform is a clean v1 ready for real customers.
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | Preserve list misses a reference table → app breaks | Low | Medium | Pre-flight `SELECT tablename` step + visual confirm before TRUNCATE |
-| Stale auth-bff cookie fails open instead of 401 | Low | Medium | Verify with stale-cookie smoke test; if needed, rotate `mark8ly-session` Secret |
+| Stale auth-bff cookie fails open instead of 401 | Low | Medium | Rotate `mark8ly-session` Secret as part of wipe (handled in Stale-cookie section) — fail-safe by construction |
 | `fga-init` Job fails to recreate store → apps can't authorize | Low | High | Wait for Job Completed before scaling apps back; if it fails, debug script + re-run before restart |
 | GIP `accounts:batchDelete` rate-limits with 180 users | Low | Low | Page in batches of 100 if needed |
 | `tracking-sync` CronJob fires before suspend takes effect | Very Low | Low | Suspend is idempotent and immediate; worst case a few extra outbox rows that the Section 2 TRUNCATE catches anyway |

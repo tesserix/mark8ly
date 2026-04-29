@@ -153,6 +153,12 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
 
 ### 2A: `mark8ly_marketplace_api`
 
+> **Preserve list verified against live DB on 2026-04-29:**
+> - marketplace_api uses `marketplace_db_schema_migrations` (golang-migrate)
+> - platform_api has 4 schema-tracking tables (multiple services share the DB): `schema_migrations`, `schema_marker`, `platform_api_schema_migrations`, `auth_bff_schema_migrations`
+> - openfga uses Goose: `goose_db_version`
+> - `migration_fast_path_reviews` in marketplace_api is a feature table (merchant-platform-migration evidence), NOT schema migration — gets WIPED.
+
 - [ ] **Step 2A.1: Preview which tables will be wiped vs preserved**
 
   Run:
@@ -160,11 +166,11 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
   kubectl exec -n mark8ly mark8ly-postgres-2 -c postgres -- \
     psql -U postgres -d mark8ly_marketplace_api -c \
     "SELECT tablename,
-            CASE WHEN tablename IN ('schema_migrations','schema_marker')
+            CASE WHEN tablename IN ('marketplace_db_schema_migrations')
                  THEN 'PRESERVE' ELSE 'WIPE' END AS action
        FROM pg_tables WHERE schemaname='public' ORDER BY action, tablename;"
   ```
-  STOP if any table named `*reference*`, `*config*`, `*seed*`, `*country*`, `*currency*`, `*timezone*`, `*state*` shows action=WIPE — investigate before proceeding.
+  STOP if any table named `*reference*`, `*config*`, `*seed*`, `*country*`, `*currency*`, `*timezone*`, `*state*` shows action=WIPE — investigate before proceeding. (Note: `migration_fast_path_reviews` is intentionally WIPED — it's a feature table.)
 
 - [ ] **Step 2A.2: Execute TRUNCATE loop**
 
@@ -176,7 +182,7 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
   BEGIN
     FOR r IN SELECT tablename FROM pg_tables
              WHERE schemaname='public'
-               AND tablename NOT IN ('schema_migrations','schema_marker')
+               AND tablename NOT IN ('marketplace_db_schema_migrations')
     LOOP
       EXECUTE format('TRUNCATE TABLE public.%I RESTART IDENTITY CASCADE', r.tablename);
     END LOOP;
@@ -191,7 +197,8 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
   kubectl exec -n mark8ly mark8ly-postgres-2 -c postgres -- \
     psql -U postgres -d mark8ly_marketplace_api -t -c \
     "SELECT relname, n_live_tup FROM pg_stat_user_tables
-      WHERE n_live_tup > 0 ORDER BY n_live_tup DESC;"
+      WHERE n_live_tup > 0 AND relname NOT IN ('marketplace_db_schema_migrations')
+      ORDER BY n_live_tup DESC;"
   ```
   Expected: empty result. STOP if any table has rows.
 
@@ -204,7 +211,7 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
   kubectl exec -n mark8ly mark8ly-postgres-2 -c postgres -- \
     psql -U postgres -d mark8ly_platform_api -c \
     "SELECT tablename,
-            CASE WHEN tablename IN ('schema_migrations','schema_marker','countries','states','currencies','timezones')
+            CASE WHEN tablename IN ('schema_migrations','schema_marker','platform_api_schema_migrations','auth_bff_schema_migrations','countries','states','currencies','timezones')
                  THEN 'PRESERVE' ELSE 'WIPE' END AS action
        FROM pg_tables WHERE schemaname='public' ORDER BY action, tablename;"
   ```
@@ -237,18 +244,15 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
     "SELECT relname, n_live_tup FROM pg_stat_user_tables
       WHERE n_live_tup > 0 ORDER BY relname;"
   ```
-  Expected exactly (counts approximate):
+  Expected (live state on 2026-04-29 — only `states` is populated; `countries`/`currencies`/`timezones` are already empty as a pre-existing condition; the 4 schema-tracking tables are also preserved but will all be 0 rows since pg_stat_user_tables only shows non-zero):
   ```
-  countries  | 20
-  currencies | 16
-  states     | 117
-  timezones  | 22
+  states  | 117
   ```
-  STOP if any other table appears.
+  STOP if any non-preserve table appears.
 
 ### 2C: `mark8ly_openfga`
 
-- [ ] **Step 2C.1: Wipe everything except schema_migrations**
+- [ ] **Step 2C.1: Wipe everything except `goose_db_version`** (OpenFGA uses Goose migrations, not golang-migrate)
 
   Run:
   ```
@@ -258,7 +262,7 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
   BEGIN
     FOR r IN SELECT tablename FROM pg_tables
              WHERE schemaname='public'
-               AND tablename NOT IN ('schema_migrations')
+               AND tablename NOT IN ('goose_db_version')
     LOOP
       EXECUTE format('TRUNCATE TABLE public.%I RESTART IDENTITY CASCADE', r.tablename);
     END LOOP;
@@ -415,30 +419,55 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
 
 ### 3D: GIP users (3 active tenants)
 
-- [ ] **Step 3D.1: Define helper function (paste once into shell)**
+> **Note:** `gcloud identity-platform` CLI is not installed on this workstation. Using Identity Toolkit REST API directly throughout. The `accounts:batchDelete` endpoint enforces ≤100 uids per call. The `accounts:query` endpoint pages user listings.
+
+- [ ] **Step 3D.1: Define helper functions (paste once into shell)**
 
   ```
+  PROJECT=tesseracthub-480811
+  IDP_HOST=https://identitytoolkit.googleapis.com
+
+  list_gip_uids() {
+    local T="$1"
+    local token; token=$(gcloud auth print-access-token)
+    local next=""
+    local uids=()
+    while :; do
+      local body; body=$(jq -nc --arg next "$next" '
+        {limit: 500} + (if $next == "" then {} else {nextPageToken: $next} end)')
+      local resp; resp=$(curl -fsS -X POST \
+        -H "Authorization: Bearer $token" \
+        -H "Content-Type: application/json" \
+        -H "X-Goog-User-Project: '"$PROJECT"'" \
+        -d "$body" \
+        "$IDP_HOST/v1/projects/$PROJECT/tenants/$T/accounts:query")
+      while IFS= read -r u; do uids+=("$u"); done < <(echo "$resp" | jq -r '.userInfo[]?.localId // empty')
+      next=$(echo "$resp" | jq -r '.nextPageToken // empty')
+      [[ -z "$next" ]] && break
+    done
+    printf '%s\n' "${uids[@]}"
+  }
+
   wipe_gip_tenant() {
     local T="$1"
-    local uids
-    uids=$(gcloud identity-platform users list --tenant="$T" \
-      --project=tesseracthub-480811 --format='value(uid)')
+    local uids; uids=$(list_gip_uids "$T")
     if [[ -z "$uids" ]]; then
       echo "[$T] already empty"
       return
     fi
     local arr=( $uids )
     echo "[$T] deleting ${#arr[@]} users"
+    local token; token=$(gcloud auth print-access-token)
     local i
     for ((i=0; i<${#arr[@]}; i+=100)); do
       local chunk=( "${arr[@]:i:100}" )
-      local json
-      json=$(printf '%s\n' "${chunk[@]}" | jq -R . | jq -s .)
+      local json; json=$(printf '%s\n' "${chunk[@]}" | jq -R . | jq -s .)
       curl -fsS -X POST \
-        -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+        -H "Authorization: Bearer $token" \
         -H "Content-Type: application/json" \
+        -H "X-Goog-User-Project: $PROJECT" \
         -d "{\"localIds\":${json},\"force\":true}" \
-        "https://identitytoolkit.googleapis.com/v1/projects/tesseracthub-480811/tenants/$T/accounts:batchDelete" \
+        "$IDP_HOST/v1/projects/$PROJECT/tenants/$T/accounts:batchDelete" \
         | jq .
     done
   }
@@ -447,27 +476,32 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
 - [ ] **Step 3D.2: Wipe MP-Customer-39opy (≈6 users)**
 
   Run: `wipe_gip_tenant MP-Customer-39opy`
-  Verify: `gcloud identity-platform users list --tenant=MP-Customer-39opy --project=tesseracthub-480811 --limit=1 --format='value(uid)'` → empty.
+  Verify: `list_gip_uids MP-Customer-39opy | wc -l` → `0`.
 
 - [ ] **Step 3D.3: Wipe MP-Internal-e986p (≈180 users, 2 batches)**
 
   Run: `wipe_gip_tenant MP-Internal-e986p`
-  Verify same way → empty.
+  Verify: `list_gip_uids MP-Internal-e986p | wc -l` → `0`.
 
 - [ ] **Step 3D.4: Wipe Platform-9bu14 (≈2 users)**
 
   Run: `wipe_gip_tenant Platform-9bu14`
-  Verify same way → empty.
+  Verify: `list_gip_uids Platform-9bu14 | wc -l` → `0`.
 
 ### 3E: Delete GIP zombie tenants
 
-- [ ] **Step 3E.1: Delete the 3 empty dupes**
+- [ ] **Step 3E.1: Delete the 3 empty dupes via Identity Toolkit Admin REST API**
 
   Run:
   ```
+  TOKEN=$(gcloud auth print-access-token)
   for T in MP-Customer-zoe11 MP-Internal-z5rnh Platform-2c9z0; do
-    gcloud identity-platform tenants delete "$T" \
-      --project=tesseracthub-480811 --quiet
+    echo "deleting tenant $T"
+    curl -fsS -X DELETE \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "X-Goog-User-Project: $PROJECT" \
+      "$IDP_HOST/v2/projects/$PROJECT/tenants/$T"
+    echo
   done
   ```
 
@@ -475,8 +509,11 @@ For each DB the pattern is: read schema → preview wipe → execute → verify 
 
   Run:
   ```
-  gcloud identity-platform tenants list --project=tesseracthub-480811 \
-    --format='value(name)'
+  curl -fsS \
+    -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+    -H "X-Goog-User-Project: $PROJECT" \
+    "$IDP_HOST/v2/projects/$PROJECT/tenants?pageSize=20" \
+    | jq -r '.tenants[].name' | awk -F/ '{print $NF}' | sort
   ```
   Expected: exactly `MP-Customer-39opy`, `MP-Internal-e986p`, `Platform-9bu14`.
 

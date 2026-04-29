@@ -44,6 +44,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/apikeys"
 	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
+	"github.com/mark8ly/marketplace-api/internal/cfclient"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
@@ -320,11 +321,20 @@ func main() {
 	if domainProvisioner != nil {
 		provIface = k8sprovAdapter{p: domainProvisioner}
 	}
+	// Cloudflare auto-DNS client. Hardcoded edge target matches the A
+	// record provisioned out of band on edge.mark8ly.com — keep in
+	// sync with the manual flow's "Option A" IP.
+	cfAPIClient := cfclient.New("edge.mark8ly.com")
+	// Adapt the carriersecrets.Store onto domain.SecretStore. Same
+	// underlying GSM-or-inline plumbing already in use for shipping /
+	// payment carrier credentials, just scoped to a different bucket.
+	domainSecretStore := domainSecretsAdapter{inner: carrierSecretStore}
 	domainSvc := domain.NewService(domain.ServiceConfig{
 		DB:          conn,
 		Repo:        domainRepo,
-		CF:          nil, // Stub — real Cloudflare client wired in production config
+		CF:          cfAPIClient,
 		Provisioner: provIface,
+		Secrets:     domainSecretStore,
 		Logger:      log,
 	})
 	domainStoresRepo := stores.NewRepository(conn)
@@ -1779,6 +1789,33 @@ func (a k8sprovAdapter) Deprovision(ctx context.Context, domainName string) erro
 
 func (a k8sprovAdapter) CertStatus(ctx context.Context, domainName string) (bool, string, error) {
 	return a.p.CertStatus(ctx, domainName)
+}
+
+// domainSecretsAdapter wraps the carriersecrets.Store so it can satisfy
+// domain.SecretStore. Both interfaces are minimal Put/Get/Destroy
+// surfaces; the only difference is the Scope type (carriersecrets has
+// its own struct, domain has its own). This adapter translates one
+// scope to the other so the domain package doesn't have to import
+// carriersecrets directly.
+type domainSecretsAdapter struct {
+	inner carriersecrets.Store
+}
+
+func (a domainSecretsAdapter) Put(ctx context.Context, scope domain.SecretScope, plaintext string) (string, error) {
+	return a.inner.Put(ctx, carriersecrets.Scope{
+		TenantID: scope.TenantID,
+		Domain:   scope.Domain,
+		Provider: scope.Provider,
+		Field:    scope.Field,
+	}, plaintext)
+}
+
+func (a domainSecretsAdapter) Get(ctx context.Context, reference string) (string, error) {
+	return a.inner.Get(ctx, reference)
+}
+
+func (a domainSecretsAdapter) Destroy(ctx context.Context, reference string) error {
+	return a.inner.Destroy(ctx, reference)
 }
 
 // arbitragePrometheusCounter bridges arbitrage.Counter to the P17 Prometheus

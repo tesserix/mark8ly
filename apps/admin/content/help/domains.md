@@ -12,9 +12,62 @@ The default subdomain uses HTTPS automatically and is backed by Mark8ly's conten
 
 ## Connecting a Custom Domain
 
-To use your own domain like `www.yourshop.com`, navigate to **Settings > Domains** and enter your domain name. Mark8ly will provide DNS records that you need to add at your domain registrar.
+To use your own domain like `www.yourshop.com`, navigate to **Settings > Domains** and enter your domain name. You can pick one of two setup methods:
 
-Typically you need to create a CNAME record pointing your domain to Mark8ly's routing infrastructure. The exact records are displayed in the domain settings page after you add your domain. DNS changes can take up to forty-eight hours to propagate, though most registrars process them within a few hours.
+- **Manual (CNAME)** — works with any DNS provider. We give you the records to copy in.
+- **Cloudflare (auto)** — supply a scoped Cloudflare API token and we add the records for you.
+
+Once your custom domain is verified and active, the platform automatically retires your `yourstore.mark8ly.com` URL: any traffic that lands there is permanently redirected (HTTP 301) to your custom domain so old bookmarks, search-engine entries, and shared links still work. You stay signed in across the redirect.
+
+## Manual setup — what to add at your registrar
+
+After you click **Add domain** with the Manual method selected, the page shows the exact records you need. There are two required records and one optional record.
+
+**1. Route traffic to your storefront.** Pick one option:
+
+- *Option A — A record* (works for apex domains like `yourshop.com`): point Type `A`, Name `yourshop.com` to the IP shown on the page.
+- *Option B — CNAME* (cleaner if your DNS provider allows CNAME on this name): point Type `CNAME`, Name `yourshop.com` to the target shown on the page.
+
+**2. Delegate SSL certificate issuance.** Add a `CNAME` record at `_acme-challenge.yourshop.com` pointing to `_acme-challenge.yourshop.com.acme.mark8ly.com`. This lets Mark8ly issue and renew a free Let's Encrypt certificate for your domain without you sharing DNS credentials.
+
+**3. (Optional) Admin subdomain.** Add an `A` record at `admin.yourshop.com` pointing to the same IP if you want a branded admin URL. Skip if you're happy logging in at the default admin URL.
+
+DNS changes can take up to 48 hours to propagate, though most registrars publish them within an hour. You can check propagation at [dnschecker.org](https://dnschecker.org). Once both required records are live, click **Verify** on the domain card.
+
+## Automated setup with Cloudflare — API token guide
+
+The Cloudflare (auto) method asks for a Cloudflare API token. Mark8ly uses the token only to add the routing CNAME on your zone — never to read DNS for any other zone, and never to make changes outside your domain. The token is stored in Google Cloud Secret Manager scoped to your tenant and is never written to a database or to logs.
+
+### Required permissions on the token
+
+The token needs **two** permissions:
+
+- `Zone > DNS > Edit` — lets us add the CNAME record automatically.
+- `Zone > Zone > Read` — lets us find your zone by domain name.
+
+Under **Zone Resources**, scope the token to *only the zone for this domain*. Do not grant Account-level permissions or include other zones.
+
+### Step-by-step — creating the token
+
+1. Sign in to [dash.cloudflare.com → My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens).
+2. Click **Create Token** and pick the **Edit zone DNS** template.
+3. Under *Zone Resources*, choose **Include → Specific zone → your domain**.
+4. (Optional, recommended) Set an expiry date and add an IP allowlist for safety.
+5. Click **Continue to summary**, then **Create Token**, and copy the token value. Cloudflare only shows it once.
+6. Paste the token into the **Cloudflare API token** field on the Domains page and click **Add domain**.
+
+### What happens after you submit
+
+1. We securely store the token in Google Cloud Secret Manager under your tenant.
+2. We look up your zone on Cloudflare and add a DNS-only CNAME pointing your domain to our edge.
+3. The domain enters the **verifying** state while DNS propagates.
+4. Once verified, we automatically issue a Let's Encrypt SSL certificate for the domain.
+
+If something goes wrong, the domain card shows an inline error with a hint on what to check. The most common cause is a token without the right permissions or scoped to the wrong zone — re-create it and click **Verify** again.
+
+### Revoking access
+
+You can revoke the token at any time from your Cloudflare dashboard. If you remove the domain from Mark8ly, we delete the secret and the DNS record we created.
 
 ## SSL Certificates
 

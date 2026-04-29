@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/domainvalidate"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -23,12 +25,39 @@ type CloudflareClient interface {
 	VerifyDomain(ctx context.Context, zoneID, domain string, apiToken string) (verified bool, sslActive bool, err error)
 }
 
+// SecretScope identifies a single token entry. The scope is hashed into
+// the GCP Secret Manager resource name by the SecretStore so a token is
+// uniquely addressable per (tenant, domain). Mirrors the carriersecrets
+// scope without forcing this package to import that one.
+type SecretScope struct {
+	TenantID string
+	Domain   string // category bucket — fixed to "platform" for CF tokens.
+	Provider string // fixed to "cloudflare".
+	Field    string // sanitized FQDN — one secret per merchant domain.
+}
+
+// SecretStore is the minimal surface needed by the domain service to
+// store and resolve the merchant's Cloudflare API token. Production
+// wires in the carriersecrets HybridStore (GCP SM primary, inline
+// encryptor fallback). Tests inject an in-memory stub.
+//
+// Token plaintext NEVER leaves this interface — Put accepts it and
+// returns an opaque reference; Get takes a reference and returns the
+// plaintext on demand. The caller persists only the reference.
+type SecretStore interface {
+	Put(ctx context.Context, scope SecretScope, plaintext string) (reference string, err error)
+	Get(ctx context.Context, reference string) (plaintext string, err error)
+	Destroy(ctx context.Context, reference string) error
+}
+
 // ServiceConfig groups dependencies for the domain service.
 type ServiceConfig struct {
 	DB     *gorm.DB
 	Repo   Repository
 	CF          CloudflareClient
 	Provisioner Provisioner
+	Secrets     SecretStore // optional — falls back to inline-token storage if nil.
+	Resolver    domainvalidate.Resolver // optional — net.DefaultResolver when nil.
 	Logger      *slog.Logger
 }
 
@@ -54,6 +83,8 @@ type Service struct {
 	repo        Repository
 	cf          CloudflareClient
 	provisioner Provisioner
+	secrets     SecretStore
+	resolver    domainvalidate.Resolver
 	logger      *slog.Logger
 }
 
@@ -63,7 +94,29 @@ func NewService(cfg ServiceConfig) *Service {
 		repo:        cfg.Repo,
 		cf:          cfg.CF,
 		provisioner: cfg.Provisioner,
+		secrets:     cfg.Secrets,
+		resolver:    cfg.Resolver,
 		logger:      cfg.Logger,
+	}
+}
+
+// ValidateDomain runs the public-facing existence check used by the
+// inline UI validator and as a defense-in-depth gate inside Add.
+// Returns the canonical lower-cased FQDN on success.
+func (s *Service) ValidateDomain(ctx context.Context, raw string) (string, error) {
+	return domainvalidate.Check(ctx, raw, s.resolver)
+}
+
+// scopeForCFToken returns the SecretScope that uniquely names the
+// Cloudflare token entry for one (tenant, FQDN) pair. Field is the
+// FQDN so multiple custom domains under the same tenant each get
+// their own secret instead of stomping on a single shared entry.
+func scopeForCFToken(tenantID uuid.UUID, fqdn string) SecretScope {
+	return SecretScope{
+		TenantID: tenantID.String(),
+		Domain:   "platform",
+		Provider: "cloudflare",
+		Field:    fqdn,
 	}
 }
 
@@ -113,22 +166,28 @@ func (s *Service) ResolveByDomain(ctx context.Context, domainName string) (*Cust
 
 // AddInput holds the fields for adding a custom domain.
 type AddInput struct {
-	TenantID            uuid.UUID
-	StoreID             uuid.UUID
-	StoreSlug           string
-	Domain              string
-	DNSMethod           DNSMethod
-	CFAPITokenEncrypted string
+	TenantID  uuid.UUID
+	StoreID   uuid.UUID
+	StoreSlug string
+	Domain    string
+	DNSMethod DNSMethod
+	// CFAPIToken is the merchant's plaintext Cloudflare API token —
+	// passed through Service.Add and immediately handed to the
+	// SecretStore. It is never logged and never persisted to the DB.
+	CFAPIToken string
 }
 
 // Add registers a new custom domain.
 func (s *Service) Add(ctx context.Context, in AddInput) (*CustomDomain, error) {
-	domainStr := strings.ToLower(strings.TrimSpace(in.Domain))
-	if domainStr == "" {
-		return nil, apperrors.ValidationFailed("domain", "domain is required")
-	}
-	if len(domainStr) > 253 {
-		return nil, apperrors.ValidationFailed("domain", "domain must be 253 characters or fewer")
+	domainStr, vErr := s.ValidateDomain(ctx, in.Domain)
+	if vErr != nil {
+		// Map the sentinel onto our standard validation error so the
+		// HTTP layer surfaces the user-friendly message verbatim.
+		if errors.Is(vErr, domainvalidate.ErrInvalidDomain) {
+			msg := strings.TrimPrefix(vErr.Error(), "invalid domain: ")
+			return nil, apperrors.ValidationFailed("domain", msg)
+		}
+		return nil, vErr
 	}
 
 	method := in.DNSMethod
@@ -136,7 +195,7 @@ func (s *Service) Add(ctx context.Context, in AddInput) (*CustomDomain, error) {
 		method = DNSMethodManual
 	}
 
-	if method == DNSMethodCloudflare && in.CFAPITokenEncrypted == "" {
+	if method == DNSMethodCloudflare && strings.TrimSpace(in.CFAPIToken) == "" {
 		return nil, apperrors.ValidationFailed("cf_api_token", "Cloudflare API token is required for cloudflare method")
 	}
 
@@ -149,20 +208,42 @@ func (s *Service) Add(ctx context.Context, in AddInput) (*CustomDomain, error) {
 	// where the per-domain cert lives — Cloudflare edge doesn't have
 	// certs for arbitrary merchant domains, so we bypass CF entirely.
 	cnameTarget := "edge.mark8ly.com"
-	_ = in.StoreSlug
+
+	// For the Cloudflare path, write the token to the SecretStore
+	// BEFORE creating the row so a failure leaves no orphan record
+	// pointing at a non-existent secret. The store is per-tenant by
+	// construction; we never use a token written for tenant A to
+	// authorise a CF call for tenant B.
+	tokenRef := ""
+	if method == DNSMethodCloudflare {
+		if s.secrets == nil {
+			return nil, errors.New("custom domains: secret store not configured — cloudflare method unavailable")
+		}
+		ref, putErr := s.secrets.Put(
+			ctx,
+			scopeForCFToken(in.TenantID, domainStr),
+			strings.TrimSpace(in.CFAPIToken),
+		)
+		if putErr != nil {
+			s.logger.Error("cloudflare token: secret store put failed",
+				"tenant_id", in.TenantID, "domain", domainStr, "err", putErr)
+			return nil, fmt.Errorf("store cloudflare token: %w", putErr)
+		}
+		tokenRef = ref
+	}
 
 	now := time.Now()
 	d := &CustomDomain{
-		TenantID:            in.TenantID,
-		StoreID:             in.StoreID,
-		Domain:              domainStr,
-		DNSMethod:           method,
-		CnameTarget:         &cnameTarget,
-		Status:              DomainStatusVerifying,
-		CFAPITokenEncrypted: in.CFAPITokenEncrypted,
-		SSLStatus:           SSLStatusPending,
-		CreatedAt:           now,
-		UpdatedAt:           now,
+		TenantID:      in.TenantID,
+		StoreID:       in.StoreID,
+		Domain:        domainStr,
+		DNSMethod:     method,
+		CnameTarget:   &cnameTarget,
+		Status:        DomainStatusVerifying,
+		CFAPITokenRef: tokenRef,
+		SSLStatus:     SSLStatusPending,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 
 	if method == DNSMethodCloudflare {
@@ -170,19 +251,42 @@ func (s *Service) Add(ctx context.Context, in AddInput) (*CustomDomain, error) {
 	}
 
 	if err := s.repo.Create(ctx, s.db, d); err != nil {
+		// Roll back the secret so we don't leak orphan entries on a
+		// duplicate-domain race or DB outage.
+		if tokenRef != "" {
+			if destroyErr := s.secrets.Destroy(context.Background(), tokenRef); destroyErr != nil {
+				s.logger.Warn("cloudflare token: rollback destroy failed",
+					"tenant_id", in.TenantID, "domain", domainStr, "err", destroyErr)
+			}
+		}
 		return nil, err
 	}
 
 	if method == DNSMethodCloudflare && s.cf != nil {
-		go s.registerWithCloudflare(d.ID, d.StoreID, domainStr, in.CFAPITokenEncrypted)
+		go s.registerWithCloudflare(d.ID, d.StoreID, domainStr, tokenRef)
 	}
 
 	return d, nil
 }
 
-func (s *Service) registerWithCloudflare(id, storeID uuid.UUID, domainStr, apiToken string) {
+func (s *Service) registerWithCloudflare(id, storeID uuid.UUID, domainStr, tokenRef string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	apiToken, err := s.resolveToken(ctx, tokenRef)
+	if err != nil {
+		s.logger.Error("cloudflare token: resolve failed", "domain", domainStr, "err", err)
+		errMsg := "Could not retrieve the saved Cloudflare token. Re-add the domain with a fresh token."
+		updated := &CustomDomain{
+			ID:           id,
+			StoreID:      storeID,
+			Status:       DomainStatusError,
+			ErrorMessage: &errMsg,
+			UpdatedAt:    time.Now(),
+		}
+		_ = s.repo.Update(ctx, s.db, updated)
+		return
+	}
 
 	zoneID, dnsRecordID, err := s.cf.AddDomain(ctx, domainStr, apiToken)
 	if err != nil {
@@ -223,8 +327,17 @@ func (s *Service) Remove(ctx context.Context, storeID, id uuid.UUID) error {
 	}
 
 	if d.DNSMethod == DNSMethodCloudflare && s.cf != nil && d.CloudflareZoneID != nil && d.CloudflareDNSRecordID != nil {
-		if cfErr := s.cf.RemoveDomain(ctx, *d.CloudflareZoneID, *d.CloudflareDNSRecordID, d.CFAPITokenEncrypted); cfErr != nil {
-			s.logger.Error("cloudflare remove domain failed", "domain", d.Domain, "err", cfErr)
+		// Best-effort cleanup of the CF DNS record. If we can't resolve
+		// the token (e.g. secret already destroyed) we still remove the
+		// row so the merchant isn't stuck — the orphan record on
+		// Cloudflare is a minor concern compared to a stuck takedown.
+		if apiToken, tokErr := s.resolveToken(ctx, d.CFAPITokenRef); tokErr == nil && apiToken != "" {
+			if cfErr := s.cf.RemoveDomain(ctx, *d.CloudflareZoneID, *d.CloudflareDNSRecordID, apiToken); cfErr != nil {
+				s.logger.Error("cloudflare remove domain failed", "domain", d.Domain, "err", cfErr)
+			}
+		} else if tokErr != nil {
+			s.logger.Warn("cloudflare remove: token unresolvable, skipping CF API call",
+				"domain", d.Domain, "err", tokErr)
 		}
 	}
 
@@ -235,7 +348,20 @@ func (s *Service) Remove(ctx context.Context, storeID, id uuid.UUID) error {
 		}
 	}
 
-	return s.repo.Delete(ctx, s.db, storeID, id)
+	if err := s.repo.Delete(ctx, s.db, storeID, id); err != nil {
+		return err
+	}
+
+	// Best-effort destroy of the CF token secret AFTER the row is gone
+	// so a Destroy failure doesn't leave the merchant with a row that
+	// has no resolvable token. Idempotent on the GSM side.
+	if d.DNSMethod == DNSMethodCloudflare && s.secrets != nil && d.CFAPITokenRef != "" {
+		if destroyErr := s.secrets.Destroy(ctx, d.CFAPITokenRef); destroyErr != nil {
+			s.logger.Warn("cloudflare token: destroy after row delete failed",
+				"domain", d.Domain, "err", destroyErr)
+		}
+	}
+	return nil
 }
 
 // Verify checks domain DNS status. For manual domains, performs a DNS
@@ -333,7 +459,12 @@ func (s *Service) markVerified(ctx context.Context, d *CustomDomain) (*CustomDom
 	// Kick off k8s provisioning: Certificate + Gateway + VirtualService.
 	// Best-effort — failures log but don't fail the verify since DNS is
 	// already confirmed. A background poller can retry later.
-	if s.provisioner != nil && d.DNSMethod == DNSMethodManual {
+	//
+	// Both DNS methods need provisioning: cert-manager + Istio is what
+	// actually serves HTTPS for the merchant's domain. Cloudflare-auto
+	// only handled the CNAME — TLS still terminates at our ingress, so
+	// this Provision call must run regardless of how DNS got there.
+	if s.provisioner != nil {
 		if res, err := s.provisioner.Provision(ctx, d.Domain); err != nil {
 			s.logger.Error("k8sprov provision failed", "domain", d.Domain, "err", err)
 			msg := "SSL provisioning error: " + err.Error()
@@ -360,7 +491,17 @@ func (s *Service) verifyCloudflare(ctx context.Context, d *CustomDomain) (*Custo
 		return nil, apperrors.ValidationFailed("domain", "domain has not been registered with Cloudflare yet")
 	}
 
-	verified, sslActive, cfErr := s.cf.VerifyDomain(ctx, *d.CloudflareZoneID, d.Domain, d.CFAPITokenEncrypted)
+	apiToken, tokErr := s.resolveToken(ctx, d.CFAPITokenRef)
+	if tokErr != nil {
+		errMsg := "Could not retrieve the saved Cloudflare token. Re-add the domain with a fresh token."
+		d.Status = DomainStatusError
+		d.ErrorMessage = &errMsg
+		d.UpdatedAt = time.Now()
+		_ = s.repo.Update(ctx, s.db, d)
+		return d, nil
+	}
+
+	verified, sslActive, cfErr := s.cf.VerifyDomain(ctx, *d.CloudflareZoneID, d.Domain, apiToken)
 	if cfErr != nil {
 		errMsg := cfErr.Error()
 		d.Status = DomainStatusError
@@ -370,22 +511,56 @@ func (s *Service) verifyCloudflare(ctx context.Context, d *CustomDomain) (*Custo
 		return d, nil
 	}
 
-	now := time.Now()
+	// Once Cloudflare confirms the CNAME exists, hand off to markVerified
+	// so the Cloudflare-auto path issues the cert + Gateway exactly the
+	// same way the manual path does. SSL termination always happens at
+	// our ingress, regardless of who created the DNS record.
 	if verified {
-		d.Status = DomainStatusActive
-		d.VerifiedAt = &now
-		d.ErrorMessage = nil
-	} else {
-		d.Status = DomainStatusVerifying
+		out, err := s.markVerified(ctx, d)
+		if err != nil {
+			return nil, err
+		}
+		if sslActive {
+			out.SSLStatus = SSLStatusActive
+			_ = s.repo.Update(ctx, s.db, out)
+		}
+		return out, nil
 	}
 
+	now := time.Now()
+	d.Status = DomainStatusVerifying
 	if sslActive {
 		d.SSLStatus = SSLStatusActive
 	}
-
 	d.UpdatedAt = now
 	if err := s.repo.Update(ctx, s.db, d); err != nil {
 		return nil, err
 	}
 	return d, nil
+}
+
+// resolveToken returns the plaintext Cloudflare API token for a domain.
+// Routes the reference through the SecretStore when one is configured,
+// or treats the value as a legacy inline token when no store is wired
+// (dev mode, or rows created before this refactor). Empty refs are
+// rejected with a clear error so callers don't silently call CF with
+// an empty bearer header.
+func (s *Service) resolveToken(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		return "", errors.New("custom domains: no Cloudflare token on file")
+	}
+	if s.secrets == nil {
+		// Pre-refactor rows held the plaintext token here. Pass it
+		// through unchanged so we don't break boot for dev setups
+		// that don't wire a secret store.
+		return ref, nil
+	}
+	plain, err := s.secrets.Get(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	if plain == "" {
+		return "", errors.New("custom domains: stored token is empty")
+	}
+	return plain, nil
 }

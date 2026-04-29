@@ -324,6 +324,36 @@ export async function listDomains(
   return body.data ?? [];
 }
 
+export interface ValidateDomainResult {
+  valid: boolean;
+  canonical?: string;
+  error?: string;
+}
+
+// Pre-flight existence check used by the Domains form. The backend
+// always returns HTTP 200 with a discriminated body (valid + reason)
+// so we don't need to pattern-match status codes here.
+export async function validateDomain(
+  storeId: string,
+  domain: string,
+  session: SessionHeaders,
+): Promise<ValidateDomainResult> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/domains/validate`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ domain }),
+    },
+  );
+  if (!res.ok) {
+    return { valid: false, error: "Couldn't reach validation service." };
+  }
+  const body = (await res.json()) as ValidateDomainResult;
+  return body;
+}
+
 export async function addDomain(
   storeId: string,
   body: { domain: string; dns_method: DNSMethod; cf_api_token?: string },

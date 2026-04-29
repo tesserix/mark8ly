@@ -21,6 +21,7 @@ import {
   removeDomain as removeDomainApi,
   verifyDomain as verifyDomainApi,
   refreshDomainStatus as refreshDomainStatusApi,
+  validateDomain as validateDomainApi,
   createCheckoutSession as createCheckoutApi,
   createPortalSession as createPortalApi,
   markNotificationRead as markReadApi,
@@ -166,6 +167,24 @@ export async function deleteAccountAction(
 }
 
 // ─── S2: Custom Domains ──────────────────────────────────────────────
+
+// validateDomainAction runs the debounced existence check the Add form
+// fires while the merchant types. Returns { valid, canonical, error }
+// — never throws on a known-bad input. The same check runs again
+// inside addDomainApi server-side so this is a UX optimisation, not
+// a security boundary.
+export async function validateDomainAction(
+  raw: string,
+): Promise<{ valid: boolean; canonical?: string; error?: string }> {
+  const { userId, tenantId, email, storeId } = await getSession();
+  if (!userId || !tenantId || !storeId) {
+    return { valid: false, error: "Session expired. Please sign in again." };
+  }
+  if (!raw.trim()) {
+    return { valid: false, error: "Domain is required." };
+  }
+  return validateDomainApi(storeId, raw.trim(), { userId, tenantId, email });
+}
 
 export async function addDomainAction(
   domain: string,

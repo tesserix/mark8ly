@@ -641,6 +641,15 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				domains.GET("",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.DomainsViewRole),
 					deps.DomainsHandler.List)
+				// Pre-flight existence check used by the Add form. Mounted
+				// before POST "" so the merchant can probe a domain
+				// without write permission. Gated by the View role since
+				// the response leaks no tenant data — only "is this
+				// FQDN syntactically valid + does the apex have NS
+				// records?" — but we still want a tenant member check.
+				domains.POST("/validate",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.DomainsViewRole),
+					deps.DomainsHandler.Validate)
 				domains.POST("",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.DomainsEditRole),
 					deps.DomainsHandler.Add)

@@ -88,6 +88,52 @@ type AddDomainRequest struct {
 	CFAPIToken string `json:"cf_api_token"`
 }
 
+type ValidateDomainRequest struct {
+	Domain string `json:"domain" binding:"required"`
+}
+
+type ValidateDomainResponse struct {
+	Valid     bool   `json:"valid"`
+	Canonical string `json:"canonical,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// Validate handles POST /admin/.../domains/validate. Used by the UI as
+// a debounced pre-flight before the merchant clicks "Add domain", and
+// re-run server-side inside Add as defense-in-depth. Always returns
+// HTTP 200 with a discriminated body so the client doesn't have to
+// pattern-match on status codes.
+func (h *DomainsHandler) Validate(c *gin.Context) {
+	var req ValidateDomainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, ValidateDomainResponse{
+			Valid: false,
+			Error: "Domain is required.",
+		})
+		return
+	}
+	canonical, err := h.svc.ValidateDomain(c.Request.Context(), req.Domain)
+	if err != nil {
+		// Strip the sentinel prefix so the merchant sees the friendly
+		// half of the message ("xyz doesn't appear to be a registered
+		// domain.") without the engineering label.
+		msg := err.Error()
+		const prefix = "invalid domain: "
+		if len(msg) > len(prefix) && msg[:len(prefix)] == prefix {
+			msg = msg[len(prefix):]
+		}
+		c.JSON(http.StatusOK, ValidateDomainResponse{
+			Valid: false,
+			Error: msg,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, ValidateDomainResponse{
+		Valid:     true,
+		Canonical: canonical,
+	})
+}
+
 func (h *DomainsHandler) Add(c *gin.Context) {
 	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
@@ -120,12 +166,12 @@ func (h *DomainsHandler) Add(c *gin.Context) {
 	}
 
 	d, err := h.svc.Add(c.Request.Context(), domain.AddInput{
-		TenantID:            tenantID,
-		StoreID:             storeID,
-		StoreSlug:           storeSlug,
-		Domain:              req.Domain,
-		DNSMethod:           method,
-		CFAPITokenEncrypted: req.CFAPIToken,
+		TenantID:   tenantID,
+		StoreID:    storeID,
+		StoreSlug:  storeSlug,
+		Domain:     req.Domain,
+		DNSMethod:  method,
+		CFAPIToken: req.CFAPIToken,
 	})
 	if err != nil {
 		RespondErr(c, err, h.logger)

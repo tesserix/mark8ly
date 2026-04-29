@@ -47,7 +47,13 @@ type CustomDomain struct {
 	Status                DomainStatus `gorm:"column:status;type:varchar(20);not null;default:pending"`
 	CloudflareZoneID      *string      `gorm:"column:cloudflare_zone_id;type:varchar(100)"`
 	CloudflareDNSRecordID *string      `gorm:"column:cloudflare_dns_record_id;type:varchar(100)"`
-	CFAPITokenEncrypted   string       `gorm:"column:cf_api_token_encrypted;type:text;default:''"`
+	// CFAPITokenRef is an opaque reference to the merchant's Cloudflare
+	// API token in GCP Secret Manager (e.g. "gsm://projects/.../secrets/...").
+	// Resolved at use time via the SecretStore. The legacy column name
+	// (cf_api_token_encrypted) is preserved so we don't need a schema
+	// migration; HybridStore.Get accepts gsm://, aes:/noop: and bare
+	// plaintext, so any pre-existing rows keep working.
+	CFAPITokenRef         string       `gorm:"column:cf_api_token_encrypted;type:text;default:''"`
 	SSLStatus             SSLStatus    `gorm:"column:ssl_status;type:varchar(20);not null;default:pending"`
 	VerifiedAt            *time.Time   `gorm:"column:verified_at"`
 	ErrorMessage          *string      `gorm:"column:error_message;type:text"`

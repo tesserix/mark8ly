@@ -1,9 +1,20 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { Globe, Plus, RefreshCw, Trash2, Lock, Copy, Check, AlertCircle } from "lucide-react";
+import Link from "next/link";
+import {
+  Globe,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Lock,
+  Copy,
+  Check,
+  AlertCircle,
+  Info,
+} from "lucide-react";
 
 import type { CustomDomain, DNSMethod } from "@/lib/api/settings-tier2-api";
 import {
@@ -11,6 +22,7 @@ import {
   removeDomainAction,
   verifyDomainAction,
   refreshDomainStatusAction,
+  validateDomainAction,
 } from "@/app/(admin)/settings/actions";
 import { useToast } from "@/components/feedback/Toaster";
 
@@ -48,14 +60,51 @@ export function DomainsSettingsClient({
 
 // ─── Add Domain Form ──────────────────────────────────────────────────
 
+type DomainCheck =
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "valid"; canonical: string }
+  | { status: "invalid"; message: string };
+
 function AddDomainForm() {
   const [domain, setDomain] = useState("");
   const [method, setMethod] = useState<DNSMethod>("manual");
   const [cfToken, setCfToken] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [check, setCheck] = useState<DomainCheck>({ status: "idle" });
+  const checkSeq = useRef(0);
   const router = useRouter();
   const { toast } = useToast();
+
+  // Debounced existence check. Each keystroke kicks the timer; only the
+  // most recent request is allowed to update state (we discard stale
+  // responses by checking the seq counter on resolve).
+  useEffect(() => {
+    const value = domain.trim();
+    if (!value) {
+      setCheck({ status: "idle" });
+      return;
+    }
+    setCheck({ status: "checking" });
+    const seq = ++checkSeq.current;
+    const t = window.setTimeout(async () => {
+      const result = await validateDomainAction(value);
+      if (seq !== checkSeq.current) return;
+      if (result.valid) {
+        setCheck({
+          status: "valid",
+          canonical: result.canonical ?? value,
+        });
+      } else {
+        setCheck({
+          status: "invalid",
+          message: result.error ?? "Couldn't validate this domain.",
+        });
+      }
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [domain]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,17 +123,20 @@ function AddDomainForm() {
           "Domain added",
           method === "manual"
             ? "Follow the CNAME instructions, then click Verify."
-            : "We're provisioning via Cloudflare — this can take a minute.",
+            : "API token securely stored. We're provisioning the DNS record on Cloudflare — this can take a minute.",
         );
         setDomain("");
         setCfToken("");
+        setCheck({ status: "idle" });
         router.refresh();
       }
     });
   }
 
+  // Submit is gated on the validation result. The same gate runs again
+  // server-side (defense in depth) so a tampered button doesn't bypass.
   const canSubmit =
-    domain.trim() &&
+    check.status === "valid" &&
     (method === "manual" || cfToken.trim()) &&
     !isPending;
 
@@ -97,7 +149,14 @@ function AddDomainForm() {
             Add a custom domain
           </h2>
           <p className="text-sm text-foreground-secondary">
-            Connect your own domain to your storefront. Your customers will see your brand, not ours.
+            Connect your own domain to your storefront. Your customers will
+            see your brand, not ours.{" "}
+            <Link
+              href="/support/help/domains"
+              className="text-[color:var(--moss-700)] underline-offset-2 hover:underline"
+            >
+              See the setup guide →
+            </Link>
           </p>
         </div>
       </div>
@@ -139,13 +198,24 @@ function AddDomainForm() {
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
             disabled={isPending}
-            className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={check.status === "invalid"}
+            aria-describedby="domain-check-status"
+            className={`h-10 w-full rounded-md border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:outline-none focus:ring-1 disabled:opacity-50 ${
+              check.status === "invalid"
+                ? "border-[color:var(--signal)] focus:border-[color:var(--signal)] focus:ring-[color:var(--signal)]"
+                : check.status === "valid"
+                  ? "border-[color:var(--moss-700)] focus:border-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
+                  : "border-border focus:border-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
+            }`}
             placeholder="shop.example.com"
           />
+          <DomainCheckStatus check={check} />
         </div>
 
         {method === "cloudflare" && (
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label htmlFor="cf-token" className="text-sm font-medium text-foreground">
               Cloudflare API token
             </label>
@@ -155,9 +225,12 @@ function AddDomainForm() {
               value={cfToken}
               onChange={(e) => setCfToken(e.target.value)}
               disabled={isPending}
+              autoComplete="off"
+              spellCheck={false}
               className="h-10 w-full rounded-md border border-border bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)] disabled:opacity-50"
               placeholder="Your Cloudflare API token"
             />
+            <CloudflareTokenHelp />
           </div>
         )}
 
@@ -171,6 +244,79 @@ function AddDomainForm() {
         </button>
       </form>
     </section>
+  );
+}
+
+// ─── Domain check status pill ────────────────────────────────────────
+function DomainCheckStatus({ check }: { check: DomainCheck }) {
+  if (check.status === "idle") {
+    return (
+      <p
+        id="domain-check-status"
+        className="min-h-[1rem] text-xs text-foreground-tertiary"
+      >
+        We&apos;ll verify the domain exists before letting you continue.
+      </p>
+    );
+  }
+  if (check.status === "checking") {
+    return (
+      <p
+        id="domain-check-status"
+        className="flex items-center gap-1.5 text-xs text-foreground-secondary"
+      >
+        <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
+        Checking that this domain is registered…
+      </p>
+    );
+  }
+  if (check.status === "valid") {
+    return (
+      <p
+        id="domain-check-status"
+        role="status"
+        className="flex items-center gap-1.5 text-xs text-[color:var(--moss-700)]"
+      >
+        <Check className="h-3 w-3" aria-hidden="true" />
+        Looks good — {check.canonical} is a registered domain.
+      </p>
+    );
+  }
+  return (
+    <p
+      id="domain-check-status"
+      role="alert"
+      className="flex items-start gap-1.5 text-xs text-[color:var(--signal)]"
+    >
+      <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+      <span>{check.message}</span>
+    </p>
+  );
+}
+
+// ─── Cloudflare token — short prompt + Help Center link ───────────────
+//
+// The full token-creation guide (required scopes, step-by-step, security
+// notes) lives in the Help Center at /support/help/domains so it can be
+// searched and linked from anywhere. Here we just show a one-liner with
+// a deep link so the merchant can read it without losing context.
+function CloudflareTokenHelp() {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-border bg-[color:var(--background-elevated)] p-3 text-xs text-foreground-secondary">
+      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <p className="leading-relaxed">
+        Token needs <strong>Zone &gt; DNS &gt; Edit</strong> +{" "}
+        <strong>Zone &gt; Zone &gt; Read</strong>, scoped to this
+        domain&apos;s zone. We store it in Google Cloud Secret Manager
+        under your tenant — never in our database or logs.{" "}
+        <Link
+          href="/support/help/domains"
+          className="font-medium text-[color:var(--moss-700)] underline-offset-2 hover:underline"
+        >
+          Read the full setup guide →
+        </Link>
+      </p>
+    </div>
   );
 }
 

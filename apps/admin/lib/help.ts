@@ -16,6 +16,12 @@ export interface HelpArticle {
   content: string;
 }
 
+export interface HelpHeading {
+  slug: string;
+  text: string;
+  level: 2 | 3;
+}
+
 const HELP_DIR = path.join(process.cwd(), "content", "help");
 
 /** Allowlisted slugs — only these can be loaded to prevent path traversal. */
@@ -140,4 +146,36 @@ export function getArticle(slug: string): HelpArticle | null {
     category: meta.category,
     content,
   };
+}
+
+/**
+ * Extract h2/h3 headings from markdown content for the on-page TOC.
+ * Skips lines inside fenced code blocks. Slug matches the renderer's id.
+ */
+export function getHeadings(content: string): HelpHeading[] {
+  const lines = content.split("\n");
+  const out: HelpHeading[] = [];
+  let inFence = false;
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (line.startsWith("```")) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const m = line.match(/^(#{2,3})\s+(.+?)\s*$/);
+    if (!m || !m[1] || !m[2]) continue;
+    const level: 2 | 3 = m[1].length === 2 ? 2 : 3;
+    const text = m[2].replace(/[*_`]/g, "").trim();
+    out.push({ slug: slugify(text), text, level });
+  }
+  return out;
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
 }

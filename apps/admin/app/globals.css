@@ -274,8 +274,13 @@
 .help-article {
   color: var(--foreground-secondary);
   font-size: var(--text-base);
-  line-height: 1.7;
-  max-width: 70ch;
+  line-height: 1.75;
+  max-width: 72ch;
+}
+
+.help-article h2,
+.help-article h3 {
+  scroll-margin-top: 6rem;
 }
 
 .help-article > * + * {

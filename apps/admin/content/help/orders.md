@@ -4,32 +4,68 @@ category: "Operations"
 order: 7
 ---
 
-## Order Lifecycle
+Every order in Mark8ly has its own detail page where you'll handle payment, fulfillment, refunds, and customer communication. This article walks through the full lifecycle.
 
-Every order in Mark8ly follows a clear lifecycle: **pending**, **confirmed**, **fulfilled**, and optionally **cancelled**. When a customer completes checkout, the order is created with pending status. Once payment is confirmed by your gateway, the status moves to confirmed automatically.
+## Order lifecycle
 
-You manage fulfillment manually from the order detail page. When you pack and ship items, mark the order as fulfilled and add tracking information. For orders with multiple items shipping separately, use partial fulfillment to track each shipment independently.
+| Status | What it means |
+| --- | --- |
+| **pending** | Checkout completed, waiting for payment confirmation. |
+| **confirmed** | Payment captured (or accepted manually). Ready to fulfill. |
+| **fulfilled** | All items shipped. Tracking has been added. |
+| **cancelled** | Order voided. Inventory optionally restored. |
 
-## Viewing Orders
+Most orders progress automatically from **pending** → **confirmed** as soon as the gateway captures the payment. Fulfillment is always manual — you control when items leave your warehouse.
 
-The Orders section shows all orders across your store with filters for status, payment status, and date range. Each row displays the order number, customer email, total amount, status, and how long ago it was placed.
+## Viewing orders
 
-Click any order to see its full detail: line items with quantities and prices, shipping and billing addresses, payment information, fulfillment history, and any notes. The order detail page is your primary workspace for managing individual orders.
+The **Orders** view lists every order across your store with filters for status, payment status, and date range. Each row shows:
 
-## Processing Payments
+- Order number
+- Customer email
+- Total amount
+- Order and payment status
+- Time since the order was placed
 
-Payment status tracks separately from order status. An order can be confirmed with payment still pending if you accept manual payment methods. The payment statuses are: **pending**, **authorized**, **paid**, **failed**, **refunded**, and **partially refunded**.
+Click any order to open its detail page — your primary workspace for managing that order. You'll find line items, addresses, payment information, fulfillment history, and notes all in one place.
 
-For card payments through Stripe or Razorpay, the payment flow is automatic. The gateway authorizes the charge during checkout and captures it when the order is confirmed. Failed payments result in an order that needs attention, either a retry from the customer or manual cancellation by you.
+## Processing payments
 
-## Refunds and Cancellations
+Payment status is tracked separately from order status, because an order can be confirmed before payment is captured (for manual payment methods). The states are:
 
-Issue refunds from the order detail page by clicking the refund action. You can refund the full amount or a partial amount. The refund is processed through the original payment gateway and typically appears on the customer's statement within five to ten business days.
+- **pending** — waiting for a charge.
+- **authorized** — funds reserved, not yet captured.
+- **paid** — funds captured and settled.
+- **failed** — gateway declined.
+- **refunded** / **partially refunded** — money returned to the customer.
 
-Cancelling an order changes its status and optionally restores inventory. If payment was already captured, you will need to issue a refund separately. Always communicate with the customer about cancellations and expected refund timelines.
+For Stripe and Razorpay, the flow is fully automatic: the gateway authorizes during checkout and captures when the order is confirmed. Failed payments produce an order that needs your attention — either a retry from the customer or a manual cancellation.
 
-## Order Notifications
+## Refunds and cancellations
 
-Mark8ly sends automatic email notifications at key points in the order lifecycle: order confirmation, shipping confirmation with tracking, and refund confirmation. These emails use your store's branding and can be previewed under notification settings.
+Refunds are issued from the order detail page. You can refund:
 
-Customers appreciate timely communication. If there is a delay in fulfillment, consider reaching out proactively rather than waiting for the customer to ask. Building trust through transparent communication leads to repeat business.
+- The **full amount**, or
+- A **partial amount** (e.g. one item out of several).
+
+Refunds process through the original gateway and typically appear on the customer's statement within 5–10 business days.
+
+**Cancelling** an order changes its status and optionally restores inventory. If payment was already captured, you'll need to issue a refund separately — cancellation does not automatically return funds.
+
+> Always communicate with the customer about cancellations and expected refund timelines. Silence here is the most common cause of support escalations.
+
+## Partial fulfillment
+
+For orders shipping in multiple packages — for example, when one item is on backorder — use **partial fulfillment**. Each fulfillment gets its own tracking number and triggers a separate shipping email so customers know exactly what's on the way.
+
+## Notifications
+
+Mark8ly sends automatic emails at key points in the lifecycle:
+
+- Order confirmation
+- Shipping confirmation (with tracking)
+- Refund confirmation
+
+These emails use your store's branding and can be previewed under notification settings.
+
+> If there's a delay in fulfillment, reach out proactively rather than waiting for the customer to ask. Transparent communication is the cheapest customer-retention tool you have.

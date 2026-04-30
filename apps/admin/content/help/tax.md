@@ -4,32 +4,51 @@ category: "Store Setup"
 order: 5
 ---
 
-## Tax Rules Overview
+Mark8ly calculates tax automatically at checkout based on the rules you configure under **Settings → Tax**. Rules are defined per region and applied as either **inclusive** or **exclusive** of the displayed product price.
 
-Mark8ly lets you configure tax rules to automatically calculate the correct tax amount at checkout. Navigate to **Settings > Tax** to set up your tax configuration. Tax rules are defined per region and can be applied as inclusive or exclusive of the displayed product price.
+> Tax compliance is ultimately your responsibility as the merchant. Mark8ly provides the calculation tools and reporting data — consult a tax professional to confirm your configuration meets local requirements.
 
-Understanding whether your jurisdiction requires tax-inclusive or tax-exclusive pricing is important. In many European countries, displayed prices must include VAT. In the United States, sales tax is typically added at checkout on top of the listed price.
+## Inclusive vs. exclusive pricing
 
-## Creating Tax Rates
+The right model depends on your jurisdiction:
 
-To create a tax rate, specify the region (country or state), the rate percentage, and whether it applies to shipping charges in addition to products. You can create multiple rates for different regions to handle varying tax jurisdictions.
+| Model | How it works | Common in |
+| --- | --- | --- |
+| **Tax-inclusive** | Listed price already includes the tax. The tax is computed backward from the displayed amount. | EU (VAT), UK, Australia |
+| **Tax-exclusive** | Tax is added on top of the listed price at checkout. | United States, Canada |
 
-For example, if you sell in both California and New York, you would create separate rates reflecting each state's sales tax. Mark8ly applies the correct rate based on the customer's shipping address at checkout.
+**Worked example.** A product listed at $100 with a 20% rate:
 
-## Tax-Inclusive vs Tax-Exclusive Pricing
+- **Inclusive:** customer pays $100. Base price = $83.33, tax = $16.67.
+- **Exclusive:** customer pays $120. Base price = $100, tax = $20.
 
-When tax-inclusive pricing is enabled for a region, the tax amount is calculated backward from your listed price. A product priced at one hundred dollars with a twenty percent inclusive tax rate means the base price is eighty-three dollars and thirty-three cents, with sixteen dollars and sixty-seven cents going to tax.
+Choose the model that matches your local regulations and customer expectations.
 
-Tax-exclusive pricing adds the tax on top of your listed price at checkout. The product shows as one hundred dollars and the customer pays one hundred twenty dollars after tax is applied. Choose the model that matches your local regulations and customer expectations.
+## Creating tax rates
 
-## Tax Exemptions
+For each tax rate, you'll specify:
 
-Some products or customer types may be exempt from certain taxes. Mark8ly allows you to mark specific products as tax-exempt if they fall into categories like groceries, medical supplies, or educational materials that your jurisdiction exempts.
+- **Region** — country or state.
+- **Rate** — the percentage.
+- **Applies to shipping** — yes or no, depending on local rules.
 
-For business-to-business sales where the buyer provides a valid tax ID, you can apply a tax exemption at the customer level. Document your exemption policies clearly and keep records of any tax IDs collected for compliance purposes.
+You can create multiple rates for different jurisdictions. For example, a US merchant might create separate rates for each state where they have a sales-tax obligation. Mark8ly applies the correct rate at checkout based on the customer's shipping address.
 
-## Reporting and Compliance
+## Tax exemptions
 
-Mark8ly records the tax amount on every order, broken down by rate and region. Export your order data periodically to reconcile with your tax filings. The order export includes all the fields you need: order total, tax amount, tax rate applied, and customer shipping address.
+Some products and customers can be exempt from tax.
 
-Tax compliance is ultimately your responsibility as the merchant. Mark8ly provides the calculation tools and data, but consult with a tax professional to ensure your configuration meets local requirements.
+- **Product-level** — mark specific products as tax-exempt if they fall into categories your jurisdiction exempts (e.g. groceries, medical supplies, educational materials).
+- **Customer-level** — for B2B sales where the buyer provides a valid tax ID, apply a tax exemption to that customer.
+
+Document your exemption policy clearly and keep records of any tax IDs you collect for compliance purposes.
+
+## Reporting and compliance
+
+Every order records its tax breakdown by rate and region. To file your returns:
+
+1. Open **Orders** and filter by the period you're reporting.
+2. Export the order list as CSV.
+3. Reconcile the tax columns (`tax_amount`, `tax_rate`, `region`) against your filing.
+
+The export includes everything you'll typically need: order total, tax amount, rate applied, and customer shipping address.

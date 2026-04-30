@@ -4,32 +4,54 @@ category: "Store Setup"
 order: 4
 ---
 
-## Shipping Zones
+Shipping in Mark8ly is built around **zones** (geographic regions) and **rates** (what you charge customers in each zone). Configure both under **Settings → Shipping**.
 
-Shipping zones let you define different rates for different geographic regions. Navigate to **Settings > Shipping** to create and manage your zones. A typical setup might include a domestic zone for your home country and an international zone for everywhere else.
+## Shipping zones
 
-Each zone contains one or more shipping rates. You can name these rates anything that makes sense to your customers, such as "Standard Shipping," "Express Delivery," or "Economy International."
+A zone is a group of countries or regions that share the same shipping options. A typical setup is:
 
-## Rate Types
+- **Domestic** — your home country.
+- **International** — everywhere else, or split into specific regions (EU, North America, Asia-Pacific) if you want different rates.
 
-Mark8ly supports three rate structures. **Flat rate** charges a fixed amount regardless of cart contents and is the simplest to set up. **Weight-based** rates calculate shipping cost based on the total weight of items in the cart, using tiers you define. **Free shipping** can be offered unconditionally or as a threshold, such as free shipping on orders over a certain amount.
+Each zone holds one or more rates. You can name rates anything that makes sense to your customers — `Standard Shipping`, `Express Delivery`, `Economy International`, and so on.
 
-You can combine rate types within a single zone. For example, offer free shipping on orders above fifty dollars and a flat rate for smaller orders in the same domestic zone.
+## Rate types
 
-## Product Weights
+Mark8ly supports three rate structures, and you can mix them within a single zone.
 
-For weight-based shipping to work accurately, each product variant needs a weight value. Enter weights in grams when creating or editing products. If a product does not have a weight, Mark8ly excludes it from weight calculations, which could result in undercharging for shipping.
+| Type | When to use |
+| --- | --- |
+| **Flat rate** | Simplest setup — one fixed amount regardless of cart contents. |
+| **Weight-based** | Charge based on the total weight of items in the cart, using tiers you define. |
+| **Free shipping** | Always free, or unlocked when the cart hits a threshold (e.g. orders over $50). |
 
-Consistent weight data also helps with fulfillment accuracy. When packing orders, the expected weight serves as a quick sanity check that the right items are in the box.
+A common combination: **free shipping over $50** plus a **flat rate for smaller orders**, both in the same domestic zone.
 
-## Fulfillment Workflow
+## Product weights
 
-When an order is placed, it starts with a fulfillment status of "unfulfilled." As you pack and ship items, update the fulfillment status to reflect progress. Mark8ly supports partial fulfillment for orders where some items ship before others.
+For weight-based shipping to work, each variant needs a `weight` value. Enter weights in **grams**.
 
-Adding a tracking number to a fulfillment triggers a notification email to the customer with their tracking link. Customers appreciate proactive shipping updates, and providing tracking reduces support inquiries about order status.
+> If a product has no weight, Mark8ly excludes it from the weight calculation — which can mean undercharging customers. Audit your catalog for missing weights before enabling weight-based rates.
 
-## International Shipping Considerations
+Accurate weights also help during fulfillment: the expected weight is a quick sanity check that the right items are in the box.
 
-Selling internationally introduces customs, duties, and longer delivery times. Clearly communicate expected delivery windows on your storefront and in confirmation emails. Consider whether you want to offer delivered-duty-paid pricing or let customers handle import charges.
+## Fulfillment workflow
 
-Mark8ly does not currently calculate duties and taxes for international shipments, so factor these costs into your pricing strategy or document them clearly in your shipping policy page.
+When an order is placed, it starts with a fulfillment status of **unfulfilled**. As you pack and ship, update the order to reflect progress.
+
+1. Pack the items.
+2. Click **Fulfill** on the order detail page.
+3. Add a tracking number and select the carrier.
+4. Mark8ly emails the customer a tracking link automatically.
+
+Mark8ly supports **partial fulfillment** for orders where some items ship before others — useful for backordered SKUs or split-warehouse shipping.
+
+## International shipping
+
+Selling internationally adds customs, duties, and longer delivery times to the equation.
+
+- Communicate expected delivery windows on your storefront and in confirmation emails.
+- Decide upfront whether to offer **delivered-duty-paid** pricing or let customers handle import charges.
+- Document your policy clearly on a `Shipping` page.
+
+> Mark8ly doesn't currently calculate duties and taxes for international shipments. Factor these costs into your pricing strategy or document them on your shipping policy page.

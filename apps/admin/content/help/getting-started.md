@@ -4,36 +4,79 @@ category: "Getting Started"
 order: 1
 ---
 
-## Welcome to Mark8ly
+Welcome to Mark8ly. This guide walks you through everything you need to launch your first store — from configuring the basics to placing a test order — in under an hour.
 
-Mark8ly is a modern commerce platform built for independent merchants and growing brands. Whether you are launching your first online store or migrating from another platform, this guide walks you through the essentials so you can start selling quickly.
+Your admin dashboard is the control center for products, orders, customers, payments, and store configuration. The sidebar on the left is your primary navigation; almost every task is one or two clicks away.
 
-Your admin dashboard is the control center for everything: products, orders, customers, payments, and store configuration. Take a few minutes to familiarize yourself with the sidebar navigation and you will find that most tasks are only a click or two away.
+## 1. Confirm your store details
 
-## Setting Up Your Store
+Go to **Settings → Store Settings** and check that the following are correct:
 
-Start by visiting **Settings > Store Settings** to confirm your business name, default currency, and country. These details appear on invoices, emails, and your storefront, so accuracy matters from the beginning.
+- Business name
+- Default currency
+- Country and address
+- Contact email
 
-Next, head to **Settings > Storefront** to choose a theme and customize your store's appearance. Mark8ly storefronts are designed to look polished out of the box, but you can adjust colors, typography, and layout to match your brand identity.
+These values appear on invoices, transactional emails, and your storefront, so accuracy matters from day one.
 
-If you already have a custom domain, connect it under **Settings > Domains**. Otherwise, your store is accessible at `yourstore.mark8ly.com` immediately.
+## 2. Customize your storefront
 
-## Adding Your First Product
+Open **Settings → Storefront** to choose a theme and adjust your store's look.
 
-Navigate to **Products** in the sidebar and click **Add product**. Fill in a title, description, and at least one variant with a price. Upload a product image to make your listing compelling. Mark8ly supports multiple variants per product, so you can offer different sizes, colors, or configurations from a single product page.
+- Pick a primary color and heading font that match your brand.
+- Upload a logo (SVG or high-resolution PNG) and a favicon.
+- Preview changes in real time before publishing.
 
-Once your product is saved as a draft, preview it on your storefront to see how customers will experience it. When you are satisfied, change the status to **Active** to make it publicly visible.
+> Mark8ly storefronts are designed to look polished out of the box — you only need to change what you actually want to. Don't over-customize on day one.
 
-## Configuring Payments and Shipping
+## 3. Connect a domain (optional)
 
-Before customers can complete a purchase, you need at least one payment gateway configured. Visit **Settings > Payments** to connect Stripe or Razorpay with your API credentials. Mark8ly handles the checkout flow and securely processes transactions through your chosen provider.
+Your store is live immediately at `yourstore.mark8ly.com`. To use your own domain, go to **Settings → Domains** and follow the setup flow.
 
-Shipping rates are configured under **Settings > Shipping**. You can set flat rates, weight-based rates, or free shipping thresholds depending on your business model. Mark8ly supports multiple shipping zones so you can charge different rates for domestic and international orders.
+See the [Custom Domains](/support/help/domains) article for the full DNS guide.
 
-## Placing a Test Order
+## 4. Add your first product
 
-Before going live, place a test order to verify the full checkout experience. Use your payment provider's test mode credentials to simulate a purchase without being charged. Walk through the flow as a customer would: add a product to the cart, enter shipping details, and complete payment. This confirms that your store, products, payments, and email notifications are all working correctly.
+Navigate to **Products** and click **Add product**. At minimum, every listing needs:
 
-## Next Steps
+- A clear, descriptive title
+- One or more variants with a price
+- At least one product image
 
-Once your test order succeeds, your store is ready for real customers. Consider setting up tax rules under **Settings > Tax**, inviting team members under **Settings > Team**, and exploring the marketing tools to drive traffic to your new storefront.
+Save the product as a **Draft** while you build it out, then switch the status to **Active** when it's ready to be visible on your storefront.
+
+## 5. Set up payments
+
+Customers can't check out until you've connected a payment gateway. Open **Settings → Payments** and configure one or both:
+
+| Gateway | Best for | Methods |
+| --- | --- | --- |
+| Stripe | Most countries | Cards, Apple Pay, Google Pay |
+| Razorpay | India | UPI, netbanking, wallets, cards |
+
+Use **test mode** keys during setup so you can place a fake order before going live.
+
+## 6. Configure shipping
+
+Open **Settings → Shipping** to set up shipping zones and rates. A typical first setup is one domestic zone and one international zone, each with a flat rate or a free-shipping threshold.
+
+## 7. Place a test order
+
+Before flipping the switch on real traffic, place a test order from your storefront using your gateway's test card credentials. Walk through the full flow:
+
+1. Add a product to the cart.
+2. Enter shipping details.
+3. Complete payment in test mode.
+4. Confirm the order, confirmation email, and admin notification all appear correctly.
+
+This catches misconfigured tax, shipping, or payment settings before a real customer hits them.
+
+## Next steps
+
+Once your test order succeeds, your store is ready for real customers. From here, you might want to:
+
+- Set up tax rules under **Settings → Tax**.
+- Invite teammates under **Settings → Team**.
+- Explore **Marketing** for coupons, campaigns, and gift cards.
+
+Need help? Open a ticket under **Support → Tickets** and our team will get back to you within one business day.

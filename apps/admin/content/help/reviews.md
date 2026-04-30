@@ -4,26 +4,44 @@ category: "Operations"
 order: 9
 ---
 
-## Review System Overview
+Reviews build trust with potential customers and give you direct feedback on your products. Mark8ly's built-in review system shows verified-purchase ratings and reviews on each product page, contributing to an overall product score.
 
-Product reviews build trust with potential customers and provide valuable feedback about your products. Mark8ly includes a built-in review system that lets verified purchasers rate products and write reviews visible on your storefront.
+> Only customers who have purchased the product can leave a review. This sharply reduces spam and fake reviews compared to open review systems.
 
-Reviews appear on individual product pages and contribute to an overall rating score. Customers can rate products on a one-to-five star scale and optionally add a written review. Only customers who have purchased the product can leave a review, reducing spam and fake reviews.
+## How it works
 
-## Moderating Reviews
+- Customers rate products on a **1–5 star** scale and can optionally add a written review.
+- Reviews appear on individual product pages and feed into the overall product rating.
+- All reviews go through moderation before they're visible on your storefront.
 
-All reviews are submitted for moderation before appearing on your storefront. Navigate to **Customers > Reviews** to see pending reviews. You can approve, reject, or flag reviews individually.
+## Moderating reviews
 
-Approve reviews that are genuine and relevant, even if they are critical. Negative reviews add authenticity and help customers make informed decisions. Only reject reviews that contain spam, offensive content, or are clearly fraudulent. Responding constructively to negative reviews shows other customers that you care about feedback.
+Open **Customers → Reviews** to see pending reviews. For each one you can:
 
-## Responding to Reviews
+- **Approve** — publish to the storefront.
+- **Reject** — keep it hidden.
+- **Flag** — mark for follow-up review.
 
-You can add a public response to any review from the review moderation page. Use this feature to thank customers for positive feedback or address concerns raised in negative reviews. Keep responses professional and solution-oriented.
+Approve reviews that are genuine and relevant — even if they're critical. Negative reviews add authenticity and help customers make informed decisions.
 
-A thoughtful response to a negative review often does more for your reputation than a dozen five-star ratings. Acknowledge the issue, explain what you are doing to address it, and invite the customer to reach out directly for resolution.
+> Only reject reviews that contain spam, offensive content, or are clearly fraudulent. Suppressing all negative feedback erodes trust and is usually obvious to customers.
 
-## Review Analytics
+## Responding to reviews
 
-The reviews dashboard shows your average rating, rating distribution, and review volume over time. Use these metrics to identify products that consistently receive low ratings, which may indicate quality issues, misleading descriptions, or sizing problems.
+You can post a public response to any review from the moderation page. Use this to:
 
-Products with many reviews and high ratings can be featured prominently in your marketing and storefront layout. Social proof is one of the most effective conversion drivers in ecommerce.
+- Thank customers for positive feedback
+- Address concerns raised in negative reviews
+- Invite the customer to reach out for resolution
+
+A thoughtful, solution-oriented reply to a negative review often does more for your reputation than a dozen five-star ratings. Acknowledge the issue, explain what you're doing about it, and stay professional.
+
+## Review analytics
+
+The reviews dashboard surfaces:
+
+- **Average rating** across your catalog
+- **Rating distribution** (how many 5-stars, 4-stars, etc.)
+- **Review volume** over time
+
+Use these to spot products that consistently score low — usually a signal of quality issues, misleading descriptions, or sizing problems. Conversely, products with many reviews and high ratings are strong candidates to feature in your marketing and storefront layout. Social proof is one of the most effective conversion drivers in ecommerce.

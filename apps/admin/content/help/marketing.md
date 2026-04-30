@@ -4,32 +4,63 @@ category: "Marketing"
 order: 10
 ---
 
+Mark8ly's marketing tools live under the **Marketing** sidebar section. They cover campaigns, discount codes, gift cards, loyalty programs, and customer segments — everything you need to drive traffic and grow customer lifetime value.
+
 ## Campaigns
 
-Mark8ly's campaign system lets you create targeted marketing initiatives to drive traffic and sales. Navigate to **Marketing > Campaigns** to create and manage your campaigns. Each campaign has a name, date range, and associated promotional content.
+A **campaign** is a container for related marketing activities so you can track their combined performance.
 
-Campaigns provide a container for organizing related marketing activities. For example, a "Summer Sale" campaign might include discount coupons, a gift card promotion, and email marketing, all tracked under a single campaign for unified performance reporting.
+To create one:
 
-## Coupons and Discounts
+1. Open **Marketing → Campaigns**.
+2. Click **New campaign**.
+3. Set a name, date range, and any associated promotional content.
 
-Create discount codes under **Marketing > Coupons**. Mark8ly supports percentage discounts, fixed-amount discounts, and free shipping codes. Each coupon can have usage limits, expiration dates, minimum order requirements, and restrictions to specific products or categories.
+For example, a "Summer Sale" campaign might include several discount coupons, a gift-card promotion, and email marketing — all tracked together for unified reporting.
 
-Share coupon codes through your marketing channels: email newsletters, social media, packaging inserts, or influencer partnerships. Track redemption rates and revenue impact from the coupon analytics view to understand which promotions drive the most value.
+## Coupons and discounts
 
-## Gift Cards
+Create discount codes under **Marketing → Coupons**. Mark8ly supports:
 
-Gift cards are available under **Marketing > Gift Cards**. You can issue gift cards with custom amounts and optional expiration dates. Customers redeem gift cards during checkout by entering the gift card code.
+- **Percentage discounts** — e.g. 15% off
+- **Fixed-amount discounts** — e.g. $10 off
+- **Free-shipping codes**
 
-Gift cards are particularly effective during holidays and gifting seasons. They guarantee revenue upfront and often bring new customers to your store. Consider offering gift cards prominently on your storefront during peak gifting periods.
+Every coupon can have:
 
-## Loyalty Programs
+- Usage limits (per code or per customer)
+- Expiration dates
+- Minimum order requirements
+- Restrictions to specific products or categories
 
-The loyalty feature under **Marketing > Loyalty** lets you reward repeat customers with points for purchases. Define how many points customers earn per dollar spent and what rewards they can redeem points for, such as discounts on future orders.
+Share coupon codes through your marketing channels — email newsletters, social media, packaging inserts, influencer partnerships — and use the coupon analytics view to track redemption rates and revenue impact.
 
-Loyalty programs increase customer retention and lifetime value. Even a simple program that offers a discount after a certain number of purchases can meaningfully reduce churn and encourage repeat business.
+## Gift cards
 
-## Customer Segments
+Issue gift cards under **Marketing → Gift Cards** with custom amounts and optional expiration dates. Customers redeem them at checkout by entering the gift-card code.
 
-Segments under **Marketing > Segments** let you group customers based on behavior and attributes. Create segments like "high spenders," "inactive customers," or "repeat buyers" to target your marketing efforts more precisely.
+> Gift cards are particularly effective during holidays and gifting seasons. They guarantee revenue upfront and often bring new customers to your store. Make them prominent on your storefront during peak gifting periods.
 
-Segments update automatically as customer behavior changes. Use them to tailor email content, offer exclusive promotions, or identify customers at risk of churning so you can re-engage them with targeted outreach.
+## Loyalty programs
+
+Reward repeat customers with a points-based loyalty program under **Marketing → Loyalty**. You define:
+
+- How many points customers earn per dollar spent
+- What rewards they can redeem points for (typically discounts on future orders)
+
+Even a simple program — say, a discount after 5 purchases — can meaningfully reduce churn and encourage repeat buying.
+
+## Customer segments
+
+Segments under **Marketing → Segments** group customers by behavior and attributes so you can target marketing more precisely. Common segments include:
+
+- **High spenders** — top 10% by lifetime spend
+- **Inactive customers** — no purchase in the last 90 days
+- **Repeat buyers** — 3+ orders
+- **At risk** — was repeat, has gone quiet
+
+Segments update automatically as customer behavior changes. Use them to:
+
+- Tailor email content
+- Offer exclusive promotions
+- Identify customers at risk of churning so you can re-engage them

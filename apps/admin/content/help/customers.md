@@ -4,32 +4,57 @@ category: "Operations"
 order: 8
 ---
 
-## Customer Profiles
+Every customer who places an order or creates a storefront account gets a profile in Mark8ly. Profiles aggregate order history, addresses, and account status in one place — useful both for support and for understanding who your most valuable customers are.
 
-Every customer who places an order or creates an account on your storefront gets a profile in Mark8ly. Customer profiles aggregate their order history, contact information, addresses, and account status in one place.
+## Finding customers
 
-Navigate to **Customers** in the sidebar to see your full customer list. You can search by name or email, filter by status, and sort by most recent order or total spend. Click any customer to view their detailed profile.
+Open **Customers** in the sidebar to see your full list. From here you can:
 
-## Customer Data
+- Search by name or email
+- Filter by status (`active`, `blocked`, `deleted`)
+- Sort by most recent order, total spend, or signup date
 
-Each customer profile shows their email address, name, phone number if provided, and all saved addresses. The order history tab lists every order they have placed with your store, making it easy to look up past purchases when handling support requests.
+Click any row to open the customer's detailed profile.
 
-Mark8ly tracks lifetime metrics for each customer: total orders, total spend, and average order value. These metrics help you identify your most valuable customers and tailor your marketing and support accordingly.
+## What's on a profile
 
-## Account Status
+Each customer profile shows:
 
-Customers can have one of three statuses: **active**, **blocked**, or **deleted**. Active customers can browse and purchase normally. Blocked customers cannot place new orders but their historical data is preserved. Deleted customers have their personal data removed in compliance with privacy requests.
+- Email, name, and phone (if provided)
+- All saved addresses
+- Full order history with line items and totals
+- Lifetime metrics — total orders, total spend, average order value
 
-Block a customer if they engage in abusive behavior, commit fraud, or violate your store policies. You can unblock them later if the situation is resolved. Blocking is a reversible action, while deletion is permanent.
+> Lifetime metrics are the fastest way to spot your most valuable customers. Sort the list by total spend and you have a list of people worth investing extra care in.
 
-## Customer Communication
+## Account status
 
-Use the customer profile as context when handling support tickets or emails. Knowing a customer's order history and account age helps you provide informed, personalized responses. A long-time customer with many orders deserves different handling than a first-time buyer.
+Customers can be in one of three states.
 
-Mark8ly does not currently include a built-in messaging system for direct customer communication. Use your existing email or support tools and reference the customer's Mark8ly profile for context.
+| Status | Can place orders? | Data preserved? |
+| --- | --- | --- |
+| **Active** | Yes | Yes |
+| **Blocked** | No | Yes |
+| **Deleted** | No | No (anonymized) |
 
-## Privacy and Data Protection
+**Block** a customer for abuse, fraud, or policy violations. Blocking is reversible — you can restore access if the situation is resolved.
 
-Respect your customers' data privacy. Only collect information that is necessary for fulfilling orders and providing support. Mark8ly stores customer data securely and supports data export and deletion requests to help you comply with GDPR, CCPA, and similar regulations.
+**Deletion** is permanent and is reserved for privacy requests (GDPR, CCPA). Personal data is removed; anonymized order records are retained so your accounting doesn't break.
 
-When a customer requests data deletion, use the delete action on their profile. This removes personal information while preserving anonymized order records for your accounting and reporting needs.
+## Customer communication
+
+Mark8ly doesn't include a built-in inbox for direct messaging. Use your existing email or support tooling and reference the customer's Mark8ly profile for context.
+
+> Knowing a customer's order history and account age makes support replies dramatically better. A long-time repeat buyer often deserves a different tone than a first-time customer reporting an issue.
+
+## Privacy and data protection
+
+Only collect data you actually need to fulfill orders and provide support. Mark8ly stores customer data securely and supports both **export** and **deletion** requests so you can comply with GDPR, CCPA, and similar regulations.
+
+When a customer asks for data deletion:
+
+1. Open their profile.
+2. Click **Delete customer**.
+3. Confirm the action.
+
+This removes personal information while preserving anonymized order records for accounting and reporting.

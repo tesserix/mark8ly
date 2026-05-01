@@ -52,6 +52,7 @@ import { TenantSwitcher } from "./TenantSwitcher";
 import { StoreSwitcher } from "./StoreSwitcher";
 import { NotificationBell } from "./NotificationBell";
 import { BannerStack } from "./banners/BannerStack";
+import { PlatformAnnouncementBanner } from "./banners/PlatformAnnouncementBanner";
 
 /**
  * AdminShell wraps every authenticated admin page with the sidebar +
@@ -168,6 +169,7 @@ const navigation: NavSection[] = [
       // { label: "Audit log", href: "/support/audit-log" },
       { label: "Tickets", href: "/support/tickets" },
       { label: "Help Center", href: "/support/help" },
+      { label: "Platform support", href: "/support/platform" },
     ],
   },
 ];
@@ -361,6 +363,12 @@ function AdminShellFrame({
             </div>
           </div>
         </header>
+
+        {/* Platform announcements (Tesserix-managed) sit ABOVE the per-store
+            BannerStack so platform incidents and scheduled maintenance show
+            on every authenticated admin page, including the store list /
+            setup flows where currentStoreId is undefined. */}
+        <PlatformAnnouncementBanner />
 
         {/* Priority-selective banner slot — renders at most one banner at a
             time based on subscription state. Only mounted when storeId is
@@ -671,6 +679,9 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/support/help")) {
     return { eyebrow: "Support", title: "Help Center" };
+  }
+  if (pathname.startsWith("/support/platform")) {
+    return { eyebrow: "Support", title: "Platform support" };
   }
   return { eyebrow: "Workspace", title: "Admin" };
 }

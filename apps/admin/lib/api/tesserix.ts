@@ -16,9 +16,13 @@ const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN ?? "";
 const PRODUCT_ID = "mark8ly";
 
 function authHeaders(): Record<string, string> {
+  // X-Internal-Token rather than Authorization Bearer — the
+  // istio-ingress at tesserix.app has a RequestAuthentication policy
+  // that parses Authorization Bearer as JWT and rejects our opaque
+  // shared-secret token. A custom header bypasses that path.
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${INTERNAL_API_TOKEN}`,
+    "X-Internal-Token": INTERNAL_API_TOKEN.trim(),
   };
 }
 

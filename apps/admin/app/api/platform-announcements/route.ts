@@ -22,7 +22,9 @@ export async function GET(_req: NextRequest) {
     url.searchParams.set("tenant_status", "active");
 
     const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${INTERNAL_API_TOKEN}` },
+      // X-Internal-Token, not Authorization Bearer — istio-ingress at
+      // tesserix.app intercepts Authorization for JWT validation.
+      headers: { "X-Internal-Token": INTERNAL_API_TOKEN.trim() },
       cache: "no-store",
     });
     if (!res.ok) {

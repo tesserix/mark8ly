@@ -1698,6 +1698,12 @@ func main() {
 			if vendorHandler != nil {
 				vendorHandler.RegisterRoutes(engine.Group("/internal"))
 			}
+			// Email templates registry (B1f) — refresh + test-send.
+			// Admin-only because tesserix-home authors templates and
+			// pings exactly one URL per database. Storefront's loader
+			// ages its cache out via the 5-min TTL, which is acceptable
+			// for runtime sends.
+			templateHandler.Register(engine.Group("/internal"))
 			// Mirror of platform_api.stores. See main mode-Both branch
 			// above for context. Admin engine only — storefront never
 			// writes stores.

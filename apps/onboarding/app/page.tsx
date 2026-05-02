@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { FaqAccordion } from "@repo/ui/faq-accordion";
@@ -176,18 +177,24 @@ function Features() {
       title: "A theme that feels considered, out of the box.",
       body:
         "Quiet typography, generous whitespace, real attention to product detail pages. The default storefront looks like something you would have hired a designer to build — because we did.",
+      screen: "/screens/storefront.png",
+      screenAlt: "Mark8ly storefront — coastal hero with editorial typography",
     },
     {
       kicker: "Checkout",
       title: "Payments that work everywhere customers do.",
       body:
         "Cards, UPI, wallets, and local methods, all behind a single checkout. No upcharges from us. Standard processor fees only.",
+      screen: "/screens/checkout.png",
+      screenAlt: "Mark8ly checkout — single page with order summary and progressive contact, address, shipping, payment steps",
     },
     {
       kicker: "Admin",
       title: "An admin you don't have to learn.",
       body:
         "Products, orders, customers, inventory. Each screen does one thing, clearly. No dashboards full of metrics that don't matter to you.",
+      screen: "/screens/admin.png",
+      screenAlt: "Mark8ly admin — branding settings with editorial layout gallery",
     },
   ];
 
@@ -227,7 +234,12 @@ function Features() {
                   {f.body}
                 </p>
               </div>
-              <FeaturePlate kicker={f.kicker} index={i + 1} />
+              <FeaturePlate
+                kicker={f.kicker}
+                index={i + 1}
+                src={f.screen}
+                alt={f.screenAlt}
+              />
             </article>
           ))}
         </div>
@@ -239,39 +251,26 @@ function Features() {
 interface FeaturePlateProps {
   kicker: string;
   index: number;
+  src: string;
+  alt: string;
 }
 
-/**
- * FeaturePlate — visual slot beside each feature row.
- *
- * Currently a quiet typographic still — kicker label, serif
- * issue numeral, hairline accent rule. Designed to look like
- * an intentional editorial composition rather than a missing
- * image. Swap each one for a real product screenshot once the
- * admin and storefront surfaces exist.
- */
-function FeaturePlate({ kicker, index }: FeaturePlateProps) {
+function FeaturePlate({ kicker, index, src, alt }: FeaturePlateProps) {
   return (
-    <figure
-      aria-hidden="true"
-      className="relative aspect-[4/3] overflow-hidden rounded-lg bg-paper-100 ring-1 ring-border-subtle"
-    >
-      <div className="absolute inset-0 flex flex-col justify-between p-10">
-        <p className="eyebrow text-foreground-tertiary">{kicker}</p>
-        <div>
-          <div className="h-px w-12 bg-moss-700" />
-          <p
-            className="mt-4 font-serif text-foreground"
-            style={{
-              fontSize: "var(--text-3xl)",
-              lineHeight: 1,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            №{String(index).padStart(2, "0")}
-          </p>
-        </div>
-      </div>
+    <figure className="relative aspect-[4/3] overflow-hidden rounded-lg bg-paper-100 ring-1 ring-border-subtle">
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        sizes="(min-width: 1024px) 50vw, 100vw"
+        className="object-cover object-top"
+      />
+      <figcaption className="absolute bottom-0 left-0 right-0 flex items-end justify-between bg-gradient-to-t from-ink-900/40 to-transparent px-6 pb-4 pt-12 text-paper-50">
+        <span className="eyebrow text-paper-50/80">{kicker}</span>
+        <span className="font-serif text-sm tracking-tight">
+          №{String(index).padStart(2, "0")}
+        </span>
+      </figcaption>
     </figure>
   );
 }
@@ -398,7 +397,7 @@ function FinalCta() {
     <section className="border-t border-border-subtle bg-ink-900 py-20 text-paper-50 sm:py-28">
       <div className="mx-auto max-w-5xl px-6 text-left">
         <p className="eyebrow text-paper-400">Ready when you are</p>
-        <h2 className="mt-6 font-serif text-5xl font-medium leading-[1.02] tracking-[-0.025em]">
+        <h2 className="mt-6 font-serif text-5xl font-medium leading-[1.02] tracking-[-0.025em] text-paper-50">
           Open your shop
           <br />
           this afternoon.

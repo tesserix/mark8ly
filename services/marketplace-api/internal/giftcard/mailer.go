@@ -16,7 +16,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+
+	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 )
+
+
 
 // Mailer sends gift-card lifecycle emails. The initial implementation
 // only sends a "delivery" email when a gift card is issued with a
@@ -108,7 +112,8 @@ func (t GiftCardEmailTheme) withDefaults() GiftCardEmailTheme {
 var templateFS embed.FS
 
 type deliveryData struct {
-	Subject         string
+	// Subject removed — rendered via the loader from a separate
+	// subject-template column. See RegisterFallbacks below.
 	DisplayCode     string
 	Balance         string
 	CurrencyCode    string
@@ -124,24 +129,45 @@ type deliveryData struct {
 	FaintCopy       string
 }
 
+// Embedded template strings — kept as fallback for the loader.
 var (
-	deliveryHTMLTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/gift_card_delivery.html"),
-	)
-	deliveryTextTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/gift_card_delivery.txt"),
-	)
+	deliveryEmbeddedHTML = mustReadGiftcardEmbedded("templates/gift_card_delivery.html")
+	deliveryEmbeddedText = mustReadGiftcardEmbedded("templates/gift_card_delivery.txt")
 )
 
-func renderDelivery(in DeliveryInput) (string, string, string, error) {
+func mustReadGiftcardEmbedded(path string) string {
+	raw, err := templateFS.ReadFile(path)
+	if err != nil {
+		panic(fmt.Sprintf("giftcard mailer: embedded template %s missing: %v", path, err))
+	}
+	return string(raw)
+}
+
+// DeliverySubjectTpl is the registered subject template. Operator
+// can override per key in tesserix-home; this is the embedded fallback.
+const DeliverySubjectTpl = "You received a gift card from {{.Theme.StoreName}}"
+
+// DeliveryTemplateKey is the loader registry key for the delivery
+// email. Public so tests can refer to it.
+const DeliveryTemplateKey = "giftcard_delivery"
+
+// RegisterFallbacks registers the giftcard delivery template's
+// embedded fallback against the shared loader. Called once at boot.
+func RegisterFallbacks(loader *emailtemplates.Loader) {
+	loader.Register(DeliveryTemplateKey, emailtemplates.EmbeddedFallback{
+		Subject:  DeliverySubjectTpl,
+		HTMLBody: deliveryEmbeddedHTML,
+		TextBody: deliveryEmbeddedText,
+	})
+}
+
+func renderDelivery(ctx context.Context, loader *emailtemplates.Loader, in DeliveryInput) (string, string, string, error) {
 	if in.Card == nil {
 		return "", "", "", fmt.Errorf("giftcard mailer: nil card")
 	}
 	theme := in.Theme.withDefaults()
-	subject := fmt.Sprintf("You received a gift card from %s", theme.StoreName)
 
 	data := deliveryData{
-		Subject:        subject,
 		DisplayCode:    FormatCodeDisplay(in.Card.Code),
 		Balance:        formatMoney(in.Card.InitialBalance),
 		CurrencyCode:   in.Card.CurrencyCode,
@@ -157,14 +183,17 @@ func renderDelivery(in DeliveryInput) (string, string, string, error) {
 		FaintCopy:      emailFaint,
 	}
 
-	var htmlBuf, textBuf bytes.Buffer
-	if err := deliveryHTMLTemplate.Execute(&htmlBuf, data); err != nil {
-		return "", "", "", fmt.Errorf("giftcard mailer: render html: %w", err)
+	if loader == nil {
+		// Test path with no loader — render embedded directly via
+		// a temporary loader.
+		loader = emailtemplates.NewLoader(nil)
+		RegisterFallbacks(loader)
 	}
-	if err := deliveryTextTemplate.Execute(&textBuf, data); err != nil {
-		return "", "", "", fmt.Errorf("giftcard mailer: render text: %w", err)
+	r, err := loader.Render(ctx, DeliveryTemplateKey, data)
+	if err != nil {
+		return "", "", "", fmt.Errorf("giftcard mailer: %w", err)
 	}
-	return subject, htmlBuf.String(), textBuf.String(), nil
+	return r.Subject, r.HTMLBody, r.TextBody, nil
 }
 
 func deref(s *string) string {
@@ -229,6 +258,7 @@ type SendGridMailer struct {
 	from   string
 	client *http.Client
 	logger *slog.Logger
+	loader *emailtemplates.Loader
 }
 
 // NewSendGridMailer constructs a SendGrid-backed Mailer.
@@ -239,6 +269,13 @@ func NewSendGridMailer(apiKey, from string, logger *slog.Logger) *SendGridMailer
 		client: &http.Client{Timeout: 15 * time.Second},
 		logger: logger,
 	}
+}
+
+// WithLoader wires the shared template loader. When set, render uses
+// DB-backed templates with embedded fallback. When nil, embedded only.
+func (m *SendGridMailer) WithLoader(l *emailtemplates.Loader) *SendGridMailer {
+	m.loader = l
+	return m
 }
 
 // SendDelivery renders the gift-card delivery envelope and POSTs to
@@ -253,7 +290,7 @@ func (m *SendGridMailer) SendDelivery(ctx context.Context, in DeliveryInput) err
 		return fmt.Errorf("giftcard: missing recipient")
 	}
 
-	subject, htmlBody, textBody, err := renderDelivery(in)
+	subject, htmlBody, textBody, err := renderDelivery(ctx, m.loader, in)
 	if err != nil {
 		return err
 	}

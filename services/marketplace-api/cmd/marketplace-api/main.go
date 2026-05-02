@@ -226,6 +226,7 @@ func main() {
 	// to embedded.
 	templateLoader := emailtemplates.NewLoader(conn)
 	orderdoc.RegisterFallbacks(templateLoader)
+	giftcard.RegisterFallbacks(templateLoader)
 	{
 		seedCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if seedErr := templateLoader.SeedFromEmbedded(seedCtx); seedErr != nil {
@@ -607,7 +608,7 @@ func main() {
 		// the platform.
 		var giftCardMailer giftcard.Mailer
 		if cfg.SendGridAPIKey != "" {
-			giftCardMailer = giftcard.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+			giftCardMailer = giftcard.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log).WithLoader(templateLoader)
 		} else {
 			giftCardMailer = &giftcard.LogMailer{Logger: log}
 		}
@@ -1002,7 +1003,7 @@ func main() {
 		// and the store's configured Stripe gateway (payment_gateway_configs).
 		var giftCardMailerSF giftcard.Mailer
 		if cfg.SendGridAPIKey != "" {
-			giftCardMailerSF = giftcard.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+			giftCardMailerSF = giftcard.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log).WithLoader(templateLoader)
 		} else {
 			giftCardMailerSF = &giftcard.LogMailer{Logger: log}
 		}

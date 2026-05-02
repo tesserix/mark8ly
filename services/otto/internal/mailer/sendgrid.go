@@ -38,6 +38,12 @@ type sendgridPayload struct {
 	From             sendgridAddress           `json:"from"`
 	Subject          string                    `json:"subject"`
 	Content          []sendgridContent         `json:"content"`
+	// CustomArgs is echoed back on every SendGrid engagement event
+	// (delivered/open/click/bounce). Used by the notification-service
+	// webhook ingester to attribute events to the right tenant in
+	// tesserix-home dashboards. Always carries `product=mark8ly`;
+	// `tenant_id` is included only when the caller has it.
+	CustomArgs map[string]string `json:"custom_args,omitempty"`
 }
 
 type sendgridPersonalization struct {
@@ -58,7 +64,10 @@ type sendgridContent struct {
 // intentionally plain: most "unexpected chat OTP" mails go through spam
 // filters, and heavy templates make the "is this suspicious" judgement
 // harder for the recipient.
-func (m *SendgridMailer) SendOTP(ctx context.Context, to, recipientName, code, storeName string) error {
+//
+// tenantID is forwarded to SendGrid as a custom_arg for per-tenant
+// engagement attribution. Empty values are omitted rather than sent.
+func (m *SendgridMailer) SendOTP(ctx context.Context, tenantID, to, recipientName, code, storeName string) error {
 	if storeName == "" {
 		storeName = "the store"
 	}
@@ -78,6 +87,10 @@ func (m *SendgridMailer) SendOTP(ctx context.Context, to, recipientName, code, s
 		greetingSuffix(recipientName), htmlEscape(storeName), code,
 	)
 
+	customArgs := map[string]string{"product": "mark8ly"}
+	if tenantID != "" {
+		customArgs["tenant_id"] = tenantID
+	}
 	payload := sendgridPayload{
 		Personalizations: []sendgridPersonalization{{
 			To: []sendgridAddress{{Email: to, Name: recipientName}},
@@ -88,6 +101,7 @@ func (m *SendgridMailer) SendOTP(ctx context.Context, to, recipientName, code, s
 			{Type: "text/plain", Value: text},
 			{Type: "text/html", Value: html},
 		},
+		CustomArgs: customArgs,
 	}
 	buf, err := json.Marshal(payload)
 	if err != nil {

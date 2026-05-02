@@ -123,7 +123,7 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, error
 	if err := s.repo.Insert(ctx, ch); err != nil {
 		return nil, err
 	}
-	if err := s.mailer.SendOTP(ctx, email, ch.Name, code, in.StoreName); err != nil {
+	if err := s.mailer.SendOTP(ctx, in.TenantID, email, ch.Name, code, in.StoreName); err != nil {
 		// Best-effort: the row is already inserted so a retry on the next
 		// /verify/start will hit the cooldown. Surface the error so the
 		// caller can show a useful message.

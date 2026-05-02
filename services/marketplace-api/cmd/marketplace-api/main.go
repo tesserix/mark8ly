@@ -86,6 +86,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
 	"github.com/mark8ly/marketplace-api/internal/handlers/testroutes"
 	"github.com/mark8ly/marketplace-api/internal/handlers/webhooks"
+	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 	"github.com/mark8ly/marketplace-api/internal/health"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/media"
@@ -215,6 +216,28 @@ func main() {
 		log.Error("db open", "err", err)
 		os.Exit(1)
 	}
+
+	// ─── Email templates loader (B1f) ───────────────────────────────────
+	// DB-backed templates with embedded fallback. tesserix-home authors
+	// templates over the cross-DB grant; loader reads with a 5-minute
+	// TTL cache and falls back to embedded on miss / DB error so emails
+	// keep flowing during outages. SeedFromEmbedded is idempotent so
+	// the first boot after migration 000085 ships byte-identical output
+	// to embedded.
+	templateLoader := emailtemplates.NewLoader(conn)
+	orderdoc.RegisterFallbacks(templateLoader)
+	{
+		seedCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if seedErr := templateLoader.SeedFromEmbedded(seedCtx); seedErr != nil {
+			log.Warn("emailtemplates: seed failed (continuing with embedded fallback)", "err", seedErr)
+		}
+		cancel()
+	}
+	// Test-send dispatcher used by /internal/templates/:key/test. nil
+	// SendGrid key is acceptable — handler returns 503 with a clear
+	// message so dev users don't get silent fail.
+	templateTestSender := emailtemplates.NewSendGridTestSender(cfg.SendGridAPIKey, cfg.EmailFrom)
+	templateHandler := emailtemplates.NewHandler(templateLoader, templateTestSender)
 
 	// API key encryptor — AES-256-GCM in production, noop in dev.
 	var apiKeyEncryptor crypto.Encryptor
@@ -507,7 +530,7 @@ func main() {
 		// so local dev still exercises the dispatch path.
 		var orderDocMailer orderdoc.Mailer
 		if cfg.SendGridAPIKey != "" {
-			sg := orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+			sg := orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log).WithLoader(templateLoader)
 			// Wire the storefront PDF fetcher so invoice + receipt
 			// emails carry the rendered PDF as an attachment instead
 			// of asking the buyer to click through to download.
@@ -1055,7 +1078,7 @@ func main() {
 		// only runs when the admin route was hit).
 		var orderDocMailerSF orderdoc.Mailer
 		if cfg.SendGridAPIKey != "" {
-			sg := orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
+			sg := orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log).WithLoader(templateLoader)
 			if pf := orderdoc.NewHTTPStorefrontPDFFetcher(cfg.StorefrontBaseURLTemplate, cfg.InternalAuthSecret); pf != nil {
 				sg = sg.WithStorefrontPDFFetcher(pf)
 			}
@@ -1617,6 +1640,8 @@ func main() {
 		if vendorHandler != nil {
 			vendorHandler.RegisterRoutes(r.Group("/internal"))
 		}
+		// Email templates registry (B1f) — refresh + test-send.
+		templateHandler.Register(r.Group("/internal"))
 		// Mirror of platform_api.stores so admin/storefront slug lookups
 		// don't cross-service-call platform-api on every request. Called
 		// by platform-api at onboarding completion (parallel to

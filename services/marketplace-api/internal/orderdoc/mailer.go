@@ -22,13 +22,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 )
 
 // Kind discriminates the lifecycle email this package is dispatching.
@@ -179,7 +180,10 @@ func (t Theme) withDefaults() Theme {
 var templateFS embed.FS
 
 type renderData struct {
-	Subject         string
+	// Subject is removed — it's now rendered by the loader from a
+	// separate subject-template column. Heading / Lede / CTAButtonLabel
+	// stay here because they're computed in Go (business-state-driven
+	// copy that depends on Kind + IsFullRefund + CancelledByCustomer).
 	Heading         string
 	Lede            string
 	CTAButtonLabel  string
@@ -225,45 +229,84 @@ type renderData struct {
 	FaintCopy       string
 }
 
+// Embedded template strings — kept as fallback for the loader. We
+// register these at startup; loader prefers the DB row when present.
 var (
-	invoiceHTMLTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/invoice_email.html"),
-	)
-	invoiceTextTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/invoice_email.txt"),
-	)
-	receiptHTMLTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/receipt_email.html"),
-	)
-	receiptTextTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/receipt_email.txt"),
-	)
-	cancellationHTMLTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/cancellation_email.html"),
-	)
-	cancellationTextTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/cancellation_email.txt"),
-	)
-	refundHTMLTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/refund_email.html"),
-	)
-	refundTextTemplate = template.Must(
-		template.ParseFS(templateFS, "templates/refund_email.txt"),
-	)
+	invoiceEmbeddedHTML      = mustReadEmbedded("templates/invoice_email.html")
+	invoiceEmbeddedText      = mustReadEmbedded("templates/invoice_email.txt")
+	receiptEmbeddedHTML      = mustReadEmbedded("templates/receipt_email.html")
+	receiptEmbeddedText      = mustReadEmbedded("templates/receipt_email.txt")
+	cancellationEmbeddedHTML = mustReadEmbedded("templates/cancellation_email.html")
+	cancellationEmbeddedText = mustReadEmbedded("templates/cancellation_email.txt")
+	refundEmbeddedHTML       = mustReadEmbedded("templates/refund_email.html")
+	refundEmbeddedText       = mustReadEmbedded("templates/refund_email.txt")
 )
 
-func render(kind Kind, in DocumentInput, hasAttachment bool) (subject, html, text string, err error) {
+func mustReadEmbedded(path string) string {
+	raw, err := templateFS.ReadFile(path)
+	if err != nil {
+		// embed.FS guarantees these files at compile time; missing at
+		// runtime indicates a programming error, not user error.
+		panic(fmt.Sprintf("orderdoc: embedded template %s missing: %v", path, err))
+	}
+	return string(raw)
+}
+
+// Subject templates — Go-template strings rendered against renderData.
+// Operator can override per key in tesserix-home; embedded versions
+// here are the fallback.
+const (
+	invoiceSubjectTpl      = "Invoice for order {{.OrderNumber}} — confirmed"
+	receiptSubjectTpl      = "Receipt for order {{.OrderNumber}} — delivered"
+	cancellationSubjectTpl = "Order {{.OrderNumber}} has been cancelled"
+	refundSubjectTpl       = "{{if .IsFullRefund}}Refund issued for order {{.OrderNumber}} — fully refunded{{else}}Partial refund issued for order {{.OrderNumber}}{{end}}"
+)
+
+// templateKey converts a Kind into the loader's registry key. Public
+// so tests can refer to the same constants.
+func templateKey(kind Kind) string {
+	return "orderdoc_" + string(kind) + "_email"
+}
+
+// RegisterFallbacks registers every orderdoc template's embedded
+// fallback against the shared loader. Called once at boot.
+func RegisterFallbacks(loader *emailtemplates.Loader) {
+	loader.Register(templateKey(KindInvoice), emailtemplates.EmbeddedFallback{
+		Subject:  invoiceSubjectTpl,
+		HTMLBody: invoiceEmbeddedHTML,
+		TextBody: invoiceEmbeddedText,
+	})
+	loader.Register(templateKey(KindReceipt), emailtemplates.EmbeddedFallback{
+		Subject:  receiptSubjectTpl,
+		HTMLBody: receiptEmbeddedHTML,
+		TextBody: receiptEmbeddedText,
+	})
+	loader.Register(templateKey(KindCancellation), emailtemplates.EmbeddedFallback{
+		Subject:  cancellationSubjectTpl,
+		HTMLBody: cancellationEmbeddedHTML,
+		TextBody: cancellationEmbeddedText,
+	})
+	loader.Register(templateKey(KindRefund), emailtemplates.EmbeddedFallback{
+		Subject:  refundSubjectTpl,
+		HTMLBody: refundEmbeddedHTML,
+		TextBody: refundEmbeddedText,
+	})
+}
+
+// buildRenderData computes the per-kind renderData. Subject is no
+// longer computed here — it's a template string in DB / embedded
+// fallback, rendered by the loader. Heading / Lede / CTAButtonLabel
+// remain computed because they're business-state-driven.
+func buildRenderData(kind Kind, in DocumentInput, hasAttachment bool) renderData {
 	theme := in.Theme.withDefaults()
 
 	var heading, lede, cta string
 	switch kind {
 	case KindReceipt:
-		subject = fmt.Sprintf("Receipt for order %s — delivered", in.OrderNumber)
 		heading = "Your order has been delivered."
 		lede = fmt.Sprintf("This is your receipt for order %s. Keep it for your records — and thank you for shopping with %s.", in.OrderNumber, theme.StoreName)
 		cta = "View receipt"
 	case KindCancellation:
-		subject = fmt.Sprintf("Order %s has been cancelled", in.OrderNumber)
 		heading = "Your order has been cancelled."
 		if in.CancelledByCustomer {
 			lede = fmt.Sprintf("Order %s has been cancelled at your request. If a payment was captured, the refund will follow shortly.", in.OrderNumber)
@@ -273,16 +316,13 @@ func render(kind Kind, in DocumentInput, hasAttachment bool) (subject, html, tex
 		cta = "View order"
 	case KindRefund:
 		if in.IsFullRefund {
-			subject = fmt.Sprintf("Refund issued for order %s — fully refunded", in.OrderNumber)
 			heading = "Your refund has been issued in full."
 		} else {
-			subject = fmt.Sprintf("Partial refund issued for order %s", in.OrderNumber)
 			heading = "A partial refund has been issued."
 		}
 		lede = fmt.Sprintf("We've issued a refund of %s %s against order %s. It typically takes 3–10 business days to appear on your statement, depending on your bank.", in.RefundAmount.StringFixed(2), in.CurrencyCode, in.OrderNumber)
 		cta = "View order"
 	default: // KindInvoice
-		subject = fmt.Sprintf("Invoice for order %s — confirmed", in.OrderNumber)
 		heading = "Your order is confirmed."
 		lede = fmt.Sprintf("This is your invoice for order %s. We're getting it ready and will let you know when it ships.", in.OrderNumber)
 		cta = "View invoice"
@@ -293,8 +333,7 @@ func render(kind Kind, in DocumentInput, hasAttachment bool) (subject, html, tex
 		deliveredAt = in.DeliveredAt.Format("January 2, 2006")
 	}
 
-	data := renderData{
-		Subject:            subject,
+	return renderData{
 		Heading:            heading,
 		Lede:               lede,
 		CTAButtonLabel:     cta,
@@ -319,28 +358,31 @@ func render(kind Kind, in DocumentInput, hasAttachment bool) (subject, html, tex
 		MutedCopy:          emailMuted,
 		FaintCopy:          emailFaint,
 	}
-
-	var htmlTmpl, textTmpl *template.Template
-	switch kind {
-	case KindReceipt:
-		htmlTmpl, textTmpl = receiptHTMLTemplate, receiptTextTemplate
-	case KindCancellation:
-		htmlTmpl, textTmpl = cancellationHTMLTemplate, cancellationTextTemplate
-	case KindRefund:
-		htmlTmpl, textTmpl = refundHTMLTemplate, refundTextTemplate
-	default:
-		htmlTmpl, textTmpl = invoiceHTMLTemplate, invoiceTextTemplate
-	}
-
-	var htmlBuf, textBuf bytes.Buffer
-	if err := htmlTmpl.Execute(&htmlBuf, data); err != nil {
-		return "", "", "", fmt.Errorf("orderdoc: render html: %w", err)
-	}
-	if err := textTmpl.Execute(&textBuf, data); err != nil {
-		return "", "", "", fmt.Errorf("orderdoc: render text: %w", err)
-	}
-	return subject, htmlBuf.String(), textBuf.String(), nil
 }
+
+// render is the loader-backed renderer. Returns the same triple
+// (subject, html, text) the SendGrid envelope expects. When loader is
+// nil (e.g. unit tests that don't want a DB) it uses the embedded
+// template strings directly.
+func render(ctx context.Context, loader *emailtemplates.Loader, kind Kind, in DocumentInput, hasAttachment bool) (subject, html, text string, err error) {
+	data := buildRenderData(kind, in, hasAttachment)
+
+	if loader == nil {
+		// Test path with no loader — render the embedded fallback
+		// inline by registering against a temporary loader.
+		loader = emailtemplates.NewLoader(nil)
+		RegisterFallbacks(loader)
+	}
+
+	r, err := loader.Render(ctx, templateKey(kind), data)
+	if err != nil {
+		return "", "", "", fmt.Errorf("orderdoc: %w", err)
+	}
+	return r.Subject, r.HTMLBody, r.TextBody, nil
+}
+
+// avoid unused-import lint when bytes is only referenced by attachments
+var _ = bytes.NewReader
 
 // -- LogMailer ---------------------------------------------------------
 
@@ -391,6 +433,7 @@ type SendGridMailer struct {
 	client     *http.Client
 	logger     *slog.Logger
 	pdfFetcher StorefrontPDFFetcher
+	loader     *emailtemplates.Loader
 }
 
 // NewSendGridMailer constructs a SendGrid-backed Mailer.
@@ -401,6 +444,14 @@ func NewSendGridMailer(apiKey, from string, logger *slog.Logger) *SendGridMailer
 		client: &http.Client{Timeout: 15 * time.Second},
 		logger: logger,
 	}
+}
+
+// WithLoader wires the shared template loader. When set, render() uses
+// the DB-backed templates with embedded fallback. When nil, render()
+// uses embedded directly (test ergonomics).
+func (m *SendGridMailer) WithLoader(l *emailtemplates.Loader) *SendGridMailer {
+	m.loader = l
+	return m
 }
 
 // WithStorefrontPDFFetcher wires a fetcher that retrieves the rendered
@@ -491,7 +542,7 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 		}
 	}
 
-	subject, htmlBody, textBody, err := render(kind, in, hasAttachment)
+	subject, htmlBody, textBody, err := render(ctx, m.loader, kind, in, hasAttachment)
 	if err != nil {
 		return err
 	}

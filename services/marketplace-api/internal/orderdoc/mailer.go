@@ -36,10 +36,11 @@ import (
 type Kind string
 
 const (
-	KindInvoice      Kind = "invoice"
-	KindReceipt      Kind = "receipt"
-	KindCancellation Kind = "cancellation"
-	KindRefund       Kind = "refund"
+	KindInvoice            Kind = "invoice"
+	KindReceipt            Kind = "receipt"
+	KindCancellation       Kind = "cancellation"
+	KindRefund             Kind = "refund"
+	KindShipmentDispatched Kind = "shipment_dispatched"
 )
 
 // Mailer is the contract between the order lifecycle and the underlying
@@ -49,6 +50,12 @@ type Mailer interface {
 	SendReceipt(ctx context.Context, in DocumentInput) error
 	SendCancellation(ctx context.Context, in DocumentInput) error
 	SendRefund(ctx context.Context, in DocumentInput) error
+	// SendShipmentDispatched fires when a shipment transitions to
+	// in_transit (admin marks it shipped, OR carrier webhook reports
+	// pickup). Customer-facing — gives them tracking visibility before
+	// the package arrives. Wave 1.5 attribution flows via custom_args
+	// kind=shipment_dispatched.
+	SendShipmentDispatched(ctx context.Context, in DocumentInput) error
 }
 
 // DocumentInput is everything the email template needs to render. The
@@ -97,6 +104,14 @@ type DocumentInput struct {
 	RefundAmount    decimal.Decimal // amount of THIS refund
 	TotalRefunded   decimal.Decimal // running total after this refund
 	IsFullRefund    bool            // refunded == grand_total
+
+	// Shipment-dispatched-specific. Carrier + TrackingNumber are
+	// usually present (admin sets them when generating the label);
+	// EstimatedDelivery is best-effort (carriers don't always provide
+	// it on the in_transit transition).
+	Carrier           string
+	TrackingNumber    string
+	EstimatedDelivery string // human-readable, e.g. "Apr 18, 2026"
 
 	// AdminNote, when set, renders a "Note from {store}" block in the
 	// email body. Used by the admin "Email to customer" resend flow so
@@ -222,6 +237,13 @@ type renderData struct {
 	TotalRefunded string
 	IsFullRefund  bool
 
+	// Shipment-dispatched rendering — passthrough of DocumentInput's
+	// shipment fields so the template can branch on TrackingNumber +
+	// Carrier presence and surface them prominently.
+	Carrier           string
+	TrackingNumber    string
+	EstimatedDelivery string
+
 	Theme           Theme
 	HairlineColor   string
 	SupportingCopy  string
@@ -240,6 +262,8 @@ var (
 	cancellationEmbeddedText = mustReadEmbedded("templates/cancellation_email.txt")
 	refundEmbeddedHTML       = mustReadEmbedded("templates/refund_email.html")
 	refundEmbeddedText       = mustReadEmbedded("templates/refund_email.txt")
+	shipmentDispatchedEmbeddedHTML = mustReadEmbedded("templates/shipment_dispatched_email.html")
+	shipmentDispatchedEmbeddedText = mustReadEmbedded("templates/shipment_dispatched_email.txt")
 )
 
 func mustReadEmbedded(path string) string {
@@ -256,10 +280,11 @@ func mustReadEmbedded(path string) string {
 // Operator can override per key in tesserix-home; embedded versions
 // here are the fallback.
 const (
-	invoiceSubjectTpl      = "Invoice for order {{.OrderNumber}} — confirmed"
-	receiptSubjectTpl      = "Receipt for order {{.OrderNumber}} — delivered"
-	cancellationSubjectTpl = "Order {{.OrderNumber}} has been cancelled"
-	refundSubjectTpl       = "{{if .IsFullRefund}}Refund issued for order {{.OrderNumber}} — fully refunded{{else}}Partial refund issued for order {{.OrderNumber}}{{end}}"
+	invoiceSubjectTpl            = "Invoice for order {{.OrderNumber}} — confirmed"
+	receiptSubjectTpl            = "Receipt for order {{.OrderNumber}} — delivered"
+	cancellationSubjectTpl       = "Order {{.OrderNumber}} has been cancelled"
+	refundSubjectTpl             = "{{if .IsFullRefund}}Refund issued for order {{.OrderNumber}} — fully refunded{{else}}Partial refund issued for order {{.OrderNumber}}{{end}}"
+	shipmentDispatchedSubjectTpl = "Your order {{.OrderNumber}} has shipped"
 )
 
 // templateKey converts a Kind into the loader's registry key. Public
@@ -290,6 +315,11 @@ func RegisterFallbacks(loader *emailtemplates.Loader) {
 		Subject:  refundSubjectTpl,
 		HTMLBody: refundEmbeddedHTML,
 		TextBody: refundEmbeddedText,
+	})
+	loader.Register(templateKey(KindShipmentDispatched), emailtemplates.EmbeddedFallback{
+		Subject:  shipmentDispatchedSubjectTpl,
+		HTMLBody: shipmentDispatchedEmbeddedHTML,
+		TextBody: shipmentDispatchedEmbeddedText,
 	})
 }
 
@@ -322,6 +352,14 @@ func buildRenderData(kind Kind, in DocumentInput, hasAttachment bool) renderData
 		}
 		lede = fmt.Sprintf("We've issued a refund of %s %s against order %s. It typically takes 3–10 business days to appear on your statement, depending on your bank.", in.RefundAmount.StringFixed(2), in.CurrencyCode, in.OrderNumber)
 		cta = "View order"
+	case KindShipmentDispatched:
+		heading = "Your order is on the way."
+		if in.TrackingNumber != "" {
+			lede = fmt.Sprintf("Order %s has shipped from %s. Use the tracking number below to follow its journey.", in.OrderNumber, theme.StoreName)
+		} else {
+			lede = fmt.Sprintf("Order %s has shipped from %s. Tracking details will follow once the carrier provides them.", in.OrderNumber, theme.StoreName)
+		}
+		cta = "Track order"
 	default: // KindInvoice
 		heading = "Your order is confirmed."
 		lede = fmt.Sprintf("This is your invoice for order %s. We're getting it ready and will let you know when it ships.", in.OrderNumber)
@@ -352,6 +390,9 @@ func buildRenderData(kind Kind, in DocumentInput, hasAttachment bool) renderData
 		RefundAmount:       in.RefundAmount.StringFixed(2),
 		TotalRefunded:      in.TotalRefunded.StringFixed(2),
 		IsFullRefund:       in.IsFullRefund,
+		Carrier:            in.Carrier,
+		TrackingNumber:     in.TrackingNumber,
+		EstimatedDelivery:  in.EstimatedDelivery,
 		Theme:              theme,
 		HairlineColor:      emailHairline,
 		SupportingCopy:     emailSupporting,
@@ -410,6 +451,11 @@ func (m *LogMailer) SendCancellation(_ context.Context, in DocumentInput) error 
 // SendRefund logs the refund email payload.
 func (m *LogMailer) SendRefund(_ context.Context, in DocumentInput) error {
 	return m.log(KindRefund, in)
+}
+
+// SendShipmentDispatched logs the shipment-dispatched email payload.
+func (m *LogMailer) SendShipmentDispatched(_ context.Context, in DocumentInput) error {
+	return m.log(KindShipmentDispatched, in)
 }
 
 func (m *LogMailer) log(kind Kind, in DocumentInput) error {
@@ -492,6 +538,12 @@ func (m *SendGridMailer) SendCancellation(ctx context.Context, in DocumentInput)
 // SendRefund renders + dispatches the refund-issued envelope.
 func (m *SendGridMailer) SendRefund(ctx context.Context, in DocumentInput) error {
 	return m.send(ctx, KindRefund, in)
+}
+
+// SendShipmentDispatched renders + dispatches the customer-facing
+// shipment-dispatched envelope (no PDF attachment, just tracking).
+func (m *SendGridMailer) SendShipmentDispatched(ctx context.Context, in DocumentInput) error {
+	return m.send(ctx, KindShipmentDispatched, in)
 }
 
 func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) error {

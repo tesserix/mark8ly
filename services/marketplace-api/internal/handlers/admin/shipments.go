@@ -210,6 +210,30 @@ func (h *ShipmentsHandler) dispatchReceiptEmail(orderID uuid.UUID) {
 	}()
 }
 
+// dispatchShipmentDispatchedEmail fires the customer-facing "your
+// order has shipped" email on a detached background context. Caller
+// has already verified the shipment transitioned to "in_transit".
+func (h *ShipmentsHandler) dispatchShipmentDispatchedEmail(orderID uuid.UUID, rec *shipping.ShipmentRecord) {
+	if h.docMailer == nil || rec == nil {
+		return
+	}
+	info := orderdoc.ShipmentInfo{
+		Carrier:        rec.Carrier,
+		TrackingNumber: rec.TrackingNumber,
+	}
+	if rec.EstimatedDelivery != nil {
+		info.EstimatedDelivery = rec.EstimatedDelivery.Format("January 2, 2006")
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.docMailer.SendShipmentDispatched(ctx, orderID, info); err != nil {
+			h.logger.Warn("orderdoc: shipment-dispatched email failed",
+				"order_id", orderID, "err", err)
+		}
+	}()
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // DTOs
 // ─────────────────────────────────────────────────────────────────────────
@@ -942,6 +966,13 @@ func (h *ShipmentsHandler) UpdateStatus(c *gin.Context) {
 		desc = shipmentStatusDefaultCopy[status]
 	}
 	h.appendShipmentEvent(ctx, orderID, rec, kind, desc)
+
+	// Customer notification: shipment just moved into "in_transit" —
+	// fire the "your order has shipped" email so the buyer gets
+	// tracking visibility. Detached background context.
+	if status == "in_transit" {
+		h.dispatchShipmentDispatchedEmail(orderID, rec)
+	}
 
 	// Customer notification: shipment just moved into "delivered" — fire
 	// the receipt email. Detached from the request context so the merchant

@@ -1,0 +1,21 @@
+{{.Theme.StoreName}}
+{{if .Theme.Tagline}}{{.Theme.Tagline}}{{end}}
+
+SHIPPED
+
+{{.Heading}}
+
+{{.Lede}}
+
+{{if .TrackingNumber}}Tracking:     {{.TrackingNumber}}{{if .Carrier}} (via {{.Carrier}}){{end}}
+{{end}}{{if .EstimatedDelivery}}Estimated:    {{.EstimatedDelivery}}
+{{end}}Order:        {{.OrderNumber}}
+Items:        {{.ItemCount}}
+Total:        {{.GrandTotal}} {{.CurrencyCode}}
+
+{{if .OrderURL}}View order: {{.OrderURL}}{{end}}
+
+—
+Thank you for shopping with {{.Theme.StoreName}}.
+{{if .Theme.FooterCopyright}}
+{{.Theme.FooterCopyright}}{{end}}

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <title>Order {{.OrderNumber}} has shipped</title>
+  <style>
+    @media only screen and (max-width: 600px) {
+      .m8-card { width: 100% !important; }
+      .m8-pad  { padding: 32px 24px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:{{.Theme.ColorBackground}};font-family:{{.Theme.BodyFont}};color:{{.Theme.ColorText}};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    {{.Heading}}
+  </div>
+  <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:{{.Theme.ColorBackground}};padding:48px 16px;">
+    <tr>
+      <td align="center">
+        <table class="m8-card" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#FFFFFF;border:1px solid {{.HairlineColor}};">
+
+          <tr><td style="height:3px;background-color:{{.Theme.ColorAccent}};line-height:3px;font-size:0;">&nbsp;</td></tr>
+
+          <tr>
+            <td class="m8-pad" style="padding:32px 40px 20px 40px;border-bottom:1px solid {{.HairlineColor}};">
+              {{if .Theme.LogoURL}}
+                <img src="{{.Theme.LogoURL}}" alt="{{.Theme.StoreName}}" style="max-height:40px;width:auto;display:block;margin:0 0 8px 0;">
+              {{else}}
+                <span style="font-family:{{.Theme.HeadingFont}};font-size:22px;font-weight:500;letter-spacing:-0.025em;color:{{.Theme.ColorText}};display:inline-block;">{{.Theme.StoreName}}</span>
+              {{end}}
+              {{if .Theme.Tagline}}
+                <p style="margin:6px 0 0 0;font-size:12px;color:{{.MutedCopy}};line-height:1.5;">{{.Theme.Tagline}}</p>
+              {{end}}
+            </td>
+          </tr>
+
+          <tr>
+            <td class="m8-pad" style="padding:28px 40px 8px 40px;">
+              <p style="margin:0 0 6px 0;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:{{.Theme.ColorAccent}};font-weight:600;">
+                Shipped
+              </p>
+              <h1 style="margin:0 0 12px 0;font-family:{{.Theme.HeadingFont}};font-size:28px;font-weight:500;letter-spacing:-0.02em;line-height:1.2;color:{{.Theme.ColorText}};">
+                {{.Heading}}
+              </h1>
+              <p style="margin:0 0 20px 0;font-size:15px;line-height:1.7;color:{{.SupportingCopy}};">
+                {{.Lede}}
+              </p>
+            </td>
+          </tr>
+
+          {{if .TrackingNumber}}
+          <tr>
+            <td class="m8-pad" style="padding:8px 40px 8px 40px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid {{.HairlineColor}};">
+                <tr>
+                  <td style="padding:22px 24px;background-color:{{.Theme.ColorBackground}};border-bottom:1px solid {{.HairlineColor}};">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:{{.MutedCopy}};font-weight:600;">Tracking</p>
+                    <p style="margin:0;font-family:{{.Theme.HeadingFont}};font-size:20px;font-weight:600;color:{{.Theme.ColorText}};">{{.TrackingNumber}}</p>
+                    {{if .Carrier}}
+                    <p style="margin:6px 0 0 0;font-size:13px;color:{{.MutedCopy}};">via {{.Carrier}}</p>
+                    {{end}}
+                  </td>
+                </tr>
+                {{if .EstimatedDelivery}}
+                <tr>
+                  <td style="padding:14px 24px;border-bottom:1px solid {{.HairlineColor}};">
+                    <table width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="font-size:13px;color:{{.MutedCopy}};">Estimated delivery</td>
+                        <td align="right" style="font-size:13px;color:{{.Theme.ColorText}};">{{.EstimatedDelivery}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                {{end}}
+              </table>
+            </td>
+          </tr>
+          {{end}}
+
+          <tr>
+            <td class="m8-pad" style="padding:18px 40px 8px 40px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid {{.HairlineColor}};">
+                <tr>
+                  <td style="padding:18px 24px;border-bottom:1px solid {{.HairlineColor}};">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:{{.MutedCopy}};font-weight:600;">Order</p>
+                    <p style="margin:0;font-family:{{.Theme.HeadingFont}};font-size:16px;color:{{.Theme.ColorText}};">{{.OrderNumber}}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:14px 24px;border-bottom:1px solid {{.HairlineColor}};">
+                    <table width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="font-size:13px;color:{{.MutedCopy}};">Items</td>
+                        <td align="right" style="font-size:13px;color:{{.Theme.ColorText}};">{{.ItemCount}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:14px 24px;">
+                    <table width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="font-size:13px;color:{{.MutedCopy}};">Total</td>
+                        <td align="right" style="font-size:13px;color:{{.Theme.ColorText}};">{{.GrandTotal}} {{.CurrencyCode}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          {{if .OrderURL}}
+          <tr>
+            <td class="m8-pad" style="padding:24px 40px 32px 40px;">
+              <table cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="background-color:{{.Theme.ColorButtonBg}};">
+                    <a href="{{.OrderURL}}" style="display:inline-block;padding:14px 24px;font-family:{{.Theme.BodyFont}};font-size:14px;font-weight:600;color:{{.Theme.ColorButtonText}};text-decoration:none;">
+                      {{.CTAButtonLabel}}
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {{end}}
+
+          {{if .Theme.FooterTagline}}
+          <tr>
+            <td class="m8-pad" style="padding:16px 40px 24px 40px;border-top:1px solid {{.HairlineColor}};text-align:center;">
+              <p style="margin:0;font-size:12px;color:{{.FaintCopy}};font-style:italic;">{{.Theme.FooterTagline}}</p>
+            </td>
+          </tr>
+          {{end}}
+          {{if .Theme.FooterCopyright}}
+          <tr>
+            <td class="m8-pad" style="padding:0 40px 24px 40px;text-align:center;">
+              <p style="margin:0;font-size:11px;color:{{.FaintCopy}};">{{.Theme.FooterCopyright}}</p>
+            </td>
+          </tr>
+          {{end}}
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

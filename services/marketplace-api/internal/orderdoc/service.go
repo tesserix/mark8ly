@@ -143,6 +143,31 @@ func (s *Service) SendRefund(ctx context.Context, orderID uuid.UUID, refundAmoun
 	return s.mailer.SendRefund(ctx, in)
 }
 
+// ShipmentInfo carries the per-shipment fields the dispatched email
+// needs. Caller (admin shipments handler / carrier webhook) supplies
+// it because the order row alone doesn't have carrier + tracking; the
+// shipment row does.
+type ShipmentInfo struct {
+	Carrier           string
+	TrackingNumber    string
+	EstimatedDelivery string // human-readable, optional
+}
+
+// SendShipmentDispatched dispatches the customer-facing "your order
+// has shipped" email. Caller passes shipment-specific fields the
+// order context can't provide.
+func (s *Service) SendShipmentDispatched(ctx context.Context, orderID uuid.UUID, info ShipmentInfo) error {
+	in, err := s.buildInput(ctx, orderID, false)
+	if err != nil {
+		return err
+	}
+	in.DocumentNumber = ""
+	in.Carrier = info.Carrier
+	in.TrackingNumber = info.TrackingNumber
+	in.EstimatedDelivery = info.EstimatedDelivery
+	return s.mailer.SendShipmentDispatched(ctx, in)
+}
+
 func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt bool) (DocumentInput, error) {
 	o, items, _, err := s.orderRepo.GetByID(ctx, s.db, orderID)
 	if err != nil {

@@ -29,6 +29,7 @@ type Service struct {
 	storeRepo  store.Repository
 	fga        authz.Client
 	sender     notification.Sender
+	loader     *notification.Loader
 	emailFrom  string
 	acceptURL  func(slug, token string) string
 	expiry     time.Duration
@@ -56,6 +57,9 @@ type Config struct {
 	StoreRepo store.Repository
 	FGA       authz.Client
 	Sender    notification.Sender
+	// Loader is the DB-backed template loader (embedded fallback). May
+	// be nil; nil falls through to embedded rendering.
+	Loader    *notification.Loader
 	EmailFrom string
 	// AcceptURL builds the full invitation accept URL from the
 	// default-store slug and a plaintext token.
@@ -79,6 +83,7 @@ func NewService(cfg Config) *Service {
 		storeRepo:  cfg.StoreRepo,
 		fga:        cfg.FGA,
 		sender:     cfg.Sender,
+		loader:     cfg.Loader,
 		emailFrom:  cfg.EmailFrom,
 		acceptURL:  cfg.AcceptURL,
 		expiry:     cfg.Expiry,
@@ -219,13 +224,27 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Invitation, erro
 	if s.sender != nil {
 		slug := s.defaultStoreSlug(ctx, t.ID)
 		url := s.acceptURL(slug, token)
-		msg, err := notification.RenderInvitation(email, s.emailFrom, notification.InvitationVars{
+		vars := notification.InvitationVars{
 			TenantName:   t.Name,
 			Role:         role,
 			AcceptURL:    url,
 			ExpiresIn:    "72 hours",
 			SupportEmail: s.emailFrom,
-		})
+		}
+		// DB-loaded template with embedded fallback. Tenant context is
+		// known here so forward it for engagement attribution.
+		var (
+			msg notification.Email
+			err error
+		)
+		if s.loader != nil {
+			msg, err = s.loader.Render(ctx, "invitation", email, s.emailFrom, tenantID, vars)
+		} else {
+			msg, err = notification.RenderInvitation(email, s.emailFrom, vars)
+			if err == nil {
+				msg.TenantID = tenantID
+			}
+		}
 		if err == nil {
 			_ = s.sender.Send(ctx, msg)
 		}

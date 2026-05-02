@@ -34,6 +34,9 @@ import (
 type Config struct {
 	Admin        *gipadmin.AdminClient
 	Sender       notification.Sender
+	// Loader is the DB-backed template loader (embedded fallback). May
+	// be nil during boot races; nil falls through to embedded rendering.
+	Loader       *notification.Loader
 	EmailFrom    string
 	SupportEmail string
 	// AdminResetBaseURL is the origin users land on after clicking
@@ -80,11 +83,20 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	}
 
 	resetURL := buildResetURL(s.cfg.AdminResetBaseURL, oobCode)
-	msg, err := notification.RenderPasswordReset(email, s.cfg.EmailFrom, notification.PasswordResetVars{
+	vars := notification.PasswordResetVars{
 		ResetURL:     resetURL,
 		ExpiresIn:    "1 hour",
 		SupportEmail: s.cfg.SupportEmail,
-	})
+	}
+	// Try DB-loaded template first (operator-edited); fall back to
+	// embedded if no Loader is wired or DB is unreachable. Password
+	// reset is cross-tenant — no tenant_id to forward.
+	var msg notification.Email
+	if s.cfg.Loader != nil {
+		msg, err = s.cfg.Loader.Render(ctx, "password_reset", email, s.cfg.EmailFrom, "", vars)
+	} else {
+		msg, err = notification.RenderPasswordReset(email, s.cfg.EmailFrom, vars)
+	}
 	if err != nil {
 		return fmt.Errorf("auth: render reset email: %w", err)
 	}

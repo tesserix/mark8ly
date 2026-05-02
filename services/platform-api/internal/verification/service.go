@@ -47,6 +47,7 @@ type TokenRecorder interface {
 type Service struct {
 	repo          Repository
 	sender        notification.Sender
+	loader        *notification.Loader
 	emailFrom     string
 	supportEmail  string
 	verifyURLBase string
@@ -56,6 +57,9 @@ type Service struct {
 // Config holds Service dependencies.
 type Config struct {
 	Sender       notification.Sender
+	// Loader is the DB-backed template loader (embedded fallback).
+	// May be nil during boot races; nil falls through to embedded.
+	Loader       *notification.Loader
 	EmailFrom    string
 	SupportEmail string
 	// VerifyURLBase is prefixed onto the magic link token to form the
@@ -78,6 +82,7 @@ func NewService(repo Repository, cfg Config) *Service {
 	return &Service{
 		repo:          repo,
 		sender:        cfg.Sender,
+		loader:        cfg.Loader,
 		emailFrom:     cfg.EmailFrom,
 		supportEmail:  cfg.SupportEmail,
 		verifyURLBase: cfg.VerifyURLBase,
@@ -136,12 +141,20 @@ func (s *Service) SendMagicLink(ctx context.Context, sessionID, email, businessN
 		slog.String("verify_url", verifyURL),
 	)
 
-	msg, err := notification.RenderEmailVerification(email, s.emailFrom, notification.EmailVerificationVars{
+	vars := notification.EmailVerificationVars{
 		BusinessName: businessName,
 		VerifyURL:    verifyURL,
 		ExpiresIn:    "24 hours",
 		SupportEmail: s.supportEmail,
-	})
+	}
+	// DB-loaded template with embedded fallback. Verification is a
+	// pre-tenant flow so no tenant_id to forward.
+	var msg notification.Email
+	if s.loader != nil {
+		msg, err = s.loader.Render(ctx, "email_verification", email, s.emailFrom, "", vars)
+	} else {
+		msg, err = notification.RenderEmailVerification(email, s.emailFrom, vars)
+	}
 	if err != nil {
 		return apperrors.Wrap(err, 500, "email_render_failed", "failed to render verification email")
 	}

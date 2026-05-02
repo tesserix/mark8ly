@@ -79,6 +79,22 @@ func main() {
 		sender = notification.NewLogSender(log)
 	}
 
+	// ─── Notification template loader ───────────────────────────────────
+	// DB-backed templates with embedded fallback. tesserix-home authors
+	// templates over the cross-DB grant; the loader reads them with a
+	// 5-minute TTL cache and falls back to the embedded version on miss
+	// or DB error so emails keep flowing during outages. SeedFromEmbedded
+	// is idempotent (ON CONFLICT DO NOTHING) so the first boot after
+	// migration 0013 ships byte-identical output to the embedded path.
+	templateLoader := notification.NewLoader(conn)
+	{
+		seedCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if seedErr := templateLoader.SeedFromEmbedded(seedCtx); seedErr != nil {
+			log.Warn("notification: template seed failed (continuing with embedded fallback)", "err", seedErr)
+		}
+		cancel()
+	}
+
 	// ─── OpenFGA client ────────────────────────────────────────────────
 	// FGA_STORE_ID can be set explicitly via env. If not, we discover the
 	// store named "mark8ly-platform" automatically — that's the store
@@ -138,6 +154,7 @@ func main() {
 		verification.NewRepository(conn),
 		verification.Config{
 			Sender:        sender,
+			Loader:        templateLoader,
 			EmailFrom:     cfg.EmailFrom,
 			SupportEmail:  cfg.EmailFrom,
 			VerifyURLBase: cfg.OnboardingBaseURL,
@@ -154,6 +171,7 @@ func main() {
 		TenantRepo:            tenantRepo,
 		StoreRepo:             storeRepo,
 		Sender:                sender,
+		Loader:                templateLoader,
 		EmailFrom:             cfg.EmailFrom,
 		AdminURLTemplate:      cfg.AdminBaseURLTemplate,
 		StorefrontURLTemplate: cfg.StorefrontBaseURLTemplate,
@@ -191,6 +209,7 @@ func main() {
 		StoreRepo:  storeRepo,
 		FGA:        fga,
 		Sender:     sender,
+		Loader:     templateLoader,
 		EmailFrom:  cfg.EmailFrom,
 		AcceptURL:  acceptURL,
 		Recorder:   invitationRec,
@@ -218,6 +237,7 @@ func main() {
 			authSvc := auth.NewService(auth.Config{
 				Admin:             admin,
 				Sender:            sender,
+				Loader:            templateLoader,
 				EmailFrom:         cfg.EmailFrom,
 				SupportEmail:      cfg.EmailFrom,
 				AdminResetBaseURL: cfg.AdminResetBaseURL,
@@ -253,6 +273,7 @@ func main() {
 	if authHandler != nil {
 		authHandler.Register(internal)
 	}
+	notification.NewHandler(templateLoader, sender, cfg.EmailFrom).Register(internal)
 
 	// e2e helper routes — only mounted outside production. Gives Playwright
 	// a way to grab the latest magic-link token for an email without

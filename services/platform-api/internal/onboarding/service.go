@@ -51,6 +51,7 @@ type Service struct {
 	tenantRepo            tenant.Repository
 	storeRepo             store.Repository
 	sender                notification.Sender
+	loader                *notification.Loader
 	emailFrom             string
 	supportSite           string
 	adminURLTemplate      string
@@ -65,6 +66,8 @@ type Config struct {
 	TenantRepo tenant.Repository
 	StoreRepo  store.Repository
 	Sender     notification.Sender
+	// Loader is the DB-backed template loader (embedded fallback).
+	Loader     *notification.Loader
 	EmailFrom  string
 	// AdminURLTemplate is a template like "https://%s-admin.mark8ly.com"
 	// for building the welcome email's admin link. Supports both the
@@ -88,6 +91,7 @@ func NewService(cfg Config) *Service {
 		tenantRepo:            cfg.TenantRepo,
 		storeRepo:             cfg.StoreRepo,
 		sender:                cfg.Sender,
+		loader:                cfg.Loader,
 		emailFrom:             cfg.EmailFrom,
 		supportSite:           cfg.SupportEmail,
 		adminURLTemplate:      cfg.AdminURLTemplate,
@@ -299,12 +303,26 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 }
 
 func (s *Service) sendWelcome(ctx context.Context, t *tenant.Tenant, st *store.Store, req CompleteRequest) error {
-	msg, err := notification.RenderWelcome(t.OwnerEmail, s.emailFrom, notification.WelcomeVars{
+	vars := notification.WelcomeVars{
 		BusinessName:  t.Name,
 		AdminURL:      formatURLTemplate(s.adminURLTemplate, st.Slug),
 		StorefrontURL: formatURLTemplate(s.storefrontURLTemplate, st.Slug),
 		SupportEmail:  s.supportSite,
-	})
+	}
+	// DB-loaded template with embedded fallback. Tenant ID is freshly
+	// committed so we forward it for engagement attribution.
+	var (
+		msg notification.Email
+		err error
+	)
+	if s.loader != nil {
+		msg, err = s.loader.Render(ctx, "welcome", t.OwnerEmail, s.emailFrom, t.ID, vars)
+	} else {
+		msg, err = notification.RenderWelcome(t.OwnerEmail, s.emailFrom, vars)
+		if err == nil {
+			msg.TenantID = t.ID
+		}
+	}
 	if err != nil {
 		return err
 	}

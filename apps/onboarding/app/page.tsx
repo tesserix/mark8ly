@@ -41,6 +41,7 @@ export default async function HomePage() {
 
       <main id="main">
         <Hero />
+        <Tour />
         <Manifesto />
         <Features />
         <Pricing currency={currency} catalogue={SHARED_PRICING_CATALOGUE} />
@@ -99,6 +100,54 @@ function Hero() {
       </div>
 
       <div className="rule mx-auto max-w-6xl" />
+    </section>
+  );
+}
+
+/* ============================================================
+   Tour — editorial product film. Asymmetric heading + body,
+   then a 16:9 video frame matching the FeaturePlate language
+   (rounded-lg, ring on paper). Poster shows first frame so
+   the moment reads as composed before play. Forty-five
+   seconds of the actual product running, no marketing tricks.
+   ============================================================ */
+
+function Tour() {
+  return (
+    <section aria-labelledby="tour-heading" className="py-16 sm:py-24">
+      <div className="mx-auto max-w-6xl px-6">
+        <div className="mb-10 grid gap-8 lg:mb-14 lg:grid-cols-[1fr_2fr] lg:gap-16">
+          <div>
+            <p className="eyebrow mb-5">The product</p>
+            <h2
+              id="tour-heading"
+              className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground"
+            >
+              See it move.
+            </h2>
+          </div>
+          <p className="max-w-xl self-end text-base leading-relaxed text-foreground-secondary">
+            Forty-five seconds inside a working Mark8ly storefront, checkout
+            and admin. No screenshots, no marketing tricks &mdash; just the
+            product running.
+          </p>
+        </div>
+
+        <figure className="relative aspect-video overflow-hidden rounded-lg bg-paper-100 ring-1 ring-border-subtle">
+          <video
+            controls
+            playsInline
+            preload="metadata"
+            poster="/video/tour-poster.jpg"
+            className="absolute inset-0 h-full w-full object-cover"
+            aria-label="Mark8ly product tour"
+          >
+            <source src="/video/tour.mp4" type="video/mp4" />
+          </video>
+        </figure>
+      </div>
+
+      <div className="rule mx-auto mt-16 max-w-6xl sm:mt-24" />
     </section>
   );
 }

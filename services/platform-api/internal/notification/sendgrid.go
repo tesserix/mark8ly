@@ -44,6 +44,18 @@ func (s *SendGridSender) Send(ctx context.Context, msg Email) error {
 	// user can press the button. Disabling it account-wide is the
 	// canonical fix, but belt-and-suspenders the setting here so a
 	// future sender can't accidentally re-enable it globally.
+	// Per-tenant attribution metadata — see notification-service Wave 1.5
+	// webhook receiver. SendGrid echoes custom_args back on every
+	// engagement event (delivered/open/click/bounce) so we can join them
+	// to a tenant without parsing recipient strings. Always emit `product`
+	// so cross-product surfaces stay distinguishable; `tenant_id` is
+	// optional because platform flows (password reset, magic links) are
+	// cross-tenant.
+	customArgs := map[string]string{"product": "mark8ly"}
+	if msg.TenantID != "" {
+		customArgs["tenant_id"] = msg.TenantID
+	}
+
 	falsePtr := false
 	body := sendgridRequest{
 		Personalizations: []sendgridPersonalization{{
@@ -55,6 +67,7 @@ func (s *SendGridSender) Send(ctx context.Context, msg Email) error {
 			{Type: "text/plain", Value: msg.TextBody},
 			{Type: "text/html", Value: msg.HTMLBody},
 		},
+		CustomArgs: customArgs,
 		TrackingSettings: &sendgridTrackingSettings{
 			ClickTracking: &sendgridClickTracking{
 				Enable:     &falsePtr,
@@ -100,6 +113,7 @@ type sendgridRequest struct {
 	From             sendgridAddress           `json:"from"`
 	Subject          string                    `json:"subject"`
 	Content          []sendgridContent         `json:"content"`
+	CustomArgs       map[string]string         `json:"custom_args,omitempty"`
 	TrackingSettings *sendgridTrackingSettings `json:"tracking_settings,omitempty"`
 }
 

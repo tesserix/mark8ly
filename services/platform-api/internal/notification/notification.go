@@ -36,6 +36,15 @@ type Email struct {
 	Subject  string
 	HTMLBody string
 	TextBody string
+
+	// TenantID is the mark8ly tenant the recipient belongs to. Optional —
+	// platform-level flows (password reset, email verification) are
+	// cross-tenant and may leave this empty. When non-empty the value is
+	// forwarded to SendGrid as a `tenant_id` custom_arg so the
+	// notification-service webhook ingester can attribute the resulting
+	// open / click / bounce events back to the right tenant in
+	// tesserix-home dashboards.
+	TenantID string
 }
 
 // Sender dispatches an Email. Implementations:

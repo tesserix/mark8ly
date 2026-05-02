@@ -212,6 +212,7 @@ func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt b
 
 	in := DocumentInput{
 		Recipient:      o.CustomerEmail,
+		TenantID:       store.TenantID,
 		DocumentNumber: documentNumber(asReceipt, o.OrderNumber),
 		OrderID:        orderID.String(),
 		StoreSlug:      store.Slug,

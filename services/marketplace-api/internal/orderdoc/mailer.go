@@ -58,6 +58,12 @@ type DocumentInput struct {
 	// silently no-op so a missing customer email never crashes a confirm.
 	Recipient string
 
+	// TenantID, when set, is forwarded to SendGrid as a custom_arg so
+	// notification-service can attribute open/click/bounce events back
+	// to the right tenant in tesserix-home dashboards. The orderdoc
+	// service populates it from the loaded order's tenant.
+	TenantID string
+
 	// Document identity — formatted "INV-PLA-260417-01154" / "RCP-...".
 	// Empty for cancellation + refund (those reference the order_number
 	// directly; no separate document number issued).
@@ -490,6 +496,11 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 		return err
 	}
 
+	customArgs := map[string]string{"product": "mark8ly", "kind": string(kind)}
+	if in.TenantID != "" {
+		customArgs["tenant_id"] = in.TenantID
+	}
+
 	falsePtr := false
 	payload := sgRequest{
 		Personalizations: []sgPersonalization{{To: []sgAddress{{Email: in.Recipient}}}},
@@ -500,6 +511,7 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 			{Type: "text/html", Value: htmlBody},
 		},
 		Attachments: attachments,
+		CustomArgs:  customArgs,
 		TrackingSettings: &sgTrackingSettings{
 			ClickTracking:        &sgClickTracking{Enable: &falsePtr, EnableText: &falsePtr},
 			OpenTracking:         &sgOpenTracking{Enable: &falsePtr},
@@ -538,6 +550,7 @@ type sgRequest struct {
 	Subject          string              `json:"subject"`
 	Content          []sgContent         `json:"content"`
 	Attachments      []sgAttachment      `json:"attachments,omitempty"`
+	CustomArgs       map[string]string   `json:"custom_args,omitempty"`
 	TrackingSettings *sgTrackingSettings `json:"tracking_settings,omitempty"`
 }
 

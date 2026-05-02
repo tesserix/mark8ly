@@ -396,6 +396,7 @@ func (s *Service) sendDeliveryIfPossible(ctx context.Context, gc *GiftCard) {
 
 	if err := s.mailer.SendDelivery(ctx, DeliveryInput{
 		Recipient:     *gc.RecipientEmail,
+		TenantID:      gc.TenantID.String(),
 		Card:          gc,
 		Theme:         theme,
 		StorefrontURL: storefrontURL,

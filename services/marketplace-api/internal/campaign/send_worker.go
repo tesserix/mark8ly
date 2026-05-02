@@ -172,10 +172,12 @@ func (w *SendWorker) dispatchCampaign(ctx context.Context, c Campaign) error {
 
 		for _, r := range recipients {
 			outbound := OutboundEmail{
-				Recipient: r.CustomerEmail,
-				Subject:   subject,
-				HTMLBody:  htmlBody,
-				TextBody:  textBody,
+				Recipient:  r.CustomerEmail,
+				Subject:    subject,
+				HTMLBody:   htmlBody,
+				TextBody:   textBody,
+				TenantID:   c.TenantID.String(),
+				CampaignID: c.ID.String(),
 			}
 			if err := w.dispatcher.Send(ctx, outbound); err != nil {
 				w.logger.Error("campaign: dispatch failed",

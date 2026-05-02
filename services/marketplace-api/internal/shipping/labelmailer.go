@@ -28,6 +28,10 @@ import (
 // evolve independently — the handler maps one to the other.
 type LabelEmailPayload struct {
 	Recipient      string
+	// TenantID, when non-empty, is forwarded to SendGrid as a custom_arg
+	// so notification-service can attribute open/click/bounce events
+	// back to the right tenant in tesserix-home dashboards.
+	TenantID       string
 	StoreName      string
 	OrderNumber    string
 	Carrier        string
@@ -111,6 +115,11 @@ func (m *SendGridLabelMailer) SendLabel(ctx context.Context, in LabelEmailPayloa
 		filename = "shipping-label.pdf"
 	}
 
+	customArgs := map[string]string{"product": "mark8ly", "kind": "shipping_label"}
+	if in.TenantID != "" {
+		customArgs["tenant_id"] = in.TenantID
+	}
+
 	falsePtr := false
 	payload := sgLabelRequest{
 		Personalizations: []sgLabelPersonalization{{To: []sgLabelAddress{{Email: in.Recipient}}}},
@@ -126,6 +135,7 @@ func (m *SendGridLabelMailer) SendLabel(ctx context.Context, in LabelEmailPayloa
 			Filename:    filename,
 			Disposition: "attachment",
 		}},
+		CustomArgs: customArgs,
 		TrackingSettings: &sgLabelTrackingSettings{
 			ClickTracking:        &sgLabelTrackingFlag{Enable: &falsePtr, EnableText: &falsePtr},
 			OpenTracking:         &sgLabelTrackingFlag{Enable: &falsePtr},
@@ -166,6 +176,7 @@ type sgLabelRequest struct {
 	Subject          string                   `json:"subject"`
 	Content          []sgLabelContent         `json:"content"`
 	Attachments      []sgLabelAttachment      `json:"attachments,omitempty"`
+	CustomArgs       map[string]string        `json:"custom_args,omitempty"`
 	TrackingSettings *sgLabelTrackingSettings `json:"tracking_settings,omitempty"`
 }
 

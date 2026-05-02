@@ -1219,15 +1219,17 @@ func (h *ShipmentsHandler) EmailLabel(c *gin.Context) {
 	var meta struct {
 		OrderNumber string `gorm:"column:order_number"`
 		StoreName   string `gorm:"column:name"`
+		TenantID    string `gorm:"column:tenant_id"`
 	}
 	_ = h.db.WithContext(ctx).Raw(`
-		SELECT o.order_number, s.name
+		SELECT o.order_number, s.name, s.tenant_id
 		FROM orders o
 		JOIN stores s ON s.id = o.store_id
 		WHERE o.id = ? LIMIT 1`, orderID).Scan(&meta).Error
 
 	if err := h.labelMailer.SendLabel(ctx, shipping.LabelEmailPayload{
 		Recipient:      strings.TrimSpace(req.Recipient),
+		TenantID:       meta.TenantID,
 		StoreName:      meta.StoreName,
 		OrderNumber:    meta.OrderNumber,
 		Carrier:        rec.Carrier,

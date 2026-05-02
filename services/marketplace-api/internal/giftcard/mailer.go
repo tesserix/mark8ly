@@ -30,6 +30,9 @@ type Mailer interface {
 // worker / handler fills it in once the gift card is persisted.
 type DeliveryInput struct {
 	Recipient string              // required — recipient email
+	// TenantID is forwarded to SendGrid as a custom_arg for per-tenant
+	// engagement attribution. Optional — empty values are omitted.
+	TenantID  string
 	Card      *GiftCard           // the issued card (code, balance, message, expiry)
 	Theme     GiftCardEmailTheme  // store branding for masthead / colors / fonts
 	StorefrontURL string          // e.g. https://acme.mark8ly.com — used for CTA
@@ -255,6 +258,11 @@ func (m *SendGridMailer) SendDelivery(ctx context.Context, in DeliveryInput) err
 		return err
 	}
 
+	customArgs := map[string]string{"product": "mark8ly", "kind": "giftcard"}
+	if in.TenantID != "" {
+		customArgs["tenant_id"] = in.TenantID
+	}
+
 	falsePtr := false
 	payload := sgRequest{
 		Personalizations: []sgPersonalization{{To: []sgAddress{{Email: in.Recipient}}}},
@@ -264,6 +272,7 @@ func (m *SendGridMailer) SendDelivery(ctx context.Context, in DeliveryInput) err
 			{Type: "text/plain", Value: textBody},
 			{Type: "text/html", Value: htmlBody},
 		},
+		CustomArgs: customArgs,
 		TrackingSettings: &sgTrackingSettings{
 			ClickTracking:        &sgClickTracking{Enable: &falsePtr, EnableText: &falsePtr},
 			OpenTracking:         &sgOpenTracking{Enable: &falsePtr},
@@ -304,6 +313,7 @@ type sgRequest struct {
 	From             sgAddress           `json:"from"`
 	Subject          string              `json:"subject"`
 	Content          []sgContent         `json:"content"`
+	CustomArgs       map[string]string   `json:"custom_args,omitempty"`
 	TrackingSettings *sgTrackingSettings `json:"tracking_settings,omitempty"`
 }
 

@@ -53,6 +53,18 @@ func (d *SendGridDispatcher) Send(ctx context.Context, msg OutboundEmail) error 
 		return fmt.Errorf("campaign: missing body")
 	}
 
+	// Per-tenant attribution metadata — see notification-service Wave 1.5
+	// webhook receiver. Echoed back on every engagement event so the
+	// ingester can attribute opens / clicks / bounces to the right tenant
+	// and campaign in tesserix-home dashboards.
+	customArgs := map[string]string{"product": "mark8ly", "kind": "campaign"}
+	if msg.TenantID != "" {
+		customArgs["tenant_id"] = msg.TenantID
+	}
+	if msg.CampaignID != "" {
+		customArgs["campaign_id"] = msg.CampaignID
+	}
+
 	// Disable tracking — keeps behavior identical to platform-api's
 	// notification sender so merchants don't see inconsistent click
 	// tracking across transactional and campaign mail.
@@ -65,6 +77,7 @@ func (d *SendGridDispatcher) Send(ctx context.Context, msg OutboundEmail) error 
 			{Type: "text/plain", Value: msg.TextBody},
 			{Type: "text/html", Value: msg.HTMLBody},
 		},
+		CustomArgs: customArgs,
 		TrackingSettings: &sgTrackingSettings{
 			ClickTracking:        &sgClickTracking{Enable: &falsePtr, EnableText: &falsePtr},
 			OpenTracking:         &sgOpenTracking{Enable: &falsePtr},
@@ -105,6 +118,7 @@ type sgRequest struct {
 	From             sgAddress           `json:"from"`
 	Subject          string              `json:"subject"`
 	Content          []sgContent         `json:"content"`
+	CustomArgs       map[string]string   `json:"custom_args,omitempty"`
 	TrackingSettings *sgTrackingSettings `json:"tracking_settings,omitempty"`
 }
 

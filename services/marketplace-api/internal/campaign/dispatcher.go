@@ -25,6 +25,14 @@ type OutboundEmail struct {
 	Subject   string
 	HTMLBody  string
 	TextBody  string
+	// TenantID, when non-empty, is forwarded to SendGrid as a custom_arg
+	// for per-tenant attribution in tesserix-home dashboards. The send
+	// worker fills it from the campaign's tenant_id column.
+	TenantID string
+	// CampaignID, when non-empty, joins SendGrid engagement events to the
+	// originating campaign so future per-campaign metrics can be derived
+	// without re-keying recipient strings against the database.
+	CampaignID string
 }
 
 // LogDispatcher is a no-op Dispatcher that logs each send instead of

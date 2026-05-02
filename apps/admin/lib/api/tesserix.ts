@@ -165,6 +165,101 @@ export async function listMyPlatformTickets(
   }
 }
 
+export interface PlatformTicketReply {
+  id: string;
+  ticket_id: string;
+  author_type: "merchant" | "platform_admin";
+  author_name: string;
+  author_email: string | null;
+  author_user_id: string | null;
+  content: string;
+  created_at: string;
+}
+
+export interface PlatformTicketWithThread {
+  ticket: PlatformTicket;
+  replies: PlatformTicketReply[];
+}
+
+export async function getMyPlatformTicket(
+  tenantId: string,
+  ticketId: string,
+): Promise<PlatformTicketWithThread | null> {
+  if (!INTERNAL_API_TOKEN || !tenantId || !ticketId) return null;
+
+  try {
+    const url = new URL(
+      `${TESSERIX_INTERNAL_URL}/api/internal/platform-tickets/${ticketId}`,
+    );
+    url.searchParams.set("product", PRODUCT_ID);
+    url.searchParams.set("tenant_id", tenantId);
+
+    const res = await fetch(url.toString(), {
+      headers: authHeaders(),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as PlatformTicketWithThread;
+  } catch {
+    return null;
+  }
+}
+
+export interface ReplyInput {
+  tenantId: string;
+  ticketId: string;
+  content: string;
+  authorName: string;
+  authorEmail?: string;
+  authorUserId?: string;
+}
+
+export async function replyToPlatformTicket(
+  input: ReplyInput,
+): Promise<Result<PlatformTicketReply>> {
+  if (!INTERNAL_API_TOKEN) return configError();
+
+  try {
+    const res = await fetch(
+      `${TESSERIX_INTERNAL_URL}/api/internal/platform-tickets/${input.ticketId}/replies`,
+      {
+        method: "POST",
+        headers: authHeaders(),
+        cache: "no-store",
+        body: JSON.stringify({
+          productId: PRODUCT_ID,
+          tenantId: input.tenantId,
+          content: input.content,
+          authorName: input.authorName,
+          authorEmail: input.authorEmail,
+          authorUserId: input.authorUserId,
+        }),
+      },
+    );
+    if (!res.ok) {
+      const body = await readJsonSafely(res);
+      const code = typeof body?.error === "string" ? body.error : `http_${res.status}`;
+      return {
+        ok: false,
+        error: {
+          code,
+          message: messageForCode(code, res.status),
+        },
+      };
+    }
+    const body = (await res.json()) as { reply: PlatformTicketReply };
+    return { ok: true, data: body.reply };
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: "network_error",
+        message: err instanceof Error ? err.message : "Could not reach tesserix.",
+      },
+    };
+  }
+}
+
 export async function listActivePlatformAnnouncements(
   tenantStatus: string = "active",
 ): Promise<PlatformAnnouncement[]> {
@@ -197,6 +292,10 @@ function messageForCode(code: string, status: number): string {
       return "Some fields are invalid. Please review and try again.";
     case "missing_params":
       return "Missing required parameters.";
+    case "not_found":
+      return "Ticket not found.";
+    case "ticket_closed":
+      return "This ticket is closed and can't accept new replies.";
     case "db_unavailable":
       return "Tesserix is temporarily unavailable. Please try again in a moment.";
     default:

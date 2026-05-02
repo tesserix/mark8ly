@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import {
@@ -80,7 +81,10 @@ async function TicketList({ tenantId }: { tenantId: string }) {
 
 function TicketRow({ ticket }: { ticket: PlatformTicket }) {
   return (
-    <article className="flex items-center justify-between gap-4 border-b border-border-subtle px-1 py-4">
+    <Link
+      href={`/support/platform/${ticket.id}`}
+      className="flex items-center justify-between gap-4 border-b border-border-subtle px-1 py-4 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
+    >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="font-serif text-sm tabular-nums text-foreground">
@@ -94,7 +98,7 @@ function TicketRow({ ticket }: { ticket: PlatformTicket }) {
       <p className="shrink-0 text-xs tabular-nums text-foreground-tertiary">
         {timeAgo(ticket.updated_at)}
       </p>
-    </article>
+    </Link>
   );
 }
 

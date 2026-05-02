@@ -7,16 +7,14 @@ import {
 } from "@/lib/api/tesserix";
 import { PlatformTicketForm } from "@/components/support/PlatformTicketForm";
 
-interface PlatformSupportPageProps {
-  searchParams?: Promise<{ filed?: string }>;
-}
+// Always render fresh — the action's revalidatePath + router.refresh()
+// chain repaints the list after a ticket is filed, and we want every
+// poll/visit to see the live ticket state from tesserix-home rather
+// than a stale RSC cache.
+export const dynamic = "force-dynamic";
 
-export default async function PlatformSupportPage({
-  searchParams,
-}: PlatformSupportPageProps) {
-  const params = (await searchParams) ?? {};
+export default async function PlatformSupportPage() {
   const session = await getServerSessionContext();
-  const filed = params.filed === "1";
 
   return (
     <div className="space-y-10">
@@ -38,15 +36,6 @@ export default async function PlatformSupportPage({
           .
         </p>
       </header>
-
-      {filed && (
-        <p
-          role="status"
-          className="rounded-md border border-[color:var(--moss-700)]/20 bg-[color:var(--moss-700)]/5 px-4 py-3 text-sm text-[color:var(--moss-700)]"
-        >
-          Ticket filed. The Tesserix team will get back to you by email.
-        </p>
-      )}
 
       <section className="space-y-5">
         <h2 className="font-serif text-2xl font-medium text-foreground">

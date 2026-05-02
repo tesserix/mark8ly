@@ -1,14 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { filePlatformTicket } from "@/lib/api/tesserix";
 
 export type PlatformTicketActionState =
   | null
   | { error: string }
-  | { success: string };
+  | { success: { ticketNumber: string } };
 
 export async function filePlatformTicketAction(
   _prev: PlatformTicketActionState,
@@ -58,8 +57,12 @@ export async function filePlatformTicketAction(
     return { error: result.error.message };
   }
 
+  // No redirect — return success so the client can fire a toast and
+  // call router.refresh() to repaint the list below the form. The
+  // revalidatePath call invalidates the route's RSC cache so the
+  // refresh fetches fresh data from the upstream.
   revalidatePath("/support/platform");
-  redirect("/support/platform?filed=1");
+  return { success: { ticketNumber: result.data.ticket_number } };
 }
 
 function isPriority(

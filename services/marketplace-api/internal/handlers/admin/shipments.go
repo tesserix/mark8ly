@@ -213,10 +213,36 @@ func (h *ShipmentsHandler) dispatchReceiptEmail(orderID uuid.UUID) {
 // dispatchShipmentDispatchedEmail fires the customer-facing "your
 // order has shipped" email on a detached background context. Caller
 // has already verified the shipment transitioned to "in_transit".
+//
+// Idempotent at the DB layer via shipments.dispatched_email_sent_at:
+// the first transition to win the atomic UPDATE sends the email; any
+// subsequent caller (e.g. carrier webhook arriving after admin marked
+// shipped, or vice-versa) sees 0 rows affected and silently skips.
+//
+// If h.db is nil (test paths), we fall back to firing without the gate
+// — tests that need dedup behavior should set up the DB.
 func (h *ShipmentsHandler) dispatchShipmentDispatchedEmail(orderID uuid.UUID, rec *shipping.ShipmentRecord) {
 	if h.docMailer == nil || rec == nil {
 		return
 	}
+
+	if h.db != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		res := h.db.WithContext(ctx).
+			Table("shipments").
+			Where("id = ? AND dispatched_email_sent_at IS NULL", rec.ID).
+			Update("dispatched_email_sent_at", time.Now().UTC())
+		cancel()
+		if res.Error != nil {
+			h.logger.Warn("orderdoc: dispatched_email_sent_at gate update failed; firing anyway",
+				"order_id", orderID, "shipment_id", rec.ID, "err", res.Error)
+		} else if res.RowsAffected == 0 {
+			// Another path already sent the email. Skip silently — this
+			// is the desired dedup behavior.
+			return
+		}
+	}
+
 	info := orderdoc.ShipmentInfo{
 		Carrier:        rec.Carrier,
 		TrackingNumber: rec.TrackingNumber,
@@ -1422,6 +1448,14 @@ func (h *ShipmentsHandler) AdvanceShipmentFromTracking(
 			}
 		}
 		h.appendShipmentEvent(ctx, rec.OrderID, rec, kind, desc)
+	}
+	// Customer email on in_transit transition. Dedup'd at the DB layer
+	// via shipments.dispatched_email_sent_at — if the admin's manual
+	// PATCH /shipments/:id/status path got here first the email already
+	// fired, and dispatchShipmentDispatchedEmail will see 0 rows
+	// affected on its gate UPDATE and skip silently.
+	if newStatus == "in_transit" {
+		h.dispatchShipmentDispatchedEmail(rec.OrderID, rec)
 	}
 	if newStatus == "delivered" {
 		h.dispatchReceiptEmail(rec.OrderID)

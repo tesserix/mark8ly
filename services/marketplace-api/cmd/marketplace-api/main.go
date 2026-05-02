@@ -363,6 +363,11 @@ func main() {
 	})
 	domainStoresRepo := stores.NewRepository(conn)
 	domainsHandler := admin.NewDomainsHandler(domainSvc, domainStoresRepo, log)
+	// Super-admin (tesserix-home) re-verify + cert-refresh actions over
+	// /internal. Mounted in mode.Both and mode.Admin alongside the
+	// templates internal handler so the operator UI on tesserix.app can
+	// trigger a fresh DNS / cert check without forging a tenant session.
+	internalDomainsHandler := admin.NewInternalDomainsHandler(domainSvc, conn, log)
 
 	// Admin wiring — constructed for admin and both modes. The storefront
 	// process never mounts the admin group so these dependencies would go
@@ -1643,6 +1648,8 @@ func main() {
 		}
 		// Email templates registry (B1f) — refresh + test-send.
 		templateHandler.Register(r.Group("/internal"))
+		// Super-admin domain re-verify + cert-refresh actions.
+		internalDomainsHandler.Register(r.Group("/internal"))
 		// Mirror of platform_api.stores so admin/storefront slug lookups
 		// don't cross-service-call platform-api on every request. Called
 		// by platform-api at onboarding completion (parallel to
@@ -1704,6 +1711,8 @@ func main() {
 			// ages its cache out via the 5-min TTL, which is acceptable
 			// for runtime sends.
 			templateHandler.Register(engine.Group("/internal"))
+			// Super-admin domain re-verify + cert-refresh actions.
+			internalDomainsHandler.Register(engine.Group("/internal"))
 			// Mirror of platform_api.stores. See main mode-Both branch
 			// above for context. Admin engine only — storefront never
 			// writes stores.

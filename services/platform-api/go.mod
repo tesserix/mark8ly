@@ -12,7 +12,7 @@ require (
 	github.com/openfga/go-sdk v0.7.5
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.36.0
-	gorm.io/driver/postgres v1.5.11
+	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.25.12
 )
 

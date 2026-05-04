@@ -47,12 +47,32 @@ AU + IN · → mark8ly.com
 
 ## Phase 1 — Polish (this week, ~5 hours focused)
 
-### Step 4 — Polish `@the_bondi_store` IG account
+### Step 4 — Create + polish `@the_bondi_store` IG account
+**4a — Create the handle if not yet done.** Critical: this account
+must read as a real indie shop, NOT as a Mark8ly demo. No mention of
+Mark8ly anywhere on the profile (bio, grid, captions, highlights) —
+the storefront URL alone is the bridge.
+
+- Bio: shop voice, not founder voice. E.g.:
+  ```
+  Sun-bleached linen, made for the long Bondi summer ☀️
+  Small batch · ships worldwide
+  → the-bondi-store.mark8ly.com
+  ```
+- Profile pic: product/lifestyle shot, NOT a face. Brand mark works
+  too. Aesthetic = indie AU brand, not tech startup.
+- Honesty rule: ideally `@the_bondi_store` IS a real shop someone
+  (you, a co-founder, or a friend) actually runs and fulfills orders
+  for. Or hand it to an AU friend with an existing small product
+  business in exchange for free hosting + photography + design. Either
+  way it stays 100% truthful and the peer-outreach play stays clean.
+  Don't fake customers, reviews, or sales counts.
+
+**4b — Build the grid before any outreach.**
 - 12–20 posts (lifestyle photos, product shots, AU energy)
-- Bio: shop name + tagline + storefront URL
-- Link in bio → `the-bondi-store.mark8ly.com`
 - Highlights: "Shop", "About", "Behind the brand"
-- Goal: looks like a real shop, not a stub. Leads will click.
+- Don't DM from this account until 12+ posts are live.
+- Goal: looks like a real shop, not a stub. Leads WILL click through.
 
 ### Step 5 — Polish `the-bondi-store.mark8ly.com` storefront
 - 10+ products with real-looking photos
@@ -61,9 +81,10 @@ AU + IN · → mark8ly.com
 - Audit: nothing on this site should signal "demo" or "placeholder"
 
 ### Step 6 — Reserve all remaining handles (defensive, 5 min)
-- `@mark8ly` on X, TikTok, LinkedIn (company page), YouTube
-- `@tesserixhq` on the same surfaces (parent co)
-- Don't post yet. Just claim.
+- IG: `@mark8ly` ✅ done · `@tesserix.app` ✅ done · `@the_bondi_store` (per Step 4a)
+- Still pending: X / TikTok / LinkedIn (company page) / YouTube for both
+  `mark8ly` and `tesserix` (or `tesserixhq` if `tesserix` taken)
+- Don't post yet. Just claim. Add profile pic + bio + link to each.
 
 ---
 
@@ -278,6 +299,35 @@ sharing because it actually worked.
 
 ## Done / completed
 
-- [x] Reserved `@the_bondi_store` IG handle
 - [x] Built `the-bondi-store.mark8ly.com` storefront (needs polish per Step 5)
 - [x] Fixed transactional email footer leak (`Paper · Ink · Moss` → `Mark8ly · A Tesserix product`) in welcome + password_reset templates (commit `eaa44e3` + DB rows updated via tesserix-home admin UI)
+- [x] Reserved `@mark8ly` IG handle (Step 1) — bio + profile pic pending; do not post yet
+- [x] Reserved `@tesserix.app` IG handle (Step 6 partial) — bio + profile pic pending; do not post yet
+
+## Bio/pic copy for the new accounts (paste-ready)
+
+**`@mark8ly`** — profile pic: `apps/onboarding/public/logo.png`
+```
+Beautiful storefronts for Instagram sellers.
+60-second setup · AU + IN
+Founded by @mahesh.sangawar  →  mark8ly.com
+```
+
+**`@tesserix.app`** — profile pic: parent-co mark or reuse Mark8ly mark
+on a different background tone
+```
+Building commerce infrastructure for indie merchants.
+Maker of @mark8ly  ·  Sydney
+→  tesserix.app
+```
+Note: dot in handle (`tesserix.app`) is unusual — reads like a file
+extension to some. Live with it; cooldown to rename isn't worth the
+burn.
+
+**`@the_bondi_store`** — profile pic: product/lifestyle shot, NOT a face
+```
+Sun-bleached linen, made for the long Bondi summer ☀️
+Small batch · ships worldwide
+→ the-bondi-store.mark8ly.com
+```
+NO mention of Mark8ly on this profile. Persona = real indie shop.

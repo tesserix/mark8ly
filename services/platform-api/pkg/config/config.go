@@ -2,6 +2,8 @@
 package config
 
 import (
+	"strings"
+
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 )
@@ -93,5 +95,15 @@ func Load() (*Config, error) {
 	if err := envconfig.Process("", &cfg); err != nil {
 		return nil, err
 	}
+	// GCP Secret Manager stores random-base64 / random-hex secrets with a
+	// trailing newline that openssl + gcloud secrets create both emit.
+	// HTTP strips trailing LF from header values in transit, so the env
+	// value (with newline) and the X-Internal-Auth header (without)
+	// would never constant-time-equal. otto + marketplace-api already
+	// trim defensively; mirror that here so the gate works the moment
+	// the secret syncs.
+	cfg.InternalAuthSecret = strings.TrimSpace(cfg.InternalAuthSecret)
+	cfg.MarketplaceInternalAuthSecret = strings.TrimSpace(cfg.MarketplaceInternalAuthSecret)
+	cfg.AuditIngestSecret = strings.TrimSpace(cfg.AuditIngestSecret)
 	return &cfg, nil
 }

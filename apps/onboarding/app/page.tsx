@@ -45,6 +45,7 @@ export default async function HomePage() {
         <Manifesto />
         <Features />
         <Pricing currency={currency} catalogue={SHARED_PRICING_CATALOGUE} />
+        <Comparison />
         <HowItWorks />
         <Faq />
         <FinalCta />
@@ -330,6 +331,194 @@ function FeaturePlate({ kicker, index, src, alt }: FeaturePlateProps) {
    is @repo/ui/subscription/pricing-data.ts (shared with admin
    /pricing). Feature copy matches spec v2.3 §9 exactly.
    ============================================================ */
+
+/* ============================================================
+   Comparison — quiet, factual table that puts Mark8ly next to
+   the names readers have already weighed: Shopify, BigCommerce,
+   Wix, Squarespace. Editorial, not a SaaS bake-off — hairline
+   rules between rows, no shaded card, Mark8ly column carries a
+   single moss accent so the eye finds it without shouting.
+   Prices and trial windows reflect the cheapest paid plan at
+   the time of writing; the footnote acknowledges processor fees
+   apply on every platform.
+   ============================================================ */
+
+interface CompareRow {
+  label: string;
+  mark8ly: string;
+  shopify: string;
+  bigcommerce: string;
+  wix: string;
+  squarespace: string;
+}
+
+const COMPARISON_ROWS: readonly CompareRow[] = [
+  {
+    label: "Starting price",
+    mark8ly: "$29 / mo",
+    shopify: "$39 / mo",
+    bigcommerce: "$39 / mo",
+    wix: "$29 / mo",
+    squarespace: "$27 / mo",
+  },
+  {
+    label: "Free to try",
+    mark8ly: "90 days",
+    shopify: "3 days",
+    bigcommerce: "15 days",
+    wix: "14 days",
+    squarespace: "14 days",
+  },
+  {
+    label: "Platform fee per sale",
+    mark8ly: "None",
+    shopify: "2%, unless you use Shopify Payments",
+    bigcommerce: "None",
+    wix: "None",
+    squarespace: "None",
+  },
+  {
+    label: "Default storefront design",
+    mark8ly: "Editorial, designer-led",
+    shopify: "Generic templates",
+    bigcommerce: "Functional templates",
+    wix: "Drag-and-drop builder",
+    squarespace: "Designer themes",
+  },
+  {
+    label: "Use your own domain",
+    mark8ly: "Included",
+    shopify: "Bring your own",
+    bigcommerce: "Bring your own",
+    wix: "First year included",
+    squarespace: "First year included",
+  },
+  {
+    label: "Local payments (UPI, wallets)",
+    mark8ly: "Built in",
+    shopify: "Limited by region",
+    bigcommerce: "Limited by region",
+    wix: "Limited by region",
+    squarespace: "Mostly Stripe / PayPal",
+  },
+  {
+    label: "Take your data when you leave",
+    mark8ly: "One click, any time",
+    shopify: "CSV export",
+    bigcommerce: "CSV export",
+    wix: "Partial",
+    squarespace: "Partial",
+  },
+];
+
+function Comparison() {
+  const competitorHeaderClass =
+    "px-4 py-4 text-left align-bottom font-sans text-[0.9375rem] font-medium text-foreground-secondary";
+  const competitorCellClass =
+    "px-4 py-5 align-top text-foreground-tertiary";
+
+  return (
+    <section
+      id="compare"
+      aria-labelledby="compare-heading"
+      className="border-t border-border-subtle py-16 sm:py-24"
+    >
+      <div className="mx-auto max-w-6xl px-6">
+        <div className="mb-12 grid gap-8 lg:grid-cols-[1fr_2fr] lg:gap-16">
+          <div>
+            <p className="eyebrow mb-5">How we compare</p>
+            <h2
+              id="compare-heading"
+              className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground"
+            >
+              Side by side,
+              <br />
+              no spin.
+            </h2>
+          </div>
+          <p className="max-w-xl self-end text-base leading-relaxed text-foreground-secondary">
+            We&rsquo;re not the only commerce platform on the table. Here&rsquo;s
+            how Mark8ly lines up against the names you&rsquo;ve probably
+            already looked at &mdash; the things that show up on the bill,
+            and the things that show up on the storefront.
+          </p>
+        </div>
+
+        <div className="-mx-6 overflow-x-auto px-6 sm:mx-0 sm:px-0">
+          <table className="w-full min-w-[760px] border-collapse text-sm">
+            <caption className="sr-only">
+              How Mark8ly compares with Shopify, BigCommerce, Wix and
+              Squarespace on price, trial length, fees, design and data
+              portability.
+            </caption>
+            <thead>
+              <tr className="border-b border-border">
+                <th
+                  scope="col"
+                  className="py-4 pr-6 text-left align-bottom"
+                >
+                  <span className="eyebrow">Feature</span>
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-4 text-left align-bottom"
+                >
+                  <span className="font-serif text-lg font-medium text-foreground">
+                    Mark8ly
+                  </span>
+                </th>
+                <th scope="col" className={competitorHeaderClass}>
+                  Shopify
+                </th>
+                <th scope="col" className={competitorHeaderClass}>
+                  BigCommerce
+                </th>
+                <th scope="col" className={competitorHeaderClass}>
+                  Wix
+                </th>
+                <th scope="col" className={competitorHeaderClass}>
+                  Squarespace
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARISON_ROWS.map((row) => (
+                <tr
+                  key={row.label}
+                  className="border-b border-border-subtle"
+                >
+                  <th
+                    scope="row"
+                    className="py-5 pr-6 text-left align-top font-normal text-foreground-secondary"
+                  >
+                    {row.label}
+                  </th>
+                  <td className="px-4 py-5 align-top">
+                    <span className="block border-l-2 border-moss-700 pl-3 font-medium text-foreground">
+                      {row.mark8ly}
+                    </span>
+                  </td>
+                  <td className={competitorCellClass}>{row.shopify}</td>
+                  <td className={competitorCellClass}>{row.bigcommerce}</td>
+                  <td className={competitorCellClass}>{row.wix}</td>
+                  <td className={competitorCellClass}>{row.squarespace}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="mt-8 max-w-3xl text-sm text-foreground-tertiary">
+          Prices show the cheapest paid plan at the time of writing. Payment
+          processor fees &mdash; around 2&ndash;3% for cards, closer to 1% for
+          UPI &mdash; apply on every platform. That&rsquo;s what your bank
+          charges, not us. The line above is what the platform itself adds on
+          top.
+        </p>
+      </div>
+    </section>
+  );
+}
 
 /* ============================================================
    How it works — three steps, numbered, left-aligned, narrow

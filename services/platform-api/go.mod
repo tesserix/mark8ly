@@ -8,7 +8,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.12.3
 	github.com/openfga/go-sdk v0.7.5
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.36.0

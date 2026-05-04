@@ -5,6 +5,7 @@ import {
   isCanonicalAllowedPath,
   isValidSlugReturnUrl,
 } from "./lib/auth/host-policy";
+import { platformInternalHeaders } from "./lib/api/server/platformInternal";
 
 /**
  * Admin middleware — Phase J.
@@ -255,7 +256,7 @@ export async function middleware(req: NextRequest) {
     try {
       const storeRes = await fetch(
         `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(requestedSlug)}`,
-        { cache: "no-store" },
+        { cache: "no-store", headers: platformInternalHeaders() },
       );
       // Hard 404 when the slug isn't a known store — this is the
       // wildcard-subdomain block: `abc-admin.mark8ly.com` for an
@@ -312,7 +313,7 @@ export async function middleware(req: NextRequest) {
   try {
     const roleRes = await fetch(
       `${PLATFORM_API_URL}/internal/tenants/${session.tenant_id}/me?uid=${encodeURIComponent(session.user_id)}`,
-      { cache: "no-store" },
+      { cache: "no-store", headers: platformInternalHeaders() },
     );
     if (roleRes.ok) {
       const body = (await roleRes.json()) as {
@@ -511,7 +512,7 @@ async function fetchPrimaryStoreSlug(storeID: string): Promise<string | null> {
   try {
     const res = await fetch(
       `${PLATFORM_API_URL}/internal/stores/${encodeURIComponent(storeID)}`,
-      { cache: "no-store" },
+      { cache: "no-store", headers: platformInternalHeaders() },
     );
     if (!res.ok) return null;
     const body = (await res.json()) as { data?: { slug?: string } };
@@ -532,7 +533,7 @@ async function fetchFirstSlugForTenant(tenantID: string): Promise<string | null>
   try {
     const res = await fetch(
       `${PLATFORM_API_URL}/internal/tenants/${encodeURIComponent(tenantID)}/stores`,
-      { cache: "no-store" },
+      { cache: "no-store", headers: platformInternalHeaders() },
     );
     if (!res.ok) return null;
     const body = (await res.json()) as { data?: Array<{ slug?: string }> };

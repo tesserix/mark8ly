@@ -29,6 +29,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/invitation"
 	"github.com/mark8ly/platform-api/internal/location"
 	"github.com/mark8ly/platform-api/internal/marketplaceapi"
+	"github.com/mark8ly/platform-api/internal/middleware"
 	"github.com/mark8ly/platform-api/internal/notification"
 	"github.com/mark8ly/platform-api/internal/onboarding"
 	"github.com/mark8ly/platform-api/internal/outbox"
@@ -262,7 +263,12 @@ func main() {
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)
 	v1 := r.Group("/api/v1")
-	internal := r.Group("/internal")
+	// /internal/* is the in-cluster trust surface — admin BFF, auth-bff,
+	// marketplace-api call into here. RequireInternalAuth gates every
+	// route with a constant-time X-Internal-Auth check; an empty
+	// secret no-ops the gate so the binary stays bootable in dev and
+	// during the cutover before the secret is provisioned.
+	internal := r.Group("/internal", middleware.RequireInternalAuth(cfg.InternalAuthSecret))
 
 	locationHandler.Register(v1)
 	tenantHandler.Register(v1, internal)

@@ -12,6 +12,8 @@
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { platformInternalHeaders } from "@/lib/api/server/platformInternal";
+
 const OTTO_URL = process.env.OTTO_URL ?? "http://localhost:8089";
 // Strip surrounding whitespace/newlines — GCP Secret Manager sometimes
 // persists random-base64 with a trailing \n, which HTTP strips in transit
@@ -83,7 +85,7 @@ async function resolveScopeFromHost(
   try {
     const res = await fetch(
       `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
-      { cache: "no-store" },
+      { cache: "no-store", headers: platformInternalHeaders() },
     );
     if (!res.ok) return null;
     const body = (await res.json()) as {
@@ -114,7 +116,7 @@ async function resolveTenantDefaultStore(
   try {
     const res = await fetch(
       `${PLATFORM_API_URL}/internal/tenants/${encodeURIComponent(tenantId)}/stores`,
-      { cache: "no-store" },
+      { cache: "no-store", headers: platformInternalHeaders() },
     );
     if (!res.ok) return null;
     const body = (await res.json()) as {

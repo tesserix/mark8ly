@@ -18,6 +18,7 @@ import {
   listMemberTenants,
   PlatformApiError,
 } from "@/lib/api/platform-api";
+import { platformInternalHeaders } from "@/lib/api/server/platformInternal";
 import { publicConfig } from "@/lib/config";
 
 const PLATFORM_API_URL =
@@ -39,7 +40,7 @@ async function tenantIdForHostSlug(
   try {
     const res = await fetch(
       `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
-      { cache: "no-store" },
+      { cache: "no-store", headers: platformInternalHeaders() },
     );
     if (!res.ok) return null;
     const body = (await res.json()) as { data?: { tenant_id?: string } };

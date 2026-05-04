@@ -6,8 +6,24 @@
 
 import type { StorefrontTheme } from "@repo/ui/storefront-theme";
 
+import { platformInternalHeaders } from "@/lib/api/server/platformInternal";
+
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
+
+// Server-side calls into /internal/* on platform-api carry the shared
+// X-Internal-Auth secret so platform-api's RequireInternalAuth gate accepts
+// them. /api/v1/* routes are public (slug-available, accept-invite token
+// flows) and don't need the header — keep using a plain fetch there.
+const internalInit = (extra: RequestInit = {}): RequestInit => ({
+  cache: "no-store",
+  ...extra,
+  headers: platformInternalHeaders(
+    Object.fromEntries(
+      Object.entries((extra.headers as Record<string, string>) ?? {}),
+    ),
+  ),
+});
 
 /**
  * Tenant = the company that owns one or more stores. Phase Q moved
@@ -57,9 +73,10 @@ interface TenantResponse {
 export async function fetchTenant(id: string): Promise<Tenant | null> {
   if (!id) return null;
   try {
-    const res = await fetch(`${PLATFORM_API_URL}/internal/tenants/${id}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/tenants/${id}`,
+      internalInit(),
+    );
     if (res.status === 404) return null;
     if (!res.ok) return null;
     const body = (await res.json()) as TenantResponse;
@@ -80,7 +97,7 @@ export async function listStoresByTenant(
   try {
     const res = await fetch(
       `${PLATFORM_API_URL}/internal/tenants/${tenantId}/stores`,
-      { cache: "no-store" },
+      internalInit(),
     );
     if (!res.ok) return [];
     const body = (await res.json()) as { data: Store[] };
@@ -97,9 +114,10 @@ export async function listStoresByTenant(
 export async function fetchStore(id: string): Promise<Store | null> {
   if (!id) return null;
   try {
-    const res = await fetch(`${PLATFORM_API_URL}/internal/stores/${id}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/stores/${id}`,
+      internalInit(),
+    );
     if (!res.ok) return null;
     const body = (await res.json()) as { data: Store };
     return body.data;
@@ -126,12 +144,11 @@ export async function createStore(
 ): Promise<Store> {
   const res = await fetch(
     `${PLATFORM_API_URL}/internal/tenants/${tenantId}/stores`,
-    {
+    internalInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      cache: "no-store",
-    },
+    }),
   );
   if (!res.ok) {
     let body: { error?: string; message?: string } = {};
@@ -164,12 +181,14 @@ export async function updateStore(
     uid: string;
   },
 ): Promise<Store> {
-  const res = await fetch(`${PLATFORM_API_URL}/internal/stores/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-    cache: "no-store",
-  });
+  const res = await fetch(
+    `${PLATFORM_API_URL}/internal/stores/${id}`,
+    internalInit({
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  );
   if (!res.ok) {
     let body: { error?: string; message?: string } = {};
     try {
@@ -256,7 +275,7 @@ export async function fetchTenantMe(
   try {
     const res = await fetch(
       `${PLATFORM_API_URL}/internal/tenants/${tenantId}/me?uid=${encodeURIComponent(uid)}`,
-      { cache: "no-store" },
+      internalInit(),
     );
     if (!res.ok) return null;
     const body = (await res.json()) as TenantMeResponse;
@@ -315,12 +334,11 @@ export async function createInvitation(
 ): Promise<Invitation> {
   const res = await fetch(
     `${PLATFORM_API_URL}/internal/tenants/${tenantId}/invitations`,
-    {
+    internalInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      cache: "no-store",
-    },
+    }),
   );
   if (!res.ok) {
     throw await platformError(res);
@@ -338,7 +356,7 @@ export async function listPendingInvitations(
 ): Promise<Invitation[]> {
   const res = await fetch(
     `${PLATFORM_API_URL}/internal/tenants/${tenantId}/invitations`,
-    { cache: "no-store" },
+    internalInit(),
   );
   if (!res.ok) {
     throw await platformError(res);
@@ -369,7 +387,7 @@ export async function listTeamMembers(
 ): Promise<TeamMember[]> {
   const res = await fetch(
     `${PLATFORM_API_URL}/internal/tenants/${tenantId}/members`,
-    { cache: "no-store" },
+    internalInit(),
   );
   if (!res.ok) {
     throw await platformError(res);
@@ -396,12 +414,11 @@ export async function updateMemberRole(
 ): Promise<{ email: string; role: string }> {
   const res = await fetch(
     `${PLATFORM_API_URL}/internal/tenants/${tenantId}/members/role`,
-    {
+    internalInit({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      cache: "no-store",
-    },
+    }),
   );
   if (!res.ok) {
     throw await platformError(res);
@@ -423,12 +440,11 @@ export async function revokeInvitation(
 ): Promise<void> {
   const res = await fetch(
     `${PLATFORM_API_URL}/internal/tenants/${tenantId}/invitations/${invitationId}`,
-    {
+    internalInit({
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ uid }),
-      cache: "no-store",
-    },
+    }),
   );
   if (!res.ok) {
     throw await platformError(res);
@@ -561,12 +577,11 @@ export async function requestPasswordReset(
   try {
     const res = await fetch(
       `${PLATFORM_API_URL}/internal/auth/password-reset/request`,
-      {
+      internalInit({
         method: "POST",
-        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
-      },
+      }),
     );
     if (res.status === 204) return { ok: true };
 
@@ -622,12 +637,11 @@ export async function confirmPasswordReset(
   try {
     const res = await fetch(
       `${PLATFORM_API_URL}/internal/auth/password-reset/confirm`,
-      {
+      internalInit({
         method: "POST",
-        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ oob_code: oobCode, new_password: newPassword }),
-      },
+      }),
     );
     if (res.status === 204) return { ok: true };
 

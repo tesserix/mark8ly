@@ -66,6 +66,15 @@ type Config struct {
 	// permissive mode (rollout-safe default).
 	AuditIngestSecret string `envconfig:"AUDIT_INGEST_SECRET"`
 
+	// InternalAuthSecret gates this service's own /internal/* surface.
+	// Mirrors marketplace-api / auth-bff / otto: when set, every request
+	// to /internal/* must carry a matching X-Internal-Auth header.
+	// Empty = the gate is a no-op (rollout-safe default for dev and for
+	// the cutover window before in-cluster callers start sending the
+	// header). Verified via constant-time compare in
+	// internal/middleware.RequireInternalAuth.
+	InternalAuthSecret string `envconfig:"INTERNAL_AUTH_SECRET"`
+
 	// GIP (Google Identity Platform) admin settings used by the
 	// password-reset flow. ProjectID + TenantID are required in prod;
 	// WebAPIKey is the public Firebase Web API key. If any of the

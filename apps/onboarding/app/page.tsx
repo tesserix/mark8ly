@@ -6,6 +6,7 @@ import {
   CURRENCY_COOKIE_NAME,
   Money,
   SHARED_PRICING_CATALOGUE,
+  getPlanPrice,
   normalizeCurrency,
   type Currency,
 } from "@repo/ui/subscription";
@@ -45,7 +46,7 @@ export default async function HomePage() {
         <Manifesto />
         <Features />
         <Pricing currency={currency} catalogue={SHARED_PRICING_CATALOGUE} />
-        <Comparison />
+        <Comparison currency={currency} />
         <HowItWorks />
         <Faq />
         <FinalCta />
@@ -335,12 +336,20 @@ function FeaturePlate({ kicker, index, src, alt }: FeaturePlateProps) {
 /* ============================================================
    Comparison — quiet, factual table that puts Mark8ly next to
    the names readers have already weighed: Shopify, BigCommerce,
-   Wix, Squarespace. Editorial, not a SaaS bake-off — hairline
-   rules between rows, no shaded card, Mark8ly column carries a
-   single moss accent so the eye finds it without shouting.
-   Prices and trial windows reflect the cheapest paid plan at
-   the time of writing; the footnote acknowledges processor fees
-   apply on every platform.
+   Wix, Squarespace.
+
+   The "Starting price" row is geo-localized: Mark8ly's Starter
+   tracks the SHARED_PRICING_CATALOGUE (single source of truth
+   with /admin/pricing). Competitor prices use each platform's
+   own *published* per-country price (Shopify India, Shopify AU,
+   Wix UK, etc.) — not FX-converted from USD, because none of
+   those platforms sell at FX rates. Currencies the platform
+   doesn't localize fall back to USD with a "(USD)" tag so a
+   merchant sees what they'd actually be charged.
+
+   Editorial, not a SaaS bake-off — hairline rules between rows,
+   no shaded card, Mark8ly column carries a single moss accent
+   so the eye finds it without shouting.
    ============================================================ */
 
 interface CompareRow {
@@ -352,15 +361,10 @@ interface CompareRow {
   squarespace: string;
 }
 
+// Feature rows (currency-agnostic). The Starting-price row is
+// rendered separately and pulls from COMPETITOR_STARTING_PRICES
+// + the shared catalogue.
 const COMPARISON_ROWS: readonly CompareRow[] = [
-  {
-    label: "Starting price",
-    mark8ly: "$29 / mo",
-    shopify: "$39 / mo",
-    bigcommerce: "$39 / mo",
-    wix: "$29 / mo",
-    squarespace: "$27 / mo",
-  },
   {
     label: "Free to try",
     mark8ly: "90 days",
@@ -411,11 +415,82 @@ const COMPARISON_ROWS: readonly CompareRow[] = [
   },
 ];
 
-function Comparison() {
+type CompetitorId = "shopify" | "bigcommerce" | "wix" | "squarespace";
+
+// Pre-formatted strings, kept as strings (not minor units) because
+// each competitor uses their own grouping/symbol convention on their
+// own pricing pages — preserving that is more honest than re-formatting
+// through Intl. Currencies missing from a competitor's map fall back
+// to its USD entry with a "(USD)" tag in the renderer below.
+const COMPETITOR_STARTING_PRICES: Record<
+  CompetitorId,
+  Partial<Record<Currency, string>>
+> = {
+  shopify: {
+    USD: "$39",
+    CAD: "C$54",
+    GBP: "£25",
+    EUR: "€36",
+    AUD: "A$54",
+    NZD: "NZ$54",
+    SGD: "S$53",
+    INR: "₹1,994",
+  },
+  bigcommerce: {
+    // BigCommerce bills the Standard plan in USD globally — no
+    // localized regional pricing pages.
+    USD: "$39",
+  },
+  wix: {
+    USD: "$29",
+    CAD: "C$38",
+    GBP: "£19",
+    EUR: "€23",
+    AUD: "A$45",
+    NZD: "NZ$45",
+    SGD: "S$39",
+    INR: "₹1,000",
+  },
+  squarespace: {
+    USD: "$27",
+    CAD: "C$36",
+    GBP: "£20",
+    EUR: "€26",
+    AUD: "A$48",
+    NZD: "NZ$48",
+  },
+};
+
+function competitorStartingPrice(
+  id: CompetitorId,
+  currency: Currency,
+): string {
+  const map = COMPETITOR_STARTING_PRICES[id];
+  const localized = map[currency];
+  if (localized) return `${localized} / mo`;
+  // Platform doesn't publish a price in this currency — they bill
+  // in USD. Tag it so a non-US merchant knows what they'd actually pay.
+  const usd = map.USD!;
+  return currency === "USD" ? `${usd} / mo` : `${usd} / mo (USD)`;
+}
+
+interface ComparisonProps {
+  currency: Currency;
+}
+
+function Comparison({ currency }: ComparisonProps) {
   const competitorHeaderClass =
     "px-4 py-4 text-left align-bottom font-sans text-[0.9375rem] font-medium text-foreground-secondary";
   const competitorCellClass =
     "px-4 py-5 align-top text-foreground-tertiary";
+
+  // Mark8ly's Starter monthly tracks the shared pricing catalogue
+  // — same source of truth as the Pricing section above, so a price
+  // change there flows here automatically.
+  const starter = SHARED_PRICING_CATALOGUE.plans.find((p) => p.id === "starter");
+  const mark8lyStarterMonthly = starter
+    ? getPlanPrice(starter, currency).monthly
+    : null;
 
   return (
     <section
@@ -440,7 +515,8 @@ function Comparison() {
             We&rsquo;re not the only commerce platform on the table. Here&rsquo;s
             how Mark8ly lines up against the names you&rsquo;ve probably
             already looked at &mdash; the things that show up on the bill,
-            and the things that show up on the storefront.
+            and the things that show up on the storefront. Prices follow each
+            platform&rsquo;s published rate in {currency}.
           </p>
         </div>
 
@@ -449,7 +525,7 @@ function Comparison() {
             <caption className="sr-only">
               How Mark8ly compares with Shopify, BigCommerce, Wix and
               Squarespace on price, trial length, fees, design and data
-              portability.
+              portability. Prices shown in {currency}.
             </caption>
             <thead>
               <tr className="border-b border-border">
@@ -482,6 +558,45 @@ function Comparison() {
               </tr>
             </thead>
             <tbody>
+              {/* Starting price — geo-localized row, rendered specially. */}
+              <tr className="border-b border-border-subtle">
+                <th
+                  scope="row"
+                  className="py-5 pr-6 text-left align-top font-normal text-foreground-secondary"
+                >
+                  Starting price
+                </th>
+                <td className="px-4 py-5 align-top">
+                  <span className="block border-l-2 border-moss-700 pl-3 font-medium text-foreground">
+                    {mark8lyStarterMonthly !== null ? (
+                      <>
+                        <Money
+                          amount={mark8lyStarterMonthly}
+                          currency={currency}
+                          showCents={false}
+                        />
+                        <span className="text-foreground-tertiary"> / mo</span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </span>
+                </td>
+                <td className={competitorCellClass}>
+                  {competitorStartingPrice("shopify", currency)}
+                </td>
+                <td className={competitorCellClass}>
+                  {competitorStartingPrice("bigcommerce", currency)}
+                </td>
+                <td className={competitorCellClass}>
+                  {competitorStartingPrice("wix", currency)}
+                </td>
+                <td className={competitorCellClass}>
+                  {competitorStartingPrice("squarespace", currency)}
+                </td>
+              </tr>
+
+              {/* Feature rows — currency-agnostic. */}
               {COMPARISON_ROWS.map((row) => (
                 <tr
                   key={row.label}
@@ -509,11 +624,14 @@ function Comparison() {
         </div>
 
         <p className="mt-8 max-w-3xl text-sm text-foreground-tertiary">
-          Prices show the cheapest paid plan at the time of writing. Payment
-          processor fees &mdash; around 2&ndash;3% for cards, closer to 1% for
-          UPI &mdash; apply on every platform. That&rsquo;s what your bank
-          charges, not us. The line above is what the platform itself adds on
-          top.
+          Prices follow each platform&rsquo;s published rate for the cheapest
+          paid plan in your country. Where a platform doesn&rsquo;t localize
+          (BigCommerce globally, Squarespace outside developed markets), we
+          show their USD rate and tag it so you know what you&rsquo;ll
+          actually be charged. Payment processor fees &mdash; around 2&ndash;3%
+          for cards, closer to 1% for UPI &mdash; apply on every platform.
+          That&rsquo;s your bank, not us. The line above is what the platform
+          itself adds on top.
         </p>
       </div>
     </section>

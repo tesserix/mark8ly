@@ -48,7 +48,7 @@ AU + IN · → mark8ly.com
 ## Phase 1 — Polish (this week, ~5 hours focused)
 
 ### Step 4 — Create + polish `@the_bondi_store` IG account
-**4a — Create the handle if not yet done.** Critical: this account
+**4a — Create the handle.** ✅ DONE. Critical reminder: this account
 must read as a real indie shop, NOT as a Mark8ly demo. No mention of
 Mark8ly anywhere on the profile (bio, grid, captions, highlights) —
 the storefront URL alone is the bridge.
@@ -303,6 +303,7 @@ sharing because it actually worked.
 - [x] Fixed transactional email footer leak (`Paper · Ink · Moss` → `Mark8ly · A Tesserix product`) in welcome + password_reset templates (commit `eaa44e3` + DB rows updated via tesserix-home admin UI)
 - [x] Reserved `@mark8ly` IG handle (Step 1) — bio + profile pic pending; do not post yet
 - [x] Reserved `@tesserix.app` IG handle (Step 6 partial) — bio + profile pic pending; do not post yet
+- [x] Reserved `@the_bondi_store` IG handle (Step 4a) — bio + profile pic + 12–20 posts pending before outreach
 
 ## Bio/pic copy for the new accounts (paste-ready)
 

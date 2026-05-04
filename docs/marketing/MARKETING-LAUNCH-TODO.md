@@ -304,7 +304,7 @@ sharing because it actually worked.
 - [x] Set up `@mark8ly` — bio, profile pic (`docs/marketing/assets/mark8ly-ig-paper.png`), website link, business account; activates week 4 once first merchant is live
 - [x] Updated `@mahesh.sangawar` bio to founder/Mark8ly framing
 - [x] Set up `@tesserix.app` — bio, profile pic (`docs/marketing/assets/tesserix-ig-ink.png`), website link, business account; will not post until material announcement
-- [x] Reserved `@the_bondi_store` IG handle (Step 4a) — bio + profile pic + 12–20 posts pending before outreach
+- [x] Set up `@the_bondi_store` — bio, profile pic (`docs/marketing/assets/bondi-ig-monogram.png`), website link, business account; **grid (12–20 posts) still pending — the gating item before any outreach**
 
 ## Bio/pic copy for the new accounts (paste-ready)
 

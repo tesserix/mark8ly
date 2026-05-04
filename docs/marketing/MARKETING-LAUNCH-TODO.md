@@ -301,7 +301,8 @@ sharing because it actually worked.
 
 - [x] Built `the-bondi-store.mark8ly.com` storefront (needs polish per Step 5)
 - [x] Fixed transactional email footer leak (`Paper · Ink · Moss` → `Mark8ly · A Tesserix product`) in welcome + password_reset templates (commit `eaa44e3` + DB rows updated via tesserix-home admin UI)
-- [x] Reserved `@mark8ly` IG handle (Step 1) — bio + profile pic pending; do not post yet
+- [x] Set up `@mark8ly` — bio, profile pic (`docs/marketing/assets/mark8ly-ig-paper.png`), website link, business account; activates week 4 once first merchant is live
+- [x] Updated `@mahesh.sangawar` bio to founder/Mark8ly framing
 - [x] Set up `@tesserix.app` — bio, profile pic (`docs/marketing/assets/tesserix-ig-ink.png`), website link, business account; will not post until material announcement
 - [x] Reserved `@the_bondi_store` IG handle (Step 4a) — bio + profile pic + 12–20 posts pending before outreach
 

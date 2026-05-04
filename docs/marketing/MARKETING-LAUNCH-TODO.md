@@ -305,6 +305,7 @@ sharing because it actually worked.
 - [x] Updated `@mahesh.sangawar` bio to founder/Mark8ly framing
 - [x] Set up `@tesserix.app` — bio, profile pic (`docs/marketing/assets/tesserix-ig-ink.png`), website link, business account; will not post until material announcement
 - [x] Set up `@the_bondi_store` — bio, profile pic (`docs/marketing/assets/bondi-ig-monogram.png`), website link, business account; **grid (12–20 posts) still pending — the gating item before any outreach**
+- [x] Seeded 6 CMS policy pages on prod the_bondi_store (about, contact, shipping, refund, terms, privacy) + wired into footer with 3 sections (Help / Legal / About) + IG social link + tagline + copyright. Run via `docs/marketing/seeds/bondi-policy-pages.sql` against prod CNPG via in-cluster `database-init`-labelled psql pod. Idempotent — safe to re-run for copy edits.
 
 ## Bio/pic copy for the new accounts (paste-ready)
 

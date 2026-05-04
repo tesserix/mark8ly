@@ -78,10 +78,10 @@ The fastest way to reach us is by email — we read everything ourselves and
 reply within one business day, usually faster.
 
 **General enquiries, orders, returns**
-hello@the-bondi-store.com
+hello@mark8ly.com
 
 **Wholesale, press, collaborations**
-hello@the-bondi-store.com — please put **Wholesale** or **Press** in the
+hello@mark8ly.com — please put **Wholesale** or **Press** in the
 subject line so we can route it to the right inbox.
 
 **Studio**
@@ -134,7 +134,7 @@ new releases may add a day.
 
 ## Tracking & lost parcels
 Every order ships with tracking. If your parcel hasn't moved for more than
-seven business days after dispatch, email us at hello@the-bondi-store.com
+seven business days after dispatch, email us at hello@mark8ly.com
 with your order number and we'll lodge an enquiry with the carrier and keep
 you posted.
 
@@ -172,7 +172,7 @@ wrong colour, or just not what you expected — we'll exchange it or refund it.
 - Underwear, swimwear, or earrings, for hygiene reasons — unless faulty
 
 ## How to start a return
-Email **hello@the-bondi-store.com** with your order number and what you'd
+Email **hello@mark8ly.com** with your order number and what you'd
 like to return or exchange. We'll send a return address and instructions
 within one business day.
 
@@ -220,7 +220,7 @@ please don't use the site.
 
 ## 1. About us
 The Bondi Store is operated by Tesserix Pty Ltd, an Australian company based
-in Sydney, New South Wales. Our contact email is hello@the-bondi-store.com.
+in Sydney, New South Wales. Our contact email is hello@mark8ly.com.
 
 ## 2. Eligibility
 You must be at least 18 years old, or have the consent of a parent or
@@ -313,7 +313,7 @@ do about it.
 ## Who we are
 The Bondi Store is operated by Tesserix Pty Ltd, an Australian company based
 in Sydney, NSW. Our contact for privacy questions is
-hello@the-bondi-store.com.
+hello@mark8ly.com.
 
 ## What we collect
 - **Account & order details** — your name, email, shipping and billing
@@ -378,7 +378,7 @@ Under the APPs you have the right to:
 - ask us to delete it (subject to our legal record-keeping obligations)
 - complain if you think we've mishandled it
 
-To exercise any of these rights, email hello@the-bondi-store.com. We'll
+To exercise any of these rights, email hello@mark8ly.com. We'll
 respond within 30 days. If you're not happy with our response, you can lodge
 a complaint with the **Office of the Australian Information Commissioner**
 (OAIC) at oaic.gov.au.

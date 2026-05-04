@@ -1,10 +1,21 @@
 package config
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
+)
+
+// ErrInternalAuthRequired is returned by Load when ENV != "dev" and
+// INTERNAL_AUTH_SECRET is empty. Otto's REST surface is gated only by
+// the X-Internal-Auth header (CORS allows X-Tenant-Id / X-User-Id
+// cross-origin with credentials), so an empty secret in prod would
+// flip CORS into the only impersonation gate — exactly what we don't
+// want.
+var ErrInternalAuthRequired = errors.New(
+	"otto config: INTERNAL_AUTH_SECRET must be set when ENV != \"dev\"",
 )
 
 // Config holds runtime settings for the otto service.
@@ -63,5 +74,14 @@ func Load() (*Config, error) {
 	cfg.CustomerSessionSecret = strings.TrimSpace(cfg.CustomerSessionSecret)
 	cfg.InternalAuthSecret = strings.TrimSpace(cfg.InternalAuthSecret)
 	cfg.SendgridAPIKey = strings.TrimSpace(cfg.SendgridAPIKey)
+	// Refuse-to-boot in non-dev when the internal-auth secret is empty.
+	// Allowing the service to start without it would mean the only
+	// remaining filter on /api/v1/admin/* and /api/v1/storefront/* is
+	// the CORS allow-list — and CORS lets X-Tenant-Id / X-Store-Id /
+	// X-User-* through with AllowCredentials=true, which is fine when
+	// X-Internal-Auth is also required and not fine when it isn't.
+	if cfg.Env != "dev" && cfg.InternalAuthSecret == "" {
+		return nil, ErrInternalAuthRequired
+	}
 	return &cfg, nil
 }

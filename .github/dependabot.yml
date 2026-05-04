@@ -1,10 +1,28 @@
 version: 2
 updates:
+  # ── Go services ────────────────────────────────────────────────────
   - package-ecosystem: gomod
     directory: /services/marketplace-api
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  - package-ecosystem: gomod
+    directory: /services/platform-api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: gomod
+    directory: /services/auth-bff
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: gomod
+    directory: /services/otto
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # ── Next.js apps ───────────────────────────────────────────────────
   - package-ecosystem: npm
     directory: /apps/admin
     schedule:
@@ -15,6 +33,23 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /apps/onboarding
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /apps/mobile-admin
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /apps/storefront-mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # ── Workflow actions ───────────────────────────────────────────────
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -48,6 +48,7 @@ export default async function HomePage() {
         <Pricing currency={currency} catalogue={SHARED_PRICING_CATALOGUE} />
         <Comparison currency={currency} />
         <HowItWorks />
+        <SetupSavings />
         <Faq />
         <FinalCta />
       </main>
@@ -687,6 +688,134 @@ function HowItWorks() {
             </li>
           ))}
         </ol>
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================
+   SetupSavings — what merchants are spared from. Two left-
+   aligned columns, no card, hairline rules between rows.
+   The "other route" column is set in foreground-secondary so
+   it reads as background context; the Mark8ly column carries
+   the moss accent on the time/effort detail to mirror the
+   editorial language used everywhere else on the page.
+
+   Numbers are deliberately evocative rather than precise — we
+   don't want to claim a US$1,500 designer fee that doesn't hold
+   in INR or AUD. "A few hundred dollars" / "a weekend's salary"
+   reads honestly in every market and avoids a second pricing
+   table to maintain.
+   ============================================================ */
+
+function SetupSavings() {
+  const elsewhere = [
+    {
+      label: "Pick a theme that doesn't look templated",
+      detail: "Days of browsing",
+    },
+    {
+      label: "Hire a designer to tidy it up",
+      detail: "A few hundred, easily",
+    },
+    {
+      label: "Buy plugins to fill missing features",
+      detail: "$30–$200 a month, on top",
+    },
+    {
+      label: "Wire up payments, DNS, SSL",
+      detail: "Half a day, or a developer's fee",
+    },
+    {
+      label: "Hire a consultant to wire it all together",
+      detail: "An invoice you didn't budget for",
+    },
+  ];
+
+  const here = [
+    { label: "Tell us about your shop", detail: "Two minutes" },
+    { label: "Pick your colours", detail: "A click" },
+    { label: "Add your products", detail: "Half an hour" },
+    {
+      label: "Connect your domain",
+      detail: "Auto-SSL, no DNS expert",
+    },
+    { label: "Open the doors", detail: "Same afternoon" },
+  ];
+
+  return (
+    <section
+      id="setup"
+      aria-labelledby="setup-heading"
+      className="border-t border-border-subtle py-16 sm:py-24"
+    >
+      <div className="mx-auto max-w-6xl px-6">
+        <div className="mb-12 grid gap-8 lg:grid-cols-[1fr_2fr] lg:gap-16">
+          <div>
+            <p className="eyebrow mb-5">Without the consultant</p>
+            <h2
+              id="setup-heading"
+              className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground"
+            >
+              Save the
+              <br />
+              consultant invoice.
+            </h2>
+          </div>
+          <p className="max-w-xl self-end text-base leading-relaxed text-foreground-secondary">
+            Most store launches go the same way: a fortnight of theme
+            shopping, a designer to undo the templated look, a developer to
+            wire payments and DNS, then a consultant invoice nobody warned
+            you about. We took every one of those off the table &mdash;
+            because the platform should already do them.
+          </p>
+        </div>
+
+        <div className="grid gap-12 lg:grid-cols-2 lg:gap-20">
+          <div>
+            <p className="eyebrow mb-6 text-foreground-tertiary">
+              The other route
+            </p>
+            <ul>
+              {elsewhere.map((item) => (
+                <li
+                  key={item.label}
+                  className="grid grid-cols-[1fr_auto] items-baseline gap-6 border-b border-border-subtle py-4 first:border-t"
+                >
+                  <span className="text-foreground-secondary">
+                    {item.label}
+                  </span>
+                  <span className="text-sm text-foreground-tertiary">
+                    {item.detail}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <p className="eyebrow mb-6 text-moss-700">On Mark8ly</p>
+            <ul>
+              {here.map((item) => (
+                <li
+                  key={item.label}
+                  className="grid grid-cols-[1fr_auto] items-baseline gap-6 border-b border-border-subtle py-4 first:border-t"
+                >
+                  <span className="text-foreground">{item.label}</span>
+                  <span className="font-serif text-sm text-moss-700">
+                    {item.detail}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <p className="mt-8 max-w-md text-base leading-relaxed text-foreground-secondary">
+              No theme licence. No design fee. No plugin sprawl. No
+              consultant on retainer. Just you, your products, and an open
+              shop by the end of the day.
+            </p>
+          </div>
+        </div>
       </div>
     </section>
   );

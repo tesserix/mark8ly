@@ -2,6 +2,7 @@
 package config
 
 import (
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -172,5 +173,20 @@ func Load() (*Config, error) {
 	if err := envconfig.Process("", &cfg); err != nil {
 		return nil, err
 	}
+
+	// Trim whitespace on internal-auth shared secrets. GCP Secret Manager
+	// values pushed via `echo "..." | gcloud secrets ...` carry a trailing
+	// LF; ESO mounts the raw bytes verbatim, and the SHA-256 comparison in
+	// the X-Internal-Auth middleware fails against trimmed values on the
+	// receiving side (platform-api fixed this in commit e43b57a). The
+	// 2026-05-05 bondi storefront incident (~25h of /api/v1/storefront/
+	// stores/:slug/* 404s) was caused by exactly this trailing LF on
+	// MARKETPLACE_PLATFORM_API_SECRET. Trimming here makes the binary
+	// robust to future GCP-SM trailing-LF cases without requiring SM-side
+	// cleanups.
+	cfg.InternalAuthSecret = strings.TrimSpace(cfg.InternalAuthSecret)
+	cfg.PlatformAPISecret = strings.TrimSpace(cfg.PlatformAPISecret)
+	cfg.AuditIngestSecret = strings.TrimSpace(cfg.AuditIngestSecret)
+
 	return &cfg, nil
 }

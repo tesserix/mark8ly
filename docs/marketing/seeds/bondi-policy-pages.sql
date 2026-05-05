@@ -59,8 +59,6 @@ the longer you have them.
 
 We ship from Sydney to anywhere in the world. If something isn't right, we'll
 make it right.
-
-— Mahesh & the team
 $body$, 10, true
 FROM _bondi
 ON CONFLICT (store_id, slug) DO UPDATE

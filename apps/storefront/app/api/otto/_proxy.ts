@@ -14,6 +14,7 @@ import { cookies, headers } from "next/headers";
 
 import { decodeSessionForScope } from "@/lib/session";
 import { resolveStoreSlug } from "@/lib/slug";
+import { platformInternalFetch } from "@/lib/api/server/platformInternal";
 
 const OTTO_URL = process.env.OTTO_URL ?? "http://localhost:8089";
 // Trim surrounding whitespace/newlines — the GCP secret-manager source
@@ -21,8 +22,6 @@ const OTTO_URL = process.env.OTTO_URL ?? "http://localhost:8089";
 // otherwise be re-emitted into the X-Internal-Auth header and stripped
 // in transit, breaking the equality check on the otto side.
 const OTTO_INTERNAL_AUTH = (process.env.OTTO_INTERNAL_AUTH ?? "").trim();
-const PLATFORM_API_URL =
-  process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 const OTTO_SESSION_COOKIE =
   process.env.OTTO_SESSION_COOKIE ?? "otto_session";
 const CUSTOMER_SESSION_COOKIE = "mp_customer_session";
@@ -44,8 +43,8 @@ export async function getOttoScope(): Promise<OttoScope | null> {
   const slug = await resolveStoreSlug(host);
   if (!slug) return null;
   try {
-    const res = await fetch(
-      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
+    const res = await platformInternalFetch(
+      `/internal/stores/by-slug/${encodeURIComponent(slug)}`,
       { cache: "no-store" },
     );
     if (!res.ok) return null;

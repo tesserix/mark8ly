@@ -15,12 +15,11 @@ import {
   verifyGIPIdToken,
 } from "@/lib/gip/verify-id-token";
 import { sanitizeHost } from "@/lib/host";
+import { platformInternalFetch } from "@/lib/api/server/platformInternal";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 const STOREFRONT_KEY = process.env.MARKETPLACE_STOREFRONT_KEY ?? "";
-const PLATFORM_API_URL =
-  process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 const GIP_PROJECT_ID = process.env.GIP_PROJECT_ID ?? "";
 const GIP_CUSTOMER_TENANT_ID = process.env.GIP_CUSTOMER_TENANT_ID ?? "";
 
@@ -41,8 +40,8 @@ async function resolveStore(
   storeSlug: string,
 ): Promise<{ tenant_id: string; store_id: string } | null> {
   try {
-    const res = await fetch(
-      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(storeSlug)}`,
+    const res = await platformInternalFetch(
+      `/internal/stores/by-slug/${encodeURIComponent(storeSlug)}`,
       { cache: "no-store" },
     );
     if (!res.ok) return null;

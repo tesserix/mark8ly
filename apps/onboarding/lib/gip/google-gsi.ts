@@ -40,6 +40,19 @@ interface GsiAccountsId {
   }): void;
   prompt(callback?: (n: GsiNotification) => void): void;
   cancel(): void;
+  renderButton(
+    parent: HTMLElement,
+    options: {
+      type?: "standard" | "icon";
+      theme?: "outline" | "filled_blue" | "filled_black";
+      size?: "large" | "medium" | "small";
+      text?: "signin_with" | "signup_with" | "continue_with" | "signin";
+      shape?: "rectangular" | "pill" | "circle" | "square";
+      logo_alignment?: "left" | "center";
+      width?: number | string;
+      locale?: string;
+    },
+  ): void;
 }
 
 declare global {
@@ -124,4 +137,83 @@ export async function getGoogleCredential(): Promise<{ credential: string }> {
       }
     });
   });
+}
+
+export interface MountGoogleButtonOptions {
+  buttonContainer: HTMLElement;
+  onCredential: (credential: string) => void;
+  onError?: (err: Error) => void;
+  buttonText?: "signin_with" | "signup_with" | "continue_with" | "signin";
+  /** When true, also fire One-Tap as a passive enhancement; failures are silent. */
+  tryOneTap?: boolean;
+}
+
+/**
+ * Render the official "Sign in with Google" button into `buttonContainer`
+ * and resolve `onCredential` with the Google id_token JWT once the user
+ * clicks through the popup. Use this on pages where the user is expected
+ * to take a deliberate action (e.g. the cross-tenant trampoline) — One-Tap
+ * is unreliable for explicit sign-ins because FedCM-era browsers may
+ * silently return "unknown_reason" with no recoverable UI.
+ *
+ * Pass `tryOneTap: true` to additionally fire One-Tap as a convenience for
+ * users with an active Google session; its failures are swallowed so the
+ * rendered button always remains the primary path.
+ *
+ * Returns a teardown function that cancels both flows.
+ */
+export async function mountGoogleButton(
+  opts: MountGoogleButtonOptions,
+): Promise<() => void> {
+  if (!publicConfig.googleClientId) {
+    throw new Error(
+      "Google sign-in is not configured (NEXT_PUBLIC_GOOGLE_CLIENT_ID missing)",
+    );
+  }
+  await loadScript();
+  const gsi = window.google!.accounts.id;
+
+  let cancelled = false;
+
+  gsi.initialize({
+    client_id: publicConfig.googleClientId,
+    callback: (resp) => {
+      if (cancelled) return;
+      if (resp?.credential) {
+        opts.onCredential(resp.credential);
+      } else {
+        opts.onError?.(new Error("google: empty credential"));
+      }
+    },
+    auto_select: false,
+    cancel_on_tap_outside: true,
+    use_fedcm_for_prompt: true,
+  });
+
+  gsi.renderButton(opts.buttonContainer, {
+    type: "standard",
+    theme: "outline",
+    size: "large",
+    text: opts.buttonText ?? "continue_with",
+    shape: "pill",
+    logo_alignment: "left",
+    width: 280,
+  });
+
+  if (opts.tryOneTap) {
+    try {
+      gsi.prompt();
+    } catch {
+      // ignore — button is the primary path
+    }
+  }
+
+  return () => {
+    cancelled = true;
+    try {
+      gsi.cancel();
+    } catch {
+      // ignore
+    }
+  };
 }

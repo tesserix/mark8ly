@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { LinkProviderPrompt } from "@repo/ui/auth/link-provider-prompt";
-import { getGoogleCredential } from "@/lib/gip/google-gsi";
+import { mountGoogleButton } from "@/lib/gip/google-gsi";
 import {
   signInWithGoogleCustomer,
   CustomerGIPError,
@@ -17,12 +17,18 @@ import { mintCustomerExchangeCode } from "./actions";
  * Per-tenant storefront subdomains (e.g. india-store.mark8ly.com) cannot
  * register with Google's OAuth client config (no wildcard origins, no
  * stable Admin API). So storefronts redirect customers to this page on
- * mark8ly.com (a fixed registered origin), we run the Google popup
- * here, exchange the credential for a GIP id_token in the MP-Customer
- * pool, mint a short-lived HMAC exchange code, and bounce back to the
- * originating store's /auth/google/finish route which mints the
- * per-host mp_customer_session cookie via the existing customerSignIn
+ * mark8ly.com (a fixed registered origin), we render the official Google
+ * sign-in button here, exchange the credential for a GIP id_token in the
+ * MP-Customer pool, mint a short-lived HMAC exchange code, and bounce
+ * back to the originating store's /auth/google/finish route which mints
+ * the per-host mp_customer_session cookie via the existing customerSignIn
  * server action.
+ *
+ * We render the GSI button (rather than relying on One-Tap) because
+ * FedCM-era browsers may silently dismiss `gsi.prompt()` with
+ * "unknown_reason", which would dead-end this page with no recoverable UI.
+ * One-Tap is still fired passively as a convenience for users with an
+ * active Google session.
  *
  * Phase 3: when GIP returns needConfirmation (existing email already
  * has password but is now signing in with Google), render the
@@ -32,10 +38,11 @@ import { mintCustomerExchangeCode } from "./actions";
  */
 function TrampolineInner() {
   const params = useSearchParams();
+  const buttonRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [linkPromptError, setLinkPromptError] = useState<string | null>(null);
   const [status, setStatus] = useState<
-    "idle" | "popup" | "exchanging" | "redirecting"
+    "idle" | "ready" | "exchanging" | "redirecting"
   >("idle");
   const [needConfirmation, setNeedConfirmation] = useState<{
     email: string;
@@ -52,48 +59,42 @@ function TrampolineInner() {
         ? "link"
         : "signin";
 
-  async function completeAndRedirect(idToken: string): Promise<void> {
-    const exchange = await mintCustomerExchangeCode({
-      idToken,
-      storeSlug,
-      returnTo,
-      // The exchange-code action only knows signin/signup; link reuses
-      // signin since the cookie mint is identical.
-      intent: intent === "link" ? "signin" : intent,
-    });
-    if (!exchange.ok) {
-      setError(exchange.error);
-      return;
-    }
-    setStatus("redirecting");
-    window.location.assign(exchange.redirectUrl);
-  }
+  const completeAndRedirect = useCallback(
+    async (idToken: string): Promise<void> => {
+      const exchange = await mintCustomerExchangeCode({
+        idToken,
+        storeSlug,
+        returnTo,
+        // The exchange-code action only knows signin/signup; link reuses
+        // signin since the cookie mint is identical.
+        intent: intent === "link" ? "signin" : intent,
+      });
+      if (!exchange.ok) {
+        setError(exchange.error);
+        return;
+      }
+      setStatus("redirecting");
+      window.location.assign(exchange.redirectUrl);
+    },
+    [storeSlug, returnTo, intent],
+  );
 
-  useEffect(() => {
-    if (!returnTo || !storeSlug) {
-      setError("Missing required parameters.");
-      return;
-    }
-    let cancelled = false;
-    (async () => {
+  const handleCredential = useCallback(
+    async (credential: string): Promise<void> => {
+      setError(null);
+      setStatus("exchanging");
       try {
-        setStatus("popup");
-        const { credential } = await getGoogleCredential();
-        if (cancelled) return;
-        setStatus("exchanging");
         const result = await signInWithGoogleCustomer(credential);
-        if (cancelled) return;
         if (result.kind === "needConfirmation") {
           setNeedConfirmation({
             email: result.email,
             pendingIdpCredential: result.pendingIdpCredential,
           });
-          setStatus("idle");
+          setStatus("ready");
           return;
         }
         await completeAndRedirect(result.idToken);
       } catch (err) {
-        if (cancelled) return;
         if (err instanceof CustomerGIPError) {
           setError(
             err.code === "config_missing"
@@ -101,15 +102,58 @@ function TrampolineInner() {
               : "Google sign-in failed. Please try again.",
           );
         } else {
-          setError(err instanceof Error ? err.message : "Google sign-in failed.");
+          setError(
+            err instanceof Error ? err.message : "Google sign-in failed.",
+          );
         }
+        setStatus("ready");
+      }
+    },
+    [completeAndRedirect],
+  );
+
+  useEffect(() => {
+    if (!returnTo || !storeSlug) {
+      setError("Missing required parameters.");
+      return;
+    }
+    const container = buttonRef.current;
+    if (!container) return;
+    let cancelled = false;
+    let teardown: (() => void) | null = null;
+    (async () => {
+      try {
+        const cleanup = await mountGoogleButton({
+          buttonContainer: container,
+          onCredential: (cred) => {
+            if (cancelled) return;
+            void handleCredential(cred);
+          },
+          onError: (err) => {
+            if (cancelled) return;
+            setError(err.message || "Google sign-in failed.");
+          },
+          buttonText: intent === "signup" ? "signup_with" : "continue_with",
+          tryOneTap: true,
+        });
+        if (cancelled) {
+          cleanup();
+          return;
+        }
+        teardown = cleanup;
+        setStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        setError(
+          err instanceof Error ? err.message : "Google sign-in failed.",
+        );
       }
     })();
     return () => {
       cancelled = true;
+      teardown?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [returnTo, storeSlug, intent]);
+  }, [returnTo, storeSlug, intent, handleCredential]);
 
   async function handleLinkConfirm(password: string): Promise<void> {
     if (!needConfirmation) return;
@@ -149,11 +193,15 @@ function TrampolineInner() {
         Continuing to {storeSlug || "store"}&hellip;
       </h1>
       <p className="mt-3 text-sm opacity-70">
-        {status === "popup" && "Opening Google sign-in…"}
+        {status === "idle" && !error && "Preparing…"}
+        {status === "ready" &&
+          !error &&
+          !needConfirmation &&
+          "Click the button below to continue with Google."}
         {status === "exchanging" && "Completing sign-in…"}
         {status === "redirecting" && "Returning you to the store…"}
-        {status === "idle" && !error && !needConfirmation && "Preparing…"}
       </p>
+      <div ref={buttonRef} className="mt-6 flex justify-center" />
       {error && (
         <p
           role="alert"

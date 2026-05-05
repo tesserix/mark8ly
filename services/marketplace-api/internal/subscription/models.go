@@ -111,6 +111,11 @@ type StoreSubscription struct {
 	// P5 Task 14 — day-30 activation idempotency marker (migration 055).
 	TrialActivationMarkedAt *time.Time `gorm:"column:trial_activation_marked_at"`
 
+	// Migration 087 — drives trial reminder cron cadence selection.
+	// Authoritative writer is the customer.updated webhook handler, which
+	// reads invoice_settings.default_payment_method from the event payload.
+	HasDefaultPaymentMethod bool `gorm:"column:has_default_payment_method;not null;default:false"`
+
 	// v2.3 P6 — SCA fallback + dunning refund-window guard (§4.7, §16.5).
 	// HostedInvoiceURL is populated by invoice.payment_action_required and
 	// cleared on invoice.paid. FirstChargeAt is stamped once on the first

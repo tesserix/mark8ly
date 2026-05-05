@@ -2,13 +2,24 @@ package campaign
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/internal/campaignbudget"
 )
+
+// BudgetReserver is the narrow interface SendWorker needs from the
+// campaignbudget service. *campaignbudget.Service satisfies this. The
+// indirection keeps the campaign package decoupled from the campaignbudget
+// concretely so tests can inject a stub.
+type BudgetReserver interface {
+	Reserve(ctx context.Context, storeID uuid.UUID, recipientCount int) (int, error)
+}
 
 const (
 	// SendBatchSize is the number of recipients per dispatch batch.
@@ -37,7 +48,8 @@ type SendWorkerConfig struct {
 	DB          *gorm.DB
 	Repo        Repository
 	Dispatcher  Dispatcher
-	ThemeLoader ThemeLoader // optional — nil falls back to default theme
+	ThemeLoader ThemeLoader    // optional — nil falls back to default theme
+	Budget      BudgetReserver // optional — nil disables per-batch quota enforcement
 	Logger      *slog.Logger
 }
 
@@ -48,6 +60,7 @@ type SendWorker struct {
 	repo        Repository
 	dispatcher  Dispatcher
 	themeLoader ThemeLoader
+	budget      BudgetReserver
 	logger      *slog.Logger
 }
 
@@ -58,6 +71,7 @@ func NewSendWorker(cfg SendWorkerConfig) *SendWorker {
 		repo:        cfg.Repo,
 		dispatcher:  cfg.Dispatcher,
 		themeLoader: cfg.ThemeLoader,
+		budget:      cfg.Budget,
 		logger:      cfg.Logger,
 	}
 }
@@ -168,6 +182,42 @@ func (w *SendWorker) dispatchCampaign(ctx context.Context, c Campaign) error {
 		}
 		if len(recipients) == 0 {
 			break // All dispatched.
+		}
+
+		// Reserve monthly campaign-email budget BEFORE dispatching the batch.
+		// Atomic decrement via campaignbudget.Reserve ensures the cap is
+		// enforced even when multiple send workers race on the same store.
+		// On exhaustion the campaign is paused — the merchant can resume
+		// after upgrading or after monthly_reset rolls the bucket forward.
+		// Per-tenant safety: store_id keys the budget row, so two stores in
+		// the same tenant have independent quotas.
+		if w.budget != nil {
+			if _, err := w.budget.Reserve(ctx, c.StoreID, len(recipients)); err != nil {
+				switch {
+				case errors.Is(err, campaignbudget.ErrBudgetExhausted):
+					w.logger.Warn("campaign: monthly email cap reached; pausing",
+						"campaign_id", c.ID, "store_id", c.StoreID,
+						"tenant_id", c.TenantID, "batch_size", len(recipients))
+					if updErr := w.repo.UpdateCampaignStatus(w.db, c.ID, StatusPaused); updErr != nil {
+						w.logger.Error("campaign: failed to pause after cap reached",
+							"campaign_id", c.ID, "err", updErr)
+					}
+					return nil
+				case errors.Is(err, campaignbudget.ErrNoBudgetRow):
+					// Should not happen if monthly_reset cron is running. Pause
+					// the campaign and surface the issue rather than silently
+					// over-sending.
+					w.logger.Error("campaign: no budget row; pausing for ops",
+						"campaign_id", c.ID, "store_id", c.StoreID)
+					if updErr := w.repo.UpdateCampaignStatus(w.db, c.ID, StatusPaused); updErr != nil {
+						w.logger.Error("campaign: failed to pause after missing budget row",
+							"campaign_id", c.ID, "err", updErr)
+					}
+					return fmt.Errorf("campaign budget row missing for store %s", c.StoreID)
+				default:
+					return fmt.Errorf("campaign budget reserve: %w", err)
+				}
+			}
 		}
 
 		for _, r := range recipients {

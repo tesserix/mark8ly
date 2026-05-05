@@ -3,16 +3,17 @@
  *
  * Source of truth: services/marketplace-api/internal/handlers/admin/subscription.go
  *
- * The Go handler (SubscriptionResponse / toSubscriptionResponse) populates:
+ * Currently populated by the Go handler:
  *   id, store_id, plan, status, current_period_start, current_period_end,
  *   cancel_at_period_end, stripe_subscription_id, created_at,
- *   arbitrage_flag, latest_arbitrage_audit.
+ *   arbitrage_flag, latest_arbitrage_audit,
+ *   payment_method_type/brand/last4,
+ *   has_default_payment_method, trial_ends_at, days_remaining_in_trial,
+ *   trial_cta, feature_limits, min_plan_for_feature.
  *
- * Fields like billing_currency, add_ons, trial_ends_at, next_invoice_amount_minor,
- * payment_method_brand, payment_method_last4 are NOT in the current Go DTO.
- * They are defined here with safe `.optional()` / nullable defaults so the
- * schema can be tightened when the backend ships those fields without a
- * breaking change in the frontend.
+ * Fields like billing_currency, add_ons, next_invoice_amount_minor are NOT
+ * yet in the Go DTO. Defined with `.optional()` so the schema can be
+ * tightened when the backend ships them without a breaking change here.
  */
 import { z } from 'zod'
 
@@ -113,6 +114,52 @@ export const subscriptionResponseSchema = z.object({
   /** Card last 4 digits, or Link account email for Type=link. */
   payment_method_last4: z.string().nullable().optional(),
 
+  // ─── Trial banner state (migration 087) ────────────────────────────────
+  // These four fields drive the in-admin trial countdown banner. They are
+  // populated only while status is 'signup' or 'trialing'; on active /
+  // expired / past_due the trial_* fields are absent.
+
+  /**
+   * Whether the Stripe customer has a default payment method on file.
+   * Mirrored from invoice_settings.default_payment_method by the
+   * customer.updated webhook handler. Drives the trial reminder cron's
+   * cadence and the banner's CTA.
+   */
+  has_default_payment_method: z.boolean().default(false),
+
+  /** Days remaining in trial (0 ≤ n ≤ 90). Omitted when not in trial. */
+  days_remaining_in_trial: z.number().int().nullable().optional(),
+
+  /**
+   * UI banner CTA. The frontend uses this to choose copy + button label
+   * without re-deriving the same logic from days/PM/plan triplets.
+   * Omitted (null) when banner should be hidden.
+   */
+  trial_cta: z
+    .enum(['pick_plan', 'add_card', 'billing_imminent', 'all_set'])
+    .nullable()
+    .optional(),
+
+  // ─── Plan feature gating (plangate.AllFeatureLimits) ───────────────────
+  // The admin UI uses these maps to disable gated controls and render
+  // accurate "upgrade to {plan}" tooltips, so we never drift from the
+  // server-side gate (plangate.RequireFeature).
+
+  /**
+   * Per-feature limits for the current plan. Sentinel values:
+   *   -1 = Unlimited
+   *   -2 = Negotiated (Pro — contact sales)
+   *    0 = Disabled (gated off)
+   *   otherwise: numeric cap (e.g. 5 stores, 25 images).
+   */
+  feature_limits: z.record(z.string(), z.number().int()).default({}),
+
+  /**
+   * For each feature key, the lowest plan that enables it. Frontend
+   * uses this to render "Upgrade to Studio" / "Upgrade to Pro" CTAs.
+   */
+  min_plan_for_feature: z.record(z.string(), z.string()).default({}),
+
   /**
    * White-label app lifecycle state. Populated by P13/P14 backend once the
    * add-on is active. Optional until those plans ship.
@@ -156,6 +203,8 @@ export type WhiteLabelAppLifecycleState =
  * CurrentPlan — the domain type the UI actually works with.
  * Normalises nullable period fields to a consistent shape.
  */
+export type TrialCTA = 'pick_plan' | 'add_card' | 'billing_imminent' | 'all_set'
+
 export interface CurrentPlan {
   id: string
   storeId: string
@@ -170,15 +219,54 @@ export interface CurrentPlan {
   /** ISO date string: when the subscription record was created (signup timestamp). */
   createdAt: string
   trialEndsAt: string | null
+  /** Days remaining in trial; null when not in trial. */
+  daysRemainingInTrial: number | null
+  /** UI banner state — null hides the banner. */
+  trialCTA: TrialCTA | null
+  /** Whether a default payment method is on file in Stripe. */
+  hasDefaultPaymentMethod: boolean
   nextInvoiceAmountMinor: number | null
   paymentMethodType: 'card' | 'link' | null
   paymentMethodBrand: string | null
   paymentMethodLast4: string | null
+  /**
+   * Per-feature limits for the current plan. Sentinel values:
+   *   -1 = Unlimited, -2 = Negotiated (contact sales), 0 = Disabled.
+   * Use the helper `featureLimit` below to read defensively.
+   */
+  featureLimits: Record<string, number>
+  /** For each feature, the lowest plan that enables it (e.g. "studio"). */
+  minPlanForFeature: Record<string, string>
   /** White-label app lifecycle info. Null until P13/P14 backend ships. */
   whiteLabelApp: {
     lifecycleState: WhiteLabelAppLifecycleState | null
     updatedAt: string | null
   } | null
+}
+
+// featureLimit / featureEnabled / featureUnlimited — typed helpers around
+// the sentinel ints so callers don't have to remember which negative value
+// means what. Mirrors plangate.go's Disabled/Unlimited/Negotiated constants.
+export const FEATURE_DISABLED = 0
+export const FEATURE_UNLIMITED = -1
+export const FEATURE_NEGOTIATED = -2
+
+export function featureLimit(plan: CurrentPlan, feature: string): number {
+  return plan.featureLimits[feature] ?? FEATURE_DISABLED
+}
+
+export function featureEnabled(plan: CurrentPlan, feature: string): boolean {
+  return featureLimit(plan, feature) !== FEATURE_DISABLED
+}
+
+export function featureUnlimited(plan: CurrentPlan, feature: string): boolean {
+  const v = featureLimit(plan, feature)
+  return v === FEATURE_UNLIMITED || v === FEATURE_NEGOTIATED
+}
+
+/** Returns the lowest plan that enables the feature (e.g. "studio") for upgrade CTAs. */
+export function minPlanForFeature(plan: CurrentPlan, feature: string): string {
+  return plan.minPlanForFeature[feature] ?? 'pro'
 }
 
 export function toCurrentPlan(raw: SubscriptionResponse): CurrentPlan {
@@ -195,6 +283,9 @@ export function toCurrentPlan(raw: SubscriptionResponse): CurrentPlan {
     addOns: raw.add_ons ?? [],
     createdAt: raw.created_at,
     trialEndsAt: raw.trial_ends_at ?? null,
+    daysRemainingInTrial: raw.days_remaining_in_trial ?? null,
+    trialCTA: raw.trial_cta ?? null,
+    hasDefaultPaymentMethod: raw.has_default_payment_method,
     nextInvoiceAmountMinor: raw.next_invoice_amount_minor ?? null,
     paymentMethodType:
       raw.payment_method_type === 'card' || raw.payment_method_type === 'link'
@@ -202,6 +293,8 @@ export function toCurrentPlan(raw: SubscriptionResponse): CurrentPlan {
         : null,
     paymentMethodBrand: raw.payment_method_brand ?? null,
     paymentMethodLast4: raw.payment_method_last4 ?? null,
+    featureLimits: raw.feature_limits ?? {},
+    minPlanForFeature: raw.min_plan_for_feature ?? {},
     whiteLabelApp: raw.white_label_app
       ? {
           lifecycleState:

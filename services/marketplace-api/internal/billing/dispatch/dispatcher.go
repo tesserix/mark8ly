@@ -14,6 +14,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
@@ -39,9 +40,10 @@ func chain(handlers ...Handler) Handler {
 
 // Dispatcher routes incoming webhook events to registered per-type handlers.
 type Dispatcher struct {
-	emitter   *audit.Emitter
-	recorder  *arbitrage.Recorder // nil-safe: arbitrage check is skipped when nil
-	handlers  map[string]Handler
+	emitter  *audit.Emitter
+	recorder *arbitrage.Recorder // nil-safe: arbitrage check is skipped when nil
+	emailCl  email.Client        // nil-safe: trial-billed confirmation email is skipped when nil
+	handlers map[string]Handler
 }
 
 // New returns a Dispatcher with all P2/P3 handlers wired. em may be nil for
@@ -52,10 +54,11 @@ func New(em *audit.Emitter) *Dispatcher {
 	// Free functions — side-effect-only handlers that don't advance status.
 	d.handlers["customer.subscription.updated"] = handleSubscriptionUpdated
 	// invoice.paid runs a chain: the generic handler first (stamps
-	// first_charge_at, clears hosted_invoice_url), then the P15
+	// first_charge_at, clears hosted_invoice_url, emits trial-billed
+	// confirmation email if this is the first charge), then the P15
 	// white-label app sub-handler that flips has_white_label_app_add_on
 	// when metadata.kind matches. Errors in either stage bail the chain.
-	d.handlers["invoice.paid"] = chain(handleInvoicePaid, appaddon.HandleInvoicePaidForAppAddOn)
+	d.handlers["invoice.paid"] = chain(d.handleInvoicePaid, appaddon.HandleInvoicePaidForAppAddOn)
 	d.handlers["customer.updated"] = handleCustomerUpdated
 	d.handlers["charge.refunded"] = handleChargeRefunded
 	d.handlers["payment_method.attached"] = handlePaymentMethodAttached
@@ -74,6 +77,15 @@ func New(em *audit.Emitter) *Dispatcher {
 // check per spec §18.8. Recorder may be nil (skips the check).
 func (d *Dispatcher) WithRecorder(r *arbitrage.Recorder) *Dispatcher {
 	d.recorder = r
+	return d
+}
+
+// WithEmail attaches an email.Client so the dispatcher can emit the
+// trial-billed confirmation email on the first successful invoice charge.
+// emailCl may be nil — the send is then skipped without affecting other
+// invoice.paid side effects.
+func (d *Dispatcher) WithEmail(c email.Client) *Dispatcher {
+	d.emailCl = c
 	return d
 }
 

@@ -91,6 +91,28 @@ var (
 		[]string{"offset"},
 	)
 
+	// TrialRemindersSentTotal counts trial-end reminders sent, labeled by
+	// offset key (no_pm_t_minus_15 / _10 / _7 / _3 / _1, has_pm_t_minus_1).
+	// Migration 088.
+	TrialRemindersSentTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_subscription_trial_reminders_sent_total",
+			Help: "Count of trial-end reminders sent, labeled by offset key.",
+		},
+		[]string{"offset"},
+	)
+
+	// AuditPruneRowsDeletedTotal counts audit_logs rows hard-deleted by the
+	// retention prune cron, labeled by retention bucket
+	// (trial_starter_90d, studio_365d). Pro is unlimited and never pruned.
+	AuditPruneRowsDeletedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_audit_prune_rows_deleted_total",
+			Help: "Count of audit_logs rows deleted by the retention prune cron.",
+		},
+		[]string{"bucket"},
+	)
+
 	// DunningSuppressedRefundWindowTotal counts past_due→expired ladder steps
 	// skipped due to the 14-day refund window (§16.5). P6 dunning metrics.
 	DunningSuppressedRefundWindowTotal = prometheus.NewCounter(
@@ -144,6 +166,8 @@ func init() {
 		TrialActivationDay30Total,
 		DunningEmailsSentTotal,
 		PaymentActionRemindersSentTotal,
+		TrialRemindersSentTotal,
+		AuditPruneRowsDeletedTotal,
 		DunningSuppressedRefundWindowTotal,
 		APIKeyUsedTotal,
 		APIKeyAuthFailedTotal,

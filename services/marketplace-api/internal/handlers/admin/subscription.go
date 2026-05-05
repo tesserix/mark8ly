@@ -15,6 +15,8 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -103,17 +105,45 @@ type SubscriptionResponse struct {
 	PaymentMethodType  *string `json:"payment_method_type,omitempty"`
 	PaymentMethodBrand *string `json:"payment_method_brand,omitempty"`
 	PaymentMethodLast4 *string `json:"payment_method_last4,omitempty"`
+
+	// Trial banner state — drives the in-admin trial countdown banner.
+	// HasDefaultPaymentMethod is sourced from the row (mirrored by the
+	// customer.updated webhook) — it's the same signal the trial reminder
+	// cron uses, so the UI banner and the email cadence stay aligned.
+	// TrialEndsAt / DaysRemaining are populated only while in trial (status
+	// in {signup, trialing}); on active/expired/etc. they're omitted.
+	// TrialCTA is one of: "pick_plan" | "add_card" | "billing_imminent" |
+	// "all_set" | null. The frontend uses it to choose copy + button label
+	// without re-deriving the same logic from days/PM/plan triplets.
+	HasDefaultPaymentMethod bool    `json:"has_default_payment_method"`
+	TrialEndsAt             *string `json:"trial_ends_at,omitempty"`
+	DaysRemainingInTrial    *int    `json:"days_remaining_in_trial,omitempty"`
+	TrialCTA                *string `json:"trial_cta,omitempty"`
+
+	// FeatureLimits is the JSON-ready snapshot of the per-plan limits for
+	// the current plan — see plangate.AllFeatureLimits. Sentinel values:
+	// -1 = Unlimited, -2 = Negotiated, 0 = Disabled, otherwise the numeric
+	// cap. The admin UI uses this to disable gated controls and render
+	// "upgrade to {plan}" tooltips without re-encoding the matrix client-side.
+	FeatureLimits map[string]int `json:"feature_limits"`
+	// MinPlanForFeature maps each feature key to the lowest plan that
+	// enables it, so the frontend can render "Upgrade to Studio" / "Upgrade
+	// to Pro" CTAs accurately. For features enabled on the current plan
+	// the entry is the current plan; for features the matrix has no plan
+	// for, the entry is "pro" (conservative — see plangate.MinPlanForFeature).
+	MinPlanForFeature map[string]string `json:"min_plan_for_feature"`
 }
 
 func toSubscriptionResponse(s subscription.StoreSubscription) SubscriptionResponse {
 	resp := SubscriptionResponse{
-		ID:                s.ID.String(),
-		StoreID:           s.StoreID.String(),
-		Plan:              string(s.Plan),
-		Status:            string(s.Status),
-		CancelAtPeriodEnd: s.CancelAtPeriodEnd,
-		CreatedAt:         s.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		ArbitrageFlag:     s.ArbitrageFlag,
+		ID:                      s.ID.String(),
+		StoreID:                 s.StoreID.String(),
+		Plan:                    string(s.Plan),
+		Status:                  string(s.Status),
+		CancelAtPeriodEnd:       s.CancelAtPeriodEnd,
+		CreatedAt:               s.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		ArbitrageFlag:           s.ArbitrageFlag,
+		HasDefaultPaymentMethod: s.HasDefaultPaymentMethod,
 	}
 	if s.StripeSubscriptionID != nil {
 		resp.StripeSubscriptionID = s.StripeSubscriptionID
@@ -126,7 +156,78 @@ func toSubscriptionResponse(s subscription.StoreSubscription) SubscriptionRespon
 		t := s.CurrentPeriodEnd.Format("2006-01-02T15:04:05Z")
 		resp.CurrentPeriodEnd = &t
 	}
+	enrichTrialBanner(&resp, s, time.Now().UTC())
+	enrichFeatureLimits(&resp, s.Plan)
 	return resp
+}
+
+// enrichFeatureLimits populates FeatureLimits and MinPlanForFeature on resp
+// from plangate. Single source of truth: every gated UI control reads its
+// permission from this map, eliminating drift between the server-side
+// gate (plangate.RequireFeature) and the client-side rendering. Static
+// per plan, so no per-request computation cost beyond a map clone.
+func enrichFeatureLimits(resp *SubscriptionResponse, plan subscription.SubscriptionPlan) {
+	resp.FeatureLimits = plangate.AllFeatureLimits(plan)
+
+	features := plangate.AllFeatures()
+	resp.MinPlanForFeature = make(map[string]string, len(features))
+	for _, f := range features {
+		resp.MinPlanForFeature[string(f)] = string(plangate.MinPlanForFeature(f))
+	}
+}
+
+// enrichTrialBanner populates the trial countdown fields on resp when the
+// subscription is in a pre-billing state. Computed server-side so the admin
+// UI doesn't need to duplicate the day-90 / PM / plan-chosen logic that
+// drives the trial reminder cron — they share this single derivation.
+//
+// CTA matrix:
+//
+//	signup  (no plan picked yet)         → pick_plan
+//	trialing + !has_pm + days > 1        → add_card
+//	trialing + !has_pm + days <= 1       → add_card  (frontend uses days_remaining for urgency)
+//	trialing + has_pm  + days > 3        → all_set
+//	trialing + has_pm  + days <= 3       → billing_imminent
+//	any other status (active, expired …) → CTA stays nil; banner is hidden
+func enrichTrialBanner(resp *SubscriptionResponse, s subscription.StoreSubscription, now time.Time) {
+	if s.Status != subscription.StatusSignup && s.Status != subscription.StatusTrialing {
+		return
+	}
+
+	endsAt := s.CreatedAt.Add(trial.TrialDays * 24 * time.Hour).UTC()
+	endsAtStr := endsAt.Format("2006-01-02T15:04:05Z")
+	resp.TrialEndsAt = &endsAtStr
+
+	// Days remaining — clamp at zero so the UI never shows a negative number
+	// during the brief window between expiry-time and the expiry cron run.
+	hoursLeft := endsAt.Sub(now).Hours()
+	days := int(hoursLeft / 24)
+	if hoursLeft > 0 && hoursLeft < 24 {
+		days = 1 // round up the final partial day so "0 days" never appears mid-trial
+	}
+	if days < 0 {
+		days = 0
+	}
+	resp.DaysRemainingInTrial = &days
+
+	cta := computeTrialCTA(s.Status, s.HasDefaultPaymentMethod, days)
+	if cta != "" {
+		resp.TrialCTA = &cta
+	}
+}
+
+func computeTrialCTA(status subscription.SubscriptionStatus, hasPM bool, daysRemaining int) string {
+	if status == subscription.StatusSignup {
+		return "pick_plan"
+	}
+	// status == trialing
+	if !hasPM {
+		return "add_card"
+	}
+	if daysRemaining <= 3 {
+		return "billing_imminent"
+	}
+	return "all_set"
 }
 
 // GetSubscription handles GET /admin/stores/:storeId/subscription.

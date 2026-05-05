@@ -13,6 +13,20 @@ const (
 	TemplateDunningDay5           TemplateID = "dunning_day_5"
 	TemplateDunningDay7           TemplateID = "dunning_day_7"
 	TemplatePaymentActionReminder TemplateID = "payment_action_reminder"
+
+	// Trial-end reminder cadence (migration 088). The "no_pm" templates
+	// nudge merchants without a default payment method five times during
+	// the final 15 days of the 90-day trial. The "has_pm" template is a
+	// single heads-up the day before Stripe auto-bills the chosen plan.
+	TemplateTrialNoPMT15  TemplateID = "trial_no_pm_t15"
+	TemplateTrialNoPMT10  TemplateID = "trial_no_pm_t10"
+	TemplateTrialNoPMT7   TemplateID = "trial_no_pm_t7"
+	TemplateTrialNoPMT3   TemplateID = "trial_no_pm_t3"
+	TemplateTrialNoPMT1   TemplateID = "trial_no_pm_t1"
+	TemplateTrialHasPMT1  TemplateID = "trial_has_pm_t1"
+	// Sent from invoice.paid webhook on the first successful charge —
+	// confirms the chosen plan is now active.
+	TemplateTrialStartedBilled TemplateID = "trial_started_billed"
 )
 
 // Client is the narrow interface every caller uses.

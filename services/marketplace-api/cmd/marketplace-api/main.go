@@ -1243,11 +1243,18 @@ func main() {
 		})
 		themeLoader := campaign.NewStoreThemeLoader(conn, brandingSvcForCampaign)
 
+		// Per-tenant per-store monthly cap enforcement (spec §10). Re-instantiated
+		// here because campaignBudgetSvc lives in a separate scope earlier in
+		// main; the service is stateless (just wraps the *gorm.DB) so creating
+		// another handle is free. Without this, merchants could send unlimited
+		// campaign emails regardless of plan.
+		campaignBudgetSvcForWorker := campaignbudget.NewService(conn)
 		sendWorker := campaign.NewSendWorker(campaign.SendWorkerConfig{
 			DB:          conn,
 			Repo:        campaignRepo,
 			Dispatcher:  dispatcher,
 			ThemeLoader: themeLoader,
+			Budget:      campaignBudgetSvcForWorker,
 			Logger:      log,
 		})
 		go func() {
@@ -1303,6 +1310,13 @@ func main() {
 			allowed[t] = true
 		}
 		dispatcher := dispatch.New(auditEmitter)
+
+		// Email adapter — currently the NoOp implementation pending real SMTP/SendGrid
+		// wiring (deferred when email/store_name columns land on StoreSubscription).
+		// Used by the dispatcher for the trial-billed confirmation email on first
+		// invoice.paid, and by the dunning + trial reminder crons.
+		dispatcherEmailClient := email.NoOpClient{Logger: log}
+		dispatcher.WithEmail(dispatcherEmailClient)
 
 		// P7 §19.2: annotate B2B invoices with the reverse-charge clause on
 		// invoice.finalized for validated tax IDs in reverse-charge jurisdictions.
@@ -1410,6 +1424,23 @@ func main() {
 		log.Error("register signup anomaly cron", "err", err)
 	}
 
+	// Audit log retention — daily prune at 02:00 UTC. Per-plan windows
+	// (Trial/Starter 90d, Studio 365d, Pro unlimited) are encoded in the
+	// audit package's retentionBuckets. Multi-tenant safe: each DELETE
+	// joins audit_logs to store_subscriptions on store_id, so a tenant's
+	// rows are pruned only against their OWN plan.
+	auditPruneCron := audit.NewPruneCron(conn, log, nil, 0).
+		WithCounter(func(label string, n int64) {
+			metrics.AuditPruneRowsDeletedTotal.WithLabelValues(label).Add(float64(n))
+		})
+	if _, err := trialScheduler.AddFunc(audit.PruneSpec, func() {
+		if _, err := auditPruneCron.Run(workerCtx); err != nil {
+			log.Error("audit prune cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register audit prune cron", "err", err)
+	}
+
 	trialScheduler.Start()
 	defer trialScheduler.Stop()
 	log.Info("P5 crons started", "count", 4)
@@ -1474,7 +1505,22 @@ func main() {
 		log.Error("register SCA reminders cron", "err", err)
 	}
 
-	log.Info("P6 dunning crons registered", "count", 3)
+	// Trial-end reminders — escalating nudges for merchants without a payment
+	// method (T-15 / T-10 / T-7 / T-3 / T-1) and a single heads-up for
+	// merchants with a card on file (T-1 before auto-billing). Idempotency
+	// via the trial_reminders table (migration 088). See spec §5.3.
+	trialRemindersCron := dunning.NewSendTrialReminders(conn, dunningEmailClient, log,
+		dunning.WrapPrometheusCounterVec(metrics.TrialRemindersSentTotal),
+		nil)
+	if _, err := trialScheduler.AddFunc(dunning.TrialRemindersSpec, func() {
+		if err := trialRemindersCron.Run(workerCtx); err != nil {
+			log.Error("trial reminders cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register trial reminders cron", "err", err)
+	}
+
+	log.Info("P6 dunning crons registered", "count", 4)
 
 	// P11 lifecycle crons — post-cancellation pipeline + win-back + GDPR portal.
 	// All registered on the shared trialScheduler (same thread pool as P5/P6).

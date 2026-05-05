@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
+	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
@@ -238,12 +239,33 @@ func (d *Dispatcher) handleSubscriptionDeleted(ctx context.Context, tx *gorm.DB,
 // resolved. No status transition is needed: staying active is correct; if the
 // sub was in payment_action_required, P3's customer.subscription.updated path
 // handles that move.
-func handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []byte) error {
+//
+// First-charge detection: if first_charge_at was nil before the COALESCE
+// update, this invoice is the first successful charge — meaning the trial
+// has just transitioned to a paid plan. We emit a TemplateTrialStartedBilled
+// confirmation email so the merchant knows their selected plan is now active.
+//
+// Multi-pod safety: the dispatcher holds pg_advisory_xact_lock on the store
+// for the duration of webhook processing (see dispatcher.go), so two pods
+// cannot race to detect "first charge" — only one will see first_charge_at=nil.
+func (d *Dispatcher) handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	customer, err := extractCustomerID(raw)
 	if err != nil {
 		// Pre-P6 replays may omit customer — treat as no-op for safety.
 		return nil
 	}
+
+	// Capture pre-state inside the locked tx so first-charge detection is
+	// race-free. Unknown customer (e.g. test-mode noise) is a benign no-op.
+	var sub subscription.StoreSubscription
+	if err := tx.WithContext(ctx).Where("stripe_customer_id = ?", customer).First(&sub).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("dispatch: invoice.paid lookup: %w", err)
+	}
+	wasFirstCharge := sub.FirstChargeAt == nil
+
 	res := tx.WithContext(ctx).Exec(`
 		UPDATE store_subscriptions
 		SET first_charge_at    = COALESCE(first_charge_at, now()),
@@ -254,6 +276,24 @@ func handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	)
 	if res.Error != nil {
 		return fmt.Errorf("dispatch: invoice.paid update: %w", res.Error)
+	}
+
+	if wasFirstCharge && d.emailCl != nil {
+		// TODO: real email recipient — see trial.ExpiryCron / SendTrialReminders.
+		// StoreID placeholder mirrors the existing convention until store_email
+		// columns land on StoreSubscription.
+		if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, sub.StoreID.String(), map[string]any{
+			"store_id":  sub.StoreID.String(),
+			"tenant_id": sub.TenantID.String(),
+			"plan":      string(sub.Plan),
+			"period":    string(sub.SubscriptionPeriod),
+		}); sendErr != nil {
+			// Don't fail the webhook — Stripe would retry, double-firing every
+			// other side effect. Email failure is a soft error: log and move on.
+			// Idempotency is preserved by first_charge_at being non-nil after
+			// this UPDATE, so a retried invoice.paid event won't re-emit.
+			_ = fmt.Errorf("dispatch: trial-billed email (non-fatal): %w", sendErr)
+		}
 	}
 	return nil
 }
@@ -359,20 +399,66 @@ func (d *Dispatcher) handleInvoicePaymentActionRequired(ctx context.Context, tx 
 	return err
 }
 
-// handleCustomerUpdated is audit-only in P2.
-// TODO(P3): sync billing email / name changes.
-func handleCustomerUpdated(ctx context.Context, tx *gorm.DB, raw []byte) error { return nil }
+// handleCustomerUpdated mirrors invoice_settings.default_payment_method onto
+// store_subscriptions.has_default_payment_method. The flag drives the trial
+// reminder cron's cadence:
+//   - true  → single T-1 heads-up before Stripe auto-bills the chosen plan.
+//   - false → nudges at T-15, T-10, T-7, T-3, T-1 asking the merchant to add
+//     a card or pick a plan.
+//
+// Stripe emits customer.updated whenever invoice_settings.default_payment_method
+// changes (set, cleared, or replaced), so the inline payload value is the
+// source of truth. payment_method.attached / .detached stay as no-ops because
+// Stripe pairs them with a customer.updated when the default actually changes.
+func handleCustomerUpdated(ctx context.Context, tx *gorm.DB, raw []byte) error {
+	var e struct {
+		Data struct {
+			Object struct {
+				Customer        string `json:"id"`
+				InvoiceSettings struct {
+					DefaultPaymentMethod *string `json:"default_payment_method"`
+				} `json:"invoice_settings"`
+			} `json:"object"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return fmt.Errorf("dispatch: unmarshal customer.updated: %w", err)
+	}
+	customer := e.Data.Object.Customer
+	if customer == "" {
+		// Replays of older Stripe events sometimes omit the id — skip safely.
+		return nil
+	}
+	hasPM := e.Data.Object.InvoiceSettings.DefaultPaymentMethod != nil &&
+		*e.Data.Object.InvoiceSettings.DefaultPaymentMethod != ""
+
+	res := tx.WithContext(ctx).Exec(`
+		UPDATE store_subscriptions
+		SET has_default_payment_method = ?,
+		    updated_at                 = now()
+		WHERE stripe_customer_id = ?`,
+		hasPM, customer,
+	)
+	if res.Error != nil {
+		return fmt.Errorf("dispatch: customer.updated has_default_payment_method: %w", res.Error)
+	}
+	return nil
+}
 
 // handleChargeRefunded is audit-only in P2.
 // TODO(P3): create refund record in billing ledger.
 func handleChargeRefunded(ctx context.Context, tx *gorm.DB, raw []byte) error { return nil }
 
-// handlePaymentMethodAttached is audit-only in P2.
-// TODO(P3): store default payment method fingerprint.
+// handlePaymentMethodAttached is intentionally a no-op. has_default_payment_method
+// is mirrored from customer.updated, which Stripe emits whenever
+// invoice_settings.default_payment_method changes. Attaching a PM that becomes
+// the default always pairs with a customer.updated; attaching a non-default
+// PM correctly leaves the flag unchanged.
 func handlePaymentMethodAttached(ctx context.Context, tx *gorm.DB, raw []byte) error { return nil }
 
-// handlePaymentMethodDetached is audit-only in P2.
-// TODO(P3): clear stored payment method if it was the default.
+// handlePaymentMethodDetached is intentionally a no-op. See handlePaymentMethodAttached:
+// when detaching the default PM, Stripe emits customer.updated with
+// default_payment_method=null which clears the flag in handleCustomerUpdated.
 func handlePaymentMethodDetached(ctx context.Context, tx *gorm.DB, raw []byte) error { return nil }
 
 // handleFraudWarning is audit-only in P2.

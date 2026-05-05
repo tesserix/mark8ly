@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
+	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
@@ -281,4 +282,156 @@ func TestHandleCheckoutSessionCompleted_BillingCurrencyLockedAfterFirstBind(t *t
 	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
 	require.NotNil(t, sub.BillingCurrency)
 	require.Equal(t, "GBP", *sub.BillingCurrency, "billing_currency must remain GBP after second bind attempt")
+}
+
+// TestDispatch_CustomerUpdated_SetsHasDefaultPaymentMethod verifies that the
+// customer.updated handler mirrors invoice_settings.default_payment_method
+// onto store_subscriptions.has_default_payment_method. Three cases:
+//   - default_payment_method present  → flag flips false → true.
+//   - default_payment_method null     → flag flips true → false.
+//   - tenant isolation: a second tenant's row with a different
+//     stripe_customer_id is unaffected by the update.
+func TestDispatch_CustomerUpdated_SetsHasDefaultPaymentMethod(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantA, storeA := uuid.New(), uuid.New()
+	tenantB, storeB := uuid.New(), uuid.New()
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:                tenantA,
+		StoreID:                 storeA,
+		StripeCustomerID:        "cus_pm_a",
+		Plan:                    subscription.PlanTrial,
+		Status:                  subscription.StatusTrialing,
+		HasDefaultPaymentMethod: false,
+	}).Error)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:                tenantB,
+		StoreID:                 storeB,
+		StripeCustomerID:        "cus_pm_b",
+		Plan:                    subscription.PlanTrial,
+		Status:                  subscription.StatusTrialing,
+		HasDefaultPaymentMethod: true, // sentinel: must remain unchanged
+	}).Error)
+
+	d := dispatch.New(nil)
+
+	// Case 1 — A gets a default PM. Only A's row should flip to true.
+	setPM := []byte(`{"id":"evt_pm1","type":"customer.updated","data":{"object":{"id":"cus_pm_a","invoice_settings":{"default_payment_method":"pm_123"}}}}`)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pm1", EventType: "customer.updated", Payload: setPM,
+	}))
+
+	var subA, subB subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeA).First(&subA).Error)
+	require.NoError(t, db.Where("store_id=?", storeB).First(&subB).Error)
+	require.True(t, subA.HasDefaultPaymentMethod, "tenant A flag must flip to true")
+	require.True(t, subB.HasDefaultPaymentMethod, "tenant B flag must remain true (not touched by A's event)")
+
+	// Case 2 — A's PM is detached (default_payment_method=null). Flag flips back to false.
+	clearPM := []byte(`{"id":"evt_pm2","type":"customer.updated","data":{"object":{"id":"cus_pm_a","invoice_settings":{"default_payment_method":null}}}}`)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pm2", EventType: "customer.updated", Payload: clearPM,
+	}))
+	require.NoError(t, db.Where("store_id=?", storeA).First(&subA).Error)
+	require.NoError(t, db.Where("store_id=?", storeB).First(&subB).Error)
+	require.False(t, subA.HasDefaultPaymentMethod, "tenant A flag must flip back to false")
+	require.True(t, subB.HasDefaultPaymentMethod, "tenant B flag still untouched")
+
+	// Case 3 — empty-string default_payment_method also counts as "no PM".
+	emptyPM := []byte(`{"id":"evt_pm3","type":"customer.updated","data":{"object":{"id":"cus_pm_a","invoice_settings":{"default_payment_method":""}}}}`)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pm3", EventType: "customer.updated", Payload: emptyPM,
+	}))
+	require.NoError(t, db.Where("store_id=?", storeA).First(&subA).Error)
+	require.False(t, subA.HasDefaultPaymentMethod)
+
+	// Verify updated_at moves forward — proves the row was written, not just read.
+	require.WithinDuration(t, time.Now().UTC(), subA.UpdatedAt, 30*time.Second)
+}
+
+// TestDispatch_CustomerUpdated_UnknownCustomerIsNoop verifies that an event
+// for a stripe_customer_id we don't know about (e.g. test-mode noise, replay
+// from a deleted store) is a benign no-op rather than an error — preserves
+// Stripe webhook idempotency contract.
+func TestDispatch_CustomerUpdated_UnknownCustomerIsNoop(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+	d := dispatch.New(nil)
+	payload := []byte(`{"id":"evt_pm_x","type":"customer.updated","data":{"object":{"id":"cus_unknown","invoice_settings":{"default_payment_method":"pm_x"}}}}`)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pm_x", EventType: "customer.updated", Payload: payload,
+	}))
+}
+
+// dispatchEmailRecorder is a minimal email.Client used by the
+// trial-billed-confirmation tests below. It stores templates seen for
+// later assertion. Local to the test file because the cross-test
+// capturingClient lives in a different package.
+type dispatchEmailRecorder struct {
+	templates []email.TemplateID
+}
+
+func (r *dispatchEmailRecorder) Send(_ context.Context, t email.TemplateID, _ string, _ map[string]any) error {
+	r.templates = append(r.templates, t)
+	return nil
+}
+
+// TestDispatch_InvoicePaid_FirstChargeEmitsTrialBilledEmail verifies that the
+// first successful invoice.paid emits TemplateTrialStartedBilled when an
+// email client is wired. This is the merchant-facing confirmation that
+// "your chosen plan is now active and we just billed your card".
+func TestDispatch_InvoicePaid_FirstChargeEmitsTrialBilledEmail(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_first_charge",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+		// FirstChargeAt deliberately nil — this is the first charge.
+	}).Error)
+
+	rec := &dispatchEmailRecorder{}
+	d := dispatch.New(nil).WithEmail(rec)
+	payload := []byte(`{"id":"evt_first","type":"invoice.paid","data":{"object":{"customer":"cus_first_charge"}}}`)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_first", EventType: "invoice.paid", Payload: payload,
+	}))
+
+	require.Len(t, rec.templates, 1, "trial-billed email must be emitted on first charge")
+	require.Equal(t, email.TemplateTrialStartedBilled, rec.templates[0])
+
+	// Second invoice.paid must NOT re-emit the email — first_charge_at is now non-nil.
+	payload2 := []byte(`{"id":"evt_second","type":"invoice.paid","data":{"object":{"customer":"cus_first_charge"}}}`)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_second", EventType: "invoice.paid", Payload: payload2,
+	}))
+	require.Len(t, rec.templates, 1, "subsequent invoice.paid events must not re-emit (idempotent)")
+}
+
+// TestDispatch_InvoicePaid_NoEmailClientStillProcesses verifies the dispatcher
+// is robust to no email client being wired (e.g. dev mode without the
+// adapter): first_charge_at is still stamped, no panic, no error.
+func TestDispatch_InvoicePaid_NoEmailClientStillProcesses(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_no_email",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+	}).Error)
+
+	d := dispatch.New(nil) // no WithEmail call
+	payload := []byte(`{"id":"evt_noemail","type":"invoice.paid","data":{"object":{"customer":"cus_no_email"}}}`)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_noemail", EventType: "invoice.paid", Payload: payload,
+	}))
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.NotNil(t, sub.FirstChargeAt, "first_charge_at must be stamped even without email client")
 }

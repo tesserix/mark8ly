@@ -44,7 +44,7 @@
     "@repo/mobile-shared": "*"
   },
   "devDependencies": {
-    "typescript": "^5.9.0",
+    "typescript": "^6.0.3",
     "@types/react": "^19.0.0",
     "vitest": "^4.1.4"
   }

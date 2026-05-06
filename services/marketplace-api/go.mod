@@ -3,7 +3,7 @@ module github.com/mark8ly/marketplace-api
 go 1.26
 
 require (
-	cloud.google.com/go/secretmanager v1.19.0
+	cloud.google.com/go/secretmanager v1.20.0
 	cloud.google.com/go/storage v1.62.1
 	firebase.google.com/go/v4 v4.19.0
 	github.com/coreos/go-oidc/v3 v3.18.0

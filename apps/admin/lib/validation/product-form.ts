@@ -35,6 +35,12 @@ export const productFormSchema = z.object({
   inventoryQuantity: z
     .string()
     .regex(/^\d+$/, "Enter a whole number"),
+  // "Always in stock" — when true, the synthesized variant is created
+  // (or updated) with inventory_policy="continue" so the storefront
+  // accepts the product into the cart even when stock=0. Form
+  // initialiser supplies the default (false) so input/output match
+  // and the RHF generic stays a single concrete type.
+  alwaysInStock: z.boolean(),
   sku: z
     .string()
     .trim()

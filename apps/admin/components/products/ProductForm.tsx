@@ -106,6 +106,7 @@ export function ProductForm({
     inventoryQuantity: firstVariant
       ? String(firstVariant.inventory_quantity)
       : "0",
+    alwaysInStock: firstVariant?.inventory_policy === "continue",
     sku: firstVariant?.sku ?? "",
     weightKg: firstVariant?.weight_grams
       ? String(firstVariant.weight_grams / 1000)

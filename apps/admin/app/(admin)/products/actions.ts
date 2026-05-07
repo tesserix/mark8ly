@@ -96,7 +96,7 @@ function buildVariants(
       price: values.price,
       currency_code: currencyCode,
       inventory_quantity: Number.isFinite(qty) ? qty : 0,
-      inventory_policy: "deny",
+      inventory_policy: values.alwaysInStock ? "continue" : "deny",
       position: 0,
     },
   ];
@@ -172,6 +172,9 @@ export async function updateProductAction(
   // single variant from the scalar price/sku/stock fields, preserving
   // the existing variant's id so the server replaces in-place rather
   // than creating a duplicate.
+  const inventoryPolicy: "continue" | "deny" = parsed.data.alwaysInStock
+    ? "continue"
+    : "deny";
   let variants = (parsed.data.variants ?? []).map((v) => ({
     id: v.id,
     sku: v.sku && v.sku.length > 0
@@ -179,6 +182,7 @@ export async function updateProductAction(
       : autoVariantSku(parsed.data.title, v.optionValues),
     price: v.price,
     inventory_quantity: v.stock,
+    inventory_policy: inventoryPolicy,
     weight_grams: Math.round(v.weight * 1000),
     // Pass through optional package dimensions so backfilled / future
     // merchant-entered values aren't dropped on save. The form schema
@@ -250,6 +254,10 @@ export async function updateProductAction(
               ? Number(firstVariant.height_cm)
               : undefined,
         currency_code: ctx.currencyCode,
+        // "Always in stock" toggle — propagated on simple-product
+        // updates so the synthesised single variant keeps the merchant's
+        // current selection on a status/price/title-only edit.
+        inventory_policy: inventoryPolicy,
         option_values: [],
       },
     ];

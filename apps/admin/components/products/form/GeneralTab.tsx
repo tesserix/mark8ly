@@ -143,6 +143,23 @@ export function GeneralTab({
       )}
 
       {!hasMultipleVariants && (
+        <label className="flex items-start gap-2 text-sm text-[color:var(--ink-900)]">
+          <input
+            type="checkbox"
+            {...register("alwaysInStock")}
+            className="mt-[3px] h-4 w-4 rounded border border-[color:var(--ink-900)] border-opacity-30"
+          />
+          <span>
+            <span className="font-medium">Always in stock</span>
+            <span className="ml-2 text-[color:var(--ink-900)] opacity-60">
+              Continue selling this product when stock reaches zero
+              (sets <code>inventory_policy=continue</code> on the variant).
+            </span>
+          </span>
+        </label>
+      )}
+
+      {!hasMultipleVariants && (
         <fieldset className="rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--paper-200)] px-4 py-3">
           <legend className="px-2 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)] opacity-60">
             Shipping

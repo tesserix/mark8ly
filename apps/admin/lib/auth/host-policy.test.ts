@@ -207,4 +207,21 @@ describe("isValidSlugReturnUrl", () => {
     expect(isValidSlugReturnUrl("https://evil.com/")).toBe(false);
     expect(isValidSlugReturnUrl("https://shop.acme.com/")).toBe(false);
   });
+
+  it("accepts UAT slug-admin returnUrls (admin-uat.mark8ly.com canonical flow)", () => {
+    // The UAT canonical /login (admin-uat.mark8ly.com/login) has the
+    // same gate as prod — without recognising the UAT slug pattern as
+    // a valid bounce-back, every UAT login flow 404s itself.
+    expect(isValidSlugReturnUrl("https://acceptance-training-admin-uat.mark8ly.com/")).toBe(true);
+    expect(isValidSlugReturnUrl("https://playwrite-test-admin-uat.mark8ly.com/orders")).toBe(true);
+    expect(isValidSlugReturnUrl("https://my-store-admin-uat.mark8ly.dev/")).toBe(true);
+  });
+
+  it("rejects malformed UAT slug-admin returnUrls", () => {
+    // -admin-uat.mark8ly.com (empty slug) fails the regex.
+    expect(isValidSlugReturnUrl("https://-admin-uat.mark8ly.com/")).toBe(false);
+    // The bare admin-uat host (no slug prefix) isn't a slug bounce
+    // target — slug-existence check assumes a slug is present.
+    expect(isValidSlugReturnUrl("https://admin-uat.mark8ly.com/")).toBe(false);
+  });
 });

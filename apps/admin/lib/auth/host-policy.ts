@@ -135,6 +135,13 @@ export function isValidSlugReturnUrl(raw: string | null | undefined): boolean {
     if (/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-admin\.mark8ly\.(?:com|dev)$/.test(host)) {
       return true;
     }
+    // UAT mirror — `{slug}-admin-uat.mark8ly.com` carries the same
+    // returnUrl semantics as the prod equivalent. Without this, the
+    // canonical UAT /login (admin-uat.mark8ly.com/login) 404s its own
+    // valid bounce-back targets and breaks the UAT auth flow.
+    if (/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-admin-uat\.mark8ly\.(?:com|dev)$/.test(host)) {
+      return true;
+    }
     if (
       host.startsWith("admin.") &&
       host.split(".").length >= 3 &&

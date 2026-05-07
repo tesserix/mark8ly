@@ -426,15 +426,38 @@ function isRscPrefetch(req: NextRequest): boolean {
   return false;
 }
 
+// Derive the canonical login origin from the current request host so
+// the SAME image works for both prod and UAT without rebuilding. UAT
+// requests on {slug}-admin-uat.mark8ly.com get bounced to
+// admin-uat.mark8ly.com (NOT prod's admin.mark8ly.com) — without this,
+// the build-time CANONICAL_LOGIN_ORIGIN baked from a single GitHub
+// secret would punt every UAT user across to prod login and the
+// env isolation breaks.
+function deriveCanonicalLoginOrigin(req: NextRequest): string | null {
+  const host = (req.headers.get("host") ?? "").split(":")[0]?.toLowerCase() ?? "";
+  if (!host) return null;
+  const parts = host.split(".");
+  if (parts.length < 2) return null;
+  const tld = parts.slice(-2).join(".");
+  if (tld !== "mark8ly.com" && tld !== "mark8ly.dev") return null;
+  const first = parts[0] ?? "";
+  // Canonical hosts host the sign-in form themselves — don't loop.
+  if (first === "admin" || first === "admin-uat") return null;
+  if (first.endsWith("-admin-uat")) return `https://admin-uat.${tld}`;
+  if (first.endsWith("-admin")) return `https://admin.${tld}`;
+  return null;
+}
+
 function redirectToLogin(req: NextRequest): NextResponse {
-  // If CANONICAL_LOGIN_ORIGIN is configured AND the current request is
-  // NOT already on that host, bounce the user to the canonical host
-  // for sign-in. The session cookie is scoped to .mark8ly.com so once
-  // auth-bff mints it at admin.mark8ly.com, every {slug}-admin.mark8ly.com
-  // subdomain picks it up without extra plumbing.
+  // Bounce slug-admin traffic to the matching canonical sign-in host.
+  // Prefer the host-derived value over the build-time
+  // CANONICAL_LOGIN_ORIGIN env var so the prod and UAT images can be
+  // identical — the env-var fallback stays for backward compat with
+  // off-mark8ly admin custom domains.
   const externalCurrent = externalOrigin(req);
-  const useCanonical =
-    CANONICAL_LOGIN_ORIGIN && externalCurrent !== CANONICAL_LOGIN_ORIGIN;
+  const derivedCanonical = deriveCanonicalLoginOrigin(req);
+  const targetCanonical = derivedCanonical || CANONICAL_LOGIN_ORIGIN || null;
+  const useCanonical = !!targetCanonical && externalCurrent !== targetCanonical;
 
   // Never cross-origin redirect an RSC prefetch (see isRscPrefetch
   // above for why). Return a lightweight 401 instead — the RSC client
@@ -447,7 +470,7 @@ function redirectToLogin(req: NextRequest): NextResponse {
 
   const loginUrl = new URL(
     "/login",
-    useCanonical ? CANONICAL_LOGIN_ORIGIN : externalCurrent,
+    useCanonical ? (targetCanonical as string) : externalCurrent,
   );
   loginUrl.searchParams.set("returnUrl", externalUrl(req));
   return NextResponse.redirect(loginUrl);

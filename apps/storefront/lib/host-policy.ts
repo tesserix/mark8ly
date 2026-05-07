@@ -24,6 +24,10 @@ const RESERVED_SUBDOMAINS = new Set([
   "api",
   "api-v1",
   "admin", // canonical admin host — not a storefront slug
+  "admin-uat", // canonical UAT admin host
+  "uat", // canonical UAT storefront host (the apex equivalent for UAT)
+  "uat-landing", // UAT onboarding landing host
+  "onboarding-uat", // UAT onboarding wizard host
   "internal-identity",
   "identity",
 ]);
@@ -50,6 +54,15 @@ export function classifyStorefrontHost(
     if (!first) return { kind: "unknown" };
     if (RESERVED_SUBDOMAINS.has(first)) return { kind: "marketing" };
     if (first.endsWith("-admin")) return { kind: "unknown" }; // admin host hit storefront pod
+    if (first.endsWith("-admin-uat")) return { kind: "unknown" }; // UAT admin host hit storefront pod
+    // UAT mirror: `{slug}-uat.mark8ly.com` is the UAT analog of prod's
+    // `{slug}.mark8ly.com`. Strip the `-uat` suffix to recover the
+    // canonical slug. Prod hosts skip this branch entirely.
+    if (first.endsWith("-uat")) {
+      const slug = first.slice(0, -"-uat".length);
+      if (!slug) return { kind: "unknown" };
+      return { kind: "slug", slug };
+    }
     return { kind: "slug", slug: first };
   }
 

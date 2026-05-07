@@ -33,6 +33,18 @@ export function slugFromHost(host: string | null): string | null {
   const sub = parts[0] ?? "";
   if (!sub || RESERVED_SUBDOMAINS.has(sub)) return null;
   if (sub.endsWith("-admin")) return null;
+  // Admin UAT subdomain ({slug}-admin-uat) is the admin app's host —
+  // ignore here so the storefront pod doesn't try to render it.
+  if (sub.endsWith("-admin-uat")) return null;
+  // UAT mirror — `{slug}.mark8ly.com` becomes `{slug}-uat.mark8ly.com`
+  // in the cluster-co-located UAT env. Strip the suffix to recover the
+  // canonical slug; prod hosts (`{slug}.mark8ly.com`) skip this branch
+  // because they don't end in `-uat`.
+  if (sub.endsWith("-uat")) {
+    const baseSlug = sub.slice(0, -"-uat".length);
+    if (!baseSlug) return null;
+    return baseSlug;
+  }
   return sub;
 }
 

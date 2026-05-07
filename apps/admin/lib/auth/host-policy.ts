@@ -50,10 +50,19 @@ export function classifyAdminHost(hostHeader: string | null | undefined): HostCl
   if (MARK8LY_TLDS.has(tld)) {
     // mark8ly-controlled TLD. The first label decides the kind.
     const first = parts[0] ?? "";
-    if (first === "admin") return { kind: "canonical" };
+    if (first === "admin" || first === "admin-uat") return { kind: "canonical" };
     if (first.endsWith("-admin")) {
       const slug = first.slice(0, -"-admin".length);
       // {slug}-admin where slug is empty is malformed (e.g. "-admin.mark8ly.com").
+      if (!slug) return { kind: "unknown" };
+      return { kind: "slug", slug };
+    }
+    // UAT mirror — `{slug}-admin.mark8ly.com` becomes
+    // `{slug}-admin-uat.mark8ly.com` in the cluster-co-located UAT env.
+    // Same slug, different host suffix. Prod hosts take the branches
+    // above first, so this is strictly additive.
+    if (first.endsWith("-admin-uat")) {
+      const slug = first.slice(0, -"-admin-uat".length);
       if (!slug) return { kind: "unknown" };
       return { kind: "slug", slug };
     }

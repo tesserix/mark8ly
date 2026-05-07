@@ -361,7 +361,17 @@ export async function middleware(req: NextRequest) {
     }
     if (slug) {
       const target = new URL(req.nextUrl);
-      target.host = `${slug}-admin.mark8ly.com`;
+      // Preserve the env suffix from the request host so prod redirects
+      // to {slug}-admin.mark8ly.com and UAT redirects to
+      // {slug}-admin-uat.mark8ly.com — never cross the env boundary.
+      // Hardcoding "admin.mark8ly.com" would punt every UAT user back
+      // to prod after sign-in.
+      const currentHost = (req.headers.get("host") ?? "").split(":")[0]?.toLowerCase() ?? "";
+      const parts = currentHost.split(".");
+      const first = parts[0] ?? "";
+      const tld = parts.slice(-2).join(".");
+      const adminPrefix = first === "admin-uat" ? "admin-uat" : "admin";
+      target.host = `${slug}-${adminPrefix}.${tld}`;
       target.protocol = "https:";
       target.port = "";
       return NextResponse.redirect(target);

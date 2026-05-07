@@ -64,6 +64,33 @@ describe("classifyAdminHost", () => {
     expect(classifyAdminHost(undefined)).toEqual({ kind: "unknown" });
     expect(classifyAdminHost("singlelabel")).toEqual({ kind: "unknown" });
   });
+
+  it("recognises the UAT canonical admin host", () => {
+    // `admin-uat.mark8ly.com` is the UAT mirror of the prod
+    // `admin.mark8ly.com` — same canonical role, different env.
+    expect(classifyAdminHost("admin-uat.mark8ly.com")).toEqual({ kind: "canonical" });
+    expect(classifyAdminHost("ADMIN-UAT.MARK8LY.COM")).toEqual({ kind: "canonical" });
+  });
+
+  it("recognises tenanted UAT slug-admin subdomains", () => {
+    // `{slug}-admin-uat.mark8ly.com` is the UAT mirror of the prod
+    // `{slug}-admin.mark8ly.com`. Slug returned is identical so
+    // downstream tenant lookups don't have to be env-aware.
+    expect(classifyAdminHost("acceptance-training-admin-uat.mark8ly.com")).toEqual({
+      kind: "slug",
+      slug: "acceptance-training",
+    });
+    expect(classifyAdminHost("playwrite-test-admin-uat.mark8ly.com")).toEqual({
+      kind: "slug",
+      slug: "playwrite-test",
+    });
+  });
+
+  it("rejects malformed UAT slug subdomains", () => {
+    // `-admin-uat.mark8ly.com` (empty slug) is malformed; same guard
+    // as the prod equivalent.
+    expect(classifyAdminHost("-admin-uat.mark8ly.com")).toEqual({ kind: "unknown" });
+  });
 });
 
 describe("isCanonicalAllowedPath", () => {

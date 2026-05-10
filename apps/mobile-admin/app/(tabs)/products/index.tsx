@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import {
   View,
-  Text,
-  TextInput,
   FlatList,
   RefreshControl,
   TouchableOpacity,
@@ -10,8 +8,16 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { Plus } from "lucide-react-native";
 import { useProducts } from "../../../lib/hooks/use-products";
 import { ProductRow } from "../../../components/ProductRow";
+import {
+  EmptyState,
+  PageHeader,
+  Screen,
+  SearchField,
+  SegmentedControl,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Product } from "@repo/mobile-shared/api/types";
 
@@ -25,12 +31,10 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 
 function useDebounce(value: string, delay: number): string {
   const [debounced, setDebounced] = useState(value);
-
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(value), delay);
     return () => clearTimeout(timer);
   }, [value, delay]);
-
   return debounced;
 }
 
@@ -50,73 +54,43 @@ export default function ProductsScreen() {
     Object.keys(queryParams).length > 0 ? queryParams : undefined,
   );
 
-  const handleProductPress = useCallback(
-    (product: Product) => {
-      router.push(`/(tabs)/products/${product.id}`);
-    },
+  const handlePress = useCallback(
+    (product: Product) => router.push(`/(tabs)/products/${product.id}`),
     [router],
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: Product }) => (
-      <ProductRow product={item} onPress={handleProductPress} />
-    ),
-    [handleProductPress],
+    ({ item }: { item: Product }) => <ProductRow product={item} onPress={handlePress} />,
+    [handlePress],
   );
 
-  const keyExtractor = useCallback((item: Product) => item.id, []);
-
   return (
-    <View style={styles.screen}>
-      <View style={styles.filtersRow}>
-        {FILTERS.map((filter) => {
-          const isActive = activeFilter === filter.key;
-          return (
-            <TouchableOpacity
-              key={filter.key}
-              style={[styles.filterBtn, isActive && styles.filterBtnActive]}
-              onPress={() => setActiveFilter(filter.key)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={`Filter by ${filter.label}`}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-                  isActive && styles.filterTextActive,
-                ]}
-              >
-                {filter.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search products..."
-          placeholderTextColor={`${theme.colors.text}50`}
+    <Screen>
+      <PageHeader eyebrow="PRODUCTS" title="Catalog" />
+      <View style={styles.search}>
+        <SearchField
           value={searchText}
           onChangeText={setSearchText}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
+          placeholder="Search products…"
           accessibilityLabel="Search products"
         />
       </View>
+      <SegmentedControl<FilterKey>
+        segments={FILTERS}
+        value={activeFilter}
+        onChange={setActiveFilter}
+      />
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={theme.colors.text} />
+          <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : (
         <FlatList
           data={data?.items ?? []}
           renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={styles.listContent}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}
@@ -125,14 +99,14 @@ export default function ProductsScreen() {
             />
           }
           ListEmptyComponent={
-            <View style={styles.centered}>
-              <Text style={styles.emptyTitle}>No products found</Text>
-              <Text style={styles.emptySubtitle}>
-                {debouncedSearch
-                  ? "Try a different search term"
-                  : "Add your first product to get started"}
-              </Text>
-            </View>
+            <EmptyState
+              title="No products yet"
+              message={
+                debouncedSearch
+                  ? "Try a different search term."
+                  : "Add your first product to get started."
+              }
+            />
           }
         />
       )}
@@ -140,101 +114,44 @@ export default function ProductsScreen() {
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push("/(tabs)/products/new")}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
         accessibilityRole="button"
         accessibilityLabel="Add new product"
       >
-        <Text style={styles.fabText}>+</Text>
+        <Plus size={22} color={theme.colors.inverse} strokeWidth={2} />
       </TouchableOpacity>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  filtersRow: {
-    flexDirection: "row",
+  search: {
     paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
-    gap: theme.spacing.sm,
-  },
-  filterBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: theme.radius,
-    backgroundColor: "transparent",
-  },
-  filterBtnActive: {
-    backgroundColor: theme.colors.text,
-  },
-  filterText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: theme.colors.text,
-  },
-  filterTextActive: {
-    color: theme.colors.background,
-  },
-  searchContainer: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingBottom: theme.spacing.md,
-  },
-  searchInput: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: theme.colors.text,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
-  },
-  listContent: {
     paddingTop: theme.spacing.xs,
-    paddingBottom: 80,
+  },
+  list: {
     flexGrow: 1,
+    paddingBottom: 96,
   },
   centered: {
     flex: 1,
-    justifyContent: "center",
     alignItems: "center",
-    paddingTop: 80,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: theme.colors.text,
-    marginBottom: theme.spacing.xs,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.5,
+    justifyContent: "center",
   },
   fab: {
     position: "absolute",
-    bottom: theme.spacing.xxl,
-    right: theme.spacing.xl,
+    right: theme.spacing.lg,
+    bottom: theme.spacing.lg,
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: theme.colors.text,
+    backgroundColor: theme.colors.accent,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
     elevation: 6,
-  },
-  fabText: {
-    color: theme.colors.background,
-    fontSize: 28,
-    fontWeight: "400",
-    marginTop: -2,
   },
 });

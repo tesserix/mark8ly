@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, TouchableOpacity, StyleSheet } from "react-native";
+import { StatusBadge, Text, type StatusTone } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Order } from "@repo/mobile-shared/api/types";
 
@@ -7,11 +8,11 @@ interface OrderRowProps {
   onPress: (order: Order) => void;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "#F59E0B",
-  confirmed: theme.colors.accent,
-  fulfilled: theme.colors.text,
-  cancelled: theme.colors.danger,
+const STATUS_TONE: Record<string, StatusTone> = {
+  pending: "warning",
+  confirmed: "success",
+  fulfilled: "neutral",
+  cancelled: "danger",
 };
 
 function formatCurrency(amount: number): string {
@@ -38,29 +39,33 @@ function formatRelativeTime(dateString: string): string {
 }
 
 export function OrderRow({ order, onPress }: OrderRowProps) {
-  const badgeBg = STATUS_COLORS[order.status] ?? theme.colors.text;
+  const tone = STATUS_TONE[order.status] ?? "neutral";
   const displayName = order.customer_name || order.customer_email;
 
   return (
     <TouchableOpacity
       style={styles.container}
       onPress={() => onPress(order)}
-      activeOpacity={0.7}
+      activeOpacity={0.6}
       accessibilityRole="button"
       accessibilityLabel={`Order ${order.order_number}, ${displayName}, ${formatCurrency(order.grand_total)}, ${order.status}`}
     >
       <View style={styles.topRow}>
-        <Text style={styles.orderNumber}>{order.order_number}</Text>
-        <View style={[styles.badge, { backgroundColor: badgeBg }]}>
-          <Text style={styles.badgeText}>{order.status}</Text>
-        </View>
+        <Text preset="bodyEmphasis" color="text">
+          #{order.order_number}
+        </Text>
+        <StatusBadge label={order.status} tone={tone} />
       </View>
-      <Text style={styles.customer} numberOfLines={1}>
+      <Text preset="caption" color="textSecondary" numberOfLines={1} style={styles.customer}>
         {displayName}
       </Text>
       <View style={styles.bottomRow}>
-        <Text style={styles.total}>{formatCurrency(order.grand_total)}</Text>
-        <Text style={styles.time}>{formatRelativeTime(order.created_at)}</Text>
+        <Text preset="bodyEmphasis" color="text">
+          {formatCurrency(order.grand_total)}
+        </Text>
+        <Text preset="caption" color="textTertiary">
+          {formatRelativeTime(order.created_at)}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -68,55 +73,23 @@ export function OrderRow({ order, onPress }: OrderRowProps) {
 
 const styles = StyleSheet.create({
   container: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
     backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    padding: 14,
-    marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.sm,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
+    borderBottomWidth: theme.hairline,
+    borderBottomColor: theme.colors.hairline,
+    gap: theme.spacing.xs,
   },
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: theme.spacing.xs,
   },
-  orderNumber: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.text,
-  },
-  badge: {
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: theme.colors.elevated,
-    textTransform: "capitalize",
-  },
-  customer: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.6,
-    marginBottom: theme.spacing.sm,
-  },
+  customer: { marginTop: 2 },
   bottomRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-  },
-  total: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: theme.colors.text,
-  },
-  time: {
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.4,
+    marginTop: 2,
   },
 });

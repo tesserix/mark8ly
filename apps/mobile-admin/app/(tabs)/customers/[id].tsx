@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   Alert,
@@ -11,6 +10,16 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCustomer } from "../../../lib/hooks/use-customers";
 import { useBlockCustomer, useUnblockCustomer } from "../../../lib/admin-api/customer-actions";
+import {
+  BackHeader,
+  Card,
+  Eyebrow,
+  Hairline,
+  Screen,
+  StatusBadge,
+  Text,
+  type StatusTone,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { RecentOrder } from "@repo/mobile-shared/api/types";
 
@@ -36,21 +45,26 @@ function getInitial(firstName: string, lastName: string, email: string): string 
 }
 
 function getDisplayName(firstName: string, lastName: string, email: string): string {
-  if (firstName || lastName) {
-    return [firstName, lastName].filter(Boolean).join(" ");
-  }
+  if (firstName || lastName) return [firstName, lastName].filter(Boolean).join(" ");
   return email;
 }
 
-function SectionHeader({ title }: { title: string }) {
-  return <Text style={styles.sectionHeader}>{title}</Text>;
-}
+const ORDER_STATUS_TONE: Record<string, StatusTone> = {
+  pending: "warning",
+  confirmed: "success",
+  fulfilled: "neutral",
+  cancelled: "danger",
+};
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.statCard} accessibilityLabel={`${label}: ${value}`}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+    <View style={styles.statTile}>
+      <Text preset="h3" color="text">
+        {value}
+      </Text>
+      <Text preset="caption" color="textTertiary">
+        {label}
+      </Text>
     </View>
   );
 }
@@ -62,28 +76,28 @@ function RecentOrderRow({
   order: RecentOrder;
   onPress: (id: string) => void;
 }) {
+  const tone = ORDER_STATUS_TONE[order.status] ?? "neutral";
   return (
     <TouchableOpacity
       style={styles.orderRow}
       onPress={() => onPress(order.id)}
-      activeOpacity={0.7}
+      activeOpacity={0.6}
       accessibilityRole="button"
       accessibilityLabel={`Order ${order.order_number}, ${formatCurrency(order.grand_total)}, ${order.status}`}
     >
       <View style={styles.orderInfo}>
-        <Text style={styles.orderNumber}>{order.order_number}</Text>
-        <Text style={styles.orderDate}>{formatDate(order.created_at)}</Text>
+        <Text preset="bodyEmphasis" color="text">
+          #{order.order_number}
+        </Text>
+        <Text preset="caption" color="textTertiary">
+          {formatDate(order.created_at)}
+        </Text>
       </View>
       <View style={styles.orderRight}>
-        <Text style={styles.orderTotal}>{formatCurrency(order.grand_total)}</Text>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: order.status === "cancelled" ? theme.colors.danger : theme.colors.accent },
-          ]}
-        >
-          <Text style={styles.statusText}>{order.status}</Text>
-        </View>
+        <Text preset="bodyEmphasis" color="text">
+          {formatCurrency(order.grand_total)}
+        </Text>
+        <StatusBadge label={order.status} tone={tone} />
       </View>
     </TouchableOpacity>
   );
@@ -102,40 +116,34 @@ export default function CustomerDetailScreen() {
 
   const handleBlockToggle = useCallback(() => {
     if (!customer) return;
-
     const action = isBlocked ? "Unblock" : "Block";
     const message = isBlocked
       ? "This customer will be able to place orders again."
       : "This customer will not be able to place new orders.";
-
     Alert.alert(`${action} Customer`, message, [
       { text: "Cancel", style: "cancel" },
       {
         text: action,
         style: isBlocked ? "default" : "destructive",
-        onPress: () => {
-          if (isBlocked) {
-            unblockMutation.mutate(customer.id);
-          } else {
-            blockMutation.mutate(customer.id);
-          }
-        },
+        onPress: () =>
+          isBlocked ? unblockMutation.mutate(customer.id) : blockMutation.mutate(customer.id),
       },
     ]);
   }, [customer, isBlocked, blockMutation, unblockMutation]);
 
   const handleOrderPress = useCallback(
-    (orderId: string) => {
-      router.push(`/(tabs)/orders/${orderId}`);
-    },
+    (orderId: string) => router.push(`/(tabs)/orders/${orderId}`),
     [router],
   );
 
   if (isLoading || !customer) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.text} />
-      </View>
+      <Screen>
+        <BackHeader eyebrow="CUSTOMER" title="Loading…" />
+        <View style={styles.centered}>
+          <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      </Screen>
     );
   }
 
@@ -143,267 +151,158 @@ export default function CustomerDetailScreen() {
   const initial = getInitial(customer.first_name, customer.last_name, customer.email);
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {/* Profile header */}
-      <View style={styles.card}>
-        <View style={styles.profileHeader}>
-          <View style={styles.avatar} accessibilityLabel={`Avatar for ${displayName}`}>
-            <Text style={styles.avatarText}>{initial}</Text>
+    <Screen>
+      <BackHeader eyebrow="CUSTOMER" title={displayName} />
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.profile}>
+          <View style={styles.avatar}>
+            <Text preset="h2" color="inverse">
+              {initial}
+            </Text>
           </View>
-          <Text style={styles.profileName}>{displayName}</Text>
-          <Text style={styles.profileEmail}>{customer.email}</Text>
-          {customer.phone && (
-            <Text style={styles.profilePhone}>{customer.phone}</Text>
-          )}
-          <Text style={styles.profileJoined}>
+          <Text preset="h1" color="text" align="center" style={styles.profileName}>
+            {displayName}
+          </Text>
+          <Text preset="body" color="textSecondary" align="center">
+            {customer.email}
+          </Text>
+          {customer.phone ? (
+            <Text preset="caption" color="textTertiary" align="center">
+              {customer.phone}
+            </Text>
+          ) : null}
+          <Text preset="caption" color="textTertiary" align="center" style={styles.joined}>
             Joined {formatDate(customer.created_at)}
           </Text>
-          {isBlocked && (
-            <View style={styles.blockedBadge}>
-              <Text style={styles.blockedText}>Blocked</Text>
+          {isBlocked ? (
+            <View style={styles.blockedRow}>
+              <StatusBadge label="Blocked" tone="danger" />
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.statsRow}>
+          <StatTile label="Orders" value={String(customer.order_count)} />
+          <StatTile label="Spent" value={formatCurrency(customer.total_spent)} />
+          <StatTile label="Avg" value={formatCurrency(customer.average_order_value)} />
+        </View>
+
+        <Eyebrow label="Recent Orders" />
+        <Card padding={0} style={styles.card}>
+          {customer.recent_orders.length > 0 ? (
+            customer.recent_orders.map((order, i) => (
+              <View key={order.id}>
+                {i > 0 ? <Hairline inset={theme.spacing.lg} /> : null}
+                <RecentOrderRow order={order} onPress={handleOrderPress} />
+              </View>
+            ))
+          ) : (
+            <View style={styles.empty}>
+              <Text preset="caption" color="textTertiary">
+                No orders yet.
+              </Text>
             </View>
           )}
+        </Card>
+
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={isBlocked ? styles.unblockBtn : styles.blockBtn}
+            onPress={handleBlockToggle}
+            disabled={isMutating}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isBlocked
+                ? unblockMutation.isPending ? "Unblocking customer" : "Unblock customer"
+                : blockMutation.isPending ? "Blocking customer" : "Block customer"
+            }
+          >
+            <Text
+              preset="bodyEmphasis"
+              color={isBlocked ? "inverse" : "danger"}
+            >
+              {isMutating
+                ? isBlocked ? "Unblocking…" : "Blocking…"
+                : isBlocked ? "Unblock Customer" : "Block Customer"}
+            </Text>
+          </TouchableOpacity>
         </View>
-      </View>
-
-      {/* Stats */}
-      <View style={styles.statsRow}>
-        <StatCard label="Total Orders" value={String(customer.order_count)} />
-        <StatCard label="Total Spent" value={formatCurrency(customer.total_spent)} />
-        <StatCard
-          label="Avg Order"
-          value={formatCurrency(customer.average_order_value)}
-        />
-      </View>
-
-      {/* Recent orders */}
-      <View style={styles.card}>
-        <SectionHeader title="Recent Orders" />
-        {customer.recent_orders.length > 0 ? (
-          customer.recent_orders.map((order) => (
-            <RecentOrderRow
-              key={order.id}
-              order={order}
-              onPress={handleOrderPress}
-            />
-          ))
-        ) : (
-          <Text style={styles.emptyText}>No orders yet</Text>
-        )}
-      </View>
-
-      {/* Actions */}
-      <View style={styles.actionsSection}>
-        <TouchableOpacity
-          style={isBlocked ? styles.primaryBtn : styles.dangerBtn}
-          onPress={handleBlockToggle}
-          disabled={isMutating}
-          accessibilityRole="button"
-          accessibilityLabel={
-            isMutating
-              ? isBlocked ? "Unblocking customer" : "Blocking customer"
-              : isBlocked ? "Unblock customer" : "Block customer"
-          }
-        >
-          <Text style={isBlocked ? styles.primaryBtnText : styles.dangerBtnText}>
-            {isMutating
-              ? isBlocked
-                ? "Unblocking..."
-                : "Blocking..."
-              : isBlocked
-                ? "Unblock Customer"
-                : "Block Customer"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  scroll: { paddingBottom: theme.spacing.huge },
+  centered: {
     flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  content: {
-    padding: theme.spacing.lg,
-    paddingBottom: 40,
-    gap: theme.spacing.md,
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
   },
-  card: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    padding: 14,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
-  },
-  profileHeader: {
+  profile: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xl,
+    paddingBottom: theme.spacing.xl,
     alignItems: "center",
-    paddingVertical: theme.spacing.sm,
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: theme.colors.accent,
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
     marginBottom: theme.spacing.md,
   },
-  avatarText: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: theme.colors.elevated,
-  },
-  profileName: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  profileEmail: {
-    fontSize: 14,
-    color: theme.colors.text,
-    opacity: 0.6,
-    marginBottom: 2,
-  },
-  profilePhone: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.5,
-    marginBottom: theme.spacing.xs,
-  },
-  profileJoined: {
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.4,
-    marginTop: theme.spacing.xs,
-  },
-  blockedBadge: {
-    marginTop: theme.spacing.sm,
-    backgroundColor: theme.colors.danger,
-    paddingHorizontal: 10,
-    paddingVertical: theme.spacing.xs,
-    borderRadius: 4,
-  },
-  blockedText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: theme.colors.elevated,
-  },
+  profileName: { marginBottom: 2 },
+  joined: { marginTop: theme.spacing.xs },
+  blockedRow: { marginTop: theme.spacing.sm },
   statsRow: {
     flexDirection: "row",
     gap: theme.spacing.sm,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
   },
-  statCard: {
+  statTile: {
     flex: 1,
     backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    padding: theme.spacing.md,
+    borderRadius: theme.radii.md,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.hairline,
+    paddingVertical: theme.spacing.md,
     alignItems: "center",
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
+    gap: 2,
   },
-  statValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: theme.colors.text,
-    opacity: 0.5,
-  },
-  sectionHeader: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.5,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 10,
-  },
+  card: { marginHorizontal: theme.spacing.lg },
   orderRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 0.5,
-    borderBottomColor: `${theme.colors.text}10`,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    minHeight: 56,
+    gap: theme.spacing.md,
   },
-  orderInfo: {
-    flex: 1,
+  orderInfo: { flex: 1, gap: 2 },
+  orderRight: { alignItems: "flex-end", gap: 4 },
+  empty: { padding: theme.spacing.lg },
+  actions: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xl,
   },
-  orderNumber: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  orderDate: {
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.4,
-  },
-  orderRight: {
-    alignItems: "flex-end",
-  },
-  orderTotal: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: theme.colors.text,
-    marginBottom: theme.spacing.xs,
-  },
-  statusBadge: {
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: theme.colors.elevated,
-    textTransform: "capitalize",
-  },
-  emptyText: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.4,
-    fontStyle: "italic",
-  },
-  actionsSection: {
-    gap: 10,
-    marginTop: theme.spacing.xs,
-  },
-  primaryBtn: {
-    backgroundColor: theme.colors.accent,
-    borderRadius: theme.radius,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  primaryBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.elevated,
-  },
-  dangerBtn: {
+  blockBtn: {
     backgroundColor: "transparent",
-    borderRadius: theme.radius,
-    paddingVertical: 14,
-    alignItems: "center",
     borderWidth: 1,
     borderColor: theme.colors.danger,
+    height: 48,
+    borderRadius: theme.radii.md,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  dangerBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.danger,
+  unblockBtn: {
+    backgroundColor: theme.colors.accent,
+    height: 48,
+    borderRadius: theme.radii.md,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

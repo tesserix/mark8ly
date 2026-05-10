@@ -1,11 +1,17 @@
 import { useEffect, useRef } from "react";
 import { Tabs, useRouter } from "expo-router";
 import * as Notifications from "expo-notifications";
-import { createApiClient } from "@repo/mobile-shared/api/client";
+import {
+  LayoutDashboard,
+  ShoppingBag,
+  Package,
+  Users,
+  MoreHorizontal,
+} from "lucide-react-native";
 import { createNotificationsApi } from "@repo/mobile-shared/api/notifications";
 import { registerForPushNotifications } from "@repo/mobile-shared/push/registration";
-import { useAuth } from "@repo/mobile-shared/auth/provider";
-import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
+import { useApiClient } from "@/lib/api-client";
+import { TenantGate } from "@/components/TenantGate";
 import { theme } from "@/lib/theme";
 
 Notifications.setNotificationHandler({
@@ -15,16 +21,6 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
-
-function useApiClient() {
-  const { getToken } = useAuth();
-  const activeStore = useTenantStore((s) => s.activeStore);
-  return createApiClient({
-    baseUrl: "https://api.mark8ly.com", // TODO: read from config
-    getToken,
-    getStoreId: () => activeStore?.id ?? null,
-  });
-}
 
 function usePushSetup() {
   const router = useRouter();
@@ -53,43 +49,90 @@ function usePushSetup() {
   }, []);
 }
 
+const ICON_SIZE = 22;
+const ICON_STROKE = 1.75;
+
 export default function TabLayout() {
+  return (
+    <TenantGate>
+      <TabsInner />
+    </TenantGate>
+  );
+}
+
+function TabsInner() {
   usePushSetup();
 
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: theme.colors.text,
-        tabBarInactiveTintColor: `${theme.colors.text}80`,
+        tabBarInactiveTintColor: theme.colors.textTertiary,
         tabBarStyle: {
           backgroundColor: theme.colors.elevated,
-          borderTopColor: `${theme.colors.text}10`,
-          borderTopWidth: 0.5,
+          borderTopColor: theme.colors.hairline,
+          borderTopWidth: theme.hairline,
+          height: 64,
+          paddingTop: 6,
+          paddingBottom: 10,
         },
-        headerStyle: { backgroundColor: theme.colors.background },
-        headerTintColor: theme.colors.text,
-        headerShadowVisible: false,
+        tabBarLabelStyle: {
+          fontFamily: theme.fonts.sans,
+          fontSize: 11,
+          fontWeight: "600",
+          letterSpacing: 0.3,
+          marginTop: 2,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
+        },
+        headerShown: false,
       }}
     >
       <Tabs.Screen
         name="index"
-        options={{ title: "Dashboard" }}
+        options={{
+          title: "Dashboard",
+          tabBarIcon: ({ color }) => (
+            <LayoutDashboard size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="orders"
-        options={{ title: "Orders", headerShown: false }}
+        options={{
+          title: "Orders",
+          tabBarIcon: ({ color }) => (
+            <ShoppingBag size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="products"
-        options={{ title: "Products", headerShown: false }}
+        options={{
+          title: "Products",
+          tabBarIcon: ({ color }) => (
+            <Package size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="customers"
-        options={{ title: "Customers", headerShown: false }}
+        options={{
+          title: "Customers",
+          tabBarIcon: ({ color }) => (
+            <Users size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="more"
-        options={{ title: "More", headerShown: false }}
+        options={{
+          title: "More",
+          tabBarIcon: ({ color }) => (
+            <MoreHorizontal size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
+          ),
+        }}
       />
     </Tabs>
   );

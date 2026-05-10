@@ -1,15 +1,16 @@
 import { useCallback } from "react";
 import {
   View,
-  Text,
   Modal,
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
+import { Check, X } from "lucide-react-native";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useStores, useSwitchStore } from "../lib/hooks/use-store";
+import { Hairline, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Store } from "@repo/mobile-shared/api/types";
 
@@ -23,47 +24,62 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
   const { data: stores, isLoading } = useStores();
   const switchStore = useSwitchStore();
 
-  const handleSelect = useCallback((store: Store) => {
-    switchStore(store);
-    onClose();
-  }, [switchStore, onClose]);
+  const handleSelect = useCallback(
+    (store: Store) => {
+      switchStore(store);
+      onClose();
+    },
+    [switchStore, onClose],
+  );
 
-  const renderItem = useCallback(({ item }: { item: Store }) => {
-    const isActive = activeStore?.id === item.id;
-    return (
-      <TouchableOpacity
-        style={[styles.storeRow, isActive && styles.storeRowActive]}
-        onPress={() => handleSelect(item)}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityState={{ selected: isActive }}
-        accessibilityLabel={`${item.name}${isActive ? ", currently selected" : ""}`}
-      >
-        <View style={styles.storeInfo}>
-          <Text style={styles.storeName}>{item.name}</Text>
-          <Text style={styles.storeSlug}>{item.slug}</Text>
-        </View>
-        {isActive && <Text style={styles.checkmark}>&#x2713;</Text>}
-      </TouchableOpacity>
-    );
-  }, [activeStore?.id, handleSelect]);
-
-  const keyExtractor = useCallback((item: Store) => item.id, []);
+  const renderItem = useCallback(
+    ({ item }: { item: Store }) => {
+      const isActive = activeStore?.id === item.id;
+      return (
+        <TouchableOpacity
+          style={styles.storeRow}
+          onPress={() => handleSelect(item)}
+          activeOpacity={0.6}
+          accessibilityRole="button"
+          accessibilityState={{ selected: isActive }}
+          accessibilityLabel={`${item.name}${isActive ? ", currently selected" : ""}`}
+        >
+          <View style={styles.storeInfo}>
+            <Text preset="bodyEmphasis" color="text">
+              {item.name}
+            </Text>
+            <Text preset="caption" color="textTertiary">
+              {item.slug}
+            </Text>
+          </View>
+          {isActive ? (
+            <Check size={18} color={theme.colors.accent} strokeWidth={2} />
+          ) : null}
+        </TouchableOpacity>
+      );
+    },
+    [activeStore?.id, handleSelect],
+  );
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
+          <View style={styles.handle} />
           <View style={styles.header}>
-            <Text style={styles.title}>Select Store</Text>
+            <Text preset="h3" color="text">
+              Select Store
+            </Text>
             <TouchableOpacity
               onPress={onClose}
+              hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel="Done selecting store"
+              accessibilityLabel="Close"
             >
-              <Text style={styles.closeText}>Done</Text>
+              <X size={20} color={theme.colors.text} strokeWidth={1.75} />
             </TouchableOpacity>
           </View>
+          <Hairline />
           {isLoading ? (
             <View style={styles.loading}>
               <ActivityIndicator size="small" color={theme.colors.text} />
@@ -72,11 +88,16 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
             <FlatList
               data={stores ?? []}
               renderItem={renderItem}
-              keyExtractor={keyExtractor}
-              contentContainerStyle={styles.listContent}
+              keyExtractor={(item) => item.id}
+              ItemSeparatorComponent={() => <Hairline inset={theme.spacing.lg} />}
               ListEmptyComponent={
-                <Text style={styles.emptyText}>No stores available</Text>
+                <View style={styles.empty}>
+                  <Text preset="caption" color="textTertiary" align="center">
+                    No stores available.
+                  </Text>
+                </View>
               }
+              contentContainerStyle={styles.list}
             />
           )}
         </View>
@@ -88,78 +109,41 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backgroundColor: theme.colors.overlay,
     justifyContent: "flex-end",
   },
   sheet: {
     backgroundColor: theme.colors.elevated,
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-    maxHeight: "60%",
+    borderTopLeftRadius: theme.radii.xl,
+    borderTopRightRadius: theme.radii.xl,
+    maxHeight: "70%",
     paddingBottom: 34,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.border,
+    alignSelf: "center",
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
   },
   header: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 14,
-    borderBottomWidth: 0.5,
-    borderBottomColor: `${theme.colors.text}10`,
+    paddingVertical: theme.spacing.md,
   },
-  title: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: theme.colors.text,
-  },
-  closeText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.accent,
-  },
-  loading: {
-    padding: 40,
-    alignItems: "center",
-  },
-  listContent: {
-    paddingVertical: theme.spacing.sm,
-  },
+  loading: { padding: theme.spacing.huge, alignItems: "center" },
+  list: { paddingVertical: theme.spacing.xs },
   storeRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 14,
-    minHeight: 48,
+    paddingVertical: theme.spacing.md,
+    minHeight: 56,
   },
-  storeRowActive: {
-    backgroundColor: theme.colors.background,
-  },
-  storeInfo: {
-    flex: 1,
-  },
-  storeName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  storeSlug: {
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.4,
-  },
-  checkmark: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: theme.colors.accent,
-    marginLeft: theme.spacing.sm,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.4,
-    fontStyle: "italic",
-    textAlign: "center",
-    padding: theme.spacing.xxl,
-  },
+  storeInfo: { flex: 1, gap: 2 },
+  empty: { padding: theme.spacing.huge },
 });

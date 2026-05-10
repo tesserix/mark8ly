@@ -13,7 +13,8 @@
     "./push/*": "./push/*.ts",
     "./stores/*": "./stores/*.ts",
     "./deep-links/*": "./deep-links/*.ts",
-    "./haptics/*": "./haptics/*.ts"
+    "./haptics/*": "./haptics/*.ts",
+    "./config/*": "./config/*.ts"
   },
   "dependencies": {
     "zustand": "^5.0.0",
@@ -22,6 +23,7 @@
   "peerDependencies": {
     "react": "^19.0.0",
     "react-native": "*",
+    "expo-constants": "*",
     "expo-secure-store": "*",
     "expo-notifications": "*",
     "expo-device": "*",

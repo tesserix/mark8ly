@@ -2,8 +2,27 @@ import { z } from "zod";
 
 export interface ApiClientConfig {
   baseUrl: string;
+  /** Returns the cached GIP id_token, or null when signed out. */
   getToken: () => Promise<string | null>;
+  /**
+   * Returns a freshly-minted GIP id_token. Called once on a 401 before
+   * we give up and sign the user out. When omitted we treat the first
+   * 401 as terminal.
+   */
+  refreshToken?: () => Promise<string | null>;
   getStoreId: () => string | null;
+  /**
+   * Called when the API rejects the (possibly refreshed) token with a
+   * 401. The caller normally signs the user out and routes back to /login.
+   */
+  onUnauthorized?: () => void | Promise<void>;
+  /**
+   * Called when the API rejects a request scoped to the current active
+   * store with 403/404 (membership revoked, store deleted, etc.). The
+   * caller drops the active store and re-runs the tenant resolver, the
+   * mobile equivalent of the web's middleware redirecting to /pick-tenant.
+   */
+  onTenantInvalid?: (status: number) => void | Promise<void>;
 }
 
 export class ApiError extends Error {
@@ -17,18 +36,98 @@ export class ApiError extends Error {
   }
 }
 
+interface RawRequestInit {
+  method: string;
+  body?: unknown;
+  isStoreScoped: boolean;
+  url: string;
+  headers?: Record<string, string>;
+  formData?: FormData;
+}
+
 export function createApiClient(config: ApiClientConfig) {
+  // Single-flight token refresh — if two parallel requests both get a
+  // 401, only one fetches a fresh token. The other awaits the same
+  // promise so we don't blow past Firebase's refresh-rate limits.
+  let inflightRefresh: Promise<string | null> | null = null;
+  function refresh(): Promise<string | null> {
+    if (!config.refreshToken) return Promise.resolve(null);
+    if (!inflightRefresh) {
+      inflightRefresh = config
+        .refreshToken()
+        .finally(() => {
+          inflightRefresh = null;
+        });
+    }
+    return inflightRefresh;
+  }
+
+  async function send(token: string, init: RawRequestInit): Promise<Response> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      ...(init.headers ?? {}),
+    };
+    let body: BodyInit | undefined;
+    if (init.formData) {
+      body = init.formData;
+    } else if (init.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(init.body);
+    }
+    return fetch(init.url, { method: init.method, headers, body });
+  }
+
+  async function execute(init: RawRequestInit): Promise<Response> {
+    const token = await config.getToken();
+    if (!token) {
+      // No token at all — surface immediately so the caller can route to /login.
+      await config.onUnauthorized?.();
+      throw new ApiError(401, "unauthorized", "Not authenticated");
+    }
+
+    let res = await send(token, init);
+    if (res.status === 401) {
+      // Try a single forced token refresh. GIP id_tokens expire after an
+      // hour and may have stale custom claims — refresh first, then retry.
+      const refreshed = await refresh();
+      if (refreshed) {
+        res = await send(refreshed, init);
+      }
+      if (res.status === 401) {
+        await config.onUnauthorized?.();
+        throw new ApiError(401, "unauthorized", "Session expired");
+      }
+    }
+
+    if (init.isStoreScoped && (res.status === 403 || res.status === 404)) {
+      // Active store became invalid for this user (role revoked, store
+      // deleted, member removed). Self-correct by re-resolving the tenant.
+      await config.onTenantInvalid?.(res.status);
+    }
+
+    return res;
+  }
+
   async function request<T>(
     method: string,
     path: string,
-    options?: { body?: unknown; schema?: z.ZodType<T>; params?: Record<string, string> },
+    options?: {
+      body?: unknown;
+      schema?: z.ZodType<T>;
+      params?: Record<string, string>;
+      /**
+       * When true, the path is mounted under `/api/v1/mobile/admin`
+       * directly, skipping the active-store prefix. Use this for
+       * tenant-wide endpoints like the stores membership list.
+       */
+      tenantScope?: boolean;
+    },
   ): Promise<T> {
-    const token = await config.getToken();
-    if (!token) throw new ApiError(401, "unauthorized", "Not authenticated");
-
     const storeId = config.getStoreId();
+    const useStorePrefix = !options?.tenantScope && storeId !== null;
     const url = new URL(
-      `/api/v1/mobile/admin${storeId ? `/stores/${storeId}` : ""}${path}`,
+      `/api/v1/mobile/admin${useStorePrefix ? `/stores/${storeId}` : ""}${path}`,
       config.baseUrl,
     );
 
@@ -38,14 +137,11 @@ export function createApiClient(config: ApiClientConfig) {
       }
     }
 
-    const res = await fetch(url.toString(), {
+    const res = await execute({
       method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: options?.body ? JSON.stringify(options.body) : undefined,
+      body: options?.body,
+      isStoreScoped: useStorePrefix,
+      url: url.toString(),
     });
 
     if (!res.ok) {
@@ -61,20 +157,25 @@ export function createApiClient(config: ApiClientConfig) {
   return {
     get: <T>(path: string, params?: Record<string, string>, schema?: z.ZodType<T>) =>
       request<T>("GET", path, { params, schema }),
+    /** GET against a tenant-wide path (skips the `/stores/{id}` prefix). */
+    getTenant: <T>(path: string, params?: Record<string, string>, schema?: z.ZodType<T>) =>
+      request<T>("GET", path, { params, schema, tenantScope: true }),
     post: <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
       request<T>("POST", path, { body, schema }),
     patch: <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
       request<T>("PATCH", path, { body, schema }),
     delete: <T>(path: string) => request<T>("DELETE", path),
     uploadMedia: async (path: string, formData: FormData) => {
-      const token = await config.getToken();
-      if (!token) throw new ApiError(401, "unauthorized", "Not authenticated");
       const storeId = config.getStoreId();
+      if (!storeId) {
+        throw new ApiError(400, "no_active_store", "No active store");
+      }
       const url = `${config.baseUrl}/api/v1/mobile/admin/stores/${storeId}${path}`;
-      const res = await fetch(url, {
+      const res = await execute({
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+        formData,
+        isStoreScoped: true,
+        url,
       });
       if (!res.ok) throw new ApiError(res.status, "upload_failed", "Media upload failed");
       return res.json();

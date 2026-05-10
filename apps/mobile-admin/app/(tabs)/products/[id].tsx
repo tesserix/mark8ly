@@ -1,7 +1,6 @@
-import { useState, useCallback, useLayoutEffect } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
-  Text,
   ScrollView,
   TextInput,
   Image,
@@ -12,7 +11,8 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
-import { useLocalSearchParams, useNavigation } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { Plus, Trash2 } from "lucide-react-native";
 import { useProduct } from "../../../lib/hooks/use-products";
 import {
   useUpdateProduct,
@@ -22,23 +22,23 @@ import {
   useUpdateVariant,
 } from "../../../lib/admin-api/product-crud";
 import { ProductMediaPicker } from "../../../components/ProductMediaPicker";
+import {
+  BackHeader,
+  Card,
+  Eyebrow,
+  Hairline,
+  Screen,
+  Text,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Variant } from "@repo/mobile-shared/api/types";
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
-function SectionHeader({ title }: { title: string }) {
-  return <Text style={styles.sectionHeader}>{title}</Text>;
-}
-
 function FieldLabel({ label }: { label: string }) {
-  return <Text style={styles.fieldLabel}>{label}</Text>;
+  return (
+    <Text preset="caption" color="textSecondary" style={styles.fieldLabel}>
+      {label}
+    </Text>
+  );
 }
 
 interface VariantRowProps {
@@ -50,27 +50,28 @@ function VariantRow({ variant, onUpdate }: VariantRowProps) {
   const [price, setPrice] = useState(String(variant.price));
   const [stock, setStock] = useState(String(variant.stock));
 
-  const handleBlurPrice = useCallback(() => {
+  const handleBlurPrice = () => {
     const parsed = parseFloat(price);
-    if (!isNaN(parsed) && parsed !== variant.price) {
-      onUpdate(variant.id, { price: parsed });
-    }
-  }, [price, variant.id, variant.price, onUpdate]);
-
-  const handleBlurStock = useCallback(() => {
+    if (!isNaN(parsed) && parsed !== variant.price) onUpdate(variant.id, { price: parsed });
+  };
+  const handleBlurStock = () => {
     const parsed = parseInt(stock, 10);
-    if (!isNaN(parsed) && parsed !== variant.stock) {
-      onUpdate(variant.id, { stock: parsed });
-    }
-  }, [stock, variant.id, variant.stock, onUpdate]);
+    if (!isNaN(parsed) && parsed !== variant.stock) onUpdate(variant.id, { stock: parsed });
+  };
 
   return (
     <View style={styles.variantRow}>
-      <Text style={styles.variantName}>{variant.name}</Text>
-      {variant.sku ? <Text style={styles.variantSku}>SKU: {variant.sku}</Text> : null}
+      <Text preset="bodyEmphasis" color="text">
+        {variant.name}
+      </Text>
+      {variant.sku ? (
+        <Text preset="caption" color="textTertiary">
+          SKU · {variant.sku}
+        </Text>
+      ) : null}
       <View style={styles.variantFields}>
         <View style={styles.variantField}>
-          <Text style={styles.variantFieldLabel}>Price</Text>
+          <FieldLabel label="Price" />
           <TextInput
             style={styles.variantInput}
             value={price}
@@ -81,7 +82,7 @@ function VariantRow({ variant, onUpdate }: VariantRowProps) {
           />
         </View>
         <View style={styles.variantField}>
-          <Text style={styles.variantFieldLabel}>Stock</Text>
+          <FieldLabel label="Stock" />
           <TextInput
             style={styles.variantInput}
             value={stock}
@@ -98,7 +99,6 @@ function VariantRow({ variant, onUpdate }: VariantRowProps) {
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const navigation = useNavigation();
   const { data: product, isLoading, error } = useProduct(id);
 
   const updateMutation = useUpdateProduct();
@@ -122,7 +122,6 @@ export default function ProductDetailScreen() {
   const [newVariantStock, setNewVariantStock] = useState("");
   const [initialized, setInitialized] = useState(false);
 
-  // Populate fields once product loads
   if (product && !initialized) {
     setName(product.name);
     setDescription(product.description ?? "");
@@ -147,7 +146,6 @@ export default function ProductDetailScreen() {
       Alert.alert("Validation", "Enter a valid price.");
       return;
     }
-
     updateMutation.mutate({
       id,
       body: {
@@ -162,32 +160,11 @@ export default function ProductDetailScreen() {
     });
   }, [id, name, description, price, compareAtPrice, sku, stock, isActive, updateMutation]);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity
-          onPress={handleSave}
-          disabled={updateMutation.isPending}
-          style={styles.headerSaveBtn}
-          accessibilityRole="button"
-          accessibilityLabel={updateMutation.isPending ? "Saving product" : "Save product"}
-        >
-          <Text style={styles.headerSaveText}>
-            {updateMutation.isPending ? "Saving..." : "Save"}
-          </Text>
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation, handleSave, updateMutation.isPending]);
-
   const handleUploadNewImages = useCallback(
     async (uris: string[]) => {
       setNewImages(uris);
-      // Upload any newly added images
       const latestUri = uris[uris.length - 1];
-      if (latestUri) {
-        uploadMediaMutation.mutate({ productId: id, uri: latestUri });
-      }
+      if (latestUri) uploadMediaMutation.mutate({ productId: id, uri: latestUri });
     },
     [id, uploadMediaMutation],
   );
@@ -244,201 +221,241 @@ export default function ProductDetailScreen() {
 
   if (isLoading || !product) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.text} />
-      </View>
+      <Screen>
+        <BackHeader eyebrow="PRODUCT" title="Loading…" />
+        <View style={styles.centered}>
+          <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      </Screen>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>Failed to load product</Text>
-      </View>
+      <Screen>
+        <BackHeader eyebrow="PRODUCT" />
+        <View style={styles.centered}>
+          <Text preset="h3" color="danger">
+            Failed to load product
+          </Text>
+        </View>
+      </Screen>
     );
   }
 
+  const saveLabel = updateMutation.isPending ? "Saving…" : "Save";
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {/* Existing media gallery */}
-      <View style={styles.card}>
-        <SectionHeader title="Photos" />
-        {product.media.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {product.media.map((m) => (
-              <TouchableOpacity
-                key={m.id}
-                onLongPress={() => handleDeleteExistingMedia(m.id)}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel={`Product image. Long press to delete`}
-                accessibilityHint="Long press to delete"
-              >
-                <Image
-                  source={{ uri: m.url }}
-                  style={styles.mediaThumb}
-                  accessibilityLabel="Product image"
-                />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        ) : (
-          <Text style={styles.emptyText}>No images yet</Text>
-        )}
-        <View style={styles.pickerWrap}>
-          <ProductMediaPicker images={newImages} onImagesChange={handleUploadNewImages} />
-        </View>
-      </View>
+    <Screen>
+      <BackHeader
+        eyebrow="PRODUCT"
+        title={product.name}
+        rightSlot={
+          <TouchableOpacity
+            onPress={handleSave}
+            disabled={updateMutation.isPending}
+            accessibilityRole="button"
+            accessibilityLabel={saveLabel}
+            hitSlop={8}
+          >
+            <Text preset="bodyEmphasis" color="accent">
+              {saveLabel}
+            </Text>
+          </TouchableOpacity>
+        }
+      />
 
-      {/* Editable fields */}
-      <View style={styles.card}>
-        <SectionHeader title="Details" />
-        <FieldLabel label="Name" />
-        <TextInput
-          style={styles.input}
-          value={name}
-          onChangeText={setName}
-          placeholder="Product name"
-          placeholderTextColor={`${theme.colors.text}50`}
-          accessibilityLabel="Product name"
-        />
-        <FieldLabel label="Description" />
-        <TextInput
-          style={[styles.input, styles.multilineInput]}
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Product description"
-          placeholderTextColor={`${theme.colors.text}50`}
-          multiline
-          numberOfLines={4}
-          textAlignVertical="top"
-          accessibilityLabel="Product description"
-        />
-        <View style={styles.row}>
-          <View style={styles.halfField}>
-            <FieldLabel label="Price" />
-            <TextInput
-              style={styles.input}
-              value={price}
-              onChangeText={setPrice}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              placeholderTextColor={`${theme.colors.text}50`}
-              accessibilityLabel="Product price"
-            />
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <Eyebrow label="Photos" />
+        <Card padding="md" style={styles.card}>
+          {product.media.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.galleryRow}
+            >
+              {product.media.map((m) => (
+                <TouchableOpacity
+                  key={m.id}
+                  onLongPress={() => handleDeleteExistingMedia(m.id)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Product image. Long press to delete."
+                >
+                  <Image source={{ uri: m.url }} style={styles.mediaThumb} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <Text preset="caption" color="textTertiary">
+              No images yet — add some below.
+            </Text>
+          )}
+          <View style={styles.pickerWrap}>
+            <ProductMediaPicker images={newImages} onImagesChange={handleUploadNewImages} />
           </View>
-          <View style={styles.halfField}>
-            <FieldLabel label="Compare at Price" />
-            <TextInput
-              style={styles.input}
-              value={compareAtPrice}
-              onChangeText={setCompareAtPrice}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              placeholderTextColor={`${theme.colors.text}50`}
-              accessibilityLabel="Compare at price"
-            />
-          </View>
-        </View>
-        <View style={styles.row}>
-          <View style={styles.halfField}>
-            <FieldLabel label="SKU" />
-            <TextInput
-              style={styles.input}
-              value={sku}
-              onChangeText={setSku}
-              placeholder="SKU"
-              placeholderTextColor={`${theme.colors.text}50`}
-              autoCapitalize="characters"
-              accessibilityLabel="SKU"
-            />
-          </View>
-          <View style={styles.halfField}>
-            <FieldLabel label="Stock" />
-            <TextInput
-              style={styles.input}
-              value={stock}
-              onChangeText={setStock}
-              keyboardType="number-pad"
-              placeholder="0"
-              placeholderTextColor={`${theme.colors.text}50`}
-              accessibilityLabel="Stock quantity"
-            />
-          </View>
-        </View>
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>Active</Text>
-          <Switch
-            value={isActive}
-            onValueChange={setIsActive}
-            trackColor={{ false: `${theme.colors.text}20`, true: theme.colors.accent }}
-            thumbColor={theme.colors.elevated}
-            accessibilityLabel="Product active status"
+        </Card>
+
+        <Eyebrow label="Details" />
+        <Card padding="md" style={styles.card}>
+          <FieldLabel label="Name" />
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Product name"
+            placeholderTextColor={theme.colors.textTertiary}
           />
-        </View>
-      </View>
+          <FieldLabel label="Description" />
+          <TextInput
+            style={[styles.input, styles.multilineInput]}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Describe your product…"
+            placeholderTextColor={theme.colors.textTertiary}
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+          />
+          <View style={styles.row}>
+            <View style={styles.half}>
+              <FieldLabel label="Price" />
+              <TextInput
+                style={styles.input}
+                value={price}
+                onChangeText={setPrice}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={theme.colors.textTertiary}
+              />
+            </View>
+            <View style={styles.half}>
+              <FieldLabel label="Compare at" />
+              <TextInput
+                style={styles.input}
+                value={compareAtPrice}
+                onChangeText={setCompareAtPrice}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={theme.colors.textTertiary}
+              />
+            </View>
+          </View>
+          <View style={styles.row}>
+            <View style={styles.half}>
+              <FieldLabel label="SKU" />
+              <TextInput
+                style={styles.input}
+                value={sku}
+                onChangeText={setSku}
+                autoCapitalize="characters"
+                placeholder="SKU"
+                placeholderTextColor={theme.colors.textTertiary}
+              />
+            </View>
+            <View style={styles.half}>
+              <FieldLabel label="Stock" />
+              <TextInput
+                style={styles.input}
+                value={stock}
+                onChangeText={setStock}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={theme.colors.textTertiary}
+              />
+            </View>
+          </View>
+          <Hairline style={styles.fieldDivider} />
+          <View style={styles.switchRow}>
+            <View>
+              <Text preset="bodyEmphasis" color="text">
+                Active
+              </Text>
+              <Text preset="caption" color="textTertiary">
+                Visible in the storefront
+              </Text>
+            </View>
+            <Switch
+              value={isActive}
+              onValueChange={setIsActive}
+              trackColor={{
+                false: theme.colors.border,
+                true: theme.colors.accent,
+              }}
+              thumbColor={theme.colors.inverse}
+            />
+          </View>
+        </Card>
 
-      {/* Variants */}
-      <View style={styles.card}>
-        <SectionHeader title="Variants" />
-        {product.variants.length > 0 ? (
-          product.variants.map((v) => (
-            <VariantRow key={v.id} variant={v} onUpdate={handleVariantUpdate} />
-          ))
-        ) : (
-          <Text style={styles.emptyText}>No variants</Text>
-        )}
-        <TouchableOpacity
-          style={styles.addVariantBtn}
-          onPress={() => setVariantModalVisible(true)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Add variant"
-        >
-          <Text style={styles.addVariantText}>+ Add Variant</Text>
-        </TouchableOpacity>
-      </View>
+        <Eyebrow label="Variants" />
+        <Card padding={0} style={styles.card}>
+          {product.variants.length > 0 ? (
+            product.variants.map((v, i) => (
+              <View key={v.id}>
+                {i > 0 ? <Hairline /> : null}
+                <VariantRow variant={v} onUpdate={handleVariantUpdate} />
+              </View>
+            ))
+          ) : (
+            <View style={styles.empty}>
+              <Text preset="caption" color="textTertiary">
+                No variants yet.
+              </Text>
+            </View>
+          )}
+          <Hairline />
+          <TouchableOpacity
+            style={styles.addVariantBtn}
+            onPress={() => setVariantModalVisible(true)}
+            activeOpacity={0.6}
+            accessibilityRole="button"
+            accessibilityLabel="Add variant"
+          >
+            <Plus size={16} color={theme.colors.accent} strokeWidth={2} />
+            <Text preset="bodyEmphasis" color="accent">
+              Add Variant
+            </Text>
+          </TouchableOpacity>
+        </Card>
+      </ScrollView>
 
-      {/* Add variant modal */}
       <Modal visible={variantModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>New Variant</Text>
+            <Text preset="h3" color="text">
+              New Variant
+            </Text>
             <TextInput
               style={styles.modalInput}
               placeholder="Variant name (e.g. Large, Red)"
-              placeholderTextColor={`${theme.colors.text}50`}
+              placeholderTextColor={theme.colors.textTertiary}
               value={newVariantName}
               onChangeText={setNewVariantName}
               autoFocus
-              accessibilityLabel="Variant name"
             />
             <TextInput
               style={styles.modalInput}
               placeholder="Price"
-              placeholderTextColor={`${theme.colors.text}50`}
+              placeholderTextColor={theme.colors.textTertiary}
               value={newVariantPrice}
               onChangeText={setNewVariantPrice}
               keyboardType="decimal-pad"
-              accessibilityLabel="Variant price"
             />
             <TextInput
               style={styles.modalInput}
               placeholder="SKU (optional)"
-              placeholderTextColor={`${theme.colors.text}50`}
+              placeholderTextColor={theme.colors.textTertiary}
               value={newVariantSku}
               onChangeText={setNewVariantSku}
               autoCapitalize="characters"
-              accessibilityLabel="Variant SKU"
             />
             <TextInput
               style={styles.modalInput}
               placeholder="Stock (optional)"
-              placeholderTextColor={`${theme.colors.text}50`}
+              placeholderTextColor={theme.colors.textTertiary}
               value={newVariantStock}
               onChangeText={setNewVariantStock}
               keyboardType="number-pad"
-              accessibilityLabel="Variant stock"
             />
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -451,241 +468,159 @@ export default function ProductDetailScreen() {
                   setNewVariantStock("");
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Cancel adding variant"
+                accessibilityLabel="Cancel"
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text preset="bodyEmphasis" color="textSecondary">
+                  Cancel
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.modalSubmitBtn}
                 onPress={handleAddVariant}
                 disabled={createVariantMutation.isPending}
                 accessibilityRole="button"
-                accessibilityLabel={createVariantMutation.isPending ? "Adding variant" : "Add variant"}
+                accessibilityLabel={
+                  createVariantMutation.isPending ? "Adding variant" : "Add variant"
+                }
               >
-                <Text style={styles.modalSubmitText}>
-                  {createVariantMutation.isPending ? "Adding..." : "Add Variant"}
+                <Text preset="bodyEmphasis" color="inverse">
+                  {createVariantMutation.isPending ? "Adding…" : "Add Variant"}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  content: {
-    padding: theme.spacing.lg,
-    paddingBottom: 40,
-    gap: theme.spacing.md,
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  errorText: {
-    fontSize: 15,
-    color: theme.colors.danger,
-    fontWeight: "500",
+  scroll: {
+    paddingBottom: theme.spacing.huge,
   },
   card: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    padding: 14,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
+    marginHorizontal: theme.spacing.lg,
   },
-  sectionHeader: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.5,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 10,
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  galleryRow: { gap: theme.spacing.sm },
   mediaThumb: {
-    width: 100,
-    height: 100,
-    borderRadius: theme.radius,
-    marginRight: theme.spacing.sm,
+    width: 96,
+    height: 96,
+    borderRadius: theme.radii.md,
+    backgroundColor: theme.colors.surfaceAlt,
   },
-  pickerWrap: {
-    marginTop: theme.spacing.md,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.4,
-    fontStyle: "italic",
-    marginBottom: theme.spacing.sm,
-  },
+  pickerWrap: { marginTop: theme.spacing.md },
   fieldLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.6,
+    marginTop: theme.spacing.sm,
     marginBottom: theme.spacing.xs,
-    marginTop: 10,
+    letterSpacing: 0.4,
   },
   input: {
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.radius,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    fontFamily: theme.fonts.sans,
+    fontSize: 15,
     color: theme.colors.text,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.hairline,
+    minHeight: 44,
   },
-  multilineInput: {
-    minHeight: 80,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  halfField: {
-    flex: 1,
-  },
+  multilineInput: { minHeight: 88, paddingTop: theme.spacing.sm },
+  row: { flexDirection: "row", gap: theme.spacing.sm },
+  half: { flex: 1 },
+  fieldDivider: { marginVertical: theme.spacing.md },
   switchRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 14,
-  },
-  switchLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.text,
   },
   variantRow: {
-    paddingVertical: 10,
-    borderBottomWidth: 0.5,
-    borderBottomColor: `${theme.colors.text}10`,
-  },
-  variantName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  variantSku: {
-    fontSize: 11,
-    color: theme.colors.text,
-    opacity: 0.5,
-    marginBottom: theme.spacing.sm,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    gap: 4,
   },
   variantFields: {
     flexDirection: "row",
-    gap: 10,
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
   },
-  variantField: {
-    flex: 1,
-  },
-  variantFieldLabel: {
-    fontSize: 11,
-    color: theme.colors.text,
-    opacity: 0.5,
-    marginBottom: 2,
-  },
+  variantField: { flex: 1 },
   variantInput: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 13,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radii.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
+    fontFamily: theme.fonts.sans,
+    fontSize: 14,
     color: theme.colors.text,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.hairline,
+    minHeight: 36,
+  },
+  empty: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.lg,
   },
   addVariantBtn: {
-    marginTop: 10,
-    paddingVertical: 10,
+    flexDirection: "row",
+    gap: theme.spacing.xs,
     alignItems: "center",
-    borderRadius: theme.radius,
-    borderWidth: 1,
-    borderColor: `${theme.colors.text}20`,
-    borderStyle: "dashed",
-  },
-  addVariantText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: theme.colors.accent,
-  },
-  headerSaveBtn: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-  },
-  headerSaveText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.accent,
+    justifyContent: "center",
+    paddingVertical: theme.spacing.md,
+    minHeight: 48,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backgroundColor: theme.colors.overlay,
     justifyContent: "center",
     alignItems: "center",
-    padding: theme.spacing.xxl,
+    padding: theme.spacing.xl,
   },
   modalContent: {
     backgroundColor: theme.colors.elevated,
-    borderRadius: 10,
+    borderRadius: theme.radii.lg,
     padding: theme.spacing.xl,
     width: "100%",
-    maxWidth: 340,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: theme.colors.text,
-    marginBottom: 14,
+    maxWidth: 360,
+    gap: theme.spacing.sm,
   },
   modalInput: {
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.radius,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    fontFamily: theme.fonts.sans,
+    fontSize: 15,
     color: theme.colors.text,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
-    marginBottom: 10,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.hairline,
+    minHeight: 44,
   },
   modalActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
-    gap: 10,
+    gap: theme.spacing.sm,
     marginTop: theme.spacing.sm,
   },
   modalCancelBtn: {
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 10,
-    borderRadius: theme.radius,
-  },
-  modalCancelText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: theme.colors.text,
-    opacity: 0.6,
+    paddingVertical: theme.spacing.sm,
+    minHeight: 44,
+    justifyContent: "center",
   },
   modalSubmitBtn: {
     backgroundColor: theme.colors.accent,
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 10,
-    borderRadius: theme.radius,
-  },
-  modalSubmitText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.elevated,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radii.md,
+    minHeight: 44,
+    justifyContent: "center",
   },
 });

@@ -1,125 +1,137 @@
-import { View, Text, TouchableOpacity, Linking, StyleSheet } from "react-native";
+import { View, TouchableOpacity, Linking, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
+import {
+  Bell,
+  ChevronRight,
+  ExternalLink,
+  Settings,
+  UserRound,
+} from "lucide-react-native";
 import { useNotifications } from "../../../lib/hooks/use-notifications";
+import { useEnvironment } from "@repo/mobile-shared/config/env";
+import {
+  Card,
+  Hairline,
+  PageHeader,
+  Screen,
+  Text,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 const APP_VERSION = "1.0.0";
 
+interface RowProps {
+  icon: React.ReactNode;
+  label: string;
+  trailing?: React.ReactNode;
+  onPress: () => void;
+  accessibilityLabel: string;
+}
+
+function Row({ icon, label, trailing, onPress, accessibilityLabel }: RowProps) {
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      onPress={onPress}
+      activeOpacity={0.6}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      <View style={styles.rowIcon}>{icon}</View>
+      <Text preset="bodyEmphasis" color="text" style={styles.rowLabel}>
+        {label}
+      </Text>
+      {trailing ? <View style={styles.rowTrailing}>{trailing}</View> : null}
+      <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
+    </TouchableOpacity>
+  );
+}
+
 export default function MoreScreen() {
   const router = useRouter();
+  const env = useEnvironment();
   const { data: notifications } = useNotifications();
-
   const unreadCount = notifications?.items.filter((n) => !n.read).length ?? 0;
 
+  const browserUrl = env.adminWebUrl;
+
   return (
-    <View style={styles.screen}>
-      <View style={styles.menu}>
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/more/notifications")}
-          activeOpacity={0.7}
-          accessibilityRole="button"
+    <Screen>
+      <PageHeader eyebrow="MORE" title="Settings" />
+      <Card padding={0} style={styles.card}>
+        <Row
+          icon={<Bell size={18} color={theme.colors.text} strokeWidth={1.75} />}
+          label="Notifications"
           accessibilityLabel={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
-        >
-          <Text style={styles.menuLabel}>Notifications</Text>
-          {unreadCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {unreadCount > 99 ? "99+" : String(unreadCount)}
-              </Text>
-            </View>
-          )}
-          <Text style={styles.chevron}>&#x203A;</Text>
-        </TouchableOpacity>
-
-        <View style={styles.separator} />
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/more/account")}
-          activeOpacity={0.7}
-          accessibilityRole="button"
+          onPress={() => router.push("/(tabs)/more/notifications")}
+          trailing={
+            unreadCount > 0 ? (
+              <View style={styles.badge}>
+                <Text preset="caption" color="inverse" style={styles.badgeLabel}>
+                  {unreadCount > 99 ? "99+" : String(unreadCount)}
+                </Text>
+              </View>
+            ) : null
+          }
+        />
+        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
+        <Row
+          icon={<UserRound size={18} color={theme.colors.text} strokeWidth={1.75} />}
+          label="Account"
           accessibilityLabel="Account settings"
-        >
-          <Text style={styles.menuLabel}>Account</Text>
-          <Text style={styles.chevron}>&#x203A;</Text>
-        </TouchableOpacity>
-
-        <View style={styles.separator} />
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => Linking.openURL("https://admin.mark8ly.com")}
-          activeOpacity={0.7}
-          accessibilityRole="link"
+          onPress={() => router.push("/(tabs)/more/account")}
+        />
+        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
+        <Row
+          icon={<ExternalLink size={18} color={theme.colors.text} strokeWidth={1.75} />}
+          label="Open in Browser"
           accessibilityLabel="Open admin dashboard in browser"
-        >
-          <Text style={styles.menuLabel}>Open in Browser</Text>
-          <Text style={styles.chevron}>&#x203A;</Text>
-        </TouchableOpacity>
-      </View>
+          onPress={() => Linking.openURL(browserUrl)}
+        />
+      </Card>
 
-      <Text style={styles.version}>Version {APP_VERSION}</Text>
-    </View>
+      <View style={styles.footer}>
+        <Settings size={14} color={theme.colors.textTertiary} strokeWidth={1.75} />
+        <Text preset="caption" color="textTertiary">
+          Mark8ly Admin · v{APP_VERSION}
+        </Text>
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    paddingTop: theme.spacing.lg,
-  },
-  menu: {
-    backgroundColor: theme.colors.elevated,
+  card: {
     marginHorizontal: theme.spacing.lg,
-    borderRadius: theme.radius,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
+    marginTop: theme.spacing.xs,
   },
-  menuItem: {
+  row: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.lg,
-    minHeight: 48,
+    paddingVertical: theme.spacing.md,
+    minHeight: 56,
+    gap: theme.spacing.md,
   },
-  menuLabel: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "500",
-    color: theme.colors.text,
-  },
+  rowIcon: { width: 22, alignItems: "center" },
+  rowLabel: { flex: 1 },
+  rowTrailing: { marginRight: theme.spacing.xs },
   badge: {
     backgroundColor: theme.colors.danger,
     borderRadius: 10,
-    minWidth: 20,
+    minWidth: 22,
     height: 20,
-    paddingHorizontal: theme.spacing.sm,
-    justifyContent: "center",
+    paddingHorizontal: theme.spacing.xs,
     alignItems: "center",
-    marginRight: theme.spacing.sm,
+    justifyContent: "center",
   },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: theme.colors.elevated,
-  },
-  chevron: {
-    fontSize: 20,
-    color: theme.colors.text,
-    opacity: 0.3,
-  },
-  separator: {
-    height: 0.5,
-    backgroundColor: `${theme.colors.text}10`,
-    marginLeft: theme.spacing.lg,
-  },
-  version: {
-    textAlign: "center",
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.3,
-    marginTop: theme.spacing.xxl,
+  badgeLabel: { fontSize: 10, fontWeight: "700" },
+  footer: {
+    marginTop: "auto",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.xs,
+    paddingVertical: theme.spacing.huge,
   },
 });

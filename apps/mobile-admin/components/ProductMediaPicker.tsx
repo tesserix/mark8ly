@@ -1,5 +1,7 @@
-import { View, Text, Image, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
+import { View, Image, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { Camera, Image as ImageIcon, X } from "lucide-react-native";
+import { Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 interface ProductMediaPickerProps {
@@ -46,7 +48,10 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
           accessibilityRole="button"
           accessibilityLabel="Take photo"
         >
-          <Text style={styles.buttonText}>Take Photo</Text>
+          <Camera size={16} color={theme.colors.text} strokeWidth={1.75} />
+          <Text preset="bodyEmphasis" color="text">
+            Camera
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.button}
@@ -55,11 +60,18 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
           accessibilityRole="button"
           accessibilityLabel="Choose from library"
         >
-          <Text style={styles.buttonText}>Choose from Library</Text>
+          <ImageIcon size={16} color={theme.colors.text} strokeWidth={1.75} />
+          <Text preset="bodyEmphasis" color="text">
+            Library
+          </Text>
         </TouchableOpacity>
       </View>
-      {images.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gallery}>
+      {images.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.gallery}
+        >
           {images.map((uri, i) => (
             <View key={`${uri}-${i}`} style={styles.thumbWrap}>
               <Image
@@ -72,13 +84,14 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
                 onPress={() => removeImage(i)}
                 accessibilityRole="button"
                 accessibilityLabel={`Remove image ${i + 1}`}
+                hitSlop={8}
               >
-                <Text style={styles.removeText}>x</Text>
+                <X size={12} color={theme.colors.inverse} strokeWidth={2.5} />
               </TouchableOpacity>
             </View>
           ))}
         </ScrollView>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -88,16 +101,25 @@ const styles = StyleSheet.create({
   buttons: { flexDirection: "row", gap: theme.spacing.sm },
   button: {
     flex: 1,
-    backgroundColor: theme.colors.text,
-    borderRadius: theme.radius,
+    flexDirection: "row",
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radii.md,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.border,
     height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
-  buttonText: { color: theme.colors.background, fontSize: 14, fontWeight: "600" },
-  gallery: { marginTop: theme.spacing.sm },
-  thumbWrap: { position: "relative", marginRight: theme.spacing.sm },
-  thumb: { width: 80, height: 80, borderRadius: theme.radius },
+  gallery: { gap: theme.spacing.sm, paddingVertical: theme.spacing.xs },
+  thumbWrap: { position: "relative" },
+  thumb: {
+    width: 80,
+    height: 80,
+    borderRadius: theme.radii.md,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.hairline,
+  },
   removeBtn: {
     position: "absolute",
     top: -6,
@@ -105,9 +127,8 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: theme.colors.danger,
+    backgroundColor: theme.colors.text,
     alignItems: "center",
     justifyContent: "center",
   },
-  removeText: { color: theme.colors.elevated, fontSize: 14, fontWeight: "700", marginTop: -1 },
 });

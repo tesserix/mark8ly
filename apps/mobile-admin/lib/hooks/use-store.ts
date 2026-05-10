@@ -1,33 +1,24 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
-import type { Store } from "@repo/mobile-shared/api/types";
+import type { PaginatedResponse, Store } from "@repo/mobile-shared/api/types";
+import { useApiClient } from "@/lib/api-client";
 
-const BASE_URL = "https://api.mark8ly.com"; // TODO: read from config
-
+/**
+ * Lists every store the signed-in user has any role on. This is the
+ * mobile equivalent of the admin web's `/api/v1/users/me/tenants` —
+ * the membership probe used by the post-login resolver and by the
+ * in-app store switcher. Routed through the shared api-client so 401
+ * (token expired) and tenant-invalid responses self-correct.
+ */
 export function useStores() {
-  const { getToken } = useAuth();
-
+  const client = useApiClient();
   return useQuery<Store[]>({
     queryKey: ["stores"],
     queryFn: async () => {
-      const token = await getToken();
-      if (!token) throw new Error("Not authenticated");
-
-      const res = await fetch(`${BASE_URL}/api/v1/mobile/admin/stores`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error(`Failed to fetch stores: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      return data.items ?? data;
+      const data = await client.getTenant<PaginatedResponse<Store> | Store[]>("/stores");
+      if (Array.isArray(data)) return data;
+      return data.items ?? [];
     },
   });
 }

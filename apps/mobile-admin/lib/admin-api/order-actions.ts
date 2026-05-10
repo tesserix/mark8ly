@@ -1,18 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createApiClient } from "@repo/mobile-shared/api/client";
 import { createOrdersApi } from "@repo/mobile-shared/api/orders";
-import { useAuth } from "@repo/mobile-shared/auth/provider";
-import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
-
-function useApiClient() {
-  const { getToken } = useAuth();
-  const activeStore = useTenantStore((s) => s.activeStore);
-  return createApiClient({
-    baseUrl: "https://api.mark8ly.com", // TODO: read from config
-    getToken,
-    getStoreId: () => activeStore?.id ?? null,
-  });
-}
+import { useApiClient } from "@/lib/api-client";
 
 export function useConfirmOrder() {
   const client = useApiClient();

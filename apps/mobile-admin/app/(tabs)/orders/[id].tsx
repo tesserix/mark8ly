@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -18,14 +17,24 @@ import {
   useCancelOrder,
   useRefundOrder,
 } from "../../../lib/admin-api/order-actions";
+import {
+  BackHeader,
+  Card,
+  Eyebrow,
+  Hairline,
+  Screen,
+  StatusBadge,
+  Text,
+  type StatusTone,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { LineItem, Address } from "@repo/mobile-shared/api/types";
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "#F59E0B",
-  confirmed: theme.colors.accent,
-  fulfilled: theme.colors.text,
-  cancelled: theme.colors.danger,
+const STATUS_TONE: Record<string, StatusTone> = {
+  pending: "warning",
+  confirmed: "success",
+  fulfilled: "neutral",
+  cancelled: "danger",
 };
 
 function formatCurrency(amount: number): string {
@@ -54,61 +63,47 @@ function formatAddress(address: Address): string {
   return parts.join("\n");
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const bg = STATUS_COLORS[status] ?? theme.colors.text;
-  return (
-    <View style={[styles.badge, { backgroundColor: bg }]} accessibilityLabel={`Status: ${status}`}>
-      <Text style={styles.badgeText}>{status}</Text>
-    </View>
-  );
-}
-
-function SectionHeader({ title }: { title: string }) {
-  return <Text style={styles.sectionHeader}>{title}</Text>;
-}
-
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
   return (
     <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+      <Text preset="caption" color="textTertiary" style={styles.infoLabel}>
+        {label}
+      </Text>
+      <Text preset="body" color="text" style={styles.infoValue}>
+        {value}
+      </Text>
     </View>
   );
 }
 
 function LineItemRow({ item }: { item: LineItem }) {
+  const total = item.quantity * item.unit_price;
   return (
-    <View style={styles.lineItem} accessibilityLabel={`${item.product_name}, quantity ${item.quantity}, ${formatCurrency(item.quantity * item.unit_price)}`}>
-      <View style={styles.thumbnail} />
-      <View style={styles.lineItemInfo}>
-        <Text style={styles.lineItemName} numberOfLines={1}>
+    <View style={styles.lineItem}>
+      <View style={styles.lineThumb} />
+      <View style={styles.lineInfo}>
+        <Text preset="bodyEmphasis" color="text" numberOfLines={1}>
           {item.product_name}
         </Text>
-        {item.variant_name && (
-          <Text style={styles.lineItemVariant}>{item.variant_name}</Text>
-        )}
-        <Text style={styles.lineItemQty}>
-          {item.quantity} x {formatCurrency(item.unit_price)}
+        {item.variant_name ? (
+          <Text preset="caption" color="textTertiary">
+            {item.variant_name}
+          </Text>
+        ) : null}
+        <Text preset="caption" color="textSecondary">
+          {item.quantity} × {formatCurrency(item.unit_price)}
         </Text>
       </View>
-      <Text style={styles.lineItemTotal}>
-        {formatCurrency(item.quantity * item.unit_price)}
+      <Text preset="bodyEmphasis" color="text">
+        {formatCurrency(total)}
       </Text>
     </View>
   );
 }
 
 function InputModal({
-  visible,
-  title,
-  placeholder,
-  value,
-  onChangeText,
-  onSubmit,
-  onCancel,
-  submitLabel,
-  keyboardType,
+  visible, title, placeholder, value, onChangeText, onSubmit, onCancel, submitLabel, keyboardType,
 }: {
   visible: boolean;
   title: string;
@@ -124,11 +119,13 @@ function InputModal({
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>{title}</Text>
+          <Text preset="h3" color="text" style={styles.modalTitle}>
+            {title}
+          </Text>
           <TextInput
             style={styles.modalInput}
             placeholder={placeholder}
-            placeholderTextColor={`${theme.colors.text}50`}
+            placeholderTextColor={theme.colors.textTertiary}
             value={value}
             onChangeText={onChangeText}
             keyboardType={keyboardType ?? "default"}
@@ -142,7 +139,9 @@ function InputModal({
               accessibilityRole="button"
               accessibilityLabel="Cancel"
             >
-              <Text style={styles.modalCancelText}>Cancel</Text>
+              <Text preset="bodyEmphasis" color="textSecondary">
+                Cancel
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.modalSubmitBtn}
@@ -150,7 +149,9 @@ function InputModal({
               accessibilityRole="button"
               accessibilityLabel={submitLabel}
             >
-              <Text style={styles.modalSubmitText}>{submitLabel}</Text>
+              <Text preset="bodyEmphasis" color="inverse">
+                {submitLabel}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -168,18 +169,15 @@ export default function OrderDetailScreen() {
   const cancelMutation = useCancelOrder();
   const refundMutation = useRefundOrder();
 
-  const [fulfillModalVisible, setFulfillModalVisible] = useState(false);
-  const [refundModalVisible, setRefundModalVisible] = useState(false);
+  const [fulfillVisible, setFulfillVisible] = useState(false);
+  const [refundVisible, setRefundVisible] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState("");
   const [refundAmount, setRefundAmount] = useState("");
 
   const handleConfirm = useCallback(() => {
     Alert.alert("Confirm Order", "Mark this order as confirmed?", [
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Confirm",
-        onPress: () => confirmMutation.mutate(id),
-      },
+      { text: "Confirm", onPress: () => confirmMutation.mutate(id) },
     ]);
   }, [id, confirmMutation]);
 
@@ -187,7 +185,7 @@ export default function OrderDetailScreen() {
     if (!trackingNumber.trim()) return;
     fulfillMutation.mutate(
       { id, trackingNumber: trackingNumber.trim() },
-      { onSuccess: () => setFulfillModalVisible(false) },
+      { onSuccess: () => setFulfillVisible(false) },
     );
     setTrackingNumber("");
   }, [id, trackingNumber, fulfillMutation]);
@@ -195,14 +193,10 @@ export default function OrderDetailScreen() {
   const handleCancel = useCallback(() => {
     Alert.alert(
       "Cancel Order",
-      "Are you sure you want to cancel this order? This cannot be undone.",
+      "Are you sure? This cannot be undone.",
       [
         { text: "No", style: "cancel" },
-        {
-          text: "Cancel Order",
-          style: "destructive",
-          onPress: () => cancelMutation.mutate({ id }),
-        },
+        { text: "Cancel Order", style: "destructive", onPress: () => cancelMutation.mutate({ id }) },
       ],
     );
   }, [id, cancelMutation]);
@@ -212,19 +206,23 @@ export default function OrderDetailScreen() {
     if (isNaN(amount) || amount <= 0) return;
     refundMutation.mutate(
       { id, amount },
-      { onSuccess: () => setRefundModalVisible(false) },
+      { onSuccess: () => setRefundVisible(false) },
     );
     setRefundAmount("");
   }, [id, refundAmount, refundMutation]);
 
   if (isLoading || !order) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.text} />
-      </View>
+      <Screen>
+        <BackHeader eyebrow="ORDER" title="Loading…" />
+        <View style={styles.centered}>
+          <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      </Screen>
     );
   }
 
+  const tone = STATUS_TONE[order.status] ?? "neutral";
   const isMutating =
     confirmMutation.isPending ||
     fulfillMutation.isPending ||
@@ -232,381 +230,305 @@ export default function OrderDetailScreen() {
     refundMutation.isPending;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {/* Header */}
-      <View style={styles.card}>
-        <View style={styles.headerRow}>
-          <Text style={styles.orderNumber}>{order.order_number}</Text>
-          <StatusBadge status={order.status} />
-        </View>
-        <Text style={styles.date}>{formatDate(order.created_at)}</Text>
-      </View>
-
-      {/* Line items */}
-      <View style={styles.card}>
-        <SectionHeader title="Items" />
-        {order.line_items.map((item) => (
-          <LineItemRow key={item.id} item={item} />
-        ))}
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>
-            {formatCurrency(order.grand_total)}
+    <Screen>
+      <BackHeader eyebrow="ORDER" title={`#${order.order_number}`} />
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.heading}>
+          <Text preset="h1" color="text">
+            #{order.order_number}
           </Text>
-        </View>
-      </View>
-
-      {/* Customer */}
-      <View style={styles.card}>
-        <SectionHeader title="Customer" />
-        <InfoRow label="Name" value={order.customer_name} />
-        <InfoRow label="Email" value={order.customer_email} />
-      </View>
-
-      {/* Shipping */}
-      <View style={styles.card}>
-        <SectionHeader title="Shipping" />
-        {order.shipping_address ? (
-          <InfoRow label="Address" value={formatAddress(order.shipping_address)} />
-        ) : (
-          <Text style={styles.emptyText}>No shipping address</Text>
-        )}
-        <InfoRow label="Method" value={order.shipping_method} />
-        <InfoRow label="Tracking" value={order.tracking_number} />
-      </View>
-
-      {/* Payment */}
-      <View style={styles.card}>
-        <SectionHeader title="Payment" />
-        <InfoRow label="Method" value={order.payment_method} />
-        <InfoRow label="Amount" value={formatCurrency(order.grand_total)} />
-        <InfoRow label="Transaction" value={order.payment_transaction_id} />
-      </View>
-
-      {/* Actions */}
-      {order.status !== "cancelled" && (
-        <View style={styles.actionsSection}>
-          {order.status === "pending" && (
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={handleConfirm}
-              disabled={isMutating}
-              accessibilityRole="button"
-              accessibilityLabel={confirmMutation.isPending ? "Confirming order" : "Confirm order"}
-            >
-              <Text style={styles.primaryBtnText}>
-                {confirmMutation.isPending ? "Confirming..." : "Confirm Order"}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {order.status === "confirmed" && (
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => setFulfillModalVisible(true)}
-              disabled={isMutating}
-              accessibilityRole="button"
-              accessibilityLabel="Mark order as fulfilled"
-            >
-              <Text style={styles.primaryBtnText}>Mark Fulfilled</Text>
-            </TouchableOpacity>
-          )}
-
-          {order.status === "fulfilled" && (
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => setRefundModalVisible(true)}
-              disabled={isMutating}
-              accessibilityRole="button"
-              accessibilityLabel="Refund order"
-            >
-              <Text style={styles.secondaryBtnText}>Refund</Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            style={styles.dangerBtn}
-            onPress={handleCancel}
-            disabled={isMutating}
-            accessibilityRole="button"
-            accessibilityLabel={cancelMutation.isPending ? "Cancelling order" : "Cancel order"}
-          >
-            <Text style={styles.dangerBtnText}>
-              {cancelMutation.isPending ? "Cancelling..." : "Cancel Order"}
+          <View style={styles.headingMeta}>
+            <StatusBadge label={order.status} tone={tone} />
+            <Text preset="caption" color="textTertiary">
+              {formatDate(order.created_at)}
             </Text>
-          </TouchableOpacity>
+          </View>
         </View>
-      )}
 
-      {/* Fulfill modal */}
+        <Eyebrow label="Items" />
+        <Card padding={0} style={styles.card}>
+          {order.line_items.map((item, i) => (
+            <View key={item.id}>
+              {i > 0 ? <Hairline inset={theme.spacing.lg} /> : null}
+              <LineItemRow item={item} />
+            </View>
+          ))}
+          <Hairline />
+          <View style={styles.totalRow}>
+            <Text preset="body" color="textSecondary">
+              Total
+            </Text>
+            <Text preset="h3" color="text">
+              {formatCurrency(order.grand_total)}
+            </Text>
+          </View>
+        </Card>
+
+        <Eyebrow label="Customer" />
+        <Card style={styles.card}>
+          <InfoRow label="Name" value={order.customer_name} />
+          <InfoRow label="Email" value={order.customer_email} />
+        </Card>
+
+        <Eyebrow label="Shipping" />
+        <Card style={styles.card}>
+          {order.shipping_address ? (
+            <InfoRow label="Address" value={formatAddress(order.shipping_address)} />
+          ) : (
+            <Text preset="caption" color="textTertiary">
+              No shipping address.
+            </Text>
+          )}
+          <InfoRow label="Method" value={order.shipping_method} />
+          <InfoRow label="Tracking" value={order.tracking_number} />
+        </Card>
+
+        <Eyebrow label="Payment" />
+        <Card style={styles.card}>
+          <InfoRow label="Method" value={order.payment_method} />
+          <InfoRow label="Amount" value={formatCurrency(order.grand_total)} />
+          <InfoRow label="Transaction" value={order.payment_transaction_id} />
+        </Card>
+
+        {order.status !== "cancelled" ? (
+          <View style={styles.actions}>
+            {order.status === "pending" ? (
+              <PrimaryButton
+                label={confirmMutation.isPending ? "Confirming…" : "Confirm Order"}
+                onPress={handleConfirm}
+                disabled={isMutating}
+              />
+            ) : null}
+            {order.status === "confirmed" ? (
+              <PrimaryButton
+                label="Mark Fulfilled"
+                onPress={() => setFulfillVisible(true)}
+                disabled={isMutating}
+              />
+            ) : null}
+            {order.status === "fulfilled" ? (
+              <SecondaryButton
+                label="Refund"
+                onPress={() => setRefundVisible(true)}
+                disabled={isMutating}
+              />
+            ) : null}
+            <DangerButton
+              label={cancelMutation.isPending ? "Cancelling…" : "Cancel Order"}
+              onPress={handleCancel}
+              disabled={isMutating}
+            />
+          </View>
+        ) : null}
+      </ScrollView>
+
       <InputModal
-        visible={fulfillModalVisible}
+        visible={fulfillVisible}
         title="Tracking Number"
         placeholder="Enter tracking number"
         value={trackingNumber}
         onChangeText={setTrackingNumber}
         onSubmit={handleFulfill}
         onCancel={() => {
-          setFulfillModalVisible(false);
+          setFulfillVisible(false);
           setTrackingNumber("");
         }}
-        submitLabel={fulfillMutation.isPending ? "Saving..." : "Mark Fulfilled"}
+        submitLabel={fulfillMutation.isPending ? "Saving…" : "Mark Fulfilled"}
       />
 
-      {/* Refund modal */}
       <InputModal
-        visible={refundModalVisible}
+        visible={refundVisible}
         title="Refund Amount"
         placeholder="0.00"
         value={refundAmount}
         onChangeText={setRefundAmount}
         onSubmit={handleRefund}
         onCancel={() => {
-          setRefundModalVisible(false);
+          setRefundVisible(false);
           setRefundAmount("");
         }}
-        submitLabel={refundMutation.isPending ? "Processing..." : "Refund"}
+        submitLabel={refundMutation.isPending ? "Processing…" : "Refund"}
         keyboardType="decimal-pad"
       />
-    </ScrollView>
+    </Screen>
+  );
+}
+
+function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <TouchableOpacity
+      style={[styles.btnPrimary, disabled && styles.btnDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Text preset="bodyEmphasis" color="inverse">{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function SecondaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <TouchableOpacity
+      style={[styles.btnSecondary, disabled && styles.btnDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Text preset="bodyEmphasis" color="text">{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function DangerButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <TouchableOpacity
+      style={[styles.btnDanger, disabled && styles.btnDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Text preset="bodyEmphasis" color="danger">{label}</Text>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
+  scroll: {
+    paddingBottom: theme.spacing.huge,
   },
-  content: {
-    padding: theme.spacing.lg,
-    paddingBottom: 40,
+  heading: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.sm,
+    gap: theme.spacing.sm,
+  },
+  headingMeta: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: theme.spacing.md,
   },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   card: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    padding: 14,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
+    marginHorizontal: theme.spacing.lg,
   },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  centered: {
+    flex: 1,
     alignItems: "center",
-    marginBottom: theme.spacing.xs,
-  },
-  orderNumber: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: theme.colors.text,
-  },
-  badge: {
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: theme.colors.elevated,
-    textTransform: "capitalize",
-  },
-  date: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.5,
-  },
-  sectionHeader: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.5,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 10,
+    justifyContent: "center",
   },
   lineItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: theme.spacing.sm,
-    borderBottomWidth: 0.5,
-    borderBottomColor: `${theme.colors.text}10`,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.md,
   },
-  thumbnail: {
+  lineThumb: {
     width: 40,
     height: 40,
-    borderRadius: 4,
+    borderRadius: theme.radii.sm,
     backgroundColor: theme.colors.background,
-    marginRight: 10,
   },
-  lineItemInfo: {
-    flex: 1,
-  },
-  lineItemName: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: theme.colors.text,
-  },
-  lineItemVariant: {
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.5,
-    marginTop: 1,
-  },
-  lineItemQty: {
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.6,
-    marginTop: 2,
-  },
-  lineItemTotal: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.text,
-    marginLeft: theme.spacing.sm,
-  },
+  lineInfo: { flex: 1, gap: 2 },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingTop: 10,
-    marginTop: theme.spacing.xs,
-  },
-  totalLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.text,
-  },
-  totalValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: theme.colors.text,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
   },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
     paddingVertical: theme.spacing.sm,
+    gap: theme.spacing.md,
   },
-  infoLabel: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.5,
-    flex: 1,
+  infoLabel: { flex: 1 },
+  infoValue: { flex: 2, textAlign: "right" },
+  actions: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xl,
+    gap: theme.spacing.sm,
   },
-  infoValue: {
-    fontSize: 13,
-    color: theme.colors.text,
-    fontWeight: "500",
-    flex: 2,
-    textAlign: "right",
-  },
-  emptyText: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.4,
-    fontStyle: "italic",
-  },
-  actionsSection: {
-    gap: 10,
-    marginTop: theme.spacing.xs,
-  },
-  primaryBtn: {
+  btnPrimary: {
     backgroundColor: theme.colors.accent,
-    borderRadius: theme.radius,
-    paddingVertical: 14,
+    height: 48,
+    borderRadius: theme.radii.md,
     alignItems: "center",
+    justifyContent: "center",
   },
-  primaryBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.elevated,
-  },
-  secondaryBtn: {
-    backgroundColor: theme.colors.text,
-    borderRadius: theme.radius,
-    paddingVertical: 14,
+  btnSecondary: {
+    backgroundColor: theme.colors.elevated,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.border,
+    height: 48,
+    borderRadius: theme.radii.md,
     alignItems: "center",
+    justifyContent: "center",
   },
-  secondaryBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.elevated,
-  },
-  dangerBtn: {
+  btnDanger: {
     backgroundColor: "transparent",
-    borderRadius: theme.radius,
-    paddingVertical: 14,
-    alignItems: "center",
     borderWidth: 1,
     borderColor: theme.colors.danger,
+    height: 48,
+    borderRadius: theme.radii.md,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  dangerBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.danger,
-  },
+  btnDisabled: { opacity: 0.5 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backgroundColor: theme.colors.overlay,
     justifyContent: "center",
     alignItems: "center",
-    padding: theme.spacing.xxl,
+    padding: theme.spacing.xl,
   },
   modalContent: {
     backgroundColor: theme.colors.elevated,
-    borderRadius: 10,
+    borderRadius: theme.radii.lg,
     padding: theme.spacing.xl,
     width: "100%",
-    maxWidth: 340,
+    maxWidth: 360,
+    gap: theme.spacing.md,
   },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: theme.colors.text,
-    marginBottom: 14,
-  },
+  modalTitle: { marginBottom: theme.spacing.xs },
   modalInput: {
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.radius,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    fontFamily: theme.fonts.sans,
+    fontSize: 15,
     color: theme.colors.text,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
-    marginBottom: theme.spacing.lg,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.hairline,
+    minHeight: 44,
   },
   modalActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
-    gap: 10,
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
   },
   modalCancelBtn: {
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 10,
-    borderRadius: theme.radius,
-  },
-  modalCancelText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: theme.colors.text,
-    opacity: 0.6,
+    paddingVertical: theme.spacing.sm,
+    minHeight: 44,
+    justifyContent: "center",
   },
   modalSubmitBtn: {
     backgroundColor: theme.colors.accent,
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 10,
-    borderRadius: theme.radius,
-  },
-  modalSubmitText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.elevated,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radii.md,
+    minHeight: 44,
+    justifyContent: "center",
   },
 });

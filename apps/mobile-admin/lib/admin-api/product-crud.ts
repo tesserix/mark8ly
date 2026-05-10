@@ -1,18 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createApiClient } from "@repo/mobile-shared/api/client";
-import { createProductsApi } from "@repo/mobile-shared/api/products";
-import { useAuth } from "@repo/mobile-shared/auth/provider";
-import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
-
-function useApiClient() {
-  const { getToken } = useAuth();
-  const activeStore = useTenantStore((s) => s.activeStore);
-  return createApiClient({
-    baseUrl: "https://api.mark8ly.com", // TODO: read from config
-    getToken,
-    getStoreId: () => activeStore?.id ?? null,
-  });
-}
+import {
+  createProductsApi,
+  type CreateProductBody,
+} from "@repo/mobile-shared/api/products";
+import { useApiClient } from "@/lib/api-client";
 
 export function useCreateProduct() {
   const client = useApiClient();
@@ -20,17 +11,7 @@ export function useCreateProduct() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (body: {
-      name: string;
-      description?: string;
-      price: number;
-      compare_at_price?: number;
-      sku?: string;
-      stock?: number;
-      status?: string;
-      category_id?: string;
-      tags?: string[];
-    }) => productsApi.create(body),
+    mutationFn: (body: CreateProductBody) => productsApi.create(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] });
     },
@@ -105,7 +86,7 @@ export function useCreateVariant() {
       body,
     }: {
       productId: string;
-      body: { name: string; sku?: string; price: number; stock?: number };
+      body: { name: string; sku?: string; price: number; stock: number };
     }) => productsApi.createVariant(productId, body),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({

@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
 import {
   View,
-  Text,
   ScrollView,
   TextInput,
   TouchableOpacity,
@@ -12,6 +11,13 @@ import {
 import { useRouter } from "expo-router";
 import { ProductMediaPicker } from "../../../components/ProductMediaPicker";
 import { useCreateProduct, useUploadMedia } from "../../../lib/admin-api/product-crud";
+import {
+  BackHeader,
+  Card,
+  Hairline,
+  Screen,
+  Text,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 const TOTAL_STEPS = 4;
@@ -23,48 +29,52 @@ const STATUS_OPTIONS: { key: ProductStatus; label: string }[] = [
   { key: "active", label: "Active" },
 ];
 
-function StepIndicator({ current, total }: { current: number; total: number }) {
-  const progress = current / total;
+function StepDots({ current, total }: { current: number; total: number }) {
   return (
-    <View style={stepStyles.container}>
-      <Text style={stepStyles.label}>
-        {current} of {total}
-      </Text>
-      <View style={stepStyles.track}>
-        <View style={[stepStyles.fill, { width: `${progress * 100}%` }]} />
-      </View>
+    <View style={stepStyles.row}>
+      {Array.from({ length: total }).map((_, i) => {
+        const idx = i + 1;
+        const active = idx === current;
+        const done = idx < current;
+        return (
+          <View
+            key={i}
+            style={[
+              stepStyles.dot,
+              active && stepStyles.dotActive,
+              done && stepStyles.dotDone,
+            ]}
+          />
+        );
+      })}
     </View>
   );
 }
 
 const stepStyles = StyleSheet.create({
-  container: {
+  row: {
+    flexDirection: "row",
+    gap: theme.spacing.xs,
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.lg,
+    paddingBottom: theme.spacing.sm,
   },
-  label: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.5,
-    marginBottom: theme.spacing.sm,
-  },
-  track: {
-    height: 4,
+  dot: {
+    flex: 1,
+    height: 3,
+    backgroundColor: theme.colors.border,
     borderRadius: 2,
-    backgroundColor: `${theme.colors.text}15`,
-    overflow: "hidden",
   },
-  fill: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colors.accent,
-  },
+  dotActive: { backgroundColor: theme.colors.text },
+  dotDone: { backgroundColor: theme.colors.accent },
 });
 
 function FieldLabel({ label }: { label: string }) {
-  return <Text style={styles.fieldLabel}>{label}</Text>;
+  return (
+    <Text preset="caption" color="textSecondary" style={styles.fieldLabel}>
+      {label}
+    </Text>
+  );
 }
 
 export default function NewProductScreen() {
@@ -73,23 +83,16 @@ export default function NewProductScreen() {
   const uploadMediaMutation = useUploadMedia();
 
   const [step, setStep] = useState(1);
-
-  // Step 1: Photos
   const [images, setImages] = useState<string[]>([]);
-
-  // Step 2: Details
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [compareAtPrice, setCompareAtPrice] = useState("");
   const [sku, setSku] = useState("");
   const [stock, setStock] = useState("");
-
-  // Step 3: Organization
   const [categoryId, setCategoryId] = useState("");
   const [tags, setTags] = useState("");
   const [status, setStatus] = useState<ProductStatus>("draft");
-
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const canProceed = useCallback((): boolean => {
@@ -104,15 +107,11 @@ export default function NewProductScreen() {
       Alert.alert("Validation", "Please fill in all required fields (name and price).");
       return;
     }
-    if (step < TOTAL_STEPS) {
-      setStep(step + 1);
-    }
+    if (step < TOTAL_STEPS) setStep(step + 1);
   }, [step, canProceed]);
 
   const handleBack = useCallback(() => {
-    if (step > 1) {
-      setStep(step - 1);
-    }
+    if (step > 1) setStep(step - 1);
   }, [step]);
 
   const handleCreate = useCallback(
@@ -122,14 +121,10 @@ export default function NewProductScreen() {
         Alert.alert("Validation", "Product name and price are required.");
         return;
       }
-
       setIsSubmitting(true);
       const parsedCompare = compareAtPrice ? parseFloat(compareAtPrice) : undefined;
       const parsedStock = parseInt(stock, 10);
-      const tagList = tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
+      const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
 
       createMutation.mutate(
         {
@@ -145,15 +140,11 @@ export default function NewProductScreen() {
         },
         {
           onSuccess: async (data) => {
-            // Upload images sequentially
             for (const uri of images) {
               try {
-                await uploadMediaMutation.mutateAsync({
-                  productId: data.id,
-                  uri,
-                });
+                await uploadMediaMutation.mutateAsync({ productId: data.id, uri });
               } catch {
-                // Continue uploading remaining images even if one fails
+                // ignore individual failures, others continue
               }
             }
             setIsSubmitting(false);
@@ -172,52 +163,76 @@ export default function NewProductScreen() {
     ],
   );
 
-  const renderStep = () => {
-    switch (step) {
-      case 1:
-        return (
+  if (isSubmitting) {
+    return (
+      <Screen>
+        <BackHeader eyebrow="NEW PRODUCT" />
+        <View style={styles.centered}>
+          <ActivityIndicator size="small" color={theme.colors.text} />
+          <Text preset="body" color="textSecondary">
+            Creating product…
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      <BackHeader
+        eyebrow={`STEP ${step} OF ${TOTAL_STEPS}`}
+        title="New Product"
+      />
+      <StepDots current={step} total={TOTAL_STEPS} />
+
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
+        {step === 1 ? (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Product Photos</Text>
-            <Text style={styles.stepSubtitle}>
-              Take photos or choose from your library. You can add more later.
+            <Text preset="h2" color="text">
+              Photos
+            </Text>
+            <Text preset="body" color="textSecondary" style={styles.stepIntro}>
+              Take photos or pick from your library. You can add more later.
             </Text>
             <ProductMediaPicker images={images} onImagesChange={setImages} />
-            {images.length === 0 && (
-              <Text style={styles.hint}>
-                Tip: Good product photos increase sales by up to 40%
+            {images.length === 0 ? (
+              <Text preset="caption" color="textTertiary" style={styles.tip}>
+                Tip — clean photos on a plain background convert ~40% better.
               </Text>
-            )}
+            ) : null}
           </View>
-        );
+        ) : null}
 
-      case 2:
-        return (
+        {step === 2 ? (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Product Details</Text>
+            <Text preset="h2" color="text">
+              Details
+            </Text>
             <FieldLabel label="Name *" />
             <TextInput
               style={styles.input}
               value={name}
               onChangeText={setName}
               placeholder="e.g. Handmade Ceramic Mug"
-              placeholderTextColor={`${theme.colors.text}50`}
+              placeholderTextColor={theme.colors.textTertiary}
               autoFocus
-              accessibilityLabel="Product name"
             />
             <FieldLabel label="Description" />
             <TextInput
-              style={[styles.input, styles.multilineInput]}
+              style={[styles.input, styles.multiline]}
               value={description}
               onChangeText={setDescription}
-              placeholder="Describe your product..."
-              placeholderTextColor={`${theme.colors.text}50`}
+              placeholder="Describe your product…"
+              placeholderTextColor={theme.colors.textTertiary}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
-              accessibilityLabel="Product description"
             />
             <View style={styles.row}>
-              <View style={styles.halfField}>
+              <View style={styles.half}>
                 <FieldLabel label="Price *" />
                 <TextInput
                   style={styles.input}
@@ -225,37 +240,34 @@ export default function NewProductScreen() {
                   onChangeText={setPrice}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
-                  placeholderTextColor={`${theme.colors.text}50`}
-                  accessibilityLabel="Product price"
+                  placeholderTextColor={theme.colors.textTertiary}
                 />
               </View>
-              <View style={styles.halfField}>
-                <FieldLabel label="Compare at Price" />
+              <View style={styles.half}>
+                <FieldLabel label="Compare at" />
                 <TextInput
                   style={styles.input}
                   value={compareAtPrice}
                   onChangeText={setCompareAtPrice}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
-                  placeholderTextColor={`${theme.colors.text}50`}
-                  accessibilityLabel="Compare at price"
+                  placeholderTextColor={theme.colors.textTertiary}
                 />
               </View>
             </View>
             <View style={styles.row}>
-              <View style={styles.halfField}>
+              <View style={styles.half}>
                 <FieldLabel label="SKU" />
                 <TextInput
                   style={styles.input}
                   value={sku}
                   onChangeText={setSku}
-                  placeholder="SKU-001"
-                  placeholderTextColor={`${theme.colors.text}50`}
                   autoCapitalize="characters"
-                  accessibilityLabel="Product SKU"
+                  placeholder="SKU-001"
+                  placeholderTextColor={theme.colors.textTertiary}
                 />
               </View>
-              <View style={styles.halfField}>
+              <View style={styles.half}>
                 <FieldLabel label="Stock" />
                 <TextInput
                   style={styles.input}
@@ -263,26 +275,25 @@ export default function NewProductScreen() {
                   onChangeText={setStock}
                   keyboardType="number-pad"
                   placeholder="0"
-                  placeholderTextColor={`${theme.colors.text}50`}
-                  accessibilityLabel="Stock quantity"
+                  placeholderTextColor={theme.colors.textTertiary}
                 />
               </View>
             </View>
           </View>
-        );
+        ) : null}
 
-      case 3:
-        return (
+        {step === 3 ? (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Organization</Text>
+            <Text preset="h2" color="text">
+              Organization
+            </Text>
             <FieldLabel label="Category ID" />
             <TextInput
               style={styles.input}
               value={categoryId}
               onChangeText={setCategoryId}
-              placeholder="Category ID (optional)"
-              placeholderTextColor={`${theme.colors.text}50`}
-              accessibilityLabel="Category ID"
+              placeholder="Optional"
+              placeholderTextColor={theme.colors.textTertiary}
             />
             <FieldLabel label="Tags" />
             <TextInput
@@ -290,31 +301,25 @@ export default function NewProductScreen() {
               value={tags}
               onChangeText={setTags}
               placeholder="tag1, tag2, tag3"
-              placeholderTextColor={`${theme.colors.text}50`}
+              placeholderTextColor={theme.colors.textTertiary}
               autoCapitalize="none"
-              accessibilityLabel="Product tags"
             />
             <FieldLabel label="Status" />
             <View style={styles.statusRow}>
               {STATUS_OPTIONS.map((opt) => {
-                const isSelected = status === opt.key;
+                const selected = status === opt.key;
                 return (
                   <TouchableOpacity
                     key={opt.key}
-                    style={[
-                      styles.statusOption,
-                      isSelected && styles.statusOptionSelected,
-                    ]}
+                    style={[styles.statusOpt, selected && styles.statusOptSelected]}
                     onPress={() => setStatus(opt.key)}
                     accessibilityRole="button"
-                    accessibilityState={{ selected: isSelected }}
+                    accessibilityState={{ selected }}
                     accessibilityLabel={`Status: ${opt.label}`}
                   >
                     <Text
-                      style={[
-                        styles.statusOptionText,
-                        isSelected && styles.statusOptionTextSelected,
-                      ]}
+                      preset="bodyEmphasis"
+                      color={selected ? "inverse" : "text"}
                     >
                       {opt.label}
                     </Text>
@@ -323,52 +328,54 @@ export default function NewProductScreen() {
               })}
             </View>
           </View>
-        );
+        ) : null}
 
-      case 4:
-        return (
+        {step === 4 ? (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Review</Text>
-            <View style={styles.reviewCard}>
+            <Text preset="h2" color="text">
+              Review
+            </Text>
+            <Card padding={0} style={styles.reviewCard}>
               <ReviewRow label="Photos" value={`${images.length} image${images.length !== 1 ? "s" : ""}`} />
+              <Hairline />
               <ReviewRow label="Name" value={name || "Not set"} />
+              <Hairline />
               <ReviewRow label="Price" value={price ? `$${price}` : "Not set"} />
-              {compareAtPrice ? <ReviewRow label="Compare at" value={`$${compareAtPrice}`} /> : null}
-              {sku ? <ReviewRow label="SKU" value={sku} /> : null}
+              {compareAtPrice ? (
+                <>
+                  <Hairline />
+                  <ReviewRow label="Compare at" value={`$${compareAtPrice}`} />
+                </>
+              ) : null}
+              {sku ? (
+                <>
+                  <Hairline />
+                  <ReviewRow label="SKU" value={sku} />
+                </>
+              ) : null}
+              <Hairline />
               <ReviewRow label="Stock" value={stock || "0"} />
-              {categoryId ? <ReviewRow label="Category" value={categoryId} /> : null}
-              {tags ? <ReviewRow label="Tags" value={tags} /> : null}
+              {categoryId ? (
+                <>
+                  <Hairline />
+                  <ReviewRow label="Category" value={categoryId} />
+                </>
+              ) : null}
+              {tags ? (
+                <>
+                  <Hairline />
+                  <ReviewRow label="Tags" value={tags} />
+                </>
+              ) : null}
+              <Hairline />
               <ReviewRow label="Status" value={status} />
-            </View>
+            </Card>
           </View>
-        );
-
-      default:
-        return null;
-    }
-  };
-
-  if (isSubmitting) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.text} />
-        <Text style={styles.loadingText}>Creating product...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.screen}>
-      <StepIndicator current={step} total={TOTAL_STEPS} />
-      <ScrollView
-        style={styles.scrollArea}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        {renderStep()}
+        ) : null}
       </ScrollView>
+
       <View style={styles.footer}>
-        {step > 1 && (
+        {step > 1 ? (
           <TouchableOpacity
             style={styles.backBtn}
             onPress={handleBack}
@@ -376,10 +383,13 @@ export default function NewProductScreen() {
             accessibilityRole="button"
             accessibilityLabel="Go back to previous step"
           >
-            <Text style={styles.backBtnText}>Back</Text>
+            <Text preset="bodyEmphasis" color="textSecondary">
+              Back
+            </Text>
           </TouchableOpacity>
+        ) : (
+          <View style={styles.backBtn} />
         )}
-        <View style={styles.footerSpacer} />
         {step === TOTAL_STEPS ? (
           <View style={styles.finalActions}>
             <TouchableOpacity
@@ -387,234 +397,164 @@ export default function NewProductScreen() {
               onPress={() => handleCreate(true)}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Save product as draft"
+              accessibilityLabel="Save as draft"
             >
-              <Text style={styles.draftBtnText}>Save as Draft</Text>
+              <Text preset="bodyEmphasis" color="text">
+                Draft
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.createBtn}
+              style={styles.primaryBtn}
               onPress={() => handleCreate(false)}
-              activeOpacity={0.7}
+              activeOpacity={0.85}
               accessibilityRole="button"
               accessibilityLabel="Create product"
             >
-              <Text style={styles.createBtnText}>Create Product</Text>
+              <Text preset="bodyEmphasis" color="inverse">
+                Create
+              </Text>
             </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity
-            style={styles.nextBtn}
+            style={styles.primaryBtn}
             onPress={handleNext}
-            activeOpacity={0.7}
+            activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="Go to next step"
+            accessibilityLabel="Next step"
           >
-            <Text style={styles.nextBtnText}>Next</Text>
+            <Text preset="bodyEmphasis" color="inverse">
+              Next
+            </Text>
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </Screen>
   );
 }
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.reviewRow}>
-      <Text style={styles.reviewLabel}>{label}</Text>
-      <Text style={styles.reviewValue}>{value}</Text>
+      <Text preset="caption" color="textTertiary">
+        {label}
+      </Text>
+      <Text preset="body" color="text" style={styles.reviewValue}>
+        {value}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  scrollArea: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: theme.spacing.xxl,
-  },
+  scroll: { paddingBottom: theme.spacing.huge },
   stepContent: {
     paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
+    gap: theme.spacing.sm,
   },
-  stepTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: theme.colors.text,
-    marginBottom: theme.spacing.xs,
-  },
-  stepSubtitle: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.5,
-    marginBottom: theme.spacing.lg,
-  },
-  hint: {
-    fontSize: 12,
-    color: theme.colors.accent,
-    opacity: 0.7,
+  stepIntro: { marginBottom: theme.spacing.md },
+  tip: {
     fontStyle: "italic",
     marginTop: theme.spacing.lg,
     textAlign: "center",
   },
   fieldLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.6,
-    marginBottom: theme.spacing.xs,
     marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
+    letterSpacing: 0.4,
   },
   input: {
     backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    fontFamily: theme.fonts.sans,
+    fontSize: 15,
     color: theme.colors.text,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.hairline,
+    minHeight: 44,
   },
-  multilineInput: {
-    minHeight: 80,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  halfField: {
-    flex: 1,
-  },
+  multiline: { minHeight: 88, paddingTop: theme.spacing.sm },
+  row: { flexDirection: "row", gap: theme.spacing.sm },
+  half: { flex: 1 },
   statusRow: {
     flexDirection: "row",
     gap: theme.spacing.sm,
     marginTop: theme.spacing.xs,
   },
-  statusOption: {
+  statusOpt: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: theme.radius,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radii.md,
     alignItems: "center",
     backgroundColor: theme.colors.elevated,
-    borderWidth: 1,
-    borderColor: `${theme.colors.text}20`,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.border,
+    minHeight: 44,
+    justifyContent: "center",
   },
-  statusOptionSelected: {
+  statusOptSelected: {
     backgroundColor: theme.colors.text,
     borderColor: theme.colors.text,
   },
-  statusOptionText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.text,
-  },
-  statusOptionTextSelected: {
-    color: theme.colors.background,
-  },
-  reviewCard: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    padding: 14,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
-    marginTop: theme.spacing.md,
-  },
+  reviewCard: { marginTop: theme.spacing.md },
   reviewRow: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: theme.spacing.sm,
-    borderBottomWidth: 0.5,
-    borderBottomColor: `${theme.colors.text}10`,
-  },
-  reviewLabel: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.5,
-    flex: 1,
+    gap: theme.spacing.md,
   },
   reviewValue: {
-    fontSize: 13,
-    color: theme.colors.text,
-    fontWeight: "500",
     flex: 2,
     textAlign: "right",
     textTransform: "capitalize",
   },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.md,
+  },
   footer: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    borderTopWidth: 0.5,
-    borderTopColor: `${theme.colors.text}10`,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.lg,
+    borderTopWidth: theme.hairline,
+    borderTopColor: theme.colors.hairline,
     backgroundColor: theme.colors.background,
   },
-  footerSpacer: {
-    flex: 1,
-  },
   backBtn: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 10,
-    borderRadius: theme.radius,
+    minWidth: 64,
+    minHeight: 44,
+    justifyContent: "center",
   },
-  backBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.6,
-  },
-  nextBtn: {
-    backgroundColor: theme.colors.text,
-    paddingHorizontal: theme.spacing.xxl,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.radius,
-  },
-  nextBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.background,
+  primaryBtn: {
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radii.md,
+    minHeight: 44,
+    justifyContent: "center",
   },
   finalActions: {
     flexDirection: "row",
     gap: theme.spacing.sm,
+    alignItems: "center",
   },
   draftBtn: {
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.radius,
-    borderWidth: 1,
-    borderColor: `${theme.colors.text}20`,
-  },
-  draftBtnText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.7,
-  },
-  createBtn: {
-    backgroundColor: theme.colors.accent,
-    paddingHorizontal: theme.spacing.xl,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.radius,
-  },
-  createBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.elevated,
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radii.md,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.border,
+    minHeight: 44,
     justifyContent: "center",
-    alignItems: "center",
-    gap: theme.spacing.md,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: theme.colors.text,
-    opacity: 0.6,
   },
 });

@@ -1,11 +1,22 @@
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native";
-import { useAuth } from "@repo/mobile-shared/auth/provider";
+import {
+  View,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+} from "react-native";
 import * as Linking from "expo-linking";
+import { useAuth } from "@repo/mobile-shared/auth/provider";
+import { useEnvironment } from "@repo/mobile-shared/config/env";
+import { Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
+  const env = useEnvironment();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,60 +48,108 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={styles.form}>
-        <Text style={styles.title}>Mark8ly</Text>
-        <Text style={styles.subtitle}>Admin</Text>
+      <View style={styles.frame}>
+        <View style={styles.brand}>
+          <Text preset="eyebrow" color="textTertiary">
+            MARK8LY ADMIN
+          </Text>
+          <Text preset="display" color="text" style={styles.wordmark}>
+            Welcome back
+          </Text>
+          <Text preset="bodyLg" color="textSecondary">
+            Sign in to your store dashboard.
+          </Text>
+        </View>
 
-        {error && <Text style={styles.error}>{error}</Text>}
+        {error ? (
+          <View style={styles.errorBox}>
+            <Text preset="caption" color="danger">
+              {error}
+            </Text>
+          </View>
+        ) : null}
 
-        <TextInput
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          autoComplete="email"
-          style={styles.input}
-          placeholderTextColor={`${theme.colors.text}60`}
-          accessibilityLabel="Email address"
-        />
+        <View style={styles.form}>
+          <View style={styles.field}>
+            <Text preset="caption" color="textSecondary" style={styles.label}>
+              Email
+            </Text>
+            <TextInput
+              placeholder="you@store.com"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+              style={styles.input}
+              placeholderTextColor={theme.colors.textTertiary}
+              accessibilityLabel="Email address"
+            />
+          </View>
 
-        <TextInput
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoComplete="password"
-          style={styles.input}
-          placeholderTextColor={`${theme.colors.text}60`}
-          accessibilityLabel="Password"
-        />
+          <View style={styles.field}>
+            <Text preset="caption" color="textSecondary" style={styles.label}>
+              Password
+            </Text>
+            <TextInput
+              placeholder="••••••••"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="password"
+              style={styles.input}
+              placeholderTextColor={theme.colors.textTertiary}
+              accessibilityLabel="Password"
+            />
+          </View>
 
-        <TouchableOpacity
-          onPress={handleLogin}
-          disabled={loading}
-          style={[styles.button, loading && styles.buttonDisabled]}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel={loading ? "Signing in" : "Sign in"}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color={theme.colors.background} />
-          ) : (
-            <Text style={styles.buttonText}>Sign in</Text>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleLogin}
+            disabled={loading}
+            style={[styles.button, loading && styles.buttonDisabled]}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={loading ? "Signing in" : "Sign in"}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color={theme.colors.inverse} />
+            ) : (
+              <Text preset="bodyEmphasis" color="inverse">
+                Sign in
+              </Text>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => Linking.openURL("https://admin.mark8ly.com/forgot-password")}
-          style={styles.forgotLink}
-          accessibilityRole="link"
-          accessibilityLabel="Forgot password"
-        >
-          <Text style={styles.forgotText}>Forgot password?</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => Linking.openURL(`${env.adminWebUrl}/forgot-password`)}
+            style={styles.link}
+            accessibilityRole="link"
+            accessibilityLabel="Forgot password"
+          >
+            <Text preset="caption" color="textSecondary">
+              Forgot password?
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.footer}>
+          <Text preset="caption" color="textTertiary" align="center">
+            Don&apos;t have a store yet?
+          </Text>
+          <TouchableOpacity
+            onPress={() => Linking.openURL(env.signupUrl)}
+            style={styles.signupBtn}
+            activeOpacity={0.7}
+            accessibilityRole="link"
+            accessibilityLabel="Start a new store on mark8ly.com"
+          >
+            <Text preset="bodyEmphasis" color="text">
+              Start a new one
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -100,42 +159,66 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
-    justifyContent: "center",
-    paddingHorizontal: theme.spacing.xxl,
+  },
+  frame: {
+    flex: 1,
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.huge * 1.5,
+    paddingBottom: theme.spacing.xxl,
+  },
+  brand: {
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.xxxl,
+  },
+  wordmark: {
+    marginTop: theme.spacing.sm,
+  },
+  errorBox: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderLeftWidth: 2,
+    borderLeftColor: theme.colors.danger,
+    marginBottom: theme.spacing.lg,
+    backgroundColor: theme.colors.surfaceAlt,
   },
   form: { gap: theme.spacing.lg },
-  title: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: theme.colors.text,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: theme.colors.text,
-    opacity: 0.6,
-    marginBottom: theme.spacing.lg,
-  },
-  error: { color: theme.colors.danger, fontSize: 14 },
+  field: { gap: theme.spacing.xs },
+  label: { letterSpacing: 0.4 },
   input: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
     height: 48,
-    paddingHorizontal: theme.spacing.lg,
+    fontFamily: theme.fonts.sans,
     fontSize: 16,
     color: theme.colors.text,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}15`,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    paddingHorizontal: 0,
   },
   button: {
     backgroundColor: theme.colors.text,
     height: 48,
-    borderRadius: theme.radius,
+    borderRadius: theme.radii.md,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: theme.spacing.sm,
+    marginTop: theme.spacing.lg,
   },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: theme.colors.background, fontSize: 16, fontWeight: "600" },
-  forgotLink: { alignItems: "center", marginTop: theme.spacing.sm },
-  forgotText: { color: theme.colors.accent, fontSize: 14 },
+  buttonDisabled: { opacity: 0.5 },
+  link: {
+    alignSelf: "center",
+    marginTop: theme.spacing.md,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.md,
+  },
+  footer: {
+    marginTop: "auto",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+    paddingTop: theme.spacing.xl,
+  },
+  signupBtn: {
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.md,
+  },
 });

@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import {
   View,
-  Text,
   FlatList,
   TouchableOpacity,
   RefreshControl,
@@ -10,12 +9,19 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useNotifications, useMarkAllRead } from "../../../lib/hooks/use-notifications";
+import {
+  BackHeader,
+  EmptyState,
+  Hairline,
+  Screen,
+  Text,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Notification } from "@repo/mobile-shared/api/types";
 
-const TYPE_COLORS: Record<string, string> = {
+const TYPE_DOT: Record<string, string> = {
   order: theme.colors.accent,
-  payment: "#F59E0B",
+  payment: theme.colors.warning,
   alert: theme.colors.danger,
   system: theme.colors.text,
 };
@@ -27,7 +33,6 @@ function formatRelativeTime(dateString: string): string {
   const diffMin = Math.floor(diffMs / 60_000);
   const diffHr = Math.floor(diffMs / 3_600_000);
   const diffDay = Math.floor(diffMs / 86_400_000);
-
   if (diffMin < 1) return "just now";
   if (diffMin < 60) return `${diffMin}m ago`;
   if (diffHr < 24) return `${diffHr}h ago`;
@@ -42,32 +47,32 @@ function NotificationItem({
   notification: Notification;
   onPress: (n: Notification) => void;
 }) {
-  const dotColor = TYPE_COLORS[notification.type] ?? theme.colors.text;
+  const dotColor = TYPE_DOT[notification.type] ?? theme.colors.text;
   const isUnread = !notification.read;
 
   return (
     <TouchableOpacity
-      style={[styles.notifRow, isUnread && styles.notifRowUnread]}
+      style={[styles.row, isUnread && styles.rowUnread]}
       onPress={() => onPress(notification)}
-      activeOpacity={0.7}
+      activeOpacity={0.6}
       accessibilityRole="button"
       accessibilityLabel={`${notification.title}, ${notification.body}, ${isUnread ? "unread" : "read"}`}
     >
-      {isUnread && <View style={[styles.unreadBorder, { backgroundColor: dotColor }]} />}
-      <View style={styles.dotContainer}>
-        <View style={[styles.dot, { backgroundColor: dotColor }]} />
-      </View>
-      <View style={styles.notifContent}>
+      {isUnread ? <View style={[styles.unreadBar, { backgroundColor: dotColor }]} /> : null}
+      <View style={[styles.dot, { backgroundColor: dotColor }]} />
+      <View style={styles.content}>
         <Text
-          style={[styles.notifTitle, isUnread && styles.notifTitleUnread]}
+          preset="bodyEmphasis"
+          color="text"
           numberOfLines={1}
+          style={isUnread ? styles.unreadTitle : undefined}
         >
           {notification.title}
         </Text>
-        <Text style={styles.notifBody} numberOfLines={2}>
+        <Text preset="caption" color="textSecondary" numberOfLines={2} style={styles.body}>
           {notification.body}
         </Text>
-        <Text style={styles.notifTime}>
+        <Text preset="caption" color="textTertiary">
           {formatRelativeTime(notification.created_at)}
         </Text>
       </View>
@@ -84,48 +89,46 @@ export default function NotificationsScreen() {
 
   const handlePress = useCallback(
     (notification: Notification) => {
-      if (notification.deep_link) {
-        router.push(notification.deep_link as never);
-      }
+      if (notification.deep_link) router.push(notification.deep_link as never);
     },
     [router],
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: Notification }) => (
-      <NotificationItem notification={item} onPress={handlePress} />
-    ),
-    [handlePress],
-  );
-
-  const keyExtractor = useCallback((item: Notification) => item.id, []);
-
   return (
-    <View style={styles.screen}>
-      {hasUnread && (
-        <TouchableOpacity
-          style={styles.markAllBtn}
-          onPress={() => markAllRead.mutate()}
-          disabled={markAllRead.isPending}
-          accessibilityRole="button"
-          accessibilityLabel={markAllRead.isPending ? "Marking all as read" : "Mark all as read"}
-        >
-          <Text style={styles.markAllText}>
-            {markAllRead.isPending ? "Marking..." : "Mark all as read"}
-          </Text>
-        </TouchableOpacity>
-      )}
+    <Screen>
+      <BackHeader
+        eyebrow="NOTIFICATIONS"
+        title="Inbox"
+        rightSlot={
+          hasUnread ? (
+            <TouchableOpacity
+              onPress={() => markAllRead.mutate()}
+              disabled={markAllRead.isPending}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={
+                markAllRead.isPending ? "Marking all as read" : "Mark all as read"
+              }
+            >
+              <Text preset="caption" color="accent">
+                {markAllRead.isPending ? "Marking…" : "Mark all"}
+              </Text>
+            </TouchableOpacity>
+          ) : null
+        }
+      />
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={theme.colors.text} />
+          <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : (
         <FlatList
           data={data?.items ?? []}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => <NotificationItem notification={item} onPress={handlePress} />}
+          keyExtractor={(item) => item.id}
+          ItemSeparatorComponent={() => <Hairline />}
+          contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}
@@ -134,106 +137,39 @@ export default function NotificationsScreen() {
             />
           }
           ListEmptyComponent={
-            <View style={styles.centered}>
-              <Text style={styles.emptyTitle}>No notifications</Text>
-              <Text style={styles.emptySubtitle}>
-                You're all caught up
-              </Text>
-            </View>
+            <EmptyState title="No notifications" message="You're all caught up." />
           }
         />
       )}
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  markAllBtn: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 10,
-    alignItems: "flex-end",
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  markAllText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: theme.colors.accent,
-  },
-  listContent: {
-    paddingBottom: theme.spacing.xxl,
-    flexGrow: 1,
-  },
-  notifRow: {
+  list: { flexGrow: 1, paddingBottom: theme.spacing.huge },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  row: {
     flexDirection: "row",
     backgroundColor: theme.colors.elevated,
-    paddingVertical: 14,
+    paddingVertical: theme.spacing.md,
     paddingHorizontal: theme.spacing.lg,
-    borderBottomWidth: 0.5,
-    borderBottomColor: `${theme.colors.text}10`,
+    gap: theme.spacing.md,
   },
-  notifRowUnread: {
-    backgroundColor: "#FAFAF6",
-  },
-  unreadBorder: {
+  rowUnread: { backgroundColor: theme.colors.surfaceAlt },
+  unreadBar: {
     position: "absolute",
     left: 0,
     top: 0,
     bottom: 0,
     width: 3,
   },
-  dotContainer: {
-    width: 24,
-    paddingTop: theme.spacing.xs,
-  },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    marginTop: 6,
   },
-  notifContent: {
-    flex: 1,
-  },
-  notifTitle: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  notifTitleUnread: {
-    fontWeight: "700",
-  },
-  notifBody: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.6,
-    lineHeight: 18,
-    marginBottom: theme.spacing.xs,
-  },
-  notifTime: {
-    fontSize: 11,
-    color: theme.colors.text,
-    opacity: 0.35,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingTop: 80,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: theme.colors.text,
-    marginBottom: theme.spacing.xs,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.5,
-  },
+  content: { flex: 1, gap: 2 },
+  unreadTitle: { fontWeight: "700" },
+  body: { marginVertical: 2 },
 });

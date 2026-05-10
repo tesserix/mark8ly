@@ -1,15 +1,36 @@
-import { useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Alert,
-  StyleSheet,
-} from "react-native";
+import { useCallback, useState } from "react";
+import { View, TouchableOpacity, Alert, StyleSheet } from "react-native";
+import { ChevronRight } from "lucide-react-native";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { StoreSelector } from "../../../components/StoreSelector";
+import {
+  BackHeader,
+  Card,
+  Eyebrow,
+  Hairline,
+  Screen,
+  Text,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
+
+interface InfoRowProps {
+  label: string;
+  value?: string | null;
+}
+
+function InfoRow({ label, value }: InfoRowProps) {
+  return (
+    <View style={styles.infoRow}>
+      <Text preset="caption" color="textTertiary">
+        {label}
+      </Text>
+      <Text preset="body" color="text">
+        {value ?? "—"}
+      </Text>
+    </View>
+  );
+}
 
 export default function AccountScreen() {
   const { user, signOut } = useAuth();
@@ -19,151 +40,94 @@ export default function AccountScreen() {
   const handleLogout = useCallback(() => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: () => signOut(),
-      },
+      { text: "Sign Out", style: "destructive", onPress: () => signOut() },
     ]);
   }, [signOut]);
 
   return (
-    <View style={styles.screen}>
-      {/* Profile */}
-      <View style={styles.card}>
-        <Text style={styles.sectionHeader}>Profile</Text>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Name</Text>
-          <Text style={styles.infoValue}>
-            {user?.displayName ?? "Not set"}
-          </Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Email</Text>
-          <Text style={styles.infoValue}>
-            {user?.email ?? "Unknown"}
-          </Text>
-        </View>
-      </View>
+    <Screen>
+      <BackHeader eyebrow="ACCOUNT" title="Account" />
 
-      {/* Store */}
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => setStoreSelectorVisible(true)}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel={`Current store: ${activeStore?.name ?? "None"}. Tap to switch.`}
-      >
-        <Text style={styles.sectionHeader}>Store</Text>
-        <View style={styles.storeRow}>
+      <Eyebrow label="Profile" />
+      <Card padding="md" style={styles.card}>
+        <InfoRow label="Name" value={user?.displayName ?? "Not set"} />
+        <Hairline style={styles.divider} />
+        <InfoRow label="Email" value={user?.email} />
+      </Card>
+
+      <Eyebrow label="Store" />
+      <Card padding={0} style={styles.card}>
+        <TouchableOpacity
+          style={styles.storeRow}
+          onPress={() => setStoreSelectorVisible(true)}
+          activeOpacity={0.6}
+          accessibilityRole="button"
+          accessibilityLabel={`Current store: ${activeStore?.name ?? "None"}. Tap to switch.`}
+        >
           <View style={styles.storeInfo}>
-            <Text style={styles.storeName}>
+            <Text preset="bodyEmphasis" color="text">
               {activeStore?.name ?? "No store selected"}
             </Text>
-            {activeStore?.slug && (
-              <Text style={styles.storeSlug}>{activeStore.slug}</Text>
-            )}
+            {activeStore?.slug ? (
+              <Text preset="caption" color="textTertiary">
+                {activeStore.slug}
+              </Text>
+            ) : null}
           </View>
-          <Text style={styles.chevron}>&#x203A;</Text>
-        </View>
-      </TouchableOpacity>
+          <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
+        </TouchableOpacity>
+      </Card>
 
-      {/* Sign out */}
-      <TouchableOpacity
-        style={styles.logoutBtn}
-        onPress={handleLogout}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel="Sign out"
-      >
-        <Text style={styles.logoutText}>Sign Out</Text>
-      </TouchableOpacity>
+      <View style={styles.actions}>
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={handleLogout}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Sign out"
+        >
+          <Text preset="bodyEmphasis" color="danger">
+            Sign Out
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <StoreSelector
         visible={storeSelectorVisible}
         onClose={() => setStoreSelectorVisible(false)}
       />
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    padding: theme.spacing.lg,
-    gap: theme.spacing.md,
-  },
-  card: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    padding: 14,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
-  },
-  sectionHeader: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.5,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 10,
-  },
+  card: { marginHorizontal: theme.spacing.lg },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: theme.spacing.sm,
   },
-  infoLabel: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.5,
-    flex: 1,
-  },
-  infoValue: {
-    fontSize: 13,
-    color: theme.colors.text,
-    fontWeight: "500",
-    flex: 2,
-    textAlign: "right",
-  },
+  divider: { marginVertical: 2 },
   storeRow: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    minHeight: 56,
   },
-  storeInfo: {
-    flex: 1,
-  },
-  storeName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  storeSlug: {
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.4,
-  },
-  chevron: {
-    fontSize: 20,
-    color: theme.colors.text,
-    opacity: 0.3,
-    marginLeft: theme.spacing.sm,
+  storeInfo: { flex: 1, gap: 2 },
+  actions: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xl,
   },
   logoutBtn: {
     backgroundColor: "transparent",
-    borderRadius: theme.radius,
-    paddingVertical: 14,
-    alignItems: "center",
+    borderRadius: theme.radii.md,
     borderWidth: 1,
     borderColor: theme.colors.danger,
-    marginTop: theme.spacing.sm,
-  },
-  logoutText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.danger,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

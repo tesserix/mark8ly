@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, TouchableOpacity, StyleSheet } from "react-native";
+import { Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Customer } from "@repo/mobile-shared/api/types";
 
@@ -29,29 +30,32 @@ function getDisplayName(customer: Customer): string {
 
 export function CustomerRow({ customer, onPress }: CustomerRowProps) {
   const displayName = getDisplayName(customer);
-
   return (
     <TouchableOpacity
       style={styles.container}
       onPress={() => onPress(customer)}
-      activeOpacity={0.7}
+      activeOpacity={0.6}
       accessibilityRole="button"
       accessibilityLabel={`${displayName}, ${customer.email}, ${customer.order_count} orders, ${formatCurrency(customer.total_spent)} spent`}
     >
-      <View style={styles.avatar} accessibilityLabel={`Avatar for ${displayName}`}>
-        <Text style={styles.avatarText}>{getInitial(customer)}</Text>
+      <View style={styles.avatar}>
+        <Text preset="bodyEmphasis" color="inverse">
+          {getInitial(customer)}
+        </Text>
       </View>
       <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>
+        <Text preset="bodyEmphasis" color="text" numberOfLines={1}>
           {displayName}
         </Text>
-        <Text style={styles.email} numberOfLines={1}>
+        <Text preset="caption" color="textTertiary" numberOfLines={1}>
           {customer.email}
         </Text>
       </View>
       <View style={styles.stats}>
-        <Text style={styles.spent}>{formatCurrency(customer.total_spent)}</Text>
-        <Text style={styles.orders}>
+        <Text preset="bodyEmphasis" color="text">
+          {formatCurrency(customer.total_spent)}
+        </Text>
+        <Text preset="caption" color="textTertiary">
           {customer.order_count} {customer.order_count === 1 ? "order" : "orders"}
         </Text>
       </View>
@@ -61,57 +65,23 @@ export function CustomerRow({ customer, onPress }: CustomerRowProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    padding: 14,
-    marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.sm,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.elevated,
+    borderBottomWidth: theme.hairline,
+    borderBottomColor: theme.colors.hairline,
+    gap: theme.spacing.md,
   },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: theme.colors.accent,
-    justifyContent: "center",
     alignItems: "center",
-    marginRight: theme.spacing.md,
+    justifyContent: "center",
   },
-  avatarText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: theme.colors.elevated,
-  },
-  info: {
-    flex: 1,
-    marginRight: theme.spacing.sm,
-  },
-  name: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  email: {
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.5,
-  },
-  stats: {
-    alignItems: "flex-end",
-  },
-  spent: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  orders: {
-    fontSize: 11,
-    color: theme.colors.text,
-    opacity: 0.4,
-  },
+  info: { flex: 1, gap: 2 },
+  stats: { alignItems: "flex-end", gap: 2 },
 });

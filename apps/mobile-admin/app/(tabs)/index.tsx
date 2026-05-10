@@ -2,15 +2,215 @@ import {
   RefreshControl,
   ScrollView,
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { ChevronRight } from "lucide-react-native";
 import { useDashboard } from "@/lib/hooks/use-dashboard";
 import { DashboardStats } from "@/components/DashboardStats";
+import {
+  Card,
+  EmptyState,
+  Hairline,
+  PageHeader,
+  Screen,
+  Text,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { RecentOrder, LowStockItem } from "@repo/mobile-shared/api/types";
+
+function todaysDate() {
+  return new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
+function ListRow({
+  primary,
+  secondary,
+  trailing,
+  trailingTone = "text",
+  onPress,
+  accessibilityLabel,
+}: {
+  primary: string;
+  secondary?: string;
+  trailing: string;
+  trailingTone?: "text" | "danger" | "accent";
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      onPress={onPress}
+      activeOpacity={0.6}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      <View style={styles.rowMain}>
+        <Text preset="bodyEmphasis" color="text" numberOfLines={1}>
+          {primary}
+        </Text>
+        {secondary ? (
+          <Text preset="caption" color="textTertiary" numberOfLines={1}>
+            {secondary}
+          </Text>
+        ) : null}
+      </View>
+      <Text preset="bodyEmphasis" color={trailingTone}>
+        {trailing}
+      </Text>
+      <ChevronRight
+        size={16}
+        color={theme.colors.textTertiary}
+        strokeWidth={1.75}
+        style={styles.chevron}
+      />
+    </TouchableOpacity>
+  );
+}
+
+function Section({
+  title,
+  onSeeAll,
+  children,
+}: {
+  title: string;
+  onSeeAll?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text preset="eyebrow" color="textTertiary">
+          {title}
+        </Text>
+        {onSeeAll ? (
+          <TouchableOpacity
+            onPress={onSeeAll}
+            accessibilityRole="link"
+            accessibilityLabel={`View all ${title.toLowerCase()}`}
+            hitSlop={8}
+          >
+            <Text preset="caption" color="accent">
+              See all
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      <Card padding={0}>{children}</Card>
+    </View>
+  );
+}
+
+export default function DashboardScreen() {
+  const { data, isLoading, refetch, isRefetching } = useDashboard();
+  const router = useRouter();
+
+  return (
+    <Screen>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={refetch}
+            tintColor={theme.colors.text}
+          />
+        }
+      >
+        <PageHeader
+          eyebrow="DASHBOARD"
+          title={todaysDate()}
+          subtitle={data ? "Snapshot of your store today." : undefined}
+        />
+
+        {!data ? (
+          <View style={styles.contentPad}>
+            {isLoading ? (
+              <EmptyState title="Loading…" message="Fetching your latest numbers." />
+            ) : (
+              <EmptyState
+                title="Couldn't load dashboard"
+                message="Pull to refresh or check your connection."
+              />
+            )}
+          </View>
+        ) : (
+          <View style={styles.contentPad}>
+            <DashboardStats stats={data.stats} />
+
+            {data.recent_orders.length > 0 ? (
+              <Section
+                title="Recent Orders"
+                onSeeAll={() => router.push("/(tabs)/orders")}
+              >
+                {data.recent_orders.map((order, i) => (
+                  <RowWrapper key={order.id} divider={i > 0}>
+                    <RecentOrderRow
+                      order={order}
+                      onPress={() => router.push(`/(tabs)/orders/${order.id}`)}
+                    />
+                  </RowWrapper>
+                ))}
+              </Section>
+            ) : null}
+
+            {data.low_stock.length > 0 ? (
+              <Section title="Low Stock">
+                {data.low_stock.map((item, i) => (
+                  <RowWrapper key={item.id} divider={i > 0}>
+                    <LowStockRow
+                      item={item}
+                      onPress={() => router.push(`/(tabs)/products/${item.id}`)}
+                    />
+                  </RowWrapper>
+                ))}
+              </Section>
+            ) : null}
+
+            {data.top_products.length > 0 ? (
+              <Section title="Top Products">
+                {data.top_products.map((p, i) => (
+                  <RowWrapper key={p.id} divider={i > 0}>
+                    <ListRow
+                      primary={p.name}
+                      secondary={`${p.total_sold} sold`}
+                      trailing={formatCurrency(p.revenue)}
+                      onPress={() => router.push(`/(tabs)/products/${p.id}`)}
+                      accessibilityLabel={`${p.name}, ${p.total_sold} sold, ${formatCurrency(p.revenue)} revenue`}
+                    />
+                  </RowWrapper>
+                ))}
+              </Section>
+            ) : null}
+          </View>
+        )}
+      </ScrollView>
+    </Screen>
+  );
+}
+
+function RowWrapper({ children, divider }: { children: React.ReactNode; divider: boolean }) {
+  return (
+    <View>
+      {divider ? <Hairline inset={theme.spacing.lg} /> : null}
+      {children}
+    </View>
+  );
+}
 
 function RecentOrderRow({
   order,
@@ -20,201 +220,52 @@ function RecentOrderRow({
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity
-      style={styles.orderRow}
+    <ListRow
+      primary={`#${order.order_number}`}
+      secondary={order.customer_email}
+      trailing={formatCurrency(order.grand_total)}
       onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`Order ${order.order_number}, ${order.customer_email}, $${order.grand_total.toFixed(2)}`}
-    >
-      <View style={{ flex: 1 }}>
-        <Text style={styles.orderNumber}>#{order.order_number}</Text>
-        <Text style={styles.orderEmail}>{order.customer_email}</Text>
-      </View>
-      <Text style={styles.orderTotal}>${order.grand_total.toFixed(2)}</Text>
-    </TouchableOpacity>
+      accessibilityLabel={`Order ${order.order_number}, ${order.customer_email}, ${formatCurrency(order.grand_total)}`}
+    />
   );
 }
 
-function LowStockRow({
-  item,
-  onPress,
-}: {
-  item: LowStockItem;
-  onPress: () => void;
-}) {
+function LowStockRow({ item, onPress }: { item: LowStockItem; onPress: () => void }) {
   return (
-    <TouchableOpacity
-      style={styles.orderRow}
+    <ListRow
+      primary={item.name}
+      trailing={`${item.stock} left`}
+      trailingTone="danger"
       onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
       accessibilityLabel={`${item.name}, ${item.stock} left in stock`}
-    >
-      <View style={{ flex: 1 }}>
-        <Text style={styles.orderNumber}>{item.name}</Text>
-      </View>
-      <Text style={[styles.orderTotal, { color: theme.colors.danger }]}>
-        {item.stock} left
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-export default function DashboardScreen() {
-  const { data, isLoading, refetch, isRefetching } = useDashboard();
-  const router = useRouter();
-
-  if (isLoading && !data) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.loadingText}>Loading dashboard...</Text>
-      </View>
-    );
-  }
-
-  if (!data) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.loadingText}>Failed to load dashboard</Text>
-        <TouchableOpacity
-          onPress={() => refetch()}
-          style={styles.retryButton}
-          accessibilityRole="button"
-          accessibilityLabel="Retry loading dashboard"
-        >
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={isRefetching}
-          onRefresh={refetch}
-          tintColor={theme.colors.text}
-        />
-      }
-    >
-      <DashboardStats stats={data.stats} />
-
-      {data.recent_orders.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Orders</Text>
-            <TouchableOpacity
-              onPress={() => router.push("/(tabs)/orders")}
-              accessibilityRole="link"
-              accessibilityLabel="View all orders"
-            >
-              <Text style={styles.viewAll}>View all</Text>
-            </TouchableOpacity>
-          </View>
-          {data.recent_orders.map((order) => (
-            <RecentOrderRow
-              key={order.id}
-              order={order}
-              onPress={() => router.push(`/(tabs)/orders/${order.id}`)}
-            />
-          ))}
-        </View>
-      )}
-
-      {data.low_stock.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Low Stock</Text>
-          {data.low_stock.map((item) => (
-            <LowStockRow
-              key={item.id}
-              item={item}
-              onPress={() => router.push(`/(tabs)/products/${item.id}`)}
-            />
-          ))}
-        </View>
-      )}
-
-      {data.top_products.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Top Products</Text>
-          {data.top_products.map((product) => (
-            <TouchableOpacity
-              key={product.id}
-              style={styles.orderRow}
-              onPress={() => router.push(`/(tabs)/products/${product.id}`)}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={`${product.name}, ${product.total_sold} sold, $${product.revenue.toFixed(0)} revenue`}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.orderNumber}>{product.name}</Text>
-                <Text style={styles.orderEmail}>
-                  {product.total_sold} sold
-                </Text>
-              </View>
-              <Text style={styles.orderTotal}>
-                ${product.revenue.toFixed(0)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </ScrollView>
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: theme.spacing.lg, gap: theme.spacing.xxl, paddingBottom: theme.spacing.xxxl },
-  centered: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    justifyContent: "center",
-    alignItems: "center",
+  scroll: {
+    paddingBottom: theme.spacing.huge,
   },
-  loadingText: { color: theme.colors.text, opacity: 0.5, fontSize: 16 },
-  retryButton: {
-    marginTop: theme.spacing.md,
-    paddingHorizontal: theme.spacing.xl,
-    paddingVertical: 10,
-    backgroundColor: theme.colors.text,
-    borderRadius: theme.radius,
+  contentPad: {
+    paddingHorizontal: theme.spacing.lg,
+    gap: theme.spacing.xl,
   },
-  retryText: { color: theme.colors.background, fontSize: 14, fontWeight: "600" },
-  section: { gap: theme.spacing.sm },
+  section: { gap: theme.spacing.xs },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    paddingHorizontal: theme.spacing.xs,
+    paddingBottom: theme.spacing.xs,
   },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.text,
-    opacity: 0.5,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  viewAll: { fontSize: 14, color: theme.colors.accent, fontWeight: "500" },
-  orderRow: {
+  row: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    padding: theme.spacing.md,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.md,
+    minHeight: 56,
   },
-  orderNumber: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
-  orderEmail: {
-    fontSize: 12,
-    color: theme.colors.text,
-    opacity: 0.5,
-    marginTop: 2,
-  },
-  orderTotal: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
+  rowMain: { flex: 1, gap: 2 },
+  chevron: { marginLeft: -theme.spacing.xs },
 });

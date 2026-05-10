@@ -1,27 +1,29 @@
 import { useState, useCallback, useEffect } from "react";
 import {
   View,
-  Text,
-  TextInput,
   FlatList,
   RefreshControl,
-  ActivityIndicator,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useCustomers } from "../../../lib/hooks/use-customers";
 import { CustomerRow } from "../../../components/CustomerRow";
+import {
+  EmptyState,
+  PageHeader,
+  Screen,
+  SearchField,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Customer } from "@repo/mobile-shared/api/types";
 
 function useDebounce(value: string, delay: number): string {
   const [debounced, setDebounced] = useState(value);
-
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(value), delay);
     return () => clearTimeout(timer);
   }, [value, delay]);
-
   return debounced;
 }
 
@@ -34,48 +36,38 @@ export default function CustomersScreen() {
     debouncedSearch || undefined,
   );
 
-  const handleCustomerPress = useCallback(
-    (customer: Customer) => {
-      router.push(`/(tabs)/customers/${customer.id}`);
-    },
+  const handlePress = useCallback(
+    (customer: Customer) => router.push(`/(tabs)/customers/${customer.id}`),
     [router],
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: Customer }) => (
-      <CustomerRow customer={item} onPress={handleCustomerPress} />
-    ),
-    [handleCustomerPress],
+    ({ item }: { item: Customer }) => <CustomerRow customer={item} onPress={handlePress} />,
+    [handlePress],
   );
 
-  const keyExtractor = useCallback((item: Customer) => item.id, []);
-
   return (
-    <View style={styles.screen}>
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search customers..."
-          placeholderTextColor={`${theme.colors.text}50`}
+    <Screen>
+      <PageHeader eyebrow="CUSTOMERS" title="People" />
+      <View style={styles.search}>
+        <SearchField
           value={searchText}
           onChangeText={setSearchText}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
+          placeholder="Search customers…"
           accessibilityLabel="Search customers"
         />
       </View>
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={theme.colors.text} />
+          <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : (
         <FlatList
           data={data?.items ?? []}
           renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={styles.listContent}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}
@@ -84,61 +76,34 @@ export default function CustomersScreen() {
             />
           }
           ListEmptyComponent={
-            <View style={styles.centered}>
-              <Text style={styles.emptyTitle}>No customers found</Text>
-              <Text style={styles.emptySubtitle}>
-                {debouncedSearch
-                  ? "Try a different search term"
-                  : "Customers will appear here once they sign up"}
-              </Text>
-            </View>
+            <EmptyState
+              title="No customers yet"
+              message={
+                debouncedSearch
+                  ? "Try a different search term."
+                  : "Customers appear here once they sign up."
+              }
+            />
           }
         />
       )}
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  searchContainer: {
+  search: {
     paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.md,
-  },
-  searchInput: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radius,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: theme.colors.text,
-    borderWidth: 0.5,
-    borderColor: `${theme.colors.text}10`,
-  },
-  listContent: {
     paddingTop: theme.spacing.xs,
-    paddingBottom: theme.spacing.xxl,
+    paddingBottom: theme.spacing.sm,
+  },
+  list: {
     flexGrow: 1,
+    paddingBottom: theme.spacing.huge,
   },
   centered: {
     flex: 1,
-    justifyContent: "center",
     alignItems: "center",
-    paddingTop: 80,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: theme.colors.text,
-    marginBottom: theme.spacing.xs,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: theme.colors.text,
-    opacity: 0.5,
+    justifyContent: "center",
   },
 });

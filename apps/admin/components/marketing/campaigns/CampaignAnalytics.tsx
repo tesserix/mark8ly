@@ -1,6 +1,7 @@
 "use client";
 
 import type { AdminCampaign, CampaignStatus } from "@/lib/api/campaigns-api";
+import { sanitizeRichHtml } from "@/lib/sanitize";
 import { CampaignActions } from "./CampaignActions";
 
 interface CampaignAnalyticsProps {
@@ -231,7 +232,7 @@ export function CampaignAnalytics({
           )}
           <div
             className="prose prose-sm max-w-none rounded-md border border-border-subtle bg-[color:var(--background-elevated)] p-6 text-foreground-secondary"
-            dangerouslySetInnerHTML={{ __html: c.content }}
+            dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(c.content) }}
           />
         </section>
       )}

@@ -301,11 +301,28 @@ function JsonLd({ raw }: { raw?: string | null }) {
 
 function sanitizeCss(raw: string): string {
   let css = raw;
+  // Decode CSS escape sequences first so attacks like `java\6Cscript:` or
+  // `\65xpression(...)` can't slip past the literal-string regex filters
+  // below. Per CSS spec a backslash followed by 1–6 hex digits is the
+  // codepoint, optionally trailed by a single whitespace.
+  css = css.replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_m, hex: string) => {
+    const cp = parseInt(hex, 16);
+    if (!Number.isFinite(cp) || cp === 0 || cp > 0x10ffff) return "";
+    return String.fromCodePoint(cp);
+  });
+  // Strip the other escape form: `\X` where X is a single non-hex char.
+  css = css.replace(/\\([^\r\n\f0-9a-fA-F])/g, "$1");
+  // Drop NULs and control chars that some parsers ignore but regex
+  // would otherwise see through.
+  css = css.replace(/[ --]/g, "");
   css = css.replace(/<[^>]*>/g, "");
   css = css.replace(/@import\b[^;]*/gi, "/* blocked @import */");
+  css = css.replace(/@charset\b[^;]*/gi, "/* blocked @charset */");
   css = css.replace(/url\s*\([^)]*\)/gi, "/* blocked url() */");
   css = css.replace(/expression\s*\([^)]*\)/gi, "/* blocked expression() */");
   css = css.replace(/javascript\s*:/gi, "/* blocked */");
+  css = css.replace(/vbscript\s*:/gi, "/* blocked */");
+  css = css.replace(/data\s*:/gi, "/* blocked */");
   css = css.replace(/behavior\s*:/gi, "/* blocked */");
   css = css.replace(/-moz-binding\s*:/gi, "/* blocked */");
   return css.trim();

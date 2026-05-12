@@ -244,9 +244,12 @@ function ToolbarButton({
  */
 export function htmlToMarkdown(html: string): string {
   if (typeof window === "undefined") return "";
-  const container = document.createElement("div");
-  container.innerHTML = html;
-  return walkBlocks(container).trim();
+  // Parse via DOMParser instead of assigning to a live element's
+  // innerHTML — that path resolves <script>, fires <img onerror=…>, and
+  // triggers other side effects on the document we're attached to.
+  // DOMParser builds an inert document; nothing executes.
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  return walkBlocks(parsed.body).trim();
 }
 
 function walkBlocks(node: Node): string {

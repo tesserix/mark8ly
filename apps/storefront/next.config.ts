@@ -31,6 +31,29 @@ const nextConfig: NextConfig = {
           key: "Strict-Transport-Security",
           value: "max-age=31536000; includeSubDomains",
         },
+        {
+          key: "Content-Security-Policy",
+          // 'unsafe-inline' for style-src is required because merchants
+          // inject branded CSS via <style> (see sanitizeCss in
+          // app/layout.tsx). 'unsafe-inline' for script-src covers
+          // Next.js's hydration JSON + the JSON-LD <script> blocks; we
+          // gate this with strict object-src 'none' + base-uri 'self'
+          // so injection still can't pivot to plugin/data execution.
+          value: [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob: https:",
+            "font-src 'self' data:",
+            "connect-src 'self' https: wss:",
+            "frame-ancestors 'self'",
+            "frame-src 'self'",
+            "object-src 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+          ].join("; "),
+        },
+        { key: "Permissions-Policy", value: "geolocation=(), microphone=(), camera=()" },
       ],
     },
   ],

@@ -27,6 +27,7 @@ package public
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -209,7 +210,10 @@ func (h *DelhiveryWebhookHandler) Handle(c *gin.Context) {
 	// a deployment without a secret is one-line-of-config away from a
 	// public write endpoint hitting our DB. Merchants who want webhooks
 	// must set Settings → Shipping → Delhivery → Webhook Secret.
-	if expected == "" || token != expected {
+	// Constant-time compare so attackers can't byte-shift the secret
+	// via response-timing differences. subtle.ConstantTimeCompare
+	// returns 0 on length mismatch too, which is what we want.
+	if expected == "" || subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}

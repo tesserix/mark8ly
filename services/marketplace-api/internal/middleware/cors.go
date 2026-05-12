@@ -45,7 +45,15 @@ func CORS(allowedOrigins string) gin.HandlerFunc {
 
 func matchOrigin(origin string, allowed []string) bool {
 	for _, a := range allowed {
-		if a == "*" || a == origin {
+		// We never honour a bare "*" — the response sets
+		// Access-Control-Allow-Credentials: true, and pairing
+		// credentials with a wildcard origin would let any site read
+		// authenticated responses. Operators must use explicit hosts
+		// or "https://*.<domain>" wildcard-subdomain entries.
+		if a == "" || a == "*" {
+			continue
+		}
+		if a == origin {
 			return true
 		}
 		// Wildcard subdomain match: "https://*.mark8ly.com"

@@ -24,22 +24,37 @@ func New(env string, log *slog.Logger, corsOrigins string) *gin.Engine {
 	r.Use(securityHeaders(env))
 	r.Use(requestLogger(log))
 
-	if corsOrigins != "" {
-		origins := splitOrigins(corsOrigins)
-		r.Use(cors.New(cors.Config{
-			AllowOrigins: origins,
-			AllowMethods: []string{
-				http.MethodGet, http.MethodPost, http.MethodPatch,
-				http.MethodDelete, http.MethodOptions,
-			},
-			AllowHeaders: []string{
-				"Origin", "Content-Type", "Accept", "Authorization",
-				"X-Internal-Auth", "X-User-Id", "X-Tenant-Id", "X-Store-Id",
-				"X-User-Email", "X-User-Name", "X-User-Role",
-			},
-			AllowCredentials: true,
-			MaxAge:           12 * time.Hour,
-		}))
+	// Only wire CORS if we have at least one concrete origin. Attaching
+	// gin-contrib/cors with an empty AllowOrigins + AllowCredentials:true
+	// is undefined across library versions and we never want to risk a
+	// permissive default — fail closed: no CORS = no cross-origin access.
+	if origins := splitOrigins(corsOrigins); len(origins) > 0 {
+		// Reject a bare "*" entry — it would be paired with
+		// AllowCredentials:true below, which the CORS spec forbids and
+		// browsers ignore (but mis-configured proxies may forward).
+		safe := make([]string, 0, len(origins))
+		for _, o := range origins {
+			if o == "*" {
+				continue
+			}
+			safe = append(safe, o)
+		}
+		if len(safe) > 0 {
+			r.Use(cors.New(cors.Config{
+				AllowOrigins: safe,
+				AllowMethods: []string{
+					http.MethodGet, http.MethodPost, http.MethodPatch,
+					http.MethodDelete, http.MethodOptions,
+				},
+				AllowHeaders: []string{
+					"Origin", "Content-Type", "Accept", "Authorization",
+					"X-Internal-Auth", "X-User-Id", "X-Tenant-Id", "X-Store-Id",
+					"X-User-Email", "X-User-Name", "X-User-Role",
+				},
+				AllowCredentials: true,
+				MaxAge:           12 * time.Hour,
+			}))
+		}
 	}
 
 	r.GET("/health", func(c *gin.Context) {

@@ -1,4 +1,5 @@
 import { marked } from "marked";
+import { sanitizeRichHtml } from "@/lib/sanitize";
 
 interface HelpArticleRendererProps {
   content: string;
@@ -19,7 +20,7 @@ export function HelpArticleRenderer({ content }: HelpArticleRendererProps) {
     breaks: false,
   }) as string;
 
-  const html = raw.replace(
+  const withAnchors = raw.replace(
     /<(h[23])>([\s\S]*?)<\/h[23]>/g,
     (_match, tag: string, inner: string) => {
       const text = inner.replace(/<[^>]+>/g, "").trim();
@@ -27,6 +28,11 @@ export function HelpArticleRenderer({ content }: HelpArticleRendererProps) {
       return `<${tag} id="${id}">${inner}</${tag}>`;
     },
   );
+
+  // marked passes raw HTML in the markdown source through untouched —
+  // sanitize before injection so a help article containing <script> or
+  // <img onerror=…> can't fire in the admin DOM.
+  const html = sanitizeRichHtml(withAnchors);
 
   return (
     <div

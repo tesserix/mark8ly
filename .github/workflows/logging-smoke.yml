@@ -1,4 +1,6 @@
 name: Log-shipping PII smoke guard
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 # =============================================================================
 # P17 Task 12 — static grep that prevents fmt.Print* from leaking structured

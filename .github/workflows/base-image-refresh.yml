@@ -1,4 +1,6 @@
 name: Base Image Refresh
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 # Fired by tesserix/base-docker-images when a weekly rebuild publishes
 # new tesserix base images (repository_dispatch event

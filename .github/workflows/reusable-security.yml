@@ -1,4 +1,6 @@
 name: Reusable — security scans
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 # Single source of truth for CVE / vulnerability scanning. Any workflow
 # that runs on pull_request or push-to-main should `uses:` this so we

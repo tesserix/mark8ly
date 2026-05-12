@@ -1,4 +1,6 @@
 name: Dashboard Validation
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 # =============================================================================
 # Validates Grafana dashboard JSON + PromQL metric references.

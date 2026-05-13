@@ -86,15 +86,25 @@ type Ticket struct {
 	Priority         TicketPriority `gorm:"column:priority;type:varchar(10);not null;default:medium"`
 	SubmittedByName  string       `gorm:"column:submitted_by_name;type:varchar(200);not null"`
 	SubmittedByEmail string       `gorm:"column:submitted_by_email;type:varchar(300);not null"`
-	ResolvedAt       *time.Time   `gorm:"column:resolved_at"`
-	CreatedAt        time.Time    `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt        time.Time    `gorm:"column:updated_at;not null;default:now()"`
+	// ConversationID links a ticket back to the Otto chat that
+	// spawned it. Optional: tickets opened manually by a merchant
+	// from the admin UI have no conversation. When set, the admin
+	// inbox can open the live transcript inline.
+	ConversationID *string    `gorm:"column:conversation_id;type:varchar(64);index"`
+	ResolvedAt     *time.Time `gorm:"column:resolved_at"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:now()"`
 
 	// Preloaded association.
 	Replies []TicketReply `gorm:"foreignKey:TicketID"`
 }
 
-func (Ticket) TableName() string { return "tickets" }
+// TableName — the customer-support tickets table is `support_tickets`
+// (see tesserix-k8s/charts/apps/db-schema-bootstrap/schemas/marketplace/
+// marketplace/customer_support_tickets.sql). The bare `tickets` table
+// in the same schema belongs to a different platform-engineering
+// ticket system and is intentionally NOT touched here.
+func (Ticket) TableName() string { return "support_tickets" }
 
 // CanTransitionTo returns true if moving from the ticket's current status
 // to the target status is a valid transition. Same target (noop) is
@@ -133,4 +143,4 @@ type TicketReply struct {
 	CreatedAt   time.Time  `gorm:"column:created_at;not null;default:now()"`
 }
 
-func (TicketReply) TableName() string { return "ticket_replies" }
+func (TicketReply) TableName() string { return "support_ticket_replies" }

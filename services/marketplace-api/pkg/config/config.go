@@ -109,6 +109,15 @@ type Config struct {
 	SendGridAPIKey string `envconfig:"SENDGRID_API_KEY" default:""`
 	EmailFrom      string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.com"`
 
+	// Otto support — deep link in customer ticket emails points back
+	// to the storefront's tickets page so the customer can resume the
+	// case (`{host}/support/tickets/{ticket_number}`). Empty disables
+	// the CTA but keeps the email body intact. For multi-store
+	// deployments where each store has its own subdomain, use
+	// StorefrontBaseURLTemplate instead and per-store render — for
+	// the single-brand v1 setup this static host is sufficient.
+	PublicStorefrontHost string `envconfig:"PUBLIC_STOREFRONT_HOST" default:""`
+
 	// Marketing M2 — Storefront URL template for gift card delivery
 	// emails. {slug} is substituted with the store slug. Empty disables
 	// the "Shop storefront" CTA in gift card emails.

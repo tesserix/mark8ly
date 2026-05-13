@@ -17,6 +17,13 @@ type ServiceConfig struct {
 	DB     *gorm.DB
 	Repo   Repository
 	Logger *slog.Logger
+	// Notifier is optional; when set, Service fires
+	// NotifyTicketResolved on every status -> resolved transition.
+	// Creation emails are fired from InternalHandler (so they only
+	// happen for AI-escalated tickets, not merchant-opened ones).
+	Notifier interface {
+		NotifyTicketResolved(ctx context.Context, t *Ticket)
+	}
 }
 
 // Service implements ticket CRUD and reply logic.
@@ -24,6 +31,9 @@ type Service struct {
 	db     *gorm.DB
 	repo   Repository
 	logger *slog.Logger
+	notify interface {
+		NotifyTicketResolved(ctx context.Context, t *Ticket)
+	}
 }
 
 // NewService constructs a ticket Service.
@@ -32,6 +42,7 @@ func NewService(cfg ServiceConfig) *Service {
 		db:     cfg.DB,
 		repo:   cfg.Repo,
 		logger: cfg.Logger,
+		notify: cfg.Notifier,
 	}
 }
 
@@ -54,6 +65,10 @@ type CreateInput struct {
 	Priority         string
 	SubmittedByName  string
 	SubmittedByEmail string
+	// ConversationID is set when the ticket is auto-created from an
+	// Otto chat that the customer escalated to a human. Empty when
+	// the merchant opens the ticket manually from the admin UI.
+	ConversationID string
 }
 
 // Create validates and persists a new ticket. The ticket number is
@@ -99,6 +114,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Ticket, error) {
 			CreatedAt:        now,
 			UpdatedAt:        now,
 		}
+		if in.ConversationID != "" {
+			cid := in.ConversationID
+			t.ConversationID = &cid
+		}
 		if err := s.repo.Create(ctx, tx, t); err != nil {
 			return err
 		}
@@ -109,6 +128,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Ticket, error) {
 		return nil, err
 	}
 	return created, nil
+}
+
+// GetByConversation returns the ticket created from a specific Otto
+// conversation, or apperrors.NotFound if none exists. Used by the
+// /internal/v1/tickets/from-conversation handler to short-circuit
+// duplicate POSTs (slm-router retries on transient failure).
+func (s *Service) GetByConversation(ctx context.Context, storeID uuid.UUID, conversationID string) (*Ticket, error) {
+	return s.repo.GetByConversation(ctx, s.db, storeID, conversationID)
 }
 
 // UpdateStatus validates the status transition and persists it.
@@ -144,6 +171,11 @@ func (s *Service) UpdateStatus(ctx context.Context, storeID, tenantID, id uuid.U
 
 	if err := s.repo.UpdateStatus(ctx, s.db, t); err != nil {
 		return nil, err
+	}
+	// Fire "ticket resolved" email out-of-band when applicable. SMTP
+	// latency must not stretch the HTTP response.
+	if s.notify != nil && target == TicketStatusResolved {
+		go s.notify.NotifyTicketResolved(context.Background(), t)
 	}
 	return t, nil
 }

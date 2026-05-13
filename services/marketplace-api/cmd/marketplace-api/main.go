@@ -435,11 +435,22 @@ func main() {
 	// notification service: the storefront /support/tickets endpoint
 	// needs to create tickets via this service, and the admin dashboard
 	// reads them through the same service instance.
+	// Ticket emails (customer-facing): SendGrid when configured,
+	// log-only fallback otherwise. publicHost is the storefront origin
+	// the deep link in the email points to (e.g. https://mystore.mark8ly.com).
+	// In a multi-store deployment we'd compute it per-store; for now
+	// the env var is sufficient as we only have one storefront brand
+	// per cluster.
+	ticketNotifier := ticket.NewSendGridNotifier(
+		cfg.SendGridAPIKey, cfg.EmailFrom, cfg.PublicStorefrontHost, log,
+	)
 	ticketSvc := ticket.NewService(ticket.ServiceConfig{
-		DB:     conn,
-		Repo:   ticket.NewRepository(),
-		Logger: log,
+		DB:       conn,
+		Repo:     ticket.NewRepository(),
+		Logger:   log,
+		Notifier: ticketNotifier,
 	})
+	ticketInternalHandler := ticket.NewInternalHandler(ticketSvc, ticketNotifier)
 
 	if m == mode.Admin || m == mode.Both {
 		productRepo := product.NewRepository(conn)
@@ -1702,6 +1713,11 @@ func main() {
 		// EnsureSelfVendor). See internal_handler.go for idempotency.
 		stores.NewInternalHandler(domainStoresRepo).
 			RegisterRoutes(r.Group("/internal"))
+		// Otto escalation hook — slm-router POSTs
+		// /internal/v1/tickets/from-conversation when an AI chat is
+		// handed off to a human. Same /internal namespace + same shared
+		// secret; the slm-router pod carries it via SLM_ROUTER_INTERNAL_AUTH.
+		ticketInternalHandler.RegisterRoutes(r.Group("/internal"))
 		// Cross-service audit ingest — auth-bff posts login/logout,
 		// platform-api posts staff invite/accept/revoke. Mounted on the
 		// existing /internal namespace gated by X-Internal-Auth.

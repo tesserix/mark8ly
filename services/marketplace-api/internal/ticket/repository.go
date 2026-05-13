@@ -46,6 +46,12 @@ type Repository interface {
 	// enumeration attacks.
 	GetByIDForCustomerEmail(ctx context.Context, db *gorm.DB, storeID, id uuid.UUID, email string) (*Ticket, error)
 
+	// GetByConversation returns the (at most one) ticket linked to a
+	// given Otto conversation_id within a store. Used by the
+	// slm-router escalation hook to make ticket creation idempotent on
+	// conversation_id.
+	GetByConversation(ctx context.Context, db *gorm.DB, storeID uuid.UUID, conversationID string) (*Ticket, error)
+
 	// Create inserts a new ticket row.
 	Create(ctx context.Context, db *gorm.DB, t *Ticket) error
 
@@ -148,6 +154,24 @@ func (gormRepository) GetByIDForCustomerEmail(ctx context.Context, db *gorm.DB, 
 			return nil, apperrors.NotFound("ticket")
 		}
 		return nil, fmt.Errorf("ticket get by id for customer: %w", err)
+	}
+	return &t, nil
+}
+
+func (gormRepository) GetByConversation(ctx context.Context, db *gorm.DB, storeID uuid.UUID, conversationID string) (*Ticket, error) {
+	if conversationID == "" {
+		return nil, apperrors.NotFound("ticket")
+	}
+	var t Ticket
+	err := db.WithContext(ctx).
+		Where("store_id = ? AND conversation_id = ?", storeID, conversationID).
+		Order("created_at DESC").
+		First(&t).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperrors.NotFound("ticket")
+		}
+		return nil, fmt.Errorf("ticket get by conversation: %w", err)
 	}
 	return &t, nil
 }

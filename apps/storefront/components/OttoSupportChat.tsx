@@ -24,6 +24,7 @@ export function OttoSupportChat({ storeName }: OttoSupportChatProps) {
       buildWsUrl={(id) => buildConversationWsUrl(id)}
       productName={storeName ?? "Support"}
       tenantId="mark8ly"
+      customerId={auth.email ?? undefined}
       customerName={auth.displayName ?? undefined}
       customerEmail={auth.email ?? undefined}
     />

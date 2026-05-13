@@ -35,8 +35,14 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+          # @tesserix/* are hosted on GitHub Packages which always
+          # requires auth even for public packages.
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@tesserix"
       - name: Install (full tree — audit must see every workspace)
         run: npm install --legacy-peer-deps
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: npm audit (fail on high+)
         run: |
           set -eo pipefail

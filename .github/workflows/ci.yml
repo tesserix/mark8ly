@@ -92,7 +92,15 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+          # The .npmrc pins @tesserix to GitHub Packages, so npm install
+          # needs an auth token even though the published packages
+          # (@tesserix/web, @tesserix/otto-widget) are marked public — GH
+          # Packages still requires authentication on download.
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@tesserix"
       - run: npm install --legacy-peer-deps
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-admin' --filter='!@repo/mobile-storefront' --filter='!@repo/mobile-shared'
 
   # ─── Security scans ────────────────────────────────────────────────

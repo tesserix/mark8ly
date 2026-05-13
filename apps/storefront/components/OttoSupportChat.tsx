@@ -10,9 +10,12 @@ interface OttoSupportChatProps {
   storeName?: string;
 }
 
-// Thin wrapper so the widget props (customer name/email prefill, store name)
-// can be sourced from the client auth context without leaking client hooks
-// into the shared package.
+// Thin wrapper so the widget props (customer name/email prefill, store
+// name) can be sourced from the client auth context without leaking
+// client hooks into the shared package. tenantId="mark8ly" pins the
+// conversation to the marketplace SLM + MCP knowledge base inside
+// Otto; mark8ly's reasons are the widget defaults so no `reasons`
+// prop is needed here.
 export function OttoSupportChat({ storeName }: OttoSupportChatProps) {
   const auth = useCustomerAuth();
   return (
@@ -20,6 +23,7 @@ export function OttoSupportChat({ storeName }: OttoSupportChatProps) {
       apiBaseUrl="/api/otto"
       buildWsUrl={(id) => buildConversationWsUrl(id)}
       productName={storeName ?? "Support"}
+      tenantId="mark8ly"
       customerName={auth.displayName ?? undefined}
       customerEmail={auth.email ?? undefined}
     />

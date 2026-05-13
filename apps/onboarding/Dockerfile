@@ -15,7 +15,7 @@ FROM ghcr.io/tesserix/base-node-builder-22:latest AS deps
 USER 0:0
 WORKDIR /src
 
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 COPY apps/onboarding/package.json ./apps/onboarding/
 COPY apps/admin/package.json ./apps/admin/
 COPY apps/storefront/package.json ./apps/storefront/
@@ -25,7 +25,12 @@ COPY packages/eslint-config/package.json ./packages/eslint-config/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
 COPY packages/ui/package.json ./packages/ui/
 
-RUN npm ci --no-audit --no-fund --legacy-peer-deps
+# Root npm ci resolves the entire workspace tree, which now includes
+# @tesserix/otto-widget under admin/storefront. The token is mounted as
+# a BuildKit secret so it never lands in a layer.
+RUN --mount=type=secret,id=NODE_AUTH_TOKEN \
+    NODE_AUTH_TOKEN="$(cat /run/secrets/NODE_AUTH_TOKEN)" \
+    npm ci --no-audit --no-fund --legacy-peer-deps
 
 # ─── builder ───────────────────────────────────────────────────────────
 FROM ghcr.io/tesserix/base-node-builder-22:latest AS builder

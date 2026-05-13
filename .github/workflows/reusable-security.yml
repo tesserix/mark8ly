@@ -45,7 +45,9 @@ jobs:
       - name: Install (full tree — audit must see every workspace)
         run: npm install --legacy-peer-deps
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Cross-repo package read needs the org PAT — GITHUB_TOKEN
+          # only grants access to packages owned by this repo.
+          NODE_AUTH_TOKEN: ${{ secrets.GHCR_PAT }}
       - name: npm audit (fail on high+)
         run: |
           set -eo pipefail

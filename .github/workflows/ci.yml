@@ -114,6 +114,9 @@ jobs:
   # or HIGH finding halts the deploy.
   security:
     uses: ./.github/workflows/reusable-security.yml
+    # Reusable workflows need explicit secret forwarding — GITHUB_TOKEN
+    # passes automatically but org PATs like GHCR_PAT do not.
+    secrets: inherit
 
   # ─── Image build + push ────────────────────────────────────────────
   # Builds 5 immutable images tagged sha-<12-char-commit> and pushes

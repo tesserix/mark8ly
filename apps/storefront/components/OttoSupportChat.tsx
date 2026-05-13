@@ -1,8 +1,8 @@
 "use client";
 
-import { OttoWidget } from "@repo/otto-widget";
+import { OttoWidget } from "@tesserix/otto-widget";
 
-import "@repo/otto-widget/styles/otto.css";
+import "@tesserix/otto-widget/styles/otto.css";
 
 import { useCustomerAuth } from "@/components/CustomerAuthProvider";
 

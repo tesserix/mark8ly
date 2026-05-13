@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback } from "react";
-import { OttoInbox } from "@repo/otto-widget";
+import { OttoInbox } from "@tesserix/otto-widget";
 
 import { useToast } from "@/components/feedback/Toaster";
 
-import "@repo/otto-widget/styles/inbox.css";
+import "@tesserix/otto-widget/styles/inbox.css";
 
 interface LiveChatInboxProps {
   currentUserId: string;

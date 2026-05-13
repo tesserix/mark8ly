@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   // includes the right node_modules for monorepo builds inside Docker.
   outputFileTracingRoot: path.join(__dirname, "../.."),
   reactStrictMode: true,
+  // @tesserix/otto-widget ships raw TypeScript source (no dist/) — Next.js
+  // must compile it like first-party app code instead of trying to resolve
+  // a pre-built CJS/ESM entrypoint.
+  transpilePackages: ["@tesserix/otto-widget"],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "storage.googleapis.com" },

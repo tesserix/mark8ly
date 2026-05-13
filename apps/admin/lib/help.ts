@@ -40,6 +40,7 @@ const VALID_SLUGS = [
   "subscription",
   "storefront",
   "troubleshooting",
+  "customer-support-kb",
 ] as const;
 
 interface Frontmatter {

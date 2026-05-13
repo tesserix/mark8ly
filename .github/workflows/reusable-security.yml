@@ -24,6 +24,9 @@ on:
 
 permissions:
   contents: read
+  # @tesserix packages live on GitHub Packages which always requires
+  # auth; the install in npm-audit needs to be able to read packages.
+  packages: read
 
 jobs:
   npm-audit:

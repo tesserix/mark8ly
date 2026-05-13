@@ -21,7 +21,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.2.2",
     "@react-pdf/renderer": "^4.3.1",
-    "@tesserix/otto-widget": "^0.2.0",
+    "@tesserix/otto-widget": "^0.3.0",
     "@repo/ui": "*",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/typography": "^0.5.19",

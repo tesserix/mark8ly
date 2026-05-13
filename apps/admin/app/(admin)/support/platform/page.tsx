@@ -7,6 +7,7 @@ import {
   type PlatformTicket,
 } from "@/lib/api/tesserix";
 import { PlatformTicketForm } from "@/components/support/PlatformTicketForm";
+import { PlatformChat } from "@/components/support/PlatformChat";
 
 // Always render fresh — the action's revalidatePath + router.refresh()
 // chain repaints the list after a ticket is filed, and we want every
@@ -37,6 +38,21 @@ export default async function PlatformSupportPage() {
           .
         </p>
       </header>
+
+      <section className="space-y-5">
+        <h2 className="font-serif text-2xl font-medium text-foreground">
+          Chat with Tesserix support
+        </h2>
+        <p className="max-w-2xl text-sm leading-6 text-foreground-secondary">
+          Live chat with the Tesserix platform team for quick questions.
+          Use the form below if you'd rather file a tracked ticket.
+        </p>
+        <PlatformChat
+          adminEmail={session.email}
+          adminName={session.email}
+          tenantName={session.tenantName}
+        />
+      </section>
 
       <section className="space-y-5">
         <h2 className="font-serif text-2xl font-medium text-foreground">

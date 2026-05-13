@@ -184,6 +184,13 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image.name }}
           cache-to: type=gha,scope=${{ matrix.image.name }},mode=max
           provenance: false
+          # NODE_AUTH_TOKEN is mounted into the Next.js Dockerfiles via
+          # BuildKit secrets so `npm ci` can pull @tesserix/* from
+          # GitHub Packages without baking the token into a layer.
+          # Go Dockerfiles ignore this secret since their build doesn't
+          # touch GitHub Packages.
+          secrets: |
+            NODE_AUTH_TOKEN=${{ secrets.GHCR_PAT }}
           # Public Next.js config baked into the client bundle at build
           # time. Go service Dockerfiles ignore unknown ARGs, so it's safe
           # to pass these for every image in the matrix.

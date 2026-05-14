@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.1",
-    "@tesserix/otto-widget": "^0.4.2",
+    "@tesserix/otto-widget": "^0.4.3",
     "@repo/ui": "*",
     "@tailwindcss/postcss": "^4.2.2",
     "@tesserix/web": "^1.7.1",

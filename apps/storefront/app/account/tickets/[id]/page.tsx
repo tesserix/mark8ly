@@ -6,7 +6,9 @@ import { decodeSessionForScope } from "@/lib/session";
 import { resolveStoreSlug } from "@/lib/slug";
 
 import { ReplyForm } from "./ReplyForm";
+import { StatusActions } from "./StatusActions";
 import { TicketStatusStepper } from "./TicketStatusStepper";
+import { TranscriptSection } from "./TranscriptSection";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,6 +30,7 @@ interface TicketDetail {
   created_at: string;
   updated_at: string;
   description: string;
+  conversation_id?: string;
   replies: TicketReply[];
 }
 
@@ -136,10 +139,13 @@ export default async function TicketDetailPage({
         </p>
       </div>
 
-      {/* Read-only status stepper so the shopper sees exactly where
-          their ticket is in the workflow, no ambiguity. */}
-      <div className="rounded-[var(--storefront-radius,6px)] border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface,white)] p-5">
+      {/* Status stepper + customer-driven actions. The customer can
+          mark resolved, close, or reopen their own ticket; the action
+          bar hides options that aren't applicable for the current
+          state (e.g. nothing on `closed`, since that's terminal). */}
+      <div className="space-y-4 rounded-[var(--storefront-radius,6px)] border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface,white)] p-5">
         <TicketStatusStepper status={ticket.status} />
+        <StatusActions ticketId={ticket.id} status={ticket.status} />
       </div>
 
       <article className="space-y-2 border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6">
@@ -181,6 +187,13 @@ export default async function TicketDetailPage({
           disabledReason="This ticket is closed. Open a new one if you need further help."
         />
       </div>
+
+      {/* Otto transcript — only rendered when the ticket was opened
+          from a chat session. The section is collapsed by default and
+          lazy-loads the messages on expand so the page paints fast. */}
+      {ticket.conversation_id && (
+        <TranscriptSection ticketId={ticket.id} />
+      )}
     </div>
   );
 }

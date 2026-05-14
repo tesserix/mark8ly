@@ -18,6 +18,7 @@ interface TicketSummary {
   subject: string;
   status: string;
   priority: string;
+  from_chat?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -153,6 +154,14 @@ export default async function TicketsPage() {
                     <StatusChip tone={statusTone(t.status)} size="md">
                       {statusLabel(t.status)}
                     </StatusChip>
+                    {t.from_chat && (
+                      <span
+                        title="This ticket was opened from a live chat"
+                        className="inline-flex items-center rounded-full border border-[color:var(--storefront-text,var(--ink-900))]/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[color:var(--storefront-text,var(--ink-900))] opacity-70"
+                      >
+                        From chat
+                      </span>
+                    )}
                   </div>
                   <p className="truncate text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
                     {t.subject}

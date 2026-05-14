@@ -67,6 +67,12 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		router.GET("/storefront/resolve-domain", deps.DomainResolveHandler)
 	}
 
+	// OpenAPI spec — public, no storefront key. The mcp-gateway pod
+	// pulls this at startup to auto-register the customer-read tools
+	// the SLM can call. Pulling needs no auth because the spec is
+	// metadata about which endpoints exist, not customer data.
+	ServeOpenAPISpec(router)
+
 	keyMW := RequireStorefrontKey(deps.StorefrontKey)
 	storeMW := StoreContext(deps.SlugCache)
 

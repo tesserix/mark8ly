@@ -123,6 +123,15 @@ type Config struct {
 	// the "Shop storefront" CTA in gift card emails.
 	StorefrontBaseURLTemplate string `envconfig:"STOREFRONT_BASE_URL_TEMPLATE" default:"https://{slug}.mark8ly.com"`
 
+	// Otto chat service — server-to-server URL and shared secret. The
+	// customer's ticket detail view uses this to lazily pull the chat
+	// transcript that spawned the ticket (when conversation_id is set).
+	// Empty URL disables the transcript pull but leaves the rest of the
+	// ticket flow untouched. The shared secret is sent as the
+	// X-Internal-Auth header on every call.
+	OttoURL          string `envconfig:"OTTO_URL" default:""`
+	OttoInternalAuth string `envconfig:"OTTO_INTERNAL_AUTH" default:""`
+
 	// P7 — tax-ID validation (§19). NZTaxValidationEnabled gates the IRD
 	// validator until counsel sign-off (§20.3); leave false in production
 	// until legal approves. The remaining keys are per-registry secrets;

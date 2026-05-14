@@ -91,6 +91,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/notification"
+	"github.com/mark8ly/marketplace-api/internal/ottoclient"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/push"
 	"github.com/mark8ly/marketplace-api/internal/mode"
@@ -1124,10 +1125,15 @@ func main() {
 
 		// Support tickets — public contact form endpoint. Shares the
 		// ticketSvc with admin so created rows surface on the admin
-		// dashboard immediately.
+		// dashboard immediately. The otto client is best-effort: when
+		// OTTO_URL / OTTO_INTERNAL_AUTH are unset (typical for local
+		// dev without otto running) the constructor returns nil and the
+		// transcript endpoint cleanly degrades to 404.
+		ottoSupportClient := ottoclient.New(cfg.OttoURL, cfg.OttoInternalAuth)
 		sfTicketsHandler := storefront.NewTicketsHandler(ticketSvc, log).
 			WithNotifier(notificationSvc).
-			WithAudit(auditEmitter)
+			WithAudit(auditEmitter).
+			WithOtto(ottoSupportClient)
 
 		// P11 — Customer portal (GDPR order-history + erasure §15.4).
 		customerPortalHandler := customerportal.NewHandler(conn, log)

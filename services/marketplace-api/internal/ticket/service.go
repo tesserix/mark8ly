@@ -256,6 +256,75 @@ func (s *Service) GetForCustomer(ctx context.Context, storeID, id uuid.UUID, ema
 	return s.repo.GetByIDForCustomerEmail(ctx, s.db, storeID, id, email)
 }
 
+// CustomerAllowedStatusTransition returns true if a signed-in shopper
+// is allowed to drive the ticket from `from` to `to`. The shopper can:
+//   • mark an open/in-progress ticket as resolved when they're happy,
+//   • close a ticket once it's resolved (archive it),
+//   • reopen a resolved ticket back to open (e.g. issue came back).
+//
+// The shopper can NOT set `in_progress` (that signals merchant pickup)
+// nor revive a closed ticket (terminal — they must open a fresh one).
+func CustomerAllowedStatusTransition(from, to TicketStatus) bool {
+	switch to {
+	case TicketStatusResolved:
+		return from == TicketStatusOpen || from == TicketStatusInProgress
+	case TicketStatusClosed:
+		return from == TicketStatusOpen ||
+			from == TicketStatusInProgress ||
+			from == TicketStatusResolved
+	case TicketStatusOpen:
+		return from == TicketStatusResolved
+	}
+	return false
+}
+
+// UpdateStatusForCustomer is the customer-restricted twin of
+// UpdateStatus. Scopes the lookup to the submitter email (ownership),
+// then enforces CustomerAllowedStatusTransition on top of the model-
+// level state machine. A merchant-only transition (e.g. to in_progress)
+// is rejected with InvalidTransition.
+func (s *Service) UpdateStatusForCustomer(ctx context.Context, storeID, ticketID uuid.UUID, email, newStatus string) (*Ticket, error) {
+	if !ValidateStatus(newStatus) {
+		return nil, apperrors.ValidationFailed("status", "status must be open, resolved, or closed")
+	}
+
+	t, err := s.repo.GetByIDForCustomerEmail(ctx, s.db, storeID, ticketID, email)
+	if err != nil {
+		return nil, err
+	}
+
+	target := TicketStatus(newStatus)
+	if !CustomerAllowedStatusTransition(t.Status, target) {
+		return nil, apperrors.New(apperrors.CodeInvalidTransition,
+			fmt.Sprintf("cannot transition from %s to %s as customer", t.Status, target))
+	}
+
+	now := time.Now()
+	t.Status = target
+	t.UpdatedAt = now
+
+	switch target {
+	case TicketStatusResolved:
+		t.ResolvedAt = &now
+	case TicketStatusOpen, TicketStatusInProgress:
+		// Reopening clears the previous resolution timestamp so the UI
+		// doesn't misleadingly show "resolved at ..." on an active
+		// ticket.
+		t.ResolvedAt = nil
+	}
+
+	if err := s.repo.UpdateStatus(ctx, s.db, t); err != nil {
+		return nil, err
+	}
+
+	// Mirror the merchant-side resolve email: customer self-resolution
+	// is a legitimate "ticket resolved" terminal event.
+	if s.notify != nil && target == TicketStatusResolved {
+		go s.notify.NotifyTicketResolved(context.Background(), t)
+	}
+	return t, nil
+}
+
 // CountByStatus returns status counts for a store.
 func (s *Service) CountByStatus(ctx context.Context, storeID, tenantID uuid.UUID) (map[string]int64, error) {
 	return s.repo.CountByStatus(ctx, s.db, storeID, tenantID)

@@ -116,6 +116,22 @@ func main() {
 	})
 	adminHandler.Register(admin)
 
+	// Internal REST routes — server-to-server only, gated by the same
+	// shared secret. Used by marketplace-api to pull the chat
+	// transcript that spawned a customer ticket so the storefront's
+	// /account/tickets/:id view can show the live conversation
+	// inline. CustomerContext supplies the same tenant/store scope
+	// checks the storefront routes use, without the otto_session
+	// cookie requirement (the customer's browser never hits this).
+	internalGroup := r.Group("/api/v1/internal/otto")
+	internalGroup.Use(auth.CustomerContext(cfg.InternalAuthSecret))
+	internalHandler := conversation.NewInternalHandler(conversation.InternalDeps{
+		Conversations: convRepo,
+		Messages:      msgRepo,
+		Logger:        log,
+	})
+	internalHandler.Register(internalGroup)
+
 	// Inactivity sweeper — closes active conversations the customer
 	// has gone quiet on for 15 min. One goroutine per process; no
 	// leader election needed at v1 volume, the CloseForInactivity

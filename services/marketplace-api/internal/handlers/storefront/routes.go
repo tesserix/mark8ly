@@ -290,6 +290,24 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 				account.POST("/tickets/:id/reply",
 					ratelimit.PerIP(0.083, 5), // ~5 req/min — reply spam guard
 					deps.TicketsHandler.AddMyReply)
+				// Customer-driven status transitions (resolve / close /
+				// reopen). The merchant-only `in_progress` transition is
+				// rejected server-side. Tight rate limit because the UI
+				// guards against double-submits but a script could still
+				// thrash an open ticket through state churn.
+				account.POST("/tickets/:id/status",
+					ratelimit.PerIP(0.083, 5),
+					deps.TicketsHandler.UpdateMyStatus)
+				// Otto transcript pull — returns the live chat that
+				// spawned the ticket when conversation_id is set, else
+				// 404. Read-heavy but cheap (no DB write); allow a
+				// modestly higher cadence so the UI can lazy-load on
+				// expand without throttling.
+				if deps.TicketsHandler != nil {
+					account.GET("/tickets/:id/transcript",
+						ratelimit.PerIP(0.167, 10),
+						deps.TicketsHandler.GetMyTranscript)
+				}
 			}
 		}
 	}

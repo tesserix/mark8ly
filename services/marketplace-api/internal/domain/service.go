@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/domainvalidate"
+	"github.com/mark8ly/marketplace-api/internal/gipkey"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -58,6 +59,13 @@ type ServiceConfig struct {
 	Provisioner Provisioner
 	Secrets     SecretStore // optional — falls back to inline-token storage if nil.
 	Resolver    domainvalidate.Resolver // optional — net.DefaultResolver when nil.
+	// GIPKey, when non-nil, gets the merchant's FQDN added to the GIP
+	// browser API key allowlist on markVerified and stripped on Remove.
+	// Without this, customers visiting the custom domain would hit
+	// API_KEY_HTTP_REFERRER_BLOCKED on signInWithPassword. main.go
+	// constructs the real client only when GIP_WEB_API_KEY_RESOURCE_NAME
+	// is configured; tests and local dev get gipkey.Noop.
+	GIPKey      gipkey.Client
 	Logger      *slog.Logger
 }
 
@@ -85,10 +93,15 @@ type Service struct {
 	provisioner Provisioner
 	secrets     SecretStore
 	resolver    domainvalidate.Resolver
+	gipKey      gipkey.Client
 	logger      *slog.Logger
 }
 
 func NewService(cfg ServiceConfig) *Service {
+	gk := cfg.GIPKey
+	if gk == nil {
+		gk = gipkey.Noop{}
+	}
 	return &Service{
 		db:          cfg.DB,
 		repo:        cfg.Repo,
@@ -96,6 +109,7 @@ func NewService(cfg ServiceConfig) *Service {
 		provisioner: cfg.Provisioner,
 		secrets:     cfg.Secrets,
 		resolver:    cfg.Resolver,
+		gipKey:      gk,
 		logger:      cfg.Logger,
 	}
 }
@@ -361,6 +375,17 @@ func (s *Service) Remove(ctx context.Context, storeID, id uuid.UUID) error {
 				"domain", d.Domain, "err", destroyErr)
 		}
 	}
+
+	// Best-effort strip of the merchant's referrer patterns from the
+	// GIP browser key allowlist. Only meaningful when the domain ever
+	// went active; calling RemoveDomain against a verifying/pending
+	// row is still safe because the patterns are deduped by exact
+	// match — absent entries are a no-op.
+	if s.gipKey != nil {
+		if err := s.gipKey.RemoveDomain(ctx, d.Domain); err != nil {
+			s.logger.Warn("gipkey remove domain failed", "domain", d.Domain, "err", err)
+		}
+	}
 	return nil
 }
 
@@ -479,6 +504,18 @@ func (s *Service) markVerified(ctx context.Context, d *CustomDomain) (*CustomDom
 
 	if err := s.repo.Update(ctx, s.db, d); err != nil {
 		return nil, err
+	}
+
+	// Self-service GIP allowlist: once DNS is confirmed, append the
+	// merchant's apex + wildcard to the GIP browser key so the
+	// storefront's signInWithPassword call from the custom domain is
+	// not rejected with API_KEY_HTTP_REFERRER_BLOCKED. Best-effort —
+	// a transient API Keys error must not fail the verify since the
+	// row is already updated and the cert is already in flight.
+	if s.gipKey != nil {
+		if err := s.gipKey.AddDomain(ctx, d.Domain); err != nil {
+			s.logger.Error("gipkey add domain failed", "domain", d.Domain, "err", err)
+		}
 	}
 	return d, nil
 }

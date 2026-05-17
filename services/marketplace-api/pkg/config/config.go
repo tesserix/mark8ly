@@ -69,6 +69,14 @@ type Config struct {
 	// mobile Bearer tokens. When empty, GIPBearerAuth rejects all requests —
 	// fine for dev environments that don't use mobile auth.
 	GIPProjectID string `envconfig:"GIP_PROJECT_ID" default:""`
+	// GIPWebAPIKeyResource is the full Google API Keys v2 resource name
+	// of the browser API key used by storefront sign-in (e.g.
+	// "projects/849928263410/locations/global/keys/2457e3a0-..."). When
+	// set, the custom-domain service patches this key's HTTP-referrer
+	// allowlist on verify and Remove, so a new merchant domain is
+	// self-served end-to-end. Empty disables the integration — gipkey
+	// falls back to a Noop client and no GCP API call is made.
+	GIPWebAPIKeyResource string `envconfig:"GIP_WEB_API_KEY_RESOURCE_NAME" default:""`
 
 	// S1 — auth-bff URL for MFA/session proxying.
 	AuthBFFURL string `envconfig:"AUTH_BFF_URL" default:""`

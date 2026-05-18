@@ -45,13 +45,17 @@ const nextConfig: NextConfig = {
           // so injection still can't pivot to plugin/data execution.
           value: [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-            "style-src 'self' 'unsafe-inline'",
+            // Storefronts trampoline to mark8ly.com/auth/google for customer
+            // Google sign-in, so GSI is not loaded here directly. The
+            // allowlist is kept in sync with admin + onboarding so any
+            // future inline use (e.g. one-tap on storefront) is unblocked.
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client",
+            "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data:",
             "connect-src 'self' https: wss:",
             "frame-ancestors 'self'",
-            "frame-src 'self'",
+            "frame-src 'self' https://accounts.google.com/gsi/",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",

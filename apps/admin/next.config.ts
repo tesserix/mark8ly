@@ -34,13 +34,17 @@ const nextConfig: NextConfig = {
           key: "Content-Security-Policy",
           value: [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-            "style-src 'self' 'unsafe-inline'",
+            // accounts.google.com hosts the GSI client script used by
+            // admin's Google sign-in (SignInForm → getGoogleCredential).
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client",
+            "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data:",
             "connect-src 'self' https: wss:",
             "frame-ancestors 'self'",
-            "frame-src 'self'",
+            // GSI renders the button + One-Tap UI inside an iframe served
+            // from accounts.google.com/gsi/.
+            "frame-src 'self' https://accounts.google.com/gsi/",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",

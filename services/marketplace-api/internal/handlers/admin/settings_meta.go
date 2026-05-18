@@ -5,10 +5,12 @@
 package admin
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/country"
 )
@@ -51,6 +53,20 @@ func (h *SettingsMetaHandler) GetSupportedProviders(c *gin.Context) {
 
 	supported, err := h.countryRepo.GetByCode(c.Request.Context(), store.CountryCode)
 	if err != nil {
+		// supported_countries is reference data seeded by migration 000008 +
+		// re-asserted idempotently by 000090. A missing row is a data-config
+		// gap, not a server fault — return 404 so the admin UI degrades to
+		// its "unable to load" state instead of a hard 500. We still log so
+		// the operator can re-run the seed migration.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			h.logger.Warn("supported country missing — re-run migration 000090 to reseed",
+				"country", store.CountryCode)
+			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+				"error":   "country_not_supported",
+				"message": "supported providers not configured for this country",
+			})
+			return
+		}
 		h.logger.Error("lookup country for supported providers", "country", store.CountryCode, "err", err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 			"error":   "internal",

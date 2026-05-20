@@ -11,7 +11,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/lib/pq v1.12.3
-	github.com/openfga/go-sdk v0.8.0
+	github.com/openfga/go-sdk v0.8.1
 	github.com/pquerna/otp v1.5.0
 )
 

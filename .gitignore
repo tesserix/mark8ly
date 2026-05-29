@@ -72,3 +72,6 @@ apps/*/tests/e2e/.audit/
 CLAUDE.md
 .claude/
 *.tsbuildinfo
+
+# Local (kind) Secret — copy of k8s/secrets.example.yaml; never commit real creds
+k8s/secrets.yaml

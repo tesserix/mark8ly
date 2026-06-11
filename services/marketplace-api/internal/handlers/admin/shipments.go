@@ -288,8 +288,8 @@ type ShipmentResponse struct {
 	// is the canonical "package handed to buyer" timestamp consumed by
 	// the receipt PDF; the older proxy was order.updated_at, which
 	// drifted whenever any field on the order changed.
-	ShippedAt          *time.Time `json:"shipped_at,omitempty"`
-	DeliveredAt        *time.Time `json:"delivered_at,omitempty"`
+	ShippedAt   *time.Time `json:"shipped_at,omitempty"`
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
 	// Pickup scheduling. PickupRequestID is Delhivery's pr_id (or the
 	// "already-scheduled" sentinel) and PickupScheduledFor combines
 	// the date + slot-start into a single UTC timestamp so the admin
@@ -580,17 +580,17 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	})
 
 	rec := &shipping.ShipmentRecord{
-		TenantID:           tenantUUID,
-		StoreID:            storeUUID,
-		OrderID:            orderID,
-		Carrier:            provider,
-		TrackingNumber:     shipment.TrackingNumber,
-		LabelURL:           shipment.LabelURL,
-		Status:             "pending",
-		ShipFrom:           datatypes.JSON(fromJSON),
-		ShipTo:             datatypes.JSON(toJSON),
-		CurrencyCode:       o.CurrencyCode,
-		EstimatedDelivery:  shipment.EstimatedDelivery,
+		TenantID:          tenantUUID,
+		StoreID:           storeUUID,
+		OrderID:           orderID,
+		Carrier:           provider,
+		TrackingNumber:    shipment.TrackingNumber,
+		LabelURL:          shipment.LabelURL,
+		Status:            "pending",
+		ShipFrom:          datatypes.JSON(fromJSON),
+		ShipTo:            datatypes.JSON(toJSON),
+		CurrencyCode:      o.CurrencyCode,
+		EstimatedDelivery: shipment.EstimatedDelivery,
 		// Response-only fields — not persisted, but carried so the wire
 		// DTO can surface them.
 		Provider:           provider,
@@ -1100,9 +1100,9 @@ func (h *ShipmentsHandler) Delete(c *gin.Context) {
 
 // LabelMailer sends the shipping-label PDF as an email attachment.
 // Kept as an interface so this package doesn't depend on a specific
-// transport — main.go wires up a SendGrid implementation when the API
-// key is configured, and a logger-only fallback otherwise. Both
-// shipping.SendGridLabelMailer and shipping.LogLabelMailer satisfy it.
+// transport — main.go wires shipping.EmailLabelMailer on top of the
+// shared internal/email sender (SendGrid → Resend in prod, log-only
+// when no provider keys are configured).
 type LabelMailer interface {
 	SendLabel(ctx context.Context, in shipping.LabelEmailPayload) error
 }

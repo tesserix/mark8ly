@@ -2,7 +2,6 @@ package campaign
 
 import (
 	"context"
-	"log/slog"
 )
 
 // Dispatcher delivers fully-rendered campaign emails. The send worker
@@ -10,9 +9,10 @@ import (
 // editorial envelope before calling Send — the dispatcher itself is a
 // thin transport adapter and does no theming work.
 //
-// Implementations:
-//   - LogDispatcher       — dev / no-API-key fallback, logs only
-//   - SendGridDispatcher  — production, POSTs to SendGrid v3 API
+// The production implementation is EmailDispatcher, which rides the
+// shared internal/email transport (SendGrid primary, Resend fallback;
+// log-only when no provider keys are configured — main decides once via
+// email.NewFromConfig).
 type Dispatcher interface {
 	Send(ctx context.Context, msg OutboundEmail) error
 }
@@ -25,28 +25,12 @@ type OutboundEmail struct {
 	Subject   string
 	HTMLBody  string
 	TextBody  string
-	// TenantID, when non-empty, is forwarded to SendGrid as a custom_arg
+	// TenantID, when non-empty, is forwarded to the provider as a custom_arg
 	// for per-tenant attribution in tesserix-home dashboards. The send
 	// worker fills it from the campaign's tenant_id column.
 	TenantID string
-	// CampaignID, when non-empty, joins SendGrid engagement events to the
+	// CampaignID, when non-empty, joins provider engagement events to the
 	// originating campaign so future per-campaign metrics can be derived
 	// without re-keying recipient strings against the database.
 	CampaignID string
-}
-
-// LogDispatcher is a no-op Dispatcher that logs each send instead of
-// delivering. Used when SENDGRID_API_KEY is empty (local dev, tests).
-type LogDispatcher struct {
-	Logger *slog.Logger
-}
-
-// Send logs the email dispatch without actually sending.
-func (d *LogDispatcher) Send(_ context.Context, msg OutboundEmail) error {
-	d.Logger.Info("campaign: dispatching email (log-only)",
-		"recipient", msg.Recipient,
-		"subject", msg.Subject,
-		"html_bytes", len(msg.HTMLBody),
-		"text_bytes", len(msg.TextBody))
-	return nil
 }

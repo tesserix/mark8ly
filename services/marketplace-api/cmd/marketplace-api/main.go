@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	"cloud.google.com/go/storage"
 	secretmanagerclient "cloud.google.com/go/secretmanager/apiv1"
+	"cloud.google.com/go/storage"
 	firebase "firebase.google.com/go/v4"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,84 +32,84 @@ import (
 	"github.com/robfig/cron/v3"
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
+	"github.com/mark8ly/marketplace-api/internal/apikeys"
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
-	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
-	appcredspkg "github.com/mark8ly/marketplace-api/internal/billing/appcreds"
-	wlapple "github.com/mark8ly/marketplace-api/internal/whitelabel/apple"
-	wlfirebase "github.com/mark8ly/marketplace-api/internal/whitelabel/firebase"
-	wlgoogleplay "github.com/mark8ly/marketplace-api/internal/whitelabel/googleplay"
-	wllifecycle "github.com/mark8ly/marketplace-api/internal/whitelabel/lifecycle"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
-	"github.com/mark8ly/marketplace-api/internal/apikeys"
-	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
-	"github.com/mark8ly/marketplace-api/internal/cfclient"
-	"github.com/mark8ly/marketplace-api/internal/crypto"
-	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
+	appcredspkg "github.com/mark8ly/marketplace-api/internal/billing/appcreds"
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
 	"github.com/mark8ly/marketplace-api/internal/billing/migration"
 	"github.com/mark8ly/marketplace-api/internal/billing/pricing"
+	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/billing/tax"
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/revalidation"
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/seaqueue"
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/taxreg"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
-	"github.com/mark8ly/marketplace-api/internal/ipprivacy"
-	"github.com/mark8ly/marketplace-api/internal/email"
-	"github.com/mark8ly/marketplace-api/internal/metrics"
-	"github.com/mark8ly/marketplace-api/internal/signup"
-	"github.com/mark8ly/marketplace-api/internal/customerportal"
 	"github.com/mark8ly/marketplace-api/internal/billingarchive"
-	"github.com/mark8ly/marketplace-api/internal/promo"
-	"github.com/mark8ly/marketplace-api/internal/refund"
-	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
-	"github.com/mark8ly/marketplace-api/internal/subscription/dunning"
-	"github.com/mark8ly/marketplace-api/internal/subscription/harddelete"
-	"github.com/mark8ly/marketplace-api/internal/subscription/lifecycle"
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/campaignbudget"
-	campaignbudgetcron "github.com/mark8ly/marketplace-api/internal/campaignbudget/cron"
 	"github.com/mark8ly/marketplace-api/internal/campaignbudget/concurrency"
+	campaignbudgetcron "github.com/mark8ly/marketplace-api/internal/campaignbudget/cron"
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/category"
-	"github.com/mark8ly/marketplace-api/internal/customer"
-	"github.com/mark8ly/marketplace-api/internal/coupon"
-	"github.com/mark8ly/marketplace-api/internal/domain"
-	"github.com/mark8ly/marketplace-api/internal/gipkey"
-	"github.com/mark8ly/marketplace-api/internal/k8sprov"
-	"github.com/mark8ly/marketplace-api/internal/giftcard"
+	"github.com/mark8ly/marketplace-api/internal/cfclient"
 	"github.com/mark8ly/marketplace-api/internal/country"
+	"github.com/mark8ly/marketplace-api/internal/coupon"
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
+	"github.com/mark8ly/marketplace-api/internal/customer"
+	"github.com/mark8ly/marketplace-api/internal/customerportal"
+	"github.com/mark8ly/marketplace-api/internal/domain"
+	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
+	"github.com/mark8ly/marketplace-api/internal/giftcard"
+	"github.com/mark8ly/marketplace-api/internal/gipkey"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
 	"github.com/mark8ly/marketplace-api/internal/handlers/public"
 	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
 	"github.com/mark8ly/marketplace-api/internal/handlers/testroutes"
 	"github.com/mark8ly/marketplace-api/internal/handlers/webhooks"
-	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 	"github.com/mark8ly/marketplace-api/internal/health"
+	"github.com/mark8ly/marketplace-api/internal/ipprivacy"
+	"github.com/mark8ly/marketplace-api/internal/k8sprov"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/media"
-	"github.com/mark8ly/marketplace-api/internal/notification"
-	"github.com/mark8ly/marketplace-api/internal/ottoclient"
-	"github.com/mark8ly/marketplace-api/internal/plangate"
-	"github.com/mark8ly/marketplace-api/internal/push"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/mode"
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
+	"github.com/mark8ly/marketplace-api/internal/ottoclient"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/page"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/product"
+	"github.com/mark8ly/marketplace-api/internal/promo"
+	"github.com/mark8ly/marketplace-api/internal/push"
+	"github.com/mark8ly/marketplace-api/internal/refund"
 	"github.com/mark8ly/marketplace-api/internal/review"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
+	"github.com/mark8ly/marketplace-api/internal/signup"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
+	"github.com/mark8ly/marketplace-api/internal/subscription/dunning"
+	"github.com/mark8ly/marketplace-api/internal/subscription/harddelete"
+	"github.com/mark8ly/marketplace-api/internal/subscription/lifecycle"
 	"github.com/mark8ly/marketplace-api/internal/subscription/planchange"
 	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
+	wlapple "github.com/mark8ly/marketplace-api/internal/whitelabel/apple"
+	wlfirebase "github.com/mark8ly/marketplace-api/internal/whitelabel/firebase"
+	wlgoogleplay "github.com/mark8ly/marketplace-api/internal/whitelabel/googleplay"
+	wllifecycle "github.com/mark8ly/marketplace-api/internal/whitelabel/lifecycle"
 	"github.com/mark8ly/marketplace-api/internal/wishlist"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
@@ -458,18 +458,25 @@ func main() {
 		Logger: log,
 	})
 
+	// Shared outbound email transport — every mailer below (ticket,
+	// orderdoc, shipping label, gift card, campaign) sends through this
+	// one Sender. SendGrid is the primary provider with Resend as an
+	// always-on per-message fallback; when neither API key is configured
+	// it degrades to a log-only sender so local/dev still exercises the
+	// full dispatch path without a provider account.
+	emailSender := email.NewFromConfig(cfg.SendGridAPIKey, cfg.ResendAPIKey, log)
+
 	// Dashboard D2 — Tickets. Hoisted for the same reason as the
 	// notification service: the storefront /support/tickets endpoint
 	// needs to create tickets via this service, and the admin dashboard
 	// reads them through the same service instance.
-	// Ticket emails (customer-facing): SendGrid when configured,
-	// log-only fallback otherwise. publicHost is the storefront origin
-	// the deep link in the email points to (e.g. https://mystore.mark8ly.com).
-	// In a multi-store deployment we'd compute it per-store; for now
-	// the env var is sufficient as we only have one storefront brand
-	// per cluster.
-	ticketNotifier := ticket.NewSendGridNotifier(
-		cfg.SendGridAPIKey, cfg.EmailFrom, cfg.PublicStorefrontHost, log,
+	// Ticket emails (customer-facing) ride the shared transport.
+	// publicHost is the storefront origin the deep link in the email
+	// points to (e.g. https://mystore.mark8ly.com). In a multi-store
+	// deployment we'd compute it per-store; for now the env var is
+	// sufficient as we only have one storefront brand per cluster.
+	ticketNotifier := ticket.NewEmailNotifier(
+		emailSender, cfg.EmailFrom, cfg.PublicStorefrontHost, log,
 	)
 	ticketSvc := ticket.NewService(ticket.ServiceConfig{
 		DB:       conn,
@@ -570,20 +577,14 @@ func main() {
 		abandonedCartSvc := order.NewAbandonedCartService(conn, abandonedCartRepo, outboxRepo)
 		// Order document mailer — invoice on accept, receipt on delivery.
 		// Built up here because both OrdersHandler and ShipmentsHandler need
-		// it. SendGrid when an API key is configured, log fallback otherwise
-		// so local dev still exercises the dispatch path.
-		var orderDocMailer orderdoc.Mailer
-		if cfg.SendGridAPIKey != "" {
-			sg := orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log).WithLoader(templateLoader)
-			// Wire the storefront PDF fetcher so invoice + receipt
-			// emails carry the rendered PDF as an attachment instead
-			// of asking the buyer to click through to download.
-			if pf := orderdoc.NewHTTPStorefrontPDFFetcher(cfg.StorefrontBaseURLTemplate, cfg.InternalAuthSecret); pf != nil {
-				sg = sg.WithStorefrontPDFFetcher(pf)
-			}
-			orderDocMailer = sg
-		} else {
-			orderDocMailer = &orderdoc.LogMailer{Logger: log}
+		// it. Provider selection (SendGrid → Resend → log-only) already
+		// happened once in emailSender, so no per-mailer branching here.
+		orderDocMailer := orderdoc.NewDocumentMailer(emailSender, cfg.EmailFrom, log).WithLoader(templateLoader)
+		// Wire the storefront PDF fetcher so invoice + receipt
+		// emails carry the rendered PDF as an attachment instead
+		// of asking the buyer to click through to download.
+		if pf := orderdoc.NewHTTPStorefrontPDFFetcher(cfg.StorefrontBaseURLTemplate, cfg.InternalAuthSecret); pf != nil {
+			orderDocMailer = orderDocMailer.WithStorefrontPDFFetcher(pf)
 		}
 		orderDocBrandingSvc := branding.NewService(branding.ServiceConfig{
 			DB:     conn,
@@ -614,15 +615,10 @@ func main() {
 			WithSecretStore(carrierSecretStore)
 		shippingRepo := shipping.NewRepository(conn)
 		shippingService := shipping.NewShippingService(shippingRepo)
-		// Label email: SendGrid when configured, log-only fallback
-		// otherwise so local dev still exercises the dispatch path and
-		// the admin UI sees a 200 instead of a 503.
-		var labelMailer admin.LabelMailer
-		if cfg.SendGridAPIKey != "" {
-			labelMailer = shipping.NewSendGridLabelMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log)
-		} else {
-			labelMailer = &shipping.LogLabelMailer{Logger: log}
-		}
+		// Label email rides the shared transport; the log-only fallback
+		// now lives inside emailSender, so local dev still exercises the
+		// dispatch path and the admin UI sees a 200 instead of a 503.
+		labelMailer := shipping.NewEmailLabelMailer(emailSender, cfg.EmailFrom, log)
 		shipmentsHandler := admin.NewShipmentsHandler(conn, shippingService, shippingRepo, orderDocSvc, log).
 			WithEncryptor(apiKeyEncryptor).
 			WithSecretStore(carrierSecretStore).
@@ -645,16 +641,10 @@ func main() {
 
 		// Gift cards — Marketing M2.
 		giftCardRepo := giftcard.NewRepository()
-		// Delivery email: SendGrid when an API key is configured, Log
-		// fallback for local/dev. Theme loader pulls the merchant's
-		// branding + storefront URL so the email matches the store, not
-		// the platform.
-		var giftCardMailer giftcard.Mailer
-		if cfg.SendGridAPIKey != "" {
-			giftCardMailer = giftcard.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log).WithLoader(templateLoader)
-		} else {
-			giftCardMailer = &giftcard.LogMailer{Logger: log}
-		}
+		// Delivery email rides the shared transport (log-only in dev).
+		// Theme loader pulls the merchant's branding + storefront URL so
+		// the email matches the store, not the platform.
+		giftCardMailer := giftcard.NewDeliveryMailer(emailSender, cfg.EmailFrom, log).WithLoader(templateLoader)
 		giftCardBrandingSvc := branding.NewService(branding.ServiceConfig{
 			DB:     conn,
 			Repo:   branding.NewRepository(),
@@ -914,50 +904,50 @@ func main() {
 		})
 
 		adminDeps = admin.Deps{
-			ProductHandler:          productHandler,
-			CategoryHandler:         categoryHandler,
-			VariantHandler:          variantHandler,
-			MediaHandler:            mediaHandler,
-			OrdersHandler:           ordersHandler,
-			ReturnsHandler:          returnsHandler,
-			AbandonedCartsHandler:   abandonedCartsHandler,
-			StoresHandler:           storesHandler,
-			BulkHandler:             bulkHandler,
-			CSVImportsHandler:       csvImportsHandler,
-			PaymentSettingsHandler:  paymentSettingsHandler,
-			ShippingSettingsHandler: shippingSettingsHandler,
-			ShipmentsHandler:       shipmentsHandler,
-			TaxSettingsHandler:      taxSettingsHandler,
-			SettingsMetaHandler:     settingsMetaHandler,
-			CouponHandler:          couponHandler,
-			GiftCardHandler:        giftCardHandler,
-			LoyaltyHandler:         loyaltyHandler,
-			CampaignHandler:        campaignHandler,
-			SegmentHandler:         segmentHandler,
-			CustomersHandler:       customersHandler,
-			ReviewsHandler:        reviewsHandler,
-			AccountHandler:         accountHandler,
-			DomainsHandler:         domainsHandler,
-			SubscriptionHandler:    subscriptionHandler,
-			PromoHandler:               promoHandler,
-			RefundHandler:              refundHandler,
-			ChangePlanHandler:          changePlanHandler,
-			CancelHandler:              cancelHandler,
-			ArbitrageAppealHandler:     arbitrageAppealHandler,
-			TrialBillingHandler:        trialBillingHandler,
-			MigrationFastPathHandler:   migrationHandler,
-			TaxHandler:                 taxHandler,
-			APIKeysHandler:             apiKeysHandler,
-			APIKeysLogger:              log,
-			AppCredentialsHandler:      appCredentialsHandler,
-			AppAddOnHandler:            appAddOnHandler,
-			AuditLogsHandler:           auditLogsHandler,
-			NotificationsHandler:   notificationsHandler,
-			DashboardHandler:       dashboardHandler,
-			TicketsHandler:         ticketsHandler,
-			BrandingHandler:        brandingHandler,
-			PagesHandler:           pagesHandler,
-			PlanResolver:           planResolver,
+			ProductHandler:           productHandler,
+			CategoryHandler:          categoryHandler,
+			VariantHandler:           variantHandler,
+			MediaHandler:             mediaHandler,
+			OrdersHandler:            ordersHandler,
+			ReturnsHandler:           returnsHandler,
+			AbandonedCartsHandler:    abandonedCartsHandler,
+			StoresHandler:            storesHandler,
+			BulkHandler:              bulkHandler,
+			CSVImportsHandler:        csvImportsHandler,
+			PaymentSettingsHandler:   paymentSettingsHandler,
+			ShippingSettingsHandler:  shippingSettingsHandler,
+			ShipmentsHandler:         shipmentsHandler,
+			TaxSettingsHandler:       taxSettingsHandler,
+			SettingsMetaHandler:      settingsMetaHandler,
+			CouponHandler:            couponHandler,
+			GiftCardHandler:          giftCardHandler,
+			LoyaltyHandler:           loyaltyHandler,
+			CampaignHandler:          campaignHandler,
+			SegmentHandler:           segmentHandler,
+			CustomersHandler:         customersHandler,
+			ReviewsHandler:           reviewsHandler,
+			AccountHandler:           accountHandler,
+			DomainsHandler:           domainsHandler,
+			SubscriptionHandler:      subscriptionHandler,
+			PromoHandler:             promoHandler,
+			RefundHandler:            refundHandler,
+			ChangePlanHandler:        changePlanHandler,
+			CancelHandler:            cancelHandler,
+			ArbitrageAppealHandler:   arbitrageAppealHandler,
+			TrialBillingHandler:      trialBillingHandler,
+			MigrationFastPathHandler: migrationHandler,
+			TaxHandler:               taxHandler,
+			APIKeysHandler:           apiKeysHandler,
+			APIKeysLogger:            log,
+			AppCredentialsHandler:    appCredentialsHandler,
+			AppAddOnHandler:          appAddOnHandler,
+			AuditLogsHandler:         auditLogsHandler,
+			NotificationsHandler:     notificationsHandler,
+			DashboardHandler:         dashboardHandler,
+			TicketsHandler:           ticketsHandler,
+			BrandingHandler:          brandingHandler,
+			PagesHandler:             pagesHandler,
+			PlanResolver:             planResolver,
 			StoresMiddleware:         storeMW,
 			SubscriptionStatusLoader: readonly.LoadStatus(readonly.StatusLoaderConfig{DB: conn, Repo: subscriptionRepo, Logger: log}),
 			SubscriptionReadOnlyGate: readonly.RequireActive(readonly.Config{}),
@@ -1041,15 +1031,10 @@ func main() {
 
 		// Gift cards — Marketing M2.
 		giftCardRepoSF := giftcard.NewRepository()
-		// Storefront purchase flow: use the same SendGrid mailer config
-		// as admin-issued cards, the store's own branding for the email,
+		// Storefront purchase flow: same shared email transport as
+		// admin-issued cards, the store's own branding for the email,
 		// and the store's configured Stripe gateway (payment_gateway_configs).
-		var giftCardMailerSF giftcard.Mailer
-		if cfg.SendGridAPIKey != "" {
-			giftCardMailerSF = giftcard.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log).WithLoader(templateLoader)
-		} else {
-			giftCardMailerSF = &giftcard.LogMailer{Logger: log}
-		}
+		giftCardMailerSF := giftcard.NewDeliveryMailer(emailSender, cfg.EmailFrom, log).WithLoader(templateLoader)
 		giftCardBrandingSvcSF := branding.NewService(branding.ServiceConfig{
 			DB:     conn,
 			Repo:   branding.NewRepository(),
@@ -1120,15 +1105,9 @@ func main() {
 		// customer self-service cancel path can fire the cancellation
 		// email itself (the admin OrdersHandler.dispatchCancellationEmail
 		// only runs when the admin route was hit).
-		var orderDocMailerSF orderdoc.Mailer
-		if cfg.SendGridAPIKey != "" {
-			sg := orderdoc.NewSendGridMailer(cfg.SendGridAPIKey, cfg.EmailFrom, log).WithLoader(templateLoader)
-			if pf := orderdoc.NewHTTPStorefrontPDFFetcher(cfg.StorefrontBaseURLTemplate, cfg.InternalAuthSecret); pf != nil {
-				sg = sg.WithStorefrontPDFFetcher(pf)
-			}
-			orderDocMailerSF = sg
-		} else {
-			orderDocMailerSF = &orderdoc.LogMailer{Logger: log}
+		orderDocMailerSF := orderdoc.NewDocumentMailer(emailSender, cfg.EmailFrom, log).WithLoader(templateLoader)
+		if pf := orderdoc.NewHTTPStorefrontPDFFetcher(cfg.StorefrontBaseURLTemplate, cfg.InternalAuthSecret); pf != nil {
+			orderDocMailerSF = orderDocMailerSF.WithStorefrontPDFFetcher(pf)
 		}
 		orderDocBrandingSvcSF := branding.NewService(branding.ServiceConfig{
 			DB:     conn,
@@ -1136,7 +1115,7 @@ func main() {
 			Logger: log,
 		})
 		orderDocSvcSF := orderdoc.NewService(conn, orderDocMailerSF, orderRepoSF, orderDocBrandingSvcSF, cfg.StorefrontBaseURLTemplate).
-				WithLogger(log)
+			WithLogger(log)
 		// Wire the docMailer onto the webhook handler so a successful
 		// payment-captured event auto-fires the buyer's invoice email
 		// (the "order placed, here's your invoice" message). Same
@@ -1165,20 +1144,20 @@ func main() {
 		customerPortalHandler := customerportal.NewHandler(conn, log)
 
 		storefrontDeps = storefront.Deps{
-			Handler:               storefrontHandler,
-			CheckoutHandler:       checkoutHandler,
-			CheckoutExtHandler:    checkoutExtHandler,
-			PaymentMethodsHandler: paymentMethodsHandler,
+			Handler:                storefrontHandler,
+			CheckoutHandler:        checkoutHandler,
+			CheckoutExtHandler:     checkoutExtHandler,
+			PaymentMethodsHandler:  paymentMethodsHandler,
 			ShippingRatesHandler:   shippingRatesHandler,
 			ShippingOptionsHandler: shippingOptionsHandler,
-			WebhookHandler:        webhookHandler,
-			OrderDetailHandler:    orderDetailHandler,
-			CouponValidateHandler: couponValidateHandler,
-			GiftCardHandler:       giftCardSFHandler,
-			LoyaltyHandler:        sfLoyaltyHandler,
-			SlugCache:             slugCache,
-			StorefrontKey:         cfg.StorefrontKey,
-			CountryHandler:        countryHandler,
+			WebhookHandler:         webhookHandler,
+			OrderDetailHandler:     orderDetailHandler,
+			CouponValidateHandler:  couponValidateHandler,
+			GiftCardHandler:        giftCardSFHandler,
+			LoyaltyHandler:         sfLoyaltyHandler,
+			SlugCache:              slugCache,
+			StorefrontKey:          cfg.StorefrontKey,
+			CountryHandler:         countryHandler,
 			// C1 customer auth.
 			CustomerAccountHandler: customerAccountHandler,
 			CustomerService:        customerSvc,
@@ -1188,8 +1167,8 @@ func main() {
 			// C4 wishlists.
 			WishlistHandler: wishlistHandler,
 			// B1 branding.
-			BrandingHandler:      sfBrandingHandler,
-			PagesHandler:         sfPagesHandler,
+			BrandingHandler:       sfBrandingHandler,
+			PagesHandler:          sfPagesHandler,
 			DomainResolveHandler:  domainsHandler.ResolveDomain,
 			TicketsHandler:        sfTicketsHandler,
 			CustomerPortalHandler: customerPortalHandler,
@@ -1267,16 +1246,11 @@ func main() {
 		// Polling goroutine.
 		campaignDone := make(chan struct{})
 		campaignWorkerDone = campaignDone
-		// Prefer SendGrid when an API key is configured; fall back to
-		// LogDispatcher in dev / local so the worker still runs.
-		var dispatcher campaign.Dispatcher
-		if cfg.SendGridAPIKey != "" {
-			dispatcher = campaign.NewSendGridDispatcher(cfg.SendGridAPIKey, cfg.EmailFrom, log)
-			log.Info("campaign: SendGrid dispatcher enabled", "from", cfg.EmailFrom)
-		} else {
-			dispatcher = &campaign.LogDispatcher{Logger: log}
-			log.Warn("campaign: SENDGRID_API_KEY not set — using LogDispatcher (no emails will be sent)")
-		}
+		// Campaign dispatch rides the shared transport — SendGrid primary
+		// with Resend fallback in prod, log-only in dev / local (decided
+		// once by email.NewFromConfig) so the worker still runs either way.
+		var dispatcher campaign.Dispatcher = campaign.NewEmailDispatcher(emailSender, cfg.EmailFrom, log)
+		log.Info("campaign: email dispatcher enabled", "from", cfg.EmailFrom)
 		// Load per-store branding into the campaign envelope so customer
 		// emails match the merchant's storefront theme, not the platform's.
 		brandingSvcForCampaign := branding.NewService(branding.ServiceConfig{

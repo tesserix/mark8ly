@@ -1,7 +1,7 @@
 // Package ticket — mailer.go
 //
-// Thin SendGrid v3 client for the two customer-facing transactional
-// emails the support flow needs:
+// Mailer for the two customer-facing transactional emails the support
+// flow needs:
 //
 //   - NotifyTicketCreated:  fired by InternalHandler when slm-router
 //     escalates an Otto chat to a human. Tells the customer their
@@ -10,52 +10,48 @@
 //     transition to "resolved". Confirms the merchant marked it
 //     done and links back to the case if the customer disagrees.
 //
-// Both emails are best-effort. SendGrid downtime or template errors
+// Both emails are best-effort. Provider downtime or template errors
 // must NOT fail the underlying HTTP request — the ticket exists in
-// the DB regardless of email outcome.
+// the DB regardless of email outcome. Delivery rides the shared
+// internal/email transport (SendGrid primary, Resend fallback).
 package ticket
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"html"
 	"log/slog"
-	"net/http"
 	"strings"
-	"time"
+
+	"github.com/mark8ly/marketplace-api/internal/email"
 )
 
-// SendGridNotifier implements TicketNotifier via the SendGrid v3
-// /mail/send REST endpoint. No SDK, mirrors the orderdoc mailer
-// shape so future template/translation work can extract a shared
-// helper.
-type SendGridNotifier struct {
-	apiKey     string
+// EmailNotifier implements TicketNotifier on top of the shared
+// internal/email transport. Mirrors the orderdoc mailer shape so
+// future template/translation work can extract a shared helper.
+type EmailNotifier struct {
+	sender     email.Sender
 	from       string
 	publicHost string // e.g. "https://mystore.mark8ly.com" for deep links
-	client     *http.Client
 	logger     *slog.Logger
 }
 
-// NewSendGridNotifier constructs a notifier. publicHost is used to
+// NewEmailNotifier constructs a notifier. publicHost is used to
 // build customer-facing links into the storefront ticket page (e.g.
 // `/support/tickets/{number}`). When empty, the email still renders
 // but without the "view case" CTA.
-func NewSendGridNotifier(apiKey, from, publicHost string, logger *slog.Logger) *SendGridNotifier {
-	return &SendGridNotifier{
-		apiKey:     apiKey,
+func NewEmailNotifier(sender email.Sender, from, publicHost string, logger *slog.Logger) *EmailNotifier {
+	return &EmailNotifier{
+		sender:     sender,
 		from:       from,
 		publicHost: strings.TrimRight(publicHost, "/"),
-		client:     &http.Client{Timeout: 10 * time.Second},
 		logger:     logger,
 	}
 }
 
 // NotifyTicketCreated emails the customer that a support case has
 // been logged with a case ID they can quote.
-func (m *SendGridNotifier) NotifyTicketCreated(ctx context.Context, t *Ticket) {
+func (m *EmailNotifier) NotifyTicketCreated(ctx context.Context, t *Ticket) {
 	if t == nil || t.SubmittedByEmail == "" {
 		return
 	}
@@ -66,7 +62,7 @@ func (m *SendGridNotifier) NotifyTicketCreated(ctx context.Context, t *Ticket) {
 
 // NotifyTicketResolved emails the customer that the merchant marked
 // the ticket resolved, and tells them how to reopen.
-func (m *SendGridNotifier) NotifyTicketResolved(ctx context.Context, t *Ticket) {
+func (m *EmailNotifier) NotifyTicketResolved(ctx context.Context, t *Ticket) {
 	if t == nil || t.SubmittedByEmail == "" {
 		return
 	}
@@ -81,7 +77,7 @@ func (m *SendGridNotifier) NotifyTicketResolved(ctx context.Context, t *Ticket) 
 // calls and the strings live in a DB row.
 // ---------------------------------------------------------------------------
 
-func (m *SendGridNotifier) renderCreated(t *Ticket) string {
+func (m *EmailNotifier) renderCreated(t *Ticket) string {
 	link := m.caseLink(t)
 	return strings.Join([]string{
 		`<p>Hi ` + html.EscapeString(coalesce(t.SubmittedByName, "there")) + `,</p>`,
@@ -93,7 +89,7 @@ func (m *SendGridNotifier) renderCreated(t *Ticket) string {
 	}, "\n")
 }
 
-func (m *SendGridNotifier) renderResolved(t *Ticket) string {
+func (m *EmailNotifier) renderResolved(t *Ticket) string {
 	link := m.caseLink(t)
 	return strings.Join([]string{
 		`<p>Hi ` + html.EscapeString(coalesce(t.SubmittedByName, "there")) + `,</p>`,
@@ -105,7 +101,7 @@ func (m *SendGridNotifier) renderResolved(t *Ticket) string {
 	}, "\n")
 }
 
-func (m *SendGridNotifier) caseLink(t *Ticket) string {
+func (m *EmailNotifier) caseLink(t *Ticket) string {
 	if m.publicHost == "" || t == nil {
 		return ""
 	}
@@ -113,69 +109,27 @@ func (m *SendGridNotifier) caseLink(t *Ticket) string {
 }
 
 // ---------------------------------------------------------------------------
-// SendGrid v3 client
+// dispatch
 // ---------------------------------------------------------------------------
 
-type sgPersonalization struct {
-	To []sgAddress `json:"to"`
-}
-
-type sgAddress struct {
-	Email string `json:"email"`
-	Name  string `json:"name,omitempty"`
-}
-
-type sgContent struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
-}
-
-type sgEnvelope struct {
-	Personalizations []sgPersonalization `json:"personalizations"`
-	From             sgAddress           `json:"from"`
-	Subject          string              `json:"subject"`
-	Content          []sgContent         `json:"content"`
-}
-
-func (m *SendGridNotifier) send(ctx context.Context, toEmail, toName, subject, body, kind string) {
-	if m.apiKey == "" {
-		// Log-only fallback in dev / when SendGrid isn't configured
-		// yet. The merchant still sees the ticket in their dashboard
-		// — the customer just doesn't get a copy.
-		if m.logger != nil {
-			m.logger.Info("ticket email skipped: SendGrid not configured",
-				"kind", kind, "to", toEmail, "subject", subject)
-		}
-		return
-	}
-	env := sgEnvelope{
-		Personalizations: []sgPersonalization{{To: []sgAddress{{Email: toEmail, Name: toName}}}},
-		From:             sgAddress{Email: m.from, Name: "Mark8ly Support"},
-		Subject:          subject,
-		Content:          []sgContent{{Type: "text/html", Value: body}},
-	}
-	payload, err := json.Marshal(env)
-	if err != nil {
-		m.log("ticket email marshal failed", kind, err)
-		return
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.sendgrid.com/v3/mail/send", bytes.NewReader(payload))
-	if err != nil {
-		m.log("ticket email request build failed", kind, err)
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+m.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	res, err := m.client.Do(req)
+// send hands the rendered envelope to the shared transport. Errors are
+// logged, never returned — ticket emails are best-effort by contract
+// (see the package comment). In dev the transport is a LogSender, so
+// the dispatch path still runs end-to-end without a provider account.
+func (m *EmailNotifier) send(ctx context.Context, toEmail, toName, subject, body, kind string) {
+	err := m.sender.Send(ctx, email.Message{
+		From:     m.from,
+		FromName: "Mark8ly Support",
+		To:       toEmail,
+		ToName:   toName,
+		Subject:  subject,
+		HTMLBody: body,
+		// Wave 1.5 attribution — product/kind let notification-service
+		// group engagement events without parsing subjects.
+		CustomArgs: map[string]string{"product": "mark8ly", "kind": kind},
+	})
 	if err != nil {
 		m.log("ticket email send failed", kind, err)
-		return
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		m.log("ticket email rejected by SendGrid",
-			kind, fmt.Errorf("status %d", res.StatusCode))
 		return
 	}
 	if m.logger != nil {
@@ -183,7 +137,7 @@ func (m *SendGridNotifier) send(ctx context.Context, toEmail, toName, subject, b
 	}
 }
 
-func (m *SendGridNotifier) log(msg, kind string, err error) {
+func (m *EmailNotifier) log(msg, kind string, err error) {
 	if m.logger == nil {
 		return
 	}

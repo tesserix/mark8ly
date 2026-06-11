@@ -1,10 +1,10 @@
 // Package orderdoc dispatches lifecycle emails for an order.
 //
 // Four distinct hooks:
-//   • Invoice       — fired when an order is confirmed (accepted)
-//   • Receipt       — fired when a shipment transitions to delivered
-//   • Cancellation  — fired when an order is cancelled (admin or customer)
-//   • Refund        — fired when a refund is recorded against an order
+//   - Invoice       — fired when an order is confirmed (accepted)
+//   - Receipt       — fired when a shipment transitions to delivered
+//   - Cancellation  — fired when an order is cancelled (admin or customer)
+//   - Refund        — fired when a refund is recorded against an order
 //
 // Emails contain a deep link back to the customer's account order page,
 // where they can download the actual PDF (rendered by the storefront's
@@ -16,19 +16,15 @@
 package orderdoc
 
 import (
-	"bytes"
 	"context"
 	"embed"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/shopspring/decimal"
 
+	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 )
 
@@ -66,8 +62,8 @@ type DocumentInput struct {
 	// silently no-op so a missing customer email never crashes a confirm.
 	Recipient string
 
-	// TenantID, when set, is forwarded to SendGrid as a custom_arg so
-	// notification-service can attribute open/click/bounce events back
+	// TenantID, when set, is forwarded to the email provider as a custom_arg
+	// so notification-service can attribute open/click/bounce events back
 	// to the right tenant in tesserix-home dashboards. The orderdoc
 	// service populates it from the loaded order's tenant.
 	TenantID string
@@ -78,18 +74,18 @@ type DocumentInput struct {
 	DocumentNumber string
 
 	// Order context — used in subject line + email body.
-	OrderID      string // uuid string — needed for the storefront PDF fetch
-	StoreSlug    string // also for the PDF fetch (URL templating)
-	OrderNumber  string
-	OrderURL     string // deep link to /account/orders/:id on the storefront
+	OrderID     string // uuid string — needed for the storefront PDF fetch
+	StoreSlug   string // also for the PDF fetch (URL templating)
+	OrderNumber string
+	OrderURL    string // deep link to /account/orders/:id on the storefront
 	// DocumentURL is the direct PDF download URL on the storefront
 	// (/api/orders/:id/invoice or /api/orders/:id/receipt). Used as the
 	// CTA on invoice + receipt emails so a single click downloads the
 	// file instead of routing through the account page. Also kept
 	// around as a fallback when PDF attach fails.
-	DocumentURL  string
-	PlacedAt     time.Time
-	DeliveredAt  *time.Time // populated for receipts only
+	DocumentURL string
+	PlacedAt    time.Time
+	DeliveredAt *time.Time // populated for receipts only
 
 	// Money summary
 	GrandTotal   decimal.Decimal
@@ -97,13 +93,13 @@ type DocumentInput struct {
 	ItemCount    int
 
 	// Cancellation-specific
-	CancellationReason string // free text from the cancel form, may be empty
-	CancelledByCustomer bool  // true when self-service cancel; affects copy
+	CancellationReason  string // free text from the cancel form, may be empty
+	CancelledByCustomer bool   // true when self-service cancel; affects copy
 
 	// Refund-specific
-	RefundAmount    decimal.Decimal // amount of THIS refund
-	TotalRefunded   decimal.Decimal // running total after this refund
-	IsFullRefund    bool            // refunded == grand_total
+	RefundAmount  decimal.Decimal // amount of THIS refund
+	TotalRefunded decimal.Decimal // running total after this refund
+	IsFullRefund  bool            // refunded == grand_total
 
 	// Shipment-dispatched-specific. Carrier + TrackingNumber are
 	// usually present (admin sets them when generating the label);
@@ -199,23 +195,23 @@ type renderData struct {
 	// separate subject-template column. Heading / Lede / CTAButtonLabel
 	// stay here because they're computed in Go (business-state-driven
 	// copy that depends on Kind + IsFullRefund + CancelledByCustomer).
-	Heading         string
-	Lede            string
-	CTAButtonLabel  string
-	DocumentNumber  string
-	OrderNumber     string
+	Heading        string
+	Lede           string
+	CTAButtonLabel string
+	DocumentNumber string
+	OrderNumber    string
 	// OrderURL points at the storefront's /account/orders/:id page —
 	// used by Cancellation/Refund emails. Invoice + Receipt emails
 	// override the CTA with DocumentURL (a direct PDF link) so a single
 	// click downloads the file instead of dropping the buyer on the
 	// account page.
-	OrderURL        string
-	DocumentURL     string
-	PlacedAt        string
-	DeliveredAt     string
-	GrandTotal      string
-	CurrencyCode    string
-	ItemCount       int
+	OrderURL     string
+	DocumentURL  string
+	PlacedAt     string
+	DeliveredAt  string
+	GrandTotal   string
+	CurrencyCode string
+	ItemCount    int
 
 	// HasAttachment is true when the rendered PDF was successfully
 	// fetched from the storefront and will be attached to the outgoing
@@ -244,24 +240,24 @@ type renderData struct {
 	TrackingNumber    string
 	EstimatedDelivery string
 
-	Theme           Theme
-	HairlineColor   string
-	SupportingCopy  string
-	MutedCopy       string
-	FaintCopy       string
+	Theme          Theme
+	HairlineColor  string
+	SupportingCopy string
+	MutedCopy      string
+	FaintCopy      string
 }
 
 // Embedded template strings — kept as fallback for the loader. We
 // register these at startup; loader prefers the DB row when present.
 var (
-	invoiceEmbeddedHTML      = mustReadEmbedded("templates/invoice_email.html")
-	invoiceEmbeddedText      = mustReadEmbedded("templates/invoice_email.txt")
-	receiptEmbeddedHTML      = mustReadEmbedded("templates/receipt_email.html")
-	receiptEmbeddedText      = mustReadEmbedded("templates/receipt_email.txt")
-	cancellationEmbeddedHTML = mustReadEmbedded("templates/cancellation_email.html")
-	cancellationEmbeddedText = mustReadEmbedded("templates/cancellation_email.txt")
-	refundEmbeddedHTML       = mustReadEmbedded("templates/refund_email.html")
-	refundEmbeddedText       = mustReadEmbedded("templates/refund_email.txt")
+	invoiceEmbeddedHTML            = mustReadEmbedded("templates/invoice_email.html")
+	invoiceEmbeddedText            = mustReadEmbedded("templates/invoice_email.txt")
+	receiptEmbeddedHTML            = mustReadEmbedded("templates/receipt_email.html")
+	receiptEmbeddedText            = mustReadEmbedded("templates/receipt_email.txt")
+	cancellationEmbeddedHTML       = mustReadEmbedded("templates/cancellation_email.html")
+	cancellationEmbeddedText       = mustReadEmbedded("templates/cancellation_email.txt")
+	refundEmbeddedHTML             = mustReadEmbedded("templates/refund_email.html")
+	refundEmbeddedText             = mustReadEmbedded("templates/refund_email.txt")
 	shipmentDispatchedEmbeddedHTML = mustReadEmbedded("templates/shipment_dispatched_email.html")
 	shipmentDispatchedEmbeddedText = mustReadEmbedded("templates/shipment_dispatched_email.txt")
 )
@@ -402,7 +398,7 @@ func buildRenderData(kind Kind, in DocumentInput, hasAttachment bool) renderData
 }
 
 // render is the loader-backed renderer. Returns the same triple
-// (subject, html, text) the SendGrid envelope expects. When loader is
+// (subject, html, text) the outgoing envelope expects. When loader is
 // nil (e.g. unit tests that don't want a DB) it uses the embedded
 // template strings directly.
 func render(ctx context.Context, loader *emailtemplates.Loader, kind Kind, in DocumentInput, hasAttachment bool) (subject, html, text string, err error) {
@@ -422,72 +418,24 @@ func render(ctx context.Context, loader *emailtemplates.Loader, kind Kind, in Do
 	return r.Subject, r.HTMLBody, r.TextBody, nil
 }
 
-// avoid unused-import lint when bytes is only referenced by attachments
-var _ = bytes.NewReader
+// -- DocumentMailer ----------------------------------------------------
 
-// -- LogMailer ---------------------------------------------------------
-
-// LogMailer logs the would-be dispatch instead of sending. Used when no
-// SendGrid API key is configured (local dev, integration tests).
-type LogMailer struct {
-	Logger *slog.Logger
-}
-
-// SendInvoice logs the invoice email payload.
-func (m *LogMailer) SendInvoice(_ context.Context, in DocumentInput) error {
-	return m.log(KindInvoice, in)
-}
-
-// SendReceipt logs the receipt email payload.
-func (m *LogMailer) SendReceipt(_ context.Context, in DocumentInput) error {
-	return m.log(KindReceipt, in)
-}
-
-// SendCancellation logs the cancellation email payload.
-func (m *LogMailer) SendCancellation(_ context.Context, in DocumentInput) error {
-	return m.log(KindCancellation, in)
-}
-
-// SendRefund logs the refund email payload.
-func (m *LogMailer) SendRefund(_ context.Context, in DocumentInput) error {
-	return m.log(KindRefund, in)
-}
-
-// SendShipmentDispatched logs the shipment-dispatched email payload.
-func (m *LogMailer) SendShipmentDispatched(_ context.Context, in DocumentInput) error {
-	return m.log(KindShipmentDispatched, in)
-}
-
-func (m *LogMailer) log(kind Kind, in DocumentInput) error {
-	m.Logger.Info("orderdoc: email (log-only)",
-		"kind", string(kind),
-		"recipient", in.Recipient,
-		"document_number", in.DocumentNumber,
-		"order_number", in.OrderNumber,
-		"store", in.Theme.StoreName,
-	)
-	return nil
-}
-
-// -- SendGridMailer ----------------------------------------------------
-
-// SendGridMailer sends order document emails via SendGrid v3. Mirrors
-// the giftcard mailer pattern (thin HTTP, no SDK).
-type SendGridMailer struct {
-	apiKey     string
+// DocumentMailer sends order document emails through the shared
+// internal/email transport (SendGrid primary, Resend fallback; log-only
+// in dev). Mirrors the giftcard mailer pattern.
+type DocumentMailer struct {
+	sender     email.Sender
 	from       string
-	client     *http.Client
 	logger     *slog.Logger
 	pdfFetcher StorefrontPDFFetcher
 	loader     *emailtemplates.Loader
 }
 
-// NewSendGridMailer constructs a SendGrid-backed Mailer.
-func NewSendGridMailer(apiKey, from string, logger *slog.Logger) *SendGridMailer {
-	return &SendGridMailer{
-		apiKey: apiKey,
+// NewDocumentMailer constructs a Mailer on top of the shared transport.
+func NewDocumentMailer(sender email.Sender, from string, logger *slog.Logger) *DocumentMailer {
+	return &DocumentMailer{
+		sender: sender,
 		from:   from,
-		client: &http.Client{Timeout: 15 * time.Second},
 		logger: logger,
 	}
 }
@@ -495,7 +443,7 @@ func NewSendGridMailer(apiKey, from string, logger *slog.Logger) *SendGridMailer
 // WithLoader wires the shared template loader. When set, render() uses
 // the DB-backed templates with embedded fallback. When nil, render()
 // uses embedded directly (test ergonomics).
-func (m *SendGridMailer) WithLoader(l *emailtemplates.Loader) *SendGridMailer {
+func (m *DocumentMailer) WithLoader(l *emailtemplates.Loader) *DocumentMailer {
 	m.loader = l
 	return m
 }
@@ -505,7 +453,7 @@ func (m *SendGridMailer) WithLoader(l *emailtemplates.Loader) *SendGridMailer {
 // channel. When set, SendInvoice and SendReceipt attach the PDF to the
 // outgoing email — the canonical document arrives directly in the
 // buyer's inbox instead of asking them to click through to download it.
-func (m *SendGridMailer) WithStorefrontPDFFetcher(f StorefrontPDFFetcher) *SendGridMailer {
+func (m *DocumentMailer) WithStorefrontPDFFetcher(f StorefrontPDFFetcher) *DocumentMailer {
 	m.pdfFetcher = f
 	return m
 }
@@ -521,35 +469,32 @@ type StorefrontPDFFetcher interface {
 }
 
 // SendInvoice renders + dispatches the invoice envelope.
-func (m *SendGridMailer) SendInvoice(ctx context.Context, in DocumentInput) error {
+func (m *DocumentMailer) SendInvoice(ctx context.Context, in DocumentInput) error {
 	return m.send(ctx, KindInvoice, in)
 }
 
 // SendReceipt renders + dispatches the receipt envelope.
-func (m *SendGridMailer) SendReceipt(ctx context.Context, in DocumentInput) error {
+func (m *DocumentMailer) SendReceipt(ctx context.Context, in DocumentInput) error {
 	return m.send(ctx, KindReceipt, in)
 }
 
 // SendCancellation renders + dispatches the cancellation envelope.
-func (m *SendGridMailer) SendCancellation(ctx context.Context, in DocumentInput) error {
+func (m *DocumentMailer) SendCancellation(ctx context.Context, in DocumentInput) error {
 	return m.send(ctx, KindCancellation, in)
 }
 
 // SendRefund renders + dispatches the refund-issued envelope.
-func (m *SendGridMailer) SendRefund(ctx context.Context, in DocumentInput) error {
+func (m *DocumentMailer) SendRefund(ctx context.Context, in DocumentInput) error {
 	return m.send(ctx, KindRefund, in)
 }
 
 // SendShipmentDispatched renders + dispatches the customer-facing
 // shipment-dispatched envelope (no PDF attachment, just tracking).
-func (m *SendGridMailer) SendShipmentDispatched(ctx context.Context, in DocumentInput) error {
+func (m *DocumentMailer) SendShipmentDispatched(ctx context.Context, in DocumentInput) error {
 	return m.send(ctx, KindShipmentDispatched, in)
 }
 
-func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) error {
-	if m.apiKey == "" {
-		return fmt.Errorf("orderdoc: SendGrid API key not configured")
-	}
+func (m *DocumentMailer) send(ctx context.Context, kind Kind, in DocumentInput) error {
 	if in.Recipient == "" {
 		return fmt.Errorf("orderdoc: missing recipient")
 	}
@@ -562,7 +507,7 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 	// We resolve the attachment FIRST so the template can branch its
 	// "PDF attached" copy on the actual outcome instead of optimistic
 	// language that turns into a small lie when the fetch flakes.
-	var attachments []sgAttachment
+	var attachments []email.Attachment
 	hasAttachment := false
 	if (kind == KindInvoice || kind == KindReceipt) && m.pdfFetcher != nil {
 		var pdfBytes []byte
@@ -584,11 +529,10 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 			if in.DocumentNumber == "" {
 				filename = "document-" + in.OrderNumber + ".pdf"
 			}
-			attachments = []sgAttachment{{
-				Content:     base64.StdEncoding.EncodeToString(pdfBytes),
+			attachments = []email.Attachment{{
 				Filename:    filename,
-				Type:        "application/pdf",
-				Disposition: "attachment",
+				ContentType: "application/pdf",
+				Content:     pdfBytes,
 			}}
 			hasAttachment = true
 		}
@@ -604,97 +548,16 @@ func (m *SendGridMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 		customArgs["tenant_id"] = in.TenantID
 	}
 
-	falsePtr := false
-	payload := sgRequest{
-		Personalizations: []sgPersonalization{{To: []sgAddress{{Email: in.Recipient}}}},
-		From:             sgAddress{Email: m.from},
-		Subject:          subject,
-		Content: []sgContent{
-			{Type: "text/plain", Value: textBody},
-			{Type: "text/html", Value: htmlBody},
-		},
-		Attachments: attachments,
+	if err := m.sender.Send(ctx, email.Message{
+		From:        m.from,
+		To:          in.Recipient,
+		Subject:     subject,
+		HTMLBody:    htmlBody,
+		TextBody:    textBody,
 		CustomArgs:  customArgs,
-		TrackingSettings: &sgTrackingSettings{
-			ClickTracking:        &sgClickTracking{Enable: &falsePtr, EnableText: &falsePtr},
-			OpenTracking:         &sgOpenTracking{Enable: &falsePtr},
-			SubscriptionTracking: &sgSubscriptionTracking{Enable: &falsePtr},
-		},
+		Attachments: attachments,
+	}); err != nil {
+		return fmt.Errorf("orderdoc: send %s email: %w", string(kind), err)
 	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("orderdoc: marshal sendgrid request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.sendgrid.com/v3/mail/send", bytes.NewReader(raw))
-	if err != nil {
-		return fmt.Errorf("orderdoc: build sendgrid request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+m.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("orderdoc: sendgrid POST: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-	body, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("orderdoc: sendgrid returned %d: %s", resp.StatusCode, string(body))
-}
-
-// -- SendGrid wire types (subset) --------------------------------------
-
-type sgRequest struct {
-	Personalizations []sgPersonalization `json:"personalizations"`
-	From             sgAddress           `json:"from"`
-	Subject          string              `json:"subject"`
-	Content          []sgContent         `json:"content"`
-	Attachments      []sgAttachment      `json:"attachments,omitempty"`
-	CustomArgs       map[string]string   `json:"custom_args,omitempty"`
-	TrackingSettings *sgTrackingSettings `json:"tracking_settings,omitempty"`
-}
-
-// sgAttachment is SendGrid's attachment wire shape. Content MUST be
-// base64-encoded; SendGrid rejects raw bytes with a 400.
-type sgAttachment struct {
-	Content     string `json:"content"`
-	Filename    string `json:"filename"`
-	Type        string `json:"type,omitempty"`
-	Disposition string `json:"disposition,omitempty"`
-}
-
-type sgTrackingSettings struct {
-	ClickTracking        *sgClickTracking        `json:"click_tracking,omitempty"`
-	OpenTracking         *sgOpenTracking         `json:"open_tracking,omitempty"`
-	SubscriptionTracking *sgSubscriptionTracking `json:"subscription_tracking,omitempty"`
-}
-
-type sgClickTracking struct {
-	Enable     *bool `json:"enable,omitempty"`
-	EnableText *bool `json:"enable_text,omitempty"`
-}
-
-type sgOpenTracking struct {
-	Enable *bool `json:"enable,omitempty"`
-}
-
-type sgSubscriptionTracking struct {
-	Enable *bool `json:"enable,omitempty"`
-}
-
-type sgPersonalization struct {
-	To []sgAddress `json:"to"`
-}
-
-type sgAddress struct {
-	Email string `json:"email"`
-	Name  string `json:"name,omitempty"`
-}
-
-type sgContent struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
+	return nil
 }

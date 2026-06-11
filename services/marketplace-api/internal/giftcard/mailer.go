@@ -1,26 +1,19 @@
 package giftcard
 
 import (
-	"bytes"
 	"context"
 	"embed"
-	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
 	"log/slog"
-	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 )
-
-
 
 // Mailer sends gift-card lifecycle emails. The initial implementation
 // only sends a "delivery" email when a gift card is issued with a
@@ -33,13 +26,14 @@ type Mailer interface {
 // DeliveryInput is everything the delivery template needs. The send
 // worker / handler fills it in once the gift card is persisted.
 type DeliveryInput struct {
-	Recipient string              // required — recipient email
-	// TenantID is forwarded to SendGrid as a custom_arg for per-tenant
-	// engagement attribution. Optional — empty values are omitted.
-	TenantID  string
-	Card      *GiftCard           // the issued card (code, balance, message, expiry)
-	Theme     GiftCardEmailTheme  // store branding for masthead / colors / fonts
-	StorefrontURL string          // e.g. https://acme.mark8ly.com — used for CTA
+	Recipient string // required — recipient email
+	// TenantID is forwarded to the email provider as a custom_arg for
+	// per-tenant engagement attribution. Optional — empty values are
+	// omitted.
+	TenantID      string
+	Card          *GiftCard          // the issued card (code, balance, message, expiry)
+	Theme         GiftCardEmailTheme // store branding for masthead / colors / fonts
+	StorefrontURL string             // e.g. https://acme.mark8ly.com — used for CTA
 }
 
 // GiftCardEmailTheme is the subset of store branding surfaced in the
@@ -114,19 +108,19 @@ var templateFS embed.FS
 type deliveryData struct {
 	// Subject removed — rendered via the loader from a separate
 	// subject-template column. See RegisterFallbacks below.
-	DisplayCode     string
-	Balance         string
-	CurrencyCode    string
-	ExpiresAt       string
-	SenderName      string
-	RecipientName   string
-	Message         template.HTML
-	StorefrontURL   string
-	Theme           GiftCardEmailTheme
-	HairlineColor   string
-	SupportingCopy  string
-	MutedCopy       string
-	FaintCopy       string
+	DisplayCode    string
+	Balance        string
+	CurrencyCode   string
+	ExpiresAt      string
+	SenderName     string
+	RecipientName  string
+	Message        template.HTML
+	StorefrontURL  string
+	Theme          GiftCardEmailTheme
+	HairlineColor  string
+	SupportingCopy string
+	MutedCopy      string
+	FaintCopy      string
 }
 
 // Embedded template strings — kept as fallback for the loader.
@@ -225,67 +219,40 @@ func renderMessage(msg *string) template.HTML {
 	return template.HTML(escaped)
 }
 
-// -- LogMailer ---------------------------------------------------------
+// -- DeliveryMailer ----------------------------------------------------
 
-// LogMailer is a Mailer that logs instead of sending. Used when
-// SENDGRID_API_KEY is unset (local dev, tests) so we don't silently
-// drop delivery attempts.
-type LogMailer struct {
-	Logger *slog.Logger
-}
-
-// SendDelivery logs the would-be dispatch.
-func (m *LogMailer) SendDelivery(_ context.Context, in DeliveryInput) error {
-	if in.Card == nil {
-		return fmt.Errorf("giftcard LogMailer: nil card")
-	}
-	m.Logger.Info("giftcard: delivery email (log-only)",
-		"recipient", in.Recipient,
-		"code", in.Card.Code,
-		"balance", in.Card.InitialBalance.String(),
-		"currency", in.Card.CurrencyCode,
-		"store", in.Theme.StoreName)
-	return nil
-}
-
-// -- SendGridMailer ----------------------------------------------------
-
-// SendGridMailer sends the delivery email via SendGrid v3. Thin HTTP
-// client (no SDK) consistent with campaign.SendGridDispatcher and
+// DeliveryMailer sends the delivery email through the shared
+// internal/email transport (SendGrid primary, Resend fallback;
+// log-only in dev) — consistent with campaign.EmailDispatcher and
 // platform-api's notification sender.
-type SendGridMailer struct {
-	apiKey string
+type DeliveryMailer struct {
+	sender email.Sender
 	from   string
-	client *http.Client
 	logger *slog.Logger
 	loader *emailtemplates.Loader
 }
 
-// NewSendGridMailer constructs a SendGrid-backed Mailer.
-func NewSendGridMailer(apiKey, from string, logger *slog.Logger) *SendGridMailer {
-	return &SendGridMailer{
-		apiKey: apiKey,
+// NewDeliveryMailer constructs a Mailer on top of the shared transport.
+func NewDeliveryMailer(sender email.Sender, from string, logger *slog.Logger) *DeliveryMailer {
+	return &DeliveryMailer{
+		sender: sender,
 		from:   from,
-		client: &http.Client{Timeout: 15 * time.Second},
 		logger: logger,
 	}
 }
 
 // WithLoader wires the shared template loader. When set, render uses
 // DB-backed templates with embedded fallback. When nil, embedded only.
-func (m *SendGridMailer) WithLoader(l *emailtemplates.Loader) *SendGridMailer {
+func (m *DeliveryMailer) WithLoader(l *emailtemplates.Loader) *DeliveryMailer {
 	m.loader = l
 	return m
 }
 
-// SendDelivery renders the gift-card delivery envelope and POSTs to
-// SendGrid v3. Returns a non-nil error on any failure; callers should
-// treat the error as non-fatal for the gift-card issue operation
-// itself (the card is already persisted).
-func (m *SendGridMailer) SendDelivery(ctx context.Context, in DeliveryInput) error {
-	if m.apiKey == "" {
-		return fmt.Errorf("giftcard: SendGrid API key not configured")
-	}
+// SendDelivery renders the gift-card delivery envelope and hands it to
+// the provider transport. Returns a non-nil error on any failure;
+// callers should treat the error as non-fatal for the gift-card issue
+// operation itself (the card is already persisted).
+func (m *DeliveryMailer) SendDelivery(ctx context.Context, in DeliveryInput) error {
 	if in.Recipient == "" {
 		return fmt.Errorf("giftcard: missing recipient")
 	}
@@ -300,94 +267,15 @@ func (m *SendGridMailer) SendDelivery(ctx context.Context, in DeliveryInput) err
 		customArgs["tenant_id"] = in.TenantID
 	}
 
-	falsePtr := false
-	payload := sgRequest{
-		Personalizations: []sgPersonalization{{To: []sgAddress{{Email: in.Recipient}}}},
-		From:             sgAddress{Email: m.from},
-		Subject:          subject,
-		Content: []sgContent{
-			{Type: "text/plain", Value: textBody},
-			{Type: "text/html", Value: htmlBody},
-		},
+	if err := m.sender.Send(ctx, email.Message{
+		From:       m.from,
+		To:         in.Recipient,
+		Subject:    subject,
+		HTMLBody:   htmlBody,
+		TextBody:   textBody,
 		CustomArgs: customArgs,
-		TrackingSettings: &sgTrackingSettings{
-			ClickTracking:        &sgClickTracking{Enable: &falsePtr, EnableText: &falsePtr},
-			OpenTracking:         &sgOpenTracking{Enable: &falsePtr},
-			SubscriptionTracking: &sgSubscriptionTracking{Enable: &falsePtr},
-		},
+	}); err != nil {
+		return fmt.Errorf("giftcard: send delivery email: %w", err)
 	}
-
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("giftcard: marshal sendgrid request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.sendgrid.com/v3/mail/send", bytes.NewReader(raw))
-	if err != nil {
-		return fmt.Errorf("giftcard: build sendgrid request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+m.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("giftcard: sendgrid POST: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-	respBody, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("giftcard: sendgrid returned %d: %s", resp.StatusCode, string(respBody))
+	return nil
 }
-
-// -- SendGrid wire types (minimum viable subset) -----------------------
-
-type sgRequest struct {
-	Personalizations []sgPersonalization `json:"personalizations"`
-	From             sgAddress           `json:"from"`
-	Subject          string              `json:"subject"`
-	Content          []sgContent         `json:"content"`
-	CustomArgs       map[string]string   `json:"custom_args,omitempty"`
-	TrackingSettings *sgTrackingSettings `json:"tracking_settings,omitempty"`
-}
-
-type sgTrackingSettings struct {
-	ClickTracking        *sgClickTracking        `json:"click_tracking,omitempty"`
-	OpenTracking         *sgOpenTracking         `json:"open_tracking,omitempty"`
-	SubscriptionTracking *sgSubscriptionTracking `json:"subscription_tracking,omitempty"`
-}
-
-type sgClickTracking struct {
-	Enable     *bool `json:"enable,omitempty"`
-	EnableText *bool `json:"enable_text,omitempty"`
-}
-
-type sgOpenTracking struct {
-	Enable *bool `json:"enable,omitempty"`
-}
-
-type sgSubscriptionTracking struct {
-	Enable *bool `json:"enable,omitempty"`
-}
-
-type sgPersonalization struct {
-	To []sgAddress `json:"to"`
-}
-
-type sgAddress struct {
-	Email string `json:"email"`
-	Name  string `json:"name,omitempty"`
-}
-
-type sgContent struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
-}
-
-// -- Helpers (unused but silence unused-import linter when editing) ----
-
-var _ = regexp.MustCompile
-var _ = uuid.Nil

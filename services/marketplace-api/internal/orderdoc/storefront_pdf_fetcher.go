@@ -6,7 +6,7 @@
 // admin → marketplace-api uses, so we get service-to-service auth for
 // free. PDF rendering stays in TS (single source of truth — see the
 // mailer package comment) and we just stream the bytes back here so
-// SendGrid can attach them.
+// the mailer can attach them.
 
 package orderdoc
 

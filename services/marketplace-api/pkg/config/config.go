@@ -81,14 +81,14 @@ type Config struct {
 	// S1 — auth-bff URL for MFA/session proxying.
 	AuthBFFURL string `envconfig:"AUTH_BFF_URL" default:""`
 	// S3 — Stripe Billing keys + webhook / orphan cron config.
-	StripeBillingSecretKey      string        `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
-	StripeBillingWebhookSecret  string        `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
-	StripeAllowedEventTypes     []string      `envconfig:"STRIPE_ALLOWED_EVENT_TYPES" default:"checkout.session.completed,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed,invoice.payment_action_required,customer.updated,charge.refunded,payment_method.attached,payment_method.detached,radar.early_fraud_warning"`
-	WebhookMaxBodyBytes         int64         `envconfig:"WEBHOOK_MAX_BODY_BYTES" default:"524288"`
-	OrphanRetryMaxCount         int           `envconfig:"ORPHAN_RETRY_MAX_COUNT" default:"6"`
-	OrphanRetryInterval         time.Duration `envconfig:"ORPHAN_RETRY_INTERVAL" default:"5m"`
-	OrphanStaleThreshold        time.Duration `envconfig:"ORPHAN_STALE_THRESHOLD" default:"1h"`
-	PagerDutyWebhookURL         string        `envconfig:"PAGERDUTY_WEBHOOK_URL" default:""`
+	StripeBillingSecretKey     string        `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
+	StripeBillingWebhookSecret string        `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
+	StripeAllowedEventTypes    []string      `envconfig:"STRIPE_ALLOWED_EVENT_TYPES" default:"checkout.session.completed,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed,invoice.payment_action_required,customer.updated,charge.refunded,payment_method.attached,payment_method.detached,radar.early_fraud_warning"`
+	WebhookMaxBodyBytes        int64         `envconfig:"WEBHOOK_MAX_BODY_BYTES" default:"524288"`
+	OrphanRetryMaxCount        int           `envconfig:"ORPHAN_RETRY_MAX_COUNT" default:"6"`
+	OrphanRetryInterval        time.Duration `envconfig:"ORPHAN_RETRY_INTERVAL" default:"5m"`
+	OrphanStaleThreshold       time.Duration `envconfig:"ORPHAN_STALE_THRESHOLD" default:"1h"`
+	PagerDutyWebhookURL        string        `envconfig:"PAGERDUTY_WEBHOOK_URL" default:""`
 
 	// AUDIT — shared secret gating /internal/audit-events. When empty,
 	// the endpoint is permissive (dev convenience). Set to the SAME
@@ -111,10 +111,12 @@ type Config struct {
 	// P1 — Prometheus metrics port. 0 disables the metrics server.
 	MetricsPort int `envconfig:"METRICS_PORT" default:"9090"`
 
-	// Marketing M4 — Email dispatch for campaigns. When SendGridAPIKey is
-	// empty, the campaign worker falls back to LogDispatcher (no emails
-	// sent) so local/dev doesn't need a SendGrid account.
+	// Marketing M4 — outbound email dispatch (campaigns + transactional).
+	// SendGrid is the primary provider, Resend the fallback. When both
+	// keys are empty, the shared sender (email.NewFromConfig) degrades to
+	// a log-only transport so local/dev doesn't need a provider account.
 	SendGridAPIKey string `envconfig:"SENDGRID_API_KEY" default:""`
+	ResendAPIKey   string `envconfig:"RESEND_API_KEY" default:""`
 	EmailFrom      string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.com"`
 
 	// Otto support — deep link in customer ticket emails points back
@@ -145,9 +147,9 @@ type Config struct {
 	// until legal approves. The remaining keys are per-registry secrets;
 	// empty values mean "anonymous" for HMRC/VIES/ABN/ACRA (which permit
 	// anonymous lookups) and "skip" for GSTN (token required in prod).
-	NZTaxValidationEnabled bool   `envconfig:"NZ_TAX_VALIDATION_ENABLED" default:"false"`
-	GSTNAuthToken          string `envconfig:"GSTN_AUTH_TOKEN" default:""`
-	ABNGUID                string `envconfig:"AU_ABN_LOOKUP_GUID" default:""`
+	NZTaxValidationEnabled  bool   `envconfig:"NZ_TAX_VALIDATION_ENABLED" default:"false"`
+	GSTNAuthToken           string `envconfig:"GSTN_AUTH_TOKEN" default:""`
+	ABNGUID                 string `envconfig:"AU_ABN_LOOKUP_GUID" default:""`
 	TaxAttestationIPHashKey string `envconfig:"TAX_ATTESTATION_IP_HASH_KEY" default:""`
 
 	// P14 — enterprise API key IP-hash key (§18.4). Same shape as the tax

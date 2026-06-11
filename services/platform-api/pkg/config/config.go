@@ -18,8 +18,9 @@ type Config struct {
 	FGAAPIURL  string `envconfig:"FGA_API_URL" default:"http://openfga:8080"`
 	FGAStoreID string `envconfig:"FGA_STORE_ID"`
 
-	// Notification (inlined SendGrid for now)
+	// Notification — SendGrid is the primary provider, Resend the fallback.
 	SendGridAPIKey string `envconfig:"SENDGRID_API_KEY"`
+	ResendAPIKey   string `envconfig:"RESEND_API_KEY"`
 	EmailFrom      string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.local"`
 
 	// Storage (inlined GCS for now)

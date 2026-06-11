@@ -504,9 +504,9 @@ func (h *WebhookHandler) handleGiftCardEvent(ctx context.Context, evt *payment.W
 	switch evt.EventType {
 	case "checkout.completed", "payment.succeeded":
 		var (
-			card       *giftcard.GiftCard
-			flipped    bool
-			err        error
+			card    *giftcard.GiftCard
+			flipped bool
+			err     error
 		)
 		if evt.SessionID != "" {
 			card, flipped, err = h.giftCardSvc.ActivateByCheckoutSession(ctx, evt.SessionID, evt.ProviderPaymentID)
@@ -575,13 +575,13 @@ func (h *WebhookHandler) handlePaymentSucceeded(ctx context.Context, provider st
 		}
 
 		// Order placed + paid → the buyer's invoice email goes out now.
-		// Detached goroutine: a SendGrid blip must NOT make the webhook
-		// retry, because order.Confirm already committed and a retry
-		// would push the order through invalid-transition guards. Same
-		// fire-and-forget contract the admin OrdersHandler.dispatchInvoiceEmail
-		// uses on the manual-Confirm path. Nil-safe — when the docMailer
-		// isn't wired (dev without SendGrid + without LogMailer fallback)
-		// this is a no-op and the order still confirms cleanly.
+		// Detached goroutine: an email-provider blip must NOT make the
+		// webhook retry, because order.Confirm already committed and a
+		// retry would push the order through invalid-transition guards.
+		// Same fire-and-forget contract the admin
+		// OrdersHandler.dispatchInvoiceEmail uses on the manual-Confirm
+		// path. Nil-safe — when the docMailer isn't wired this is a
+		// no-op and the order still confirms cleanly.
 		if h.docMailer != nil {
 			go func() {
 				dctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

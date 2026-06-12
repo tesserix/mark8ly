@@ -460,11 +460,16 @@ func main() {
 
 	// Shared outbound email transport — every mailer below (ticket,
 	// orderdoc, shipping label, gift card, campaign) sends through this
-	// one Sender. SendGrid is the primary provider with Resend as an
-	// always-on per-message fallback; when neither API key is configured
-	// it degrades to a log-only sender so local/dev still exercises the
-	// full dispatch path without a provider account.
-	emailSender := email.NewFromConfig(cfg.SendGridAPIKey, cfg.ResendAPIKey, log)
+	// one Sender. EMAIL_PRIMARY_PROVIDER orders the provider chain; every
+	// other configured provider is an always-on per-message fallback. When
+	// no API key is configured it degrades to a log-only sender so
+	// local/dev still exercises the full dispatch path without a provider
+	// account. New providers plug in here: add the key to this map after
+	// registering the adapter in internal/email/providers.go.
+	emailSender := email.NewFromConfig(map[string]string{
+		email.ProviderSendGrid: cfg.SendGridAPIKey,
+		email.ProviderResend:   cfg.ResendAPIKey,
+	}, cfg.EmailPrimaryProvider, log)
 
 	// Dashboard D2 — Tickets. Hoisted for the same reason as the
 	// notification service: the storefront /support/tickets endpoint

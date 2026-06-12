@@ -99,3 +99,6 @@ type resendTag struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
+
+// Name identifies the provider in fallback-chain logs.
+func (s *ResendSender) Name() string { return ProviderResend }

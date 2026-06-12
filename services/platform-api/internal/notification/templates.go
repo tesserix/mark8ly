@@ -21,11 +21,11 @@ type EmailVerificationVars struct {
 
 // WelcomeVars are the variables for the post-onboarding welcome email.
 type WelcomeVars struct {
-	BusinessName string
-	OwnerName    string
-	AdminURL     string
+	BusinessName  string
+	OwnerName     string
+	AdminURL      string
 	StorefrontURL string
-	SupportEmail string
+	SupportEmail  string
 }
 
 // InvitationVars are the variables for the teammate invitation email.

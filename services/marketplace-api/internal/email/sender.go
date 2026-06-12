@@ -80,30 +80,8 @@ func validate(msg Message) error {
 	return nil
 }
 
-// NewFromConfig builds the process-wide Sender from the configured
-// provider API keys. Called exactly once in main so log-vs-real
-// selection lives in one place instead of being re-decided per mailer.
-//
-//   - both keys set      → FallbackSender(SendGrid → Resend)
-//   - only SendGrid set  → SendGrid only (warn: no fallback)
-//   - only Resend set    → Resend only (warn: degraded ordering)
-//   - neither set        → LogSender (dev / CI — no emails sent)
-func NewFromConfig(sendgridKey, resendKey string, log *slog.Logger) Sender {
-	switch {
-	case sendgridKey != "" && resendKey != "":
-		log.Info("email: SendGrid primary with Resend fallback enabled")
-		return NewFallbackSender(NewSendGridSender(sendgridKey), NewResendSender(resendKey), log)
-	case sendgridKey != "":
-		log.Warn("email: RESEND_API_KEY not set — SendGrid only, no provider fallback")
-		return NewSendGridSender(sendgridKey)
-	case resendKey != "":
-		log.Warn("email: SENDGRID_API_KEY not set — Resend only, no provider fallback")
-		return NewResendSender(resendKey)
-	default:
-		log.Warn("email: no provider API keys set — using LogSender (no emails will be sent)")
-		return &LogSender{Logger: log}
-	}
-}
+// Provider construction, ordering and the config-driven chain live in
+// providers.go.
 
 // LogSender logs the would-be send instead of delivering. Wired when no
 // provider API key is configured (local dev, CI) so the full dispatch
@@ -127,3 +105,6 @@ func (s *LogSender) Send(_ context.Context, msg Message) error {
 		"attachments", len(msg.Attachments))
 	return nil
 }
+
+// Name identifies the log-only transport in fallback-chain logs.
+func (s *LogSender) Name() string { return "log" }

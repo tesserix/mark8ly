@@ -36,3 +36,6 @@ func (l *LogSender) Send(ctx context.Context, msg Email) error {
 	)
 	return nil
 }
+
+// Name identifies the log-only transport in fallback-chain logs.
+func (l *LogSender) Name() string { return "log" }

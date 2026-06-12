@@ -6,47 +6,59 @@ import (
 	"log/slog"
 )
 
-// FallbackMailer chains two Mailers: every OTP goes to Primary first, and
-// only when Primary errors does it retry on Fallback. Production wiring is
-// SendGrid (primary) → Resend (fallback) so a SendGrid outage degrades to
-// a provider switch instead of customers stuck at the OTP screen.
+// FallbackMailer chains any number of Mailers: every OTP goes to the
+// first provider, and each later provider is tried only when the one
+// before it errored. Production wiring is built by NewFromConfig from
+// EMAIL_PRIMARY_PROVIDER, so the order is pure config — e.g. Resend
+// primary with SendGrid catching its failures, or the reverse — and a
+// provider outage degrades to a provider switch instead of customers
+// stuck at the OTP screen.
 //
-// Failover is per-message and stateless — no circuit breaker. Primary is
-// retried first on every send, so recovery is automatic.
+// Failover is per-message and stateless — no circuit breaker. The first
+// provider is retried first on every send, so recovery is automatic.
 type FallbackMailer struct {
-	Primary  Mailer
-	Fallback Mailer
-	Logger   *slog.Logger
+	providers []Mailer
+	log       *slog.Logger
 }
 
-// SendOTP tries Primary, then Fallback. Both errors are joined when both
-// providers fail so the log shows the full failure picture.
+// NewFallbackChain constructs a FallbackMailer that tries providers in
+// the given order.
+func NewFallbackChain(log *slog.Logger, providers ...Mailer) *FallbackMailer {
+	return &FallbackMailer{providers: providers, log: log}
+}
+
+// SendOTP tries each provider in order until one delivers. All provider
+// errors are joined when the whole chain fails so the log shows the full
+// failure picture.
 func (m *FallbackMailer) SendOTP(ctx context.Context, tenantID, to, recipientName, code, storeName string) error {
-	primaryErr := m.Primary.SendOTP(ctx, tenantID, to, recipientName, code, storeName)
-	if primaryErr == nil {
-		return nil
-	}
-	// A cancelled context will fail on the fallback too — bail early.
-	if ctx.Err() != nil {
-		return primaryErr
-	}
+	var errs []error
+	for i, p := range m.providers {
+		err := p.SendOTP(ctx, tenantID, to, recipientName, code, storeName)
+		if err == nil {
+			if i > 0 && m.log != nil {
+				m.log.Info("otp mailer: fallback provider delivered",
+					slog.String("provider", nameOf(p)),
+					slog.String("to", to),
+				)
+			}
+			return nil
+		}
+		errs = append(errs, err)
 
-	if m.Logger != nil {
-		m.Logger.Warn("otp mailer: primary provider failed, retrying on fallback",
-			slog.String("tenant_id", tenantID),
-			slog.String("to", to),
-			slog.String("error", primaryErr.Error()),
-		)
-	}
-
-	fallbackErr := m.Fallback.SendOTP(ctx, tenantID, to, recipientName, code, storeName)
-	if fallbackErr == nil {
-		if m.Logger != nil {
-			m.Logger.Info("otp mailer: fallback provider delivered",
+		// A cancelled context will fail on every remaining provider —
+		// bail early instead of burning their quota.
+		if ctx.Err() != nil {
+			break
+		}
+		if i < len(m.providers)-1 && m.log != nil {
+			m.log.Warn("otp mailer: provider failed, retrying on next",
+				slog.String("provider", nameOf(p)),
+				slog.String("next", nameOf(m.providers[i+1])),
+				slog.String("tenant_id", tenantID),
 				slog.String("to", to),
+				slog.String("error", err.Error()),
 			)
 		}
-		return nil
 	}
-	return errors.Join(primaryErr, fallbackErr)
+	return errors.Join(errs...)
 }

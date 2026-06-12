@@ -43,3 +43,6 @@ func (m *LogMailer) SendOTP(_ context.Context, tenantID, to, recipientName, code
 	)
 	return nil
 }
+
+// Name identifies the log-only transport in fallback-chain logs.
+func (m *LogMailer) Name() string { return "log" }

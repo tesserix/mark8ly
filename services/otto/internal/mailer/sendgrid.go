@@ -104,3 +104,6 @@ func (m *SendgridMailer) SendOTP(ctx context.Context, tenantID, to, recipientNam
 	}
 	return nil
 }
+
+// Name identifies the provider in fallback-chain logs.
+func (m *SendgridMailer) Name() string { return ProviderSendGrid }

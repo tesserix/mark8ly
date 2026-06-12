@@ -93,3 +93,6 @@ func (m *ResendMailer) SendOTP(ctx context.Context, tenantID, to, recipientName,
 	}
 	return nil
 }
+
+// Name identifies the provider in fallback-chain logs.
+func (m *ResendMailer) Name() string { return ProviderResend }

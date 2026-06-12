@@ -149,3 +149,6 @@ type sendgridContent struct {
 	Type  string `json:"type"`
 	Value string `json:"value"`
 }
+
+// Name identifies the provider in fallback-chain logs.
+func (s *SendGridSender) Name() string { return ProviderSendGrid }

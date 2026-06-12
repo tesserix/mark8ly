@@ -18,10 +18,14 @@ type Config struct {
 	FGAAPIURL  string `envconfig:"FGA_API_URL" default:"http://openfga:8080"`
 	FGAStoreID string `envconfig:"FGA_STORE_ID"`
 
-	// Notification — SendGrid is the primary provider, Resend the fallback.
-	SendGridAPIKey string `envconfig:"SENDGRID_API_KEY"`
-	ResendAPIKey   string `envconfig:"RESEND_API_KEY"`
-	EmailFrom      string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.local"`
+	// Notification — two providers, order picked by EMAIL_PRIMARY_PROVIDER
+	// ("sendgrid" or "resend"); the other becomes the per-message fallback.
+	// Rendered emails are identical on both providers, so flipping the
+	// order is purely a config change.
+	SendGridAPIKey       string `envconfig:"SENDGRID_API_KEY"`
+	ResendAPIKey         string `envconfig:"RESEND_API_KEY"`
+	EmailPrimaryProvider string `envconfig:"EMAIL_PRIMARY_PROVIDER" default:"sendgrid"`
+	EmailFrom            string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.local"`
 
 	// Storage (inlined GCS for now)
 	GCSBucket string `envconfig:"GCS_BUCKET"`
@@ -106,5 +110,10 @@ func Load() (*Config, error) {
 	cfg.InternalAuthSecret = strings.TrimSpace(cfg.InternalAuthSecret)
 	cfg.MarketplaceInternalAuthSecret = strings.TrimSpace(cfg.MarketplaceInternalAuthSecret)
 	cfg.AuditIngestSecret = strings.TrimSpace(cfg.AuditIngestSecret)
+	// Provider API keys go straight into Authorization headers — a
+	// trailing LF from GCP SM would make net/http reject every request
+	// with "invalid header field value".
+	cfg.SendGridAPIKey = strings.TrimSpace(cfg.SendGridAPIKey)
+	cfg.ResendAPIKey = strings.TrimSpace(cfg.ResendAPIKey)
 	return &cfg, nil
 }

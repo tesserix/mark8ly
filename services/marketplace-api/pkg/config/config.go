@@ -112,12 +112,15 @@ type Config struct {
 	MetricsPort int `envconfig:"METRICS_PORT" default:"9090"`
 
 	// Marketing M4 — outbound email dispatch (campaigns + transactional).
-	// SendGrid is the primary provider, Resend the fallback. When both
-	// keys are empty, the shared sender (email.NewFromConfig) degrades to
-	// a log-only transport so local/dev doesn't need a provider account.
-	SendGridAPIKey string `envconfig:"SENDGRID_API_KEY" default:""`
-	ResendAPIKey   string `envconfig:"RESEND_API_KEY" default:""`
-	EmailFrom      string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.com"`
+	// EMAIL_PRIMARY_PROVIDER orders the provider chain ("resend" or
+	// "sendgrid", or a comma-separated preference list); every other
+	// configured provider becomes a per-message fallback. When all keys
+	// are empty, the shared sender (email.NewFromConfig) degrades to a
+	// log-only transport so local/dev doesn't need a provider account.
+	SendGridAPIKey       string `envconfig:"SENDGRID_API_KEY" default:""`
+	ResendAPIKey         string `envconfig:"RESEND_API_KEY" default:""`
+	EmailPrimaryProvider string `envconfig:"EMAIL_PRIMARY_PROVIDER" default:"sendgrid"`
+	EmailFrom            string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.com"`
 
 	// Otto support — deep link in customer ticket emails points back
 	// to the storefront's tickets page so the customer can resume the
@@ -215,6 +218,11 @@ func Load() (*Config, error) {
 	cfg.InternalAuthSecret = strings.TrimSpace(cfg.InternalAuthSecret)
 	cfg.PlatformAPISecret = strings.TrimSpace(cfg.PlatformAPISecret)
 	cfg.AuditIngestSecret = strings.TrimSpace(cfg.AuditIngestSecret)
+	// Provider API keys go straight into Authorization headers — a
+	// trailing LF from GCP SM would make net/http reject every request
+	// with "invalid header field value".
+	cfg.SendGridAPIKey = strings.TrimSpace(cfg.SendGridAPIKey)
+	cfg.ResendAPIKey = strings.TrimSpace(cfg.ResendAPIKey)
 
 	return &cfg, nil
 }

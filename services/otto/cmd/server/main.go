@@ -51,33 +51,19 @@ func main() {
 	availRepo := conversation.NewAvailabilityRepository(mongoClient.StaffAvailability())
 	auditRepo := conversation.NewAuditRepository(mongoClient.Audit())
 
-	// OTP: repo + mailer + service. SendGrid is the primary provider with
-	// Resend as the always-on fallback when both keys are set. When neither
-	// is set we fall back to a stdout log mailer so the service remains
-	// bootable.
+	// OTP: repo + mailer + service. Two providers; EMAIL_PRIMARY_PROVIDER
+	// picks which sends first and the other is the always-on per-message
+	// fallback. When neither key is set we fall back to a stdout log
+	// mailer so the service remains bootable.
 	otpRepo, err := otp.NewRepository(ctx, mongoClient.OTP())
 	if err != nil {
 		log.Error("otp: repo", "err", err)
 		panic(err)
 	}
-	var mail mailer.Mailer
-	switch {
-	case cfg.SendgridAPIKey != "" && cfg.ResendAPIKey != "":
-		mail = &mailer.FallbackMailer{
-			Primary:  mailer.NewSendgridMailer(cfg.SendgridAPIKey, cfg.OTPFromEmail, cfg.OTPFromName),
-			Fallback: mailer.NewResendMailer(cfg.ResendAPIKey, cfg.OTPFromEmail, cfg.OTPFromName),
-			Logger:   log,
-		}
-	case cfg.SendgridAPIKey != "":
-		log.Warn("otp: RESEND_API_KEY not set — SendGrid only, no fallback provider")
-		mail = mailer.NewSendgridMailer(cfg.SendgridAPIKey, cfg.OTPFromEmail, cfg.OTPFromName)
-	case cfg.ResendAPIKey != "":
-		log.Warn("otp: SENDGRID_API_KEY not set — using Resend as the only provider")
-		mail = mailer.NewResendMailer(cfg.ResendAPIKey, cfg.OTPFromEmail, cfg.OTPFromName)
-	default:
-		log.Warn("otp: SENDGRID_API_KEY and RESEND_API_KEY not set — falling back to stdout log mailer (codes will not reach real inboxes)")
-		mail = &mailer.LogMailer{Logger: log}
-	}
+	mail := mailer.NewFromConfig(map[string]string{
+		mailer.ProviderSendGrid: cfg.SendgridAPIKey,
+		mailer.ProviderResend:   cfg.ResendAPIKey,
+	}, cfg.EmailPrimaryProvider, cfg.OTPFromEmail, cfg.OTPFromName, log)
 	otpSvc := otp.NewService(otpRepo, mail, otp.Config{
 		TTL:            time.Duration(cfg.OTPCodeTTL) * time.Second,
 		MaxAttempts:    cfg.OTPMaxAttempts,

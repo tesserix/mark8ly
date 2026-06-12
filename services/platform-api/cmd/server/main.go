@@ -70,28 +70,16 @@ func main() {
 	}
 
 	// ─── Notification sender ────────────────────────────────────────────
-	// SendGrid is the primary provider; Resend is ALWAYS the fallback when
-	// both keys are set, so a SendGrid outage degrades to a provider switch
-	// instead of dropped mail. In dev with no keys, log emails to stdout
-	// (so devs can grab the OTP for testing).
-	var sender notification.Sender
-	switch {
-	case cfg.SendGridAPIKey != "" && cfg.ResendAPIKey != "":
-		sender = notification.NewFallbackSender(
-			notification.NewSendGridSender(cfg.SendGridAPIKey),
-			notification.NewResendSender(cfg.ResendAPIKey),
-			log,
-		)
-	case cfg.SendGridAPIKey != "":
-		log.Warn("notification: no RESEND_API_KEY set — SendGrid only, no fallback provider")
-		sender = notification.NewSendGridSender(cfg.SendGridAPIKey)
-	case cfg.ResendAPIKey != "":
-		log.Warn("notification: no SENDGRID_API_KEY set — using Resend as the only provider")
-		sender = notification.NewResendSender(cfg.ResendAPIKey)
-	default:
-		log.Warn("notification: no SENDGRID_API_KEY or RESEND_API_KEY set — using LogSender (emails will be printed to stdout)")
-		sender = notification.NewLogSender(log)
-	}
+	// EMAIL_PRIMARY_PROVIDER orders the provider chain; every other
+	// configured provider is an always-on per-message fallback, so a
+	// provider outage degrades to a provider switch instead of dropped
+	// mail. In dev with no keys, emails log to stdout (so devs can grab
+	// the OTP for testing). New providers plug in here: add the key to
+	// this map after registering the adapter in internal/notification.
+	sender := notification.NewFromConfig(map[string]string{
+		notification.ProviderSendGrid: cfg.SendGridAPIKey,
+		notification.ProviderResend:   cfg.ResendAPIKey,
+	}, cfg.EmailPrimaryProvider, log)
 
 	// ─── Notification template loader ───────────────────────────────────
 	// DB-backed templates with embedded fallback. tesserix-home authors

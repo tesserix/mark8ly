@@ -160,3 +160,6 @@ type resendAttachment struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type,omitempty"`
 }
+
+// Name identifies the provider in fallback-chain logs.
+func (s *ResendSender) Name() string { return ProviderResend }

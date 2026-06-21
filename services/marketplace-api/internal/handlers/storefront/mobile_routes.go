@@ -39,8 +39,10 @@ type MobileDeps struct {
 	// Mobile-specific.
 	PushTokenHandler *PushTokenHandler
 	NotifyMeHandler  *NotifyMeHandler
-	DevMode          bool
-	Logger           *slog.Logger
+	// Support chat — bridges to the otto service (customer→merchant).
+	SupportHandler *MobileSupportHandler
+	DevMode        bool
+	Logger         *slog.Logger
 }
 
 // RegisterMobileStorefront mounts the mobile storefront routes on the given
@@ -191,6 +193,13 @@ func RegisterMobileStorefront(router *gin.RouterGroup, deps MobileDeps) {
 			if deps.NotifyMeHandler != nil {
 				authed.POST("/products/:handle/notify-me", deps.NotifyMeHandler.Subscribe)
 				authed.DELETE("/products/:handle/notify-me/:notifyType", deps.NotifyMeHandler.Unsubscribe)
+			}
+
+			// Support chat — bridges to otto (customer→merchant). Mounted
+			// under the authed group so every conversation is attributed to
+			// the logged-in customer and otto skips the anonymous OTP step.
+			if deps.SupportHandler != nil {
+				deps.SupportHandler.Register(authed.Group("/support"))
 			}
 		}
 	}

@@ -962,6 +962,16 @@ func main() {
 		}
 	}
 
+	// Shared otto chat client (S2S) — nil when OTTO_URL/OTTO_INTERNAL_AUTH
+	// are unset (local dev without otto). Reused by the ticket transcript
+	// pull, the admin platform-support bridge (#119), and the storefront
+	// support bridge (#118).
+	ottoChatClient := ottoclient.New(cfg.OttoURL, cfg.OttoInternalAuth)
+	// Mobile storefront support chat (#118) — populated in the storefront
+	// wiring block, mounted in the per-mode registration below.
+	var storefrontSupportHandler *storefront.MobileSupportHandler
+	var storefrontCustomerVerifier storefront.CustomerVerifier
+
 	// Mobile admin deps — Bearer auth for external mobile clients.
 	var mobileDeps admin.MobileDeps
 	var pushWebhookHandler gin.HandlerFunc
@@ -991,6 +1001,9 @@ func main() {
 			Deps:             adminDeps,
 			TokenVerifier:    tokenVerifier,
 			PushTokenHandler: pushTokenHandler,
+			// Merchant→platform support chat (#119) — bridges to otto's
+			// platform tenant. Nil otto client => routes return 503.
+			PlatformSupportHandler: admin.NewPlatformSupportHandler(ottoChatClient, cfg.OttoWSPublicBase, log),
 		}
 	}
 
@@ -1139,11 +1152,25 @@ func main() {
 		// OTTO_URL / OTTO_INTERNAL_AUTH are unset (typical for local
 		// dev without otto running) the constructor returns nil and the
 		// transcript endpoint cleanly degrades to 404.
-		ottoSupportClient := ottoclient.New(cfg.OttoURL, cfg.OttoInternalAuth)
 		sfTicketsHandler := storefront.NewTicketsHandler(ticketSvc, log).
 			WithNotifier(notificationSvc).
 			WithAudit(auditEmitter).
-			WithOtto(ottoSupportClient)
+			WithOtto(ottoChatClient)
+
+		// Mobile support chat (#118) — customer→merchant, bridges to otto.
+		// Mounted standalone below (the full mobile storefront route group
+		// isn't wired yet). The customer verifier reuses the GIP project to
+		// validate the app's Firebase ID tokens.
+		storefrontSupportHandler = storefront.NewMobileSupportHandler(ottoChatClient, cfg.OttoWSPublicBase, log)
+		if cfg.GIPProjectID != "" {
+			if fbApp, err := firebase.NewApp(context.Background(), &firebase.Config{ProjectID: cfg.GIPProjectID}); err != nil {
+				log.Error("mobile support: firebase init failed", "error", err)
+			} else if fbAuth, err := fbApp.Auth(context.Background()); err != nil {
+				log.Error("mobile support: firebase auth init failed", "error", err)
+			} else {
+				storefrontCustomerVerifier = storefront.NewGIPCustomerVerifier(fbAuth)
+			}
+		}
 
 		// P11 — Customer portal (GDPR order-history + erasure §15.4).
 		customerPortalHandler := customerportal.NewHandler(conn, log)
@@ -1702,6 +1729,7 @@ func main() {
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
 		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
+		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
 		public.RegisterPublic(r.Group("/api/v1"), public.PublicDeps{
 			DelhiveryWebhookHandler: delhiveryWebhookHandler,
 		})
@@ -1818,6 +1846,7 @@ func main() {
 		}
 		if m == mode.Storefront {
 			storefront.RegisterStorefront(engine.Group("/api/v1"), storefrontDeps)
+			storefront.RegisterMobileStorefrontSupport(engine.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
 			// Custom-domain takeover — storefront middleware queries
 			// this on every slug-host request to decide whether to 301
 			// to the merchant's verified custom domain.

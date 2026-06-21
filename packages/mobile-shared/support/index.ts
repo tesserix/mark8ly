@@ -1,0 +1,5 @@
+// Barrel for the shared mobile support-chat module.
+export * from "./types";
+export * from "./events";
+export * from "./client";
+export * from "./useSupportChat";

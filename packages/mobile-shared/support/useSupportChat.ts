@@ -87,8 +87,9 @@ export function useSupportChat({ client, autoResume = true }: UseSupportChatOpti
           setConnected(true);
           setStatus("ready");
         };
-        ws.onmessage = (ev: { data: string }) => {
-          const event = parseOttoEvent(typeof ev.data === "string" ? ev.data : "");
+        ws.onmessage = (ev) => {
+          const data = (ev as { data?: unknown }).data;
+          const event = parseOttoEvent(typeof data === "string" ? data : "");
           if (event.kind === "message") {
             setMessages((prev) => mergeMessage(prev, event.message));
           } else if (event.kind === "conversation_closed") {

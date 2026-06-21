@@ -17,6 +17,7 @@ import {
   Heart,
   Star,
   MessageSquare,
+  LifeBuoy,
   LogOut,
 } from "lucide-react-native";
 
@@ -32,6 +33,7 @@ const QUICK_LINKS: QuickLinkItem[] = [
   { label: "Wishlist", icon: Heart, route: "/(tabs)/account/wishlist" },
   { label: "Loyalty", icon: Star, route: "/(tabs)/account/loyalty" },
   { label: "Reviews", icon: MessageSquare, route: "/(tabs)/account/reviews" },
+  { label: "Support", icon: LifeBuoy, route: "/(tabs)/account/support" },
 ];
 
 export default function AccountDashboardScreen() {

@@ -14,6 +14,7 @@ import {
   type IntakeReason,
   type SupportPalette,
 } from "@repo/mobile-shared/support";
+import { secureStoreKV } from "@repo/mobile-shared/support/storage";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useEnvironment } from "@repo/mobile-shared/config/env";
 
@@ -51,7 +52,7 @@ export default function PlatformSupportScreen() {
     [env.apiBaseUrl, getToken, refreshToken, signOut],
   );
 
-  const chat = useSupportChat({ client });
+  const chat = useSupportChat({ client, storage: secureStoreKV });
 
   const palette = useMemo<SupportPalette>(
     () => ({

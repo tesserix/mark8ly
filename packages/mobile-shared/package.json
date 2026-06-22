@@ -36,7 +36,6 @@
     "@react-native-firebase/auth": "*"
   },
   "devDependencies": {
-    "typescript": "^5.9.0",
-    "vitest": "^4.1.4"
+    "typescript": "^5.9.0"
   }
 }

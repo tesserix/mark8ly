@@ -56,10 +56,10 @@ describe("createSupportClient", () => {
 
     expect(out.conversation.id).toBe("c1");
     expect(out.firstMessage.id).toBe("m1");
-    expect(calls[0].method).toBe("POST");
-    expect(calls[0].url).toBe("https://api.test/api/v1/mobile/storefront/stores/acme/support/conversations");
-    expect(calls[0].headers["Authorization"]).toBe("Bearer tok-1");
-    expect(JSON.parse(calls[0].body!)).toMatchObject({ message: "hi", reason: "order_issue", status_info: "late" });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.url).toBe("https://api.test/api/v1/mobile/storefront/stores/acme/support/conversations");
+    expect(calls[0]!.headers["Authorization"]).toBe("Bearer tok-1");
+    expect(JSON.parse(calls[0]!.body!)).toMatchObject({ message: "hi", reason: "order_issue", status_info: "late" });
     expect(client.currentSessionToken()).toBe("sess-xyz");
     expect(saved).toEqual(["sess-xyz"]);
   });
@@ -72,8 +72,8 @@ describe("createSupportClient", () => {
     mockOnce(201, { message: { id: "m2", sender_type: "customer", body: "again", created_at: "2026-06-21T10:01:00Z" } });
     await client.postMessage("c1", "again");
 
-    expect(calls[1].headers["X-Otto-Session"]).toBe("sess-xyz");
-    expect(calls[1].url).toBe("https://api.test/api/v1/mobile/storefront/stores/acme/support/conversations/c1/messages");
+    expect(calls[1]!.headers["X-Otto-Session"]).toBe("sess-xyz");
+    expect(calls[1]!.url).toBe("https://api.test/api/v1/mobile/storefront/stores/acme/support/conversations/c1/messages");
   });
 
   it("refreshes the token once on 401 then retries", async () => {
@@ -85,7 +85,7 @@ describe("createSupportClient", () => {
     const msgs = await client.listMessages("c1");
     expect(msgs).toEqual([]);
     expect(refreshToken).toHaveBeenCalledTimes(1);
-    expect(calls[1].headers["Authorization"]).toBe("Bearer tok-2");
+    expect(calls[1]!.headers["Authorization"]).toBe("Bearer tok-2");
   });
 
   it("throws SupportError + calls onUnauthorized when refresh still 401s", async () => {
@@ -114,7 +114,7 @@ describe("createSupportClient", () => {
     const client = newClient({ loadSessionToken: () => "persisted-sess" });
     mockOnce(200, { conversation: { id: "c1", status: "active" }, messages: [] });
     await client.resume();
-    expect(calls[0].headers["X-Otto-Session"]).toBe("persisted-sess");
+    expect(calls[0]!.headers["X-Otto-Session"]).toBe("persisted-sess");
   });
 
   it("builds the ws url with the ticket query param", () => {

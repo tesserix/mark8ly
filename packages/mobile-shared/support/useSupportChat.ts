@@ -15,6 +15,7 @@ import { AppState, type AppStateStatus } from "react-native";
 
 import { SupportError, type SupportClient } from "./client";
 import { mergeMessage, mergeMessages, parseOttoEvent } from "./events";
+import { openSSE, type SSEHandle } from "./sse";
 import {
   addItem,
   backoffMs,
@@ -61,6 +62,8 @@ export interface UseSupportChat {
 
 const MAX_BACKOFF_MS = 15_000;
 const DEFAULT_POLL_MS = 5_000;
+// Consecutive WebSocket connect failures before falling back to SSE.
+const WS_FALLBACK_THRESHOLD = 3;
 
 function newClientMsgId(): string {
   return `cmid-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -89,6 +92,9 @@ export function useSupportChat({
   const [error, setError] = useState<string | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
+  const sseRef = useRef<SSEHandle | null>(null);
+  const preferSSERef = useRef(false);
+  const wsFailuresRef = useRef(0);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptsRef = useRef(0);
@@ -177,7 +183,7 @@ export function useSupportChat({
     void drainOutbox();
   }, [persistOutbox, drainOutbox]);
 
-  // ── WebSocket ─────────────────────────────────────────────────────
+  // ── Realtime (WebSocket → SSE → polling) ──────────────────────────
   const clearReconnect = () => {
     if (reconnectRef.current) {
       clearTimeout(reconnectRef.current);
@@ -185,6 +191,8 @@ export function useSupportChat({
     }
   };
 
+  // teardownSocket tears down whichever realtime transport is active
+  // (WebSocket or SSE) and stops reconnects.
   const teardownSocket = useCallback(() => {
     closedByUsRef.current = true;
     clearReconnect();
@@ -192,58 +200,91 @@ export function useSupportChat({
       socketRef.current.close();
       socketRef.current = null;
     }
+    if (sseRef.current) {
+      sseRef.current.close();
+      sseRef.current = null;
+    }
     setConnectedBoth(false);
   }, []);
 
   const connect = useCallback(
     async (conversationId: string) => {
       closedByUsRef.current = false;
-      try {
-        const ticket = await client.getWsTicket(conversationId);
-        if (closedByUsRef.current) return;
-        const ws = new WebSocket(client.buildWsUrl(ticket));
-        socketRef.current = ws;
 
-        ws.onopen = () => {
-          attemptsRef.current = 0;
-          setConnectedBoth(true);
-          setStatus("ready");
-          // Reconcile anything missed while we were offline, and flush the
-          // outbox now that connectivity is confirmed.
-          void refresh();
-          void drainOutbox();
-        };
-        ws.onmessage = (ev) => {
-          const data = (ev as { data?: unknown }).data;
-          const event = parseOttoEvent(typeof data === "string" ? data : "");
-          if (event.kind === "message") {
-            setServerMessages((prev) => mergeMessage(prev, event.message));
-          } else if (event.kind === "conversation_closed") {
-            setStatus("closed");
-            setConversation((prev) => (prev ? { ...prev, status: "closed" } : prev));
-            teardownSocket();
-          }
-        };
-        ws.onerror = () => setConnectedBoth(false);
-        ws.onclose = () => {
-          setConnectedBoth(false);
-          socketRef.current = null;
-          if (closedByUsRef.current) return;
-          const attempt = (attemptsRef.current += 1);
-          const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** (attempt - 1));
-          clearReconnect();
-          reconnectRef.current = setTimeout(() => {
-            if (convIdRef.current) void connect(convIdRef.current);
-          }, delay);
-        };
-      } catch {
+      const reconnect = () => {
         const attempt = (attemptsRef.current += 1);
         const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** (attempt - 1));
         clearReconnect();
         reconnectRef.current = setTimeout(() => {
           if (convIdRef.current) void connect(convIdRef.current);
         }, delay);
+      };
+      const onOpen = () => {
+        attemptsRef.current = 0;
+        setConnectedBoth(true);
+        setStatus("ready");
+        // Reconcile anything missed while offline + flush the outbox.
+        void refresh();
+        void drainOutbox();
+      };
+      const onFrame = (raw: string) => {
+        const event = parseOttoEvent(raw);
+        if (event.kind === "message") {
+          setServerMessages((prev) => mergeMessage(prev, event.message));
+        } else if (event.kind === "conversation_closed") {
+          setStatus("closed");
+          setConversation((prev) => (prev ? { ...prev, status: "closed" } : prev));
+          teardownSocket();
+        }
+      };
+
+      let ticket;
+      try {
+        ticket = await client.getWsTicket(conversationId);
+      } catch {
+        reconnect();
+        return;
       }
+      if (closedByUsRef.current) return;
+
+      // After repeated WS failures (blocked upgrades / hostile proxies) fall
+      // back to SSE. Polling remains the final safety net in both modes.
+      if (preferSSERef.current) {
+        const handle = openSSE(client.buildSseUrl(ticket), {
+          onOpen,
+          onMessage: onFrame,
+          onError: () => {
+            setConnectedBoth(false);
+            sseRef.current = null;
+            if (closedByUsRef.current) return;
+            reconnect();
+          },
+        });
+        sseRef.current = handle;
+        return;
+      }
+
+      const ws = new WebSocket(client.buildWsUrl(ticket));
+      socketRef.current = ws;
+      ws.onopen = () => {
+        wsFailuresRef.current = 0;
+        onOpen();
+      };
+      ws.onmessage = (ev) => {
+        const data = (ev as { data?: unknown }).data;
+        onFrame(typeof data === "string" ? data : "");
+      };
+      ws.onerror = () => setConnectedBoth(false);
+      ws.onclose = () => {
+        setConnectedBoth(false);
+        socketRef.current = null;
+        if (closedByUsRef.current) return;
+        wsFailuresRef.current += 1;
+        if (wsFailuresRef.current >= WS_FALLBACK_THRESHOLD) {
+          preferSSERef.current = true; // switch transports on next attempt
+        }
+        reconnect();
+      };
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [client, teardownSocket, drainOutbox],

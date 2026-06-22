@@ -195,6 +195,16 @@ export function createSupportClient(config: SupportClientConfig) {
     buildWsUrl: (ticket: WsTicket): string =>
       `${ticket.ws_url}?ticket=${encodeURIComponent(ticket.ticket)}`,
 
+    /** Builds the SSE URL from the same ticket — otto serves /sse next to
+     *  /ws and a ticket is transport-agnostic. */
+    buildSseUrl: (ticket: WsTicket): string => {
+      const base = ticket.ws_url
+        .replace(/\/ws$/, "/sse")
+        .replace(/^wss:/, "https:")
+        .replace(/^ws:/, "http:");
+      return `${base}?ticket=${encodeURIComponent(ticket.ticket)}`;
+    },
+
     /** The currently held otto session token, if any. */
     currentSessionToken: (): string | null => sessionToken,
   };

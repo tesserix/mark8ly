@@ -19,6 +19,7 @@ export default function AccountLayout() {
       <Stack.Screen name="wishlist" options={{ title: "Wishlist" }} />
       <Stack.Screen name="loyalty" options={{ title: "Loyalty" }} />
       <Stack.Screen name="reviews" options={{ title: "Reviews" }} />
+      <Stack.Screen name="support" options={{ title: "Help & Support" }} />
     </Stack>
   );
 }

@@ -4,6 +4,7 @@ import {
   Bell,
   ChevronRight,
   ExternalLink,
+  LifeBuoy,
   Settings,
   UserRound,
 } from "lucide-react-native";
@@ -80,6 +81,13 @@ export default function MoreScreen() {
           label="Account"
           accessibilityLabel="Account settings"
           onPress={() => router.push("/(tabs)/more/account")}
+        />
+        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
+        <Row
+          icon={<LifeBuoy size={18} color={theme.colors.text} strokeWidth={1.75} />}
+          label="Tesserix Support"
+          accessibilityLabel="Chat with Tesserix platform support"
+          onPress={() => router.push("/(tabs)/more/support")}
         />
         <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
         <Row

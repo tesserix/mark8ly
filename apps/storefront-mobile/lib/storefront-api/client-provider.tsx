@@ -47,3 +47,7 @@ export function useApiClient(): ApiClient {
 export function useStoreSlug(): string {
   return getExtraConfig().storeSlug;
 }
+
+export function useApiBaseUrl(): string {
+  return getExtraConfig().apiBaseUrl;
+}

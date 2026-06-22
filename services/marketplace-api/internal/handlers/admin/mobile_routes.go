@@ -12,6 +12,9 @@ type MobileDeps struct {
 	Deps
 	TokenVerifier    auth.TokenVerifier
 	PushTokenHandler *PushTokenHandler
+	// PlatformSupportHandler bridges merchant→platform support chat to
+	// otto's platform tenant. Nil when otto isn't wired.
+	PlatformSupportHandler *PlatformSupportHandler
 }
 
 // RegisterAdminMobile mounts the mobile admin route group. Uses GIPBearerAuth
@@ -24,6 +27,14 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 
 	bearerAuth := auth.GIPBearerAuth(deps.TokenVerifier)
 	rateLimiter := auth.NewPerUserRateLimiter(60, 10) // 60 req/min, burst 10
+
+	// Platform support chat — merchant admin → Tesserix platform team.
+	// Not store-scoped: it rides the admin's tenant from the bearer token,
+	// so any authenticated merchant admin can open a platform chat.
+	if deps.PlatformSupportHandler != nil {
+		ps := router.Group("/mobile/admin/platform-support", bearerAuth, rateLimiter)
+		deps.PlatformSupportHandler.Register(ps)
+	}
 
 	// Tenant-wide routes
 	if deps.StoresHandler != nil {

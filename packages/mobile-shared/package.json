@@ -14,7 +14,13 @@
     "./stores/*": "./stores/*.ts",
     "./deep-links/*": "./deep-links/*.ts",
     "./haptics/*": "./haptics/*.ts",
-    "./config/*": "./config/*.ts"
+    "./config/*": "./config/*.ts",
+    "./support": "./support/index.ts",
+    "./support/*": "./support/*.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "zustand": "^5.0.0",

@@ -144,6 +144,12 @@ type Config struct {
 	// X-Internal-Auth header on every call.
 	OttoURL          string `envconfig:"OTTO_URL" default:""`
 	OttoInternalAuth string `envconfig:"OTTO_INTERNAL_AUTH" default:""`
+	// OttoWSPublicBase is the public WebSocket origin mobile clients dial
+	// for the real-time support chat, e.g. "wss://api.mark8ly.com". The
+	// mobile support BFF returns "<base>/api/v1/storefront/otto/.../ws" so
+	// the app connects straight to otto via the gateway (bypassing the
+	// BFF). When empty the BFF derives it from the inbound request host.
+	OttoWSPublicBase string `envconfig:"OTTO_WS_PUBLIC_BASE" default:""`
 
 	// P7 — tax-ID validation (§19). NZTaxValidationEnabled gates the IRD
 	// validator until counsel sign-off (§20.3); leave false in production

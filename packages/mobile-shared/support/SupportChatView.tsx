@@ -16,8 +16,8 @@ import {
   View,
 } from "react-native";
 
-import type { UseSupportChat } from "./useSupportChat";
-import type { IntakeReason, SupportMessage } from "./types";
+import type { DisplayMessage, UseSupportChat } from "./useSupportChat";
+import type { IntakeReason } from "./types";
 
 export interface SupportPalette {
   background: string;
@@ -110,22 +110,16 @@ function ThreadView({
   onNewChat: () => void;
 }) {
   const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const listRef = useRef<FlatList<SupportMessage>>(null);
+  const listRef = useRef<FlatList<DisplayMessage>>(null);
   const closed = chat.conversation?.status === "closed" || chat.status === "closed";
 
-  const send = async () => {
+  // Fire-and-forget: the durable outbox persists + retries the message, so
+  // the composer can clear immediately and never block or lose the text.
+  const send = () => {
     const body = draft.trim();
-    if (!body || sending) return;
-    setSending(true);
+    if (!body) return;
     setDraft("");
-    try {
-      await chat.sendMessage(body);
-    } catch {
-      setDraft(body); // restore on failure
-    } finally {
-      setSending(false);
-    }
+    void chat.sendMessage(body);
   };
 
   return (
@@ -139,7 +133,9 @@ function ThreadView({
         ref={listRef}
         data={chat.messages}
         keyExtractor={(m) => m.id}
-        renderItem={({ item }) => <MessageBubble message={item} palette={palette} />}
+        renderItem={({ item }) => (
+          <MessageBubble message={item} palette={palette} onRetry={chat.retryFailed} />
+        )}
         contentContainerStyle={styles.listContent}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         showsVerticalScrollIndicator={false}
@@ -167,11 +163,11 @@ function ThreadView({
           <Pressable
             style={[styles.sendBtn, { backgroundColor: draft.trim() ? palette.primary : palette.border }]}
             onPress={send}
-            disabled={!draft.trim() || sending}
+            disabled={!draft.trim()}
             accessibilityRole="button"
             accessibilityLabel="Send message"
           >
-            <Text style={[styles.sendText, { color: palette.onPrimary }]}>{sending ? "…" : "Send"}</Text>
+            <Text style={[styles.sendText, { color: palette.onPrimary }]}>Send</Text>
           </Pressable>
         </View>
       )}
@@ -200,7 +196,15 @@ function StatusBar({ chat, palette }: { chat: UseSupportChat; palette: SupportPa
   );
 }
 
-function MessageBubble({ message, palette }: { message: SupportMessage; palette: SupportPalette }) {
+function MessageBubble({
+  message,
+  palette,
+  onRetry,
+}: {
+  message: DisplayMessage;
+  palette: SupportPalette;
+  onRetry: () => void;
+}) {
   if (message.sender_type === "system") {
     return (
       <View style={styles.systemRow}>
@@ -215,7 +219,7 @@ function MessageBubble({ message, palette }: { message: SupportMessage; palette:
         style={[
           styles.bubble,
           own
-            ? { backgroundColor: palette.bubbleOwn }
+            ? { backgroundColor: palette.bubbleOwn, opacity: message.pending && !message.failed ? 0.6 : 1 }
             : { backgroundColor: palette.surface, borderColor: palette.border, borderWidth: StyleSheet.hairlineWidth },
         ]}
       >
@@ -223,6 +227,14 @@ function MessageBubble({ message, palette }: { message: SupportMessage; palette:
           <Text style={[styles.senderName, { color: palette.textSecondary }]}>{message.sender_name}</Text>
         ) : null}
         <Text style={[styles.bubbleText, { color: own ? palette.textOnOwn : palette.text }]}>{message.body}</Text>
+        {message.pending && !message.failed ? (
+          <Text style={[styles.meta, { color: palette.textOnOwn }]}>Sending…</Text>
+        ) : null}
+        {message.failed ? (
+          <Pressable onPress={onRetry} accessibilityRole="button" accessibilityLabel="Retry sending message">
+            <Text style={[styles.meta, styles.failedMeta, { color: palette.danger }]}>Failed — tap to retry</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -374,6 +386,8 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: "82%", borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
   senderName: { fontSize: 11, marginBottom: 2, fontWeight: "600" },
   bubbleText: { fontSize: 15, lineHeight: 20 },
+  meta: { fontSize: 11, marginTop: 3, opacity: 0.85 },
+  failedMeta: { fontWeight: "600", opacity: 1 },
   systemRow: { alignItems: "center", paddingVertical: 4 },
   systemText: { fontSize: 12, fontStyle: "italic" },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, padding: 10, borderTopWidth: StyleSheet.hairlineWidth },

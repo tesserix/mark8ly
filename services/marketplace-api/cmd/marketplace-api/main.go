@@ -1819,6 +1819,12 @@ func main() {
 			// writes stores.
 			stores.NewInternalHandler(domainStoresRepo).
 				RegisterRoutes(engine.Group("/internal"))
+			// slm-router escalation hook: POST /internal/v1/tickets/
+			// from-conversation creates a support ticket when an AI chat
+			// is handed off to a human. Previously only registered in
+			// mode-Both, so the split admin service 404'd it — register
+			// on the admin engine (the dashboard that owns tickets).
+			ticketInternalHandler.RegisterRoutes(engine.Group("/internal"))
 			// Audit ingest is admin-only because the audit_logs read
 			// endpoint also lives on the admin engine — keeping write
 			// + read on the same pod simplifies ops and keeps the

@@ -52,6 +52,28 @@ func (s *Service) MarkAllRead(ctx context.Context, storeID uuid.UUID) error {
 	return s.repo.MarkAllRead(ctx, s.db, storeID)
 }
 
+// --- Customer-scoped (storefront notification bell) ---
+
+// ListForCustomer returns a customer's notifications in a store.
+func (s *Service) ListForCustomer(ctx context.Context, storeID uuid.UUID, recipientUserID string, page, perPage int) (ListResult, error) {
+	return s.repo.ListByCustomer(ctx, s.db, storeID, recipientUserID, page, perPage)
+}
+
+// GetUnreadCountForCustomer returns a customer's unread count in a store.
+func (s *Service) GetUnreadCountForCustomer(ctx context.Context, storeID uuid.UUID, recipientUserID string) (int64, error) {
+	return s.repo.GetUnreadCountByCustomer(ctx, s.db, storeID, recipientUserID)
+}
+
+// MarkReadForCustomer marks one of a customer's notifications as read.
+func (s *Service) MarkReadForCustomer(ctx context.Context, storeID uuid.UUID, recipientUserID string, id uuid.UUID) error {
+	return s.repo.MarkReadByCustomer(ctx, s.db, storeID, recipientUserID, id)
+}
+
+// MarkAllReadForCustomer marks all of a customer's notifications as read.
+func (s *Service) MarkAllReadForCustomer(ctx context.Context, storeID uuid.UUID, recipientUserID string) error {
+	return s.repo.MarkAllReadByCustomer(ctx, s.db, storeID, recipientUserID)
+}
+
 // Create inserts a new notification, bypassing preference checks. Reserved
 // for non-toggleable types like system_alert. Feature code should prefer
 // CreateIfEnabled so merchant preferences are honored.
@@ -99,6 +121,22 @@ func Emit(ctx context.Context, svc *Service, logger *slog.Logger, n Notification
 		logger.Warn("notification emit failed",
 			"type", string(n.Type),
 			"store_id", n.StoreID.String(),
+			"err", err.Error())
+	}
+}
+
+// EmitToCustomer is a fire-and-forget helper for customer-facing notifications
+// (recipient_user_id set). Customer notifications are not gated by merchant
+// preferences, so it inserts directly. Nil-safe on svc + no-op without a
+// recipient.
+func EmitToCustomer(ctx context.Context, svc *Service, logger *slog.Logger, n Notification) {
+	if svc == nil || n.RecipientUserID == nil || *n.RecipientUserID == "" {
+		return
+	}
+	if err := svc.Create(ctx, &n); err != nil && logger != nil {
+		logger.Warn("customer notification emit failed",
+			"type", string(n.Type),
+			"recipient", *n.RecipientUserID,
 			"err", err.Error())
 	}
 }

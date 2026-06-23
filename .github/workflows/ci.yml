@@ -216,13 +216,11 @@ jobs:
         # CVE IDs we've explicitly triaged as false-positives; each entry
         # in .trivyignore carries a rationale + review date.
         #
-        # TEMP: continue-on-error because trivy-action@master regressed —
-        # its setup step now rejects the cache `path` ("must be a literal
-        # path"), failing EVERY build *after* the image is already pushed.
-        # Keep the scan running (advisory) so the build stays green; pin
-        # the action to a known-good release to restore the hard gate.
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
+        # Pinned to a tagged release (off @master): @master regressed by
+        # pulling a setup-trivy/actions-cache combo that rejected the cache
+        # path and failed every build after the image was pushed. v0.36.0
+        # pins those sub-actions to known-good versions, restoring the gate.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/tesserix/${{ matrix.image.name }}:main-${{ steps.sha.outputs.short }}
           severity: CRITICAL,HIGH

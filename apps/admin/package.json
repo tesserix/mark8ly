@@ -44,7 +44,7 @@
     "postcss": "^8.5.8",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "react-easy-crop": "^5.5.7",
+    "react-easy-crop": "^6.0.2",
     "react-hook-form": "^7.72.1",
     "react-is": "^19.2.5",
     "react-markdown": "^10.1.0",

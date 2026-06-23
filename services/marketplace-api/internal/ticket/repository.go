@@ -221,9 +221,13 @@ func (gormRepository) NextTicketNumber(tx *gorm.DB, storeID uuid.UUID) (string, 
 	}
 
 	var next int
+	// Table is support_tickets (see Ticket.TableName) — NOT the bare
+	// `tickets` table. Querying the wrong table made MAX always 0, so every
+	// ticket got TKT-00001 and the 2nd insert hit the store_number unique
+	// constraint.
 	row := tx.Raw(`
 		SELECT COALESCE(MAX(CAST(SUBSTRING(ticket_number FROM 5) AS INT)), 0) + 1
-		FROM tickets
+		FROM support_tickets
 		WHERE store_id = ?
 	`, storeID).Row()
 	if err := row.Scan(&next); err != nil {

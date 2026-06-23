@@ -16,7 +16,7 @@
     "@react-pdf/renderer": "^4.3.1",
     "@repo/ui": "*",
     "@tailwindcss/postcss": "^4.2.2",
-    "@tesserix/otto-widget": "^0.5.2",
+    "@tesserix/otto-widget": "^0.5.3",
     "@tesserix/web": "^1.7.1",
     "next": "^16.2.6",
     "postcss": "^8.5.8",

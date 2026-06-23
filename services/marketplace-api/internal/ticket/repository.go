@@ -225,10 +225,14 @@ func (gormRepository) NextTicketNumber(tx *gorm.DB, storeID uuid.UUID) (string, 
 	// `tickets` table. Querying the wrong table made MAX always 0, so every
 	// ticket got TKT-00001 and the 2nd insert hit the store_number unique
 	// constraint.
+	// Scope to our own 'TKT-NNNNN' rows: any other-format ticket_number in
+	// the store would make SUBSTRING/CAST mis-parse and skew MAX, producing
+	// a "TKT-<n>" that already exists (the store_number unique-constraint
+	// violation we saw). The LIKE keeps the sequence self-consistent.
 	row := tx.Raw(`
 		SELECT COALESCE(MAX(CAST(SUBSTRING(ticket_number FROM 5) AS INT)), 0) + 1
 		FROM support_tickets
-		WHERE store_id = ?
+		WHERE store_id = ? AND ticket_number LIKE 'TKT-%'
 	`, storeID).Row()
 	if err := row.Scan(&next); err != nil {
 		return "", fmt.Errorf("ticket next number: %w", err)

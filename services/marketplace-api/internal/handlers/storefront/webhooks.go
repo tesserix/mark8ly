@@ -618,13 +618,14 @@ func (h *WebhookHandler) emitPaymentReceived(ctx context.Context, orderID uuid.U
 		return
 	}
 	var row struct {
-		TenantID    uuid.UUID `gorm:"column:tenant_id"`
-		StoreID     uuid.UUID `gorm:"column:store_id"`
-		OrderNumber string    `gorm:"column:order_number"`
+		TenantID    uuid.UUID  `gorm:"column:tenant_id"`
+		StoreID     uuid.UUID  `gorm:"column:store_id"`
+		CustomerID  *uuid.UUID `gorm:"column:customer_id"`
+		OrderNumber string     `gorm:"column:order_number"`
 	}
 	if err := h.db.WithContext(ctx).
 		Table("orders").
-		Select("tenant_id, store_id, order_number").
+		Select("tenant_id, store_id, customer_id, order_number").
 		Where("id = ?", orderID).
 		Take(&row).Error; err != nil {
 		h.logError("webhook: order lookup for notification failed",
@@ -642,6 +643,23 @@ func (h *WebhookHandler) emitPaymentReceived(ctx context.Context, orderID uuid.U
 		ResourceType: &resourceType,
 		ResourceID:   &orderID,
 	})
+
+	// Also notify the customer's own bell when the order belongs to a
+	// logged-in customer profile (recipient_user_id = customer profile id).
+	if row.CustomerID != nil {
+		custMsg := "Your payment for order " + row.OrderNumber + " was received — your order is confirmed."
+		recipient := row.CustomerID.String()
+		notification.EmitToCustomer(ctx, h.notify, h.logger, notification.Notification{
+			TenantID:        row.TenantID,
+			StoreID:         row.StoreID,
+			RecipientUserID: &recipient,
+			Type:            notification.TypeOrderPlaced,
+			Title:           "Order confirmed",
+			Message:         &custMsg,
+			ResourceType:    &resourceType,
+			ResourceID:      &orderID,
+		})
+	}
 }
 
 // awardLoyaltyPoints looks up the order and credits points on the

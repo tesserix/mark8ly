@@ -35,6 +35,8 @@ type Deps struct {
 	CustomerAccountHandler *CustomerAccountHandler
 	CustomerService        *customer.Service
 	CustomerSessionSecret  string
+	// Customer notification bell.
+	CustomerNotificationsHandler *CustomerNotificationsHandler
 	// C3 reviews.
 	ReviewsHandler *ReviewsHandler
 	// C4 wishlists.
@@ -249,6 +251,14 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 			// Order history — list orders for authenticated customer.
 			if deps.OrderDetailHandler != nil {
 				account.GET("/orders", deps.OrderDetailHandler.ListOrders)
+			}
+
+			// Customer notification bell.
+			if deps.CustomerNotificationsHandler != nil {
+				account.GET("/notifications", deps.CustomerNotificationsHandler.List)
+				account.GET("/notifications/unread-count", deps.CustomerNotificationsHandler.UnreadCount)
+				account.PATCH("/notifications/read-all", deps.CustomerNotificationsHandler.MarkAllRead)
+				account.PATCH("/notifications/:id/read", deps.CustomerNotificationsHandler.MarkRead)
 			}
 
 			// C3 — Reviews (authenticated: submit + react + comment).

@@ -40,6 +40,20 @@ type Repository interface {
 	// MarkAllRead marks all unread notifications as read for a store.
 	MarkAllRead(ctx context.Context, db *gorm.DB, storeID uuid.UUID) error
 
+	// --- Customer-scoped (recipient_user_id) — storefront notification bell ---
+
+	// ListByCustomer returns a paginated list of a customer's notifications in a store.
+	ListByCustomer(ctx context.Context, db *gorm.DB, storeID uuid.UUID, recipientUserID string, page, perPage int) (ListResult, error)
+
+	// GetUnreadCountByCustomer returns a customer's unread count in a store.
+	GetUnreadCountByCustomer(ctx context.Context, db *gorm.DB, storeID uuid.UUID, recipientUserID string) (int64, error)
+
+	// MarkReadByCustomer marks one of a customer's notifications as read.
+	MarkReadByCustomer(ctx context.Context, db *gorm.DB, storeID uuid.UUID, recipientUserID string, id uuid.UUID) error
+
+	// MarkAllReadByCustomer marks all of a customer's unread notifications as read.
+	MarkAllReadByCustomer(ctx context.Context, db *gorm.DB, storeID uuid.UUID, recipientUserID string) error
+
 	// Create inserts a new notification row.
 	Create(ctx context.Context, db *gorm.DB, n *Notification) error
 
@@ -107,6 +121,58 @@ func (gormRepository) MarkAllRead(ctx context.Context, db *gorm.DB, storeID uuid
 		Where("store_id = ? AND is_read = false", storeID).
 		Update("is_read", true).Error; err != nil {
 		return fmt.Errorf("notification mark all read: %w", err)
+	}
+	return nil
+}
+
+func (gormRepository) ListByCustomer(ctx context.Context, db *gorm.DB, storeID uuid.UUID, recipientUserID string, page, perPage int) (ListResult, error) {
+	var result ListResult
+	q := db.WithContext(ctx).Model(&Notification{}).
+		Where("store_id = ? AND recipient_user_id = ?", storeID, recipientUserID)
+	if err := q.Count(&result.Total).Error; err != nil {
+		return result, fmt.Errorf("notification customer list count: %w", err)
+	}
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 20
+	}
+	offset := (page - 1) * perPage
+	if err := q.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&result.Notifications).Error; err != nil {
+		return result, fmt.Errorf("notification customer list: %w", err)
+	}
+	return result, nil
+}
+
+func (gormRepository) GetUnreadCountByCustomer(ctx context.Context, db *gorm.DB, storeID uuid.UUID, recipientUserID string) (int64, error) {
+	var count int64
+	if err := db.WithContext(ctx).Model(&Notification{}).
+		Where("store_id = ? AND recipient_user_id = ? AND is_read = false", storeID, recipientUserID).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("notification customer unread count: %w", err)
+	}
+	return count, nil
+}
+
+func (gormRepository) MarkReadByCustomer(ctx context.Context, db *gorm.DB, storeID uuid.UUID, recipientUserID string, id uuid.UUID) error {
+	res := db.WithContext(ctx).Model(&Notification{}).
+		Where("store_id = ? AND recipient_user_id = ? AND id = ?", storeID, recipientUserID, id).
+		Update("is_read", true)
+	if res.Error != nil {
+		return fmt.Errorf("notification customer mark read: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("notification")
+	}
+	return nil
+}
+
+func (gormRepository) MarkAllReadByCustomer(ctx context.Context, db *gorm.DB, storeID uuid.UUID, recipientUserID string) error {
+	if err := db.WithContext(ctx).Model(&Notification{}).
+		Where("store_id = ? AND recipient_user_id = ? AND is_read = false", storeID, recipientUserID).
+		Update("is_read", true).Error; err != nil {
+		return fmt.Errorf("notification customer mark all read: %w", err)
 	}
 	return nil
 }

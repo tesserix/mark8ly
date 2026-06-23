@@ -1094,6 +1094,7 @@ func main() {
 		customerRepo := customer.NewRepository(conn)
 		customerSvc := customer.NewService(conn, customerRepo, log).WithAudit(auditEmitter)
 		customerAccountHandler := storefront.NewCustomerAccountHandler(conn, customerRepo, customerSvc, log)
+		customerNotificationsHandler := storefront.NewCustomerNotificationsHandler(notificationSvc)
 
 		// C3 — Reviews.
 		reviewRepoSF := review.NewRepository(conn)
@@ -1212,8 +1213,9 @@ func main() {
 			StorefrontKey:          cfg.StorefrontKey,
 			CountryHandler:         countryHandler,
 			// C1 customer auth.
-			CustomerAccountHandler: customerAccountHandler,
-			CustomerService:        customerSvc,
+			CustomerAccountHandler:       customerAccountHandler,
+			CustomerNotificationsHandler: customerNotificationsHandler,
+			CustomerService:              customerSvc,
 			CustomerSessionSecret:  cfg.CustomerSessionSecret,
 			// C3 reviews.
 			ReviewsHandler: sfReviewsHandler,

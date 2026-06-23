@@ -26,6 +26,7 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
@@ -82,6 +83,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/notification"
+	"github.com/mark8ly/marketplace-api/internal/observability"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/ottoclient"
@@ -187,12 +189,31 @@ func (stubPlatformClient) GetStoreBySlug(ctx context.Context, slug string) (*sto
 	return nil, stores.ErrPlatformUnavailable
 }
 
+// otelServiceName is the OpenTelemetry service.name reported for traces and
+// metrics. Both MODE variants (admin/storefront) run the same binary/image,
+// so they share one logical service name; the MODE is distinguished via
+// resource/span attributes downstream.
+const otelServiceName = "mark8ly-marketplace-api"
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		panic(err)
 	}
 	log := logger.New(cfg.Env)
+
+	// OpenTelemetry — traces + metrics over OTLP gRPC to the in-cluster
+	// collector. No-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset (local dev).
+	otelShutdown, err := observability.Init(context.Background(), otelServiceName)
+	if err != nil {
+		log.Error("otel init", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := otelShutdown(context.Background()); err != nil {
+			log.Error("otel shutdown", "err", err)
+		}
+	}()
 
 	m, err := mode.Parse(cfg.Mode)
 	if err != nil {
@@ -1724,6 +1745,7 @@ func main() {
 		// groups mount on one port so a developer can curl either without
 		// running two processes.
 		r := httpserver.MergedForBoth(cfg.Env, log)
+		r.Use(otelgin.Middleware(otelServiceName))
 		r.MaxMultipartMemory = 100 << 20 // 100 MB for CSV uploads
 		healthHandler.Register(r)
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
@@ -1784,6 +1806,7 @@ func main() {
 		if m == mode.Storefront {
 			engine = e.Storefront
 		}
+		engine.Use(otelgin.Middleware(otelServiceName))
 		engine.MaxMultipartMemory = 100 << 20 // 100 MB for CSV uploads
 		healthHandler.Register(engine)
 		if m == mode.Admin {

@@ -21,6 +21,8 @@ import (
 	// timezone validator in PATCH /internal/stores/:id.
 	_ "time/tzdata"
 
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+
 	platformapi "github.com/mark8ly/platform-api"
 	"github.com/mark8ly/platform-api/internal/audit"
 	"github.com/mark8ly/platform-api/internal/auth"
@@ -31,6 +33,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/marketplaceapi"
 	"github.com/mark8ly/platform-api/internal/middleware"
 	"github.com/mark8ly/platform-api/internal/notification"
+	"github.com/mark8ly/platform-api/internal/observability"
 	"github.com/mark8ly/platform-api/internal/onboarding"
 	"github.com/mark8ly/platform-api/internal/outbox"
 	"github.com/mark8ly/platform-api/internal/store"
@@ -50,6 +53,23 @@ func main() {
 		panic(err)
 	}
 	log := logger.New(cfg.Env)
+
+	// ─── Observability ──────────────────────────────────────────────────
+	// Initialise OpenTelemetry (traces + metrics over OTLP/gRPC) before any
+	// real work so startup is traced too. No-op when
+	// OTEL_EXPORTER_OTLP_ENDPOINT is unset (dev / collector-less envs).
+	const serviceName = "mark8ly-platform-api"
+	otelShutdown, err := observability.Init(context.Background(), serviceName)
+	if err != nil {
+		log.Warn("observability: init failed — continuing without telemetry", "err", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if sErr := otelShutdown(shutdownCtx); sErr != nil {
+			log.Warn("observability: shutdown", "err", sErr)
+		}
+	}()
 
 	// Verify schema version. Refuse to start on mismatch.
 	mig, err := migrate.New(platformapi.MigrationsFS, "migrations", cfg.DatabaseURL)
@@ -263,6 +283,9 @@ func main() {
 
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)
+	// Trace every request. No-op spans when telemetry is disabled, so this
+	// is safe to install unconditionally.
+	r.Use(otelgin.Middleware(serviceName))
 	v1 := r.Group("/api/v1")
 	// /internal/* is the in-cluster trust surface — admin BFF, auth-bff,
 	// marketplace-api call into here. RequireInternalAuth gates every

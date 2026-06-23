@@ -15,9 +15,15 @@ import (
 	"github.com/mark8ly/otto/internal/mailer"
 	"github.com/mark8ly/otto/internal/message"
 	ottomongo "github.com/mark8ly/otto/internal/mongo"
+	"github.com/mark8ly/otto/internal/observability"
 	"github.com/mark8ly/otto/internal/otp"
 	"github.com/mark8ly/otto/internal/session"
+
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
+
+// serviceName identifies otto in traces/metrics; matches the chart name.
+const serviceName = "mark8ly-otto"
 
 func main() {
 	cfg, err := config.Load()
@@ -28,6 +34,19 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// ── Observability ──────────────────────────────────────────────────
+	// No-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset (local/dev).
+	otelShutdown, err := observability.Init(ctx, serviceName)
+	if err != nil {
+		log.Error("observability: init", "err", err)
+		panic(err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = otelShutdown(shutdownCtx)
+	}()
 
 	// ── Mongo ──────────────────────────────────────────────────────────
 	mongoClient, err := ottomongo.Connect(ctx, cfg.MongoURL, cfg.MongoDatabase)
@@ -78,6 +97,10 @@ func main() {
 
 	// ── HTTP server ────────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log, cfg.CORSAllowedOrigins)
+	// Trace inbound HTTP. No-op spans when the TracerProvider is the
+	// default no-op (observability disabled), so this is safe to attach
+	// unconditionally.
+	r.Use(otelgin.Middleware(serviceName))
 
 	// Storefront REST routes — all run the CustomerContext middleware so
 	// the Next.js proxy's tenant/store/internal-auth headers gate entry.

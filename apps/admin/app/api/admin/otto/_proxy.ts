@@ -186,6 +186,11 @@ export async function forwardToOtto(
       headers: {
         "Content-Type":
           upstream.headers.get("Content-Type") ?? "application/json",
+        // The staff inbox is real-time data — never let the browser (or any
+        // intermediary) serve a stale conversation list. Without this the
+        // inbox can show an out-of-date list after a fix/store switch until
+        // a hard refresh.
+        "Cache-Control": "no-store",
       },
     });
   } catch (err) {

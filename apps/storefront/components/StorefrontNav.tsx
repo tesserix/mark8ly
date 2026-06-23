@@ -10,6 +10,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CartCountBadge } from "./CartCountBadge";
 import { CustomerAccountMenu } from "./CustomerAccountMenu";
+import { CustomerNotificationBell } from "./CustomerNotificationBell";
 
 export interface StorefrontNavProps {
   /** Optional store name shown as the left-hand brand slot. */
@@ -72,6 +73,9 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
                 <CartCountBadge />
               </Suspense>
             </Link>
+          </li>
+          <li className="min-h-[44px] flex items-center">
+            <CustomerNotificationBell />
           </li>
           <li className="min-h-[44px] flex items-center">
             <CustomerAccountMenu />

@@ -14,12 +14,15 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+
 	authbff "github.com/mark8ly/auth-bff"
 	"github.com/mark8ly/auth-bff/internal/adminhandoff"
 	"github.com/mark8ly/auth-bff/internal/audit"
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/autologin"
 	"github.com/mark8ly/auth-bff/internal/gip"
+	"github.com/mark8ly/auth-bff/internal/observability"
 	"github.com/mark8ly/auth-bff/internal/session"
 	"github.com/mark8ly/auth-bff/internal/usermfa"
 	"github.com/mark8ly/auth-bff/internal/usersessions"
@@ -29,12 +32,32 @@ import (
 	"github.com/mark8ly/auth-bff/pkg/migrate"
 )
 
+// serviceName is the OpenTelemetry service.name attribute and the label
+// used by the gin OTel middleware.
+const serviceName = "mark8ly-auth-bff"
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		panic(err)
 	}
 	log := logger.New(cfg.Env)
+
+	// ─── OpenTelemetry (traces + metrics) ──────────────────────────────
+	// No-op when OTEL_EXPORTER_OTLP_ENDPOINT is empty. Init early so the
+	// global providers are installed before any instrumented startup work.
+	otelShutdown, err := observability.Init(context.Background(), serviceName)
+	if err != nil {
+		log.Warn("otel: init failed — continuing without telemetry", "err", err)
+	} else {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelShutdown(shutdownCtx); err != nil {
+				log.Warn("otel: shutdown", "err", err)
+			}
+		}()
+	}
 
 	// ─── Schema version gate ───────────────────────────────────────────
 	mig, err := migrate.New(authbff.MigrationsFS, "migrations", cfg.DatabaseURL)
@@ -173,6 +196,9 @@ func main() {
 
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)
+	// OTel HTTP server instrumentation: one span per request, propagated
+	// trace context. No-op spans when the global provider is disabled.
+	r.Use(otelgin.Middleware(serviceName))
 	v1 := r.Group("/auth")
 	autologinHandler.Register(v1)
 	sessionHandler.Register(v1)

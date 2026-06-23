@@ -12,7 +12,39 @@ import {
   Star,
   CheckCheck,
   Settings,
+  MessageSquare,
+  LifeBuoy,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
+
+// A short two-tone chime synthesized via Web Audio — no asset to ship, and
+// it's a no-op if the browser blocks autoplay or lacks AudioContext.
+let audioCtx: AudioContext | null = null;
+function playChime() {
+  try {
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext;
+    audioCtx = audioCtx ?? new Ctx();
+    const ctx = audioCtx;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.type = "sine";
+    o.frequency.setValueAtTime(880, ctx.currentTime);
+    o.frequency.setValueAtTime(1175, ctx.currentTime + 0.1);
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+    o.start();
+    o.stop(ctx.currentTime + 0.4);
+  } catch {
+    /* autoplay blocked / unsupported — silent */
+  }
+}
 
 interface NotificationItem {
   id: string;
@@ -50,6 +82,13 @@ function hrefFor(n: NotificationItem): string | null {
       return "/customers/reviews";
     case "low_stock":
       return id ? `/products/${id}` : "/products";
+    case "new_support_message":
+    case "support_chat_pending":
+    case "support_escalated":
+      return "/support/live-chat";
+    case "new_ticket":
+    case "ticket_reply":
+      return id ? `/support/tickets/${id}` : "/support/tickets";
     default:
       return null;
   }
@@ -67,6 +106,11 @@ const TYPE_ICONS: Record<string, typeof Bell> = {
   return_requested: RotateCcw,
   payment_received: DollarSign,
   review_submitted: Star,
+  new_support_message: MessageSquare,
+  support_chat_pending: MessageSquare,
+  support_escalated: LifeBuoy,
+  new_ticket: LifeBuoy,
+  ticket_reply: LifeBuoy,
 };
 
 export function NotificationBell({
@@ -78,7 +122,22 @@ export function NotificationBell({
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [muted, setMuted] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef<number | null>(null);
+
+  // Restore the per-browser mute preference.
+  useEffect(() => {
+    setMuted(localStorage.getItem("notif-muted") === "1");
+  }, []);
+
+  const toggleMuted = useCallback(() => {
+    setMuted((m) => {
+      const next = !m;
+      localStorage.setItem("notif-muted", next ? "1" : "0");
+      return next;
+    });
+  }, []);
 
   // Poll unread count every 30 seconds — but only while the tab is
   // visible. A backgrounded admin tab left open all day would otherwise
@@ -93,7 +152,19 @@ export function NotificationBell({
       );
       if (res.ok) {
         const data = (await res.json()) as { unread_count: number };
-        setUnreadCount(data.unread_count ?? 0);
+        const next = data.unread_count ?? 0;
+        const prev = prevCountRef.current;
+        prevCountRef.current = next;
+        // Chime only on a genuine increase (a new notification) — never on the
+        // initial prime or when the count drops after marking things read.
+        if (
+          prev !== null &&
+          next > prev &&
+          localStorage.getItem("notif-muted") !== "1"
+        ) {
+          playChime();
+        }
+        setUnreadCount(next);
       }
     } catch (error: unknown) {
       console.error("NotificationBell: unread-count fetch failed", error);
@@ -222,16 +293,31 @@ export function NotificationBell({
         <div className="absolute right-0 left-auto top-full z-50 mt-2 w-[calc(100vw-2rem)] sm:w-80 max-h-96 overflow-y-auto rounded-md border border-border bg-[color:var(--background-elevated)] shadow-lg">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="text-sm font-medium text-foreground">Notifications</p>
-            {unreadCount > 0 && (
+            <div className="flex items-center gap-3">
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAllRead}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--moss-700)] hover:underline"
+                >
+                  <CheckCheck className="h-3 w-3" aria-hidden="true" />
+                  Mark all read
+                </button>
+              )}
               <button
                 type="button"
-                onClick={handleMarkAllRead}
-                className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--moss-700)] hover:underline"
+                onClick={toggleMuted}
+                className="inline-flex items-center text-foreground-secondary hover:text-foreground"
+                aria-label={muted ? "Unmute notification sound" : "Mute notification sound"}
+                title={muted ? "Sound off" : "Sound on"}
               >
-                <CheckCheck className="h-3 w-3" aria-hidden="true" />
-                Mark all read
+                {muted ? (
+                  <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
               </button>
-            )}
+            </div>
           </div>
 
           {loading ? (

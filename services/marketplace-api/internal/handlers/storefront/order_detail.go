@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -163,6 +164,38 @@ type storefrontAddressResponse struct {
 }
 
 // GetOrder handles GET /storefront/stores/:storeSlug/orders/:id.
+// resolveCallerCustomer identifies which customer a storefront order request is
+// acting for, so reads/writes can be scoped to that customer. It prefers a
+// logged-in session profile (CustomerProfileKey, set by the optional
+// customer-auth middleware); failing that, a trusted backend caller — the Otto
+// support assistant, already authenticated by the storefront key — may act for a
+// verified customer via the X-Customer-Email header (the conversation's
+// OTP/session-verified email). ok=false means no customer is identifiable (e.g.
+// the post-checkout confirmation view), which stays store-scoped only.
+func resolveCallerCustomer(c *gin.Context) (profileID, email string, ok bool) {
+	if pv, exists := c.Get(CustomerProfileKey); exists {
+		if p, _ := pv.(*customer.CustomerProfile); p != nil {
+			return p.ID.String(), "", true
+		}
+	}
+	if e := strings.TrimSpace(c.GetHeader("X-Customer-Email")); e != "" {
+		return "", e, true
+	}
+	return "", "", false
+}
+
+// orderMatchesCaller reports whether order o belongs to the resolved caller —
+// by customer profile id (logged-in) or by email (trusted assistant call).
+func orderMatchesCaller(o *order.Order, profileID, email string) bool {
+	if profileID != "" {
+		return o.CustomerID != nil && o.CustomerID.String() == profileID
+	}
+	if email != "" {
+		return strings.EqualFold(strings.TrimSpace(o.CustomerEmail), email)
+	}
+	return false
+}
+
 func (h *OrderDetailHandler) GetOrder(c *gin.Context) {
 	storeVal, _ := c.Get("store")
 	store, _ := storeVal.(*stores.Store)
@@ -192,6 +225,18 @@ func (h *OrderDetailHandler) GetOrder(c *gin.Context) {
 
 	// Verify order belongs to this store.
 	if o.StoreID.String() != store.ID {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+			"error": "not_found", "message": "order not found",
+		})
+		return
+	}
+
+	// Scope to the requesting customer: a logged-in customer or the Otto
+	// assistant (acting for a verified customer via X-Customer-Email) may only
+	// read THEIR own order. Anonymous storefront-key reads (the post-checkout
+	// confirmation view) stay store-scoped. Same not_found on a mismatch so an
+	// order id can't be probed for existence.
+	if pid, email, ok := resolveCallerCustomer(c); ok && !orderMatchesCaller(o, pid, email) {
 		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
 			"error": "not_found", "message": "order not found",
 		})

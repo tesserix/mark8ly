@@ -80,13 +80,14 @@ func (h *OrderDetailHandler) RequestReturn(c *gin.Context) {
 		return
 	}
 
-	profileVal, exists := c.Get(CustomerProfileKey)
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized", "message": "Sign in to request a return."})
-		return
-	}
-	profile, ok := profileVal.(*customer.CustomerProfile)
-	if !ok || profile == nil {
+	// Identify the customer: a logged-in session profile, or the Otto assistant
+	// acting for a verified customer (X-Customer-Email, gated by the storefront
+	// key). profile may be nil on the assistant path — it's only used for the
+	// notification display name below.
+	profileVal, _ := c.Get(CustomerProfileKey)
+	profile, _ := profileVal.(*customer.CustomerProfile)
+	pid, email, identified := resolveCallerCustomer(c)
+	if !identified {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized", "message": "Sign in to request a return."})
 		return
 	}
@@ -105,7 +106,7 @@ func (h *OrderDetailHandler) RequestReturn(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found", "message": "order not found"})
 		return
 	}
-	if o.StoreID.String() != store.ID || o.CustomerID == nil || o.CustomerID.String() != profile.ID.String() {
+	if o.StoreID.String() != store.ID || !orderMatchesCaller(o, pid, email) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found", "message": "order not found"})
 		return
 	}
@@ -242,9 +243,11 @@ func (h *OrderDetailHandler) ListReturnsForOrder(c *gin.Context) {
 		return
 	}
 
-	profileVal, _ := c.Get(CustomerProfileKey)
-	profile, _ := profileVal.(*customer.CustomerProfile)
-	if profile == nil {
+	// Identify the customer: a logged-in session profile, or the Otto assistant
+	// acting for a verified customer (X-Customer-Email, gated by the storefront
+	// key). No identifiable customer → empty list (never leak others' returns).
+	pid, email, identified := resolveCallerCustomer(c)
+	if !identified {
 		c.JSON(http.StatusOK, gin.H{"returns": []any{}})
 		return
 	}
@@ -259,7 +262,7 @@ func (h *OrderDetailHandler) ListReturnsForOrder(c *gin.Context) {
 	o, _, _, err := h.orderRepo.GetByID(c.Request.Context(), h.db, orderID)
 	if err != nil || o == nil ||
 		o.StoreID.String() != store.ID ||
-		o.CustomerID == nil || o.CustomerID.String() != profile.ID.String() {
+		!orderMatchesCaller(o, pid, email) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}

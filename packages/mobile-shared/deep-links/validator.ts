@@ -20,7 +20,7 @@ const ROUTE_DEFINITIONS: RouteDefinition[] = [
       segments[1] === "orders"
     ) {
       const id = segments[2];
-      if (!UUID_PATTERN.test(id)) return null;
+      if (id === undefined || !UUID_PATTERN.test(id)) return null;
       return { screen: "account/orders/[id]", params: { id } };
     }
     return null;
@@ -58,7 +58,7 @@ const ROUTE_DEFINITIONS: RouteDefinition[] = [
       segments[1] === "product"
     ) {
       const handle = segments[2];
-      if (!HANDLE_PATTERN.test(handle)) return null;
+      if (handle === undefined || !HANDLE_PATTERN.test(handle)) return null;
       return { screen: "browse/product/[handle]", params: { handle } };
     }
     return null;
@@ -72,7 +72,7 @@ const ROUTE_DEFINITIONS: RouteDefinition[] = [
       segments[1] === "category"
     ) {
       const slug = segments[2];
-      if (!SLUG_PATTERN.test(slug)) return null;
+      if (slug === undefined || !SLUG_PATTERN.test(slug)) return null;
       return { screen: "browse/category/[slug]", params: { slug } };
     }
     return null;

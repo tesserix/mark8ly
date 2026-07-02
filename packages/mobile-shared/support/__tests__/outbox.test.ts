@@ -51,7 +51,7 @@ describe("outbox list ops", () => {
   it("marks fields on one item", () => {
     const q = markItem([item("a"), item("b")], "a", { status: "failed", attempts: 3 });
     expect(q[0]).toMatchObject({ status: "failed", attempts: 3 });
-    expect(q[1].status).toBe("queued");
+    expect(q[1]?.status).toBe("queued");
   });
 });
 

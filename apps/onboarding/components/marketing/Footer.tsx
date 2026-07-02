@@ -37,13 +37,22 @@ export function Footer() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-10 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-10 sm:grid-cols-3 lg:grid-cols-5">
             <FooterColumn
               title="Product"
               links={[
                 { href: "/#features", label: "Features" },
                 { href: "/#pricing", label: "Pricing" },
                 { href: "/integrations", label: "Integrations" },
+              ]}
+            />
+            <FooterColumn
+              title="Compare"
+              links={[
+                { href: "/shopify-alternative", label: "Shopify alternative" },
+                { href: "/etsy-alternative", label: "Etsy alternative" },
+                { href: "/ecommerce-for-makers", label: "For makers" },
+                { href: "/sell-online-india", label: "Sell in India" },
               ]}
             />
             <FooterColumn

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { SeoLanding } from "@/components/marketing/SeoLanding";
 
 export const metadata: Metadata = {
-  title: "Shopify Alternative With No Transaction Fees — Mark8ly",
+  title: "Shopify Alternative With No Transaction Fees",
   description:
     "Looking for a Shopify alternative with no platform transaction fees? Mark8ly gives you an editorial storefront, your own domain, and 90 days free. Keep your margins.",
   alternates: { canonical: "/shopify-alternative" },

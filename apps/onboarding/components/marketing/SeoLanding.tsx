@@ -62,8 +62,27 @@ export function SeoLanding({
   ctaHeading,
   ctaBody,
 }: SeoLandingProps) {
+  // FAQPage structured data — the FAQ content already lives in `faq`,
+  // so emitting it as schema.org FAQPage is free and makes these pages
+  // eligible for FAQ rich results in Google. Serialised from our own
+  // static strings, so JSON.stringify output is safe to inject.
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faq.map((item) => ({
+      "@type": "Question",
+      name: item.question,
+      acceptedAnswer: { "@type": "Answer", text: item.answer },
+    })),
+  };
+
   return (
     <MarketingPage>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
+
       {/* Hero — mirrors PageHero but carries its own CTA so the
           highest-intent visitors can act without scrolling. */}
       <section className="pb-14 pt-16 sm:pt-24">

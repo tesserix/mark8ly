@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { SeoLanding } from "@/components/marketing/SeoLanding";
 
 export const metadata: Metadata = {
-  title: "Sell Online in India with UPI Payments — Mark8ly",
+  title: "Sell Online in India with UPI Payments",
   description:
     "Sell online in India with UPI, wallets, and cards built in, no platform fees, and your own domain. Mark8ly gives Indian sellers a designer storefront and 90 days free.",
   alternates: { canonical: "/sell-online-india" },

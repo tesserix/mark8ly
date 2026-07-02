@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { SeoLanding } from "@/components/marketing/SeoLanding";
 
 export const metadata: Metadata = {
-  title: "Etsy Alternative — Own Your Own Website — Mark8ly",
+  title: "Etsy Alternative — Own Your Own Website",
   description:
     "An Etsy alternative where you own your own website: your domain, your brand, your customer list, and no per-sale platform fees. Editorial storefront, 90 days free.",
   alternates: { canonical: "/etsy-alternative" },

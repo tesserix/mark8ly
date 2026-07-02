@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { SeoLanding } from "@/components/marketing/SeoLanding";
 
 export const metadata: Metadata = {
-  title: "Ecommerce Platform for Makers & Handmade Sellers — Mark8ly",
+  title: "Ecommerce Platform for Makers & Handmade Sellers",
   description:
     "An ecommerce platform for makers and handmade sellers who want a storefront that looks designed, no platform fees, and 90 days free. Built for people who make things.",
   alternates: { canonical: "/ecommerce-for-makers" },

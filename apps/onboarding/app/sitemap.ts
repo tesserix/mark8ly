@@ -37,6 +37,22 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
+  // SEO landing pages — high-intent comparison/alternative
+  // surfaces (#151). Indexed with strong priority; they're the
+  // pages built to capture buying-intent search traffic.
+  const landingRoutes: ReadonlyArray<string> = [
+    "/shopify-alternative",
+    "/ecommerce-for-makers",
+    "/sell-online-india",
+    "/etsy-alternative",
+  ];
+  const landing: MetadataRoute.Sitemap = landingRoutes.map((path) => ({
+    url: `${SITE_URL}${path}`,
+    lastModified: now,
+    changeFrequency: "monthly",
+    priority: 0.9,
+  }));
+
   // Legal — slowly changing, lower priority but indexed.
   // /dpa is intentionally excluded: noindex because it's the
   // auto-accepted controller-processor contract and doesn't
@@ -58,5 +74,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.3,
   }));
 
-  return [...primary, ...legal];
+  return [...primary, ...landing, ...legal];
 }

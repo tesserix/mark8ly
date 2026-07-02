@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -641,8 +642,46 @@ function Comparison({ currency }: ComparisonProps) {
           bank, not us; the line above is what the platform itself adds on
           top.
         </p>
+
+        <p className="mt-8 max-w-3xl text-base leading-relaxed text-foreground-secondary">
+          Weighing a specific platform? Read the full comparisons:{" "}
+          <ComparisonLink href="/shopify-alternative">
+            Mark8ly vs Shopify
+          </ComparisonLink>
+          ,{" "}
+          <ComparisonLink href="/etsy-alternative">
+            the Etsy alternative
+          </ComparisonLink>
+          , our{" "}
+          <ComparisonLink href="/ecommerce-for-makers">
+            guide for makers
+          </ComparisonLink>
+          , or{" "}
+          <ComparisonLink href="/sell-online-india">
+            selling online in India
+          </ComparisonLink>
+          .
+        </p>
       </div>
     </section>
+  );
+}
+
+/* Inline editorial link — moss underline, matches the Prose link style. */
+function ComparisonLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
+    >
+      {children}
+    </Link>
   );
 }
 

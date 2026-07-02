@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 
 import type { PublicStore } from "@/lib/api/platform-api";
-import type { StorefrontBranding } from "@/lib/api/marketplace-api";
+import type {
+  StorefrontBranding,
+  StorefrontProduct,
+} from "@/lib/api/marketplace-api";
 
 /**
  * Per-tenant metadata helper.
@@ -104,6 +107,64 @@ export function canonicalUrl(slug: string): string {
   const base = process.env.STOREFRONT_BASE_DOMAIN ?? "mark8ly.com";
   const protocol = base.includes("localhost") ? "http" : "https";
   return `${protocol}://${slug}.${base}`;
+}
+
+/**
+ * schema.org Product JSON-LD for a storefront product page. Makes each
+ * product eligible for Google product rich results (price, availability,
+ * image). Prices come from the tenant's own price_range; availability is
+ * InStock when any variant has stock. A single Offer is emitted when the
+ * range collapses to one price, otherwise an AggregateOffer.
+ *
+ * The returned object is serialized by <StructuredData>, which escapes
+ * `<` so merchant-controlled title/description can't break out of the
+ * <script> tag.
+ */
+export function buildProductJsonLd(
+  store: PublicStore,
+  product: StorefrontProduct,
+): Record<string, unknown> {
+  const url = `${canonicalUrl(store.slug)}/products/${product.handle}`;
+  const images = product.media
+    .filter((m) => m.media_type === "image")
+    .map((m) => m.url);
+  const { min, max, currency_code } = product.price_range;
+  const availability = product.variants.some((v) => v.in_stock)
+    ? "https://schema.org/InStock"
+    : "https://schema.org/OutOfStock";
+  const description = product.seo_description ?? product.description;
+
+  const offers =
+    min === max
+      ? {
+          "@type": "Offer",
+          price: min,
+          priceCurrency: currency_code,
+          availability,
+          url,
+        }
+      : {
+          "@type": "AggregateOffer",
+          lowPrice: min,
+          highPrice: max,
+          priceCurrency: currency_code,
+          offerCount: product.variants.length,
+          availability,
+          url,
+        };
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.title,
+    ...(description ? { description } : {}),
+    ...(images.length > 0 ? { image: images } : {}),
+    ...(product.categories[0]
+      ? { category: product.categories[0].name }
+      : {}),
+    brand: { "@type": "Brand", name: store.name },
+    offers,
+  };
 }
 
 /**

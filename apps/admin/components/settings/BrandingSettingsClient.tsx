@@ -488,10 +488,11 @@ function PoliciesTab({ form, patch, editable }: TabProps) {
 // ─── Advanced Tab ───────────────────────────────────────────────────
 
 function AdvancedTab({ form, patch, editable }: TabProps) {
-  // TODO: gate on actual plan tier once subscription system is wired.
-  // For now, badge removal is locked for all stores (Pro+ required).
-  const canRemoveBadge = false;
-
+  // The "Powered by mark8ly" badge is opt-out for every plan — the
+  // plangate matrix grants FeatureRemovePoweredBy to all tiers (spec §9),
+  // and the backend permits any store to clear the flag. It's on by
+  // default (each live storefront is a dofollow backlink, #152) and any
+  // merchant can turn it off here.
   return (
     <div className="space-y-8">
       <SectionHeader
@@ -504,15 +505,15 @@ function AdvancedTab({ form, patch, editable }: TabProps) {
           <div className="space-y-0.5">
             <p className="text-sm font-medium text-foreground">Show &quot;Powered by mark8ly&quot;</p>
             <p className="text-xs text-foreground-secondary">
-              {canRemoveBadge
-                ? "Display the mark8ly badge in the storefront footer."
-                : "Upgrade to Pro to remove the mark8ly badge from your storefront footer."}
+              A small &ldquo;Powered by mark8ly&rdquo; link in your storefront
+              footer. On by default &mdash; it helps other makers discover
+              Mark8ly. Turn it off any time.
             </p>
           </div>
           <ToggleSwitch
-            checked={canRemoveBadge ? form.show_powered_by : true}
-            onChange={(v) => canRemoveBadge && editable && patch({ show_powered_by: v })}
-            disabled={!canRemoveBadge || !editable}
+            checked={form.show_powered_by !== false}
+            onChange={(v) => editable && patch({ show_powered_by: v })}
+            disabled={!editable}
           />
         </div>
       </div>

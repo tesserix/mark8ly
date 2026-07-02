@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 
+import { GUIDES } from "./guides/guides";
+
 /**
  * sitemap.xml — Next 16 file convention. Emits every public
  * marketing route so search engines and LLM crawlers can index
@@ -53,6 +55,22 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.9,
   }));
 
+  // Guides — informational content hub + articles (indexed).
+  const guides: MetadataRoute.Sitemap = [
+    {
+      url: `${SITE_URL}/guides`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    },
+    ...GUIDES.map((g) => ({
+      url: `${SITE_URL}/guides/${g.slug}`,
+      lastModified: new Date(g.updated),
+      changeFrequency: "monthly" as const,
+      priority: 0.7,
+    })),
+  ];
+
   // Legal — slowly changing, lower priority but indexed.
   // /dpa is intentionally excluded: noindex because it's the
   // auto-accepted controller-processor contract and doesn't
@@ -74,5 +92,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.3,
   }));
 
-  return [...primary, ...landing, ...legal];
+  return [...primary, ...landing, ...guides, ...legal];
 }

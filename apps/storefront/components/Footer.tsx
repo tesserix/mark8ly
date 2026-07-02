@@ -231,7 +231,13 @@ export function Footer({ branding, storeName }: FooterProps) {
               <a
                 href="https://mark8ly.com"
                 target="_blank"
-                rel="noreferrer"
+                // Intentionally rel="noopener" (NOT "noreferrer" or
+                // "nofollow"): this is a dofollow backlink (#152), so it
+                // must pass link authority to mark8ly.com, and we keep the
+                // Referer header so merchant-store referral traffic is
+                // attributable in analytics. noopener still closes the
+                // window.opener security hole.
+                rel="noopener"
                 className="font-medium text-[color:var(--storefront-accent,var(--moss-700))] transition-colors hover:underline underline-offset-4"
               >
                 mark8ly

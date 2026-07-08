@@ -144,3 +144,8 @@ func TestRefund_OutsideCoolingOff(t *testing.T) {
 		t.Errorf("expected error=refund_outside_cooling_off, got %v", resp["error"])
 	}
 }
+
+// refundURL builds the §8 cooling-off subscription refund endpoint path.
+func refundURL(storeID string) string {
+	return "/admin/stores/" + storeID + "/subscription/refund"
+}

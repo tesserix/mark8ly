@@ -138,7 +138,7 @@ func TestOrderLifecycle_FullJourney(t *testing.T) {
 	require.NoError(t, err)
 	returnID := returnRow.ID
 
-	require.NoError(t, returnSvc.Approve(ctx, returnID))
+	require.NoError(t, returnSvc.Approve(ctx, returnID, ""))
 	require.NoError(t, returnSvc.MarkReceived(ctx, returnID))
 	// Refund 50 EUR (one of two items) — partial refund.
 	require.NoError(t, returnSvc.MarkRefunded(ctx, returnID,
@@ -277,8 +277,8 @@ func seedStoreWithTenant(t *testing.T, db *gorm.DB, storeID, tenantID uuid.UUID)
 	t.Helper()
 	slug := "lc-" + storeID.String()[:18]
 	err := db.Exec(
-		`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, storefront_customer_portal_secret)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, encode(gen_random_bytes(32), 'hex'))`,
 		storeID, tenantID, slug, "Lifecycle Store", "IE", "EUR", "Europe/Dublin", "active",
 	).Error
 	require.NoError(t, err)

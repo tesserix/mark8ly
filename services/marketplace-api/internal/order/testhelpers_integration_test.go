@@ -27,8 +27,8 @@ func seedStore(t *testing.T, db *gorm.DB, storeID uuid.UUID) {
 	tenantID := uuid.New()
 
 	err := db.Exec(
-		`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, storefront_customer_portal_secret)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, encode(gen_random_bytes(32), 'hex'))`,
 		storeID, tenantID, slug, "Test Store", "IE", "EUR", "Europe/Dublin", "active",
 	).Error
 	if err != nil {

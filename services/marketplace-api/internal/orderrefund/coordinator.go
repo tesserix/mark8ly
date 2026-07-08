@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -208,4 +209,56 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 		Amount:           amount,
 		PaymentStatus:    target,
 	}, nil
+}
+
+// ResumePending re-drives refund ledger rows stuck in 'pending' — the never-lost
+// guarantee. Safe to run repeatedly: the same idempotency_key makes the gateway
+// call a no-op if money already moved. A 'pending' row means tx#2 never committed,
+// so orders.refunded_amount was NOT bumped for it — re-running RecordRefund bumps
+// it exactly once.
+func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration, limit int) (int, error) {
+	var rows []payment.RefundTransaction
+	// The interval literal is built in Go (rather than concatenated in SQL
+	// via `? || ' seconds'`) because pgx cannot infer a text type for a bare
+	// numeric placeholder feeding string concatenation.
+	cutoff := fmt.Sprintf("%d seconds", int(olderThan.Seconds()))
+	if err := c.db.WithContext(ctx).
+		Where("status = 'pending' AND created_at < now() - (?)::interval", cutoff).
+		Order("created_at ASC").Limit(limit).Find(&rows).Error; err != nil {
+		return 0, err
+	}
+	resumed := 0
+	for i := range rows {
+		row := rows[i]
+		oid, err := uuid.Parse(row.OrderID)
+		if err != nil {
+			continue
+		}
+		o, _, _, err := c.orderRepo.GetByID(ctx, c.db, oid)
+		if err != nil || o == nil {
+			continue
+		}
+		gw, err := c.res.GatewayFor(ctx, o.StoreID, row.Provider)
+		if err != nil {
+			continue
+		}
+		ref, err := c.pay.ExecuteGatewayRefund(ctx, gw, payment.RefundInput{
+			ProviderPaymentID: row.ProviderPaymentID, Amount: row.Amount,
+			CurrencyCode: o.CurrencyCode, Reason: row.Reason, IdempotencyKey: row.IdempotencyKey,
+		})
+		if err != nil {
+			continue // try again next sweep
+		}
+		target := DeriveStatus(o.RefundedAmount, row.Amount, o.GrandTotal)
+		if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := c.pay.FinalizeRefund(ctx, tx, row.ID, ref.ProviderRefundID, refundStatusSucceeded); err != nil {
+				return err
+			}
+			return c.orders.RecordRefund(ctx, tx, oid, row.Amount, target, row.Reason)
+		}); err != nil {
+			continue
+		}
+		resumed++
+	}
+	return resumed, nil
 }

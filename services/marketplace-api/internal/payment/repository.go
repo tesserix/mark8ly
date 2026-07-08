@@ -43,6 +43,8 @@ type RefundTransaction struct {
 	ID                string          `gorm:"column:id;type:uuid;primaryKey"                json:"id"`
 	TenantID          string          `gorm:"column:tenant_id;type:uuid;not null;index"      json:"tenant_id"`
 	StoreID           string          `gorm:"column:store_id;type:uuid;not null;index"       json:"store_id"`
+	OrderID           string          `gorm:"column:order_id;type:uuid;index"                json:"order_id"`
+	IdempotencyKey    string          `gorm:"column:idempotency_key;type:varchar(255);uniqueIndex" json:"idempotency_key"`
 	ProviderPaymentID string          `gorm:"column:provider_payment_id;type:varchar(255);not null" json:"provider_payment_id"`
 	ProviderRefundID  string          `gorm:"column:provider_refund_id;type:varchar(255);not null"  json:"provider_refund_id"`
 	Provider          string          `gorm:"column:provider;type:varchar(20);not null"       json:"provider"`

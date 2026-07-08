@@ -222,6 +222,9 @@ func (p *PayPalGateway) RefundPayment(ctx context.Context, in RefundInput) (*Ref
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
+	if in.IdempotencyKey != "" {
+		req.Header.Set("PayPal-Request-Id", in.IdempotencyKey)
+	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {

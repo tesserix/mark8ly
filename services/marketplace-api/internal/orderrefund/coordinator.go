@@ -1,0 +1,184 @@
+package orderrefund
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/payment"
+	"github.com/mark8ly/marketplace-api/pkg/apperrors"
+)
+
+// RefundCommand is a request to refund all or part of an order's captured
+// payment. Amount==nil means "refund the full remaining balance"
+// (grand_total - refunded_amount).
+type RefundCommand struct {
+	OrderID uuid.UUID
+	Amount  *decimal.Decimal // nil ⇒ full remaining
+	Reason  string
+	Actor   string
+	ScopeID string // idempotency scope: return_id | "cancel" | refund_request_id ([A-Za-z0-9_-] only)
+}
+
+// RefundResult is what a successful (or already-completed) Refund call
+// reports back to the caller.
+type RefundResult struct {
+	ProviderRefundID string
+	Amount           decimal.Decimal
+	PaymentStatus    order.PaymentStatus
+	AlreadyDone      bool
+}
+
+// resolver is the narrow surface Coordinator needs from *Resolver — reading
+// an order's captured payment context and constructing the matching
+// payment.Gateway. Defined as an interface (rather than depending on
+// *Resolver concretely) so integration tests can inject a fake gateway
+// while still exercising the real PaymentContextForOrder DB read.
+type resolver interface {
+	PaymentContextForOrder(ctx context.Context, orderID uuid.UUID) (PaymentContext, error)
+	GatewayFor(ctx context.Context, storeID uuid.UUID, provider string) (payment.Gateway, error)
+}
+
+// Coordinator runs the refund saga: reserve a pending ledger row, call the
+// gateway, then atomically finalize the ledger and bookkeep the order. Every
+// trigger that can produce a refund (admin refund, return refund, paid
+// cancel) calls Coordinator.Refund — this is the single place gateway money
+// movement happens.
+type Coordinator struct {
+	db        *gorm.DB
+	res       resolver
+	pay       *payment.Service
+	orders    *order.Service
+	orderRepo order.Repository
+	enabled   bool
+}
+
+// NewCoordinator constructs a Coordinator. enabled gates whether Refund is
+// allowed to touch the gateway/DB at all — see the REFUND_GATEWAY_ENABLED
+// kill switch.
+func NewCoordinator(db *gorm.DB, res resolver, pay *payment.Service, orders *order.Service, orderRepo order.Repository, enabled bool) *Coordinator {
+	return &Coordinator{db: db, res: res, pay: pay, orders: orders, orderRepo: orderRepo, enabled: enabled}
+}
+
+// DeriveStatus picks partially_refunded vs refunded from the post-refund
+// total: refunded so far plus the amount about to be refunded, compared
+// against the order's grand total.
+func DeriveStatus(refunded, amount, grandTotal decimal.Decimal) order.PaymentStatus {
+	if refunded.Add(amount).GreaterThanOrEqual(grandTotal) {
+		return order.PaymentStatusRefunded
+	}
+	return order.PaymentStatusPartiallyRefunded
+}
+
+// idempotencyKey builds a provider-safe key. Charset is restricted to
+// [A-Za-z0-9_-] (Razorpay's X-Refund-Idempotency requires this and min 10
+// chars; Stripe/PayPal accept it). NO colons — Razorpay rejects them.
+func idempotencyKey(orderID uuid.UUID, scopeID string) string {
+	return "refund_" + orderID.String() + "_" + scopeID
+}
+
+// Refund runs the full saga for cmd. It never touches the gateway or the
+// database when the coordinator is disabled.
+func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResult, error) {
+	if !c.enabled {
+		return RefundResult{}, fmt.Errorf("orderrefund: gateway refunds disabled (REFUND_GATEWAY_ENABLED=false)")
+	}
+
+	o, _, _, err := c.orderRepo.GetByID(ctx, c.db, cmd.OrderID)
+	if err != nil {
+		return RefundResult{}, err
+	}
+
+	pc, err := c.res.PaymentContextForOrder(ctx, cmd.OrderID)
+	if err != nil {
+		return RefundResult{}, err
+	}
+	if !pc.Found {
+		return RefundResult{}, apperrors.RefundUnavailable("no captured payment for this order")
+	}
+
+	remaining := o.GrandTotal.Sub(o.RefundedAmount)
+	amount := remaining
+	if cmd.Amount != nil {
+		amount = *cmd.Amount
+	}
+	if amount.LessThanOrEqual(decimal.Zero) {
+		return RefundResult{}, apperrors.ValidationFailed("amount", "refund amount must be positive")
+	}
+
+	refundCap := decimal.Min(o.GrandTotal, pc.CapturedTotal)
+	if o.RefundedAmount.Add(amount).GreaterThan(refundCap) {
+		return RefundResult{}, apperrors.ErrRefundExceedsTotal
+	}
+
+	target := DeriveStatus(o.RefundedAmount, amount, o.GrandTotal)
+	key := idempotencyKey(cmd.OrderID, cmd.ScopeID)
+
+	gw, err := c.res.GatewayFor(ctx, o.StoreID, pc.Provider)
+	if err != nil {
+		return RefundResult{}, err
+	}
+
+	// tx #1 — reserve pending ledger row (idempotent re-entry guard).
+	var ledger *payment.RefundTransaction
+	if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row, _, rErr := c.pay.ReserveRefund(ctx, tx, payment.ReserveRefundInput{
+			TenantID:          o.TenantID.String(),
+			StoreID:           o.StoreID.String(),
+			OrderID:           cmd.OrderID.String(),
+			Provider:          pc.Provider,
+			ProviderPaymentID: pc.ProviderPaymentID,
+			Amount:            amount,
+			CurrencyCode:      o.CurrencyCode,
+			Reason:            cmd.Reason,
+			IdempotencyKey:    key,
+		})
+		ledger = row
+		return rErr
+	}); err != nil {
+		return RefundResult{}, err
+	}
+	if ledger.Status == "succeeded" {
+		return RefundResult{
+			ProviderRefundID: ledger.ProviderRefundID,
+			Amount:           amount,
+			PaymentStatus:    target,
+			AlreadyDone:      true,
+		}, nil
+	}
+
+	// gateway call — real money, retry-safe via key. Deliberately outside
+	// any transaction: if this fails or the process dies, the ledger row
+	// stays pending and a sweeper (or the next retry with the same
+	// ScopeID) picks it back up.
+	ref, err := c.pay.ExecuteGatewayRefund(ctx, gw, payment.RefundInput{
+		ProviderPaymentID: pc.ProviderPaymentID,
+		Amount:            amount,
+		CurrencyCode:      o.CurrencyCode,
+		Reason:            cmd.Reason,
+		IdempotencyKey:    key,
+	})
+	if err != nil {
+		return RefundResult{}, err // ledger stays pending → sweeper retries
+	}
+
+	// tx #2 — finalize ledger + bookkeeping, atomic.
+	if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := c.pay.FinalizeRefund(ctx, tx, ledger.ID, ref.ProviderRefundID, "succeeded"); err != nil {
+			return err
+		}
+		return c.orders.RecordRefund(ctx, tx, cmd.OrderID, amount, target, cmd.Reason)
+	}); err != nil {
+		return RefundResult{}, err
+	}
+
+	return RefundResult{
+		ProviderRefundID: ref.ProviderRefundID,
+		Amount:           amount,
+		PaymentStatus:    target,
+	}, nil
+}

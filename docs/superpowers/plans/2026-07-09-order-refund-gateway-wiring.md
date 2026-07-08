@@ -263,7 +263,7 @@ git commit -m "feat(refund): Stripe refund sends Idempotency-Key header"
 
 **Interfaces:**
 - Consumes: `RefundInput.IdempotencyKey` (Task 3).
-- Produces: Razorpay refund sends header `X-Razorpay-Idempotency: <key>` and `notes[order_reason]=<reason>` (mirrors Home-Chef `RefundRequest.Notes`).
+- Produces: Razorpay refund sends header `X-Refund-Idempotency: <key>` and `notes[order_reason]=<reason>` (mirrors Home-Chef `RefundRequest.Notes`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -273,7 +273,7 @@ func TestRazorpayRefund_SendsIdempotencyHeaderAndNotes(t *testing.T) {
 	var gotKey string
 	var body []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotKey = r.Header.Get("X-Razorpay-Idempotency")
+		gotKey = r.Header.Get("X-Refund-Idempotency")
 		body, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"id":"rfnd_1","status":"processed","amount":5000}`))
@@ -307,7 +307,7 @@ Expected: FAIL.
 Add `NewRazorpayGatewayWithBaseURL` seam (mirror Task 3 Step 3 if not present). In `RefundPayment`, include notes in the JSON body and set the header before `Do`:
 ```go
 	if in.IdempotencyKey != "" {
-		req.Header.Set("X-Razorpay-Idempotency", in.IdempotencyKey)
+		req.Header.Set("X-Refund-Idempotency", in.IdempotencyKey)
 	}
 ```
 When constructing the refund request body, add:
@@ -682,7 +682,7 @@ git commit -m "feat(refund): order payment-context + gateway resolver"
 **Interfaces:**
 - Consumes: `Resolver` (Task 7), `payment.Service` saga methods (Task 6), `order.Service.RecordRefund` (existing), `order.Repository.GetByID` (existing).
 - Produces:
-  - `RefundCommand{OrderID uuid.UUID; Amount *decimal.Decimal; Reason string; Actor string; ScopeID string}` — `Amount==nil` ⇒ full remaining; `ScopeID` sets the idempotency scope (`return_id`, `"cancel:"+orderID`, or a refund-request UUID).
+  - `RefundCommand{OrderID uuid.UUID; Amount *decimal.Decimal; Reason string; Actor string; ScopeID string}` — `Amount==nil` ⇒ full remaining; `ScopeID` sets the idempotency scope (`return_id`, the constant `"cancel"`, or a refund-request UUID). Must be `[A-Za-z0-9_-]` only (no colons — Razorpay).
   - `RefundResult{ProviderRefundID string; Amount decimal.Decimal; PaymentStatus order.PaymentStatus; AlreadyDone bool}`.
   - `Coordinator.Refund(ctx, cmd RefundCommand) (RefundResult, error)` — returns `apperrors.ErrRefundUnavailable` when no captured txn; `apperrors.ErrRefundExceedsTotal` when over cap.
   - `NewCoordinator(db *gorm.DB, res *Resolver, pay *payment.Service, orders *order.Service, orderRepo order.Repository, enabled bool) *Coordinator`.
@@ -744,7 +744,7 @@ type RefundCommand struct {
 	Amount  *decimal.Decimal // nil ⇒ full remaining
 	Reason  string
 	Actor   string
-	ScopeID string // idempotency scope: return_id | "cancel:"+orderID | refund_request_id
+	ScopeID string // idempotency scope: return_id | "cancel" | refund_request_id ([A-Za-z0-9_-] only)
 }
 
 type RefundResult struct {
@@ -775,8 +775,11 @@ func DeriveStatus(refunded, amount, grandTotal decimal.Decimal) order.PaymentSta
 	return order.PaymentStatusPartiallyRefunded
 }
 
+// idempotencyKey builds a provider-safe key. Charset is restricted to
+// [A-Za-z0-9_-] (Razorpay's X-Refund-Idempotency requires this and min 10
+// chars; Stripe/PayPal accept it). NO colons — Razorpay rejects them.
 func idempotencyKey(orderID uuid.UUID, scopeID string) string {
-	return "refund:" + orderID.String() + ":" + scopeID
+	return "refund_" + orderID.String() + "_" + scopeID
 }
 
 func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResult, error) {
@@ -1020,7 +1023,7 @@ git commit -m "feat(refund): return refund moves money via coordinator"
 - Test: `internal/handlers/storefront/cancel_autorefund_integration_test.go`
 
 **Interfaces:**
-- Consumes: `orderrefund.Coordinator.Refund` with `Amount=nil` (full), `ScopeID="cancel:"+orderID`.
+- Consumes: `orderrefund.Coordinator.Refund` with `Amount=nil` (full), `ScopeID="cancel"`.
 - Produces: paid, un-shipped self-cancel → order cancelled + full gateway refund + `payment_status=refunded`.
 
 - [ ] **Step 1: Write the failing integration test**
@@ -1042,7 +1045,7 @@ In `storefront/order_detail.go:Cancel`, after the successful `h.orderSvc.Cancel(
 	if h.refunds != nil && o.PaymentStatus == string(order.PaymentStatusPaid) {
 		if _, rerr := h.refunds.Refund(c.Request.Context(), orderrefund.RefundCommand{
 			OrderID: orderID, Amount: nil, Reason: "order cancelled",
-			Actor: "customer", ScopeID: "cancel:" + orderID.String(),
+			Actor: "customer", ScopeID: "cancel",
 		}); rerr != nil {
 			h.logger.Warn("cancel auto-refund deferred to sweeper", "order_id", orderID, "err", rerr)
 		}

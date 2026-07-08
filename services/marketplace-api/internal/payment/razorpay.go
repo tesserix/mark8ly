@@ -188,6 +188,9 @@ func (r *RazorpayGateway) RefundPayment(ctx context.Context, in RefundInput) (*R
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.SetBasicAuth(r.apiKey, r.secretKey)
+	if in.IdempotencyKey != "" {
+		req.Header.Set("X-Refund-Idempotency", in.IdempotencyKey)
+	}
 
 	resp, err := r.client.Do(req)
 	if err != nil {

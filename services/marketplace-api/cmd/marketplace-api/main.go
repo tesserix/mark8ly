@@ -613,6 +613,7 @@ func main() {
 		paymentSvc := payment.NewService(payment.NewRepository(conn))
 		refundResolver := orderrefund.NewResolver(conn)
 		refundCoordinator := orderrefund.NewCoordinator(conn, refundResolver, paymentSvc, orderSvc, orderRepo, refundGatewayEnabled)
+		log.Info("refund coordinator wired (admin)", "gateway_enabled", refundGatewayEnabled)
 		// Order document mailer — invoice on accept, receipt on delivery.
 		// Built up here because both OrdersHandler and ShipmentsHandler need
 		// it. Provider selection (SendGrid → Resend → log-only) already
@@ -1186,6 +1187,7 @@ func main() {
 		paymentSvcSF := payment.NewService(payment.NewRepository(conn))
 		refundResolverSF := orderrefund.NewResolver(conn)
 		refundCoordinatorSF := orderrefund.NewCoordinator(conn, refundResolverSF, paymentSvcSF, orderSvcSF, orderRepoSF, refundGatewayEnabledSF)
+		log.Info("refund coordinator wired (storefront)", "gateway_enabled", refundGatewayEnabledSF)
 
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log).
 			WithReturns(returnSvcSF, returnRepoSF).

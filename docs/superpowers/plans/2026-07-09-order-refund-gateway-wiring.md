@@ -544,11 +544,27 @@ git commit -m "feat(refund): payment saga primitives (reserve/execute/finalize)"
 **Files:**
 - Create: `internal/orderrefund/resolver.go`
 - Test: `internal/orderrefund/resolver_test.go`
+- Modify: `internal/handlers/storefront/webhooks.go` (`handlePaymentSucceeded`) — persist the captured provider payment id (see Step 0 below).
+
+**Pre-existing gap this task must close (multi-gateway correctness):**
+`handlePaymentSucceeded` currently writes `status='captured', payment_method=?` but **never persists `provider_payment_id`**. Only `provider_intent_id` (set at intent creation) is stored. That works for Stripe (its refund target IS the payment_intent) but breaks Razorpay/PayPal refunds, whose refund target is the captured payment/capture id carried in `evt.ProviderPaymentID` and currently discarded. Both the webhook path and the Razorpay client-verify path (`payment_verify.go`) route through `handlePaymentSucceeded`, so one fix covers both.
+
+- [ ] **Step 0: Persist the captured payment id.** In `handlePaymentSucceeded` (`internal/handlers/storefront/webhooks.go`), change the UPDATE to also set `provider_payment_id`, preserving any existing value when the event lacks one:
+```go
+`UPDATE payment_transactions
+    SET status = 'captured',
+        payment_method = ?,
+        provider_payment_id = COALESCE(NULLIF(?, ''), provider_payment_id),
+        updated_at = now()
+  WHERE order_id = ?::uuid AND provider = ?`,
+evt.PaymentMethod, evt.ProviderPaymentID, evt.OrderID, provider,
+```
+Add/adjust an assertion in the existing webhook test (or a focused integration test) that after a `payment.succeeded` event carrying a `ProviderPaymentID`, the row's `provider_payment_id` is populated.
 
 **Interfaces:**
 - Produces:
-  - `PaymentContext{Provider, ProviderPaymentID string; CapturedTotal decimal.Decimal; Found bool}`.
-  - `Resolver.PaymentContextForOrder(ctx, orderID uuid.UUID) (PaymentContext, error)` — reads `payment_transactions`; `Found=false` when no captured txn.
+  - `PaymentContext{Provider, ProviderPaymentID string; CapturedTotal decimal.Decimal; Found bool}` — `ProviderPaymentID` is the captured refund target (prefers `provider_payment_id`, falls back to `provider_intent_id`).
+  - `Resolver.PaymentContextForOrder(ctx, orderID uuid.UUID) (PaymentContext, error)` — reads `payment_transactions` where `status='captured'`; `Found=false` when none.
   - `Resolver.GatewayFor(ctx, storeID uuid.UUID, provider string) (payment.Gateway, error)` — reads `payment_gateway_configs`, calls `payment.NewGateway`.
 
 - [ ] **Step 1: Write the failing test**
@@ -604,19 +620,27 @@ type Resolver struct{ db *gorm.DB }
 func NewResolver(db *gorm.DB) *Resolver { return &Resolver{db: db} }
 
 // PaymentContextForOrder returns the captured payment for an order. Only rows
-// in a captured/paid state count toward CapturedTotal so authorized-only
-// orders are treated as non-refundable (Found=false).
+// with status='captured' count (that is what the capture webhook / client-verify
+// writes; authorized-only or pending orders are non-refundable → Found=false).
+//
+// ProviderPaymentID is the id we refund against. It must be the CAPTURED payment
+// id — Stripe refunds the payment_intent, Razorpay the payment id (pay_...),
+// PayPal the capture id. That id lives in provider_payment_id (persisted at
+// capture — see the capture-handler fix in this task). We prefer
+// provider_payment_id and fall back to provider_intent_id for legacy rows
+// captured before that fix (Stripe rows, where intent == the refund target).
 func (r *Resolver) PaymentContextForOrder(ctx context.Context, orderID uuid.UUID) (PaymentContext, error) {
 	type row struct {
 		Provider          string
+		ProviderPaymentID string
 		ProviderIntentID  string
 		Amount            decimal.Decimal
 	}
 	var rows []row
 	if err := r.db.WithContext(ctx).
 		Table("payment_transactions").
-		Select("provider", "provider_intent_id", "amount").
-		Where("order_id = ? AND status IN ('captured','paid','succeeded')", orderID).
+		Select("provider", "provider_payment_id", "provider_intent_id", "amount").
+		Where("order_id = ? AND status = 'captured'", orderID).
 		Order("created_at ASC").
 		Scan(&rows).Error; err != nil {
 		return PaymentContext{}, err
@@ -628,9 +652,13 @@ func (r *Resolver) PaymentContextForOrder(ctx context.Context, orderID uuid.UUID
 	for _, x := range rows {
 		total = total.Add(x.Amount)
 	}
+	refundTarget := rows[0].ProviderPaymentID
+	if refundTarget == "" {
+		refundTarget = rows[0].ProviderIntentID
+	}
 	return PaymentContext{
 		Provider:          rows[0].Provider,
-		ProviderPaymentID: rows[0].ProviderIntentID,
+		ProviderPaymentID: refundTarget,
 		CapturedTotal:     total,
 		Found:             true,
 	}, nil

@@ -231,6 +231,9 @@ func (s *StripeGateway) RefundPayment(ctx context.Context, in RefundInput) (*Ref
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth(s.apiKey, "")
+	if in.IdempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", in.IdempotencyKey)
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {

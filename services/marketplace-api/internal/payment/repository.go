@@ -2,11 +2,13 @@ package payment
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ---------------------------------------------------------------------------
@@ -43,6 +45,8 @@ type RefundTransaction struct {
 	ID                string          `gorm:"column:id;type:uuid;primaryKey"                json:"id"`
 	TenantID          string          `gorm:"column:tenant_id;type:uuid;not null;index"      json:"tenant_id"`
 	StoreID           string          `gorm:"column:store_id;type:uuid;not null;index"       json:"store_id"`
+	OrderID           string          `gorm:"column:order_id;type:uuid;index"                json:"order_id"`
+	IdempotencyKey    string          `gorm:"column:idempotency_key;type:varchar(255);uniqueIndex" json:"idempotency_key"`
 	ProviderPaymentID string          `gorm:"column:provider_payment_id;type:varchar(255);not null" json:"provider_payment_id"`
 	ProviderRefundID  string          `gorm:"column:provider_refund_id;type:varchar(255);not null"  json:"provider_refund_id"`
 	Provider          string          `gorm:"column:provider;type:varchar(20);not null"       json:"provider"`
@@ -97,6 +101,15 @@ type Repository interface {
 	CreateRefundTransaction(ctx context.Context, refund *RefundTransaction) error
 	ListRefundsByPaymentID(ctx context.Context, providerPaymentID string) ([]RefundTransaction, error)
 
+	// InsertRefundPending inserts a pending refund row inside tx. Returns
+	// (row, created). created=false ⇒ a row with this idempotency_key already
+	// existed (returned instead) — the saga re-entry guard.
+	InsertRefundPending(tx *gorm.DB, r *RefundTransaction) (*RefundTransaction, bool, error)
+	// UpdateRefundOutcome sets status + provider_refund_id on a ledger row.
+	UpdateRefundOutcome(tx *gorm.DB, ledgerID, providerRefundID, status string) error
+	// GetRefundByIdempotencyKey reads a ledger row by its unique key.
+	GetRefundByIdempotencyKey(ctx context.Context, key string) (*RefundTransaction, error)
+
 	CreateWebhookEvent(ctx context.Context, evt *WebhookEventRecord) error
 	GetWebhookEventByProviderID(ctx context.Context, providerEventID string) (*WebhookEventRecord, error)
 }
@@ -148,6 +161,62 @@ func (r *gormRepository) ListRefundsByPaymentID(ctx context.Context, providerPay
 		Order("created_at DESC").
 		Find(&rows).Error
 	return rows, err
+}
+
+// InsertRefundPending inserts a pending refund row inside tx, guarding
+// against duplicate saga re-entry via a unique idempotency_key. If a row
+// with the same key already exists, ON CONFLICT DO NOTHING skips the
+// insert and the existing row is re-selected and returned with created=false.
+func (r *gormRepository) InsertRefundPending(tx *gorm.DB, row *RefundTransaction) (*RefundTransaction, bool, error) {
+	if row.Status == "" {
+		row.Status = "pending"
+	}
+	res := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "idempotency_key"}},
+		DoNothing: true,
+	}).Create(row)
+	if res.Error != nil {
+		return nil, false, res.Error
+	}
+	if res.RowsAffected == 1 {
+		return row, true, nil
+	}
+	// Losing transaction: the winner's row isn't visible in our own
+	// snapshot yet, so re-select it. This relies on READ COMMITTED (the
+	// default isolation level) so that once the winning tx commits, our
+	// next statement in this tx sees its committed row.
+	var existing RefundTransaction
+	if err := tx.Where("idempotency_key = ?", row.IdempotencyKey).First(&existing).Error; err != nil {
+		return nil, false, err
+	}
+	return &existing, false, nil
+}
+
+// UpdateRefundOutcome sets status + provider_refund_id on a ledger row.
+func (r *gormRepository) UpdateRefundOutcome(tx *gorm.DB, ledgerID, providerRefundID, status string) error {
+	res := tx.Model(&RefundTransaction{}).
+		Where("id = ?", ledgerID).
+		Updates(map[string]any{
+			"provider_refund_id": providerRefundID,
+			"status":             status,
+			"updated_at":         gorm.Expr("now()"),
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("payment: UpdateRefundOutcome: no refund_transactions row with id %s", ledgerID)
+	}
+	return nil
+}
+
+// GetRefundByIdempotencyKey reads a ledger row by its unique key.
+func (r *gormRepository) GetRefundByIdempotencyKey(ctx context.Context, key string) (*RefundTransaction, error) {
+	var row RefundTransaction
+	if err := r.db.WithContext(ctx).Where("idempotency_key = ?", key).First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
 }
 
 // ---------------------------------------------------------------------------

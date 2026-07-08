@@ -20,6 +20,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
+	"github.com/mark8ly/marketplace-api/internal/orderrefund"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/tax"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -30,9 +31,10 @@ type OrdersHandler struct {
 	db        *gorm.DB
 	svc       *order.Service
 	repo      order.Repository
-	docMailer *orderdoc.Service     // optional — nil disables auto-emails
-	audit     *audit.Emitter        // optional — nil-safe; Emit is no-op when nil
-	notify    *notification.Service // optional — nil-safe; notification.Emit skips when nil
+	docMailer *orderdoc.Service        // optional — nil disables auto-emails
+	audit     *audit.Emitter           // optional — nil-safe; Emit is no-op when nil
+	notify    *notification.Service    // optional — nil-safe; notification.Emit skips when nil
+	refunds   *orderrefund.Coordinator // optional — nil disables the refund endpoint (503)
 	logger    *slog.Logger
 }
 
@@ -56,6 +58,16 @@ func (h *OrdersHandler) WithAudit(e *audit.Emitter) *OrdersHandler {
 // Nil-safe — notification.Emit is a no-op without a service.
 func (h *OrdersHandler) WithNotifier(n *notification.Service) *OrdersHandler {
 	h.notify = n
+	return h
+}
+
+// WithRefunds attaches the refund coordinator that moves real money.
+// Nil-safe by omission — without it, Refund returns 503 rather than
+// silently no-opping, since a refund request that appears to succeed
+// without touching the gateway would be a correctness bug, not a
+// degraded-mode fallback.
+func (h *OrdersHandler) WithRefunds(c *orderrefund.Coordinator) *OrdersHandler {
+	h.refunds = c
 	return h
 }
 
@@ -446,6 +458,17 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	// Auto-refund a paid order on cancellation (spec §4). Best-effort: a
+	// gateway blip leaves the order cancelled + a pending ledger row for the
+	// sweeper, so the merchant is never blocked on the cancel response.
+	if h.refunds != nil && o.PaymentStatus == string(order.PaymentStatusPaid) {
+		if _, rerr := h.refunds.Refund(c.Request.Context(), orderrefund.RefundCommand{
+			OrderID: id, Amount: nil, Reason: "order cancelled",
+			Actor: "user:" + c.GetString("user_id"), ScopeID: "cancel",
+		}); rerr != nil {
+			h.logger.Warn("cancel auto-refund deferred", "order_id", id, "err", rerr)
+		}
+	}
 	cancelMsg := "Order " + o.OrderNumber + " was cancelled."
 	notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
 		TenantID:     o.TenantID,
@@ -461,9 +484,11 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 
 func stringPtr(s string) *string { return &s }
 
-// Refund handles POST /admin/stores/:storeId/orders/:id/refund. The
-// payment_status target is required because the service layer needs to
-// know whether this is a partial or full refund (transition is enforced).
+// Refund handles POST /admin/stores/:storeId/orders/:id/refund. This now
+// moves real money — the request goes through orderrefund.Coordinator,
+// which resolves the captured payment, calls the gateway, and derives
+// whether the result is a partial or full refund from the amount. The
+// caller-supplied payment_status field is ignored (see RefundOrderRequest).
 func (h *OrdersHandler) Refund(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -479,11 +504,26 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
 		return
 	}
-	if err := h.svc.RecordRefund(
-		c.Request.Context(), nil, id,
-		req.Amount, order.PaymentStatus(req.PaymentStatus), req.Reason,
-	); err != nil {
-		RespondErr(c, err, h.logger)
+	if h.refunds == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "service_unavailable",
+			"message": "Refunds are not configured.",
+		})
+		return
+	}
+	if req.RefundRequestID == "" {
+		RespondErr(c, apperrors.ValidationFailed("refund_request_id", "refund_request_id is required (stable idempotency key per refund attempt)"), h.logger)
+		return
+	}
+	res, rerr := h.refunds.Refund(c.Request.Context(), orderrefund.RefundCommand{
+		OrderID: id,
+		Amount:  req.Amount,
+		Reason:  req.Reason,
+		Actor:   "user:" + c.GetString("user_id"),
+		ScopeID: req.RefundRequestID,
+	})
+	if rerr != nil {
+		RespondErr(c, rerr, h.logger)
 		return
 	}
 	o, items, addrs, err := h.repo.GetByID(c.Request.Context(), h.db, id)
@@ -497,17 +537,22 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 		ResourceID:   id.String(),
 		Severity:     audit.SeverityWarning,
 		Metadata: map[string]any{
-			"refund_amount":    req.Amount,
-			"refunded_total":   o.RefundedAmount,
-			"payment_status":   req.PaymentStatus,
-			"reason":           req.Reason,
+			"refund_amount":      res.Amount,
+			"refunded_total":     o.RefundedAmount,
+			"payment_status":     res.PaymentStatus,
+			"provider_refund_id": res.ProviderRefundID,
+			"reason":             req.Reason,
 		},
 	})
 	// Refund recorded — fire the customer email with this refund's
 	// amount + the running total. The post-refund order row already
 	// reflects the new refunded_amount.
-	h.dispatchRefundEmail(id, req.Amount, o.RefundedAmount)
-	c.JSON(http.StatusOK, ToAdminOrderResponse(o, items, addrs))
+	h.dispatchRefundEmail(id, res.Amount, o.RefundedAmount)
+	c.JSON(http.StatusOK, RefundOrderResponse{
+		AdminOrderResponse: ToAdminOrderResponse(o, items, addrs),
+		ProviderRefundID:   res.ProviderRefundID,
+		AlreadyDone:        res.AlreadyDone,
+	})
 }
 
 // EmailInvoice handles POST /admin/stores/:storeId/orders/:id/invoice/email
@@ -704,4 +749,3 @@ func (h *OrdersHandler) verifyOrderOwnership(c *gin.Context, orderID uuid.UUID) 
 	}
 	return nil
 }
-

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 // Service orchestrates payment intent creation, webhook processing, and
@@ -138,6 +139,60 @@ func (s *Service) RefundPayment(
 	}
 
 	return refund, nil
+}
+
+// ReserveRefundInput describes a refund reservation — the first step of the
+// refund saga (ledger row inserted before any provider call is made). It
+// carries CurrencyCode for later gateway use; refund_transactions has no
+// currency column, so it is not persisted on the row.
+type ReserveRefundInput struct {
+	TenantID, StoreID, OrderID  string
+	Provider, ProviderPaymentID string
+	Amount                      decimal.Decimal
+	CurrencyCode, Reason        string
+	IdempotencyKey              string
+}
+
+// ReserveRefund inserts a pending refund ledger row inside tx, keyed by
+// IdempotencyKey. This is the saga re-entry guard: replaying the same
+// reservation (e.g. after a crash mid-saga) returns the original row with
+// created=false instead of inserting a duplicate.
+func (s *Service) ReserveRefund(ctx context.Context, tx *gorm.DB, in ReserveRefundInput) (*RefundTransaction, bool, error) {
+	row, created, err := s.repo.InsertRefundPending(tx, &RefundTransaction{
+		TenantID:          in.TenantID,
+		StoreID:           in.StoreID,
+		OrderID:           in.OrderID,
+		Provider:          in.Provider,
+		ProviderPaymentID: in.ProviderPaymentID,
+		Amount:            in.Amount,
+		Reason:            in.Reason,
+		Status:            "pending",
+		IdempotencyKey:    in.IdempotencyKey,
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("payment service: reserve refund: %w", err)
+	}
+	return row, created, nil
+}
+
+// ExecuteGatewayRefund issues the refund against the provider. It is a pure
+// gateway call — no DB access — so the saga orchestrator can call it outside
+// any transaction and retry independently of ledger state.
+func (s *Service) ExecuteGatewayRefund(ctx context.Context, gw Gateway, in RefundInput) (*Refund, error) {
+	r, err := gw.RefundPayment(ctx, in)
+	if err != nil {
+		return nil, fmt.Errorf("payment service: gateway refund: %w", err)
+	}
+	return r, nil
+}
+
+// FinalizeRefund records the gateway outcome on the ledger row, completing
+// the saga.
+func (s *Service) FinalizeRefund(ctx context.Context, tx *gorm.DB, ledgerID, providerRefundID, status string) error {
+	if err := s.repo.UpdateRefundOutcome(tx, ledgerID, providerRefundID, status); err != nil {
+		return fmt.Errorf("payment service: finalize refund: %w", err)
+	}
+	return nil
 }
 
 func webhookEventToStatus(eventType string) string {

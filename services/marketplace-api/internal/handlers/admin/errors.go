@@ -36,6 +36,7 @@ var codeStatus = map[apperrors.Code]int{
 	// Orders slice 1.
 	apperrors.CodeInvalidTransition:        http.StatusConflict,
 	apperrors.CodeRefundExceedsTotal:       http.StatusUnprocessableEntity,
+	apperrors.CodeRefundUnavailable:        http.StatusUnprocessableEntity,
 	apperrors.CodeIdempotencyConflict:      http.StatusConflict,
 	apperrors.CodeReturnItemsExceedOrdered: http.StatusUnprocessableEntity,
 	apperrors.CodeRecoveryTooRecent:        http.StatusTooManyRequests,

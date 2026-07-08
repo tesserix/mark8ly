@@ -95,3 +95,13 @@ func TestCouponMinPurchaseNotMetConstructor(t *testing.T) {
 		t.Errorf("expected code %q, got %q", apperrors.CodeCouponMinPurchaseNotMet, err.Code)
 	}
 }
+
+func TestRefundUnavailable(t *testing.T) {
+	err := apperrors.RefundUnavailable("no captured payment")
+	if !errors.Is(err, apperrors.ErrRefundUnavailable) {
+		t.Fatalf("want ErrRefundUnavailable, got %v", err)
+	}
+	if err.Code != apperrors.CodeRefundUnavailable {
+		t.Fatalf("code: got %q want %q", err.Code, apperrors.CodeRefundUnavailable)
+	}
+}

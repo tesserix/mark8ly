@@ -312,6 +312,15 @@ func (s *ReturnService) MarkReceived(ctx context.Context, returnID uuid.UUID) er
 //
 // paymentStatusTarget is whichever PaymentStatus the caller wants the
 // underlying order to land on (PartiallyRefunded for partial, Refunded for full).
+//
+// Bookkeeping-only (no gateway); retained for state-machine tests
+// (internal/order/lifecycle_integration_test.go exercises the full
+// request→approve→received→refunded happy path against this method). The
+// HTTP path (ReturnsHandler.MarkRefunded) does NOT call this — it goes
+// through orderrefund.Coordinator (which moves real money and calls
+// order.Service.RecordRefund itself) followed by StampRefundedOnly. Both
+// methods coexist intentionally: this one for bookkeeping-only tests, the
+// coordinator + StampRefundedOnly pair for the real gateway-backed flow.
 func (s *ReturnService) MarkRefunded(ctx context.Context, returnID uuid.UUID, amount decimal.Decimal, paymentStatusTarget PaymentStatus, reason string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		r, _, err := s.repo.GetByID(ctx, tx, returnID)
@@ -329,6 +338,41 @@ func (s *ReturnService) MarkRefunded(ctx context.Context, returnID uuid.UUID, am
 		}
 		// Cross-module atomic refund.
 		if err := s.orderSvc.RecordRefund(ctx, tx, r.OrderID, amount, paymentStatusTarget, reason); err != nil {
+			return err
+		}
+		return s.orderSvc.RecordReturnEvent(ctx, tx, r.OrderID, EventKindReturnRefunded, outbox.EventReturnRefunded, ReturnEventPayload{
+			ReturnID:     r.ID.String(),
+			ReturnNumber: r.ReturnNumber,
+			Amount:       amount.String(),
+			Reason:       reason,
+		})
+	})
+}
+
+// StampRefundedOnly transitions received→refunded and stamps the return,
+// WITHOUT touching orders.refunded_amount — the orderrefund.Coordinator's
+// tx #2 already bumped that atomically alongside finalizing the gateway
+// refund ledger row. Used by ReturnsHandler.MarkRefunded after
+// orderrefund.Coordinator.Refund succeeds.
+//
+// Self-heal property: Coordinator.Refund is idempotent on ScopeID (the
+// return id), so if this call fails after the money already moved, an
+// admin retry of the HTTP endpoint re-runs Coordinator.Refund (which
+// no-ops with AlreadyDone=true since the ledger row is already
+// "succeeded") and then successfully completes the stamp here.
+func (s *ReturnService) StampRefundedOnly(ctx context.Context, returnID uuid.UUID, amount decimal.Decimal, reason string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		r, _, err := s.repo.GetByID(ctx, tx, returnID)
+		if err != nil {
+			return err
+		}
+		if !ReturnStatus(r.Status).CanTransitionTo(ReturnStatusRefunded) {
+			return apperrors.InvalidTransition("return", r.Status, string(ReturnStatusRefunded))
+		}
+		if err := s.repo.UpdateStatus(tx, returnID, ReturnStatusRefunded); err != nil {
+			return err
+		}
+		if err := s.repo.StampRefunded(tx, returnID, amount); err != nil {
 			return err
 		}
 		return s.orderSvc.RecordReturnEvent(ctx, tx, r.OrderID, EventKindReturnRefunded, outbox.EventReturnRefunded, ReturnEventPayload{

@@ -82,6 +82,7 @@ type RefundInput struct {
 	Amount            decimal.Decimal
 	CurrencyCode      string
 	Reason            string
+	IdempotencyKey    string // provider idempotency key; retries with the same key never double-refund
 }
 
 // Refund is the provider's response to a refund request.

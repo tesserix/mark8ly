@@ -86,9 +86,11 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/observability"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
+	"github.com/mark8ly/marketplace-api/internal/orderrefund"
 	"github.com/mark8ly/marketplace-api/internal/ottoclient"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/page"
+	"github.com/mark8ly/marketplace-api/internal/payment"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/promo"
@@ -601,6 +603,17 @@ func main() {
 		orderSvc := order.NewService(conn, orderRepo, outboxRepo)
 		returnSvc := order.NewReturnService(conn, returnRepo, orderRepo, orderSvc, outboxRepo)
 		abandonedCartSvc := order.NewAbandonedCartService(conn, abandonedCartRepo, outboxRepo)
+		// Refund coordinator — the single place that moves real money via
+		// the payment gateway. Gated by REFUND_GATEWAY_ENABLED so refunds
+		// stay a hard error (not a silent no-op) until the gateway wiring
+		// is verified in an environment; Task 13 documents the flag and
+		// reuses refundCoordinator for the other refund-triggering flows
+		// (returns, paid cancels).
+		refundGatewayEnabled := os.Getenv("REFUND_GATEWAY_ENABLED") == "true"
+		paymentSvc := payment.NewService(payment.NewRepository(conn))
+		refundResolver := orderrefund.NewResolver(conn)
+		refundCoordinator := orderrefund.NewCoordinator(conn, refundResolver, paymentSvc, orderSvc, orderRepo, refundGatewayEnabled)
+		log.Info("refund coordinator wired (admin)", "gateway_enabled", refundGatewayEnabled)
 		// Order document mailer — invoice on accept, receipt on delivery.
 		// Built up here because both OrdersHandler and ShipmentsHandler need
 		// it. Provider selection (SendGrid → Resend → log-only) already
@@ -620,8 +633,10 @@ func main() {
 		orderDocSvc := orderdoc.NewService(conn, orderDocMailer, orderRepo, orderDocBrandingSvc, cfg.StorefrontBaseURLTemplate).
 			WithLogger(log)
 
-		ordersHandler := admin.NewOrdersHandler(conn, orderSvc, orderRepo, orderDocSvc, log)
-		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log)
+		ordersHandler := admin.NewOrdersHandler(conn, orderSvc, orderRepo, orderDocSvc, log).
+			WithRefunds(refundCoordinator)
+		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log).
+			WithRefunds(refundCoordinator)
 		abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, log)
 
 		storesHandler := admin.NewStoresHandler(storesRepo, log)
@@ -1164,9 +1179,20 @@ func main() {
 		// SendGrid blip never re-queues the webhook.
 		webhookHandler.WithDocMailer(orderDocSvcSF)
 
+		// Refund coordinator for the storefront's own self-cancel auto-refund
+		// (spec §4). Built independently from the admin block's
+		// refundCoordinator — that one is scoped inside the mode.Admin
+		// block and out of reach here in a mode.Storefront-only process.
+		refundGatewayEnabledSF := os.Getenv("REFUND_GATEWAY_ENABLED") == "true"
+		paymentSvcSF := payment.NewService(payment.NewRepository(conn))
+		refundResolverSF := orderrefund.NewResolver(conn)
+		refundCoordinatorSF := orderrefund.NewCoordinator(conn, refundResolverSF, paymentSvcSF, orderSvcSF, orderRepoSF, refundGatewayEnabledSF)
+		log.Info("refund coordinator wired (storefront)", "gateway_enabled", refundGatewayEnabledSF)
+
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log).
 			WithReturns(returnSvcSF, returnRepoSF).
-			WithNotifier(notificationSvc)
+			WithNotifier(notificationSvc).
+			WithRefunds(refundCoordinatorSF)
 
 		// Support tickets — public contact form endpoint. Shares the
 		// ticketSvc with admin so created rows surface on the admin

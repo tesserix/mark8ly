@@ -188,6 +188,9 @@ func (r *RazorpayGateway) RefundPayment(ctx context.Context, in RefundInput) (*R
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.SetBasicAuth(r.apiKey, r.secretKey)
+	if in.IdempotencyKey != "" {
+		req.Header.Set("X-Refund-Idempotency", in.IdempotencyKey)
+	}
 
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -258,13 +261,14 @@ func (r *RazorpayGateway) VerifyWebhook(_ context.Context, payload []byte, signa
 	}
 
 	return &WebhookEvent{
-		ProviderEventID: entity.ID,
-		EventType:       normalizeRazorpayEvent(raw.Event),
-		OrderID:         orderID,
-		Amount:          decimal.NewFromInt(entity.Amount),
-		CurrencyCode:    strings.ToUpper(entity.Currency),
-		PaymentMethod:   entity.Method,
-		RawPayload:      payload,
+		ProviderEventID:   entity.ID,
+		ProviderPaymentID: entity.ID,
+		EventType:         normalizeRazorpayEvent(raw.Event),
+		OrderID:           orderID,
+		Amount:            decimal.NewFromInt(entity.Amount),
+		CurrencyCode:      strings.ToUpper(entity.Currency),
+		PaymentMethod:     entity.Method,
+		RawPayload:        payload,
 	}, nil
 }
 

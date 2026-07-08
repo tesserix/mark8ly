@@ -56,10 +56,13 @@ func seedPaidOrder(t *testing.T, db *gorm.DB, orderID, storeID, tenantID uuid.UU
 
 // fakeGateway implements payment.Gateway. Only RefundPayment does anything
 // interesting for these tests; it records every call so tests can assert
-// the gateway was (or was not) invoked.
+// the gateway was (or was not) invoked. If refundErr is set, RefundPayment
+// returns it instead of a successful refund (used to exercise the
+// gateway-failure path).
 type fakeGateway struct {
-	mu    sync.Mutex
-	calls []payment.RefundInput
+	mu        sync.Mutex
+	calls     []payment.RefundInput
+	refundErr error
 }
 
 func (f *fakeGateway) callCount() int {
@@ -85,7 +88,11 @@ func (f *fakeGateway) CapturePayment(ctx context.Context, captureID string) (*pa
 func (f *fakeGateway) RefundPayment(ctx context.Context, in payment.RefundInput) (*payment.Refund, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, in)
+	err := f.refundErr
 	f.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	return &payment.Refund{ProviderRefundID: "re_test", Status: "succeeded", Amount: in.Amount}, nil
 }
 
@@ -361,5 +368,104 @@ func TestRefund_IdempotentReplay(t *testing.T) {
 	o := getOrder(t, db, orderID)
 	if !o.RefundedAmount.Equal(decimal.RequireFromString("50.00")) {
 		t.Fatalf("refunded_amount = %s, want 50.00 (bumped once, not twice)", o.RefundedAmount)
+	}
+}
+
+// (g) Gateway error: the gateway rejects the refund call. The ledger row
+// reserved in tx #1 must stay pending (not succeeded) and refunded_amount
+// must not be bumped — tx #2 never runs.
+func TestRefund_GatewayError_LeavesPending(t *testing.T) {
+	db := testdb.NewDB(t, coordinatorTruncateTables...)
+	tenantID, storeID, orderID := uuid.New(), uuid.New(), uuid.New()
+	seedStore(t, db, storeID, tenantID)
+	seedPaidOrder(t, db, orderID, storeID, tenantID, "120.00", "0")
+	seedPaymentTxn(t, db, tenantID, storeID, orderID, seedPaymentTxnOpts{
+		Provider: "stripe", ProviderPaymentID: "pi_x", Amount: "120.00", Status: "captured",
+	})
+
+	gw := &fakeGateway{refundErr: errors.New("gateway: card declined")}
+	c := newCoordinator(db, gw, true)
+
+	amount := decimal.RequireFromString("50.00")
+	_, err := c.Refund(context.Background(), orderrefund.RefundCommand{
+		OrderID: orderID, Amount: &amount, Reason: "customer request", Actor: "admin", ScopeID: "rr1",
+	})
+	if err == nil {
+		t.Fatal("Refund: err = nil, want non-nil (gateway error)")
+	}
+
+	o := getOrder(t, db, orderID)
+	if !o.RefundedAmount.IsZero() {
+		t.Fatalf("refunded_amount = %s, want 0 (gateway failed, must not bookkeep)", o.RefundedAmount)
+	}
+
+	wantKey := "refund_" + orderID.String() + "_rr1"
+	row := getRefundTxn(t, db, wantKey)
+	if row.Status != "pending" {
+		t.Fatalf("ledger status = %q, want pending (gateway failed, stays pending for sweeper/retry)", row.Status)
+	}
+
+	if gw.callCount() != 1 {
+		t.Fatalf("gateway call count = %d, want 1", gw.callCount())
+	}
+}
+
+// (h) Pending replay: a ledger row already exists for this idempotency key
+// (e.g. a concurrent in-flight call or a crashed prior attempt) but never
+// reached "succeeded". Refund must reject with ErrIdempotencyConflict
+// without calling the gateway or bumping refunded_amount — re-running the
+// saga against a stuck pending row risks a double bump under RecordRefund's
+// cap-only guard. Crash-recovery of stuck rows is the sweeper's job, not
+// Refund's.
+func TestRefund_PendingReplay_ConflictWithoutGatewayCall(t *testing.T) {
+	db := testdb.NewDB(t, coordinatorTruncateTables...)
+	tenantID, storeID, orderID := uuid.New(), uuid.New(), uuid.New()
+	seedStore(t, db, storeID, tenantID)
+	seedPaidOrder(t, db, orderID, storeID, tenantID, "120.00", "0")
+	seedPaymentTxn(t, db, tenantID, storeID, orderID, seedPaymentTxnOpts{
+		Provider: "stripe", ProviderPaymentID: "pi_x", Amount: "120.00", Status: "captured",
+	})
+
+	wantKey := "refund_" + orderID.String() + "_rr1"
+
+	// Pre-reserve a pending ledger row for this scope directly via the
+	// payment repo/service, simulating a concurrent duplicate request or a
+	// crash between tx #1 and the gateway call.
+	pay := payment.NewService(payment.NewRepository(db))
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, created, rErr := pay.ReserveRefund(context.Background(), tx, payment.ReserveRefundInput{
+			TenantID: tenantID.String(), StoreID: storeID.String(), OrderID: orderID.String(),
+			Provider: "stripe", ProviderPaymentID: "pi_x",
+			Amount: decimal.RequireFromString("50.00"), CurrencyCode: "EUR",
+			Reason: "prior attempt", IdempotencyKey: wantKey,
+		})
+		if !created {
+			t.Fatal("pre-reserve: created = false, want true")
+		}
+		return rErr
+	}); err != nil {
+		t.Fatalf("pre-reserve: %v", err)
+	}
+
+	gw := &fakeGateway{}
+	c := newCoordinator(db, gw, true)
+
+	amount := decimal.RequireFromString("50.00")
+	_, err := c.Refund(context.Background(), orderrefund.RefundCommand{
+		OrderID: orderID, Amount: &amount, Reason: "customer request", Actor: "admin", ScopeID: "rr1",
+	})
+	if !errors.Is(err, apperrors.ErrIdempotencyConflict) {
+		t.Fatalf("err = %v, want ErrIdempotencyConflict", err)
+	}
+	if gw.callCount() != 0 {
+		t.Fatalf("gateway call count = %d, want 0 (must not re-run gateway against stuck pending row)", gw.callCount())
+	}
+
+	o := getOrder(t, db, orderID)
+	if !o.RefundedAmount.IsZero() {
+		t.Fatalf("refunded_amount = %s, want 0 (must not bump against a pending, non-succeeded ledger row)", o.RefundedAmount)
+	}
+	if n := countRefundTxns(t, db, orderID); n != 1 {
+		t.Fatalf("refund_transactions rows = %d, want 1 (no duplicate ledger row)", n)
 	}
 }

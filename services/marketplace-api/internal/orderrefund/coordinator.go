@@ -13,6 +13,12 @@ import (
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
+// Refund ledger row statuses used by the saga.
+const (
+	refundStatusPending   = "pending"
+	refundStatusSucceeded = "succeeded"
+)
+
 // RefundCommand is a request to refund all or part of an order's captured
 // payment. Amount==nil means "refund the full remaining balance"
 // (grand_total - refunded_amount).
@@ -125,8 +131,9 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 
 	// tx #1 — reserve pending ledger row (idempotent re-entry guard).
 	var ledger *payment.RefundTransaction
+	var created bool
 	if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row, _, rErr := c.pay.ReserveRefund(ctx, tx, payment.ReserveRefundInput{
+		row, wasCreated, rErr := c.pay.ReserveRefund(ctx, tx, payment.ReserveRefundInput{
 			TenantID:          o.TenantID.String(),
 			StoreID:           o.StoreID.String(),
 			OrderID:           cmd.OrderID.String(),
@@ -138,17 +145,26 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 			IdempotencyKey:    key,
 		})
 		ledger = row
+		created = wasCreated
 		return rErr
 	}); err != nil {
 		return RefundResult{}, err
 	}
-	if ledger.Status == "succeeded" {
-		return RefundResult{
-			ProviderRefundID: ledger.ProviderRefundID,
-			Amount:           amount,
-			PaymentStatus:    target,
-			AlreadyDone:      true,
-		}, nil
+	if !created {
+		if ledger.Status == refundStatusSucceeded {
+			return RefundResult{
+				ProviderRefundID: ledger.ProviderRefundID,
+				Amount:           amount,
+				PaymentStatus:    target,
+				AlreadyDone:      true,
+			}, nil
+		}
+		// An in-flight or crashed prior attempt reserved this key and never
+		// reached "succeeded". Do NOT re-run the gateway/bump refunded_amount
+		// here — that risks a double bump under RecordRefund's cap-only
+		// guard. Crash-recovery of stuck pending rows is handled by the
+		// sweeper, not by re-running Refund.
+		return RefundResult{}, apperrors.ErrIdempotencyConflict
 	}
 
 	// gateway call — real money, retry-safe via key. Deliberately outside
@@ -168,7 +184,7 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 
 	// tx #2 — finalize ledger + bookkeeping, atomic.
 	if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := c.pay.FinalizeRefund(ctx, tx, ledger.ID, ref.ProviderRefundID, "succeeded"); err != nil {
+		if err := c.pay.FinalizeRefund(ctx, tx, ledger.ID, ref.ProviderRefundID, refundStatusSucceeded); err != nil {
 			return err
 		}
 		return c.orders.RecordRefund(ctx, tx, cmd.OrderID, amount, target, cmd.Reason)

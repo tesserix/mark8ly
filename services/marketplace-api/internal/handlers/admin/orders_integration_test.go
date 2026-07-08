@@ -30,6 +30,9 @@ var ordersTables = []string{
 	"order_items",
 	"return_items",
 	"returns",
+	"refund_transactions",
+	"payment_transactions",
+	"payment_gateway_configs",
 	"orders",
 	"abandoned_carts",
 	"outbox_events",
@@ -68,7 +71,14 @@ func setupOrdersRouter(t *testing.T) *ordersTestEnv {
 	})
 	authzMW := authz.NewMiddleware(fga, nil)
 
-	ordersHandler := admin.NewOrdersHandler(db, orderSvc, orderRepo, nil, nil)
+	// Refund coordinator wired against a fake gateway so refund tests never
+	// hit real Stripe. fakeGateway/fakeRefundResolver live in
+	// orders_refund_integration_test.go (same package/build tag).
+	gw := &fakeGateway{}
+	refundCoordinator := newTestRefundCoordinator(db, gw)
+
+	ordersHandler := admin.NewOrdersHandler(db, orderSvc, orderRepo, nil, nil).
+		WithRefunds(refundCoordinator)
 	returnsHandler := admin.NewReturnsHandler(db, returnSvc, returnRepo, orderRepo, orderSvc, nil)
 	abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, nil)
 
@@ -181,10 +191,14 @@ func TestAPI_OrdersHappyPath(t *testing.T) {
 	}
 
 	// --- Partial refund (50 of 100) ---
+	// Refunds now move real money through the coordinator, which requires
+	// a captured gateway transaction + an active gateway config to resolve
+	// the payment context and provider — seed both before hitting /refund.
+	seedCapturedPaymentTxn(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID), "100.00")
+	seedActiveGatewayConfig(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID))
 	refundBody := map[string]any{
-		"amount":         "50.00",
-		"payment_status": "partially_refunded",
-		"reason":         "customer-credit",
+		"amount": "50.00",
+		"reason": "customer-credit",
 	}
 	w = request(t, env.router, http.MethodPost, base+"/"+orderID+"/refund", refundBody, headers)
 	if w.Code != http.StatusOK {

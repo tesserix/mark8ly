@@ -20,9 +20,9 @@ type ListOrdersQuery struct {
 	// customer_email. ILIKE match inside the repo layer so partial typed
 	// input (first chars of an order number, a customer domain, etc.)
 	// produces useful matches without pressing Enter.
-	Search        string `form:"search"`
-	Page          int    `form:"page"`
-	PageSize      int    `form:"page_size"`
+	Search   string `form:"search"`
+	Page     int    `form:"page"`
+	PageSize int    `form:"page_size"`
 }
 
 // Defaults sets sensible page / page_size defaults.
@@ -96,10 +96,17 @@ type CancelOrderRequest struct {
 }
 
 // RefundOrderRequest is the wire body for POST /admin/stores/:storeId/orders/:id/refund.
+// Money movement now goes through orderrefund.Coordinator, which derives
+// the resulting payment_status from the amount rather than trusting the
+// caller — see OrdersHandler.Refund.
 type RefundOrderRequest struct {
-	Amount        decimal.Decimal `json:"amount"         binding:"required"`
-	PaymentStatus string          `json:"payment_status" binding:"required"` // partially_refunded | refunded
-	Reason        string          `json:"reason"`
+	Amount          *decimal.Decimal `json:"amount"`                      // omit ⇒ full remaining balance
+	RefundRequestID string           `json:"refund_request_id,omitempty"` // idempotency scope; server generates one if empty
+	Reason          string           `json:"reason"`
+	// PaymentStatus is deprecated: the coordinator derives partial vs full
+	// from the amount. Retained on the wire so older clients don't fail
+	// binding; the value is ignored.
+	PaymentStatus string `json:"payment_status,omitempty"`
 }
 
 // -----------------------------------------------------------------------------
@@ -135,40 +142,40 @@ type AdminAddressResponse struct {
 
 // AdminOrderResponse is the canonical wire shape for a single order.
 type AdminOrderResponse struct {
-	ID                string                   `json:"id"`
-	TenantID          string                   `json:"tenant_id"`
-	StoreID           string                   `json:"store_id"`
-	OrderNumber       string                   `json:"order_number"`
-	IdempotencyKey    string                   `json:"idempotency_key"`
-	CustomerEmail     string                   `json:"customer_email"`
-	CustomerName      *string                  `json:"customer_name,omitempty"`
-	Status            string                   `json:"status"`
-	PaymentStatus     string                   `json:"payment_status"`
-	FulfillmentStatus string                   `json:"fulfillment_status"`
-	Subtotal          decimal.Decimal          `json:"subtotal"`
-	ShippingTotal     decimal.Decimal          `json:"shipping_total"`
-	TaxTotal          decimal.Decimal          `json:"tax_total"`
+	ID                string          `json:"id"`
+	TenantID          string          `json:"tenant_id"`
+	StoreID           string          `json:"store_id"`
+	OrderNumber       string          `json:"order_number"`
+	IdempotencyKey    string          `json:"idempotency_key"`
+	CustomerEmail     string          `json:"customer_email"`
+	CustomerName      *string         `json:"customer_name,omitempty"`
+	Status            string          `json:"status"`
+	PaymentStatus     string          `json:"payment_status"`
+	FulfillmentStatus string          `json:"fulfillment_status"`
+	Subtotal          decimal.Decimal `json:"subtotal"`
+	ShippingTotal     decimal.Decimal `json:"shipping_total"`
+	TaxTotal          decimal.Decimal `json:"tax_total"`
 	// TaxLines is the per-jurisdiction breakdown (CGST/SGST/IGST for
 	// India, VAT for flat-rate countries, state+county+city for TaxJar).
 	// Populated by single-order Get handler; List leaves it nil to keep
 	// the page payload tight.
-	TaxLines          []AdminOrderTaxLineResponse `json:"tax_lines,omitempty"`
-	DiscountTotal     decimal.Decimal          `json:"discount_total"`
-	GrandTotal        decimal.Decimal          `json:"grand_total"`
-	RefundedAmount    decimal.Decimal          `json:"refunded_amount"`
-	CurrencyCode      string                   `json:"currency_code"`
+	TaxLines       []AdminOrderTaxLineResponse `json:"tax_lines,omitempty"`
+	DiscountTotal  decimal.Decimal             `json:"discount_total"`
+	GrandTotal     decimal.Decimal             `json:"grand_total"`
+	RefundedAmount decimal.Decimal             `json:"refunded_amount"`
+	CurrencyCode   string                      `json:"currency_code"`
 	// ShippingService / ShippingCarrier are the customer's checkout choice
 	// — captured so the admin "Approve & generate label" panel can default
 	// to what the buyer paid for. Empty for orders pre-dating migration 82.
-	ShippingService   *string                  `json:"shipping_service,omitempty"`
-	ShippingCarrier   *string                  `json:"shipping_carrier,omitempty"`
-	Items             []AdminOrderItemResponse `json:"items"`
-	Addresses         []AdminAddressResponse   `json:"addresses"`
-	PlacedAt          time.Time                `json:"placed_at"`
-	CancelledAt       *time.Time               `json:"cancelled_at,omitempty"`
-	FulfilledAt       *time.Time               `json:"fulfilled_at,omitempty"`
-	CreatedAt         time.Time                `json:"created_at"`
-	UpdatedAt         time.Time                `json:"updated_at"`
+	ShippingService *string                  `json:"shipping_service,omitempty"`
+	ShippingCarrier *string                  `json:"shipping_carrier,omitempty"`
+	Items           []AdminOrderItemResponse `json:"items"`
+	Addresses       []AdminAddressResponse   `json:"addresses"`
+	PlacedAt        time.Time                `json:"placed_at"`
+	CancelledAt     *time.Time               `json:"cancelled_at,omitempty"`
+	FulfilledAt     *time.Time               `json:"fulfilled_at,omitempty"`
+	CreatedAt       time.Time                `json:"created_at"`
+	UpdatedAt       time.Time                `json:"updated_at"`
 }
 
 // AdminOrderTaxLineResponse is one row from order_tax_lines in the

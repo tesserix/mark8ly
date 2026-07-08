@@ -141,3 +141,54 @@ func TestResumePending_GatewayStillFailing(t *testing.T) {
 		t.Fatalf("refunded_amount = %s, want 0 (gateway failed, must not bookkeep)", o.RefundedAmount)
 	}
 }
+
+// TestResumePending_DoubleRun_BumpsOnce simulates two overlapping sweep runs
+// racing the same pending ledger row (Cloud Scheduler retry, manual
+// re-trigger, or a slow gateway call outliving the sweep cadence). Both
+// calls hit the same pending row's idempotency key, so the gateway is a
+// no-op either way — but before the concurrency fix, both calls would also
+// run the finalize tx and double-bump orders.refunded_amount. This asserts
+// the status-guarded finalize makes the second call a true no-op: it
+// reports 0 resumed and refunded_amount is bumped exactly once.
+func TestResumePending_DoubleRun_BumpsOnce(t *testing.T) {
+	db := testdb.NewDB(t, coordinatorTruncateTables...)
+	tenantID, storeID, orderID := uuid.New(), uuid.New(), uuid.New()
+	seedStore(t, db, storeID, tenantID)
+	seedPaidOrder(t, db, orderID, storeID, tenantID, "100.00", "0")
+	seedPaymentTxn(t, db, tenantID, storeID, orderID, seedPaymentTxnOpts{
+		Provider: "stripe", ProviderPaymentID: "pi_x", Amount: "100.00", Status: "captured",
+	})
+	seedGatewayConfig(t, db, tenantID, storeID, "stripe", true)
+
+	wantKey := "refund_" + orderID.String() + "_cancel"
+	seedPendingRefundTxn(t, db, tenantID, storeID, orderID, wantKey, "pi_x", "stripe", "100.00", time.Now().Add(-1*time.Hour))
+
+	gw := &fakeGateway{}
+	c := newCoordinator(db, gw, true)
+
+	n1, err := c.ResumePending(context.Background(), 0, 200)
+	if err != nil {
+		t.Fatalf("ResumePending (run 1): %v", err)
+	}
+	if n1 != 1 {
+		t.Fatalf("ResumePending (run 1) resumed = %d, want 1", n1)
+	}
+
+	n2, err := c.ResumePending(context.Background(), 0, 200)
+	if err != nil {
+		t.Fatalf("ResumePending (run 2): %v", err)
+	}
+	if n2 != 0 {
+		t.Fatalf("ResumePending (run 2) resumed = %d, want 0 (row already succeeded, must not re-finalize)", n2)
+	}
+
+	row := getRefundTxn(t, db, wantKey)
+	if row.Status != "succeeded" {
+		t.Fatalf("ledger status = %q, want succeeded", row.Status)
+	}
+
+	o := getOrder(t, db, orderID)
+	if !o.RefundedAmount.Equal(decimal.RequireFromString("100.00")) {
+		t.Fatalf("refunded_amount = %s, want 100.00 (must not be double-bumped by the second run)", o.RefundedAmount)
+	}
+}

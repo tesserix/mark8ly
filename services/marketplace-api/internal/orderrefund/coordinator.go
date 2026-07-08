@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
@@ -217,16 +218,44 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 // so orders.refunded_amount was NOT bumped for it — re-running RecordRefund bumps
 // it exactly once.
 func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration, limit int) (int, error) {
-	var rows []payment.RefundTransaction
 	// The interval literal is built in Go (rather than concatenated in SQL
 	// via `? || ' seconds'`) because pgx cannot infer a text type for a bare
 	// numeric placeholder feeding string concatenation.
 	cutoff := fmt.Sprintf("%d seconds", int(olderThan.Seconds()))
-	if err := c.db.WithContext(ctx).
-		Where("status = 'pending' AND created_at < now() - (?)::interval", cutoff).
-		Order("created_at ASC").Limit(limit).Find(&rows).Error; err != nil {
+
+	// Claim a batch of pending row IDs with FOR UPDATE SKIP LOCKED so
+	// overlapping sweep runs (Cloud Scheduler retry, manual re-trigger, a
+	// prior run still mid-flight) don't even pick the same rows. This is a
+	// best-effort reduction of duplicate gateway calls, not the correctness
+	// guarantee — the row lock is released as soon as this short
+	// transaction commits, well before the gateway call and finalize below.
+	// The status-guarded UPDATE in the per-row loop is what makes
+	// double-finalization impossible even if two sweeps do end up
+	// processing the same row.
+	var ids []string
+	if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Model(&payment.RefundTransaction{}).
+			Select("id").
+			Where("status = 'pending' AND created_at < now() - (?)::interval", cutoff).
+			Order("created_at ASC").
+			Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Limit(limit).
+			Pluck("id", &ids).Error
+	}); err != nil {
 		return 0, err
 	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	var rows []payment.RefundTransaction
+	if err := c.db.WithContext(ctx).
+		Where("id IN ?", ids).
+		Order("created_at ASC").
+		Find(&rows).Error; err != nil {
+		return 0, err
+	}
+
 	resumed := 0
 	for i := range rows {
 		row := rows[i]
@@ -250,15 +279,38 @@ func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration
 			continue // try again next sweep
 		}
 		target := DeriveStatus(o.RefundedAmount, row.Amount, o.GrandTotal)
+
+		// Status-guarded finalize: the UPDATE only flips rows still
+		// 'pending'. If a concurrent sweep run already finalized this row
+		// (RowsAffected == 0), skip RecordRefund entirely — otherwise
+		// orders.refunded_amount would be double-bumped for one real
+		// refund, since RecordRefund's only guard is the grand_total cap,
+		// not idempotency. Deliberately inlined here (rather than reusing
+		// payment.Service.FinalizeRefund) to make the guard explicit and
+		// keep the shared method's Task-6 contract untouched.
+		finalized := false
 		if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := c.pay.FinalizeRefund(ctx, tx, row.ID, ref.ProviderRefundID, refundStatusSucceeded); err != nil {
-				return err
+			res := tx.Exec(
+				`UPDATE refund_transactions SET status = 'succeeded', provider_refund_id = ?, updated_at = now()
+				  WHERE id = ? AND status = 'pending'`,
+				ref.ProviderRefundID, row.ID,
+			)
+			if res.Error != nil {
+				return res.Error
 			}
+			if res.RowsAffected == 0 {
+				// Another sweep run already finalized this row — do NOT
+				// bump refunded_amount again.
+				return nil
+			}
+			finalized = true
 			return c.orders.RecordRefund(ctx, tx, oid, row.Amount, target, row.Reason)
 		}); err != nil {
 			continue
 		}
-		resumed++
+		if finalized {
+			resumed++
+		}
 	}
 	return resumed, nil
 }

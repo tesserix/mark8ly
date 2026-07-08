@@ -109,3 +109,10 @@ func TestCodeStatus_CoversAllCodes(t *testing.T) {
 		}
 	}
 }
+
+func TestRespondErr_RefundUnavailable_Returns422(t *testing.T) {
+	w, _ := runRespondErr(t, apperrors.RefundUnavailable("no captured payment"))
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", w.Code)
+	}
+}

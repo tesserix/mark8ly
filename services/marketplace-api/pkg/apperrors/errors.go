@@ -35,11 +35,12 @@ const (
 	CodeOptionValueInUse        Code = "option_value_in_use"
 
 	// Orders slice 1 — added in Orders M2.
-	CodeInvalidTransition       Code = "invalid_transition"
-	CodeRefundExceedsTotal      Code = "refund_exceeds_total"
-	CodeIdempotencyConflict     Code = "idempotency_conflict"
+	CodeInvalidTransition        Code = "invalid_transition"
+	CodeRefundExceedsTotal       Code = "refund_exceeds_total"
+	CodeRefundUnavailable        Code = "refund_unavailable"
+	CodeIdempotencyConflict      Code = "idempotency_conflict"
 	CodeReturnItemsExceedOrdered Code = "return_items_exceed_ordered"
-	CodeRecoveryTooRecent       Code = "recovery_too_recent"
+	CodeRecoveryTooRecent        Code = "recovery_too_recent"
 
 	// Coupons M1.
 	CodeCouponNotFound          Code = "coupon_not_found"
@@ -111,6 +112,7 @@ var (
 	// Orders slice 1 sentinels.
 	ErrInvalidTransition        = &Error{Code: CodeInvalidTransition}
 	ErrRefundExceedsTotal       = &Error{Code: CodeRefundExceedsTotal}
+	ErrRefundUnavailable        = &Error{Code: CodeRefundUnavailable}
 	ErrIdempotencyConflict      = &Error{Code: CodeIdempotencyConflict}
 	ErrReturnItemsExceedOrdered = &Error{Code: CodeReturnItemsExceedOrdered}
 	ErrRecoveryTooRecent        = &Error{Code: CodeRecoveryTooRecent}
@@ -163,7 +165,7 @@ func IsKnownCode(s string) bool {
 		CodeTargetStoreInvalid, CodeUploadNotFound, CodeForbidden, CodeNotFound,
 		CodePayloadTooLarge, CodeUnsupportedMediaType, CodeRateLimited,
 		CodeCurrencyChangeForbidden, CodeOptionValueInUse,
-		CodeInvalidTransition, CodeRefundExceedsTotal, CodeIdempotencyConflict,
+		CodeInvalidTransition, CodeRefundExceedsTotal, CodeRefundUnavailable, CodeIdempotencyConflict,
 		CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent,
 		CodeCouponNotFound, CodeCouponExpired, CodeCouponUsageLimitReached,
 		CodeCouponInvalid, CodeCouponMinPurchaseNotMet,
@@ -309,10 +311,16 @@ func RefundExceedsTotal(grandTotal, requested, alreadyRefunded string) *Error {
 	return &Error{Code: CodeRefundExceedsTotal,
 		Message: "refund amount would exceed the order grand total",
 		Details: map[string]any{
-			"grand_total":       grandTotal,
-			"requested":         requested,
-			"already_refunded":  alreadyRefunded,
+			"grand_total":      grandTotal,
+			"requested":        requested,
+			"already_refunded": alreadyRefunded,
 		}}
+}
+
+// RefundUnavailable is returned when an order cannot be refunded through the
+// gateway (no captured payment transaction — COD/manual/authorized-only).
+func RefundUnavailable(reason string) *Error {
+	return &Error{Code: CodeRefundUnavailable, Message: reason}
 }
 
 // IdempotencyConflict is returned when a Create call reuses an existing

@@ -272,9 +272,9 @@ func (p *PayPalGateway) VerifyWebhook(ctx context.Context, payload []byte, signa
 
 	// Parse the raw event first to extract the webhook_id.
 	var rawEvent struct {
-		ID           string `json:"id"`
-		EventType    string `json:"event_type"`
-		Resource     json.RawMessage `json:"resource"`
+		ID        string          `json:"id"`
+		EventType string          `json:"event_type"`
+		Resource  json.RawMessage `json:"resource"`
 	}
 	if err := json.Unmarshal(payload, &rawEvent); err != nil {
 		return nil, fmt.Errorf("paypal: verify webhook: decode event: %w", err)
@@ -341,7 +341,7 @@ func (p *PayPalGateway) VerifyWebhook(ctx context.Context, payload []byte, signa
 
 	// Extract resource details.
 	var resource struct {
-		ID            string `json:"id"`
+		ID            string        `json:"id"`
 		Amount        *paypalAmount `json:"amount"`
 		PurchaseUnits []struct {
 			ReferenceID string       `json:"reference_id"`
@@ -356,6 +356,8 @@ func (p *PayPalGateway) VerifyWebhook(ctx context.Context, payload []byte, signa
 		PaymentMethod:   "paypal",
 		RawPayload:      payload,
 	}
+
+	evt.ProviderPaymentID = resource.ID
 
 	if len(resource.PurchaseUnits) > 0 {
 		pu := resource.PurchaseUnits[0]
@@ -439,14 +441,14 @@ func normalizePayPalEvent(eventType string) string {
 // PayPal request/response types.
 
 type paypalOrderRequest struct {
-	Intent        string                `json:"intent"`
-	PurchaseUnits []paypalPurchaseUnit  `json:"purchase_units"`
-	Payer         *paypalPayer          `json:"payer,omitempty"`
+	Intent        string               `json:"intent"`
+	PurchaseUnits []paypalPurchaseUnit `json:"purchase_units"`
+	Payer         *paypalPayer         `json:"payer,omitempty"`
 }
 
 type paypalPurchaseUnit struct {
-	ReferenceID string      `json:"reference_id"`
-	Description string      `json:"description"`
+	ReferenceID string       `json:"reference_id"`
+	Description string       `json:"description"`
 	Amount      paypalAmount `json:"amount"`
 }
 

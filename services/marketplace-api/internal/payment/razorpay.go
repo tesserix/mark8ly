@@ -261,13 +261,14 @@ func (r *RazorpayGateway) VerifyWebhook(_ context.Context, payload []byte, signa
 	}
 
 	return &WebhookEvent{
-		ProviderEventID: entity.ID,
-		EventType:       normalizeRazorpayEvent(raw.Event),
-		OrderID:         orderID,
-		Amount:          decimal.NewFromInt(entity.Amount),
-		CurrencyCode:    strings.ToUpper(entity.Currency),
-		PaymentMethod:   entity.Method,
-		RawPayload:      payload,
+		ProviderEventID:   entity.ID,
+		ProviderPaymentID: entity.ID,
+		EventType:         normalizeRazorpayEvent(raw.Event),
+		OrderID:           orderID,
+		Amount:            decimal.NewFromInt(entity.Amount),
+		CurrencyCode:      strings.ToUpper(entity.Currency),
+		PaymentMethod:     entity.Method,
+		RawPayload:        payload,
 	}, nil
 }
 

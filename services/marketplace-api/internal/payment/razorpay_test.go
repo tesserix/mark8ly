@@ -2,6 +2,9 @@ package payment
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -40,5 +43,24 @@ func TestRazorpayRefund_SendsIdempotencyHeaderAndNotes(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `"reason":"cancelled"`) {
 		t.Fatalf("reason not in notes: %s", body)
+	}
+}
+
+func TestRazorpayVerifyWebhook_SetsProviderPaymentID(t *testing.T) {
+	secret := "secret"
+	payload := []byte(`{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_123","order_id":"order_9","amount":5000,"currency":"INR","method":"upi","notes":{"order_id":"11111111-1111-1111-1111-111111111111"}}}}}`)
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(payload)
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	g := NewRazorpayGateway("key", secret, "test")
+
+	evt, err := g.VerifyWebhook(context.Background(), payload, signature)
+	if err != nil {
+		t.Fatalf("verify webhook: %v", err)
+	}
+	if evt.ProviderPaymentID != "pay_123" {
+		t.Fatalf("ProviderPaymentID = %q, want %q", evt.ProviderPaymentID, "pay_123")
 	}
 }

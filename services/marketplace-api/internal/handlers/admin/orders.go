@@ -511,16 +511,16 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 		})
 		return
 	}
-	scope := req.RefundRequestID
-	if scope == "" {
-		scope = uuid.NewString()
+	if req.RefundRequestID == "" {
+		RespondErr(c, apperrors.ValidationFailed("refund_request_id", "refund_request_id is required (stable idempotency key per refund attempt)"), h.logger)
+		return
 	}
 	res, rerr := h.refunds.Refund(c.Request.Context(), orderrefund.RefundCommand{
 		OrderID: id,
 		Amount:  req.Amount,
 		Reason:  req.Reason,
 		Actor:   "user:" + c.GetString("user_id"),
-		ScopeID: scope,
+		ScopeID: req.RefundRequestID,
 	})
 	if rerr != nil {
 		RespondErr(c, rerr, h.logger)

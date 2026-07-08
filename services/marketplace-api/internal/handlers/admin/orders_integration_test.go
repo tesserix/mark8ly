@@ -198,8 +198,9 @@ func TestAPI_OrdersHappyPath(t *testing.T) {
 	seedCapturedPaymentTxn(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID), "100.00")
 	seedActiveGatewayConfig(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID))
 	refundBody := map[string]any{
-		"amount": "50.00",
-		"reason": "customer-credit",
+		"amount":            "50.00",
+		"reason":            "customer-credit",
+		"refund_request_id": uuid.NewString(),
 	}
 	w = request(t, env.router, http.MethodPost, base+"/"+orderID+"/refund", refundBody, headers)
 	if w.Code != http.StatusOK {

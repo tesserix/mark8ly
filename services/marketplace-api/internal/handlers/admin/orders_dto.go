@@ -100,9 +100,17 @@ type CancelOrderRequest struct {
 // the resulting payment_status from the amount rather than trusting the
 // caller — see OrdersHandler.Refund.
 type RefundOrderRequest struct {
-	Amount          *decimal.Decimal `json:"amount"`                      // omit ⇒ full remaining balance
-	RefundRequestID string           `json:"refund_request_id,omitempty"` // idempotency scope; server generates one if empty
-	Reason          string           `json:"reason"`
+	Amount *decimal.Decimal `json:"amount"` // omit ⇒ full remaining balance
+	// RefundRequestID is REQUIRED. It is the idempotency scope passed
+	// straight through to orderrefund.Coordinator as ScopeID: a stable
+	// UUID the admin UI generates once per refund attempt (charset
+	// [A-Za-z0-9_-]) and reuses verbatim on retry, so a client that times
+	// out and resubmits the same logical refund lands on the coordinator's
+	// AlreadyDone path instead of triggering a second real gateway refund.
+	// There is deliberately no server-generated fallback — a fresh UUID
+	// per request would defeat retry-safety.
+	RefundRequestID string `json:"refund_request_id"`
+	Reason          string `json:"reason"`
 	// PaymentStatus is deprecated: the coordinator derives partial vs full
 	// from the amount. Retained on the wire so older clients don't fail
 	// binding; the value is ignored.

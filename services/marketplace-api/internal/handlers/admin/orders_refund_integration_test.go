@@ -162,7 +162,7 @@ func TestAPI_OrdersRefund_NoCapturedPayment_Unavailable(t *testing.T) {
 	orderID := createAndConfirmOrder(t, env, base, headers, "100.00")
 	// Deliberately do NOT seed payment_transactions or payment_gateway_configs.
 
-	refundBody := map[string]any{"amount": "50.00", "reason": "customer-credit"}
+	refundBody := map[string]any{"amount": "50.00", "reason": "customer-credit", "refund_request_id": uuid.NewString()}
 	w := request(t, env.router, http.MethodPost, base+"/"+orderID+"/refund", refundBody, headers)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("refund: status %d, want 422 (body=%s)", w.Code, w.Body.String())
@@ -192,7 +192,7 @@ func TestAPI_OrdersRefund_OverCap_Rejected(t *testing.T) {
 	seedCapturedPaymentTxn(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID), "100.00")
 	seedActiveGatewayConfig(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID))
 
-	refundBody := map[string]any{"amount": "999.00", "reason": "customer-credit"}
+	refundBody := map[string]any{"amount": "999.00", "reason": "customer-credit", "refund_request_id": uuid.NewString()}
 	w := request(t, env.router, http.MethodPost, base+"/"+orderID+"/refund", refundBody, headers)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("refund: status %d, want 422 (body=%s)", w.Code, w.Body.String())
@@ -249,5 +249,101 @@ func TestAPI_OrdersCancel_Paid_AutoRefunds(t *testing.T) {
 	}
 	if refundCount != 1 {
 		t.Fatalf("refund_transactions succeeded rows = %d, want 1", refundCount)
+	}
+}
+
+// TestAPI_OrdersRefund_MissingRequestID_400 asserts that refund_request_id
+// is required: a request omitting it never reaches the coordinator (no
+// server-generated fallback), and is rejected with 400 validation_failed.
+func TestAPI_OrdersRefund_MissingRequestID_400(t *testing.T) {
+	env := setupOrdersRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+	headers := authHeaders(userID, tenantID)
+	base := "/api/v1/admin/stores/" + storeID + "/orders"
+
+	orderID := createAndConfirmOrder(t, env, base, headers, "100.00")
+	seedCapturedPaymentTxn(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID), "100.00")
+	seedActiveGatewayConfig(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID))
+
+	refundBody := map[string]any{"amount": "50.00", "reason": "customer-credit"}
+	w := request(t, env.router, http.MethodPost, base+"/"+orderID+"/refund", refundBody, headers)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("refund: status %d, want 400 (body=%s)", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("refund: unmarshal: %v", err)
+	}
+	if body["error"] != "validation_failed" {
+		t.Fatalf("refund: error = %v, want validation_failed", body["error"])
+	}
+}
+
+// TestAPI_OrdersRefund_SameRequestID_Idempotent proves retry-safety: POSTing
+// the same amount + refund_request_id twice must not double-refund. The
+// second call hits the coordinator's AlreadyDone path (same ScopeID), so
+// refunded_amount reflects the amount exactly once.
+func TestAPI_OrdersRefund_SameRequestID_Idempotent(t *testing.T) {
+	env := setupOrdersRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+	headers := authHeaders(userID, tenantID)
+	base := "/api/v1/admin/stores/" + storeID + "/orders"
+
+	orderID := createAndConfirmOrder(t, env, base, headers, "100.00")
+	seedCapturedPaymentTxn(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID), "100.00")
+	seedActiveGatewayConfig(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID))
+
+	requestID := uuid.NewString()
+	refundBody := map[string]any{"amount": "50.00", "reason": "customer-credit", "refund_request_id": requestID}
+
+	w := request(t, env.router, http.MethodPost, base+"/"+orderID+"/refund", refundBody, headers)
+	if w.Code != http.StatusOK {
+		t.Fatalf("refund #1: status %d, want 200 (body=%s)", w.Code, w.Body.String())
+	}
+	var first admin.AdminOrderResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &first); err != nil {
+		t.Fatalf("refund #1: unmarshal: %v", err)
+	}
+	if first.RefundedAmount.String() != "50" && first.RefundedAmount.String() != "50.00" {
+		t.Fatalf("refund #1: refunded_amount = %q, want 50", first.RefundedAmount.String())
+	}
+
+	// Retry with the SAME body (same amount + same refund_request_id) —
+	// simulates a client that timed out and resubmitted the identical
+	// logical refund. Must not trigger a second real gateway refund.
+	w = request(t, env.router, http.MethodPost, base+"/"+orderID+"/refund", refundBody, headers)
+	if w.Code != http.StatusOK {
+		t.Fatalf("refund #2 (retry): status %d, want 200 (body=%s)", w.Code, w.Body.String())
+	}
+	var second admin.AdminOrderResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &second); err != nil {
+		t.Fatalf("refund #2: unmarshal: %v", err)
+	}
+	if second.RefundedAmount.String() != "50" && second.RefundedAmount.String() != "50.00" {
+		t.Fatalf("refund #2 (retry): refunded_amount = %q, want 50 (not doubled — idempotency broken)", second.RefundedAmount.String())
+	}
+
+	var refundMeta struct {
+		AlreadyDone bool `json:"already_refunded"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &refundMeta); err != nil {
+		t.Fatalf("refund #2: unmarshal meta: %v", err)
+	}
+	if !refundMeta.AlreadyDone {
+		t.Fatalf("refund #2 (retry): already_refunded = false, want true (coordinator should have short-circuited on the reused scope)")
+	}
+
+	// Double-check against the DB directly — refunded_amount must not be
+	// 100 (which would mean the cap didn't stop a second real refund).
+	var reloaded order.Order
+	if err := env.db.Table("orders").First(&reloaded, "id = ?", orderID).Error; err != nil {
+		t.Fatalf("reload order: %v", err)
+	}
+	if reloaded.RefundedAmount.String() != "50" && reloaded.RefundedAmount.String() != "50.00" {
+		t.Fatalf("reloaded order refunded_amount = %q, want 50 (not doubled)", reloaded.RefundedAmount.String())
 	}
 }

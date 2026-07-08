@@ -21,6 +21,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
+	"github.com/mark8ly/marketplace-api/internal/orderrefund"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/tax"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -39,6 +40,11 @@ type OrderDetailHandler struct {
 	// initiated return requests emit notification.TypeReturnRequested so
 	// admins see them in their bell just like admin-initiated ones.
 	notify     *notification.Service
+	// refunds is an optional refund coordinator. When set, a paid order
+	// is auto-refunded on customer self-cancel (spec §4). Nil-safe —
+	// without it, self-cancel simply skips the refund step (pre-existing
+	// behavior).
+	refunds    *orderrefund.Coordinator
 	logger     *slog.Logger
 }
 
@@ -62,6 +68,14 @@ func (h *OrderDetailHandler) WithReturns(svc *order.ReturnService, repo order.Re
 // Nil-safe; passing nil simply suppresses notifications on this path.
 func (h *OrderDetailHandler) WithNotifier(n *notification.Service) *OrderDetailHandler {
 	h.notify = n
+	return h
+}
+
+// WithRefunds attaches the refund coordinator so a paid order is
+// auto-refunded when the customer self-cancels it (spec §4). Nil-safe —
+// passing nil (or never calling this) simply skips the refund step.
+func (h *OrderDetailHandler) WithRefunds(c *orderrefund.Coordinator) *OrderDetailHandler {
+	h.refunds = c
 	return h
 }
 
@@ -594,6 +608,17 @@ func (h *OrderDetailHandler) Cancel(c *gin.Context) {
 		h.logger.Error("storefront cancel: service error", "err", err, "order_id", orderID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal", "message": "Could not cancel the order. Please try again."})
 		return
+	}
+
+	// Auto-refund a paid order on cancellation (spec §4). Best-effort: a
+	// gateway blip leaves the order cancelled + a pending ledger row for the
+	// sweeper, so the customer is never blocked on the cancel response.
+	if h.refunds != nil && o.PaymentStatus == string(order.PaymentStatusPaid) {
+		if _, rerr := h.refunds.Refund(c.Request.Context(), orderrefund.RefundCommand{
+			OrderID: orderID, Amount: nil, Reason: "order cancelled", Actor: "customer", ScopeID: "cancel",
+		}); rerr != nil {
+			h.logger.Warn("cancel auto-refund deferred", "order_id", orderID, "err", rerr)
+		}
 	}
 
 	// Fire the cancellation email on a detached context — same fire-and-

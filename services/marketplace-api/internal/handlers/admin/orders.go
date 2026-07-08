@@ -458,6 +458,17 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	// Auto-refund a paid order on cancellation (spec §4). Best-effort: a
+	// gateway blip leaves the order cancelled + a pending ledger row for the
+	// sweeper, so the merchant is never blocked on the cancel response.
+	if h.refunds != nil && o.PaymentStatus == string(order.PaymentStatusPaid) {
+		if _, rerr := h.refunds.Refund(c.Request.Context(), orderrefund.RefundCommand{
+			OrderID: id, Amount: nil, Reason: "order cancelled",
+			Actor: "user:" + c.GetString("user_id"), ScopeID: "cancel",
+		}); rerr != nil {
+			h.logger.Warn("cancel auto-refund deferred", "order_id", id, "err", rerr)
+		}
+	}
 	cancelMsg := "Order " + o.OrderNumber + " was cancelled."
 	notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
 		TenantID:     o.TenantID,

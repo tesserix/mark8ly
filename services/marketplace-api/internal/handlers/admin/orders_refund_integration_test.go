@@ -205,3 +205,49 @@ func TestAPI_OrdersRefund_OverCap_Rejected(t *testing.T) {
 		t.Fatalf("refund: error = %v, want refund_exceeds_total", body["error"])
 	}
 }
+
+// TestAPI_OrdersCancel_Paid_AutoRefunds asserts Task 11's admin-side hook:
+// cancelling a paid order with a captured payment auto-refunds the full
+// remaining balance through the same orderrefund.Coordinator saga the
+// Refund endpoint uses. Best-effort — the cancel response is 200 either
+// way — so this asserts on the resulting DB state (order + ledger row)
+// rather than the response body.
+func TestAPI_OrdersCancel_Paid_AutoRefunds(t *testing.T) {
+	env := setupOrdersRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+	headers := authHeaders(userID, tenantID)
+	base := "/api/v1/admin/stores/" + storeID + "/orders"
+
+	orderID := createAndConfirmOrder(t, env, base, headers, "75.00")
+	seedCapturedPaymentTxn(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID), "75.00")
+	seedActiveGatewayConfig(t, env.db, uuid.MustParse(tenantID), uuid.MustParse(storeID))
+
+	cancelBody := map[string]any{"reason": "merchant cancelled — out of stock"}
+	w := request(t, env.router, http.MethodPost, base+"/"+orderID+"/cancel", cancelBody, headers)
+	if w.Code != http.StatusOK {
+		t.Fatalf("cancel: status %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var reloaded order.Order
+	if err := env.db.Table("orders").First(&reloaded, "id = ?", orderID).Error; err != nil {
+		t.Fatalf("reload order: %v", err)
+	}
+	if reloaded.Status != string(order.OrderStatusCancelled) {
+		t.Fatalf("order status = %q, want cancelled", reloaded.Status)
+	}
+	if reloaded.PaymentStatus != string(order.PaymentStatusRefunded) {
+		t.Fatalf("order payment_status = %q, want refunded", reloaded.PaymentStatus)
+	}
+
+	var refundCount int64
+	if err := env.db.Table("refund_transactions").
+		Where("order_id = ? AND status = 'succeeded' AND idempotency_key = ?", orderID, "refund_"+orderID+"_cancel").
+		Count(&refundCount).Error; err != nil {
+		t.Fatalf("count refund_transactions: %v", err)
+	}
+	if refundCount != 1 {
+		t.Fatalf("refund_transactions succeeded rows = %d, want 1", refundCount)
+	}
+}

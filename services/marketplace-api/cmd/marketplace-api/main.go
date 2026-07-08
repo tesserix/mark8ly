@@ -1178,9 +1178,19 @@ func main() {
 		// SendGrid blip never re-queues the webhook.
 		webhookHandler.WithDocMailer(orderDocSvcSF)
 
+		// Refund coordinator for the storefront's own self-cancel auto-refund
+		// (spec §4). Built independently from the admin block's
+		// refundCoordinator — that one is scoped inside the mode.Admin
+		// block and out of reach here in a mode.Storefront-only process.
+		refundGatewayEnabledSF := os.Getenv("REFUND_GATEWAY_ENABLED") == "true"
+		paymentSvcSF := payment.NewService(payment.NewRepository(conn))
+		refundResolverSF := orderrefund.NewResolver(conn)
+		refundCoordinatorSF := orderrefund.NewCoordinator(conn, refundResolverSF, paymentSvcSF, orderSvcSF, orderRepoSF, refundGatewayEnabledSF)
+
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log).
 			WithReturns(returnSvcSF, returnRepoSF).
-			WithNotifier(notificationSvc)
+			WithNotifier(notificationSvc).
+			WithRefunds(refundCoordinatorSF)
 
 		// Support tickets — public contact form endpoint. Shares the
 		// ticketSvc with admin so created rows surface on the admin

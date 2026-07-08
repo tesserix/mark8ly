@@ -2,6 +2,7 @@ package payment
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -180,6 +181,10 @@ func (r *gormRepository) InsertRefundPending(tx *gorm.DB, row *RefundTransaction
 	if res.RowsAffected == 1 {
 		return row, true, nil
 	}
+	// Losing transaction: the winner's row isn't visible in our own
+	// snapshot yet, so re-select it. This relies on READ COMMITTED (the
+	// default isolation level) so that once the winning tx commits, our
+	// next statement in this tx sees its committed row.
 	var existing RefundTransaction
 	if err := tx.Where("idempotency_key = ?", row.IdempotencyKey).First(&existing).Error; err != nil {
 		return nil, false, err
@@ -189,13 +194,20 @@ func (r *gormRepository) InsertRefundPending(tx *gorm.DB, row *RefundTransaction
 
 // UpdateRefundOutcome sets status + provider_refund_id on a ledger row.
 func (r *gormRepository) UpdateRefundOutcome(tx *gorm.DB, ledgerID, providerRefundID, status string) error {
-	return tx.Model(&RefundTransaction{}).
+	res := tx.Model(&RefundTransaction{}).
 		Where("id = ?", ledgerID).
 		Updates(map[string]any{
 			"provider_refund_id": providerRefundID,
 			"status":             status,
 			"updated_at":         gorm.Expr("now()"),
-		}).Error
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("payment: UpdateRefundOutcome: no refund_transactions row with id %s", ledgerID)
+	}
+	return nil
 }
 
 // GetRefundByIdempotencyKey reads a ledger row by its unique key.

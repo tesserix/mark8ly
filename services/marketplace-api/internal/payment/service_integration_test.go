@@ -110,3 +110,18 @@ func TestFinalizeRefund_UpdatesStatusAndProviderRefundID(t *testing.T) {
 		t.Fatalf("ProviderRefundID = %q, want re_789", updated.ProviderRefundID)
 	}
 }
+
+// TestFinalizeRefund_UnknownLedgerID_Errors proves FinalizeRefund cannot
+// silently no-op: a ledgerID that matches zero refund_transactions rows must
+// return an error rather than nil, otherwise the saga would falsely report
+// success while the ledger row never reflects the gateway's outcome.
+func TestFinalizeRefund_UnknownLedgerID_Errors(t *testing.T) {
+	db := testdb.NewDB(t, "refund_transactions")
+	svc := NewService(NewRepository(db))
+	ctx := context.Background()
+
+	err := svc.FinalizeRefund(ctx, db, uuid.New().String(), "re_x", "succeeded")
+	if err == nil {
+		t.Fatal("FinalizeRefund: err = nil, want non-nil for unknown ledger ID")
+	}
+}

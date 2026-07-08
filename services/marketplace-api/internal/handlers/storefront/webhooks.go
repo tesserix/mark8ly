@@ -545,11 +545,21 @@ func (h *WebhookHandler) handleGiftCardEvent(ctx context.Context, evt *payment.W
 
 // handlePaymentSucceeded updates the payment transaction and confirms the order.
 func (h *WebhookHandler) handlePaymentSucceeded(ctx context.Context, provider string, evt *payment.WebhookEvent) {
-	// Update payment_transaction status to "captured".
+	// Update payment_transaction status to "captured". provider_payment_id
+	// is the captured refund target — Stripe's refund target is the intent
+	// (already persisted at intent creation), but Razorpay/PayPal refund
+	// against the captured payment/capture id carried on the event, which
+	// was previously discarded here. COALESCE(NULLIF(?, ''), ...) preserves
+	// any existing value when the event doesn't carry one (e.g. a retried
+	// webhook), instead of clobbering it with empty string.
 	if err := h.db.WithContext(ctx).Exec(
-		`UPDATE payment_transactions SET status = 'captured', payment_method = ?, updated_at = now()
-		 WHERE order_id = ?::uuid AND provider = ?`,
-		evt.PaymentMethod, evt.OrderID, provider,
+		`UPDATE payment_transactions
+		    SET status = 'captured',
+		        payment_method = ?,
+		        provider_payment_id = COALESCE(NULLIF(?, ''), provider_payment_id),
+		        updated_at = now()
+		  WHERE order_id = ?::uuid AND provider = ?`,
+		evt.PaymentMethod, evt.ProviderPaymentID, evt.OrderID, provider,
 	).Error; err != nil {
 		h.logError("webhook: failed to update payment transaction",
 			"order_id", evt.OrderID,

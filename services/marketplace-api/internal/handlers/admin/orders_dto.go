@@ -301,9 +301,12 @@ type RejectReturnRequest struct {
 }
 
 // MarkRefundedRequest is the wire body for the cross-module refund step.
+// PaymentStatus is accepted for backward compatibility but ignored — the
+// orderrefund.Coordinator derives partial vs full payment_status itself
+// from the amount and the order's running refunded_amount.
 type MarkRefundedRequest struct {
-	Amount        decimal.Decimal `json:"amount"         binding:"required"`
-	PaymentStatus string          `json:"payment_status" binding:"required"`
+	Amount        decimal.Decimal `json:"amount" binding:"required"`
+	PaymentStatus string          `json:"payment_status"`
 	Reason        string          `json:"reason"`
 }
 

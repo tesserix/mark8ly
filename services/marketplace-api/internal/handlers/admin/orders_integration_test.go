@@ -79,7 +79,8 @@ func setupOrdersRouter(t *testing.T) *ordersTestEnv {
 
 	ordersHandler := admin.NewOrdersHandler(db, orderSvc, orderRepo, nil, nil).
 		WithRefunds(refundCoordinator)
-	returnsHandler := admin.NewReturnsHandler(db, returnSvc, returnRepo, orderRepo, orderSvc, nil)
+	returnsHandler := admin.NewReturnsHandler(db, returnSvc, returnRepo, orderRepo, orderSvc, nil).
+		WithRefunds(refundCoordinator)
 	abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, nil)
 
 	r := gin.New()

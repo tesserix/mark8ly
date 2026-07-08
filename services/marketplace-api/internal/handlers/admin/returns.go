@@ -13,6 +13,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/orderrefund"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -24,7 +25,8 @@ type ReturnsHandler struct {
 	repo      order.ReturnRepository
 	orderRepo order.Repository
 	orderSvc  *order.Service
-	notify    *notification.Service // optional — nil-safe
+	refunds   *orderrefund.Coordinator // optional — nil disables the refunded endpoint (503)
+	notify    *notification.Service    // optional — nil-safe
 	logger    *slog.Logger
 }
 
@@ -37,6 +39,14 @@ func NewReturnsHandler(db *gorm.DB, svc *order.ReturnService, repo order.ReturnR
 // in-app notifications. Nil-safe.
 func (h *ReturnsHandler) WithNotifier(n *notification.Service) *ReturnsHandler {
 	h.notify = n
+	return h
+}
+
+// WithRefunds attaches the refund coordinator that moves real money for
+// return refunds. Nil-safe — leaving it unset makes MarkRefunded respond
+// 503 rather than silently skipping the gateway.
+func (h *ReturnsHandler) WithRefunds(c *orderrefund.Coordinator) *ReturnsHandler {
+	h.refunds = c
 	return h
 }
 
@@ -284,7 +294,20 @@ func (h *ReturnsHandler) MarkReceived(c *gin.Context) {
 }
 
 // MarkRefunded handles POST /admin/stores/:storeId/returns/:id/refunded.
-// Drives the cross-module atomic refund through the service layer.
+// This now moves real money — the request goes through
+// orderrefund.Coordinator (ScopeID = the return id, giving each return its
+// own idempotency key namespace), which resolves the order's captured
+// payment, calls the gateway, and derives partial vs full payment_status
+// from the amount. The caller-supplied payment_status field is ignored
+// (server-derived). Once the coordinator succeeds, ReturnService.StampRefundedOnly
+// stamps the return as refunded — the coordinator's own tx already bumped
+// orders.refunded_amount, so this second step only owns the return
+// aggregate's state.
+//
+// Self-heal: Coordinator.Refund is idempotent on ScopeID, so if
+// StampRefundedOnly fails after the money moved, retrying this endpoint
+// re-runs Coordinator.Refund as a no-op (AlreadyDone=true) and completes
+// the stamp on retry.
 func (h *ReturnsHandler) MarkRefunded(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -296,17 +319,41 @@ func (h *ReturnsHandler) MarkRefunded(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
 		return
 	}
-	if err := h.svc.MarkRefunded(
-		c.Request.Context(), id,
-		req.Amount, order.PaymentStatus(req.PaymentStatus), req.Reason,
-	); err != nil {
-		RespondErr(c, err, h.logger)
+	if h.refunds == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "service_unavailable",
+			"message": "Refunds are not configured.",
+		})
 		return
 	}
-	r, items, err := h.repo.GetByID(c.Request.Context(), h.db, id)
+
+	r, _, err := h.repo.GetByID(c.Request.Context(), h.db, id)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
-	c.JSON(http.StatusOK, ToAdminReturnResponse(r, items))
+
+	amount := req.Amount
+	if _, rerr := h.refunds.Refund(c.Request.Context(), orderrefund.RefundCommand{
+		OrderID: r.OrderID,
+		Amount:  &amount,
+		Reason:  req.Reason,
+		Actor:   "user:" + c.GetString("user_id"),
+		ScopeID: id.String(),
+	}); rerr != nil {
+		RespondErr(c, rerr, h.logger)
+		return
+	}
+
+	if err := h.svc.StampRefundedOnly(c.Request.Context(), id, req.Amount, req.Reason); err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	full, items, err := h.repo.GetByID(c.Request.Context(), h.db, id)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, ToAdminReturnResponse(full, items))
 }

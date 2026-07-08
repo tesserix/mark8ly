@@ -634,7 +634,8 @@ func main() {
 
 		ordersHandler := admin.NewOrdersHandler(conn, orderSvc, orderRepo, orderDocSvc, log).
 			WithRefunds(refundCoordinator)
-		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log)
+		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log).
+			WithRefunds(refundCoordinator)
 		abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, log)
 
 		storesHandler := admin.NewStoresHandler(storesRepo, log)

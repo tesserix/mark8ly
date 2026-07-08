@@ -212,6 +212,16 @@ func TestAPI_OrdersHappyPath(t *testing.T) {
 	if refunded.RefundedAmount.String() != "50" && refunded.RefundedAmount.String() != "50.00" {
 		t.Fatalf("refund: refunded_amount = %q, want 50", refunded.RefundedAmount.String())
 	}
+	// RefundOrderResponse anonymously embeds AdminOrderResponse and adds
+	// provider_refund_id — unmarshal separately into a narrow struct to
+	// assert the gateway's fakeGateway-supplied id round-trips.
+	var refundMeta struct {
+		ProviderRefundID string `json:"provider_refund_id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &refundMeta)
+	if refundMeta.ProviderRefundID != "re_test" {
+		t.Fatalf("refund: provider_refund_id = %q, want re_test", refundMeta.ProviderRefundID)
+	}
 
 	// --- Get returns the same final state ---
 	w = request(t, env.router, http.MethodGet, base+"/"+orderID, nil, headers)

@@ -187,6 +187,17 @@ type AdminOrderTaxLineResponse struct {
 	Jurisdiction string          `json:"jurisdiction,omitempty"`
 }
 
+// RefundOrderResponse is the wire shape for a successful refund. It
+// anonymously embeds AdminOrderResponse so the response still serializes
+// every existing order field inline (callers unmarshalling into a plain
+// AdminOrderResponse keep working) while also surfacing the gateway's
+// provider_refund_id for reconciliation.
+type RefundOrderResponse struct {
+	AdminOrderResponse
+	ProviderRefundID string `json:"provider_refund_id"`
+	AlreadyDone      bool   `json:"already_refunded,omitempty"`
+}
+
 // ToAdminOrderResponse renders the persistence types into the wire shape.
 func ToAdminOrderResponse(o *order.Order, items []order.OrderItem, addrs []order.OrderAddress) AdminOrderResponse {
 	out := AdminOrderResponse{

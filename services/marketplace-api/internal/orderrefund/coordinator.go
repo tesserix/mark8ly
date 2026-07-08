@@ -3,6 +3,7 @@ package orderrefund
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -12,6 +13,13 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/payment"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
+
+// scopeIDPattern restricts RefundCommand.ScopeID to the charset gateways
+// accept in idempotency keys (Razorpay's X-Refund-Idempotency requires
+// [A-Za-z0-9_-]). Return IDs (uuids) and the "cancel" constant already
+// satisfy this; the only untrusted value is admin's client-supplied
+// refund_request_id, but validating centrally protects every caller.
+var scopeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // Refund ledger row statuses used by the saga.
 const (
@@ -92,6 +100,9 @@ func idempotencyKey(orderID uuid.UUID, scopeID string) string {
 func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResult, error) {
 	if !c.enabled {
 		return RefundResult{}, fmt.Errorf("orderrefund: gateway refunds disabled (REFUND_GATEWAY_ENABLED=false)")
+	}
+	if !scopeIDPattern.MatchString(cmd.ScopeID) {
+		return RefundResult{}, apperrors.ValidationFailed("refund_request_id", "must match [A-Za-z0-9_-]")
 	}
 
 	o, _, _, err := c.orderRepo.GetByID(ctx, c.db, cmd.OrderID)

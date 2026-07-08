@@ -1,6 +1,8 @@
 package orderrefund
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
 // TestDeriveStatus proves the partial-vs-full status derivation: a refund
@@ -56,5 +59,24 @@ func TestIdempotencyKey_StableAndColonFree(t *testing.T) {
 	}
 	if idempotencyKey(orderID, "rr2") == first {
 		t.Fatalf("idempotency key collided across different scope IDs")
+	}
+}
+
+// TestRefund_InvalidScopeID_Rejected proves the ScopeID charset guard runs
+// immediately after the enabled check and before any DB access — a
+// coordinator with nil db/resolver/pay/orders/orderRepo must still reject a
+// bad ScopeID rather than panicking on a nil dependency.
+func TestRefund_InvalidScopeID_Rejected(t *testing.T) {
+	c := &Coordinator{enabled: true}
+
+	_, err := c.Refund(context.Background(), RefundCommand{
+		OrderID: uuid.New(),
+		ScopeID: "a:b",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid ScopeID, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrValidationFailed) {
+		t.Fatalf("expected apperrors.ErrValidationFailed, got %v", err)
 	}
 }

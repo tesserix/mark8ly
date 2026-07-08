@@ -537,7 +537,11 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 	// amount + the running total. The post-refund order row already
 	// reflects the new refunded_amount.
 	h.dispatchRefundEmail(id, res.Amount, o.RefundedAmount)
-	c.JSON(http.StatusOK, ToAdminOrderResponse(o, items, addrs))
+	c.JSON(http.StatusOK, RefundOrderResponse{
+		AdminOrderResponse: ToAdminOrderResponse(o, items, addrs),
+		ProviderRefundID:   res.ProviderRefundID,
+		AlreadyDone:        res.AlreadyDone,
+	})
 }
 
 // EmailInvoice handles POST /admin/stores/:storeId/orders/:id/invoice/email

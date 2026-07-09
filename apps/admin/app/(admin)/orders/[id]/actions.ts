@@ -159,6 +159,7 @@ export interface RefundOrderActionInput {
   amount: string;
   paymentStatus: PaymentStatus;
   reason?: string;
+  refundRequestId: string;
 }
 
 export async function refundOrderAction(
@@ -194,6 +195,16 @@ export async function refundOrderAction(
       },
     };
   }
+  if (!input.refundRequestId) {
+    return {
+      ok: false,
+      error: {
+        code: "validation_failed",
+        message: "Refund request id is required.",
+        field: "refund_request_id",
+      },
+    };
+  }
 
   const result = await refundOrder(
     ctx.storeId,
@@ -202,6 +213,7 @@ export async function refundOrderAction(
       amount: input.amount,
       payment_status: input.paymentStatus,
       reason: input.reason ?? "",
+      refund_request_id: input.refundRequestId,
     },
     { userId: ctx.userId, tenantId: ctx.tenantId },
   );

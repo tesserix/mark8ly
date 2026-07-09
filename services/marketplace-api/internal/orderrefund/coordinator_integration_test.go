@@ -305,8 +305,8 @@ func TestRefund_Disabled_SkipsGateway(t *testing.T) {
 	_, err := c.Refund(context.Background(), orderrefund.RefundCommand{
 		OrderID: orderID, Amount: &amount, Reason: "customer request", Actor: "admin", ScopeID: "rr1",
 	})
-	if err == nil {
-		t.Fatal("Refund: err = nil, want non-nil (coordinator disabled)")
+	if !errors.Is(err, apperrors.ErrRefundsDisabled) {
+		t.Fatalf("Refund: err = %v, want apperrors.ErrRefundsDisabled", err)
 	}
 	if gw.callCount() != 0 {
 		t.Fatalf("gateway call count = %d, want 0", gw.callCount())

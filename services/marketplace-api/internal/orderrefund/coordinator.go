@@ -101,7 +101,7 @@ func idempotencyKey(orderID uuid.UUID, scopeID string) string {
 // database when the coordinator is disabled.
 func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResult, error) {
 	if !c.enabled {
-		return RefundResult{}, fmt.Errorf("orderrefund: gateway refunds disabled (REFUND_GATEWAY_ENABLED=false)")
+		return RefundResult{}, apperrors.ErrRefundsDisabled
 	}
 	if !scopeIDPattern.MatchString(cmd.ScopeID) {
 		return RefundResult{}, apperrors.ValidationFailed("refund_request_id", "must match [A-Za-z0-9_-]")

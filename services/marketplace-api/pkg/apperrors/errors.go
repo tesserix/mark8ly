@@ -41,6 +41,7 @@ const (
 	CodeIdempotencyConflict      Code = "idempotency_conflict"
 	CodeReturnItemsExceedOrdered Code = "return_items_exceed_ordered"
 	CodeRecoveryTooRecent        Code = "recovery_too_recent"
+	CodeRefundsDisabled          Code = "refunds_disabled"
 
 	// Coupons M1.
 	CodeCouponNotFound          Code = "coupon_not_found"
@@ -116,6 +117,7 @@ var (
 	ErrIdempotencyConflict      = &Error{Code: CodeIdempotencyConflict}
 	ErrReturnItemsExceedOrdered = &Error{Code: CodeReturnItemsExceedOrdered}
 	ErrRecoveryTooRecent        = &Error{Code: CodeRecoveryTooRecent}
+	ErrRefundsDisabled          = &Error{Code: CodeRefundsDisabled}
 
 	// Coupons M1 sentinels.
 	ErrCouponNotFound          = &Error{Code: CodeCouponNotFound}
@@ -166,7 +168,7 @@ func IsKnownCode(s string) bool {
 		CodePayloadTooLarge, CodeUnsupportedMediaType, CodeRateLimited,
 		CodeCurrencyChangeForbidden, CodeOptionValueInUse,
 		CodeInvalidTransition, CodeRefundExceedsTotal, CodeRefundUnavailable, CodeIdempotencyConflict,
-		CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent,
+		CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent, CodeRefundsDisabled,
 		CodeCouponNotFound, CodeCouponExpired, CodeCouponUsageLimitReached,
 		CodeCouponInvalid, CodeCouponMinPurchaseNotMet,
 		CodeInsufficientGiftCardBalance, CodeGiftCardExpired, CodeGiftCardNotFound,
@@ -321,6 +323,12 @@ func RefundExceedsTotal(grandTotal, requested, alreadyRefunded string) *Error {
 // gateway (no captured payment transaction — COD/manual/authorized-only).
 func RefundUnavailable(reason string) *Error {
 	return &Error{Code: CodeRefundUnavailable, Message: reason}
+}
+
+// RefundsDisabled is returned when the refund coordinator's feature flag is
+// off, so callers get a clear 503 instead of a generic 500.
+func RefundsDisabled() *Error {
+	return &Error{Code: CodeRefundsDisabled, Message: "refunds are temporarily disabled"}
 }
 
 // IdempotencyConflict is returned when a Create call reuses an existing

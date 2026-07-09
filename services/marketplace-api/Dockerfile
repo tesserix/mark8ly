@@ -20,7 +20,9 @@ COPY . .
 RUN go build -trimpath -ldflags="-s -w" \
       -o /out/marketplace-api ./cmd/marketplace-api \
  && go build -trimpath -ldflags="-s -w" \
-      -o /out/migrate ./cmd/migrate
+      -o /out/migrate ./cmd/migrate \
+ && go build -trimpath -ldflags="-s -w" \
+      -o /out/refund-sweep-cron ./cmd/refund-sweep-cron
 
 # ─── migrate ────────────────────────────────────────────────────────────
 # Standalone image used by the K8s Job pattern.
@@ -29,11 +31,14 @@ COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 CMD ["/usr/local/bin/migrate"]
 
 # ─── runtime ────────────────────────────────────────────────────────────
-# Runtime image carries BOTH binaries — server (default ENTRYPOINT) and the
-# migrate CLI at /usr/local/bin/migrate — so the Helm init container
-# can override ENTRYPOINT to run migrations from the same image.
+# Runtime image carries all three binaries — server (default ENTRYPOINT),
+# the migrate CLI at /usr/local/bin/migrate, and the refund-sweep-cron at
+# /usr/local/bin/refund-sweep-cron — so the Helm init container and the
+# refund-sweep CronJob can override ENTRYPOINT to run migrations / the
+# stuck-refund sweeper from the same image.
 FROM ghcr.io/tesserix/base-distroless-static:latest AS runtime
 COPY --from=builder --chown=10001:10001 /out/marketplace-api /usr/local/bin/marketplace-api
 COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
+COPY --from=builder --chown=10001:10001 /out/refund-sweep-cron /usr/local/bin/refund-sweep-cron
 EXPOSE 8091
 CMD ["/usr/local/bin/marketplace-api"]

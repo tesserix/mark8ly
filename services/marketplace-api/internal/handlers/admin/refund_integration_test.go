@@ -147,5 +147,5 @@ func TestRefund_OutsideCoolingOff(t *testing.T) {
 
 // refundURL builds the §8 cooling-off subscription refund endpoint path.
 func refundURL(storeID string) string {
-	return "/admin/stores/" + storeID + "/subscription/refund"
+	return "/api/v1/admin/stores/" + storeID + "/subscription/refund"
 }

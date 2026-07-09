@@ -1240,6 +1240,8 @@ export interface RefundOrderInput {
   /** Target payment_status: "partially_refunded" or "refunded". */
   payment_status: PaymentStatus;
   reason?: string;
+  /** Stable idempotency key per refund attempt. */
+  refund_request_id: string;
 }
 
 export async function refundOrder(

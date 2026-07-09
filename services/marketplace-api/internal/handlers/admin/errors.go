@@ -40,6 +40,7 @@ var codeStatus = map[apperrors.Code]int{
 	apperrors.CodeIdempotencyConflict:      http.StatusConflict,
 	apperrors.CodeReturnItemsExceedOrdered: http.StatusUnprocessableEntity,
 	apperrors.CodeRecoveryTooRecent:        http.StatusTooManyRequests,
+	apperrors.CodeRefundsDisabled:          http.StatusServiceUnavailable,
 
 	// Coupons M1.
 	apperrors.CodeCouponNotFound:          http.StatusNotFound,

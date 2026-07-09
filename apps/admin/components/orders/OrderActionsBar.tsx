@@ -442,6 +442,10 @@ function RefundForm({
   );
   const [reason, setReason] = useState("");
   const [step, setStep] = useState<"form" | "review">("form");
+  // Stable per-mount id: same value across re-renders and submit retries
+  // within this open form, but a new id if the form is closed and reopened
+  // (a new refund attempt). This is the idempotency semantics we want.
+  const [refundRequestId] = useState(() => crypto.randomUUID());
 
   const remaining = (
     Number.parseFloat(grandTotal) - Number.parseFloat(refundedAmount)
@@ -454,6 +458,7 @@ function RefundForm({
         amount,
         paymentStatus,
         reason,
+        refundRequestId,
       });
       if (!r.ok) {
         setError(r.error);

@@ -278,8 +278,8 @@ func seedStoreRowForSync(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID)
 	// evolved. Field list chosen to satisfy NOT NULL columns in
 	// migrations/000002_orders_initial.up.sql.
 	err := db.Exec(`
-		INSERT INTO stores (id, tenant_id, name, slug, country_code, currency_code, created_at, updated_at)
-		VALUES (?, ?, 'Test', ?, 'IN', 'INR', now(), now())
+		INSERT INTO stores (id, tenant_id, name, slug, country_code, currency_code, created_at, updated_at, storefront_customer_portal_secret)
+		VALUES (?, ?, 'Test', ?, 'IN', 'INR', now(), now(), encode(gen_random_bytes(32), 'hex'))
 		ON CONFLICT (id) DO NOTHING`,
 		storeID, tenantID, "test-"+storeID.String()[:8]).Error
 	if err != nil {

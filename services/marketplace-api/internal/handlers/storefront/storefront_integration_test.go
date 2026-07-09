@@ -100,8 +100,8 @@ func seedStorefrontStore(t *testing.T, db *gorm.DB, slug, currency string) (stor
 	storeID = uuid.NewString()
 	tenantID = uuid.NewString()
 	if err := db.Exec(`
-		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())`,
+		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at, storefront_customer_portal_secret)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, now(), encode(gen_random_bytes(32), 'hex'))`,
 		storeID, tenantID, slug, "Storefront Test Store", "US", currency, "UTC", stores.StatusActive).Error; err != nil {
 		t.Fatalf("seed store: %v", err)
 	}
@@ -113,8 +113,8 @@ func seedSuspendedStore(t *testing.T, db *gorm.DB, slug string) string {
 	storeID := uuid.NewString()
 	tenantID := uuid.NewString()
 	if err := db.Exec(`
-		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())`,
+		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at, storefront_customer_portal_secret)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, now(), encode(gen_random_bytes(32), 'hex'))`,
 		storeID, tenantID, slug, "Suspended Store", "US", "USD", "UTC", stores.StatusSuspended).Error; err != nil {
 		t.Fatalf("seed suspended store: %v", err)
 	}

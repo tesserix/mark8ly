@@ -50,21 +50,26 @@ func (s OrderStatus) Allowed() []OrderStatus {
 type PaymentStatus string
 
 const (
-	PaymentStatusPending            PaymentStatus = "pending"
-	PaymentStatusAuthorized         PaymentStatus = "authorized"
-	PaymentStatusPaid               PaymentStatus = "paid"
-	PaymentStatusFailed             PaymentStatus = "failed"
-	PaymentStatusRefunded           PaymentStatus = "refunded"
-	PaymentStatusPartiallyRefunded  PaymentStatus = "partially_refunded"
+	PaymentStatusPending           PaymentStatus = "pending"
+	PaymentStatusAuthorized        PaymentStatus = "authorized"
+	PaymentStatusPaid              PaymentStatus = "paid"
+	PaymentStatusFailed            PaymentStatus = "failed"
+	PaymentStatusRefunded          PaymentStatus = "refunded"
+	PaymentStatusPartiallyRefunded PaymentStatus = "partially_refunded"
 )
 
 var paymentStatusTransitions = map[PaymentStatus][]PaymentStatus{
-	PaymentStatusPending:           {PaymentStatusAuthorized, PaymentStatusPaid, PaymentStatusFailed},
-	PaymentStatusAuthorized:        {PaymentStatusPaid, PaymentStatusFailed, PaymentStatusRefunded},
-	PaymentStatusPaid:              {PaymentStatusRefunded, PaymentStatusPartiallyRefunded},
-	PaymentStatusPartiallyRefunded: {PaymentStatusRefunded},
+	PaymentStatusPending:    {PaymentStatusAuthorized, PaymentStatusPaid, PaymentStatusFailed},
+	PaymentStatusAuthorized: {PaymentStatusPaid, PaymentStatusFailed, PaymentStatusRefunded},
+	PaymentStatusPaid:       {PaymentStatusRefunded, PaymentStatusPartiallyRefunded},
+	// A partially-refunded order may take another partial refund (a second
+	// return, or a second partial admin refund) and stay partially_refunded —
+	// hence the self-transition — or be topped up to a full refund. Without
+	// the self-transition the *second* partial refund moves money on the
+	// gateway and then fails bookkeeping, stranding the ledger row.
+	PaymentStatusPartiallyRefunded: {PaymentStatusPartiallyRefunded, PaymentStatusRefunded},
 	PaymentStatusFailed:            {PaymentStatusPending, PaymentStatusPaid}, // retry path
-	PaymentStatusRefunded:          nil,                                        // terminal
+	PaymentStatusRefunded:          nil,                                       // terminal
 }
 
 func (s PaymentStatus) CanTransitionTo(target PaymentStatus) bool {

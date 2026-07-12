@@ -205,7 +205,11 @@ func (p *PayPalGateway) RefundPayment(ctx context.Context, in RefundInput) (*Ref
 	refundBody := map[string]any{
 		"amount": map[string]string{
 			"currency_code": strings.ToUpper(currency),
-			"value":         in.Amount.StringFixed(2),
+			// PayPal requires the value's decimal places to match the
+			// currency's exponent — "1000" for JPY, "10.00" for USD,
+			// "10.000" for KWD. StringFixed(2) unconditionally 422s on
+			// zero-decimal currencies.
+			"value": in.Amount.StringFixed(currencyExponent(currency)),
 		},
 		"note_to_payer": in.Reason,
 	}
@@ -238,7 +242,7 @@ func (p *PayPalGateway) RefundPayment(ctx context.Context, in RefundInput) (*Ref
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("paypal: refund payment: status %d: %s", resp.StatusCode, body)
+		return nil, &GatewayError{Provider: "paypal", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var result struct {

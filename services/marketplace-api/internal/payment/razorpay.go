@@ -167,6 +167,11 @@ func (r *RazorpayGateway) CapturePayment(ctx context.Context, captureID string) 
 
 // RefundPayment creates a refund via POST /v1/refunds.
 func (r *RazorpayGateway) RefundPayment(ctx context.Context, in RefundInput) (*Refund, error) {
+	// Razorpay settles only in INR (see SupportedCountries). Reject a
+	// mismatched currency loudly rather than silently converting as INR.
+	if in.CurrencyCode != "" && !strings.EqualFold(in.CurrencyCode, "INR") {
+		return nil, fmt.Errorf("razorpay: refund payment: unsupported currency %q (INR only)", in.CurrencyCode)
+	}
 	amountPaise := toMinorUnits(in.Amount, "INR")
 
 	body := map[string]any{
@@ -204,7 +209,7 @@ func (r *RazorpayGateway) RefundPayment(ctx context.Context, in RefundInput) (*R
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("razorpay: refund payment: status %d: %s", resp.StatusCode, respBody)
+		return nil, &GatewayError{Provider: "razorpay", StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
 	var result struct {

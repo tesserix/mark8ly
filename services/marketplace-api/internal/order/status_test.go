@@ -62,7 +62,10 @@ func TestPaymentStatus_LegalTransitions(t *testing.T) {
 			order.PaymentStatusPartiallyRefunded: true,
 		},
 		order.PaymentStatusPartiallyRefunded: {
-			order.PaymentStatusRefunded: true,
+			// self-transition: a second partial refund keeps the order
+			// partially_refunded (see paymentStatusTransitions).
+			order.PaymentStatusPartiallyRefunded: true,
+			order.PaymentStatusRefunded:          true,
 		},
 		order.PaymentStatusFailed: {
 			order.PaymentStatusPending: true,

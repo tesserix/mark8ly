@@ -214,16 +214,30 @@ func (s *StripeGateway) CapturePayment(ctx context.Context, captureID string) (*
 	}, nil
 }
 
+// stripeRefundReason maps our free-text refund reason onto Stripe's fixed
+// `reason` enum. Stripe rejects any value other than duplicate | fraudulent |
+// requested_by_customer, so anything the admin typed collapses to
+// requested_by_customer. The original human text is preserved on the
+// refund_transactions ledger row and in the audit trail, not lost.
+func stripeRefundReason(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "duplicate":
+		return "duplicate"
+	case "fraudulent":
+		return "fraudulent"
+	default:
+		return "requested_by_customer"
+	}
+}
+
 // RefundPayment creates a refund via POST /v1/refunds.
 func (s *StripeGateway) RefundPayment(ctx context.Context, in RefundInput) (*Refund, error) {
-	amountMinor := toMinorUnits(in.Amount, "")
+	amountMinor := toMinorUnits(in.Amount, in.CurrencyCode)
 
 	form := url.Values{}
 	form.Set("payment_intent", in.ProviderPaymentID)
 	form.Set("amount", strconv.FormatInt(amountMinor, 10))
-	if in.Reason != "" {
-		form.Set("reason", in.Reason)
-	}
+	form.Set("reason", stripeRefundReason(in.Reason))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/v1/refunds", strings.NewReader(form.Encode()))
 	if err != nil {
@@ -247,7 +261,7 @@ func (s *StripeGateway) RefundPayment(ctx context.Context, in RefundInput) (*Ref
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("stripe: refund payment: status %d: %s", resp.StatusCode, body)
+		return nil, &GatewayError{Provider: "stripe", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var result struct {
@@ -401,16 +415,27 @@ func normalizeStripeEvent(stripeType string) string {
 	}
 }
 
-// toMinorUnits converts a decimal amount to the smallest currency unit
-// (e.g. cents for USD). For zero-decimal currencies like JPY it returns
-// the integer value directly.
-func toMinorUnits(amount decimal.Decimal, currency string) int64 {
-	upper := strings.ToUpper(currency)
-	switch upper {
+// currencyExponent returns the number of minor-unit decimal places for an
+// ISO-4217 currency (0 for JPY/KRW, 2 for USD/EUR, 3 for the Gulf dinars).
+// Unknown currencies default to 2, the overwhelmingly common case.
+func currencyExponent(currency string) int32 {
+	switch strings.ToUpper(currency) {
 	case "JPY", "KRW", "VND", "BIF", "CLP", "DJF", "GNF", "ISK",
 		"KMF", "PYG", "RWF", "UGX", "XAF", "XOF", "XPF":
-		return amount.IntPart()
+		return 0
+	case "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND":
+		return 3
 	default:
-		return amount.Mul(decimal.NewFromInt(100)).IntPart()
+		return 2
 	}
+}
+
+// toMinorUnits converts a decimal amount to the smallest currency unit
+// (e.g. cents for USD, yen for JPY, fils for KWD). It rounds to the nearest
+// minor unit rather than truncating, so a sub-unit residue from upstream
+// proportional-split math never silently drops money.
+func toMinorUnits(amount decimal.Decimal, currency string) int64 {
+	exp := currencyExponent(currency)
+	factor := decimal.New(1, exp) // 10^exp
+	return amount.Mul(factor).Round(0).IntPart()
 }

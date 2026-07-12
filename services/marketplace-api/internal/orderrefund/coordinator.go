@@ -2,6 +2,7 @@ package orderrefund
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -97,6 +98,15 @@ func idempotencyKey(orderID uuid.UUID, scopeID string) string {
 	return "refund_" + orderID.String() + "_" + scopeID
 }
 
+// refundReplay classifies a same-ScopeID re-entry detected during reservation.
+type refundReplay int
+
+const (
+	replayNone      refundReplay = iota
+	replaySucceeded              // prior attempt already moved money → idempotent success
+	replayPending                // prior attempt reserved but never finalized → conflict
+)
+
 // Refund runs the full saga for cmd. It never touches the gateway or the
 // database when the coordinator is disabled.
 func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResult, error) {
@@ -107,11 +117,6 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 		return RefundResult{}, apperrors.ValidationFailed("refund_request_id", "must match [A-Za-z0-9_-]")
 	}
 
-	o, _, _, err := c.orderRepo.GetByID(ctx, c.db, cmd.OrderID)
-	if err != nil {
-		return RefundResult{}, err
-	}
-
 	pc, err := c.res.PaymentContextForOrder(ctx, cmd.OrderID)
 	if err != nil {
 		return RefundResult{}, err
@@ -120,70 +125,114 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 		return RefundResult{}, apperrors.RefundUnavailable("no captured payment for this order")
 	}
 
-	remaining := o.GrandTotal.Sub(o.RefundedAmount)
-	amount := remaining
-	if cmd.Amount != nil {
-		amount = *cmd.Amount
+	// Read once for the immutable routing fields (store + provider) needed to
+	// build the gateway. The authoritative balance for the cap check is
+	// re-read under a row lock in tx #1 below.
+	o, _, _, err := c.orderRepo.GetByID(ctx, c.db, cmd.OrderID)
+	if err != nil {
+		return RefundResult{}, err
 	}
-	if amount.LessThanOrEqual(decimal.Zero) {
-		return RefundResult{}, apperrors.ValidationFailed("amount", "refund amount must be positive")
-	}
-
-	refundCap := decimal.Min(o.GrandTotal, pc.CapturedTotal)
-	if o.RefundedAmount.Add(amount).GreaterThan(refundCap) {
-		return RefundResult{}, apperrors.ErrRefundExceedsTotal
-	}
-
-	target := DeriveStatus(o.RefundedAmount, amount, o.GrandTotal)
-	key := idempotencyKey(cmd.OrderID, cmd.ScopeID)
 
 	gw, err := c.res.GatewayFor(ctx, o.StoreID, pc.Provider)
 	if err != nil {
 		return RefundResult{}, err
 	}
 
-	// tx #1 — reserve pending ledger row (idempotent re-entry guard).
-	var ledger *payment.RefundTransaction
-	var created bool
+	key := idempotencyKey(cmd.OrderID, cmd.ScopeID)
+	refundCap := decimal.Min(o.GrandTotal, pc.CapturedTotal)
+
+	// tx #1 — serialize on the order row, validate against the authoritative
+	// balance INCLUDING in-flight pending refunds, then reserve the ledger
+	// row. Locking the order (FOR UPDATE) is what makes concurrent refunds
+	// with DIFFERENT ScopeIDs safe: the second blocks until the first's
+	// pending row is committed, then counts it in the cap check. Without the
+	// lock + pending-sum, two distinct-scope refunds could each clear the cap
+	// on a stale refunded_amount and both move real money on the gateway.
+	var (
+		ledger        *payment.RefundTransaction
+		amount        decimal.Decimal
+		target        order.PaymentStatus
+		currentStatus order.PaymentStatus
+		replay        refundReplay
+	)
 	if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		locked, lErr := lockOrder(tx, cmd.OrderID)
+		if lErr != nil {
+			return lErr
+		}
+		currentStatus = order.PaymentStatus(locked.PaymentStatus)
+
+		amount = locked.GrandTotal.Sub(locked.RefundedAmount) // full remaining
+		if cmd.Amount != nil {
+			amount = *cmd.Amount
+		}
+		if amount.LessThanOrEqual(decimal.Zero) {
+			return apperrors.ValidationFailed("amount", "refund amount must be positive")
+		}
+		target = DeriveStatus(locked.RefundedAmount, amount, locked.GrandTotal)
+
 		row, wasCreated, rErr := c.pay.ReserveRefund(ctx, tx, payment.ReserveRefundInput{
-			TenantID:          o.TenantID.String(),
-			StoreID:           o.StoreID.String(),
+			TenantID:          locked.TenantID.String(),
+			StoreID:           locked.StoreID.String(),
 			OrderID:           cmd.OrderID.String(),
 			Provider:          pc.Provider,
 			ProviderPaymentID: pc.ProviderPaymentID,
 			Amount:            amount,
-			CurrencyCode:      o.CurrencyCode,
+			CurrencyCode:      locked.CurrencyCode,
 			Reason:            cmd.Reason,
 			IdempotencyKey:    key,
 		})
+		if rErr != nil {
+			return rErr
+		}
 		ledger = row
-		created = wasCreated
-		return rErr
+
+		if !wasCreated {
+			// Same-ScopeID replay: a succeeded row is an idempotent success; a
+			// still-pending row is a conflict (crash-recovery of stuck rows is
+			// the sweeper's job, not Refund's — re-running here risks a double
+			// bump under RecordRefund's cap-only guard).
+			if row.Status == refundStatusSucceeded {
+				replay = replaySucceeded
+			} else {
+				replay = replayPending
+			}
+			return nil
+		}
+
+		// Cap check on committed balance + all in-flight pending refunds for
+		// this order (our just-inserted row included). Exceeding the cap rolls
+		// back this tx, removing the reservation we just made.
+		pendingSum, pErr := sumPendingRefunds(tx, cmd.OrderID)
+		if pErr != nil {
+			return pErr
+		}
+		if locked.RefundedAmount.Add(pendingSum).GreaterThan(refundCap) {
+			return apperrors.ErrRefundExceedsTotal
+		}
+		return nil
 	}); err != nil {
 		return RefundResult{}, err
 	}
-	if !created {
-		if ledger.Status == refundStatusSucceeded {
-			return RefundResult{
-				ProviderRefundID: ledger.ProviderRefundID,
-				Amount:           amount,
-				PaymentStatus:    target,
-				AlreadyDone:      true,
-			}, nil
-		}
-		// An in-flight or crashed prior attempt reserved this key and never
-		// reached "succeeded". Do NOT re-run the gateway/bump refunded_amount
-		// here — that risks a double bump under RecordRefund's cap-only
-		// guard. Crash-recovery of stuck pending rows is handled by the
-		// sweeper, not by re-running Refund.
+
+	switch replay {
+	case replaySucceeded:
+		return RefundResult{
+			ProviderRefundID: ledger.ProviderRefundID,
+			Amount:           ledger.Amount,
+			PaymentStatus:    currentStatus,
+			AlreadyDone:      true,
+		}, nil
+	case replayPending:
 		return RefundResult{}, apperrors.ErrIdempotencyConflict
 	}
 
-	// gateway call — real money, retry-safe via key. Deliberately outside
-	// any transaction: if this fails or the process dies, the ledger row
-	// stays pending and a sweeper (or the next retry with the same
-	// ScopeID) picks it back up.
+	// gateway call — real money, retry-safe via key. Deliberately outside any
+	// transaction: on a transient failure the ledger row stays pending and the
+	// sweeper (or a same-ScopeID retry) picks it back up. On a PERMANENT
+	// failure (bad request, invalid id, already refunded) the row is moved to
+	// 'failed' so it is never re-driven forever — it surfaces for manual
+	// reconciliation instead.
 	ref, err := c.pay.ExecuteGatewayRefund(ctx, gw, payment.RefundInput{
 		ProviderPaymentID: pc.ProviderPaymentID,
 		Amount:            amount,
@@ -192,7 +241,10 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 		IdempotencyKey:    key,
 	})
 	if err != nil {
-		return RefundResult{}, err // ledger stays pending → sweeper retries
+		if payment.IsPermanentGatewayError(err) {
+			_ = c.pay.MarkRefundFailed(ctx, c.db, ledger.ID)
+		}
+		return RefundResult{}, err
 	}
 
 	// tx #2 — finalize ledger + bookkeeping, atomic.
@@ -210,6 +262,35 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 		Amount:           amount,
 		PaymentStatus:    target,
 	}, nil
+}
+
+// lockOrder reads an order FOR UPDATE, serialising concurrent refunds on the
+// same order so their cap checks can't race on a stale refunded_amount.
+func lockOrder(tx *gorm.DB, id uuid.UUID) (*order.Order, error) {
+	var o order.Order
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		First(&o).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NotFound("order")
+		}
+		return nil, err
+	}
+	return &o, nil
+}
+
+// sumPendingRefunds totals the amount of all still-pending refund ledger rows
+// for an order. These are refunds that have reserved a row but not yet
+// finalized (so orders.refunded_amount does not yet reflect them); the cap
+// check must count them to prevent concurrent distinct-scope over-refunds.
+func sumPendingRefunds(tx *gorm.DB, orderID uuid.UUID) (decimal.Decimal, error) {
+	var result struct{ Sum decimal.Decimal }
+	err := tx.Model(&payment.RefundTransaction{}).
+		Where("order_id = ? AND status = ?", orderID, refundStatusPending).
+		Select("COALESCE(SUM(amount), 0) AS sum").
+		Scan(&result).Error
+	return result.Sum, err
 }
 
 // ResumePending re-drives refund ledger rows stuck in 'pending' — the never-lost
@@ -276,7 +357,14 @@ func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration
 			CurrencyCode: o.CurrencyCode, Reason: row.Reason, IdempotencyKey: row.IdempotencyKey,
 		})
 		if err != nil {
-			continue // try again next sweep
+			// Permanent failure will never succeed on retry — move it to
+			// 'failed' so subsequent sweeps skip it (the claim query only
+			// selects 'pending'). Transient failures are left pending to
+			// retry on the next sweep.
+			if payment.IsPermanentGatewayError(err) {
+				_ = c.pay.MarkRefundFailed(ctx, c.db, row.ID)
+			}
+			continue
 		}
 		target := DeriveStatus(o.RefundedAmount, row.Amount, o.GrandTotal)
 

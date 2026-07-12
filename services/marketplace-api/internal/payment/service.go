@@ -104,43 +104,6 @@ func (s *Service) ProcessWebhook(
 	return evt, nil
 }
 
-// RefundPayment issues a refund through the provider and persists a
-// refund transaction record.
-func (s *Service) RefundPayment(
-	ctx context.Context,
-	providerPaymentID string,
-	amount decimal.Decimal,
-	currencyCode string,
-	reason string,
-	gateway Gateway,
-) (*Refund, error) {
-	in := RefundInput{
-		ProviderPaymentID: providerPaymentID,
-		Amount:            amount,
-		CurrencyCode:      currencyCode,
-		Reason:            reason,
-	}
-
-	refund, err := gateway.RefundPayment(ctx, in)
-	if err != nil {
-		return nil, fmt.Errorf("payment service: refund: %w", err)
-	}
-
-	record := RefundTransaction{
-		ProviderPaymentID: providerPaymentID,
-		ProviderRefundID:  refund.ProviderRefundID,
-		Provider:          gateway.ProviderName(),
-		Amount:            amount,
-		Reason:            reason,
-		Status:            refund.Status,
-	}
-	if err := s.repo.CreateRefundTransaction(ctx, &record); err != nil {
-		return nil, fmt.Errorf("payment service: persist refund: %w", err)
-	}
-
-	return refund, nil
-}
-
 // ReserveRefundInput describes a refund reservation — the first step of the
 // refund saga (ledger row inserted before any provider call is made). It
 // carries CurrencyCode for later gateway use; refund_transactions has no
@@ -191,6 +154,24 @@ func (s *Service) ExecuteGatewayRefund(ctx context.Context, gw Gateway, in Refun
 func (s *Service) FinalizeRefund(ctx context.Context, tx *gorm.DB, ledgerID, providerRefundID, status string) error {
 	if err := s.repo.UpdateRefundOutcome(tx, ledgerID, providerRefundID, status); err != nil {
 		return fmt.Errorf("payment service: finalize refund: %w", err)
+	}
+	return nil
+}
+
+// MarkRefundFailed flags a reserved-but-unfulfillable refund ledger row as
+// permanently 'failed', so the retry sweeper (which only re-drives 'pending'
+// rows) stops re-driving it and it surfaces for manual reconciliation. The
+// UPDATE is status-guarded to 'pending' so a row that concurrently raced to
+// 'succeeded' is never clobbered. db may be a plain *gorm.DB (no surrounding
+// transaction needed — this is a single guarded UPDATE).
+func (s *Service) MarkRefundFailed(ctx context.Context, db *gorm.DB, ledgerID string) error {
+	res := db.WithContext(ctx).Exec(
+		`UPDATE refund_transactions SET status = 'failed', updated_at = now()
+		  WHERE id = ? AND status = 'pending'`,
+		ledgerID,
+	)
+	if res.Error != nil {
+		return fmt.Errorf("payment service: mark refund failed: %w", res.Error)
 	}
 	return nil
 }

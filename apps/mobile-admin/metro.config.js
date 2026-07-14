@@ -22,9 +22,11 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, 'node_modules'),
 ];
 config.resolver.unstable_enableSymlinks = true;
-// @repo/mobile-shared ships subpath exports (api/client, auth/provider, …),
-// so package-exports resolution must stay on.
-config.resolver.unstable_enablePackageExports = true;
+// Keep package-exports resolution OFF (Metro default, matches Home-Chef).
+// Enabling it made some deps resolve to an ESM entry Hermes evaluated to
+// `undefined`, crashing setUpDefaultReactNativeEnvironment at launch.
+// @repo/mobile-shared subpaths still resolve via classic path resolution.
+config.resolver.unstable_enablePackageExports = false;
 // Do NOT crawl parent node_modules hierarchically — nodeModulesPaths above
 // already lists the two real roots. Without this, metro walks the entire
 // monorepo-root node_modules and hangs on this large workspace.

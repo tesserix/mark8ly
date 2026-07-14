@@ -1,0 +1,89 @@
+/** @type {import('tailwindcss').Config} */
+//
+// Source of truth: packages/ui/src/styles/mark8ly-tokens.css (Paper · Ink · Moss).
+// RN picks fonts by family name only, so each weight is its own family —
+// loaded via expo-font in lib/fonts.ts + app/_layout.tsx.
+module.exports = {
+  darkMode: 'media',
+  content: [
+    './app/**/*.{js,ts,jsx,tsx}',
+    './components/**/*.{js,ts,jsx,tsx}',
+    './lib/**/*.{js,ts,jsx,tsx}',
+    '../../packages/mobile-shared/**/*.{js,ts,jsx,tsx}',
+  ],
+  presets: [require('nativewind/preset')],
+  theme: {
+    extend: {
+      colors: {
+        paper: {
+          DEFAULT: '#F7F6F2',
+          elevated: '#FFFFFF',
+          sink: '#ECEAE3',
+        },
+        ink: {
+          DEFAULT: '#0E0E0C',
+          soft: '#45433E',
+          muted: '#7A766E',
+          faint: '#A09C92',
+        },
+        moss: {
+          DEFAULT: '#2D4A2B',
+          soft: '#3D5F38',
+          tint: '#E8EEE2',
+        },
+        // Functional only — never decorative.
+        signal: '#D94B1A',
+        danger: {
+          DEFAULT: '#8B2E20',
+          tint: '#F6E4E1',
+        },
+        warning: {
+          DEFAULT: '#B5751F',
+          tint: '#F3E7CE',
+        },
+        border: {
+          DEFAULT: '#E2DFD6',
+          strong: '#C7C3B8',
+          subtle: '#ECEAE3',
+        },
+        background: '#F7F6F2',
+        foreground: '#0E0E0C',
+      },
+      fontFamily: {
+        // font-sans          → body / UI              (Source Sans 3 400)
+        // font-sans-medium   → slight emphasis        (Source Sans 3 500)
+        // font-sans-semibold → buttons, strong labels (Source Sans 3 600)
+        // font-serif         → headlines, numerals    (Source Serif 4 600)
+        // font-serif-bold    → hero display           (Source Serif 4 700)
+        sans: ['SourceSans', 'System'],
+        'sans-medium': ['SourceSans-Medium', 'SourceSans', 'System'],
+        'sans-semibold': ['SourceSans-SemiBold', 'SourceSans', 'System'],
+        serif: ['SourceSerif', 'Georgia', 'serif'],
+        'serif-bold': ['SourceSerif-Bold', 'SourceSerif', 'serif'],
+        mono: ['Menlo', 'Courier New'],
+      },
+      fontSize: {
+        display: ['36px', { lineHeight: '42px', letterSpacing: '-0.5px' }],
+        h1: ['28px', { lineHeight: '34px', letterSpacing: '-0.3px' }],
+        h2: ['22px', { lineHeight: '28px', letterSpacing: '-0.2px' }],
+        h3: ['18px', { lineHeight: '24px', letterSpacing: '0px' }],
+        'body-lg': ['16px', { lineHeight: '22px', letterSpacing: '0px' }],
+        body: ['14px', { lineHeight: '20px', letterSpacing: '0px' }],
+        label: ['13px', { lineHeight: '18px', letterSpacing: '0.1px' }],
+        caption: ['12px', { lineHeight: '16px', letterSpacing: '0.2px' }],
+        eyebrow: ['11px', { lineHeight: '14px', letterSpacing: '1.2px' }],
+      },
+      borderRadius: {
+        none: '0px',
+        sm: '4px',
+        DEFAULT: '6px',
+        md: '10px',
+        lg: '14px',
+        full: '9999px',
+      },
+      minHeight: { touch: '44px' },
+      minWidth: { touch: '44px' },
+    },
+  },
+  plugins: [],
+};

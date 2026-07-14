@@ -1,32 +1,34 @@
 {
   "cli": {
-    "version": ">= 7.0.0",
+    "version": ">= 18.0.0",
     "appVersionSource": "remote"
   },
   "build": {
-    "production": {
-      "channel": "production",
-      "ios": {
-        "buildConfiguration": "Release",
-        "simulator": false
-      },
-      "android": {
-        "buildType": "app-bundle"
-      },
-      "autoIncrement": true
-    },
-    "production-simulator": {
-      "extends": "production",
+    "local-sim": {
+      "developmentClient": false,
       "distribution": "internal",
       "ios": {
+        "resourceClass": "m-medium",
         "simulator": true
       },
-      "android": {
-        "buildType": "apk"
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com"
       }
+    },
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": { "resourceClass": "m-medium" },
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": { "resourceClass": "m-medium" },
+      "env": { "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com" }
     }
-  },
-  "submit": {
-    "production": {}
   }
 }

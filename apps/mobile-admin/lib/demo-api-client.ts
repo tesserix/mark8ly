@@ -35,9 +35,9 @@ function iso(daysAgo: number): string {
 }
 
 const DEMO_ORDERS: Order[] = [
-  { id: "o-1001", order_number: "#1001", status: "pending", customer_email: "maya@example.com", customer_name: "Maya Chen", grand_total: 8400, item_count: 2, created_at: iso(0), updated_at: iso(0) },
-  { id: "o-1000", order_number: "#1000", status: "fulfilled", customer_email: "leo@example.com", customer_name: "Leo Park", grand_total: 12900, item_count: 3, created_at: iso(1), updated_at: iso(1) },
-  { id: "o-0999", order_number: "#0999", status: "cancelled", customer_email: "ida@example.com", customer_name: "Ida Rossi", grand_total: 5200, item_count: 1, created_at: iso(3), updated_at: iso(2) },
+  { id: "o-1001", order_number: "1001", status: "pending", customer_email: "maya@example.com", customer_name: "Maya Chen", grand_total: 8400, item_count: 2, created_at: iso(0), updated_at: iso(0) },
+  { id: "o-1000", order_number: "1000", status: "fulfilled", customer_email: "leo@example.com", customer_name: "Leo Park", grand_total: 12900, item_count: 3, created_at: iso(1), updated_at: iso(1) },
+  { id: "o-0999", order_number: "0999", status: "cancelled", customer_email: "ida@example.com", customer_name: "Ida Rossi", grand_total: 5200, item_count: 1, created_at: iso(3), updated_at: iso(2) },
 ];
 
 const DEMO_PRODUCTS: Product[] = [

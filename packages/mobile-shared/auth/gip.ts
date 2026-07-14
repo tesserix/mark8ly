@@ -1,5 +1,11 @@
 import auth, { type FirebaseAuthTypes } from "@react-native-firebase/auth";
 
+import {
+  signInWithGoogleCredential,
+  signInWithAppleCredential,
+  type AppleFullName,
+} from "./social-credentials";
+
 export interface GIPAuthConfig {
   tenantId: string;
 }
@@ -11,6 +17,13 @@ export function createGIPAuth(config: GIPAuthConfig) {
   return {
     signIn: (email: string, password: string) =>
       firebaseAuth.signInWithEmailAndPassword(email, password),
+    signInWithGoogle: (idToken: string, accessToken?: string) =>
+      signInWithGoogleCredential(idToken, accessToken),
+    signInWithApple: (
+      idToken: string,
+      rawNonce: string,
+      fullName?: AppleFullName | null,
+    ) => signInWithAppleCredential(idToken, rawNonce, fullName),
     signOut: () => firebaseAuth.signOut(),
     getIdToken: async (): Promise<string | null> => {
       const user = firebaseAuth.currentUser;

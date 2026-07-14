@@ -10,3 +10,6 @@ android/
 *.mobileprovision
 *.orig.*
 web-build/
+
+# metro FileStore cache
+.metro-cache/

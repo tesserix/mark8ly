@@ -9,7 +9,8 @@
     "build": "echo 'use eas build'",
     "lint": "eslint .",
     "check-types": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "postinstall": "node scripts/link-nativewind-tailwind.js"
   },
   "dependencies": {
     "@expo-google-fonts/source-sans-3": "^0.4.0",

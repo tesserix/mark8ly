@@ -1,21 +1,11 @@
 const { getDefaultConfig } = require('expo/metro-config');
 
-// npm hoists `nativewind` to the monorepo root, where `tailwindcss@4`
-// (required by the web apps: admin/onboarding/storefront) lives. NativeWind
-// only supports Tailwind v3. Redirect every `tailwindcss` resolution to this
-// app's nested v3 copy for the Metro config process, so nativewind's
-// version check and CSS compilation see v3 without disturbing the web apps.
-const Module = require('module');
-const appTailwindDir = require('path').dirname(
-  require.resolve('tailwindcss/package.json', { paths: [__dirname] }),
-);
-const _origResolve = Module._resolveFilename;
-Module._resolveFilename = function (request, ...args) {
-  if (request === 'tailwindcss' || request.startsWith('tailwindcss/')) {
-    return _origResolve.call(this, appTailwindDir + request.slice('tailwindcss'.length), ...args);
-  }
-  return _origResolve.call(this, request, ...args);
-};
+// NativeWind's tailwindcss@3 requirement is satisfied by a symlink created in
+// the `postinstall` (scripts/link-nativewind-tailwind.js): npm hoists
+// `nativewind` to the monorepo root where the web apps' tailwindcss@4 lives, so
+// the postinstall points nativewind at this app's nested v3 copy. A previous
+// approach patched `Module._resolveFilename` here, but that global override
+// deadlocked Metro's graph build — the symlink keeps resolution untouched.
 
 const { withNativeWind } = require('nativewind/metro');
 const { FileStore } = require('metro-cache');

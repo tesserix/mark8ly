@@ -3,6 +3,7 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
+      "@/*": ["./*"],
       "@repo/mobile-shared": ["../../packages/mobile-shared"],
       "@repo/mobile-shared/*": ["../../packages/mobile-shared/*"]
     }

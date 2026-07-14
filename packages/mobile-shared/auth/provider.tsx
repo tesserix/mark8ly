@@ -56,6 +56,17 @@ function isExpoGo(): boolean {
 }
 
 /**
+ * Force the demo (no-Firebase) backend outside Expo Go by setting
+ * EXPO_PUBLIC_AUTH_BACKEND=demo. This lets a native dev-client / simulator
+ * build boot and render the login screen without a bundled
+ * GoogleService-Info.plist — real GIP auth needs that plist and is wired
+ * per app in a later phase. Defaults off, so production builds are unaffected.
+ */
+function isDemoAuthForced(): boolean {
+  return process.env.EXPO_PUBLIC_AUTH_BACKEND === "demo";
+}
+
+/**
  * Demo backend used in Expo Go. Skips Firebase entirely so the UI can
  * render without RNFBAppModule. Starts signed out so the Login screen
  * shows on launch — exactly like the web admin — and any email/password
@@ -121,7 +132,9 @@ function createFirebaseBackend(tenantId: string): AuthBackend {
 export function AuthProvider({ tenantId, children }: AuthProviderProps) {
   const resolvedTenantId = tenantId ?? getEnv().gipTenantId;
   const [backend] = useState<AuthBackend>(() =>
-    isExpoGo() ? createDemoBackend() : createFirebaseBackend(resolvedTenantId),
+    isExpoGo() || isDemoAuthForced()
+      ? createDemoBackend()
+      : createFirebaseBackend(resolvedTenantId),
   );
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);

@@ -5,9 +5,28 @@ import { useAuth } from '@repo/mobile-shared/auth/provider';
 import { Text } from '../components/ui/Text';
 
 export default function LoginScreen() {
-  const { signIn, loading } = useAuth();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSignIn() {
+    if (submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await signIn(email, password);
+    } catch (e: unknown) {
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : 'Could not sign in. Check your details and try again.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-paper">
@@ -44,15 +63,26 @@ export default function LoginScreen() {
           />
         </View>
 
+        {error ? (
+          <Text
+            preset="caption"
+            className="mt-3 text-danger"
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            {error}
+          </Text>
+        ) : null}
+
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Sign in"
-          disabled={loading}
-          onPress={() => signIn(email, password)}
+          disabled={submitting}
+          onPress={handleSignIn}
           className="mt-6 min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
         >
           <Text preset="bodyEmphasis" className="text-paper">
-            {loading ? 'Signing in…' : 'Sign in'}
+            {submitting ? 'Signing in…' : 'Sign in'}
           </Text>
         </Pressable>
       </View>

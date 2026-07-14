@@ -104,9 +104,10 @@ type CropBox struct {
 // metadata the client sends so the backend can log / audit the transform;
 // the actual pixel work happens in the browser.
 type RecropMediaRequest struct {
-	CropBox  CropBox `json:"crop_box" binding:"required"`
-	Rotation int     `json:"rotation"`
-	Filename string  `json:"filename" binding:"omitempty,max=200"`
+	CropBox     CropBox `json:"crop_box" binding:"required"`
+	Rotation    int     `json:"rotation"`
+	Filename    string  `json:"filename" binding:"omitempty,max=200"`
+	ContentType string  `json:"content_type" binding:"omitempty,oneof=image/png image/jpeg image/webp"`
 }
 
 // RecropMediaResponse is the wire response for the recrop endpoint.

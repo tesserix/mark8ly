@@ -24,11 +24,12 @@ import (
 // RecropMediaRequest is the service-level DTO for POST
 // /products/:id/media/:mediaId/recrop.
 type RecropMediaRequest struct {
-	ProductID string
-	MediaID   string
-	StoreID   string
-	TenantID  string
-	Filename  string
+	ProductID   string
+	MediaID     string
+	StoreID     string
+	TenantID    string
+	Filename    string
+	ContentType string
 }
 
 // RecropMediaResponse carries the signed URLs the handler returns to
@@ -92,13 +93,18 @@ func (s *Service) RecropMedia(
 	}
 	newKey := media.BuildStorageKey(req.TenantID, nonce, filename)
 
+	contentType := req.ContentType
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+
 	// Sign a GET URL against the pristine original and a PUT URL
 	// against the new key.
 	readURL, _, err := getSigner.SignedReadURL(ctx, row.GcsPathOriginal, ttl)
 	if err != nil {
 		return nil, fmt.Errorf("product: recrop: sign read: %w", err)
 	}
-	putURL, expiresAt, err := putSigner.SignedUploadURL(ctx, newKey, "image/jpeg", ttl)
+	putURL, expiresAt, err := putSigner.SignedUploadURL(ctx, newKey, contentType, ttl)
 	if err != nil {
 		return nil, fmt.Errorf("product: recrop: sign put: %w", err)
 	}

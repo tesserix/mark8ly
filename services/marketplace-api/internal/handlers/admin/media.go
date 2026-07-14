@@ -227,11 +227,12 @@ func (h *MediaHandler) Recrop(c *gin.Context) {
 	}
 
 	svcReq := product.RecropMediaRequest{
-		ProductID: productID,
-		MediaID:   mediaID,
-		StoreID:   storeID,
-		TenantID:  tenantID,
-		Filename:  req.Filename,
+		ProductID:   productID,
+		MediaID:     mediaID,
+		StoreID:     storeID,
+		TenantID:    tenantID,
+		Filename:    req.Filename,
+		ContentType: req.ContentType,
 	}
 	resp, err := h.svc.RecropMedia(c.Request.Context(), svcReq, putSigner, getSigner, h.signedURLTTL)
 	if err != nil {

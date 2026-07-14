@@ -29,6 +29,7 @@ import {
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { LineItem, Address } from "@repo/mobile-shared/api/types";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 const STATUS_TONE: Record<string, StatusTone> = {
   pending: "warning",
@@ -161,6 +162,7 @@ function InputModal({
 }
 
 export default function OrderDetailScreen() {
+  const dockPad = useDockClearance();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: order, isLoading } = useOrder(id);
 
@@ -232,7 +234,7 @@ export default function OrderDetailScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="ORDER" title={`#${order.order_number}`} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         <View style={styles.heading}>
           <Text preset="h1" color="text">
             #{order.order_number}

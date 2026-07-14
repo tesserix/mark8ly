@@ -32,6 +32,7 @@ import {
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Variant } from "@repo/mobile-shared/api/types";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 function FieldLabel({ label }: { label: string }) {
   return (
@@ -98,6 +99,7 @@ function VariantRow({ variant, onUpdate }: VariantRowProps) {
 }
 
 export default function ProductDetailScreen() {
+  const dockPad = useDockClearance();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: product, isLoading, error } = useProduct(id);
 
@@ -265,7 +267,7 @@ export default function ProductDetailScreen() {
         }
       />
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         <Eyebrow label="Photos" />
         <Card padding="md" style={styles.card}>
           {product.media.length > 0 ? (

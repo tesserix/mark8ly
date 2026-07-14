@@ -20,6 +20,7 @@ import {
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Product } from "@repo/mobile-shared/api/types";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 type FilterKey = "all" | "low_stock" | "inactive";
 
@@ -39,6 +40,7 @@ function useDebounce(value: string, delay: number): string {
 }
 
 export default function ProductsScreen() {
+  const dockPad = useDockClearance();
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchText, setSearchText] = useState("");
@@ -90,7 +92,7 @@ export default function ProductsScreen() {
           data={data?.items ?? []}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}

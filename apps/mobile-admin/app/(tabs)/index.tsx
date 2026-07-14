@@ -19,6 +19,7 @@ import {
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { RecentOrder, LowStockItem } from "@repo/mobile-shared/api/types";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 function todaysDate() {
   return new Date().toLocaleDateString("en-US", {
@@ -116,13 +117,14 @@ function Section({
 }
 
 export default function DashboardScreen() {
+  const dockPad = useDockClearance();
   const { data, isLoading, refetch, isRefetching } = useDashboard();
   const router = useRouter();
 
   return (
     <Screen>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}

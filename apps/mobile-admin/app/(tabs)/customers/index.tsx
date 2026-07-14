@@ -17,6 +17,7 @@ import {
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Customer } from "@repo/mobile-shared/api/types";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 function useDebounce(value: string, delay: number): string {
   const [debounced, setDebounced] = useState(value);
@@ -28,6 +29,7 @@ function useDebounce(value: string, delay: number): string {
 }
 
 export default function CustomersScreen() {
+  const dockPad = useDockClearance();
   const router = useRouter();
   const [searchText, setSearchText] = useState("");
   const debouncedSearch = useDebounce(searchText, 300);
@@ -67,7 +69,7 @@ export default function CustomersScreen() {
           data={data?.items ?? []}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}

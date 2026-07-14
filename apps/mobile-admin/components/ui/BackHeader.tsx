@@ -11,6 +11,9 @@ interface BackHeaderProps {
   rightSlot?: ReactNode;
 }
 
+// The screen's <Screen> wrapper already applies the top safe-area inset, so
+// BackHeader (its first child) sits below the status bar without adding its
+// own inset — adding one here double-pads the top.
 export function BackHeader({ title, eyebrow, rightSlot }: BackHeaderProps) {
   const router = useRouter();
 

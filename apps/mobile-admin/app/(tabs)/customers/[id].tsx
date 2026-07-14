@@ -22,6 +22,7 @@ import {
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { RecentOrder } from "@repo/mobile-shared/api/types";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -104,6 +105,7 @@ function RecentOrderRow({
 }
 
 export default function CustomerDetailScreen() {
+  const dockPad = useDockClearance();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { data: customer, isLoading } = useCustomer(id);
@@ -153,7 +155,7 @@ export default function CustomerDetailScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="CUSTOMER" title={displayName} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         <View style={styles.profile}>
           <View style={styles.avatar}>
             <Text preset="h2" color="inverse">

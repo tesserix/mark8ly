@@ -18,6 +18,7 @@ import {
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Order } from "@repo/mobile-shared/api/types";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 type FilterKey = "all" | "active" | "completed" | "cancelled";
 
@@ -38,6 +39,7 @@ function useDebounce(value: string, delay: number): string {
 }
 
 export default function OrdersScreen() {
+  const dockPad = useDockClearance();
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchText, setSearchText] = useState("");
@@ -85,7 +87,7 @@ export default function OrdersScreen() {
           data={data?.items ?? []}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}

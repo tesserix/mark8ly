@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import {
   QueryClient,
@@ -68,11 +69,13 @@ export default function RootLayout() {
     <ErrorBoundary>
       <AuthProvider>
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <QueryClientProvider client={queryClient}>
-            <BottomSheetModalProvider>
-              <AuthGate />
-            </BottomSheetModalProvider>
-          </QueryClientProvider>
+          <SafeAreaProvider>
+            <QueryClientProvider client={queryClient}>
+              <BottomSheetModalProvider>
+                <AuthGate />
+              </BottomSheetModalProvider>
+            </QueryClientProvider>
+          </SafeAreaProvider>
         </GestureHandlerRootView>
       </AuthProvider>
     </ErrorBoundary>

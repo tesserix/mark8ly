@@ -1,18 +1,11 @@
 import { useEffect, useRef } from "react";
 import { Tabs, useRouter } from "expo-router";
 import * as Notifications from "expo-notifications";
-import {
-  LayoutDashboard,
-  ShoppingBag,
-  Package,
-  Users,
-  MoreHorizontal,
-} from "lucide-react-native";
 import { createNotificationsApi } from "@repo/mobile-shared/api/notifications";
 import { registerForPushNotifications } from "@repo/mobile-shared/push/registration";
 import { useApiClient } from "@/lib/api-client";
 import { TenantGate } from "@/components/TenantGate";
-import { theme } from "@/lib/theme";
+import { Dock } from "@/components/navigation/Dock";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -49,9 +42,6 @@ function usePushSetup() {
   }, []);
 }
 
-const ICON_SIZE = 22;
-const ICON_STROKE = 1.75;
-
 export default function TabLayout() {
   return (
     <TenantGate>
@@ -63,77 +53,19 @@ export default function TabLayout() {
 function TabsInner() {
   usePushSetup();
 
+  // The floating Dock (components/navigation/Dock) is the tab bar; it renders
+  // its own icons/labels from the route name, so per-screen tabBarIcon options
+  // aren't needed. Titles feed the accessibility label.
   return (
     <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: theme.colors.text,
-        tabBarInactiveTintColor: theme.colors.textTertiary,
-        tabBarStyle: {
-          backgroundColor: theme.colors.elevated,
-          borderTopColor: theme.colors.hairline,
-          borderTopWidth: theme.hairline,
-          height: 64,
-          paddingTop: 6,
-          paddingBottom: 10,
-        },
-        tabBarLabelStyle: {
-          fontFamily: theme.fonts.sans,
-          fontSize: 11,
-          fontWeight: "600",
-          letterSpacing: 0.3,
-          marginTop: 2,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 4,
-        },
-        headerShown: false,
-      }}
+      tabBar={(props) => <Dock {...props} />}
+      screenOptions={{ headerShown: false }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Dashboard",
-          tabBarIcon: ({ color }) => (
-            <LayoutDashboard size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="orders"
-        options={{
-          title: "Orders",
-          tabBarIcon: ({ color }) => (
-            <ShoppingBag size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="products"
-        options={{
-          title: "Products",
-          tabBarIcon: ({ color }) => (
-            <Package size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="customers"
-        options={{
-          title: "Customers",
-          tabBarIcon: ({ color }) => (
-            <Users size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="more"
-        options={{
-          title: "More",
-          tabBarIcon: ({ color }) => (
-            <MoreHorizontal size={ICON_SIZE} color={color} strokeWidth={ICON_STROKE} />
-          ),
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: "Dashboard" }} />
+      <Tabs.Screen name="orders" options={{ title: "Orders" }} />
+      <Tabs.Screen name="products" options={{ title: "Products" }} />
+      <Tabs.Screen name="customers" options={{ title: "Customers" }} />
+      <Tabs.Screen name="more" options={{ title: "More" }} />
     </Tabs>
   );
 }

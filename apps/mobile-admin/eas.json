@@ -21,14 +21,22 @@
       "ios": { "resourceClass": "m-medium" },
       "android": { "buildType": "apk" },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com"
+        "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "",
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": ""
       }
     },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
       "ios": { "resourceClass": "m-medium" },
-      "env": { "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com" }
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "",
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": ""
+      }
     }
   }
 }

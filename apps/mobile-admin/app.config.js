@@ -44,6 +44,9 @@ module.exports = {
         ITSAppUsesNonExemptEncryption: false,
       },
       associatedDomains: ['applinks:admin.mark8ly.com'],
+      usesAppleSignIn: true,
+      googleServicesFile:
+        process.env.GOOGLE_SERVICES_PLIST || './GoogleService-Info.plist',
     },
     android: {
       adaptiveIcon: {
@@ -70,7 +73,16 @@ module.exports = {
       'expo-image-picker',
       'expo-notifications',
       ['expo-build-properties', { ios: { newArchEnabled: true, useFrameworks: 'static' } }],
-      ...(USE_DEMO_AUTH ? [] : ['@react-native-firebase/app']),
+      ...(USE_DEMO_AUTH
+        ? []
+        : [
+            '@react-native-firebase/app',
+            'expo-apple-authentication',
+            [
+              '@react-native-google-signin/google-signin',
+              { iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME || '' },
+            ],
+          ]),
     ],
     extra: {
       eas: { projectId: 'your-eas-project-id' },

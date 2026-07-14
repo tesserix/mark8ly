@@ -13,3 +13,6 @@ web-build/
 
 # metro FileStore cache
 .metro-cache/
+
+# Firebase config (gitignored - injected via GOOGLE_SERVICES_PLIST or provided locally)
+GoogleService-Info.plist

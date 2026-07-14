@@ -45,8 +45,12 @@ module.exports = {
       },
       associatedDomains: ['applinks:admin.mark8ly.com'],
       usesAppleSignIn: true,
-      googleServicesFile:
-        process.env.GOOGLE_SERVICES_PLIST || './GoogleService-Info.plist',
+      ...(USE_DEMO_AUTH
+        ? {}
+        : {
+            googleServicesFile:
+              process.env.GOOGLE_SERVICES_PLIST || './GoogleService-Info.plist',
+          }),
     },
     android: {
       adaptiveIcon: {

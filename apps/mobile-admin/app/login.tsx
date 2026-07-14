@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@repo/mobile-shared/auth/provider';
 import { configureGoogleSignin, signInWithAppleNative, signInWithGoogleNative } from '@/lib/social-auth';
 import { Text } from '../components/ui/Text';
+
+const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
 
 function getErrorMessage(e: unknown): string {
   return e instanceof Error && e.message
@@ -17,10 +19,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    configureGoogleSignin();
-  }, []);
 
   async function handleSignIn() {
     if (submitting) return;
@@ -40,8 +38,13 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
-      const idToken = await signInWithGoogleNative();
-      await signInWithGoogle(idToken);
+      if (DEMO_AUTH) {
+        await signInWithGoogle('demo-google-token');
+      } else {
+        configureGoogleSignin();
+        const idToken = await signInWithGoogleNative();
+        await signInWithGoogle(idToken);
+      }
     } catch (e: unknown) {
       setError(getErrorMessage(e));
     } finally {
@@ -54,8 +57,12 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
-      const { idToken, rawNonce, fullName } = await signInWithAppleNative();
-      await signInWithApple(idToken, rawNonce, fullName);
+      if (DEMO_AUTH) {
+        await signInWithApple('demo-apple-token', '', null);
+      } else {
+        const { idToken, rawNonce, fullName } = await signInWithAppleNative();
+        await signInWithApple(idToken, rawNonce, fullName);
+      }
     } catch (e: unknown) {
       setError(getErrorMessage(e));
     } finally {

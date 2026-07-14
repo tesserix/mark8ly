@@ -67,8 +67,14 @@ const ALIGN_CLASSES: Record<TextAlign, string> = {
 export interface TextComponentProps extends RNTextProps {
   preset?: TextPreset;
   className?: string;
-  /** Overrides the preset's default colour. */
-  color?: TextColor;
+  /**
+   * Overrides the preset's default colour. Accepts either a semantic token
+   * ("inverse", "success", …) OR a raw colour value (e.g. a `theme.colors.*`
+   * hex). Some pre-existing screens pass a hex directly (e.g. StatusBadge),
+   * so both forms must resolve — a hex is applied as an inline style, a token
+   * as a nativewind class.
+   */
+  color?: TextColor | (string & {});
   align?: TextAlign;
 }
 
@@ -76,23 +82,40 @@ export interface TextComponentProps extends RNTextProps {
 // collide with it (nativewind doesn't guarantee last-wins for two text-*).
 const PRESET_COLOR_TOKENS = /\btext-ink(?:-\w+)?\b/g;
 
+function isColorToken(c: string): c is TextColor {
+  return Object.prototype.hasOwnProperty.call(COLOR_CLASSES, c);
+}
+
 export function Text({
   preset = 'body',
   className,
   color,
   align,
+  style,
   ...rest
 }: TextComponentProps) {
+  const token = color && isColorToken(color) ? color : null;
+  // Anything that isn't a known token is treated as a raw colour value and
+  // applied inline (wins over the className colour).
+  const rawColor = color && !token ? color : null;
+
   const presetClasses = color
     ? PRESET_CLASSES[preset].replace(PRESET_COLOR_TOKENS, '').trim()
     : PRESET_CLASSES[preset];
   const merged = [
     presetClasses,
     align ? ALIGN_CLASSES[align] : null,
-    color ? COLOR_CLASSES[color] : null,
+    token ? COLOR_CLASSES[token] : null,
     className,
   ]
     .filter(Boolean)
     .join(' ');
-  return <RNText className={merged} {...rest} />;
+
+  return (
+    <RNText
+      className={merged}
+      style={rawColor ? [{ color: rawColor }, style] : style}
+      {...rest}
+    />
+  );
 }

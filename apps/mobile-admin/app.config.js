@@ -70,7 +70,7 @@ module.exports = {
       ['expo-camera', { cameraPermission: 'Take product photos for your store' }],
       'expo-image-picker',
       'expo-notifications',
-      ['expo-build-properties', { ios: { newArchEnabled: true } }],
+      ['expo-build-properties', { ios: { newArchEnabled: true, useFrameworks: 'static' } }],
       ...(USE_DEMO_AUTH ? [] : ['@react-native-firebase/app']),
     ],
     extra: {

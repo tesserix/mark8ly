@@ -685,6 +685,7 @@ export interface RecropMediaInput {
   crop_box: { x: number; y: number; width: number; height: number };
   rotation?: number;
   filename?: string;
+  content_type?: "image/png" | "image/jpeg" | "image/webp";
 }
 
 export interface RecropMediaResult {

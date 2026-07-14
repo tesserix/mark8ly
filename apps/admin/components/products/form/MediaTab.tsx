@@ -24,6 +24,12 @@ import {
 import type { MediaAction } from "@/components/products/media/MediaCard";
 import { MediaCropDialog } from "@/components/products/media/MediaCropDialog";
 import type { CropBox } from "@/components/products/media/cropImage";
+import {
+  belowMinShortEdge,
+  inferMimeFromUrl,
+  MIN_RESOLUTION_WARNING,
+  readFileDimensions,
+} from "@/components/products/media/mediaResolution";
 
 // MediaGrid pulls in dnd-kit (~50KB gzipped). Lazy-load so it only loads
 // on the Media tab of the product edit flow, not on every product list
@@ -44,7 +50,12 @@ export interface MediaTabDeps {
     storeId: string,
     productId: string,
     mediaId: string,
-    body: { crop_box: CropBox; rotation?: number; filename?: string },
+    body: {
+      crop_box: CropBox;
+      rotation?: number;
+      filename?: string;
+      content_type?: "image/png" | "image/jpeg" | "image/webp";
+    },
     session: SessionHeaders,
   ) => Promise<MutationResult<RecropMediaResult>>;
   updateMedia?: (
@@ -70,12 +81,11 @@ export interface MediaTabProps extends MediaTabDeps {
 }
 
 interface CropTarget {
-  mediaId?: string;
+  mediaId: string;
   sourceUrl: string;
-  mode: "fresh" | "recrop";
-  file?: File;
-  uploadUrl?: string;
-  newStorageKey?: string;
+  sourceMimeType: string;
+  uploadUrl: string;
+  newStorageKey: string;
 }
 
 async function defaultPutBlob(
@@ -98,6 +108,9 @@ function mediaToField(m: AdminMediaResponse): ProductFormValues["media"] extends
     position: m.position,
     variant_id: m.variant_id ?? null,
     storage_key: m.storage_key,
+    // Backend is authoritative for gcs_path_original (AddMedia stamps it
+    // from the finalized storage_key). This client-side "" is a form
+    // placeholder only and is never sent back on save.
     gcs_path_original: "",
   };
 }
@@ -171,20 +184,32 @@ export function MediaTab({
     [append, productId, storeId, setProgressItem, uploadMediaFile],
   );
 
-  const [pendingFreshQueue, setPendingFreshQueue] = useState<File[]>([]);
-
-  // When a user drops files we open the crop dialog on the first one.
-  // Each Apply produces a blob that we then upload via uploadOne.
+  // Dropped files upload untouched — no forced crop, no queue. Cropping
+  // stays available only via the per-card recrop action.
   const handleFiles = useCallback(
     (files: File[]) => {
-      const first = files[0];
-      if (!first) return;
-      const rest = files.slice(1);
-      setPendingFreshQueue(rest);
-      const url = URL.createObjectURL(first);
-      setCropTarget({ sourceUrl: url, mode: "fresh", file: first });
+      const start = fields.length;
+      void (async () => {
+        for (let i = 0; i < files.length; i += 1) {
+          const file = files[i]!;
+          const progressId = crypto.randomUUID();
+          setProgress((p) => [
+            ...p,
+            { id: progressId, filename: file.name, percent: 0, status: "uploading" },
+          ]);
+          try {
+            const dims = await readFileDimensions(file);
+            if (belowMinShortEdge(dims.width, dims.height)) {
+              setProgressItem(progressId, { warning: MIN_RESOLUTION_WARNING });
+            }
+          } catch {
+            // Dimension read failed — fail open, skip the advisory.
+          }
+          await uploadOne(file, start + i, progressId);
+        }
+      })();
     },
-    [],
+    [fields.length, setProgressItem, uploadOne],
   );
 
   const handleAction = useCallback(
@@ -209,18 +234,19 @@ export function MediaTab({
       }
       if (action === "crop") {
         void (async () => {
+          const sourceMimeType = inferMimeFromUrl(media.url);
           const res = await recropMedia(
             storeId,
             productId,
             media.id,
-            { crop_box: { x: 0, y: 0, width: 0, height: 0 } },
+            { crop_box: { x: 0, y: 0, width: 0, height: 0 }, content_type: sourceMimeType },
             session,
           );
           if (!res.ok) return;
           setCropTarget({
             mediaId: media.id,
             sourceUrl: res.data.source_original_url,
-            mode: "recrop",
+            sourceMimeType,
             uploadUrl: res.data.upload_url,
             newStorageKey: res.data.new_storage_key,
           });
@@ -244,59 +270,36 @@ export function MediaTab({
       setCropTarget(null);
       URL.revokeObjectURL(target.sourceUrl);
 
-      if (target.mode === "fresh" && target.file) {
-        const freshFile = target.file;
-        const progressId = crypto.randomUUID();
-        setProgress((p) => [
-          ...p,
-          { id: progressId, filename: freshFile.name, percent: 0, status: "uploading" },
-        ]);
-        const croppedFile = new File([blob], freshFile.name, { type: "image/jpeg" });
-        await uploadOne(croppedFile, fields.length, progressId);
-        // Drain any queued files (one crop dialog each).
-        const nextFile = pendingFreshQueue[0];
-        if (nextFile) {
-          setPendingFreshQueue(pendingFreshQueue.slice(1));
-          const url = URL.createObjectURL(nextFile);
-          setCropTarget({ sourceUrl: url, mode: "fresh", file: nextFile });
-        }
-        return;
-      }
-
-      if (target.mode === "recrop" && target.mediaId && target.uploadUrl && target.newStorageKey) {
-        const putRes = await putBlob(target.uploadUrl, blob);
-        if (!putRes.ok) return;
-        const updateRes = await updateMedia(
-          storeId,
-          productId,
-          target.mediaId,
-          { storage_key: target.newStorageKey },
-          session,
-        );
-        if (!updateRes.ok) return;
-        const idx = fields.findIndex((f) => f.id === target.mediaId);
-        const current = idx >= 0 ? fields[idx] : undefined;
-        if (current) {
-          const nextItem: ProductFormValues["media"] extends (infer U)[] | undefined ? U : never = {
-            id: current.id,
-            url: current.url,
-            alt: current.alt,
-            position: current.position,
-            variant_id: current.variant_id,
-            storage_key: target.newStorageKey,
-            gcs_path_original: current.gcs_path_original,
-          };
-          update(idx, nextItem);
-        }
+      const putRes = await putBlob(target.uploadUrl, blob);
+      if (!putRes.ok) return;
+      const updateRes = await updateMedia(
+        storeId,
+        productId,
+        target.mediaId,
+        { storage_key: target.newStorageKey },
+        session,
+      );
+      if (!updateRes.ok) return;
+      const idx = fields.findIndex((f) => f.id === target.mediaId);
+      const current = idx >= 0 ? fields[idx] : undefined;
+      if (current) {
+        update(idx, {
+          id: current.id,
+          url: current.url,
+          alt: current.alt,
+          position: current.position,
+          variant_id: current.variant_id,
+          storage_key: target.newStorageKey,
+          gcs_path_original: current.gcs_path_original,
+        });
       }
     },
-    [cropTarget, fields, pendingFreshQueue, productId, putBlob, session, storeId, update, updateMedia, uploadOne],
+    [cropTarget, fields, productId, putBlob, session, storeId, update, updateMedia],
   );
 
   const handleCropCancel = useCallback(() => {
     if (cropTarget) URL.revokeObjectURL(cropTarget.sourceUrl);
     setCropTarget(null);
-    setPendingFreshQueue([]);
   }, [cropTarget]);
 
   return (
@@ -306,6 +309,7 @@ export function MediaTab({
       {cropTarget ? (
         <MediaCropDialog
           sourceUrl={cropTarget.sourceUrl}
+          sourceMimeType={cropTarget.sourceMimeType}
           onApply={handleCropApply}
           onCancel={handleCropCancel}
         />

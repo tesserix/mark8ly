@@ -6,7 +6,7 @@ import { MediaTab } from "./MediaTab";
 import type { ProductFormValues } from "@/lib/validation/product-form";
 import type { AdminMediaResponse } from "@/lib/api/marketplace-api";
 
-// Mock MediaCropDialog to auto-apply with a deterministic blob.
+// Auto-applying crop dialog stub (used only by the re-crop path now).
 vi.mock("@/components/products/media/MediaCropDialog", () => ({
   MediaCropDialog: ({
     onApply,
@@ -29,6 +29,16 @@ vi.mock("@/components/products/media/MediaCropDialog", () => ({
   ),
 }));
 
+// Deterministic dimensions so the add-flow min-res guard is exercised
+// without a real image decode. 2400x1600 → above the 1000px floor.
+vi.mock("@/components/products/media/mediaResolution", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/products/media/mediaResolution")>();
+  return {
+    ...actual,
+    readFileDimensions: vi.fn(async () => ({ width: 2400, height: 1600 })),
+  };
+});
+
 function makeMedia(id: string, position: number): AdminMediaResponse {
   return {
     id,
@@ -46,7 +56,6 @@ function makeMedia(id: string, position: number): AdminMediaResponse {
 
 interface HarnessProps {
   initialMedia?: AdminMediaResponse[];
-  // Loose typing — the real component props are strict; we cast on render.
   uploadMediaFile: (...args: unknown[]) => unknown;
   recropMedia: (...args: unknown[]) => unknown;
   updateMedia: (...args: unknown[]) => unknown;
@@ -89,21 +98,17 @@ describe("MediaTab", () => {
     vi.clearAllMocks();
   });
 
-  it("uploads a file and appends it to the form media array", async () => {
+  it("uploads the pristine original directly on add without opening a crop dialog", async () => {
     const uploaded = makeMedia("new1", 0);
     const uploadMediaFile = vi.fn(async () => uploaded);
-    const recropMedia = vi.fn();
-    const updateMedia = vi.fn();
-    const deleteMedia = vi.fn();
-    const putBlob = vi.fn();
 
     render(
       <Harness
         uploadMediaFile={uploadMediaFile}
-        recropMedia={recropMedia}
-        updateMedia={updateMedia}
-        deleteMedia={deleteMedia}
-        putBlob={putBlob}
+        recropMedia={vi.fn()}
+        updateMedia={vi.fn()}
+        deleteMedia={vi.fn()}
+        putBlob={vi.fn()}
       />,
     );
 
@@ -113,14 +118,40 @@ describe("MediaTab", () => {
       fireEvent.change(input, { target: { files: [file] } });
     });
 
-    // Dialog renders → auto-apply
-    await waitFor(() => expect(screen.getByTestId("auto-apply-crop")).toBeInTheDocument());
+    // No crop dialog on add.
+    expect(screen.queryByTestId("auto-apply-crop")).not.toBeInTheDocument();
+    // The raw File is uploaded (first positional arg), not a derived blob.
+    await waitFor(() => expect(uploadMediaFile).toHaveBeenCalledTimes(1));
+    const firstArg = (uploadMediaFile.mock.calls[0]?.[0] ?? {}) as { file?: File };
+    expect(firstArg.file).toBe(file);
+    await waitFor(() => expect(screen.getByAltText("alt new1")).toBeInTheDocument());
+  });
+
+  it("uploads multiple dropped files directly", async () => {
+    const uploadMediaFile = vi
+      .fn()
+      .mockResolvedValueOnce(makeMedia("a", 0))
+      .mockResolvedValueOnce(makeMedia("b", 1));
+
+    render(
+      <Harness
+        uploadMediaFile={uploadMediaFile}
+        recropMedia={vi.fn()}
+        updateMedia={vi.fn()}
+        deleteMedia={vi.fn()}
+        putBlob={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByLabelText(/drop images/i) as HTMLInputElement;
+    const f1 = new File(["a"], "a.jpg", { type: "image/jpeg" });
+    const f2 = new File(["b"], "b.jpg", { type: "image/jpeg" });
     await act(async () => {
-      fireEvent.click(screen.getByTestId("auto-apply-crop"));
+      fireEvent.change(input, { target: { files: [f1, f2] } });
     });
 
-    await waitFor(() => expect(uploadMediaFile).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByAltText("alt new1")).toBeInTheDocument());
+    expect(screen.queryByTestId("auto-apply-crop")).not.toBeInTheDocument();
+    await waitFor(() => expect(uploadMediaFile).toHaveBeenCalledTimes(2));
   });
 
   it("delete action removes the card and calls deleteMedia", async () => {
@@ -138,7 +169,6 @@ describe("MediaTab", () => {
       />,
     );
 
-    // Open first card's overflow menu
     const buttons = screen.getAllByRole("button", { name: /image actions/i });
     fireEvent.click(buttons[0]!);
     fireEvent.click(screen.getByRole("menuitem", { name: /delete/i }));
@@ -148,8 +178,8 @@ describe("MediaTab", () => {
     expect(screen.getByAltText("alt b")).toBeInTheDocument();
   });
 
-  it("crop action on existing media calls recropMedia then updateMedia", async () => {
-    const initial = [makeMedia("a", 0)];
+  it("crop action recrops with the source content_type then updates", async () => {
+    const initial = [makeMedia("a", 0)]; // url ends in .jpg → image/jpeg
     const recropMedia = vi.fn(async () => ({
       ok: true as const,
       data: {
@@ -178,8 +208,11 @@ describe("MediaTab", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /^crop$/i }));
 
     await waitFor(() => expect(recropMedia).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByTestId("auto-apply-crop")).toBeInTheDocument());
+    // content_type inferred from the media URL (.jpg → image/jpeg).
+    const recropBody = recropMedia.mock.calls[0]?.[3] as { content_type?: string };
+    expect(recropBody.content_type).toBe("image/jpeg");
 
+    await waitFor(() => expect(screen.getByTestId("auto-apply-crop")).toBeInTheDocument());
     await act(async () => {
       fireEvent.click(screen.getByTestId("auto-apply-crop"));
     });
@@ -194,33 +227,5 @@ describe("MediaTab", () => {
         { userId: "u", tenantId: "t" },
       ),
     );
-  });
-
-  it("queues multi-file upload and cancel clears pending queue", async () => {
-    const uploaded = makeMedia("u1", 0);
-    const uploadMediaFile = vi.fn(async () => uploaded);
-    render(
-      <Harness
-        uploadMediaFile={uploadMediaFile}
-        recropMedia={vi.fn()}
-        updateMedia={vi.fn()}
-        deleteMedia={vi.fn()}
-        putBlob={vi.fn()}
-      />,
-    );
-    const input = screen.getByLabelText(/drop images/i) as HTMLInputElement;
-    const f1 = new File(["a"], "a.jpg", { type: "image/jpeg" });
-    const f2 = new File(["b"], "b.jpg", { type: "image/jpeg" });
-    await act(async () => {
-      fireEvent.change(input, { target: { files: [f1, f2] } });
-    });
-    await waitFor(() => expect(screen.getByTestId("auto-apply-crop")).toBeInTheDocument());
-    // Apply first → triggers pendingFreshQueue drain for second
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("auto-apply-crop"));
-    });
-    await waitFor(() => expect(uploadMediaFile).toHaveBeenCalledTimes(1));
-    // Second crop dialog should have re-opened
-    await waitFor(() => expect(screen.getByTestId("auto-apply-crop")).toBeInTheDocument());
   });
 });

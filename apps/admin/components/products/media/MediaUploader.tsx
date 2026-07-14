@@ -9,6 +9,7 @@ export interface MediaUploaderProgressItem {
   percent: number;
   status: "uploading" | "done" | "error";
   error?: string;
+  warning?: string;
 }
 
 export interface MediaUploaderProps {

@@ -1,27 +1,33 @@
-import { useEffect, useRef } from "react";
-import { Slot, useRouter, useSegments } from "expo-router";
+import '../global.css';
+
+import { useEffect, useRef } from 'react';
+import { View } from 'react-native';
+import { Slot, useRouter, useSegments } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import {
   QueryClient,
   QueryClientProvider,
   useQueryClient,
-} from "@tanstack/react-query";
-import { AuthProvider, useAuth } from "@repo/mobile-shared/auth/provider";
-import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
-import * as SplashScreen from "expo-splash-screen";
+} from '@tanstack/react-query';
+import * as SplashScreen from 'expo-splash-screen';
+import { useFonts } from 'expo-font';
+import { AuthProvider, useAuth } from '@repo/mobile-shared/auth/provider';
+import { useTenantStore } from '@repo/mobile-shared/stores/tenant-store';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { fontMap } from '../lib/fonts';
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { staleTime: 30_000, retry: 2 },
-  },
+  defaultOptions: { queries: { staleTime: 30_000, retry: 2 } },
 });
 
 function AuthGate() {
   const { user, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   const hydrate = useTenantStore((s) => s.hydrate);
   const clearTenant = useTenantStore((s) => s.clear);
   const previousUid = useRef<string | null>(null);
@@ -32,37 +38,43 @@ function AuthGate() {
 
   useEffect(() => {
     if (loading) return;
+    const inAuthGroup = segments[0] === 'login';
 
-    const inAuthGroup = segments[0] === "login";
-
-    // Whenever the signed-in identity changes (sign out, or sign in as a
-    // different account), throw away every cached query and the tenant
-    // selection so user A's data can't leak into user B's session.
+    // Identity changed → wipe cached queries + tenant so user A's data can't
+    // leak into user B's session.
     const currentUid = user?.uid ?? null;
     if (previousUid.current !== null && previousUid.current !== currentUid) {
-      queryClient.clear();
+      qc.clear();
       clearTenant();
     }
     previousUid.current = currentUid;
 
     if (!user && !inAuthGroup) {
-      router.replace("/login");
+      router.replace('/login');
     } else if (user && inAuthGroup) {
-      router.replace("/");
+      router.replace('/');
     }
-
     SplashScreen.hideAsync();
-  }, [user, loading, segments, router, clearTenant, queryClient]);
+  }, [user, loading, segments, router, clearTenant, qc]);
 
   return <Slot />;
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts(fontMap);
+  if (!fontsLoaded) return <View className="flex-1 bg-paper" />;
+
   return (
-    <QueryClientProvider client={queryClient}>
+    <ErrorBoundary>
       <AuthProvider>
-        <AuthGate />
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <QueryClientProvider client={queryClient}>
+            <BottomSheetModalProvider>
+              <AuthGate />
+            </BottomSheetModalProvider>
+          </QueryClientProvider>
+        </GestureHandlerRootView>
       </AuthProvider>
-    </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

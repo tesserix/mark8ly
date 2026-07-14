@@ -4,6 +4,12 @@ import { createApiClient } from "@repo/mobile-shared/api/client";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useEnvironment } from "@repo/mobile-shared/config/env";
+import { createDemoApiClient } from "./demo-api-client";
+
+// Demo/simulator builds have no real GIP token, so the real API would 401
+// and bounce the user back to /login. Serve canned data instead.
+const DEMO_MODE = process.env.EXPO_PUBLIC_AUTH_BACKEND === "demo";
+const demoClient = DEMO_MODE ? createDemoApiClient() : null;
 
 /**
  * Shared API client hook used by every admin data hook.
@@ -24,7 +30,7 @@ export function useApiClient() {
   const env = useEnvironment();
   const queryClient = useQueryClient();
 
-  return useMemo(
+  const realClient = useMemo(
     () =>
       createApiClient({
         baseUrl: env.apiBaseUrl,
@@ -52,4 +58,9 @@ export function useApiClient() {
       queryClient,
     ],
   );
+
+  // Demo build: serve canned data instead of the real (network) client, so
+  // there's no 401 → signOut bounce. `demoClient` is a build-time constant,
+  // so hook order stays stable across renders.
+  return demoClient ?? realClient;
 }

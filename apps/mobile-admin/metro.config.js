@@ -1,44 +1,49 @@
-const { getDefaultConfig } = require("expo/metro-config");
-const path = require("path");
+const { getDefaultConfig } = require('expo/metro-config');
+
+// npm hoists `nativewind` to the monorepo root, where `tailwindcss@4`
+// (required by the web apps: admin/onboarding/storefront) lives. NativeWind
+// only supports Tailwind v3. Redirect every `tailwindcss` resolution to this
+// app's nested v3 copy for the Metro config process, so nativewind's
+// version check and CSS compilation see v3 without disturbing the web apps.
+const Module = require('module');
+const appTailwindDir = require('path').dirname(
+  require.resolve('tailwindcss/package.json', { paths: [__dirname] }),
+);
+const _origResolve = Module._resolveFilename;
+Module._resolveFilename = function (request, ...args) {
+  if (request === 'tailwindcss' || request.startsWith('tailwindcss/')) {
+    return _origResolve.call(this, appTailwindDir + request.slice('tailwindcss'.length), ...args);
+  }
+  return _origResolve.call(this, request, ...args);
+};
+
+const { withNativeWind } = require('nativewind/metro');
+const { FileStore } = require('metro-cache');
+const path = require('path');
 
 const projectRoot = __dirname;
-const workspaceRoot = path.resolve(projectRoot, "../..");
+const monorepoRoot = path.resolve(projectRoot, '../..');
 
 const config = getDefaultConfig(projectRoot);
 
-config.watchFolders = [workspaceRoot];
+config.watchFolders = [monorepoRoot];
 config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, "node_modules"),
-  path.resolve(workspaceRoot, "node_modules"),
+  path.resolve(projectRoot, 'node_modules'),
+  path.resolve(monorepoRoot, 'node_modules'),
+];
+config.resolver.unstable_enableSymlinks = true;
+// @repo/mobile-shared ships subpath exports (api/client, auth/provider, …),
+// so package-exports resolution must stay on.
+config.resolver.unstable_enablePackageExports = true;
+// Do NOT crawl parent node_modules hierarchically — nodeModulesPaths above
+// already lists the two real roots. Without this, metro walks the entire
+// monorepo-root node_modules and hangs on this large workspace.
+config.resolver.disableHierarchicalLookup = true;
+
+config.cacheStores = [
+  new FileStore({ root: path.join(projectRoot, '.metro-cache') }),
 ];
 
-config.resolver.unstable_enablePackageExports = true;
-
-// Hard-pin React, React-DOM, and react-native to mobile-admin's nested
-// copies. The workspace root holds React 19 + RN-newer (used by web admin
-// and other workspaces); Expo SDK 52 + RN 0.76 here require React 18.3.1.
-// extraNodeModules only acts as a fallback, so we use resolveRequest to
-// force every import to the local copy regardless of where the importer
-// lives — otherwise packages walking up to the root pick React 19 and the
-// app crashes with "Cannot read property 'ReactCurrentOwner' of undefined".
-const FORCE = {
-  react: path.resolve(projectRoot, "node_modules/react"),
-  "react-dom": path.resolve(projectRoot, "node_modules/react-dom"),
-};
-
-const defaultResolveRequest = config.resolver.resolveRequest;
-config.resolver.resolveRequest = (context, moduleName, platform) => {
-  for (const [name, target] of Object.entries(FORCE)) {
-    if (moduleName === name || moduleName.startsWith(`${name}/`)) {
-      const sub = moduleName.slice(name.length);
-      const filePath = sub ? path.join(target, sub) : target;
-      return context.resolveRequest(context, filePath, platform);
-    }
-  }
-  if (defaultResolveRequest) {
-    return defaultResolveRequest(context, moduleName, platform);
-  }
-  return context.resolveRequest(context, moduleName, platform);
-};
-
-module.exports = config;
+module.exports = withNativeWind(config, {
+  input: './global.css',
+});

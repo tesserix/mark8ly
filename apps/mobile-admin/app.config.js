@@ -1,3 +1,9 @@
+// Demo-auth builds (EXPO_PUBLIC_AUTH_BACKEND=demo) skip the
+// @react-native-firebase/app config plugin: its prebuild step requires a
+// GoogleService-Info.plist we don't ship yet, and the demo auth backend never
+// touches Firebase. Real GIP builds keep the plugin and provide the plist.
+const USE_DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
+
 const PRODUCTION = {
   name: 'Mark8ly Admin',
   bundleIdentifier: 'com.mark8ly.admin',
@@ -65,7 +71,7 @@ module.exports = {
       'expo-image-picker',
       'expo-notifications',
       ['expo-build-properties', { ios: { newArchEnabled: true } }],
-      '@react-native-firebase/app',
+      ...(USE_DEMO_AUTH ? [] : ['@react-native-firebase/app']),
     ],
     extra: {
       eas: { projectId: 'your-eas-project-id' },

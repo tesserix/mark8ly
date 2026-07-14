@@ -20,6 +20,8 @@ vi.mock("react-easy-crop", () => ({
   },
 }));
 
+import { cropToBlob as mockCropToBlob } from "./cropImage";
+
 vi.mock("./cropImage", () => ({
   cropToBlob: vi.fn(async () => new Blob(["x"], { type: "image/jpeg" })),
   loadImage: vi.fn(async () => ({ naturalWidth: 800, naturalHeight: 600 } as HTMLImageElement)),
@@ -71,6 +73,45 @@ describe("MediaCropDialog", () => {
     render(<MediaCropDialog sourceUrl="blob:test" onApply={onApply} onCancel={onCancel} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /apply/i })).not.toBeDisabled());
     fireEvent.keyDown(window, { key: "Enter" });
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+  });
+
+  it("passes sourceMimeType through to cropToBlob", async () => {
+    const onApply = vi.fn();
+    render(
+      <MediaCropDialog
+        sourceUrl="blob:test"
+        sourceMimeType="image/webp"
+        onApply={onApply}
+        onCancel={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /apply/i })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: /apply/i }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(mockCropToBlob).toHaveBeenCalledWith(
+      expect.anything(),
+      { x: 10, y: 20, width: 200, height: 300 },
+      0,
+      { mimeType: "image/webp", quality: 0.95 },
+    );
+  });
+
+  it("renders aspect controls including a default and Free option", () => {
+    render(<MediaCropDialog sourceUrl="blob:test" onApply={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /^4:5$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^1:1$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^3:4$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^free$/i })).toBeInTheDocument();
+  });
+
+  it("shows a non-blocking advisory when the crop output is below the floor and still applies", async () => {
+    // The mock cropper reports a 200x300 pixel box → short edge 200 < 1000.
+    const onApply = vi.fn();
+    render(<MediaCropDialog sourceUrl="blob:test" onApply={onApply} onCancel={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /apply/i })).not.toBeDisabled());
+    expect(screen.getByText(/smaller than recommended/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /apply/i }));
     await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
   });
 });

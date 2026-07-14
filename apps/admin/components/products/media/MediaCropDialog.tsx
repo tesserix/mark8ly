@@ -4,26 +4,44 @@ import * as React from "react";
 import { useCallback, useEffect, useState } from "react";
 import Cropper from "react-easy-crop";
 import { cropToBlob, loadImage, type CropBox } from "./cropImage";
+import { belowMinShortEdge, MIN_RESOLUTION_WARNING } from "./mediaResolution";
 
 export interface MediaCropDialogProps {
   sourceUrl: string;
   aspect?: number;
+  sourceMimeType?: string;
   onApply: (blob: Blob, box: CropBox, rotation: number) => void | Promise<void>;
   onCancel: () => void;
 }
 
+const ASPECT_OPTIONS: { label: string; value: number | undefined }[] = [
+  { label: "4:5", value: 4 / 5 },
+  { label: "1:1", value: 1 },
+  { label: "3:4", value: 3 / 4 },
+  { label: "Free", value: undefined },
+];
+
 export function MediaCropDialog({
   sourceUrl,
-  aspect = 1,
+  aspect,
+  sourceMimeType = "image/jpeg",
   onApply,
   onCancel,
 }: MediaCropDialogProps): React.ReactElement {
+  const [selectedAspect, setSelectedAspect] = useState<number | undefined>(
+    aspect ?? 4 / 5,
+  );
   const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
   const [pixelCrop, setPixelCrop] = useState<CropBox | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  const lowResWarning =
+    pixelCrop && belowMinShortEdge(pixelCrop.width, pixelCrop.height)
+      ? MIN_RESOLUTION_WARNING
+      : null;
 
   const handleCropComplete = useCallback((_area: CropBox, pixels: CropBox) => {
     setPixelCrop(pixels);
@@ -35,13 +53,16 @@ export function MediaCropDialog({
     setError(null);
     try {
       const img = await loadImage(sourceUrl);
-      const blob = await cropToBlob(img, pixelCrop, rotation);
+      const blob = await cropToBlob(img, pixelCrop, rotation, {
+        mimeType: sourceMimeType,
+        quality: 0.95,
+      });
       await onApply(blob, pixelCrop, rotation);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to apply crop");
       setBusy(false);
     }
-  }, [pixelCrop, busy, sourceUrl, rotation, onApply]);
+  }, [pixelCrop, busy, sourceUrl, rotation, sourceMimeType, onApply]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
@@ -77,7 +98,7 @@ export function MediaCropDialog({
           crop={crop}
           zoom={zoom}
           rotation={rotation}
-          aspect={aspect}
+          aspect={selectedAspect}
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onRotationChange={setRotation}
@@ -117,6 +138,32 @@ export function MediaCropDialog({
             Rotate right
           </button>
         </div>
+        <div className="flex items-center gap-2 text-sm" role="group" aria-label="Aspect ratio">
+          <span className="text-[var(--ink-700)]">Aspect</span>
+          {ASPECT_OPTIONS.map((opt) => {
+            const isActive = selectedAspect === opt.value;
+            return (
+              <button
+                key={opt.label}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => setSelectedAspect(opt.value)}
+                className={`rounded-md border px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)] ${
+                  isActive
+                    ? "border-[var(--moss-700)] bg-[var(--moss-700)] text-[var(--paper-200)]"
+                    : "border-[var(--ink-200)] text-[var(--ink-700)]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        {lowResWarning ? (
+          <p role="status" className="text-sm text-[var(--warning)]">
+            {lowResWarning}
+          </p>
+        ) : null}
         {error ? (
           <p role="alert" className="text-sm text-[var(--danger)]">
             {error}

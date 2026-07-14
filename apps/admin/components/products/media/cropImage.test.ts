@@ -112,4 +112,51 @@ describe("cropToBlob", () => {
     await expect(p2).rejects.toThrow(/failed to load b.jpg/);
     (globalThis as unknown as { Image: unknown }).Image = origImage;
   });
+
+  it("forwards source mimeType and 0.95 quality to toBlob", async () => {
+    const toBlob = vi.fn((cb: (b: Blob) => void, _type?: string, _q?: number) => {
+      cb(new Blob(["x"], { type: "image/webp" }));
+    });
+    const fakeCtx = { drawImage: vi.fn(), translate: vi.fn(), rotate: vi.fn() } as unknown as CanvasRenderingContext2D;
+    const fakeCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => fakeCtx),
+      toBlob,
+    } as unknown as HTMLCanvasElement;
+    vi.spyOn(document, "createElement").mockImplementation(((tag: string) => {
+      if (tag === "canvas") return fakeCanvas;
+      return {} as HTMLElement;
+    }) as typeof document.createElement);
+
+    await cropToBlob(
+      {} as HTMLImageElement,
+      { x: 0, y: 0, width: 10, height: 10 },
+      0,
+      { mimeType: "image/webp" },
+    );
+
+    expect(toBlob).toHaveBeenCalledWith(expect.any(Function), "image/webp", 0.95);
+  });
+
+  it("defaults to image/jpeg at 0.95 when no opts given", async () => {
+    const toBlob = vi.fn((cb: (b: Blob) => void, _type?: string, _q?: number) => {
+      cb(new Blob(["x"], { type: "image/jpeg" }));
+    });
+    const fakeCtx = { drawImage: vi.fn(), translate: vi.fn(), rotate: vi.fn() } as unknown as CanvasRenderingContext2D;
+    const fakeCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => fakeCtx),
+      toBlob,
+    } as unknown as HTMLCanvasElement;
+    vi.spyOn(document, "createElement").mockImplementation(((tag: string) => {
+      if (tag === "canvas") return fakeCanvas;
+      return {} as HTMLElement;
+    }) as typeof document.createElement);
+
+    await cropToBlob({} as HTMLImageElement, { x: 0, y: 0, width: 10, height: 10 }, 0);
+
+    expect(toBlob).toHaveBeenCalledWith(expect.any(Function), "image/jpeg", 0.95);
+  });
 });

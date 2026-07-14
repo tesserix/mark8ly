@@ -10,10 +10,16 @@ export interface CropBox {
   height: number;
 }
 
+export interface CropOutputOptions {
+  mimeType?: string;
+  quality?: number;
+}
+
 export async function cropToBlob(
   image: HTMLImageElement,
   box: CropBox,
   rotationDeg: number,
+  opts: CropOutputOptions = {},
 ): Promise<Blob> {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -35,11 +41,14 @@ export async function cropToBlob(
 
   ctx.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
 
+  const mimeType = opts.mimeType ?? "image/jpeg";
+  const quality = opts.quality ?? 0.95;
+
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error("canvas.toBlob returned null"))),
-      "image/jpeg",
-      0.92,
+      mimeType,
+      quality,
     );
   });
 }

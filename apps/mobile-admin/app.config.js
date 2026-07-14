@@ -67,7 +67,6 @@ module.exports = {
       'expo-font',
       'expo-secure-store',
       'expo-local-authentication',
-      ['expo-camera', { cameraPermission: 'Take product photos for your store' }],
       'expo-image-picker',
       'expo-notifications',
       ['expo-build-properties', { ios: { newArchEnabled: true, useFrameworks: 'static' } }],

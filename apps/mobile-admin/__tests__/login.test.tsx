@@ -2,14 +2,38 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import LoginScreen from '../app/login';
 
 const mockSignIn = jest.fn();
+const mockAuth: Record<string, unknown> = {};
 
 jest.mock('@repo/mobile-shared/auth/provider', () => ({
-  useAuth: () => ({ signIn: mockSignIn, loading: false }),
+  useAuth: () => mockAuth,
 }));
+
+jest.mock('@/lib/social-auth', () => ({
+  configureGoogleSignin: jest.fn(),
+  signInWithGoogleNative: jest.fn().mockResolvedValue('gtok'),
+  signInWithAppleNative: jest.fn().mockResolvedValue({ idToken: 'atok', rawNonce: '', fullName: null }),
+}));
+
+function mockUseAuth(overrides: Record<string, unknown> = {}) {
+  Object.assign(
+    mockAuth,
+    {
+      signIn: mockSignIn,
+      signInWithGoogle: jest.fn().mockResolvedValue(undefined),
+      signInWithApple: jest.fn().mockResolvedValue(undefined),
+      loading: false,
+    },
+    overrides,
+  );
+}
 
 beforeEach(() => {
   mockSignIn.mockReset();
   mockSignIn.mockResolvedValue(undefined);
+  for (const key of Object.keys(mockAuth)) {
+    delete mockAuth[key];
+  }
+  mockUseAuth();
 });
 
 describe('LoginScreen', () => {
@@ -55,5 +79,21 @@ describe('LoginScreen', () => {
 
     // Settled: back to the idle label.
     await waitFor(() => expect(queryByText('Signing in…')).toBeNull());
+  });
+
+  it('signs in with Google when the Google button is pressed', async () => {
+    const signInWithGoogle = jest.fn().mockResolvedValue(undefined);
+    mockUseAuth({ signInWithGoogle });
+    const { getByLabelText } = render(<LoginScreen />);
+    fireEvent.press(getByLabelText('Continue with Google'));
+    await waitFor(() => expect(signInWithGoogle).toHaveBeenCalledWith('gtok'));
+  });
+
+  it('signs in with Apple when the Apple button is pressed', async () => {
+    const signInWithApple = jest.fn().mockResolvedValue(undefined);
+    mockUseAuth({ signInWithApple });
+    const { getByLabelText } = render(<LoginScreen />);
+    fireEvent.press(getByLabelText('Sign in with Apple'));
+    await waitFor(() => expect(signInWithApple).toHaveBeenCalledWith('atok', '', null));
   });
 });

@@ -56,22 +56,29 @@ export function MediaUploader({
           {progressItems.map((item) => (
             <li
               key={item.id}
-              className="flex items-center gap-3 border-b border-[var(--ink-100)] py-2 text-sm"
+              className="flex flex-col gap-1 border-b border-[var(--ink-100)] py-2 text-sm"
             >
-              <span className="flex-1 truncate text-[var(--ink-900)]">{item.filename}</span>
-              <span className="w-40 h-1 overflow-hidden rounded-full bg-[var(--ink-100)]">
-                <span
-                  className={`block h-full ${
-                    item.status === "error"
-                      ? "bg-[var(--danger)]"
-                      : "bg-[var(--moss-700)]"
-                  }`}
-                  style={{ width: `${item.percent}%` }}
-                />
-              </span>
-              <span className="w-12 text-right text-xs uppercase tracking-widest text-[var(--ink-500)]">
-                {item.status === "done" ? "Done" : item.status === "error" ? "Error" : `${item.percent}%`}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="flex-1 truncate text-[var(--ink-900)]">{item.filename}</span>
+                <span className="w-40 h-1 overflow-hidden rounded-full bg-[var(--ink-100)]">
+                  <span
+                    className={`block h-full ${
+                      item.status === "error"
+                        ? "bg-[var(--danger)]"
+                        : "bg-[var(--moss-700)]"
+                    }`}
+                    style={{ width: `${item.percent}%` }}
+                  />
+                </span>
+                <span className="w-12 text-right text-xs uppercase tracking-widest text-[var(--ink-500)]">
+                  {item.status === "done" ? "Done" : item.status === "error" ? "Error" : `${item.percent}%`}
+                </span>
+              </div>
+              {item.warning ? (
+                <span role="status" className="text-xs text-[var(--warning)]">
+                  {item.warning}
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>

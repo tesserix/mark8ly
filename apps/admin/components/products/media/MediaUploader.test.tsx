@@ -27,4 +27,22 @@ describe("MediaUploader", () => {
     expect(screen.getByText("a.jpg")).toBeInTheDocument();
     expect(screen.getByText("b.jpg")).toBeInTheDocument();
   });
+
+  it("renders a resolution advisory when a progress item carries a warning", () => {
+    render(
+      <MediaUploader
+        onFiles={vi.fn()}
+        progressItems={[
+          {
+            id: "1",
+            filename: "small.jpg",
+            percent: 100,
+            status: "done",
+            warning: "Smaller than recommended for a crisp storefront (under 1000px). You can still use it.",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(/smaller than recommended/i);
+  });
 });

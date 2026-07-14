@@ -10,9 +10,9 @@ import { ADMIN_URL, completeOnboarding } from "./helpers";
  * admin dev server:
  *
  *   - upload two JPEGs through the hidden MediaUploader input,
- *   - the crop dialog opens automatically per drop; accept each,
+ *   - they upload directly (NO crop dialog on add — the original is kept),
  *   - MediaGrid renders two MediaCards,
- *   - open the overflow menu and re-crop one image,
+ *   - open the overflow menu and crop one image (recrop flow),
  *   - drag-reorder so the cropped image becomes primary (data-primary),
  *   - save + reload and assert state round-trips,
  *   - re-crop flow hits POST /media/:id/recrop (network assertion).
@@ -94,18 +94,14 @@ test.describe("M7c products — media flow", () => {
 
     await selectTab(page, "Media");
 
-    // 1. Upload two images via the hidden file input. The MediaTab
-    // opens a crop dialog on the first file, drains the rest after.
+    // 1. Upload two images via the hidden file input. Add uploads the
+    // pristine original directly — no crop dialog appears.
     await page.locator("#media-uploader-input").setInputFiles([RED, BLUE]);
-    await applyCropDialog(page);
-    await applyCropDialog(page);
 
-    // 2. Two MediaCards in the grid.
-    const cards = page.locator('[data-primary], [data-primary="true"]').or(
-      page.getByRole("list").getByRole("listitem"),
-    );
+    // 2. Two MediaCards in the grid (no dialog to dismiss).
     const cardImages = page.getByRole("list").locator("img");
     await expect(cardImages).toHaveCount(2, { timeout: 15_000 });
+    await expect(page.getByRole("dialog", { name: /crop image/i })).toHaveCount(0);
 
     // 3. Re-crop the first card via its overflow menu.
     await page
@@ -145,9 +141,8 @@ test.describe("M7c products — media flow", () => {
 
     await selectTab(page, "Media");
 
-    // Upload one image and apply initial crop.
+    // Upload one image — it uploads directly, no crop dialog on add.
     await page.locator("#media-uploader-input").setInputFiles([RED]);
-    await applyCropDialog(page);
 
     const cardImages = page.getByRole("list").locator("img");
     await expect(cardImages).toHaveCount(1, { timeout: 15_000 });

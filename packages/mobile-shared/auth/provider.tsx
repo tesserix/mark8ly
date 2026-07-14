@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { tokenStorage } from "./token-storage";
 import { getEnv } from "../config/env";
+import type { AppleFullName } from "./social-credentials";
 
 /**
  * Loose user shape used by mobile screens — both the real Firebase user
@@ -19,6 +20,12 @@ interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: (idToken: string, accessToken?: string) => Promise<void>;
+  signInWithApple: (
+    idToken: string,
+    rawNonce: string,
+    fullName?: AppleFullName | null,
+  ) => Promise<void>;
   signOut: () => Promise<void>;
   /** Returns the cached GIP id_token. Cheap, safe to call per request. */
   getToken: () => Promise<string | null>;
@@ -44,6 +51,12 @@ interface AuthProviderProps {
 
 interface AuthBackend {
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: (idToken: string, accessToken?: string) => Promise<void>;
+  signInWithApple: (
+    idToken: string,
+    rawNonce: string,
+    fullName?: AppleFullName | null,
+  ) => Promise<void>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
   getIdTokenForced: () => Promise<string | null>;
@@ -88,6 +101,14 @@ function createDemoBackend(): AuthBackend {
       };
       for (const cb of subs) cb(active);
     },
+    signInWithGoogle: async () => {
+      active = { uid: "expo-go-demo:google", email: "demo@mark8ly.com", displayName: "Demo Admin" };
+      for (const cb of subs) cb(active);
+    },
+    signInWithApple: async () => {
+      active = { uid: "expo-go-demo:apple", email: "demo@mark8ly.com", displayName: "Demo Admin" };
+      for (const cb of subs) cb(active);
+    },
     signOut: async () => {
       active = null;
       for (const cb of subs) cb(active);
@@ -110,6 +131,12 @@ function createFirebaseBackend(tenantId: string): AuthBackend {
   return {
     signIn: async (email, password) => {
       await gip.signIn(email, password);
+    },
+    signInWithGoogle: async (idToken, accessToken) => {
+      await gip.signInWithGoogle(idToken, accessToken);
+    },
+    signInWithApple: async (idToken, rawNonce, fullName) => {
+      await gip.signInWithApple(idToken, rawNonce, fullName);
     },
     signOut: () => gip.signOut(),
     getIdToken: () => gip.getIdToken(),
@@ -151,6 +178,18 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
     await backend.signIn(email, password);
   };
 
+  const signInWithGoogle = async (idToken: string, accessToken?: string) => {
+    await backend.signInWithGoogle(idToken, accessToken);
+  };
+
+  const signInWithApple = async (
+    idToken: string,
+    rawNonce: string,
+    fullName?: AppleFullName | null,
+  ) => {
+    await backend.signInWithApple(idToken, rawNonce, fullName);
+  };
+
   const signOut = async () => {
     await tokenStorage.clearAll();
     await backend.signOut();
@@ -161,7 +200,16 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, signIn, signOut, getToken, refreshToken }}
+      value={{
+        user,
+        loading,
+        signIn,
+        signInWithGoogle,
+        signInWithApple,
+        signOut,
+        getToken,
+        refreshToken,
+      }}
     >
       {children}
     </AuthContext.Provider>

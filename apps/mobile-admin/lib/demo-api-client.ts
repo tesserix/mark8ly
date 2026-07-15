@@ -25,6 +25,9 @@ const DEMO_STORE: Store = {
   id: "demo-store",
   name: "Bondi Beach Co.",
   slug: "bondi",
+  country_code: "AU",
+  currency_code: "AUD",
+  status: "active",
 };
 
 function iso(daysAgo: number): string {

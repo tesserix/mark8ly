@@ -588,14 +588,14 @@ function jsonResponse(status: number): Response {
 }
 
 describe("onUnauthorized reason", () => {
-  const realFetch = global.fetch;
+  const realFetch = globalThis.fetch;
   afterEach(() => {
-    global.fetch = realFetch;
+    globalThis.fetch = realFetch;
   });
 
   it("reports no-session when there is no token at all", async () => {
     const onUnauthorized = jest.fn();
-    global.fetch = jest.fn() as unknown as typeof fetch;
+    globalThis.fetch = jest.fn() as unknown as typeof fetch;
     const client = createApiClient({
       baseUrl: "https://x.test",
       getToken: async () => null,
@@ -608,7 +608,7 @@ describe("onUnauthorized reason", () => {
 
   it("reports no-session when the refresh cannot mint a token", async () => {
     const onUnauthorized = jest.fn();
-    global.fetch = jest.fn().mockResolvedValue(jsonResponse(401)) as unknown as typeof fetch;
+    globalThis.fetch = jest.fn().mockResolvedValue(jsonResponse(401)) as unknown as typeof fetch;
     const client = createApiClient({
       baseUrl: "https://x.test",
       getToken: async () => "stale",
@@ -624,7 +624,7 @@ describe("onUnauthorized reason", () => {
     // A freshly minted token that the server still 401s is not expiry —
     // it is the server refusing this identity.
     const onUnauthorized = jest.fn();
-    global.fetch = jest.fn().mockResolvedValue(jsonResponse(401)) as unknown as typeof fetch;
+    globalThis.fetch = jest.fn().mockResolvedValue(jsonResponse(401)) as unknown as typeof fetch;
     const client = createApiClient({
       baseUrl: "https://x.test",
       getToken: async () => "stale",
@@ -638,7 +638,7 @@ describe("onUnauthorized reason", () => {
 
   it("does not call onUnauthorized when the retry succeeds", async () => {
     const onUnauthorized = jest.fn();
-    global.fetch = jest
+    globalThis.fetch = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(401))
       .mockResolvedValueOnce(jsonResponse(200)) as unknown as typeof fetch;
@@ -756,7 +756,7 @@ And the refresh branch:
 - [ ] **Step 4: GREEN**
 
 Run: `npx jest api-client-unauthorized` → pass. Then `npx jest` → **85 passing**.
-Then: `npx tsc --noEmit 2>&1 | grep -E "api/client|stores/auth-notice" || echo "TYPE-CLEAN"` → `TYPE-CLEAN`.
+Then: `npx tsc --noEmit 2>&1 | grep -c "error TS"` → **2** (per-file greps miss errors in the NEW test file — count instead).
 
 - [ ] **Step 5: Commit**
 

@@ -104,7 +104,7 @@ for the same decision, and the two would drift.
 
 | Condition | Message |
 |---|---|
-| Apple `ERR_REQUEST_CANCELED`; Google `SIGN_IN_CANCELLED` | `null` (show nothing) |
+| `AuthCancelledError` (see C1a); Apple `ERR_REQUEST_CANCELED` (safety net) | `null` (show nothing) |
 | Apple `ERR_REQUEST_UNKNOWN` | Couldn't complete Apple sign-in. Make sure you're signed in to iCloud on this device. |
 | `auth/reauth-failed` **and** no `ctx.provider` (password re-auth) | That password is incorrect. |
 | `auth/reauth-failed` **and** `ctx.provider` is set (social re-auth) | Couldn't verify that account. Try again. |
@@ -122,6 +122,45 @@ unrecoverable loop described in P3. **Never** branch on `auth/wrong-password` �
 
 Guard the `.code` read with `typeof e === "object" && e !== null` (a `throw null` from a native
 module must not make the mapper itself throw).
+
+### C1a — Cancellation must be normalised at the native boundary
+
+**Verified 2026-07-15 (this corrects the approved design):** `GoogleSignin.signIn()` **does not
+throw on cancel.** `node_modules/@react-native-google-signin/google-signin/src/signIn/GoogleSignin.ts:60`
+routes the native rejection through `translateCancellationError`, which **returns**
+`cancelledResult` = `{ type: "cancelled", data: null }`.
+
+`apps/mobile-admin/lib/social-auth.ts:signInWithGoogleNative` then finds no `idToken` and throws
+`new Error("Google sign-in failed: no ID token")` — a **plain Error with no `code`**. Consequences:
+
+1. Cancelling Google today shows the user `"Google sign-in failed: no ID token"`.
+2. A mapper row keyed on `SIGN_IN_CANCELLED` **would never fire**, and `SIGN_IN_CANCELLED` is a
+   *native runtime constant* (`NativeModule.getConstants()`) — matching it would force a native
+   import into `errors.ts` and break its native-free invariant.
+
+**Therefore:** cancellation is translated to a domain error at the native boundary, and
+`errors.ts` owns the sentinel (no native import):
+
+```ts
+// packages/mobile-shared/auth/errors.ts
+/** The user dismissed a native sign-in sheet. Callers show NOTHING. */
+export class AuthCancelledError extends Error {
+  constructor() {
+    super("Sign-in cancelled");
+    this.name = "AuthCancelledError";
+  }
+}
+```
+
+`apps/mobile-admin/lib/social-auth.ts`:
+
+- `signInWithGoogleNative` — when `result.type === "cancelled"`, throw `new AuthCancelledError()`
+  **before** the no-idToken check.
+- `signInWithAppleNative` — catch `code === "ERR_REQUEST_CANCELED"` and rethrow
+  `new AuthCancelledError()`; let everything else propagate.
+
+`errors.ts` maps `AuthCancelledError` → `null`, and keeps a bare `ERR_REQUEST_CANCELED` → `null`
+row as a safety net for any raw Apple error that bypasses the wrapper.
 
 ### C2 — Reauth tagging in `packages/mobile-shared/auth/link.ts`
 
@@ -197,7 +236,10 @@ again." Keep the existing retry affordance for genuine network/5xx errors.
 
 All tests live in `apps/mobile-admin/__tests__/` — **never** under `apps/mobile-admin/app/`.
 
-- **`errors.test.tsx`** — mapper table: cancel → `null`; a tagged `auth/reauth-failed` and a bare
+- **`social-auth.test.tsx`** — `signInWithGoogleNative` throws `AuthCancelledError` (not
+  "no ID token") when `signIn()` resolves `{ type: "cancelled" }`; `signInWithAppleNative` turns
+  `ERR_REQUEST_CANCELED` into `AuthCancelledError` and leaves other errors untouched.
+- **`errors.test.tsx`** — mapper table: `AuthCancelledError` → `null`; a tagged `auth/reauth-failed` and a bare
   `auth/invalid-credential` produce *different* copy; `auth/reauth-failed` with vs without
   `ctx.provider` produce *different* copy; no input yields a raw `e.message`; `throw null`
   doesn't throw; **no mapped message contains the word "expired"** (guards the P3 loop).

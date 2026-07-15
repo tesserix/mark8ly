@@ -836,10 +836,20 @@ describe("useStores", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd apps/mobile-admin && npx jest __tests__/use-store.test.tsx`
-Expected: FAIL — the first test fails with `expect(received).toHaveLength(1)` / received length `0`,
-because the hook reads `data.items` which is `undefined` and falls back to `[]`. This is the live bug,
-reproduced.
+Run: `cd apps/mobile-admin && npx jest __tests__/use-store.test.tsx --forceExit`
+
+🔴 **`--forceExit` is REQUIRED for single-file runs of THIS test — without it jest HANGS FOREVER.**
+This test renders a react-query `QueryClient`, which leaves an open handle. When jest runs a single
+suite it runs it in-band, so the process never exits once the tests finish (you'd see the tests pass or
+fail, then nothing). Running the **full** suite (`npx jest`) is unaffected — it uses workers, which get
+torn down — so the gate in Step 6 needs no flag. Verified 2026-07-15: the single-file run hangs; the
+full suite exits in <10s.
+
+Expected: FAIL — **both** tests fail. The first fails with `expect(received).toHaveLength(1)` /
+received length `0`, because the hook reads `data.items` which is `undefined` and falls back to `[]` —
+this is the live production bug, reproduced. The second fails with
+`Expected: "/stores", undefined, Anything` / `Received: "/stores"`, because the hook currently passes
+only one argument and will pass three after your change.
 
 - [ ] **Step 3: Swap the `Store` type to the inferred one**
 
@@ -910,7 +920,9 @@ because the author did not know the shape. The schema now knows it.
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `cd apps/mobile-admin && npx jest __tests__/use-store.test.tsx`
+Run: `cd apps/mobile-admin && npx jest __tests__/use-store.test.tsx --forceExit`
+(the `--forceExit` is required here for the same reason as Step 2 — without it jest hangs after the
+tests finish)
 Expected: PASS — 2 tests
 
 - [ ] **Step 6: Run the gates**

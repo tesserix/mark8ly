@@ -7,55 +7,51 @@ single-line conventional messages, no signatures, no PRs. Same convention for `t
 
 ## Read first
 `~/.claude/projects/-Users-Mahesh-Sangawar-personal-tesserix-new-mark8ly/memory/`
-- **`istio_gip_issuer_not_configured.md`** — THE BLOCKER. Read before anything.
-- **`mobile_admin_contract_mismatches.md`** — the 31 mismatches + locked decisions.
+- **`mobile_admin_contract_mismatches.md`** — the 31 mismatches + locked decisions. **Start here** —
+  auth is fixed, so this is now the live work.
+- `istio_gip_issuer_not_configured.md` — the old blocker, RESOLVED. Read only before touching Istio
+  (records the false leads + the "never add an unreachable jwksUri" rule).
+- `incident_gateway_stale_eds_504.md` — read before any mark8ly deploy.
+- `mobile_admin_gip_tenant_id_claim.md` — the verifier bug behind the Istio one; GIP claim recipes.
 - `mobile_admin_nativewind_metro_landmines.md` — 19 build/runtime traps. Read before touching Expo.
 - `project_mobile_admin_modernise.md` — program state, Apple config (all resolved).
 - `MEMORY.md` — index.
 
-## YOUR IMMEDIATE JOB — unblock mobile auth against prod
+## AUTH IS FIXED — 2026-07-15. This section is history; do not re-chase it.
 
-**The mobile app cannot authenticate against prod at all.** A *valid* GIP id_token gets
-`HTTP 401 · Jwt issuer is not configured` from Envoy. That's Istio's JWT filter: no
-`securetoken.google.com` issuer exists anywhere in the cluster — every RequestAuthentication still
-points at Keycloak from before the GIP migration. Only mobile sends a Bearer JWT (web apps use
-session cookies + HeaderTrustAuth), so it's the only client that trips it.
+```
+GET https://api.mark8ly.com/api/v1/mobile/admin/stores  →  HTTP 200
+{"data":[{"id":"8b69eea9-…","name":"The Bondi Store","slug":"the-bondi-store",…}]}
+```
 
-Independently corroborated: `tesserix-k8s/argocd/prod/infrastructure/homechef-ingress-gateway.yaml`
-documents HomeChef hitting the identical wall — *"The shared gateway's Istio JWT filter rejects
-anything that isn't a Keycloak JWT, which broke mobile login end-to-end."*
+It took two fixes; the Istio blocker was hiding a second one.
 
-### What's already done (do NOT redo)
-`tesserix-k8s@8ed38b1b` (pushed, ArgoCD synced) adds a `gip:` block to
-`charts/infrastructure/istio-auth-policies` → renders `jwt-auth-gip` + `jwt-auth-gip-custom`.
-**Additive: 93 insertions, 0 deletions.** FanZone Keycloak still renders (10 refs) + GIP (2).
-Verified: policy live; selector `{"istio":"ingressgateway"}` matches `tesseract-gateway` (which
-`mark8ly/mark8ly-wildcard` VS `*.mark8ly.com` routes through); issuer/aud exactly match the token;
-**Envoy on `istio-ingressgateway` HAS the rule** (config_dump securetoken 0 → 2); gateway pod
-reaches the JWKS (200). Keycloak rules are in that same Envoy (238 refs) so the push path works.
+1. **Istio `Jwt issuer is not configured` = a stale istiod xDS cache.** `8ed38b1b` was correct all
+   along; istiod just refused to render it onto `istio=ingressgateway`. Fixed with
+   `kubectl rollout restart deploy/istiod -n istio-system` (data plane unaffected — Envoys keep
+   serving last-known config).
+2. **`marketplace-api`'s GIP verifier was broken for EVERY merchant** — it read `tenant_id` as a
+   string but tenant-service writes it as an **array**, so the assertion could never succeed. Fixed
+   in `mark8ly@4f2fbf67` (+ 11 tests; the function previously had none, which is why it survived).
+   `demo@mark8ly.com` also had no `tenant_id` claim at all — backfilled. See
+   [[mobile-admin-gip-tenant-id-claim]] in memory.
+3. **Bonus P0 fixed:** new `istio-ingressgateway` pods couldn't boot (istiod's LDS build wedged on
+   unreachable JWKS issuers, proven by goroutine dump). Removed orphaned `jwt-auth-internal*` and the
+   404'ing ArgoCD Dex issuer (`tesserix-k8s@f822ce8e`). Fresh gateway pods now go 1/1 in ~7s.
 
-### THE OPEN QUESTION — ask the user first
-**Prod still 401s.** Decisive test: `curl ...?probe=whichgw` then grep access logs of
-`istio=ingressgateway`, `custom-ingressgateway`, `ingressgateway-internal` → **0 hits on all three**.
-So `api.mark8ly.com` terminates somewhere else — or access logging is off on those gateways (which
-would make that test blind; verify that possibility too).
+**The three leads in the old handoff were all WRONG** — recorded so nobody burns time on them again:
+- "securetoken 0 → 2" was a **CSP header false positive**, not the JWT filter.
+- There is **no Cloudflare Worker / mystery 4th proxy**. `api.mark8ly.com` terminates
+  Cloudflare → `istio-ingressgateway` → `tesseract-gateway`, exactly as configured.
+- The HomeChef dedicated-gateway fallback was never needed.
 
-**Ask the user: where does `api.mark8ly.com` actually terminate?** Candidates: a Cloudflare Worker
-(CLAUDE.md: "Cloudflare Worker for routing instead of GCP LB"), a dashboard-managed Cloudflare tunnel
-(no cloudflared ingress ConfigMap exists in-cluster), or a 4th proxy. Gateways in `istio-ingress`:
-`istio-ingressgateway` (istio 1.29.1), `custom-ingressgateway`, `ingressgateway-internal`
-(**NOT in `values.ingressGateways`** — could be the answer), `homechef-ingressgateway`.
+Full detail + diagnostic recipes: `istio_gip_issuer_not_configured.md` and
+`incident_gateway_stale_eds_504.md` in memory. **Read those before touching Istio or deploying.**
 
-Once known: either add that gateway to `values.ingressGateways`, or fall back to the **HomeChef
-dedicated-gateway pattern** (labels that dodge the Keycloak selectors). Prefer adding the issuer —
-HomeChef *had* to dodge because their Bearer is an AES-GCM blob, not a JWT; ours is a real JWT.
+**GOTCHA (still true):** `kubectl get gateway` resolves to the **Gateway API** type (ambient
+waypoints). Use `kubectl get gateways.networking.istio.io -n istio-ingress`. macOS has no `timeout`.
 
-**GOTCHA:** `kubectl get gateway` resolves to the **Gateway API** type (ambient waypoints). Use
-`kubectl get gateways.networking.istio.io -n istio-ingress`.
-
-Verify the fix by re-running the real API call (recipe below) — do not declare victory on config alone.
-
-## THEN — the contract work (blocked until auth works)
+## NEXT — the contract work (now UNBLOCKED and verifiable)
 
 **31 verified mismatches.** The mobile API type layer was written speculatively ~2mo ago and never
 run against prod. `client.ts` supports zod but **no module passes a schema**, so every mismatch is a
@@ -92,9 +88,10 @@ claims yourself (one earlier finding was a false positive).
     | python3 -c "import sys,json;print(json.load(sys.stdin)['idToken'])"
   ```
   Then: `curl -H "Authorization: Bearer $T" https://api.mark8ly.com/api/v1/mobile/admin/stores`
-  → currently `401 Jwt issuer is not configured`. **That call succeeding is the definition of done
-  for the immediate job.** When it works, capture real response shapes for every endpoint and check
-  them against the spec's hand-built fixtures.
+  → **now returns 200** (verified 2026-07-15). Next: capture real response shapes for every endpoint
+  and check them against the spec's hand-built fixtures.
+  **Confirmed against prod:** `/stores` really does return `{"data":[…]}` while `use-store.ts` reads
+  `.items` — the dashboard blocker is real, exactly as the audit predicted.
 - **Gates:** `cd apps/mobile-admin && npx jest` (**98/98**) · `npx tsc --noEmit 2>&1 | grep -c "error TS"` → **2** (pre-existing `_layout.tsx` expo-notifications; count, don't grep by filename — a per-file grep passed vacuously and missed 6 real errors) · demo `googleServicesFile` count must be 0.
 - **NEVER** `npm ci` / `npm install` / `npm install --package-lock-only` / `rm -rf node_modules` — metro runs against this tree; `--package-lock-only` causes a 4871-line mass re-resolve.
 - kubectl context is prod (`gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke`). ArgoCD sync

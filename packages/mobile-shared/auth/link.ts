@@ -5,6 +5,15 @@
 
 import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
 
+// Imported (not just re-exported) so `unlinkProvider` below can throw it —
+// `export { X } from "./mod"` alone creates no local binding. Re-exported so
+// existing importers of `LastSignInMethodError` from this module keep
+// working. The canonical definition lives in `./errors` (firebase-free) so
+// app-layer code can catch it without pulling in the native module chain —
+// see `./errors` for why that matters.
+import { LastSignInMethodError } from "./errors";
+export { LastSignInMethodError };
+
 /** Re-auth with the account's existing password, then attach `pending`. */
 export async function completeLinkWithPassword(
   email: string,
@@ -43,14 +52,6 @@ export async function completeLinkWithApple(
  */
 export async function existingSignInMethods(email: string): Promise<string[]> {
   return auth().fetchSignInMethodsForEmail(email);
-}
-
-/** Thrown when unlinking would remove the user's only remaining sign-in method. */
-export class LastSignInMethodError extends Error {
-  constructor() {
-    super("Cannot remove the only sign-in method");
-    this.name = "LastSignInMethodError";
-  }
 }
 
 function requireCurrentUser(): FirebaseAuthTypes.User {

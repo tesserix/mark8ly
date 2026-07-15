@@ -1,16 +1,3 @@
-// `@repo/mobile-shared/auth/link` imports `@react-native-firebase/auth` at
-// module scope (unlike provider.tsx's lazy `require("./gip")`), so even
-// importing just the `LastSignInMethodError` class pulls in the native
-// module chain under Jest. Stub it out — mirrors __tests__/link.test.tsx /
-// gip.test.tsx. Mock fns are built INSIDE the factory (babel hoists imports
-// above outer const/var).
-jest.mock("@react-native-firebase/auth", () => {
-  const authFn = () => ({ currentUser: null });
-  authFn.GoogleAuthProvider = { credential: jest.fn() };
-  authFn.AppleAuthProvider = { credential: jest.fn() };
-  return { __esModule: true, default: authFn };
-});
-
 const mockAuth: Record<string, unknown> = {};
 jest.mock("@repo/mobile-shared/auth/provider", () => ({ useAuth: () => mockAuth }));
 jest.mock("@/lib/social-auth", () => ({
@@ -51,7 +38,8 @@ jest.mock("react-native-safe-area-context", () => {
 });
 
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
-import { LastSignInMethodError } from "@repo/mobile-shared/auth/link";
+import { Alert } from "react-native";
+import { LastSignInMethodError } from "@repo/mobile-shared/auth/errors";
 import { configureGoogleSignin } from "@/lib/social-auth";
 import SecurityScreen from "../app/(tabs)/more/security";
 
@@ -129,6 +117,23 @@ describe("SecurityScreen", () => {
     await waitFor(() => expect(mockAuth.unlinkProvider).toHaveBeenCalledWith("google.com"));
   });
 
+  it("does NOT unlink when the destructive confirm is cancelled", async () => {
+    setAuth({ linkedProviderIds: jest.fn().mockResolvedValue(["password", "google.com"]) });
+    // Override the default auto-press-destructive behavior for this test:
+    // press the "Cancel" button instead.
+    (Alert.alert as jest.Mock).mockImplementationOnce(
+      (_t: string, _m: string, buttons: { style?: string; onPress?: () => void }[]) => {
+        const cancel = (buttons ?? []).find((b) => b.style === "cancel");
+        cancel?.onPress?.();
+      },
+    );
+    const { getByLabelText } = render(<SecurityScreen />);
+    await waitFor(() => expect(getByLabelText("Remove Google")).toBeTruthy());
+    fireEvent.press(getByLabelText("Remove Google"));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(mockAuth.unlinkProvider).not.toHaveBeenCalled();
+  });
+
   it("shows the guard copy when the auth layer rejects the last method", async () => {
     setAuth({
       linkedProviderIds: jest.fn().mockResolvedValue(["password"]),
@@ -138,6 +143,24 @@ describe("SecurityScreen", () => {
     await waitFor(() => expect(getByLabelText("Remove Password")).toBeTruthy());
     fireEvent.press(getByLabelText("Remove Password"));
     expect(await findByText(/only sign-in method/i)).toBeTruthy();
+  });
+
+  it("clears a stale load error once a subsequent load succeeds", async () => {
+    setAuth({ linkedProviderIds: jest.fn().mockRejectedValue(new Error("network down")) });
+    const { findByText, queryByText, rerender } = render(<SecurityScreen />);
+    expect(await findByText(/couldn't load your sign-in methods/i)).toBeTruthy();
+
+    // Simulate an auth-state event: `linkedProviderIds` gets a new function
+    // identity (as it does from `provider.tsx`'s fresh context value on every
+    // auth-state change) and this time succeeds. That identity change is what
+    // re-runs the load effect — a re-render alone would not.
+    mockAuth.linkedProviderIds = jest.fn().mockResolvedValue(["password"]);
+    rerender(<SecurityScreen />);
+
+    await waitFor(() =>
+      expect(queryByText(/couldn't load your sign-in methods/i)).toBeNull(),
+    );
+    expect(await findByText("Connected")).toBeTruthy();
   });
 
   it("maps credential-already-in-use to friendly copy", async () => {

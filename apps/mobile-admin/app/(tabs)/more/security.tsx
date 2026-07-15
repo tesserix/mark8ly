@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, StyleSheet, TouchableOpacity, View } from "react-native";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
-import { LastSignInMethodError } from "@repo/mobile-shared/auth/link";
+import { LastSignInMethodError } from "@repo/mobile-shared/auth/errors";
 import {
   configureGoogleSignin,
   signInWithAppleNative,
@@ -69,6 +69,7 @@ export default function SecurityScreen(): React.JSX.Element {
     void (async () => {
       try {
         await refresh();
+        if (mountedRef.current) setError(null);
       } catch {
         if (mountedRef.current) setError("Couldn't load your sign-in methods.");
       }

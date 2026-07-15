@@ -124,9 +124,10 @@ describe("LinkAccountPrompt", () => {
     expect(queryByLabelText("Continue with Google to link")).toBeNull();
   });
 
-  // The password re-auth path passes NO context, so the mapper's
-  // `auth/reauth-failed` + absent-`provider` row yields "That password is
-  // incorrect." — proving the tag-based mapping composes through the component.
+  // The password re-auth path passes { method: 'password' } explicitly, so
+  // the mapper's `auth/reauth-failed` + method:'password' row yields "That
+  // password is incorrect." — proving the tag-based mapping composes
+  // through the component.
   it("shows mapped copy — never the raw message — and stays open when the re-auth fails", async () => {
     setAuth({
       completeLinkWithPassword: jest

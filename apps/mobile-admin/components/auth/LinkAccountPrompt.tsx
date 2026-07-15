@@ -119,7 +119,10 @@ export function LinkAccountPrompt({
                 accessibilityLabel="Sign in and link"
                 disabled={busy}
                 onPress={() =>
-                  void run(() => completeLinkWithPassword(email, password, pendingCredential))
+                  void run(
+                    () => completeLinkWithPassword(email, password, pendingCredential),
+                    { method: 'password' },
+                  )
                 }
                 className="min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
               >
@@ -140,7 +143,7 @@ export function LinkAccountPrompt({
                   configureGoogleSignin();
                   const idToken = await signInWithGoogleNative();
                   await completeLinkWithGoogle(idToken, pendingCredential);
-                }, { provider: 'google.com' })
+                }, { method: 'social', provider: 'google.com' })
               }
               className="mt-3 min-h-touch items-center justify-center rounded border border-border bg-paper active:opacity-90"
             >
@@ -157,7 +160,7 @@ export function LinkAccountPrompt({
                 void run(async () => {
                   const { idToken, rawNonce } = await signInWithAppleNative();
                   await completeLinkWithApple(idToken, rawNonce, pendingCredential);
-                }, { provider: 'apple.com' })
+                }, { method: 'social', provider: 'apple.com' })
               }
               className="mt-3 min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
             >

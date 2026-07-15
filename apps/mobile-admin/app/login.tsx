@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@repo/mobile-shared/auth/provider';
 import { authErrorMessage } from '@repo/mobile-shared/auth/errors';
 import type { SocialSignInOutcome } from '@repo/mobile-shared/auth/social-credentials';
+import { useAuthNoticeStore, type AuthNotice } from '@repo/mobile-shared/stores/auth-notice';
 import { configureGoogleSignin, signInWithAppleNative, signInWithGoogleNative } from '@/lib/social-auth';
 import { LinkAccountPrompt } from '../components/auth/LinkAccountPrompt';
 import { Text } from '../components/ui/Text';
@@ -12,6 +13,11 @@ const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
 
 type LinkTarget = Extract<SocialSignInOutcome, { status: 'needs-link' }>;
 
+const NOTICE_COPY: Record<AuthNotice, string> = {
+  'access-denied': "That account doesn't have access to a Mark8ly admin account.",
+  'no-session': 'Your session ended. Sign in again.',
+};
+
 export default function LoginScreen() {
   const { signIn, signInWithGoogle, signInWithApple } = useAuth();
   const [email, setEmail] = useState('');
@@ -19,6 +25,14 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkTarget, setLinkTarget] = useState<LinkTarget | null>(null);
+  const notice = useAuthNoticeStore((s) => s.notice);
+  const clearNotice = useAuthNoticeStore((s) => s.clearNotice);
+
+  useEffect(() => {
+    if (!notice) return;
+    setError(NOTICE_COPY[notice]);
+    clearNotice();
+  }, [notice, clearNotice]);
 
   async function handleSignIn() {
     if (submitting) return;

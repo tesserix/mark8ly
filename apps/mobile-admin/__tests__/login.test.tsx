@@ -2,6 +2,44 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import LoginScreen from '../app/login';
 import { signInWithGoogleNative } from '@/lib/social-auth';
 import { AuthCancelledError } from '@repo/mobile-shared/auth/errors';
+import { useAuthNoticeStore } from '@repo/mobile-shared/stores/auth-notice';
+
+// The monorepo hoists `zustand` (and the `react` it requires) to the repo
+// root, at a different react version than this app's local install. Any
+// zustand store rendered through a component in this app's tests hits two
+// live React copies and crashes with "Cannot read properties of null
+// (reading 'useCallback')". Swap in a minimal `create()` built on this
+// test file's own `useSyncExternalStore` so `@repo/mobile-shared/stores/
+// auth-notice` (unmocked, real module) works under jest without touching
+// jest.config.js's moduleNameMapper.
+jest.mock('zustand', () => {
+  const { useSyncExternalStore } = require('react');
+  function isUpdater(value: unknown): value is (current: unknown) => unknown {
+    return typeof value === 'function';
+  }
+  function create(initializer: (set: (partial: unknown) => void, get: () => unknown) => unknown) {
+    let state: unknown;
+    const listeners = new Set<() => void>();
+    function setState(partial: unknown): void {
+      const next = isUpdater(partial) ? partial(state) : partial;
+      state = { ...(state as object), ...(next as object) };
+      listeners.forEach((listener) => listener());
+    }
+    function getState(): unknown {
+      return state;
+    }
+    function subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }
+    state = initializer(setState, getState);
+    function useBoundStore(selector?: (current: unknown) => unknown) {
+      return useSyncExternalStore(subscribe, () => (selector ? selector(getState()) : getState()));
+    }
+    return Object.assign(useBoundStore, { getState, setState, subscribe });
+  }
+  return { create };
+});
 
 const mockSignIn = jest.fn();
 const mockAuth: Record<string, unknown> = {};
@@ -150,5 +188,33 @@ describe('error copy', () => {
     fireEvent.press(getByLabelText('Continue with Google'));
     expect(await findByText('Something went wrong. Try again.')).toBeTruthy();
     expect(queryByText(/swift/i)).toBeNull();
+  });
+});
+
+describe('involuntary sign-out notice', () => {
+  afterEach(() => useAuthNoticeStore.getState().clearNotice());
+
+  it('explains an access-denied sign-out', async () => {
+    useAuthNoticeStore.getState().setNotice('access-denied');
+    const { findByText } = render(<LoginScreen />);
+    expect(await findByText(/doesn't have access to a Mark8ly admin account/i)).toBeTruthy();
+  });
+
+  it('explains a dead session', async () => {
+    useAuthNoticeStore.getState().setNotice('no-session');
+    const { findByText } = render(<LoginScreen />);
+    expect(await findByText(/your session ended/i)).toBeTruthy();
+  });
+
+  it('clears the notice so it cannot resurface on a later attempt', async () => {
+    useAuthNoticeStore.getState().setNotice('access-denied');
+    const { findByText } = render(<LoginScreen />);
+    await findByText(/doesn't have access/i);
+    await waitFor(() => expect(useAuthNoticeStore.getState().notice).toBeNull());
+  });
+
+  it('shows nothing when there is no notice', () => {
+    const { queryByText } = render(<LoginScreen />);
+    expect(queryByText(/session ended|doesn't have access/i)).toBeNull();
   });
 });

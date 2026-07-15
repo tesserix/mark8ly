@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createApiClient } from "@repo/mobile-shared/api/client";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
+import { useAuthNoticeStore } from "@repo/mobile-shared/stores/auth-notice";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useEnvironment } from "@repo/mobile-shared/config/env";
 import { createDemoApiClient } from "./demo-api-client";
@@ -37,8 +38,10 @@ export function useApiClient() {
         getToken,
         refreshToken,
         getStoreId: () => activeStore?.id ?? null,
-        onUnauthorized: async () => {
-          // Token gone or rejected after refresh — terminate the session.
+        onUnauthorized: async (reason) => {
+          // Record WHY before tearing the session down — /login reads this and
+          // explains itself instead of bouncing the user with no message.
+          useAuthNoticeStore.getState().setNotice(reason);
           await signOut();
         },
         onTenantInvalid: async () => {

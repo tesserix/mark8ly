@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
+import { ApiError } from "@repo/mobile-shared/api/client";
 import { useEnvironment } from "@repo/mobile-shared/config/env";
 import { useTenantResolver } from "@/lib/hooks/use-tenant-resolver";
 import { StorePicker } from "@/components/StorePicker";
@@ -54,24 +55,34 @@ export function TenantGate({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   if (error) {
+    // A 403 here is a permissions verdict, not a network problem — "check your
+    // connection" would send the user chasing the wrong fix, and retrying a
+    // denial just fails again.
+    const denied = error instanceof ApiError && error.status === 403;
     return (
       <Screen>
         <View style={styles.center}>
           <EmptyState
-            title="Couldn't load your store"
-            message="Check your connection and try again."
+            title={denied ? "No access" : "Couldn't load your store"}
+            message={
+              denied
+                ? "That account doesn't have access to a Mark8ly admin account."
+                : "Check your connection and try again."
+            }
           />
-          <TouchableOpacity
-            onPress={() => refetch()}
-            style={styles.primaryBtn}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel="Retry"
-          >
-            <Text preset="bodyEmphasis" color="inverse">
-              Retry
-            </Text>
-          </TouchableOpacity>
+          {denied ? null : (
+            <TouchableOpacity
+              onPress={() => refetch()}
+              style={styles.primaryBtn}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Retry"
+            >
+              <Text preset="bodyEmphasis" color="inverse">
+                Retry
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </Screen>
     );

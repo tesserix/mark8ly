@@ -240,7 +240,7 @@ export function authErrorMessage(e: unknown, ctx?: AuthErrorContext): string | n
 - [ ] **Step 4: GREEN**
 
 Run: `cd /Users/Mahesh.Sangawar/personal/tesserix-new/mark8ly/apps/mobile-admin && npx jest errors.test` → all pass.
-Then: `npx jest` → 54 + 14 = **68 passing**.
+Then: `npx jest` → 54 + 15 = **69 passing**.
 Then: `npx tsc --noEmit 2>&1 | grep -E "auth/errors" || echo "TYPE-CLEAN"` → `TYPE-CLEAN`.
 Then confirm the firebase-free invariant:
 `grep -cE "react-native-firebase|google-signin|expo-apple-authentication" ../../packages/mobile-shared/auth/errors.ts` → must print `0`.
@@ -408,7 +408,7 @@ export async function signInWithAppleNative(): Promise<{
 
 - [ ] **Step 4: GREEN**
 
-Run: `npx jest social-auth.test` → pass. Then `npx jest` → **75 passing**.
+Run: `npx jest social-auth.test` → pass. Then `npx jest` → **76 passing**.
 Then: `npx tsc --noEmit 2>&1 | grep -E "social-auth" || echo "TYPE-CLEAN"` → `TYPE-CLEAN`.
 
 - [ ] **Step 5: Commit**
@@ -552,7 +552,7 @@ export async function completeLinkWithApple(
 
 - [ ] **Step 4: GREEN**
 
-Run: `npx jest link.test` → pass. Then `npx jest` → **80 passing**.
+Run: `npx jest link.test` → pass. Then `npx jest` → **81 passing**.
 Then: `npx tsc --noEmit 2>&1 | grep -E "auth/link" || echo "TYPE-CLEAN"` → `TYPE-CLEAN`.
 
 - [ ] **Step 5: Commit**
@@ -755,7 +755,7 @@ And the refresh branch:
 
 - [ ] **Step 4: GREEN**
 
-Run: `npx jest api-client-unauthorized` → pass. Then `npx jest` → **84 passing**.
+Run: `npx jest api-client-unauthorized` → pass. Then `npx jest` → **85 passing**.
 Then: `npx tsc --noEmit 2>&1 | grep -E "api/client|stores/auth-notice" || echo "TYPE-CLEAN"` → `TYPE-CLEAN`.
 
 - [ ] **Step 5: Commit**
@@ -937,7 +937,7 @@ and in `run`, replace `setError(errorMessage(e));` with:
 - [ ] **Step 4: GREEN**
 
 Run: `npx jest login.test` → pass. Then `npx jest security.test LinkAccountPrompt.test` → pass.
-Then `npx jest` (full) → **86 passing** (84 + 2 new; the passthrough test was replaced, not added).
+Then `npx jest` (full) → **87 passing** (85 + 2 new; the passthrough test was replaced, not added).
 Then: `npx tsc --noEmit 2>&1 | grep -E "login|LinkAccountPrompt|more/security" || echo "TYPE-CLEAN"` → `TYPE-CLEAN`.
 Then confirm no mapper survives: `grep -rn "function getErrorMessage\|function errorMessage" app components | grep -v node_modules` → **no output**.
 
@@ -1099,7 +1099,7 @@ Replace the whole `if (error) { … }` block with:
 
 - [ ] **Step 4: GREEN**
 
-Run: `npx jest login.test` → pass. Then `npx jest` (full) → **90 passing**.
+Run: `npx jest login.test` → pass. Then `npx jest` (full) → **91 passing**.
 Then: `npx tsc --noEmit 2>&1 | grep -E "api-client|login|TenantGate" || echo "TYPE-CLEAN"` → `TYPE-CLEAN`.
 
 - [ ] **Step 5: Commit**
@@ -1113,9 +1113,9 @@ git commit -m "fix(mobile-admin): explain why a session ended instead of bouncin
 
 ## Final verification
 
-- [ ] `cd apps/mobile-admin && npx jest` → all green (~90).
+- [ ] `cd apps/mobile-admin && npx jest` → all green (~91).
 - [ ] `npx tsc --noEmit` → only the 2 pre-existing `app/(tabs)/_layout.tsx` errors.
-- [ ] `grep -cE "react-native-firebase|google-signin|expo-apple-authentication" packages/mobile-shared/auth/errors.ts` → `0` (the isolation invariant).
+- [ ] `grep -E "^\s*import|require\(" packages/mobile-shared/auth/errors.ts | grep -E "firebase|google-signin|apple-authentication"` → no output (the isolation invariant — check IMPORTS, not mentions; the file header legitimately names the packages in prose).
 - [ ] `grep -rn "function getErrorMessage\|function errorMessage" apps/mobile-admin/app apps/mobile-admin/components` → no output (one mapper only).
 - [ ] `EXPO_PUBLIC_AUTH_BACKEND=demo npx expo config --json | grep -c googleServicesFile` → `0` (demo prebuild stays credential-free).
 - [ ] **Manual (deferred — needs a device build):** cancel the Google sheet → no error shown. Sign in with a Google account that has no merchant record → login explains it.

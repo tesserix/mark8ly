@@ -11,3 +11,73 @@ export class LastSignInMethodError extends Error {
     this.name = "LastSignInMethodError";
   }
 }
+
+/** The user dismissed a native sign-in sheet. Callers show NOTHING. */
+export class AuthCancelledError extends Error {
+  constructor() {
+    super("Sign-in cancelled");
+    this.name = "AuthCancelledError";
+  }
+}
+
+export interface AuthErrorContext {
+  /** Which method the user re-authenticated with. Absent = password. */
+  provider?: "google.com" | "apple.com";
+}
+
+function errorCode(e: unknown): unknown {
+  return typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
+}
+
+/**
+ * The single source of user-facing auth copy.
+ *
+ * Returns `null` ONLY when the user cancelled — callers must render nothing.
+ * Never returns a raw `e.message`: native SDK strings (Swift file paths, GIP
+ * internals) must never reach a user.
+ *
+ * Disambiguation is by TAG, never by code: GIP tenants run email-enumeration
+ * protection, so `auth/wrong-password` never fires and `auth/invalid-credential`
+ * means BOTH "wrong password" AND "expired credential". Only `link.ts`'s
+ * `auth/reauth-failed` tag can tell them apart — which is why no message here
+ * may ever say "expired".
+ */
+export function authErrorMessage(e: unknown, ctx?: AuthErrorContext): string | null {
+  if (e instanceof AuthCancelledError) return null;
+  if (e instanceof LastSignInMethodError) {
+    return "You can't remove your only sign-in method.";
+  }
+
+  const code = errorCode(e);
+
+  // Safety net for a raw Apple error that bypassed the social-auth wrapper.
+  if (code === "ERR_REQUEST_CANCELED") return null;
+
+  if (code === "ERR_REQUEST_UNKNOWN") {
+    return "Couldn't complete Apple sign-in. Make sure you're signed in to iCloud on this device.";
+  }
+  if (code === "auth/reauth-failed") {
+    return ctx?.provider
+      ? "Couldn't verify that account. Try again."
+      : "That password is incorrect.";
+  }
+  if (code === "auth/invalid-credential") {
+    return "Couldn't sign you in. Check your details and try again.";
+  }
+  if (code === "auth/credential-already-in-use") {
+    return "That account is already linked to a different Mark8ly account.";
+  }
+  if (code === "auth/provider-already-linked") {
+    return "That's already linked to your account.";
+  }
+  if (code === "auth/requires-recent-login") {
+    return "For security, sign out and sign in again, then retry.";
+  }
+  if (code === "auth/network-request-failed") {
+    return "No connection. Check your network and try again.";
+  }
+  if (code === "auth/too-many-requests") {
+    return "Too many attempts. Try again in a few minutes.";
+  }
+  return "Something went wrong. Try again.";
+}

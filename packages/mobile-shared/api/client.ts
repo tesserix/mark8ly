@@ -166,7 +166,18 @@ export function createApiClient(config: ApiClientConfig) {
     }
 
     const data = await res.json();
-    if (options?.schema) return options.schema.parse(data);
+    if (options?.schema) {
+      const parsed = options.schema.safeParse(data);
+      if (!parsed.success) {
+        // A contract break must name the field. Silent `undefined` is what let
+        // 31 mismatches hide for two months. 500 (not 401/403) because this is
+        // our bug, not the user's — it must never reach the sign-out paths.
+        const issue = parsed.error.issues[0];
+        const path = issue.path.join(".") || "(root)";
+        throw new ApiError(500, "contract_mismatch", `${path}: ${issue.message}`);
+      }
+      return parsed.data;
+    }
     return data as T;
   }
 

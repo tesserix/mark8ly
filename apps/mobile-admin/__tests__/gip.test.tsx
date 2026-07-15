@@ -41,6 +41,10 @@ jest.mock("@repo/mobile-shared/auth/link", () => ({
   completeLinkWithGoogle: jest.fn().mockResolvedValue(undefined),
   completeLinkWithApple: jest.fn().mockResolvedValue(undefined),
   existingSignInMethods: jest.fn().mockResolvedValue(["password"]),
+  linkedProviderIds: jest.fn().mockResolvedValue(["password"]),
+  linkGoogleToCurrentUser: jest.fn().mockResolvedValue(undefined),
+  linkAppleToCurrentUser: jest.fn().mockResolvedValue(undefined),
+  unlinkProvider: jest.fn().mockResolvedValue(undefined),
 }));
 
 import auth from "@react-native-firebase/auth";

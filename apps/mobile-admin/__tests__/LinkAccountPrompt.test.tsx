@@ -114,6 +114,16 @@ describe("LinkAccountPrompt", () => {
     expect(queryByLabelText("Continue with Google to link")).toBeNull();
   });
 
+  // The only matched method is the provider currently being linked — that
+  // provider can never be offered as its own re-auth option, so this must
+  // fail open to password rather than dead-ending on Cancel only.
+  it("google method equals the provider being linked: falls back to password, not a Google re-auth button", async () => {
+    setAuth({ existingSignInMethods: jest.fn().mockResolvedValue(["google.com"]) });
+    const { getByLabelText, queryByLabelText } = renderPrompt("google.com");
+    await waitFor(() => expect(getByLabelText("Password")).toBeTruthy());
+    expect(queryByLabelText("Continue with Google to link")).toBeNull();
+  });
+
   it("shows an error and stays open when the re-auth fails", async () => {
     setAuth({
       completeLinkWithPassword: jest.fn().mockRejectedValue(new Error("Wrong password")),

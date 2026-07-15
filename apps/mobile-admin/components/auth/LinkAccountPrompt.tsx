@@ -64,21 +64,21 @@ export function LinkAccountPrompt({
     };
   }, [email, existingSignInMethods]);
 
-  // `[]` means enumeration protection hid the answer — offer everything.
-  const enumerationHidden = methods !== null && methods.length === 0;
   const passwordMatches = methods?.includes('password') ?? false;
   const googleMatches = methods?.includes('google.com') ?? false;
   const appleMatches = methods?.includes('apple.com') ?? false;
-  // A non-empty but unrecognized method list (e.g. `["emailLink"]`) would
-  // otherwise render zero controls and dead-end the sheet on Cancel. Treat
-  // that the same as enumeration protection: fail open and offer everything.
-  const noRecognizedMethod =
-    methods !== null &&
-    !enumerationHidden &&
-    !passwordMatches &&
-    !googleMatches &&
-    !appleMatches;
-  const unknown = enumerationHidden || noRecognizedMethod;
+  // `unknown` covers every case where none of the above would actually
+  // render a control — enumeration protection (`[]`), an unrecognized
+  // method list (e.g. `["emailLink"]`), and the case where the only
+  // matched method is the provider currently being linked (which can
+  // never be offered as its own re-auth option). Fail open in all of
+  // them: offer password plus every other provider so the sheet never
+  // dead-ends with just Cancel.
+  const anyControlWouldRender =
+    passwordMatches ||
+    (provider !== 'google.com' && googleMatches) ||
+    (provider !== 'apple.com' && appleMatches);
+  const unknown = methods !== null && !anyControlWouldRender;
   const showPassword = methods === null || unknown || passwordMatches;
   const showGoogle = provider !== 'google.com' && (unknown || googleMatches);
   const showApple = provider !== 'apple.com' && (unknown || appleMatches);

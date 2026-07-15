@@ -16,6 +16,7 @@ import {
 } from "@repo/mobile-shared/support";
 import { secureStoreKV } from "@repo/mobile-shared/support/storage";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
+import { useAuthNoticeStore } from "@repo/mobile-shared/stores/auth-notice";
 import { useEnvironment } from "@repo/mobile-shared/config/env";
 
 import { BackHeader, Screen } from "@/components/ui";
@@ -45,7 +46,13 @@ export default function PlatformSupportScreen() {
         basePath: "/api/v1/mobile/admin/platform-support",
         getToken,
         refreshToken,
-        onUnauthorized: signOut,
+        onUnauthorized: async () => {
+          // The support client can't distinguish reasons (unlike the main
+          // API client's onUnauthorized(reason)) — "no-session" is the
+          // honest value: don't invent an access-denied signal it never saw.
+          useAuthNoticeStore.getState().setNotice("no-session");
+          await signOut();
+        },
         loadSessionToken: () => SecureStore.getItemAsync(SESSION_KEY),
         saveSessionToken: (t) => SecureStore.setItemAsync(SESSION_KEY, t),
       }),

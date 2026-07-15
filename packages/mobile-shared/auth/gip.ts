@@ -12,18 +12,32 @@ export interface GIPAuthConfig {
 
 export function createGIPAuth(config: GIPAuthConfig) {
   const firebaseAuth = auth();
-  firebaseAuth.tenantId = config.tenantId;
+  // @react-native-firebase v22+: `tenantId` is a read-only getter — direct
+  // assignment throws "Proxy set returned false". `setTenantId` sets the JS
+  // field synchronously and propagates to native asynchronously. Await this
+  // before any sign-in so the native session is scoped to the GIP tenant.
+  const tenantReady = firebaseAuth.setTenantId(config.tenantId);
+  // Passive handler so a startup rejection doesn't surface as an unhandled
+  // rejection; sign-in awaiters below still observe any real error.
+  tenantReady.catch(() => {});
 
   return {
-    signIn: (email: string, password: string) =>
-      firebaseAuth.signInWithEmailAndPassword(email, password),
-    signInWithGoogle: (idToken: string, accessToken?: string) =>
-      signInWithGoogleCredential(idToken, accessToken),
-    signInWithApple: (
+    signIn: async (email: string, password: string) => {
+      await tenantReady;
+      return firebaseAuth.signInWithEmailAndPassword(email, password);
+    },
+    signInWithGoogle: async (idToken: string, accessToken?: string) => {
+      await tenantReady;
+      return signInWithGoogleCredential(idToken, accessToken);
+    },
+    signInWithApple: async (
       idToken: string,
       rawNonce: string,
       fullName?: AppleFullName | null,
-    ) => signInWithAppleCredential(idToken, rawNonce, fullName),
+    ) => {
+      await tenantReady;
+      return signInWithAppleCredential(idToken, rawNonce, fullName);
+    },
     signOut: () => firebaseAuth.signOut(),
     getIdToken: async (): Promise<string | null> => {
       const user = firebaseAuth.currentUser;

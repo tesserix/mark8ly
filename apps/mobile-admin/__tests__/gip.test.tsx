@@ -32,8 +32,8 @@ jest.mock("@react-native-firebase/auth", () => {
 });
 
 jest.mock("@repo/mobile-shared/auth/social-credentials", () => ({
-  signInWithGoogleCredential: jest.fn().mockResolvedValue({ user: { uid: "g1" } }),
-  signInWithAppleCredential: jest.fn().mockResolvedValue({ user: { uid: "a1" } }),
+  signInWithGoogleCredential: jest.fn().mockResolvedValue({ status: "signed-in" }),
+  signInWithAppleCredential: jest.fn().mockResolvedValue({ status: "signed-in" }),
 }));
 
 jest.mock("@repo/mobile-shared/auth/link", () => ({

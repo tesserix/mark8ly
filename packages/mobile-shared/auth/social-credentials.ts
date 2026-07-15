@@ -1,4 +1,5 @@
 import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
+import { toByteArray } from "base64-js";
 
 export interface AppleFullName {
   givenName?: string | null;
@@ -22,14 +23,46 @@ export type SocialSignInOutcome =
 
 const ACCOUNT_EXISTS = "auth/account-exists-with-different-credential";
 
-function isAccountExistsConflict(
-  e: unknown,
-): e is { code: string; email?: string } {
+function isAccountExistsConflict(e: unknown): e is { code: string } {
   return (
     typeof e === "object" &&
     e !== null &&
     (e as { code?: unknown }).code === ACCOUNT_EXISTS
   );
+}
+
+/**
+ * Best-effort read of the `email` claim from a provider id_token, used only to
+ * decide which account the user must re-authenticate as. This is a UX hint, not
+ * a trust decision — Firebase validates the token's signature server-side — so
+ * the payload is decoded without verification. Returns "" for any malformed token.
+ */
+function emailFromIdToken(idToken: string): string {
+  try {
+    const payload = idToken.split(".")[1];
+    if (!payload) return "";
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const bytes = toByteArray(padded);
+    // Bytes → UTF-8 string without atob/TextDecoder (neither exists in this RN runtime).
+    const json = decodeURIComponent(
+      Array.from(bytes)
+        .map((b) => "%" + b.toString(16).padStart(2, "0"))
+        .join(""),
+    );
+    const claims: unknown = JSON.parse(json);
+    const email = (claims as { email?: unknown }).email;
+    return typeof email === "string" ? email : "";
+  } catch {
+    return "";
+  }
+}
+
+function needsLinkEmail(idToken: string, e: unknown): string {
+  const fromToken = emailFromIdToken(idToken);
+  if (fromToken) return fromToken;
+  const fromUserInfo = (e as { userInfo?: { email?: unknown } }).userInfo?.email;
+  return typeof fromUserInfo === "string" ? fromUserInfo : "";
 }
 
 export async function signInWithGoogleCredential(
@@ -44,7 +77,7 @@ export async function signInWithGoogleCredential(
     if (isAccountExistsConflict(e)) {
       return {
         status: "needs-link",
-        email: e.email ?? "",
+        email: needsLinkEmail(idToken, e),
         provider: "google.com",
         pendingCredential: cred,
       };
@@ -66,7 +99,7 @@ export async function signInWithAppleCredential(
     if (isAccountExistsConflict(e)) {
       return {
         status: "needs-link",
-        email: e.email ?? "",
+        email: needsLinkEmail(idToken, e),
         provider: "apple.com",
         pendingCredential: cred,
       };

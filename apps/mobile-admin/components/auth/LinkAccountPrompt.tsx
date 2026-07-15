@@ -65,12 +65,23 @@ export function LinkAccountPrompt({
   }, [email, existingSignInMethods]);
 
   // `[]` means enumeration protection hid the answer — offer everything.
-  const unknown = methods !== null && methods.length === 0;
-  const showPassword = methods === null || unknown || methods.includes('password');
-  const showGoogle =
-    provider !== 'google.com' && (unknown || (methods?.includes('google.com') ?? false));
-  const showApple =
-    provider !== 'apple.com' && (unknown || (methods?.includes('apple.com') ?? false));
+  const enumerationHidden = methods !== null && methods.length === 0;
+  const passwordMatches = methods?.includes('password') ?? false;
+  const googleMatches = methods?.includes('google.com') ?? false;
+  const appleMatches = methods?.includes('apple.com') ?? false;
+  // A non-empty but unrecognized method list (e.g. `["emailLink"]`) would
+  // otherwise render zero controls and dead-end the sheet on Cancel. Treat
+  // that the same as enumeration protection: fail open and offer everything.
+  const noRecognizedMethod =
+    methods !== null &&
+    !enumerationHidden &&
+    !passwordMatches &&
+    !googleMatches &&
+    !appleMatches;
+  const unknown = enumerationHidden || noRecognizedMethod;
+  const showPassword = methods === null || unknown || passwordMatches;
+  const showGoogle = provider !== 'google.com' && (unknown || googleMatches);
+  const showApple = provider !== 'apple.com' && (unknown || appleMatches);
 
   async function run(fn: () => Promise<void>) {
     if (busy) return;

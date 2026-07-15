@@ -4,7 +4,6 @@ import {
   signInWithGoogleCredential,
   signInWithAppleCredential,
   type AppleFullName,
-  type SocialSignInOutcome,
 } from "./social-credentials";
 import {
   completeLinkWithPassword,

@@ -103,6 +103,17 @@ describe("LinkAccountPrompt", () => {
     expect(queryByLabelText("Continue with Google to link")).toBeNull();
   });
 
+  // A non-empty but unrecognized method list (e.g. `emailLink`) must not
+  // dead-end the sheet with only Cancel — fail open like enumeration
+  // protection: offer password plus every other provider.
+  it("unrecognized methods ([\"emailLink\"]): falls back to password plus the other providers, not the one being linked", async () => {
+    setAuth({ existingSignInMethods: jest.fn().mockResolvedValue(["emailLink"]) });
+    const { getByLabelText, queryByLabelText } = renderPrompt("google.com");
+    await waitFor(() => expect(getByLabelText("Password")).toBeTruthy());
+    expect(getByLabelText("Continue with Apple to link")).toBeTruthy();
+    expect(queryByLabelText("Continue with Google to link")).toBeNull();
+  });
+
   it("shows an error and stays open when the re-auth fails", async () => {
     setAuth({
       completeLinkWithPassword: jest.fn().mockRejectedValue(new Error("Wrong password")),

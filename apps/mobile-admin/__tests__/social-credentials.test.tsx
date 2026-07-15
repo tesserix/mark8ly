@@ -15,6 +15,7 @@ jest.mock("@react-native-firebase/auth", () => {
   return { __esModule: true, default: authFn };
 });
 
+import { fromByteArray } from "base64-js";
 import auth from "@react-native-firebase/auth";
 import { signInWithGoogleCredential, signInWithAppleCredential } from "@repo/mobile-shared/auth/social-credentials";
 
@@ -23,6 +24,28 @@ const mockedAuth = auth as unknown as {
   GoogleAuthProvider: { credential: jest.Mock };
   AppleAuthProvider: { credential: jest.Mock };
 };
+
+// Builds a syntactically valid (unsigned) JWT carrying the given claims, so
+// the id_token decoding path under test can be exercised end-to-end without
+// a real Firebase/Google/Apple token.
+function makeIdToken(claims: Record<string, unknown>): string {
+  const json = JSON.stringify(claims);
+  const bytes = Uint8Array.from(Array.from(json).map((c) => c.charCodeAt(0)));
+  const b64url = fromByteArray(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `header.${b64url}.sig`;
+}
+
+// This is the REAL React Native Firebase error shape: `code` + `message` +
+// `userInfo`. Critically, there is NO `email` property — RNFirebase never
+// puts one on the rejection. A fixture that invented `email` would hide the
+// exact bug this suite guards against.
+function accountExistsConflict(userInfo?: Record<string, unknown>) {
+  return Object.assign(new Error("account exists"), {
+    code: "auth/account-exists-with-different-credential",
+    nativeErrorMessage: "account exists with different credential",
+    userInfo,
+  });
+}
 
 it("maps a Google id_token to a GIP credential sign-in", async () => {
   await signInWithGoogleCredential("gtok");
@@ -41,37 +64,61 @@ it("returns signed-in when the credential sign-in succeeds", async () => {
   expect(outcome).toEqual({ status: "signed-in" });
 });
 
-it("maps an account-exists conflict to needs-link with the pending credential (google)", async () => {
-  const conflict = Object.assign(
-    new Error("account exists"),
-    { code: "auth/account-exists-with-different-credential", email: "merchant@store.com" },
-  );
-  mockedAuth().signInWithCredential.mockRejectedValueOnce(conflict);
+it("maps an account-exists conflict to needs-link, deriving email from the id_token claim (google)", async () => {
+  const gtok = makeIdToken({ email: "merchant@store.com" });
+  mockedAuth().signInWithCredential.mockRejectedValueOnce(accountExistsConflict());
 
-  const outcome = await signInWithGoogleCredential("gtok");
+  const outcome = await signInWithGoogleCredential(gtok);
 
   expect(outcome).toEqual({
     status: "needs-link",
     email: "merchant@store.com",
     provider: "google.com",
-    pendingCredential: { provider: "google", idToken: "gtok" },
+    pendingCredential: { provider: "google", idToken: gtok },
   });
 });
 
-it("maps an account-exists conflict to needs-link (apple)", async () => {
-  const conflict = Object.assign(
-    new Error("account exists"),
-    { code: "auth/account-exists-with-different-credential", email: "merchant@store.com" },
-  );
-  mockedAuth().signInWithCredential.mockRejectedValueOnce(conflict);
+it("maps an account-exists conflict to needs-link, deriving email from the id_token claim (apple)", async () => {
+  const atok = makeIdToken({ email: "merchant@store.com" });
+  mockedAuth().signInWithCredential.mockRejectedValueOnce(accountExistsConflict());
 
-  const outcome = await signInWithAppleCredential("atok", "nonce123", null);
+  const outcome = await signInWithAppleCredential(atok, "nonce123", null);
 
   expect(outcome).toEqual({
     status: "needs-link",
     email: "merchant@store.com",
     provider: "apple.com",
-    pendingCredential: { provider: "apple", idToken: "atok", nonce: "nonce123" },
+    pendingCredential: { provider: "apple", idToken: atok, nonce: "nonce123" },
+  });
+});
+
+it("falls back to userInfo.email when the id_token carries no email claim", async () => {
+  const gtok = makeIdToken({ sub: "12345" });
+  mockedAuth().signInWithCredential.mockRejectedValueOnce(
+    accountExistsConflict({ email: "fallback@store.com" }),
+  );
+
+  const outcome = await signInWithGoogleCredential(gtok);
+
+  expect(outcome).toEqual({
+    status: "needs-link",
+    email: "fallback@store.com",
+    provider: "google.com",
+    pendingCredential: { provider: "google", idToken: gtok },
+  });
+});
+
+it("resolves to an empty email (not a throw) when neither the id_token nor userInfo carries one", async () => {
+  const gtok = makeIdToken({ sub: "12345" });
+  mockedAuth().signInWithCredential.mockRejectedValueOnce(accountExistsConflict());
+
+  const outcome = await signInWithGoogleCredential(gtok);
+
+  expect(outcome).toEqual({
+    status: "needs-link",
+    email: "",
+    provider: "google.com",
+    pendingCredential: { provider: "google", idToken: gtok },
   });
 });
 

@@ -79,6 +79,8 @@ describe("account linking", () => {
       idToken: "existing-atok",
       nonce: "nonce",
     });
+    const linked = await instance.signInWithCredential.mock.results[0]!.value;
+    expect(linked.user.linkWithCredential).toHaveBeenCalledWith(PENDING);
   });
 
   it("existingSignInMethods returns the native result", async () => {

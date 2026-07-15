@@ -14,6 +14,15 @@
 // modules and blows up under jest. Force both packages back to this app's
 // local install so jest.mock("@react-native-firebase/auth", ...) in tests
 // actually intercepts the module the source code imports.
+// Same class of bug again, but for `react`: `zustand` exists ONLY at the
+// monorepo root (packages/mobile-shared has no node_modules at all), and the
+// root's React (19.2.5) is a different physical copy than this app's local
+// React (19.2.3). At runtime metro resolves zustand's `require('react')` to
+// this app's copy first, so there's no bug in the running app — but jest's
+// resolver walks zustand's require up to the hoisted root copy, producing
+// two live Reacts in the same render tree and breaking hooks
+// ("Cannot read properties of null (reading 'useCallback')") in any
+// zustand-backed component. Pin `react` the same way as above.
 module.exports = {
   preset: 'jest-expo',
   moduleNameMapper: {
@@ -23,5 +32,7 @@ module.exports = {
     '^@react-native-firebase/auth/(.*)$': '<rootDir>/node_modules/@react-native-firebase/auth/$1',
     '^@react-native-firebase/app$': '<rootDir>/node_modules/@react-native-firebase/app',
     '^@react-native-firebase/app/(.*)$': '<rootDir>/node_modules/@react-native-firebase/app/$1',
+    '^react$': '<rootDir>/node_modules/react',
+    '^react/(.*)$': '<rootDir>/node_modules/react/$1',
   },
 };

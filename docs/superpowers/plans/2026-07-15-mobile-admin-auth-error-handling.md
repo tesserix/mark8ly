@@ -45,7 +45,7 @@
 | `packages/mobile-shared/api/client.ts` | **modify** — `onUnauthorized(reason)`, fix bogus `"Session expired"`. |
 | `apps/mobile-admin/lib/api-client.ts` | **modify** — set notice before `signOut()`. |
 | `apps/mobile-admin/app/login.tsx` | **modify** — adopt mapper; render + clear notice. |
-| `apps/mobile-admin/components/auth/LinkAccountPrompt.tsx` | **modify** — adopt mapper with `ctx.provider` on social re-auth. |
+| `apps/mobile-admin/components/auth/LinkAccountPrompt.tsx` | **modify** — adopt mapper with `ctx.provider` on social re-auth. Its test also asserts raw passthrough — see Step 1a-ii. |
 | `apps/mobile-admin/app/(tabs)/more/security.tsx` | **modify** — delete local `errorMessage`, adopt mapper. |
 | `apps/mobile-admin/components/TenantGate.tsx` | **modify** — 403 → access copy, no retry button. |
 
@@ -808,6 +808,51 @@ in place with a test that proves *mapping*:
     expect(queryByText('INVALID_LOGIN_CREDENTIALS')).toBeNull();
   });
 ```
+
+- [ ] **Step 1a-ii: REPLACE the SECOND passthrough-asserting test**
+
+`apps/mobile-admin/__tests__/LinkAccountPrompt.test.tsx:127-137` contains the *same* trap:
+
+```tsx
+  it("shows an error and stays open when the re-auth fails", async () => {
+    setAuth({
+      completeLinkWithPassword: jest.fn().mockRejectedValue(new Error("Wrong password")),
+    });
+    …
+    expect(await findByText("Wrong password")).toBeTruthy();
+    expect(onLinked).not.toHaveBeenCalled();
+  });
+```
+
+Replace it in place, using the shape the re-auth path now actually produces (Task 3 tags it
+`auth/reauth-failed`; the password path passes no context, so the mapper yields "That password is
+incorrect."). Keep the `onLinked` assertion — "stays open" is the part worth preserving:
+
+```tsx
+  it("shows mapped copy — never the raw message — and stays open when the re-auth fails", async () => {
+    setAuth({
+      completeLinkWithPassword: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error("INVALID_LOGIN_CREDENTIALS"), { code: "auth/reauth-failed" }),
+        ),
+    });
+    const { getByLabelText, findByText, queryByText, onLinked } = renderPrompt();
+    await waitFor(() => expect(getByLabelText("Password")).toBeTruthy());
+    fireEvent.changeText(getByLabelText("Password"), "nope");
+    fireEvent.press(getByLabelText("Sign in and link"));
+    expect(await findByText("That password is incorrect.")).toBeTruthy();
+    expect(queryByText("INVALID_LOGIN_CREDENTIALS")).toBeNull();
+    expect(onLinked).not.toHaveBeenCalled();
+  });
+```
+
+This is the stronger test: it proves Task 1 + Task 3 + Task 5 compose end-to-end through the
+component. Both replacements are REPLACEMENTS, not additions — the suite total stays 87.
+
+> Swept 2026-07-15: these two are the ONLY tests asserting raw passthrough. `security.test.tsx:73`
+> and `:149` use `mockRejectedValue(new Error("network down"))` but assert the mount effect's fixed
+> "Couldn't load your sign-in methods." copy, which never goes through the mapper — unaffected.
 
 - [ ] **Step 1b: Add the new failing tests**
 

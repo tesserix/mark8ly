@@ -6,6 +6,7 @@ import {
   ExternalLink,
   LifeBuoy,
   Settings,
+  ShieldCheck,
   UserRound,
 } from "lucide-react-native";
 import { useNotifications } from "../../../lib/hooks/use-notifications";
@@ -81,6 +82,13 @@ export default function MoreScreen() {
           label="Account"
           accessibilityLabel="Account settings"
           onPress={() => router.push("/(tabs)/more/account")}
+        />
+        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
+        <Row
+          icon={<ShieldCheck size={18} color={theme.colors.text} strokeWidth={1.75} />}
+          label="Security"
+          accessibilityLabel="Security and sign-in methods"
+          onPress={() => router.push("/(tabs)/more/security")}
         />
         <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
         <Row

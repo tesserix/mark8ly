@@ -140,7 +140,11 @@ function customerDetail(id: string): CustomerDetail {
 // Match the raw path the hooks pass (e.g. "/dashboard", "/orders", "/orders/o-1001").
 function resolve(path: string): unknown {
   const clean = path.split("?")[0]!.replace(/\/+$/, "");
-  if (clean === "/stores") return [DEMO_STORE];
+  // Must mirror the real API's wire shape: /stores returns { data } with no
+  // meta (unlike the paginated list endpoints below, which use page()).
+  // Do not "simplify" this back to a bare array — see storesResponseSchema
+  // in use-store.ts, which reads res.data and would break on undefined.
+  if (clean === "/stores") return { data: [DEMO_STORE] };
   if (clean === "/dashboard") return DEMO_DASHBOARD;
 
   const orderId = clean.match(/^\/orders\/(.+)$/);

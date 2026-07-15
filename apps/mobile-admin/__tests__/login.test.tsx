@@ -4,43 +4,6 @@ import { signInWithGoogleNative } from '@/lib/social-auth';
 import { AuthCancelledError } from '@repo/mobile-shared/auth/errors';
 import { useAuthNoticeStore } from '@repo/mobile-shared/stores/auth-notice';
 
-// The monorepo hoists `zustand` (and the `react` it requires) to the repo
-// root, at a different react version than this app's local install. Any
-// zustand store rendered through a component in this app's tests hits two
-// live React copies and crashes with "Cannot read properties of null
-// (reading 'useCallback')". Swap in a minimal `create()` built on this
-// test file's own `useSyncExternalStore` so `@repo/mobile-shared/stores/
-// auth-notice` (unmocked, real module) works under jest without touching
-// jest.config.js's moduleNameMapper.
-jest.mock('zustand', () => {
-  const { useSyncExternalStore } = require('react');
-  function isUpdater(value: unknown): value is (current: unknown) => unknown {
-    return typeof value === 'function';
-  }
-  function create(initializer: (set: (partial: unknown) => void, get: () => unknown) => unknown) {
-    let state: unknown;
-    const listeners = new Set<() => void>();
-    function setState(partial: unknown): void {
-      const next = isUpdater(partial) ? partial(state) : partial;
-      state = { ...(state as object), ...(next as object) };
-      listeners.forEach((listener) => listener());
-    }
-    function getState(): unknown {
-      return state;
-    }
-    function subscribe(listener: () => void): () => void {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    }
-    state = initializer(setState, getState);
-    function useBoundStore(selector?: (current: unknown) => unknown) {
-      return useSyncExternalStore(subscribe, () => (selector ? selector(getState()) : getState()));
-    }
-    return Object.assign(useBoundStore, { getState, setState, subscribe });
-  }
-  return { create };
-});
-
 const mockSignIn = jest.fn();
 const mockAuth: Record<string, unknown> = {};
 

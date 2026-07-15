@@ -1,8 +1,8 @@
 import type { createApiClient } from "./client";
-import type { DashboardResponse } from "./types";
+import { dashboardResponseSchema } from "./schemas/dashboard";
 
 export function createDashboardApi(client: ReturnType<typeof createApiClient>) {
   return {
-    get: () => client.get<DashboardResponse>("/dashboard"),
+    get: () => client.get("/dashboard", undefined, dashboardResponseSchema),
   };
 }

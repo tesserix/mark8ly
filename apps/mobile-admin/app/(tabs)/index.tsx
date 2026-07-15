@@ -188,11 +188,11 @@ export default function DashboardScreen() {
                 {data.top_products.map((p, i) => (
                   <RowWrapper key={p.id} divider={i > 0}>
                     <ListRow
-                      primary={p.name}
-                      secondary={`${p.total_sold} sold`}
+                      primary={p.title}
+                      secondary={`${p.units_sold} sold`}
                       trailing={formatCurrency(p.revenue)}
                       onPress={() => router.push(`/(tabs)/products/${p.id}`)}
-                      accessibilityLabel={`${p.name}, ${p.total_sold} sold, ${formatCurrency(p.revenue)} revenue`}
+                      accessibilityLabel={`${p.title}, ${p.units_sold} sold, ${formatCurrency(p.revenue)} revenue`}
                     />
                   </RowWrapper>
                 ))}
@@ -235,11 +235,11 @@ function RecentOrderRow({
 function LowStockRow({ item, onPress }: { item: LowStockItem; onPress: () => void }) {
   return (
     <ListRow
-      primary={item.name}
-      trailing={`${item.stock} left`}
+      primary={item.title}
+      trailing={`${item.quantity} left`}
       trailingTone="danger"
       onPress={onPress}
-      accessibilityLabel={`${item.name}, ${item.stock} left in stock`}
+      accessibilityLabel={`${item.title}, ${item.quantity} left in stock`}
     />
   );
 }

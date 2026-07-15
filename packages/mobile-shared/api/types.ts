@@ -5,59 +5,28 @@ export interface PaginatedResponse<T> {
   has_more: boolean;
 }
 
-export interface DashboardStats {
-  revenue_today: number;
-  revenue_week: number;
-  revenue_month: number;
-  revenue_change_pct: number;
-  revenue_trend: number[];
-  orders_today: number;
-  orders_pending: number;
-  orders_fulfilled: number;
-  orders_cancelled: number;
-  customers_total: number;
-  customers_new_this_week: number;
-  pending_reviews: number;
-}
+// Re-exported from the schema module so types can never drift from validation
+// again. The hand-written versions invented `name`/`total_sold`/`stock` and a
+// 5-field setup checklist; the wire has `title`/`units_sold`/`quantity` and 8.
+// Imported (not just re-exported) because CustomerDetail below references
+// RecentOrder locally — a bare `export type {} from` does not bind the name.
+import type {
+  DashboardStats,
+  RecentOrder,
+  TopProduct,
+  LowStockItem,
+  SetupChecklist,
+  DashboardResponse,
+} from "./schemas/dashboard";
 
-export interface RecentOrder {
-  id: string;
-  order_number: string;
-  customer_email: string;
-  grand_total: number;
-  status: string;
-  created_at: string;
-}
-
-export interface TopProduct {
-  id: string;
-  name: string;
-  total_sold: number;
-  revenue: number;
-}
-
-export interface LowStockItem {
-  id: string;
-  name: string;
-  stock: number;
-  thumbnail_url: string | null;
-}
-
-export interface SetupChecklist {
-  has_products: boolean;
-  has_payment: boolean;
-  has_shipping: boolean;
-  has_domain: boolean;
-  has_branding: boolean;
-}
-
-export interface DashboardResponse {
-  stats: DashboardStats;
-  recent_orders: RecentOrder[];
-  top_products: TopProduct[];
-  low_stock: LowStockItem[];
-  setup_checklist: SetupChecklist;
-}
+export type {
+  DashboardStats,
+  RecentOrder,
+  TopProduct,
+  LowStockItem,
+  SetupChecklist,
+  DashboardResponse,
+};
 
 export interface Order {
   id: string;

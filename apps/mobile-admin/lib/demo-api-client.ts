@@ -79,16 +79,27 @@ const DEMO_DASHBOARD: DashboardResponse = {
     created_at: o.created_at,
   })),
   top_products: [
-    { id: "p-1", name: "Linen Camp Shirt", total_sold: 86, revenue: 765400 },
-    { id: "p-2", name: "Merino Beanie", total_sold: 54, revenue: 210600 },
+    { id: "p-1", title: "Linen Camp Shirt", units_sold: 86, revenue: 765400, image_url: null },
+    { id: "p-2", title: "Merino Beanie", units_sold: 54, revenue: 210600, image_url: null },
   ],
-  low_stock: [{ id: "p-2", name: "Merino Beanie", stock: 7, thumbnail_url: null }],
+  low_stock: [
+    {
+      id: "p-2",
+      title: "Merino Beanie",
+      variant_title: "One Size",
+      quantity: 7,
+      low_stock_threshold: 10,
+    },
+  ],
   setup_checklist: {
-    has_products: true,
-    has_payment: true,
-    has_shipping: true,
-    has_domain: false,
-    has_branding: true,
+    has_store: true,
+    has_brand_assets: true,
+    has_product: true,
+    has_storefront_theme: true,
+    has_payment_provider: true,
+    has_shipping_carrier: true,
+    has_return_policy: false,
+    has_custom_domain: false,
   },
 };
 

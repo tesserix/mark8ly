@@ -14,13 +14,20 @@ jest.mock('@/lib/social-auth', () => ({
   signInWithAppleNative: jest.fn().mockResolvedValue({ idToken: 'atok', rawNonce: '', fullName: null }),
 }));
 
+jest.mock('../components/auth/LinkAccountPrompt', () => ({
+  LinkAccountPrompt: ({ email }: { email: string }) => {
+    const { Text } = require('react-native');
+    return <Text testID="link-prompt">{`link:${email}`}</Text>;
+  },
+}));
+
 function mockUseAuth(overrides: Record<string, unknown> = {}) {
   Object.assign(
     mockAuth,
     {
       signIn: mockSignIn,
-      signInWithGoogle: jest.fn().mockResolvedValue(undefined),
-      signInWithApple: jest.fn().mockResolvedValue(undefined),
+      signInWithGoogle: jest.fn().mockResolvedValue({ status: 'signed-in' }),
+      signInWithApple: jest.fn().mockResolvedValue({ status: 'signed-in' }),
       loading: false,
     },
     overrides,
@@ -82,7 +89,7 @@ describe('LoginScreen', () => {
   });
 
   it('signs in with Google when the Google button is pressed', async () => {
-    const signInWithGoogle = jest.fn().mockResolvedValue(undefined);
+    const signInWithGoogle = jest.fn().mockResolvedValue({ status: 'signed-in' });
     mockUseAuth({ signInWithGoogle });
     const { getByLabelText } = render(<LoginScreen />);
     fireEvent.press(getByLabelText('Continue with Google'));
@@ -90,10 +97,32 @@ describe('LoginScreen', () => {
   });
 
   it('signs in with Apple when the Apple button is pressed', async () => {
-    const signInWithApple = jest.fn().mockResolvedValue(undefined);
+    const signInWithApple = jest.fn().mockResolvedValue({ status: 'signed-in' });
     mockUseAuth({ signInWithApple });
     const { getByLabelText } = render(<LoginScreen />);
     fireEvent.press(getByLabelText('Sign in with Apple'));
     await waitFor(() => expect(signInWithApple).toHaveBeenCalledWith('atok', '', null));
+  });
+
+  it('opens the link prompt when Google sign-in needs linking', async () => {
+    const signInWithGoogle = jest.fn().mockResolvedValue({
+      status: 'needs-link',
+      email: 'merchant@store.com',
+      provider: 'google.com',
+      pendingCredential: { provider: 'google', idToken: 'gtok' },
+    });
+    mockUseAuth({ signInWithGoogle });
+    const { getByLabelText, findByTestId } = render(<LoginScreen />);
+    fireEvent.press(getByLabelText('Continue with Google'));
+    expect(await findByTestId('link-prompt')).toBeTruthy();
+  });
+
+  it('does not open the link prompt on a normal signed-in outcome', async () => {
+    const signInWithGoogle = jest.fn().mockResolvedValue({ status: 'signed-in' });
+    mockUseAuth({ signInWithGoogle });
+    const { getByLabelText, queryByTestId } = render(<LoginScreen />);
+    fireEvent.press(getByLabelText('Continue with Google'));
+    await waitFor(() => expect(signInWithGoogle).toHaveBeenCalled());
+    expect(queryByTestId('link-prompt')).toBeNull();
   });
 });

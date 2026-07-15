@@ -2,10 +2,14 @@ import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@repo/mobile-shared/auth/provider';
+import type { SocialSignInOutcome } from '@repo/mobile-shared/auth/social-credentials';
 import { configureGoogleSignin, signInWithAppleNative, signInWithGoogleNative } from '@/lib/social-auth';
+import { LinkAccountPrompt } from '../components/auth/LinkAccountPrompt';
 import { Text } from '../components/ui/Text';
 
 const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
+
+type LinkTarget = Extract<SocialSignInOutcome, { status: 'needs-link' }>;
 
 function getErrorMessage(e: unknown): string {
   return e instanceof Error && e.message
@@ -19,6 +23,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linkTarget, setLinkTarget] = useState<LinkTarget | null>(null);
 
   async function handleSignIn() {
     if (submitting) return;
@@ -38,13 +43,15 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
+      let outcome: SocialSignInOutcome;
       if (DEMO_AUTH) {
-        await signInWithGoogle('demo-google-token');
+        outcome = await signInWithGoogle('demo-google-token');
       } else {
         configureGoogleSignin();
         const idToken = await signInWithGoogleNative();
-        await signInWithGoogle(idToken);
+        outcome = await signInWithGoogle(idToken);
       }
+      if (outcome.status === 'needs-link') setLinkTarget(outcome);
     } catch (e: unknown) {
       setError(getErrorMessage(e));
     } finally {
@@ -57,12 +64,14 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
+      let outcome: SocialSignInOutcome;
       if (DEMO_AUTH) {
-        await signInWithApple('demo-apple-token', '', null);
+        outcome = await signInWithApple('demo-apple-token', '', null);
       } else {
         const { idToken, rawNonce, fullName } = await signInWithAppleNative();
-        await signInWithApple(idToken, rawNonce, fullName);
+        outcome = await signInWithApple(idToken, rawNonce, fullName);
       }
+      if (outcome.status === 'needs-link') setLinkTarget(outcome);
     } catch (e: unknown) {
       setError(getErrorMessage(e));
     } finally {
@@ -155,6 +164,17 @@ export default function LoginScreen() {
             Sign in with Apple
           </Text>
         </Pressable>
+
+        {linkTarget ? (
+          <LinkAccountPrompt
+            visible
+            email={linkTarget.email}
+            provider={linkTarget.provider}
+            pendingCredential={linkTarget.pendingCredential}
+            onCancel={() => setLinkTarget(null)}
+            onLinked={() => setLinkTarget(null)}
+          />
+        ) : null}
       </View>
     </SafeAreaView>
   );

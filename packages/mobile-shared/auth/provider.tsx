@@ -51,6 +51,10 @@ interface AuthState {
     pending: FirebaseAuthTypes.AuthCredential,
   ) => Promise<void>;
   existingSignInMethods: (email: string) => Promise<string[]>;
+  linkedProviderIds: () => Promise<string[]>;
+  linkGoogleToCurrentUser: (idToken: string) => Promise<void>;
+  linkAppleToCurrentUser: (idToken: string, rawNonce: string) => Promise<void>;
+  unlinkProvider: (providerId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -92,6 +96,10 @@ interface AuthBackend {
     pending: FirebaseAuthTypes.AuthCredential,
   ) => Promise<void>;
   existingSignInMethods: (email: string) => Promise<string[]>;
+  linkedProviderIds: () => Promise<string[]>;
+  linkGoogleToCurrentUser: (idToken: string) => Promise<void>;
+  linkAppleToCurrentUser: (idToken: string, rawNonce: string) => Promise<void>;
+  unlinkProvider: (providerId: string) => Promise<void>;
 }
 
 /** True when running inside the public Expo Go shell (no custom native modules). */
@@ -157,6 +165,10 @@ function createDemoBackend(): AuthBackend {
     completeLinkWithGoogle: async () => {},
     completeLinkWithApple: async () => {},
     existingSignInMethods: async () => [],
+    linkedProviderIds: async () => ["password"],
+    linkGoogleToCurrentUser: async () => {},
+    linkAppleToCurrentUser: async () => {},
+    unlinkProvider: async () => {},
   };
 }
 
@@ -194,6 +206,10 @@ function createFirebaseBackend(tenantId: string): AuthBackend {
     completeLinkWithApple: (appleIdToken, rawNonce, pending) =>
       gip.completeLinkWithApple(appleIdToken, rawNonce, pending),
     existingSignInMethods: (email) => gip.existingSignInMethods(email),
+    linkedProviderIds: () => gip.linkedProviderIds(),
+    linkGoogleToCurrentUser: (idToken) => gip.linkGoogleToCurrentUser(idToken),
+    linkAppleToCurrentUser: (idToken, rawNonce) => gip.linkAppleToCurrentUser(idToken, rawNonce),
+    unlinkProvider: (providerId) => gip.unlinkProvider(providerId),
   };
 }
 
@@ -255,6 +271,15 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
 
   const existingSignInMethods = (email: string) => backend.existingSignInMethods(email);
 
+  const linkedProviderIds = () => backend.linkedProviderIds();
+
+  const linkGoogleToCurrentUser = (idToken: string) => backend.linkGoogleToCurrentUser(idToken);
+
+  const linkAppleToCurrentUser = (idToken: string, rawNonce: string) =>
+    backend.linkAppleToCurrentUser(idToken, rawNonce);
+
+  const unlinkProvider = (providerId: string) => backend.unlinkProvider(providerId);
+
   return (
     <AuthContext.Provider
       value={{
@@ -270,6 +295,10 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
         completeLinkWithGoogle,
         completeLinkWithApple,
         existingSignInMethods,
+        linkedProviderIds,
+        linkGoogleToCurrentUser,
+        linkAppleToCurrentUser,
+        unlinkProvider,
       }}
     >
       {children}

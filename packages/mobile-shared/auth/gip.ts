@@ -10,6 +10,10 @@ import {
   completeLinkWithGoogle,
   completeLinkWithApple,
   existingSignInMethods,
+  linkedProviderIds,
+  linkGoogleToCurrentUser,
+  linkAppleToCurrentUser,
+  unlinkProvider,
 } from "./link";
 
 export type { SocialSignInOutcome } from "./social-credentials";
@@ -72,6 +76,22 @@ export function createGIPAuth(config: GIPAuthConfig) {
     existingSignInMethods: async (email: string) => {
       await tenantReady;
       return existingSignInMethods(email);
+    },
+    linkedProviderIds: async () => {
+      await tenantReady;
+      return linkedProviderIds();
+    },
+    linkGoogleToCurrentUser: async (idToken: string) => {
+      await tenantReady;
+      return linkGoogleToCurrentUser(idToken);
+    },
+    linkAppleToCurrentUser: async (idToken: string, rawNonce: string) => {
+      await tenantReady;
+      return linkAppleToCurrentUser(idToken, rawNonce);
+    },
+    unlinkProvider: async (providerId: string) => {
+      await tenantReady;
+      return unlinkProvider(providerId);
     },
     signOut: () => firebaseAuth.signOut(),
     getIdToken: async (): Promise<string | null> => {

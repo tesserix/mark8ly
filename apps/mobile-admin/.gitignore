@@ -16,3 +16,4 @@ web-build/
 
 # Firebase config (gitignored - injected via GOOGLE_SERVICES_PLIST or provided locally)
 GoogleService-Info.plist
+google-services.json

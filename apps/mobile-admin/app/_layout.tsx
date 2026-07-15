@@ -15,13 +15,21 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { AuthProvider, useAuth } from '@repo/mobile-shared/auth/provider';
 import { useTenantStore } from '@repo/mobile-shared/stores/tenant-store';
+import { ApiError } from '@repo/mobile-shared/api/client';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { fontMap } from '../lib/fonts';
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 30_000, retry: 2 } },
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: (failureCount, error) =>
+        !(error instanceof ApiError && error.code === 'contract_mismatch') &&
+        failureCount < 2,
+    },
+  },
 });
 
 function AuthGate() {

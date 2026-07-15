@@ -46,4 +46,14 @@ describe("contract mismatch", () => {
       top_products: [{ units_sold: 2 }],
     });
   });
+
+  it("logs the diagnosis, including the request path, before throwing", async () => {
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+    const client = clientReturning({ top_products: [{}] });
+    await expect(client.get("/dashboard", undefined, schema)).rejects.toBeInstanceOf(ApiError);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[api] contract mismatch on /dashboard: top_products.0.units_sold: Invalid input: expected number, received undefined",
+    );
+    consoleError.mockRestore();
+  });
 });

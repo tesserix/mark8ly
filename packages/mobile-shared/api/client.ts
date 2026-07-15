@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+/**
+ * Why a request was rejected as unauthenticated.
+ *
+ * - `no-session`   — no token, or the refresh could not mint one.
+ * - `access-denied` — a FRESHLY minted token was still rejected. The token is
+ *   valid; the server is refusing this identity. This is NOT expiry.
+ */
+export type UnauthorizedReason = "no-session" | "access-denied";
+
 export interface ApiClientConfig {
   baseUrl: string;
   /** Returns the cached GIP id_token, or null when signed out. */
@@ -15,7 +24,7 @@ export interface ApiClientConfig {
    * Called when the API rejects the (possibly refreshed) token with a
    * 401. The caller normally signs the user out and routes back to /login.
    */
-  onUnauthorized?: () => void | Promise<void>;
+  onUnauthorized?: (reason: UnauthorizedReason) => void | Promise<void>;
   /**
    * Called when the API rejects a request scoped to the current active
    * store with 403/404 (membership revoked, store deleted, etc.). The
@@ -82,7 +91,7 @@ export function createApiClient(config: ApiClientConfig) {
     const token = await config.getToken();
     if (!token) {
       // No token at all — surface immediately so the caller can route to /login.
-      await config.onUnauthorized?.();
+      await config.onUnauthorized?.("no-session");
       throw new ApiError(401, "unauthorized", "Not authenticated");
     }
 
@@ -95,8 +104,15 @@ export function createApiClient(config: ApiClientConfig) {
         res = await send(refreshed, init);
       }
       if (res.status === 401) {
-        await config.onUnauthorized?.();
-        throw new ApiError(401, "unauthorized", "Session expired");
+        // A fresh token that is STILL rejected is not expiry — the server is
+        // refusing this identity. Only a failed refresh means "session gone".
+        const reason: UnauthorizedReason = refreshed ? "access-denied" : "no-session";
+        await config.onUnauthorized?.(reason);
+        throw new ApiError(
+          401,
+          "unauthorized",
+          refreshed ? "Access denied" : "Session expired",
+        );
       }
     }
 

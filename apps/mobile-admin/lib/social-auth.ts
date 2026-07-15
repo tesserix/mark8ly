@@ -1,5 +1,6 @@
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import * as AppleAuthentication from "expo-apple-authentication";
+import { AuthCancelledError } from "@repo/mobile-shared/auth/errors";
 import type { AppleFullName } from "@repo/mobile-shared/auth/social-credentials";
 
 let configured = false;
@@ -20,9 +21,14 @@ export function configureGoogleSignin(): void {
 export async function signInWithGoogleNative(): Promise<string> {
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
   const result = (await GoogleSignin.signIn()) as {
+    type?: string;
     data?: { idToken?: string | null };
     idToken?: string | null;
   };
+  // The SDK RESOLVES with {type:"cancelled"} rather than rejecting, so a
+  // cancel would otherwise fall through to the "no ID token" throw below and
+  // be shown to the user as a failure.
+  if (result?.type === "cancelled") throw new AuthCancelledError();
   const idToken = result?.data?.idToken ?? result?.idToken;
   if (!idToken) throw new Error("Google sign-in failed: no ID token");
   return idToken;
@@ -33,12 +39,19 @@ export async function signInWithAppleNative(): Promise<{
   rawNonce: string;
   fullName: AppleFullName | null;
 }> {
-  const cred = await AppleAuthentication.signInAsync({
-    requestedScopes: [
-      AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-      AppleAuthentication.AppleAuthenticationScope.EMAIL,
-    ],
-  });
+  let cred: AppleAuthentication.AppleAuthenticationCredential;
+  try {
+    cred = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+  } catch (e: unknown) {
+    const code = typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
+    if (code === "ERR_REQUEST_CANCELED") throw new AuthCancelledError();
+    throw e;
+  }
   if (!cred.identityToken) throw new Error("Apple sign-in failed: no identity token");
   // Home-Chef passes an empty rawNonce (GIP verifies Apple's token without a
   // client nonce in their setup); keep parity. Revisit if GIP rejects it in 1b.

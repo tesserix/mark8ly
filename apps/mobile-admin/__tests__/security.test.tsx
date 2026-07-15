@@ -52,6 +52,7 @@ jest.mock("react-native-safe-area-context", () => {
 
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { LastSignInMethodError } from "@repo/mobile-shared/auth/link";
+import { configureGoogleSignin } from "@/lib/social-auth";
 import SecurityScreen from "../app/(tabs)/more/security";
 
 function setAuth(overrides: Record<string, unknown> = {}) {
@@ -80,9 +81,27 @@ describe("SecurityScreen", () => {
     expect(getByLabelText("Link Apple")).toBeTruthy();
   });
 
+  it("shows an error and withholds actions when the initial load fails", async () => {
+    setAuth({ linkedProviderIds: jest.fn().mockRejectedValue(new Error("network down")) });
+    const { findByText, queryByLabelText, queryByText } = render(<SecurityScreen />);
+    // `[]` is indistinguishable from "loaded, nothing connected" — a failed
+    // load must surface an error and leave rows in the no-action state, not
+    // falsely render "Not connected".
+    expect(await findByText(/couldn't load your sign-in methods/i)).toBeTruthy();
+    expect(queryByLabelText("Link Google")).toBeNull();
+    expect(queryByLabelText("Link Apple")).toBeNull();
+    expect(queryByLabelText("Remove Password")).toBeNull();
+    expect(queryByText("Not connected")).toBeNull();
+  });
+
   it("links Google via the native flow then refreshes", async () => {
     const { getByLabelText } = render(<SecurityScreen />);
     await waitFor(() => expect(getByLabelText("Link Google")).toBeTruthy());
+    // Regression guard: configureGoogleSignin() throws when the env client id
+    // is empty, and a sync throw in a useEffect would hit the RootLayout
+    // ErrorBoundary. It must never run at mount — only lazily, inside the
+    // link handler, and only once per press.
+    expect(configureGoogleSignin).not.toHaveBeenCalled();
     fireEvent.press(getByLabelText("Link Google"));
     await waitFor(() =>
       expect(mockAuth.linkGoogleToCurrentUser).toHaveBeenCalledWith("gtok"),
@@ -90,6 +109,7 @@ describe("SecurityScreen", () => {
     await waitFor(() =>
       expect((mockAuth.linkedProviderIds as jest.Mock).mock.calls.length).toBeGreaterThan(1),
     );
+    expect(configureGoogleSignin).toHaveBeenCalledTimes(1);
   });
 
   it("links Apple via the native flow (Hide-My-Email path)", async () => {
@@ -109,7 +129,7 @@ describe("SecurityScreen", () => {
     await waitFor(() => expect(mockAuth.unlinkProvider).toHaveBeenCalledWith("google.com"));
   });
 
-  it("shows the guard copy and does not unlink the only method", async () => {
+  it("shows the guard copy when the auth layer rejects the last method", async () => {
     setAuth({
       linkedProviderIds: jest.fn().mockResolvedValue(["password"]),
       unlinkProvider: jest.fn().mockRejectedValue(new LastSignInMethodError()),

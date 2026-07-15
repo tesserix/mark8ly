@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, StyleSheet, TouchableOpacity, View } from "react-native";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { LastSignInMethodError } from "@repo/mobile-shared/auth/link";
@@ -13,6 +13,11 @@ import { theme } from "@/lib/theme";
 const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === "demo";
 
 type ProviderId = "password" | "google.com" | "apple.com";
+type LinkableProviderId = "google.com" | "apple.com";
+
+function isLinkableProviderId(id: ProviderId): id is LinkableProviderId {
+  return id === "google.com" || id === "apple.com";
+}
 
 const METHODS: { id: ProviderId; label: string; linkable: boolean }[] = [
   { id: "password", label: "Password", linkable: false },
@@ -24,7 +29,7 @@ function errorMessage(e: unknown): string {
   if (e instanceof LastSignInMethodError) {
     return "You can't remove your only sign-in method.";
   }
-  const code = (e as { code?: unknown }).code;
+  const code = typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
   if (code === "auth/credential-already-in-use") {
     return "That account is already linked to a different Mark8ly account.";
   }
@@ -35,7 +40,7 @@ function errorMessage(e: unknown): string {
   return e instanceof Error && e.message ? e.message : "Something went wrong. Try again.";
 }
 
-export default function SecurityScreen() {
+export default function SecurityScreen(): React.JSX.Element {
   const {
     linkedProviderIds,
     linkGoogleToCurrentUser,
@@ -45,46 +50,56 @@ export default function SecurityScreen() {
   const [linked, setLinked] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  const busyRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     const ids = await linkedProviderIds();
-    setLinked(ids);
+    if (mountedRef.current) setLinked(ids);
   }, [linkedProviderIds]);
 
   useEffect(() => {
-    let cancelled = false;
     void (async () => {
       try {
-        const ids = await linkedProviderIds();
-        if (!cancelled) setLinked(ids);
+        await refresh();
       } catch {
-        if (!cancelled) setLinked([]);
+        if (mountedRef.current) setError("Couldn't load your sign-in methods.");
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [linkedProviderIds]);
+  }, [refresh]);
 
   const run = useCallback(
     async (fn: () => Promise<void>) => {
-      if (busy) return;
+      if (busyRef.current) return;
+      busyRef.current = true;
       setError(null);
       setBusy(true);
       try {
         await fn();
-        await refresh();
+        try {
+          await refresh();
+        } catch (e: unknown) {
+          setError(errorMessage(e));
+        }
       } catch (e: unknown) {
         setError(errorMessage(e));
       } finally {
+        busyRef.current = false;
         setBusy(false);
       }
     },
-    [busy, refresh],
+    [refresh],
   );
 
   const handleLink = useCallback(
-    (id: ProviderId) => {
+    (id: LinkableProviderId) => {
       void run(async () => {
         if (id === "google.com") {
           if (DEMO_AUTH) return linkGoogleToCurrentUser("demo-google-token");
@@ -121,6 +136,7 @@ export default function SecurityScreen() {
       <Card padding={0} style={styles.card}>
         {METHODS.map((m, i) => {
           const isLinked = linked?.includes(m.id) ?? false;
+          const linkableId = isLinkableProviderId(m.id) ? m.id : null;
           return (
             <View key={m.id}>
               {i > 0 ? <Hairline /> : null}
@@ -144,10 +160,10 @@ export default function SecurityScreen() {
                       Remove
                     </Text>
                   </TouchableOpacity>
-                ) : m.linkable ? (
+                ) : m.linkable && linkableId ? (
                   <TouchableOpacity
                     disabled={busy}
-                    onPress={() => handleLink(m.id)}
+                    onPress={() => handleLink(linkableId)}
                     accessibilityRole="button"
                     accessibilityLabel={`Link ${m.label}`}
                   >

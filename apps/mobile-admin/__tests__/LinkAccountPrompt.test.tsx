@@ -124,15 +124,23 @@ describe("LinkAccountPrompt", () => {
     expect(queryByLabelText("Continue with Google to link")).toBeNull();
   });
 
-  it("shows an error and stays open when the re-auth fails", async () => {
+  // The password re-auth path passes NO context, so the mapper's
+  // `auth/reauth-failed` + absent-`provider` row yields "That password is
+  // incorrect." — proving the tag-based mapping composes through the component.
+  it("shows mapped copy — never the raw message — and stays open when the re-auth fails", async () => {
     setAuth({
-      completeLinkWithPassword: jest.fn().mockRejectedValue(new Error("Wrong password")),
+      completeLinkWithPassword: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error("INVALID_LOGIN_CREDENTIALS"), { code: "auth/reauth-failed" }),
+        ),
     });
-    const { getByLabelText, findByText, onLinked } = renderPrompt();
+    const { getByLabelText, findByText, queryByText, onLinked } = renderPrompt();
     await waitFor(() => expect(getByLabelText("Password")).toBeTruthy());
     fireEvent.changeText(getByLabelText("Password"), "nope");
     fireEvent.press(getByLabelText("Sign in and link"));
-    expect(await findByText("Wrong password")).toBeTruthy();
+    expect(await findByText("That password is incorrect.")).toBeTruthy();
+    expect(queryByText("INVALID_LOGIN_CREDENTIALS")).toBeNull();
     expect(onLinked).not.toHaveBeenCalled();
   });
 

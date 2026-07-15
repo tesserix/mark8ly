@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, TextInput, View } from 'react-native';
 import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { useAuth } from '@repo/mobile-shared/auth/provider';
+import { authErrorMessage, type AuthErrorContext } from '@repo/mobile-shared/auth/errors';
 import {
   configureGoogleSignin,
   signInWithAppleNative,
@@ -22,12 +23,6 @@ const PROVIDER_LABEL: Record<LinkAccountPromptProps['provider'], string> = {
   'google.com': 'Google',
   'apple.com': 'Apple',
 };
-
-function getErrorMessage(e: unknown): string {
-  return e instanceof Error && e.message
-    ? e.message
-    : 'Could not link your account. Try again.';
-}
 
 export function LinkAccountPrompt({
   visible,
@@ -83,7 +78,7 @@ export function LinkAccountPrompt({
   const showGoogle = provider !== 'google.com' && (unknown || googleMatches);
   const showApple = provider !== 'apple.com' && (unknown || appleMatches);
 
-  async function run(fn: () => Promise<void>) {
+  async function run(fn: () => Promise<void>, ctx?: AuthErrorContext) {
     if (busy) return;
     setError(null);
     setBusy(true);
@@ -91,7 +86,8 @@ export function LinkAccountPrompt({
       await fn();
       onLinked();
     } catch (e: unknown) {
-      setError(getErrorMessage(e));
+      const msg = authErrorMessage(e, ctx);
+      if (msg) setError(msg);
     } finally {
       setBusy(false);
     }
@@ -144,7 +140,7 @@ export function LinkAccountPrompt({
                   configureGoogleSignin();
                   const idToken = await signInWithGoogleNative();
                   await completeLinkWithGoogle(idToken, pendingCredential);
-                })
+                }, { provider: 'google.com' })
               }
               className="mt-3 min-h-touch items-center justify-center rounded border border-border bg-paper active:opacity-90"
             >
@@ -161,7 +157,7 @@ export function LinkAccountPrompt({
                 void run(async () => {
                   const { idToken, rawNonce } = await signInWithAppleNative();
                   await completeLinkWithApple(idToken, rawNonce, pendingCredential);
-                })
+                }, { provider: 'apple.com' })
               }
               className="mt-3 min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
             >

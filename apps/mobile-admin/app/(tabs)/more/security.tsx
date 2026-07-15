@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, StyleSheet, TouchableOpacity, View } from "react-native";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
-import { LastSignInMethodError } from "@repo/mobile-shared/auth/errors";
+import { authErrorMessage } from "@repo/mobile-shared/auth/errors";
 import {
   configureGoogleSignin,
   signInWithAppleNative,
@@ -24,21 +24,6 @@ const METHODS: { id: ProviderId; label: string; linkable: boolean }[] = [
   { id: "google.com", label: "Google", linkable: true },
   { id: "apple.com", label: "Apple", linkable: true },
 ];
-
-function errorMessage(e: unknown): string {
-  if (e instanceof LastSignInMethodError) {
-    return "You can't remove your only sign-in method.";
-  }
-  const code = typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
-  if (code === "auth/credential-already-in-use") {
-    return "That account is already linked to a different Mark8ly account.";
-  }
-  if (code === "auth/provider-already-linked") return "That's already linked to your account.";
-  if (code === "auth/requires-recent-login") {
-    return "For security, sign out and sign in again, then retry.";
-  }
-  return e instanceof Error && e.message ? e.message : "Something went wrong. Try again.";
-}
 
 export default function SecurityScreen(): React.JSX.Element {
   const {
@@ -87,10 +72,12 @@ export default function SecurityScreen(): React.JSX.Element {
         try {
           await refresh();
         } catch (e: unknown) {
-          setError(errorMessage(e));
+          const msg = authErrorMessage(e);
+          if (msg) setError(msg);
         }
       } catch (e: unknown) {
-        setError(errorMessage(e));
+        const msg = authErrorMessage(e);
+        if (msg) setError(msg);
       } finally {
         busyRef.current = false;
         setBusy(false);

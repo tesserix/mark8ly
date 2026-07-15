@@ -1,5 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import LoginScreen from '../app/login';
+import { signInWithGoogleNative } from '@/lib/social-auth';
+import { AuthCancelledError } from '@repo/mobile-shared/auth/errors';
 
 const mockSignIn = jest.fn();
 const mockAuth: Record<string, unknown> = {};
@@ -60,11 +62,14 @@ describe('LoginScreen', () => {
     );
   });
 
-  it('shows the error message when signIn rejects', async () => {
-    mockSignIn.mockRejectedValue(new Error('Wrong password'));
-    const { getByLabelText, findByText } = render(<LoginScreen />);
+  it('shows mapped copy — never the raw message — when signIn rejects', async () => {
+    mockSignIn.mockRejectedValue(
+      Object.assign(new Error('INVALID_LOGIN_CREDENTIALS'), { code: 'auth/invalid-credential' }),
+    );
+    const { getByLabelText, findByText, queryByText } = render(<LoginScreen />);
     fireEvent.press(getByLabelText('Sign in'));
-    expect(await findByText('Wrong password')).toBeTruthy();
+    expect(await findByText(/check your details/i)).toBeTruthy();
+    expect(queryByText('INVALID_LOGIN_CREDENTIALS')).toBeNull();
   });
 
   it('disables the button and shows "Signing in…" while a sign-in is in flight', async () => {
@@ -124,5 +129,26 @@ describe('LoginScreen', () => {
     fireEvent.press(getByLabelText('Continue with Google'));
     await waitFor(() => expect(signInWithGoogle).toHaveBeenCalled());
     expect(queryByTestId('link-prompt')).toBeNull();
+  });
+});
+
+describe('error copy', () => {
+  it('shows NOTHING when the user cancels the Google sheet', async () => {
+    (signInWithGoogleNative as jest.Mock).mockRejectedValueOnce(new AuthCancelledError());
+    const { getByLabelText, queryByText } = render(<LoginScreen />);
+    fireEvent.press(getByLabelText('Continue with Google'));
+    await waitFor(() => expect(signInWithGoogleNative).toHaveBeenCalled());
+    expect(queryByText(/cancel/i)).toBeNull();
+    expect(queryByText(/something went wrong/i)).toBeNull();
+  });
+
+  it('never shows a raw native error string', async () => {
+    (signInWithGoogleNative as jest.Mock).mockRejectedValueOnce(
+      new Error('RequestUnknownException: AppleAuthenticationExceptions.swift:61'),
+    );
+    const { getByLabelText, findByText, queryByText } = render(<LoginScreen />);
+    fireEvent.press(getByLabelText('Continue with Google'));
+    expect(await findByText('Something went wrong. Try again.')).toBeTruthy();
+    expect(queryByText(/swift/i)).toBeNull();
   });
 });

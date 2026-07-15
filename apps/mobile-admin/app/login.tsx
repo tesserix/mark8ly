@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@repo/mobile-shared/auth/provider';
+import { authErrorMessage } from '@repo/mobile-shared/auth/errors';
 import type { SocialSignInOutcome } from '@repo/mobile-shared/auth/social-credentials';
 import { configureGoogleSignin, signInWithAppleNative, signInWithGoogleNative } from '@/lib/social-auth';
 import { LinkAccountPrompt } from '../components/auth/LinkAccountPrompt';
@@ -10,12 +11,6 @@ import { Text } from '../components/ui/Text';
 const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
 
 type LinkTarget = Extract<SocialSignInOutcome, { status: 'needs-link' }>;
-
-function getErrorMessage(e: unknown): string {
-  return e instanceof Error && e.message
-    ? e.message
-    : 'Could not sign in. Check your details and try again.';
-}
 
 export default function LoginScreen() {
   const { signIn, signInWithGoogle, signInWithApple } = useAuth();
@@ -32,7 +27,8 @@ export default function LoginScreen() {
     try {
       await signIn(email, password);
     } catch (e: unknown) {
-      setError(getErrorMessage(e));
+      const msg = authErrorMessage(e);
+      if (msg) setError(msg);
     } finally {
       setSubmitting(false);
     }
@@ -53,7 +49,8 @@ export default function LoginScreen() {
       }
       if (outcome.status === 'needs-link') setLinkTarget(outcome);
     } catch (e: unknown) {
-      setError(getErrorMessage(e));
+      const msg = authErrorMessage(e);
+      if (msg) setError(msg);
     } finally {
       setSubmitting(false);
     }
@@ -73,7 +70,8 @@ export default function LoginScreen() {
       }
       if (outcome.status === 'needs-link') setLinkTarget(outcome);
     } catch (e: unknown) {
-      setError(getErrorMessage(e));
+      const msg = authErrorMessage(e);
+      if (msg) setError(msg);
     } finally {
       setSubmitting(false);
     }

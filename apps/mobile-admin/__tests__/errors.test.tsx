@@ -25,13 +25,24 @@ describe("authErrorMessage", () => {
     expect(authErrorMessage(new LastSignInMethodError())).toMatch(/only sign-in method/i);
   });
 
-  it("maps a TAGGED reauth failure without a provider to wrong-password copy", () => {
-    expect(authErrorMessage(withCode("auth/reauth-failed"))).toMatch(/password is incorrect/i);
+  it("maps a TAGGED reauth failure with { method: 'password' } to wrong-password copy", () => {
+    expect(authErrorMessage(withCode("auth/reauth-failed"), { method: "password" })).toMatch(
+      /password is incorrect/i,
+    );
   });
 
-  it("maps a TAGGED reauth failure WITH a provider to account copy, not password copy", () => {
-    const msg = authErrorMessage(withCode("auth/reauth-failed"), { provider: "google.com" });
+  it("maps a TAGGED reauth failure WITH a social provider to account copy, not password copy", () => {
+    const msg = authErrorMessage(withCode("auth/reauth-failed"), {
+      method: "social",
+      provider: "google.com",
+    });
     expect(msg).toMatch(/couldn't verify that account/i);
+    expect(msg).not.toMatch(/password/i);
+  });
+
+  it("maps a TAGGED reauth failure with NO ctx to neutral copy — never the password guess", () => {
+    const msg = authErrorMessage(withCode("auth/reauth-failed"));
+    expect(msg).toMatch(/couldn't verify your account/i);
     expect(msg).not.toMatch(/password/i);
   });
 
@@ -66,6 +77,20 @@ describe("authErrorMessage", () => {
     expect(authErrorMessage(withCode("auth/too-many-requests"))).toMatch(/too many attempts/i);
   });
 
+  it("maps invalid-email", () => {
+    expect(authErrorMessage(withCode("auth/invalid-email"))).toMatch(/valid email address/i);
+  });
+
+  it("maps missing-password", () => {
+    expect(authErrorMessage(withCode("auth/missing-password"))).toMatch(/enter your password/i);
+  });
+
+  it("maps user-disabled", () => {
+    expect(authErrorMessage(withCode("auth/user-disabled"))).toMatch(
+      /account has been disabled/i,
+    );
+  });
+
   it("NEVER leaks a raw error message", () => {
     const msg = authErrorMessage(new Error("RequestUnknownException: AppleAuthentication.swift:61"));
     expect(msg).toBe("Something went wrong. Try again.");
@@ -78,10 +103,26 @@ describe("authErrorMessage", () => {
     expect(authErrorMessage(null)).toBe("Something went wrong. Try again.");
   });
 
-  it("never tells a credential error to start over because it 'expired'", () => {
+  const ALL_MAPPED_CODES = [
+    "ERR_REQUEST_UNKNOWN",
+    "auth/reauth-failed",
+    "auth/invalid-credential",
+    "auth/credential-already-in-use",
+    "auth/provider-already-linked",
+    "auth/requires-recent-login",
+    "auth/network-request-failed",
+    "auth/too-many-requests",
+    "auth/invalid-email",
+    "auth/missing-password",
+    "auth/user-disabled",
+  ];
+
+  it("never tells ANY mapped error to start over because it 'expired'", () => {
     // GIP collapses wrong-password into auth/invalid-credential. Any "expired"
-    // copy makes a mistyped password unrecoverable.
-    for (const code of ["auth/invalid-credential", "auth/reauth-failed"]) {
+    // copy makes a mistyped password unrecoverable. This guard must cover the
+    // whole table, not a hand-picked subset — a defect already shipped once
+    // because an earlier version of this guard skipped most of the codes.
+    for (const code of ALL_MAPPED_CODES) {
       expect(authErrorMessage(withCode(code))).not.toMatch(/expired/i);
     }
   });

@@ -20,10 +20,9 @@ export class AuthCancelledError extends Error {
   }
 }
 
-export interface AuthErrorContext {
-  /** Which method the user re-authenticated with. Absent = password. */
-  provider?: "google.com" | "apple.com";
-}
+export type AuthErrorContext =
+  | { method: "password" }
+  | { method: "social"; provider: "google.com" | "apple.com" };
 
 function errorCode(e: unknown): unknown {
   return typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
@@ -57,9 +56,11 @@ export function authErrorMessage(e: unknown, ctx?: AuthErrorContext): string | n
     return "Couldn't complete Apple sign-in. Make sure you're signed in to iCloud on this device.";
   }
   if (code === "auth/reauth-failed") {
-    return ctx?.provider
-      ? "Couldn't verify that account. Try again."
-      : "That password is incorrect.";
+    if (ctx?.method === "password") return "That password is incorrect.";
+    if (ctx?.method === "social") return "Couldn't verify that account. Try again.";
+    // No ctx: forgetting to pass one must never produce confidently WRONG
+    // copy, so stay neutral rather than guessing "password".
+    return "Couldn't verify your account. Try again.";
   }
   if (code === "auth/invalid-credential") {
     return "Couldn't sign you in. Check your details and try again.";
@@ -78,6 +79,15 @@ export function authErrorMessage(e: unknown, ctx?: AuthErrorContext): string | n
   }
   if (code === "auth/too-many-requests") {
     return "Too many attempts. Try again in a few minutes.";
+  }
+  if (code === "auth/invalid-email") {
+    return "Enter a valid email address.";
+  }
+  if (code === "auth/missing-password") {
+    return "Enter your password.";
+  }
+  if (code === "auth/user-disabled") {
+    return "That account has been disabled. Contact support.";
   }
   return "Something went wrong. Try again.";
 }

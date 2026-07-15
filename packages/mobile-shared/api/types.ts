@@ -171,8 +171,6 @@ export interface Notification {
   created_at: string;
 }
 
-export interface Store {
-  id: string;
-  name: string;
-  slug: string;
-}
+// Re-exported from the schema module so the type can never drift from the
+// validation again. Was a hand-written 3-field interface; the wire has 6.
+export type { Store } from "./schemas/stores";

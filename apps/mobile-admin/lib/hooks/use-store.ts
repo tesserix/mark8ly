@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
-import type { PaginatedResponse, Store } from "@repo/mobile-shared/api/types";
+import { storesResponseSchema } from "@repo/mobile-shared/api/schemas/stores";
+import type { Store } from "@repo/mobile-shared/api/types";
 import { useApiClient } from "@/lib/api-client";
 
 /**
@@ -16,9 +17,8 @@ export function useStores() {
   return useQuery<Store[]>({
     queryKey: ["stores"],
     queryFn: async () => {
-      const data = await client.getTenant<PaginatedResponse<Store> | Store[]>("/stores");
-      if (Array.isArray(data)) return data;
-      return data.items ?? [];
+      const res = await client.getTenant("/stores", undefined, storesResponseSchema);
+      return res.data;
     },
   });
 }

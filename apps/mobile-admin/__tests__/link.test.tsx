@@ -126,6 +126,52 @@ describe("account linking", () => {
   });
 });
 
+describe("reauth tagging", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("tags a FAILED password re-auth with auth/reauth-failed", async () => {
+    mockedAuth().signInWithEmailAndPassword.mockRejectedValueOnce(
+      Object.assign(new Error("bad"), { code: "auth/invalid-credential" }),
+    );
+    await expect(
+      completeLinkWithPassword("a@b.com", "pw", { provider: "google" } as never),
+    ).rejects.toMatchObject({ code: "auth/reauth-failed" });
+  });
+
+  it("preserves the original error as `cause`", async () => {
+    const original = Object.assign(new Error("bad"), { code: "auth/invalid-credential" });
+    mockedAuth().signInWithEmailAndPassword.mockRejectedValueOnce(original);
+    await expect(
+      completeLinkWithPassword("a@b.com", "pw", { provider: "google" } as never),
+    ).rejects.toMatchObject({ cause: original });
+  });
+
+  it("does NOT tag a linkWithCredential failure — only the re-auth call is wrapped", async () => {
+    const linkErr = Object.assign(new Error("nope"), {
+      code: "auth/credential-already-in-use",
+    });
+    const user = { linkWithCredential: jest.fn().mockRejectedValueOnce(linkErr) };
+    mockedAuth().signInWithEmailAndPassword.mockResolvedValueOnce({ user });
+    await expect(
+      completeLinkWithPassword("a@b.com", "pw", { provider: "google" } as never),
+    ).rejects.toBe(linkErr);
+  });
+
+  it("tags a FAILED Google re-auth", async () => {
+    mockedAuth().signInWithCredential.mockRejectedValueOnce(new Error("bad"));
+    await expect(
+      completeLinkWithGoogle("gtok", { provider: "apple" } as never),
+    ).rejects.toMatchObject({ code: "auth/reauth-failed" });
+  });
+
+  it("tags a FAILED Apple re-auth", async () => {
+    mockedAuth().signInWithCredential.mockRejectedValueOnce(new Error("bad"));
+    await expect(
+      completeLinkWithApple("atok", "", { provider: "google" } as never),
+    ).rejects.toMatchObject({ code: "auth/reauth-failed" });
+  });
+});
+
 describe("connected accounts", () => {
   beforeEach(() => {
     jest.clearAllMocks();

@@ -14,13 +14,32 @@ import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
 import { LastSignInMethodError } from "./errors";
 export { LastSignInMethodError };
 
+/**
+ * Tags a failure of the RE-AUTH step. GIP tenants run email-enumeration
+ * protection, which collapses "wrong password" and "no such user" into the
+ * single ambiguous `auth/invalid-credential` — and that same code also means
+ * "expired credential" when it comes from the LINK step. Tagging by which
+ * call threw is the only way to tell them apart; never branch on the code.
+ */
+function reauthFailed(cause: unknown): Error {
+  return Object.assign(new Error("Re-authentication failed"), {
+    code: "auth/reauth-failed",
+    cause,
+  });
+}
+
 /** Re-auth with the account's existing password, then attach `pending`. */
 export async function completeLinkWithPassword(
   email: string,
   password: string,
   pending: FirebaseAuthTypes.AuthCredential,
 ): Promise<void> {
-  const result = await auth().signInWithEmailAndPassword(email, password);
+  let result: FirebaseAuthTypes.UserCredential;
+  try {
+    result = await auth().signInWithEmailAndPassword(email, password);
+  } catch (e: unknown) {
+    throw reauthFailed(e);
+  }
   await result.user.linkWithCredential(pending);
 }
 
@@ -30,7 +49,12 @@ export async function completeLinkWithGoogle(
   pending: FirebaseAuthTypes.AuthCredential,
 ): Promise<void> {
   const existing = auth.GoogleAuthProvider.credential(googleIdToken);
-  const result = await auth().signInWithCredential(existing);
+  let result: FirebaseAuthTypes.UserCredential;
+  try {
+    result = await auth().signInWithCredential(existing);
+  } catch (e: unknown) {
+    throw reauthFailed(e);
+  }
   await result.user.linkWithCredential(pending);
 }
 
@@ -41,7 +65,12 @@ export async function completeLinkWithApple(
   pending: FirebaseAuthTypes.AuthCredential,
 ): Promise<void> {
   const existing = auth.AppleAuthProvider.credential(appleIdToken, rawNonce);
-  const result = await auth().signInWithCredential(existing);
+  let result: FirebaseAuthTypes.UserCredential;
+  try {
+    result = await auth().signInWithCredential(existing);
+  } catch (e: unknown) {
+    throw reauthFailed(e);
+  }
   await result.user.linkWithCredential(pending);
 }
 

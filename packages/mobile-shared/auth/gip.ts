@@ -4,7 +4,16 @@ import {
   signInWithGoogleCredential,
   signInWithAppleCredential,
   type AppleFullName,
+  type SocialSignInOutcome,
 } from "./social-credentials";
+import {
+  completeLinkWithPassword,
+  completeLinkWithGoogle,
+  completeLinkWithApple,
+  existingSignInMethods,
+} from "./link";
+
+export type { SocialSignInOutcome } from "./social-credentials";
 
 export interface GIPAuthConfig {
   tenantId: string;
@@ -37,6 +46,33 @@ export function createGIPAuth(config: GIPAuthConfig) {
     ) => {
       await tenantReady;
       return signInWithAppleCredential(idToken, rawNonce, fullName);
+    },
+    completeLinkWithPassword: async (
+      email: string,
+      password: string,
+      pending: FirebaseAuthTypes.AuthCredential,
+    ) => {
+      await tenantReady;
+      return completeLinkWithPassword(email, password, pending);
+    },
+    completeLinkWithGoogle: async (
+      googleIdToken: string,
+      pending: FirebaseAuthTypes.AuthCredential,
+    ) => {
+      await tenantReady;
+      return completeLinkWithGoogle(googleIdToken, pending);
+    },
+    completeLinkWithApple: async (
+      appleIdToken: string,
+      rawNonce: string,
+      pending: FirebaseAuthTypes.AuthCredential,
+    ) => {
+      await tenantReady;
+      return completeLinkWithApple(appleIdToken, rawNonce, pending);
+    },
+    existingSignInMethods: async (email: string) => {
+      await tenantReady;
+      return existingSignInMethods(email);
     },
     signOut: () => firebaseAuth.signOut(),
     getIdToken: async (): Promise<string | null> => {

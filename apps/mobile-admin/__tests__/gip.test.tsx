@@ -36,11 +36,19 @@ jest.mock("@repo/mobile-shared/auth/social-credentials", () => ({
   signInWithAppleCredential: jest.fn().mockResolvedValue({ user: { uid: "a1" } }),
 }));
 
+jest.mock("@repo/mobile-shared/auth/link", () => ({
+  completeLinkWithPassword: jest.fn().mockResolvedValue(undefined),
+  completeLinkWithGoogle: jest.fn().mockResolvedValue(undefined),
+  completeLinkWithApple: jest.fn().mockResolvedValue(undefined),
+  existingSignInMethods: jest.fn().mockResolvedValue(["password"]),
+}));
+
 import auth from "@react-native-firebase/auth";
 import {
   signInWithGoogleCredential,
   signInWithAppleCredential,
 } from "@repo/mobile-shared/auth/social-credentials";
+import { completeLinkWithPassword } from "@repo/mobile-shared/auth/link";
 import { createGIPAuth } from "@repo/mobile-shared/auth/gip";
 
 interface MockedAuthInstance {
@@ -104,5 +112,17 @@ describe("createGIPAuth tenant scoping", () => {
     await gip.signInWithApple("atok", "nonce", null);
     expect(instance.setTenantId).toHaveBeenCalledWith("T4");
     expect(mockAppleCredential).toHaveBeenCalledWith("atok", "nonce", null);
+  });
+
+  it("awaits the tenant before completing a password link", async () => {
+    const gip = createGIPAuth({ tenantId: "T5" });
+    const pending = { provider: "google", idToken: "p" } as never;
+    await gip.completeLinkWithPassword("merchant@store.com", "pw", pending);
+    expect(instance.setTenantId).toHaveBeenCalledWith("T5");
+    expect(completeLinkWithPassword as jest.Mock).toHaveBeenCalledWith(
+      "merchant@store.com",
+      "pw",
+      pending,
+    );
   });
 });

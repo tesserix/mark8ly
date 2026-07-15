@@ -35,3 +35,49 @@ it("maps an Apple id_token + nonce to a GIP credential sign-in", async () => {
   expect(mockedAuth.AppleAuthProvider.credential).toHaveBeenCalledWith("atok", "nonce123");
   expect(mockedAuth().signInWithCredential).toHaveBeenCalledWith({ provider: "apple", idToken: "atok", nonce: "nonce123" });
 });
+
+it("returns signed-in when the credential sign-in succeeds", async () => {
+  const outcome = await signInWithGoogleCredential("gtok");
+  expect(outcome).toEqual({ status: "signed-in" });
+});
+
+it("maps an account-exists conflict to needs-link with the pending credential (google)", async () => {
+  const conflict = Object.assign(
+    new Error("account exists"),
+    { code: "auth/account-exists-with-different-credential", email: "merchant@store.com" },
+  );
+  mockedAuth().signInWithCredential.mockRejectedValueOnce(conflict);
+
+  const outcome = await signInWithGoogleCredential("gtok");
+
+  expect(outcome).toEqual({
+    status: "needs-link",
+    email: "merchant@store.com",
+    provider: "google.com",
+    pendingCredential: { provider: "google", idToken: "gtok" },
+  });
+});
+
+it("maps an account-exists conflict to needs-link (apple)", async () => {
+  const conflict = Object.assign(
+    new Error("account exists"),
+    { code: "auth/account-exists-with-different-credential", email: "merchant@store.com" },
+  );
+  mockedAuth().signInWithCredential.mockRejectedValueOnce(conflict);
+
+  const outcome = await signInWithAppleCredential("atok", "nonce123", null);
+
+  expect(outcome).toEqual({
+    status: "needs-link",
+    email: "merchant@store.com",
+    provider: "apple.com",
+    pendingCredential: { provider: "apple", idToken: "atok", nonce: "nonce123" },
+  });
+});
+
+it("rethrows non-conflict errors", async () => {
+  mockedAuth().signInWithCredential.mockRejectedValueOnce(
+    Object.assign(new Error("network"), { code: "auth/network-request-failed" }),
+  );
+  await expect(signInWithGoogleCredential("gtok")).rejects.toThrow("network");
+});

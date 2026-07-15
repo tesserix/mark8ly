@@ -954,6 +954,7 @@ is one task, not two.
 - Modify: `packages/mobile-shared/api/types.ts:8-60` (delete 6 interfaces, re-export)
 - Modify: `packages/mobile-shared/api/dashboard.ts`
 - Modify: `apps/mobile-admin/app/(tabs)/index.tsx:191-195`, `:238-242`
+- Modify: `apps/mobile-admin/lib/demo-api-client.ts:81-92` (`DEMO_DASHBOARD` fixtures)
 
 **Interfaces:**
 - Consumes: `dashboardResponseSchema` and the inferred types (Task 3).
@@ -964,6 +965,7 @@ is one task, not two.
 | Importer | Type | Expected |
 |---|---|---|
 | `app/(tabs)/index.tsx:21` | `RecentOrder`, `LowStockItem` | **BREAKS** on `LowStockItem` — you fix it in Steps 4-5 |
+| `lib/demo-api-client.ts:5` | `DashboardResponse` | **BREAKS** — `DEMO_DASHBOARD` uses the old names. Fix in Step 5b |
 | `app/(tabs)/customers/[id].tsx:24` | `RecentOrder` | no break — shape is unchanged |
 | `components/DashboardStats.tsx:5` | `DashboardStats` | no break — shape is unchanged |
 | `lib/hooks/use-dashboard.ts:3` | `DashboardResponse` | no break — envelope is unchanged |
@@ -1075,6 +1077,63 @@ with:
 product title matches the previous intent; wiring `variant_title` into the UI is a design change and is
 **not** in scope here.
 
+- [ ] **Step 5b: Fix the demo backend's dashboard fixture**
+
+`apps/mobile-admin/lib/demo-api-client.ts` builds `DEMO_DASHBOARD: DashboardResponse` from the OLD
+invented names, so the type swap breaks it. This is the in-memory backend used when
+`EXPO_PUBLIC_AUTH_BACKEND=demo` (Expo Go / simulator, no real GIP token). It must mirror the REAL wire
+shape — Task 5 shipped exactly this class of bug because the demo client had drifted from the contract.
+
+Replace lines 81-92:
+
+```ts
+  top_products: [
+    { id: "p-1", name: "Linen Camp Shirt", total_sold: 86, revenue: 765400 },
+    { id: "p-2", name: "Merino Beanie", total_sold: 54, revenue: 210600 },
+  ],
+  low_stock: [{ id: "p-2", name: "Merino Beanie", stock: 7, thumbnail_url: null }],
+  setup_checklist: {
+    has_products: true,
+    has_payment: true,
+    has_shipping: true,
+    has_domain: false,
+    has_branding: true,
+  },
+```
+
+with the real field names (`title`/`units_sold`/`image_url`, `title`/`variant_title`/`quantity`/
+`low_stock_threshold`, and the real 8-item checklist):
+
+```ts
+  top_products: [
+    { id: "p-1", title: "Linen Camp Shirt", units_sold: 86, revenue: 765400, image_url: null },
+    { id: "p-2", title: "Merino Beanie", units_sold: 54, revenue: 210600, image_url: null },
+  ],
+  low_stock: [
+    {
+      id: "p-2",
+      title: "Merino Beanie",
+      variant_title: "One Size",
+      quantity: 7,
+      low_stock_threshold: 10,
+    },
+  ],
+  setup_checklist: {
+    has_store: true,
+    has_brand_assets: true,
+    has_product: true,
+    has_storefront_theme: true,
+    has_payment_provider: true,
+    has_shipping_carrier: true,
+    has_return_policy: false,
+    has_custom_domain: false,
+  },
+```
+
+The checklist booleans keep the demo's original spirit (mostly set up, domain not yet done). Change
+nothing else in the file — `DEMO_STORE`, `DEMO_ORDERS`, `DEMO_PRODUCTS`, `DEMO_CUSTOMERS`, `page()`
+and the other `resolve()` branches are out of scope.
+
 - [ ] **Step 6: Run the gates**
 
 ```bash
@@ -1089,7 +1148,8 @@ chased out of the screen.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/mobile-shared/api/types.ts packages/mobile-shared/api/dashboard.ts "apps/mobile-admin/app/(tabs)/index.tsx"
+git add packages/mobile-shared/api/types.ts packages/mobile-shared/api/dashboard.ts \
+  "apps/mobile-admin/app/(tabs)/index.tsx" apps/mobile-admin/lib/demo-api-client.ts
 git commit -m "fix(mobile-admin): align dashboard types and screen with the real wire shape"
 ```
 

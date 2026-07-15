@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { tokenStorage } from "./token-storage";
 import { getEnv } from "../config/env";
-import type { AppleFullName } from "./social-credentials";
+import type { AppleFullName, SocialSignInOutcome } from "./social-credentials";
+import type { FirebaseAuthTypes } from "@react-native-firebase/auth";
 
 /**
  * Loose user shape used by mobile screens — both the real Firebase user
@@ -20,12 +21,12 @@ interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: (idToken: string, accessToken?: string) => Promise<void>;
+  signInWithGoogle: (idToken: string, accessToken?: string) => Promise<SocialSignInOutcome>;
   signInWithApple: (
     idToken: string,
     rawNonce: string,
     fullName?: AppleFullName | null,
-  ) => Promise<void>;
+  ) => Promise<SocialSignInOutcome>;
   signOut: () => Promise<void>;
   /** Returns the cached GIP id_token. Cheap, safe to call per request. */
   getToken: () => Promise<string | null>;
@@ -35,6 +36,21 @@ interface AuthState {
    * the session as terminated.
    */
   refreshToken: () => Promise<string | null>;
+  completeLinkWithPassword: (
+    email: string,
+    password: string,
+    pending: FirebaseAuthTypes.AuthCredential,
+  ) => Promise<void>;
+  completeLinkWithGoogle: (
+    googleIdToken: string,
+    pending: FirebaseAuthTypes.AuthCredential,
+  ) => Promise<void>;
+  completeLinkWithApple: (
+    appleIdToken: string,
+    rawNonce: string,
+    pending: FirebaseAuthTypes.AuthCredential,
+  ) => Promise<void>;
+  existingSignInMethods: (email: string) => Promise<string[]>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -51,16 +67,31 @@ interface AuthProviderProps {
 
 interface AuthBackend {
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: (idToken: string, accessToken?: string) => Promise<void>;
+  signInWithGoogle: (idToken: string, accessToken?: string) => Promise<SocialSignInOutcome>;
   signInWithApple: (
     idToken: string,
     rawNonce: string,
     fullName?: AppleFullName | null,
-  ) => Promise<void>;
+  ) => Promise<SocialSignInOutcome>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
   getIdTokenForced: () => Promise<string | null>;
   onAuthStateChanged: (cb: (user: AuthUser | null) => void) => () => void;
+  completeLinkWithPassword: (
+    email: string,
+    password: string,
+    pending: FirebaseAuthTypes.AuthCredential,
+  ) => Promise<void>;
+  completeLinkWithGoogle: (
+    googleIdToken: string,
+    pending: FirebaseAuthTypes.AuthCredential,
+  ) => Promise<void>;
+  completeLinkWithApple: (
+    appleIdToken: string,
+    rawNonce: string,
+    pending: FirebaseAuthTypes.AuthCredential,
+  ) => Promise<void>;
+  existingSignInMethods: (email: string) => Promise<string[]>;
 }
 
 /** True when running inside the public Expo Go shell (no custom native modules). */
@@ -104,10 +135,12 @@ function createDemoBackend(): AuthBackend {
     signInWithGoogle: async () => {
       active = { uid: "expo-go-demo:google", email: "demo@mark8ly.com", displayName: "Demo Admin" };
       for (const cb of subs) cb(active);
+      return { status: "signed-in" };
     },
     signInWithApple: async () => {
       active = { uid: "expo-go-demo:apple", email: "demo@mark8ly.com", displayName: "Demo Admin" };
       for (const cb of subs) cb(active);
+      return { status: "signed-in" };
     },
     signOut: async () => {
       active = null;
@@ -120,6 +153,10 @@ function createDemoBackend(): AuthBackend {
       cb(active);
       return () => subs.delete(cb);
     },
+    completeLinkWithPassword: async () => {},
+    completeLinkWithGoogle: async () => {},
+    completeLinkWithApple: async () => {},
+    existingSignInMethods: async () => [],
   };
 }
 
@@ -132,12 +169,9 @@ function createFirebaseBackend(tenantId: string): AuthBackend {
     signIn: async (email, password) => {
       await gip.signIn(email, password);
     },
-    signInWithGoogle: async (idToken, accessToken) => {
-      await gip.signInWithGoogle(idToken, accessToken);
-    },
-    signInWithApple: async (idToken, rawNonce, fullName) => {
-      await gip.signInWithApple(idToken, rawNonce, fullName);
-    },
+    signInWithGoogle: (idToken, accessToken) => gip.signInWithGoogle(idToken, accessToken),
+    signInWithApple: (idToken, rawNonce, fullName) =>
+      gip.signInWithApple(idToken, rawNonce, fullName),
     signOut: () => gip.signOut(),
     getIdToken: () => gip.getIdToken(),
     getIdTokenForced: () => gip.getIdTokenForced(),
@@ -153,6 +187,13 @@ function createFirebaseBackend(tenantId: string): AuthBackend {
             : null,
         ),
       ),
+    completeLinkWithPassword: (email, password, pending) =>
+      gip.completeLinkWithPassword(email, password, pending),
+    completeLinkWithGoogle: (googleIdToken, pending) =>
+      gip.completeLinkWithGoogle(googleIdToken, pending),
+    completeLinkWithApple: (appleIdToken, rawNonce, pending) =>
+      gip.completeLinkWithApple(appleIdToken, rawNonce, pending),
+    existingSignInMethods: (email) => gip.existingSignInMethods(email),
   };
 }
 
@@ -178,17 +219,14 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
     await backend.signIn(email, password);
   };
 
-  const signInWithGoogle = async (idToken: string, accessToken?: string) => {
-    await backend.signInWithGoogle(idToken, accessToken);
-  };
+  const signInWithGoogle = (idToken: string, accessToken?: string) =>
+    backend.signInWithGoogle(idToken, accessToken);
 
-  const signInWithApple = async (
+  const signInWithApple = (
     idToken: string,
     rawNonce: string,
     fullName?: AppleFullName | null,
-  ) => {
-    await backend.signInWithApple(idToken, rawNonce, fullName);
-  };
+  ) => backend.signInWithApple(idToken, rawNonce, fullName);
 
   const signOut = async () => {
     await tokenStorage.clearAll();
@@ -197,6 +235,25 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
 
   const getToken = () => backend.getIdToken();
   const refreshToken = () => backend.getIdTokenForced();
+
+  const completeLinkWithPassword = (
+    email: string,
+    password: string,
+    pending: FirebaseAuthTypes.AuthCredential,
+  ) => backend.completeLinkWithPassword(email, password, pending);
+
+  const completeLinkWithGoogle = (
+    googleIdToken: string,
+    pending: FirebaseAuthTypes.AuthCredential,
+  ) => backend.completeLinkWithGoogle(googleIdToken, pending);
+
+  const completeLinkWithApple = (
+    appleIdToken: string,
+    rawNonce: string,
+    pending: FirebaseAuthTypes.AuthCredential,
+  ) => backend.completeLinkWithApple(appleIdToken, rawNonce, pending);
+
+  const existingSignInMethods = (email: string) => backend.existingSignInMethods(email);
 
   return (
     <AuthContext.Provider
@@ -209,6 +266,10 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
         signOut,
         getToken,
         refreshToken,
+        completeLinkWithPassword,
+        completeLinkWithGoogle,
+        completeLinkWithApple,
+        existingSignInMethods,
       }}
     >
       {children}

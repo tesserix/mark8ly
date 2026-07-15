@@ -7,7 +7,7 @@ jest.mock("@react-native-firebase/auth", () => {
     signInWithEmailAndPassword: jest.fn().mockResolvedValue({ user }),
     signInWithCredential: jest.fn().mockResolvedValue({ user }),
     fetchSignInMethodsForEmail: jest.fn().mockResolvedValue(["password"]),
-    currentUser: null as unknown,
+    currentUser: null,
   };
   const authFn = () => instance;
   authFn.GoogleAuthProvider = {
@@ -127,7 +127,14 @@ describe("account linking", () => {
 });
 
 describe("connected accounts", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // `currentUser` is module-level state on the mocked auth instance —
+    // jest.clearAllMocks() resets mock fn call state but not this field.
+    // Reset it explicitly so test isolation doesn't depend on every test
+    // happening to call setCurrentUser() first.
+    setCurrentUser(null);
+  });
 
   it("linkedProviderIds maps providerData", async () => {
     setCurrentUser([{ providerId: "password" }, { providerId: "google.com" }]);

@@ -19,6 +19,13 @@ import (
 
 // seedProductViaService inserts a product with two variants and returns
 // (productID, variant1ID, variant2ID).
+//
+// Note: this must supply an explicit VendorID (products.vendor_id has
+// been NOT NULL since migration 000028, and this helper's Config carries
+// no VendorLookup to default it) and a matching Options/OptionValues
+// matrix (ValidateMatrix rejects >1 variant when no option axis is
+// given). Without both, every Create through this helper fails before
+// the test under it gets to run.
 func seedProductViaService(t *testing.T, env *testEnv, storeID, tenantID string) (string, string, string) {
 	t.Helper()
 	svc := product.NewService(product.Config{
@@ -28,13 +35,20 @@ func seedProductViaService(t *testing.T, env *testEnv, storeID, tenantID string)
 		OutboxRepo: outbox.NewRepository(env.db),
 		Uploader:   env.uploader,
 	})
+	vendorID := uuid.NewString()
 	agg, err := svc.Create(context.Background(), product.CreateRequest{
 		StoreID:  storeID,
 		TenantID: tenantID,
 		Title:    "V Product " + uuid.NewString()[:6],
+		VendorID: &vendorID,
+		Options: []product.OptionSpec{
+			{Name: "Size", Values: []product.OptionValueSpec{{Value: "S"}, {Value: "L"}}},
+		},
 		Variants: []product.VariantInput{
-			{SKU: "V1-" + uuid.NewString()[:6], Price: decimal.NewFromInt(10), CurrencyCode: "USD"},
-			{SKU: "V2-" + uuid.NewString()[:6], Price: decimal.NewFromInt(20), CurrencyCode: "USD"},
+			{SKU: "V1-" + uuid.NewString()[:6], Price: decimal.NewFromInt(10), CurrencyCode: "USD",
+				OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "S"}}},
+			{SKU: "V2-" + uuid.NewString()[:6], Price: decimal.NewFromInt(20), CurrencyCode: "USD",
+				OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "L"}}},
 		},
 	})
 	if err != nil {

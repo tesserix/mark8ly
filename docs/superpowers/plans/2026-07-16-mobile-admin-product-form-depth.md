@@ -40,6 +40,14 @@ Go 1.26 + Gin + GORM (marketplace-api).
   no multi-line body. Commit directly to `main`. No PRs.
 - Never hardcode `https://cdn.mark8ly.com`. `url` on media create carries the **storage key**; the
   backend builds the public URL itself (`service_single_media.go:91-97`).
+- **Deliberate, do not "fix":** Tasks 10 and 11 assert on **source text**
+  (`fs.readFileSync` + `toContain`). This is a conscious decision (user, 2026-07-16), not an
+  oversight. They guard two things that are painful to express behaviourally and that have each
+  already cost this project real money: "never reintroduce `requestMediaLibraryPermissionsAsync`"
+  (it stranded users in iOS's limited-library sheet) and "never send `variants` on a product PATCH"
+  (the full-desired-matrix soft-deletes real variants). A behavioural test cannot express "this
+  string must never appear". Reviewers: flag if you disagree, but this was chosen with the
+  trade-off understood.
 
 ---
 
@@ -387,9 +395,11 @@ describe("categorySchema", () => {
     expect(parsed.data[0]!.slug).toBe("swimwear");
   });
 
-  it("fails loudly when handed a {data, meta} envelope it does not have", () => {
-    // Guard against someone 'helpfully' switching this to `paginated`.
-    expect(categoryListSchema.parse({ data: [REAL_CATEGORY] })).toBeTruthy();
+  it("fails loudly on a malformed category rather than passing it through", () => {
+    // `position` is required; a category missing it must throw, not arrive as
+    // undefined and sort unpredictably in the picker.
+    const { position, ...noPosition } = REAL_CATEGORY;
+    expect(() => categoryListSchema.parse({ data: [noPosition] })).toThrow();
   });
 });
 

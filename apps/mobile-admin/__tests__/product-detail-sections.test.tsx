@@ -18,7 +18,7 @@ describe("product detail screen composition", () => {
   it("renders every new section", () => {
     expect(source).toContain("<OptionsEditor");
     expect(source).toContain("<CategoryField");
-    expect(source).toContain("<VariantEditor");
+    expect(source).toContain("<VariantRow");
     expect(source).toContain("<MediaGrid");
     expect(source).toContain("<ImageViewer");
   });

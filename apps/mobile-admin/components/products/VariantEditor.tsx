@@ -2,6 +2,7 @@ import { useState } from "react";
 import { View, TextInput, StyleSheet } from "react-native";
 import { Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { SectionDisclosure } from "./SectionDisclosure";
 import type { ProductVariant } from "@repo/mobile-shared/api/schemas/products";
 import type { UpdateVariantBody } from "@repo/mobile-shared/api/products";
 
@@ -114,38 +115,39 @@ export function VariantEditor({ variant, onUpdate }: VariantEditorProps) {
         />
       </View>
 
-      <Text preset="caption" color="textTertiary">
-        Shipping
-      </Text>
-      <View style={styles.row}>
-        <NumericField
-          label="Weight (g)"
-          accessibilityLabel="Weight in grams"
-          initial={variant.weight_grams}
-          integer
-          onCommit={(weight_grams) => onUpdate(variant.id, { weight_grams })}
-        />
-        <NumericField
-          label="Length (cm)"
-          accessibilityLabel="Length in centimetres"
-          initial={variant.length_cm}
-          onCommit={(length_cm) => onUpdate(variant.id, { length_cm })}
-        />
-      </View>
-      <View style={styles.row}>
-        <NumericField
-          label="Width (cm)"
-          accessibilityLabel="Width in centimetres"
-          initial={variant.width_cm}
-          onCommit={(width_cm) => onUpdate(variant.id, { width_cm })}
-        />
-        <NumericField
-          label="Height (cm)"
-          accessibilityLabel="Height in centimetres"
-          initial={variant.height_cm}
-          onCommit={(height_cm) => onUpdate(variant.id, { height_cm })}
-        />
-      </View>
+      <SectionDisclosure title="Shipping & dimensions">
+        <View style={styles.shippingBody}>
+          <View style={styles.row}>
+            <NumericField
+              label="Weight (g)"
+              accessibilityLabel="Weight in grams"
+              initial={variant.weight_grams}
+              integer
+              onCommit={(weight_grams) => onUpdate(variant.id, { weight_grams })}
+            />
+            <NumericField
+              label="Length (cm)"
+              accessibilityLabel="Length in centimetres"
+              initial={variant.length_cm}
+              onCommit={(length_cm) => onUpdate(variant.id, { length_cm })}
+            />
+          </View>
+          <View style={styles.row}>
+            <NumericField
+              label="Width (cm)"
+              accessibilityLabel="Width in centimetres"
+              initial={variant.width_cm}
+              onCommit={(width_cm) => onUpdate(variant.id, { width_cm })}
+            />
+            <NumericField
+              label="Height (cm)"
+              accessibilityLabel="Height in centimetres"
+              initial={variant.height_cm}
+              onCommit={(height_cm) => onUpdate(variant.id, { height_cm })}
+            />
+          </View>
+        </View>
+      </SectionDisclosure>
     </View>
   );
 }
@@ -160,6 +162,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
   },
   row: { flexDirection: "row", gap: theme.spacing.md },
+  shippingBody: { gap: theme.spacing.sm, paddingTop: theme.spacing.xs },
   field: { flex: 1, gap: theme.spacing.xs },
   input: {
     height: 44,

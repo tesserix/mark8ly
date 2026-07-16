@@ -26,7 +26,7 @@ import type {
   UpdateProductOptionBody,
 } from "@repo/mobile-shared/api/products";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
-import { VariantEditor } from "@/components/products/VariantEditor";
+import { VariantRow } from "@/components/products/VariantRow";
 import { ImageViewer } from "@/components/products/ImageViewer";
 import { OptionsEditor } from "@/components/products/OptionsEditor";
 import { CategoryField } from "@/components/products/CategoryField";
@@ -331,7 +331,11 @@ export default function ProductDetailScreen() {
               variants.map((v, i) => (
                 <View key={v.id}>
                   {i > 0 ? <Hairline /> : null}
-                  <VariantEditor variant={v} onUpdate={handleVariantUpdate} />
+                  <VariantRow
+                    variant={v}
+                    onUpdate={handleVariantUpdate}
+                    defaultOpen={variants.length === 1}
+                  />
                 </View>
               ))
             ) : (

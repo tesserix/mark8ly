@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { ScrollView } from "react-native";
 import * as Haptics from "expo-haptics";
+import { useReducedMotion } from "react-native-reanimated";
 
 export type CreatedBannerSection = "photos" | "options" | "variants";
 
@@ -18,6 +19,7 @@ export function useCreatedBanner(created: string | undefined, scrollRef: RefObje
   const [dismissed, setDismissed] = useState(false);
   const hasFiredLandingHaptic = useRef(false);
   const sectionOffsets = useRef<Partial<Record<CreatedBannerSection, number>>>({});
+  const reduceMotion = useReducedMotion();
 
   const show = created === "1" && !dismissed;
 
@@ -36,10 +38,10 @@ export function useCreatedBanner(created: string | undefined, scrollRef: RefObje
     (section: CreatedBannerSection) => {
       const y = sectionOffsets.current[section];
       if (y !== undefined) {
-        scrollRef.current?.scrollTo({ y: Math.max(y - 16, 0), animated: true });
+        scrollRef.current?.scrollTo({ y: Math.max(y - 16, 0), animated: !reduceMotion });
       }
     },
-    [scrollRef],
+    [scrollRef, reduceMotion],
   );
 
   const dismiss = useCallback(() => setDismissed(true), []);

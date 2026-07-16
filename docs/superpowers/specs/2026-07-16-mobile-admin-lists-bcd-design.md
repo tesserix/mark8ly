@@ -55,6 +55,29 @@ The handoff asserted all four lists share `{data, meta}`. Three of its claims ar
    `Notifications.removeNotificationSubscription` no longer exists on the module — the unmount cleanup
    **throws today**. `shouldShowAlert` was superseded by `shouldShowBanner`/`shouldShowList`.
 
+### Found during planning — full sweep of all 161 products
+
+Fetched every page and analysed the union of keys, not a single sample. This corrected two things
+this spec itself originally got wrong:
+
+8. **`variants` come back UNSORTED.** "Bondi Linen Beach Shirt" returns positions `2,3,4,0,1`. So
+   **`variants[0]` is not the primary variant** — the handoff's `price → variants[0].price` recipe
+   would show the *M* variant's SKU and stock instead of *XS*. `primaryVariant` **must sort by
+   `position`**.
+9. **Multi-variant is the common case, not an edge case.** 8 products have 2–5 variants — and all 8
+   are `active`, out of only **12 active products total**. Two-thirds of what a merchant sees as live
+   inventory is multi-variant.
+10. **`created_at` DOES exist at top level** — the handoff (and this spec's first draft) claimed it
+    didn't. Only `compare_at_price` is genuinely absent. Also present and unused: `published_at`,
+    `updated_at`, `seo_title`, `seo_description`, `primary_category_id`.
+11. **Variant `stock` edits are silently discarded.** `products/[id].tsx` PATCHes `{price, stock}`;
+    `UpdateVariantRequest` (`validation.go:43-55`) has no `stock` field — it's `inventory_quantity`.
+    `price` lands; `stock` is dropped on the floor with a 200.
+
+Distribution across all 161: **149 `draft` / 12 `active`** · every price a **quoted string**
+(incl. `"19.99"`) · every currency **AUD** · zero products with zero variants · 1 product with no
+media · every variant has a `sku`.
+
 ### Real product shape (live)
 
 ```json
@@ -142,22 +165,45 @@ it as the odd one out, worth normalising server-side one day.
 - Derive `average_order_value`; delete the Recent Orders card and the now-unused `RecentOrder` import.
 - `block` requires a `reason` — currently omitted → 400.
 
-### 2 — C: orders
+### 2 — C: orders (**list only** — detail deferred, decided during planning)
 
-- `items`, not `line_items` (`orders_dto.go:180`).
-- Money fields (`subtotal`/`shipping_total`/`tax_total`/`discount_total`/`grand_total`) are
-  `decimal.Decimal` → quoted strings → `money`.
-- `item_count` doesn't exist → `items.length`.
+Planning revealed C is far larger than the audit implied, and the payoff is invisible. **6 of the 12
+fields `orders/[id].tsx` reads do not exist on the wire**: `line_items` (→`items`),
+`shipping_address` (→`addresses[]`, an array with a `kind` discriminator), `timeline` (exists
+nowhere), `tracking_number` (lives on `shipments`, an endpoint not mounted for mobile),
+`payment_method`, `payment_transaction_id`. `item_count` — which the audit attributed to orders —
+actually belongs to `AdminAbandonedCartResponse` (`orders_dto.go:406`). Orders never had it.
+
+Rewriting a 536-line screen against a store with **zero orders**, unverifiable live, is its own
+sub-project. **Decision: this session does the list only.**
+
+**In scope — the list:**
+- Envelope → `paginated(orderSchema)`. All six fields `OrderRow` reads *do* exist.
+- `grand_total` (and the other money fields) are `decimal.Decimal` → **quoted strings** → `money`.
 - `customer_name` is `omitempty` → `.optional()`.
-- Fix `cancel` (needs `reason`), `refund` (needs `refund_request_id`), `MarkFulfilled` (never binds
-  the body → tracking number silently discarded).
+- **The "Active" tab is a silent-empty bug.** It sends `status=pending,confirmed`; the handler does
+  `tx.Where("status = ?", q.Status)` (`orders.go:174`) — an exact match that can never hit. Fix:
+  split into **All / Pending / Confirmed / Completed / Cancelled**, one real status per tab. No data
+  unreachable, no lie, no backend work.
+
+**Explicitly deferred (own sub-project):** `useOrder`/`OrderDetail`/`orders/[id].tsx` stay on the
+hand-written type, passing **no schema** — untouched and still broken exactly as today (the detail
+screen already crashes on `.map()` of undefined `line_items`). It is unreachable in practice with 0
+orders. Leave a comment at `OrderDetail` recording this. Also deferred with it: `MarkFulfilled`
+discards the body entirely (`orders.go:398` — the fulfill modal's tracking-number input goes
+nowhere), `cancel` needs `reason`, `refund` needs `refund_request_id`.
+
 - **Orders stay visibly empty. That is correct, not a failure.**
 
 ### 3 — D: products (largest)
 
 - Wire-truthful variant-aware `api/schemas/products.ts`.
-- New `lib/product-display.ts` — pure, unit-tested helpers so `variants[0]` doesn't scatter:
+- New `lib/product-display.ts` — pure, unit-tested helpers so variant-picking doesn't scatter:
   `primaryVariant`, `productPrice`, `productSku`, `productStock`, `productThumb`, `productCurrency`.
+  **`primaryVariant` sorts by `position`** (finding 8) — never `variants[0]`. Same for `productThumb`
+  over `media`.
+- Variant edit: send `inventory_quantity`, not `stock` (finding 11) — today's stock edits are
+  silently discarded.
 - Screens read `title`/`variants[]`/`media[]` via those helpers.
 - `formatCurrency` takes a currency code; drop the hardcoded USD.
 - Inactive tab → Draft (`status=draft`). Low Stock tab removed.

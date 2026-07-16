@@ -15,6 +15,7 @@ import { money, paginated } from "../schema-helpers";
  */
 export const variantOptionValueSchema = z.object({
   option_name: z.string(),
+  option_value_id: z.string(),
   value: z.string(),
 });
 
@@ -46,10 +47,30 @@ export const productMediaSchema = z.object({
 });
 export type ProductMedia = z.infer<typeof productMediaSchema>;
 
-export const productOptionSchema = z.object({
-  name: z.string(),
-  values: z.array(z.string()),
+/**
+ * Response shape for a product option (`AdminProductOption`, dto.go:114-125).
+ * `values` is an array of option-value objects `{id, value, position}`
+ * (`AdminProductOptionValue`), NOT `string[]`.
+ *
+ * Do not confuse this with the REQUEST shape used when creating/updating a
+ * product option (`CreateProductOptionInput`, validation.go:251-254), where
+ * `values` really is `string[]`. That request/response asymmetry is a known
+ * repeated trap on this project — mixing them up here is exactly the bug
+ * that would blank the product list the moment any product has options.
+ */
+export const productOptionValueSchema = z.object({
+  id: z.string(),
+  value: z.string(),
+  position: z.number(),
 });
+
+export const productOptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  position: z.number(),
+  values: z.array(productOptionValueSchema),
+});
+export type ProductOption = z.infer<typeof productOptionSchema>;
 
 export const productSchema = z.object({
   id: z.string(),

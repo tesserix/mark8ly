@@ -68,4 +68,58 @@ describe("productSchema", () => {
     expect(res.success).toBe(false);
     if (!res.success) expect(res.error.issues[0]!.path.join(".")).toContain("price");
   });
+
+  // Regression test for the options wire-shape bug: every product in prod
+  // currently has options: [] (see REAL_PRODUCT above), so that fixture
+  // never exercises AdminProductOption at all. The moment a merchant adds
+  // a real option, `options` arrives as objects (`AdminProductOption` /
+  // `AdminProductOptionValue`, dto.go:114-125) — NOT `string[]`, which was
+  // the previous (wrong) schema. This mirrors that populated shape.
+  it("parses a product with a populated options array (mirrors AdminProductOption DTO)", () => {
+    const withOptions = {
+      ...REAL_PRODUCT,
+      options: [
+        {
+          id: "opt-size",
+          name: "Size",
+          position: 0,
+          values: [
+            { id: "optval-s", value: "Small", position: 0 },
+            { id: "optval-m", value: "Medium", position: 1 },
+          ],
+        },
+      ],
+      variants: [
+        {
+          id: "3eabedcb",
+          sku: "TBS-PBLR-XS-S",
+          price: "199",
+          currency_code: "AUD",
+          inventory_quantity: 0,
+          inventory_policy: "deny",
+          option_values: [
+            { option_name: "Size", option_value_id: "optval-s", value: "Small" },
+          ],
+          position: 0,
+        },
+      ],
+    };
+
+    const parsed = productSchema.parse(withOptions);
+    expect(parsed.options).toHaveLength(1);
+    expect(parsed.options[0]).toEqual({
+      id: "opt-size",
+      name: "Size",
+      position: 0,
+      values: [
+        { id: "optval-s", value: "Small", position: 0 },
+        { id: "optval-m", value: "Medium", position: 1 },
+      ],
+    });
+    expect(parsed.variants[0]!.option_values[0]).toEqual({
+      option_name: "Size",
+      option_value_id: "optval-s",
+      value: "Small",
+    });
+  });
 });

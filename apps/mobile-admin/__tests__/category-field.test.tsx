@@ -4,14 +4,23 @@
 // doesn't have. Stub the pieces the sheet's tree touches (same fix as
 // __tests__/options-editor.test.tsx): BottomSheetFlatList added on top since
 // the sheet renders its rows through it.
+//
+// Unlike option-builder-sheet's stub, BottomSheetModal here renders its
+// children directly instead of returning null: CategoryField now keeps the
+// sheet permanently mounted (not just while "presented"), and its own
+// `isLoading` spinner/empty-state branches need to be reachable from
+// CategoryField-level render() calls, not just from the imperative
+// present()/dismiss() handle.
 jest.mock("@gorhom/bottom-sheet", () => {
   const React = require("react");
   return {
     __esModule: true,
-    BottomSheetModal: React.forwardRef((_props: unknown, ref: React.Ref<unknown>) => {
-      React.useImperativeHandle(ref, () => ({ present: () => {}, dismiss: () => {} }));
-      return null;
-    }),
+    BottomSheetModal: React.forwardRef(
+      ({ children }: { children?: React.ReactNode }, ref: React.Ref<unknown>) => {
+        React.useImperativeHandle(ref, () => ({ present: () => {}, dismiss: () => {} }));
+        return children ?? null;
+      },
+    ),
     BottomSheetView: ({ children }: { children?: React.ReactNode }) => children ?? null,
     BottomSheetScrollView: ({ children }: { children?: React.ReactNode }) => children ?? null,
     BottomSheetFlatList: ({ children }: { children?: React.ReactNode }) => children ?? null,
@@ -129,6 +138,13 @@ describe("CategoryField", () => {
     );
     expect(getByText("Loading categories…")).toBeTruthy();
     expect(queryByText("Add categories")).toBeNull();
+  });
+
+  it("keeps the sheet mounted and shows its own spinner while categories load, so a refetch mid-edit can't unmount an open sheet", () => {
+    const { getByTestId } = render(
+      <CategoryField categories={[]} selected={[]} onChange={jest.fn()} isLoading />,
+    );
+    expect(getByTestId("category-picker-loading")).toBeTruthy();
   });
 
   it("shows a retry affordance when categories failed to load", () => {

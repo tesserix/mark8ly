@@ -117,8 +117,8 @@ export const CategoryPickerSheet = forwardRef<CategoryPickerSheetHandle, Categor
           />
 
           {isLoading ? (
-            <View style={styles.centered}>
-              <ActivityIndicator color={theme.colors.accent} />
+            <View style={styles.centered} testID="category-picker-loading">
+              <ActivityIndicator size="small" color={theme.colors.text} />
             </View>
           ) : categories.length === 0 ? (
             <EmptyState

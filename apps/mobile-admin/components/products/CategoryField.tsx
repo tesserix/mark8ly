@@ -32,67 +32,71 @@ export function CategoryField({
 }: CategoryFieldProps) {
   const sheetRef = useRef<CategoryPickerSheetHandle>(null);
 
-  if (isLoading) {
-    return (
-      <View style={[styles.field, styles.fieldDisabled]}>
-        <Text preset="body" color="textTertiary">
-          Loading categories…
-        </Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <Pressable
-        style={styles.field}
-        onPress={onRetry}
-        accessibilityRole="button"
-        accessibilityLabel="Couldn't load categories, tap to retry"
-      >
-        <Text preset="body" color="danger">
-          Couldn&apos;t load, tap to retry
-        </Text>
-      </Pressable>
-    );
-  }
-
   const visible = selected.slice(0, MAX_VISIBLE_CHIPS);
   const overflow = selected.length - visible.length;
 
+  // The sheet stays mounted across all three field states — a refetch that
+  // flips `isLoading` true while the sheet is already open (open, edit,
+  // refetch mid-edit) must show its own spinner, not unmount the whole
+  // BottomSheetModal out from under the merchant.
   return (
     <>
-      <Pressable
-        style={styles.field}
-        onPress={() => sheetRef.current?.present()}
-        accessibilityRole="button"
-        accessibilityLabel={`Categories, ${selected.length} selected, edit`}
-      >
-        {selected.length === 0 ? (
+      {isLoading ? (
+        <View style={[styles.field, styles.fieldDisabled]}>
           <Text preset="body" color="textTertiary">
-            Add categories
+            Loading categories…
           </Text>
-        ) : (
-          <View style={styles.chips}>
-            {visible.map((c) => (
-              <View key={c.id} style={styles.chip}>
-                <Text preset="caption" color="text">
-                  {c.name}
-                </Text>
-              </View>
-            ))}
-            {overflow > 0 ? (
-              <View style={styles.chip}>
-                <Text preset="caption" color="textSecondary">
-                  +{overflow}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        )}
-        <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-      </Pressable>
-      <CategoryPickerSheet ref={sheetRef} categories={categories} selected={selected} onApply={onChange} />
+        </View>
+      ) : error ? (
+        <Pressable
+          style={styles.field}
+          onPress={onRetry}
+          accessibilityRole="button"
+          accessibilityLabel="Couldn't load categories, tap to retry"
+        >
+          <Text preset="body" color="danger">
+            Couldn&apos;t load, tap to retry
+          </Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          style={styles.field}
+          onPress={() => sheetRef.current?.present()}
+          accessibilityRole="button"
+          accessibilityLabel={`Categories, ${selected.length} selected, edit`}
+        >
+          {selected.length === 0 ? (
+            <Text preset="body" color="textTertiary">
+              Add categories
+            </Text>
+          ) : (
+            <View style={styles.chips}>
+              {visible.map((c) => (
+                <View key={c.id} style={styles.chip}>
+                  <Text preset="caption" color="text">
+                    {c.name}
+                  </Text>
+                </View>
+              ))}
+              {overflow > 0 ? (
+                <View style={styles.chip}>
+                  <Text preset="caption" color="textSecondary">
+                    +{overflow}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+          <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
+        </Pressable>
+      )}
+      <CategoryPickerSheet
+        ref={sheetRef}
+        categories={categories}
+        selected={selected}
+        onApply={onChange}
+        isLoading={isLoading}
+      />
     </>
   );
 }

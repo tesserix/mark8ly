@@ -39,9 +39,10 @@ function iso(daysAgo: number): string {
 }
 
 const DEMO_ORDERS: Order[] = [
-  { id: "o-1001", order_number: "1001", status: "pending", customer_email: "maya@example.com", customer_name: "Maya Chen", grand_total: 8400, item_count: 2, created_at: iso(0), updated_at: iso(0) },
-  { id: "o-1000", order_number: "1000", status: "fulfilled", customer_email: "leo@example.com", customer_name: "Leo Park", grand_total: 12900, item_count: 3, created_at: iso(1), updated_at: iso(1) },
-  { id: "o-0999", order_number: "0999", status: "cancelled", customer_email: "ida@example.com", customer_name: "Ida Rossi", grand_total: 5200, item_count: 1, created_at: iso(3), updated_at: iso(2) },
+  { id: "o-1001", tenant_id: "demo-tenant", store_id: "demo-store", order_number: "1001", idempotency_key: "idem-1001", status: "pending", payment_status: "paid", fulfillment_status: "unfulfilled", customer_email: "maya@example.com", customer_name: "Maya Chen", subtotal: 8400, shipping_total: 0, tax_total: 0, discount_total: 0, grand_total: 8400, refunded_amount: 0, currency_code: "AUD", items: [], addresses: [], placed_at: iso(0), created_at: iso(0), updated_at: iso(0) },
+  { id: "o-1000", tenant_id: "demo-tenant", store_id: "demo-store", order_number: "1000", idempotency_key: "idem-1000", status: "fulfilled", payment_status: "paid", fulfillment_status: "fulfilled", customer_email: "leo@example.com", customer_name: "Leo Park", subtotal: 12900, shipping_total: 0, tax_total: 0, discount_total: 0, grand_total: 12900, refunded_amount: 0, currency_code: "AUD", items: [], addresses: [], placed_at: iso(1), created_at: iso(1), updated_at: iso(1) },
+  // No customer_name — mirrors the omitempty case.
+  { id: "o-0999", tenant_id: "demo-tenant", store_id: "demo-store", order_number: "0999", idempotency_key: "idem-0999", status: "cancelled", payment_status: "refunded", fulfillment_status: "unfulfilled", customer_email: "ida@example.com", subtotal: 5200, shipping_total: 0, tax_total: 0, discount_total: 0, grand_total: 5200, refunded_amount: 5200, currency_code: "AUD", items: [], addresses: [], placed_at: iso(3), created_at: iso(3), updated_at: iso(2) },
 ];
 
 const DEMO_PRODUCTS: Product[] = [
@@ -162,7 +163,7 @@ function resolve(path: string): unknown {
 
   const orderId = clean.match(/^\/orders\/(.+)$/);
   if (orderId) return orderDetail(orderId[1]!);
-  if (clean === "/orders") return page(DEMO_ORDERS);
+  if (clean === "/orders") return paged(DEMO_ORDERS);
 
   const productId = clean.match(/^\/products\/(.+)$/);
   if (productId) return productDetail(productId[1]!);

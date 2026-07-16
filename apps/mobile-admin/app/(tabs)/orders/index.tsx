@@ -20,11 +20,15 @@ import { theme } from "@/lib/theme";
 import type { Order } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
-type FilterKey = "all" | "active" | "completed" | "cancelled";
+type FilterKey = "all" | "pending" | "confirmed" | "completed" | "cancelled";
 
 const FILTERS: { key: FilterKey; label: string; status?: string }[] = [
   { key: "all", label: "All" },
-  { key: "active", label: "Active", status: "pending,confirmed" },
+  // One real status per tab. The backend matches status exactly
+  // (orders.go:174 `status = ?`), so a comma-joined "pending,confirmed"
+  // silently matches nothing — which is what this tab used to do.
+  { key: "pending", label: "Pending", status: "pending" },
+  { key: "confirmed", label: "Confirmed", status: "confirmed" },
   { key: "completed", label: "Completed", status: "fulfilled" },
   { key: "cancelled", label: "Cancelled", status: "cancelled" },
 ];
@@ -84,7 +88,7 @@ export default function OrdersScreen() {
         </View>
       ) : (
         <FlatList
-          data={data?.items ?? []}
+          data={data?.data ?? []}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}

@@ -9,3 +9,4 @@ export { SearchField } from "./SearchField";
 export { EmptyState } from "./EmptyState";
 export { PageHeader } from "./PageHeader";
 export { BackHeader } from "./BackHeader";
+export { FieldInput, FieldLabel } from "./FieldInput";

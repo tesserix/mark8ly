@@ -22,12 +22,14 @@ import { theme } from "@/lib/theme";
 import type { Product } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
-type FilterKey = "all" | "low_stock" | "inactive";
+type FilterKey = "all" | "active" | "draft";
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "low_stock", label: "Low Stock" },
-  { key: "inactive", label: "Inactive" },
+  { key: "active", label: "Active" },
+  // Was "Inactive" -> status=inactive, a hard 400: the backend enum is
+  // draft|active|archived. 149 of the store's 161 products are drafts.
+  { key: "draft", label: "Draft" },
 ];
 
 function useDebounce(value: string, delay: number): string {
@@ -47,8 +49,7 @@ export default function ProductsScreen() {
   const debouncedSearch = useDebounce(searchText, 300);
 
   const queryParams = {
-    ...(activeFilter === "inactive" ? { status: "inactive" } : {}),
-    ...(activeFilter === "low_stock" ? { low_stock: true } : {}),
+    ...(activeFilter !== "all" ? { status: activeFilter } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
   };
 
@@ -89,7 +90,7 @@ export default function ProductsScreen() {
         </View>
       ) : (
         <FlatList
-          data={data?.items ?? []}
+          data={data?.data ?? []}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}

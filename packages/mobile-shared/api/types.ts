@@ -82,41 +82,18 @@ export interface TimelineEvent {
   created_at: string;
 }
 
-export interface Product {
-  id: string;
-  name: string;
-  status: string;
-  price: number;
-  compare_at_price: number | null;
-  sku: string | null;
-  stock: number;
-  thumbnail_url: string | null;
-  created_at: string;
-}
-
-export interface ProductDetail extends Product {
-  description: string | null;
-  barcode: string | null;
-  category_id: string | null;
-  category_name: string | null;
-  tags: string[];
-  media: MediaItem[];
-  variants: Variant[];
-}
-
-export interface MediaItem {
-  id: string;
-  url: string;
-  position: number;
-}
-
-export interface Variant {
-  id: string;
-  name: string;
-  sku: string | null;
-  price: number;
-  stock: number;
-}
+// Re-exported from the schema module so the types can never drift from the
+// validation again. The hand-written versions were entirely fictional:
+// `name`, `price`, `compare_at_price`, `sku`, `stock`, `thumbnail_url`,
+// `barcode`, `category_id`, `category_name` and `Variant.name`/`Variant.stock`
+// — not one of those keys exists on the wire. The real shape is `title` plus
+// `variants[]` (price is a QUOTED decimal string) and `media[]`.
+export type {
+  Product,
+  ProductDetail,
+  ProductVariant,
+  ProductMedia,
+} from "./schemas/products";
 
 export interface Notification {
   id: string;

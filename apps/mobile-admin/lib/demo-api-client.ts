@@ -46,9 +46,31 @@ const DEMO_ORDERS: Order[] = [
 ];
 
 const DEMO_PRODUCTS: Product[] = [
-  { id: "p-1", name: "Linen Camp Shirt", status: "active", price: 8900, compare_at_price: 11900, sku: "LCS-001", stock: 42, thumbnail_url: null, created_at: iso(20) },
-  { id: "p-2", name: "Merino Beanie", status: "active", price: 3900, compare_at_price: null, sku: "MB-014", stock: 7, thumbnail_url: null, created_at: iso(15) },
-  { id: "p-3", name: "Canvas Weekender", status: "draft", price: 14900, compare_at_price: null, sku: "CW-220", stock: 0, thumbnail_url: null, created_at: iso(9) },
+  {
+    id: "p-1", store_id: "demo-store", handle: "linen-camp-shirt", title: "Linen Camp Shirt",
+    description: "A demo product.", status: "active", tags: ["demo"], categories: [], options: [],
+    // Deliberately out of position order — the real API returns them like this.
+    variants: [
+      { id: "v-m", sku: "LCS-001-M", price: 8900, currency_code: "AUD", inventory_quantity: 20, inventory_policy: "deny", option_values: [], position: 1 },
+      { id: "v-s", sku: "LCS-001-S", price: 8900, currency_code: "AUD", inventory_quantity: 22, inventory_policy: "deny", option_values: [], position: 0 },
+    ],
+    media: [{ id: "m-1", url: "https://cdn.mark8ly.com/demo/shirt.png", storage_key: "demo/shirt.png", position: 0, media_type: "image" }],
+    created_at: iso(20), updated_at: iso(20),
+  },
+  {
+    id: "p-2", store_id: "demo-store", handle: "merino-beanie", title: "Merino Beanie",
+    description: "A demo product.", status: "active", tags: [], categories: [], options: [],
+    variants: [{ id: "v-b", sku: "MB-014", price: 3900, currency_code: "AUD", inventory_quantity: 7, inventory_policy: "deny", option_values: [], position: 0 }],
+    media: [],
+    created_at: iso(15), updated_at: iso(15),
+  },
+  {
+    id: "p-3", store_id: "demo-store", handle: "canvas-weekender", title: "Canvas Weekender",
+    description: "A demo product.", status: "draft", tags: [], categories: [], options: [],
+    variants: [{ id: "v-w", sku: "CW-220", price: 14900, currency_code: "AUD", inventory_quantity: 0, inventory_policy: "deny", option_values: [], position: 0 }],
+    media: [],
+    created_at: iso(9), updated_at: iso(9),
+  },
 ];
 
 const DEMO_CUSTOMERS: Customer[] = [
@@ -132,18 +154,9 @@ function orderDetail(id: string): OrderDetail {
   };
 }
 
+/** Detail is the same shape as list — the endpoint returns the product object. */
 function productDetail(id: string): ProductDetail {
-  const base = DEMO_PRODUCTS.find((p) => p.id === id) ?? DEMO_PRODUCTS[0]!;
-  return {
-    ...base,
-    description: "A demo product. Real data appears once real GIP auth is wired.",
-    barcode: null,
-    category_id: null,
-    category_name: "Apparel",
-    tags: ["demo"],
-    media: [],
-    variants: [],
-  };
+  return DEMO_PRODUCTS.find((p) => p.id === id) ?? DEMO_PRODUCTS[0]!;
 }
 
 function customerDetail(id: string): CustomerDetail {
@@ -155,7 +168,7 @@ function customerDetail(id: string): CustomerDetail {
 function resolve(path: string): unknown {
   const clean = path.split("?")[0]!.replace(/\/+$/, "");
   // Must mirror the real API's wire shape: /stores returns { data } with no
-  // meta (unlike the paginated list endpoints below, which use page()).
+  // meta (unlike the paginated list endpoints below, which use paged()).
   // Do not "simplify" this back to a bare array — see storesResponseSchema
   // in use-store.ts, which reads res.data and would break on undefined.
   if (clean === "/stores") return { data: [DEMO_STORE] };
@@ -167,7 +180,7 @@ function resolve(path: string): unknown {
 
   const productId = clean.match(/^\/products\/(.+)$/);
   if (productId) return productDetail(productId[1]!);
-  if (clean === "/products") return page(DEMO_PRODUCTS);
+  if (clean === "/products") return paged(DEMO_PRODUCTS);
 
   const customerId = clean.match(/^\/customers\/(.+)$/);
   if (customerId) return customerDetail(customerId[1]!);

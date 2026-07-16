@@ -3,23 +3,26 @@ import { Package } from "lucide-react-native";
 import { StatusBadge, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Product } from "@repo/mobile-shared/api/types";
+import {
+  formatMoney,
+  productCurrency,
+  productPrice,
+  productStock,
+  productThumb,
+} from "@/lib/product-display";
 
 interface ProductRowProps {
   product: Product;
   onPress: (product: Product) => void;
 }
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
 export function ProductRow({ product, onPress }: ProductRowProps) {
   const isActive = product.status === "active";
-  const lowStock = product.stock <= 5;
+  const price = productPrice(product);
+  const stock = productStock(product);
+  const thumb = productThumb(product);
+  const priceLabel = price === undefined ? "—" : formatMoney(price, productCurrency(product));
+  const lowStock = stock <= 5;
 
   return (
     <TouchableOpacity
@@ -27,13 +30,13 @@ export function ProductRow({ product, onPress }: ProductRowProps) {
       onPress={() => onPress(product)}
       activeOpacity={0.6}
       accessibilityRole="button"
-      accessibilityLabel={`${product.name}, ${formatCurrency(product.price)}, stock ${product.stock}, ${product.status}`}
+      accessibilityLabel={`${product.title}, ${priceLabel}, stock ${stock}, ${product.status}`}
     >
-      {product.thumbnail_url ? (
+      {thumb ? (
         <Image
-          source={{ uri: product.thumbnail_url }}
+          source={{ uri: thumb }}
           style={styles.thumb}
-          accessibilityLabel={`${product.name} thumbnail`}
+          accessibilityLabel={`${product.title} thumbnail`}
         />
       ) : (
         <View style={[styles.thumb, styles.thumbPlaceholder]}>
@@ -43,14 +46,14 @@ export function ProductRow({ product, onPress }: ProductRowProps) {
 
       <View style={styles.info}>
         <Text preset="bodyEmphasis" color="text" numberOfLines={1}>
-          {product.name}
+          {product.title}
         </Text>
         <View style={styles.metaRow}>
           <Text preset="caption" color="text">
-            {formatCurrency(product.price)}
+            {priceLabel}
           </Text>
           <Text preset="caption" color={lowStock ? "danger" : "textTertiary"}>
-            {product.stock} in stock
+            {stock} in stock
           </Text>
         </View>
       </View>

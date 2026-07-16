@@ -1,48 +1,78 @@
 import type { createApiClient } from "./client";
-import type { Product, ProductDetail, PaginatedResponse } from "./types";
+import {
+  productDetailSchema,
+  productListSchema,
+  type Product,
+  type ProductDetail,
+  type ProductListResponse,
+} from "./schemas/products";
 
 export interface ListProductsParams {
+  /** draft | active | archived. "inactive" is a 400 — it is not a real status. */
   status?: string;
-  low_stock?: string;
   search?: string;
-  cursor?: string;
-  limit?: string;
+  page?: string;
+  page_size?: string;
+}
+
+/**
+ * CreateProductRequest (validation.go:231-249) requires `title` and at least
+ * one variant, each with a required `sku` and `price`. The old body — name /
+ * price / stock — was an unconditional 400.
+ */
+export interface CreateProductVariantBody {
+  sku: string;
+  price: number;
+  currency_code?: string;
+  inventory_quantity?: number;
+  position?: number;
 }
 
 export interface CreateProductBody {
-  name: string;
+  title: string;
   description?: string;
-  price: number;
-  compare_at_price?: number;
-  sku?: string;
-  stock: number;
-  category_id?: string;
+  status?: string;
   tags?: string[];
-  status: string;
+  variants: CreateProductVariantBody[];
+}
+
+export interface UpdateProductBody {
+  title?: string;
+  description?: string;
+  status?: string;
+  tags?: string[];
+}
+
+/** UpdateVariantRequest (validation.go:43-55). There is no `stock` field. */
+export interface UpdateVariantBody {
+  sku?: string;
+  price?: number;
+  inventory_quantity?: number;
 }
 
 export function createProductsApi(client: ReturnType<typeof createApiClient>) {
   return {
     list: (params?: ListProductsParams) =>
-      client.get<PaginatedResponse<Product>>("/products", params as Record<string, string>),
-    get: (id: string) => client.get<ProductDetail>(`/products/${id}`),
-    create: (body: CreateProductBody) => client.post<ProductDetail>("/products", body),
-    update: (id: string, body: Partial<CreateProductBody>) =>
-      client.patch<ProductDetail>(`/products/${id}`, body),
-    uploadMedia: async (productId: string, uri: string) => {
-      const formData = new FormData();
-      const filename = uri.split("/").pop() ?? "photo.jpg";
-      formData.append("file", { uri, name: filename, type: "image/jpeg" } as unknown as Blob);
-      return client.uploadMedia(`/products/${productId}/media`, formData);
-    },
+      client.get<ProductListResponse>(
+        "/products",
+        params as Record<string, string>,
+        productListSchema,
+      ),
+    get: (id: string) =>
+      client.get<ProductDetail>(`/products/${id}`, undefined, productDetailSchema),
+    create: (body: CreateProductBody) =>
+      client.post<ProductDetail>("/products", body, productDetailSchema),
+    update: (id: string, body: UpdateProductBody) =>
+      client.patch<ProductDetail>(`/products/${id}`, body, productDetailSchema),
+    /**
+     * `inventory_quantity`, NOT `stock`. UpdateVariantRequest has no `stock`
+     * field, so the old body's stock edits were silently discarded with a 200.
+     */
+    updateVariant: (productId: string, variantId: string, body: UpdateVariantBody) =>
+      client.patch(`/products/${productId}/variants/${variantId}`, body),
     deleteMedia: (productId: string, mediaId: string) =>
       client.delete(`/products/${productId}/media/${mediaId}`),
-    reorderMedia: (productId: string, mediaIds: string[]) =>
-      client.patch(`/products/${productId}/media/reorder`, { media_ids: mediaIds }),
-    listVariants: (productId: string) => client.get(`/products/${productId}/variants`),
-    createVariant: (productId: string, body: { name: string; sku?: string; price: number; stock: number }) =>
-      client.post(`/products/${productId}/variants`, body),
-    updateVariant: (productId: string, variantId: string, body: { price?: number; stock?: number }) =>
-      client.patch(`/products/${productId}/variants/${variantId}`, body),
   };
 }
+
+export type { Product, ProductDetail };

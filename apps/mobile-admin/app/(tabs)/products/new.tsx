@@ -9,8 +9,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { ProductMediaPicker } from "../../../components/ProductMediaPicker";
-import { useCreateProduct, useUploadMedia } from "../../../lib/admin-api/product-crud";
+import { useCreateProduct } from "../../../lib/admin-api/product-crud";
 import {
   BackHeader,
   Card,
@@ -20,14 +19,27 @@ import {
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
-const TOTAL_STEPS = 4;
+// Was 4 — the "Photos" step is gone. Media upload needs a 3-step signed-URL
+// flow (POST /media/upload-url -> PUT -> POST /media) that this app does not
+// implement; the old step let a merchant pick images that were then dropped.
+const TOTAL_STEPS = 3;
 
+/** The backend enum is draft|active|archived — "inactive" is a 400. */
 type ProductStatus = "draft" | "active";
 
 const STATUS_OPTIONS: { key: ProductStatus; label: string }[] = [
   { key: "draft", label: "Draft" },
   { key: "active", label: "Active" },
 ];
+
+/**
+ * CreateProductVariantInput.SKU is `binding:"required,max=100"` — a product
+ * cannot be created without one. When the merchant leaves SKU blank we derive
+ * a stable one from the title rather than fail the request.
+ */
+function deriveSku(title: string): string {
+  return `${title.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 40)}-1`;
+}
 
 function StepDots({ current, total }: { current: number; total: number }) {
   return (
@@ -80,31 +92,27 @@ function FieldLabel({ label }: { label: string }) {
 export default function NewProductScreen() {
   const router = useRouter();
   const createMutation = useCreateProduct();
-  const uploadMediaMutation = useUploadMedia();
 
   const [step, setStep] = useState(1);
-  const [images, setImages] = useState<string[]>([]);
-  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [compareAtPrice, setCompareAtPrice] = useState("");
   const [sku, setSku] = useState("");
   const [stock, setStock] = useState("");
-  const [categoryId, setCategoryId] = useState("");
   const [tags, setTags] = useState("");
   const [status, setStatus] = useState<ProductStatus>("draft");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const canProceed = useCallback((): boolean => {
-    if (step === 2) {
-      return name.trim().length > 0 && !isNaN(parseFloat(price)) && parseFloat(price) >= 0;
+    if (step === 1) {
+      return title.trim().length > 0 && !isNaN(parseFloat(price)) && parseFloat(price) >= 0;
     }
     return true;
-  }, [step, name, price]);
+  }, [step, title, price]);
 
   const handleNext = useCallback(() => {
     if (!canProceed()) {
-      Alert.alert("Validation", "Please fill in all required fields (name and price).");
+      Alert.alert("Validation", "Please fill in all required fields (title and price).");
       return;
     }
     if (step < TOTAL_STEPS) setStep(step + 1);
@@ -115,38 +123,36 @@ export default function NewProductScreen() {
   }, [step]);
 
   const handleCreate = useCallback(
-    async (saveAsDraft: boolean) => {
+    (saveAsDraft: boolean) => {
       const parsedPrice = parseFloat(price);
-      if (!name.trim() || isNaN(parsedPrice)) {
-        Alert.alert("Validation", "Product name and price are required.");
+      if (!title.trim() || isNaN(parsedPrice)) {
+        Alert.alert("Validation", "Product title and price are required.");
         return;
       }
       setIsSubmitting(true);
-      const parsedCompare = compareAtPrice ? parseFloat(compareAtPrice) : undefined;
       const parsedStock = parseInt(stock, 10);
       const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
 
       createMutation.mutate(
         {
-          name: name.trim(),
+          title: title.trim(),
           description: description.trim() || undefined,
-          price: parsedPrice,
-          compare_at_price: parsedCompare,
-          sku: sku.trim() || undefined,
-          stock: isNaN(parsedStock) ? 0 : parsedStock,
           status: saveAsDraft ? "draft" : status,
-          category_id: categoryId.trim() || undefined,
           tags: tagList.length > 0 ? tagList : undefined,
+          // Price/SKU/stock live on the variant — the product itself has none.
+          // CreateProductRequest requires at least one variant.
+          variants: [
+            {
+              sku: sku.trim() || deriveSku(title),
+              price: parsedPrice,
+              currency_code: "AUD",
+              inventory_quantity: isNaN(parsedStock) ? 0 : parsedStock,
+              position: 0,
+            },
+          ],
         },
         {
-          onSuccess: async (data) => {
-            for (const uri of images) {
-              try {
-                await uploadMediaMutation.mutateAsync({ productId: data.id, uri });
-              } catch {
-                // ignore individual failures, others continue
-              }
-            }
+          onSuccess: () => {
             setIsSubmitting(false);
             router.back();
           },
@@ -157,10 +163,7 @@ export default function NewProductScreen() {
         },
       );
     },
-    [
-      name, description, price, compareAtPrice, sku, stock, status,
-      categoryId, tags, images, createMutation, uploadMediaMutation, router,
-    ],
+    [title, description, price, sku, stock, status, tags, createMutation, router],
   );
 
   if (isSubmitting) {
@@ -192,30 +195,13 @@ export default function NewProductScreen() {
         {step === 1 ? (
           <View style={styles.stepContent}>
             <Text preset="h2" color="text">
-              Photos
-            </Text>
-            <Text preset="body" color="textSecondary" style={styles.stepIntro}>
-              Take photos or pick from your library. You can add more later.
-            </Text>
-            <ProductMediaPicker images={images} onImagesChange={setImages} />
-            {images.length === 0 ? (
-              <Text preset="caption" color="textTertiary" style={styles.tip}>
-                Tip — clean photos on a plain background convert ~40% better.
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        {step === 2 ? (
-          <View style={styles.stepContent}>
-            <Text preset="h2" color="text">
               Details
             </Text>
-            <FieldLabel label="Name *" />
+            <FieldLabel label="Title *" />
             <TextInput
               style={styles.input}
-              value={name}
-              onChangeText={setName}
+              value={title}
+              onChangeText={setTitle}
               placeholder="e.g. Handmade Ceramic Mug"
               placeholderTextColor={theme.colors.textTertiary}
               autoFocus
@@ -233,37 +219,13 @@ export default function NewProductScreen() {
             />
             <View style={styles.row}>
               <View style={styles.half}>
-                <FieldLabel label="Price *" />
+                <FieldLabel label="Price (AUD) *" />
                 <TextInput
                   style={styles.input}
                   value={price}
                   onChangeText={setPrice}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
-                  placeholderTextColor={theme.colors.textTertiary}
-                />
-              </View>
-              <View style={styles.half}>
-                <FieldLabel label="Compare at" />
-                <TextInput
-                  style={styles.input}
-                  value={compareAtPrice}
-                  onChangeText={setCompareAtPrice}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                  placeholderTextColor={theme.colors.textTertiary}
-                />
-              </View>
-            </View>
-            <View style={styles.row}>
-              <View style={styles.half}>
-                <FieldLabel label="SKU" />
-                <TextInput
-                  style={styles.input}
-                  value={sku}
-                  onChangeText={setSku}
-                  autoCapitalize="characters"
-                  placeholder="SKU-001"
                   placeholderTextColor={theme.colors.textTertiary}
                 />
               </View>
@@ -279,22 +241,23 @@ export default function NewProductScreen() {
                 />
               </View>
             </View>
+            <FieldLabel label="SKU" />
+            <TextInput
+              style={styles.input}
+              value={sku}
+              onChangeText={setSku}
+              autoCapitalize="characters"
+              placeholder={title.trim() ? deriveSku(title) : "SKU-001"}
+              placeholderTextColor={theme.colors.textTertiary}
+            />
           </View>
         ) : null}
 
-        {step === 3 ? (
+        {step === 2 ? (
           <View style={styles.stepContent}>
             <Text preset="h2" color="text">
               Organization
             </Text>
-            <FieldLabel label="Category ID" />
-            <TextInput
-              style={styles.input}
-              value={categoryId}
-              onChangeText={setCategoryId}
-              placeholder="Optional"
-              placeholderTextColor={theme.colors.textTertiary}
-            />
             <FieldLabel label="Tags" />
             <TextInput
               style={styles.input}
@@ -330,37 +293,19 @@ export default function NewProductScreen() {
           </View>
         ) : null}
 
-        {step === 4 ? (
+        {step === 3 ? (
           <View style={styles.stepContent}>
             <Text preset="h2" color="text">
               Review
             </Text>
             <Card padding={0} style={styles.reviewCard}>
-              <ReviewRow label="Photos" value={`${images.length} image${images.length !== 1 ? "s" : ""}`} />
+              <ReviewRow label="Title" value={title || "Not set"} />
               <Hairline />
-              <ReviewRow label="Name" value={name || "Not set"} />
+              <ReviewRow label="Price" value={price ? `A$${price}` : "Not set"} />
               <Hairline />
-              <ReviewRow label="Price" value={price ? `$${price}` : "Not set"} />
-              {compareAtPrice ? (
-                <>
-                  <Hairline />
-                  <ReviewRow label="Compare at" value={`$${compareAtPrice}`} />
-                </>
-              ) : null}
-              {sku ? (
-                <>
-                  <Hairline />
-                  <ReviewRow label="SKU" value={sku} />
-                </>
-              ) : null}
+              <ReviewRow label="SKU" value={sku || (title.trim() ? deriveSku(title) : "Not set")} />
               <Hairline />
               <ReviewRow label="Stock" value={stock || "0"} />
-              {categoryId ? (
-                <>
-                  <Hairline />
-                  <ReviewRow label="Category" value={categoryId} />
-                </>
-              ) : null}
               {tags ? (
                 <>
                   <Hairline />
@@ -452,12 +397,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.md,
     gap: theme.spacing.sm,
-  },
-  stepIntro: { marginBottom: theme.spacing.md },
-  tip: {
-    fontStyle: "italic",
-    marginTop: theme.spacing.lg,
-    textAlign: "center",
   },
   fieldLabel: {
     marginTop: theme.spacing.md,

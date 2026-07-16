@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createProductsApi,
   type CreateProductBody,
+  type UpdateProductBody,
+  type UpdateVariantBody,
 } from "@repo/mobile-shared/api/products";
 import { useApiClient } from "@/lib/api-client";
 
@@ -24,32 +26,11 @@ export function useUpdateProduct() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      id,
-      body,
-    }: {
-      id: string;
-      body: Record<string, unknown>;
-    }) => productsApi.update(id, body),
+    mutationFn: ({ id, body }: { id: string; body: UpdateProductBody }) =>
+      productsApi.update(id, body),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["product", variables.id] });
-    },
-  });
-}
-
-export function useUploadMedia() {
-  const client = useApiClient();
-  const productsApi = createProductsApi(client);
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ productId, uri }: { productId: string; uri: string }) =>
-      productsApi.uploadMedia(productId, uri),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["product", variables.productId],
-      });
     },
   });
 }
@@ -75,27 +56,6 @@ export function useDeleteMedia() {
   });
 }
 
-export function useCreateVariant() {
-  const client = useApiClient();
-  const productsApi = createProductsApi(client);
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      productId,
-      body,
-    }: {
-      productId: string;
-      body: { name: string; sku?: string; price: number; stock: number };
-    }) => productsApi.createVariant(productId, body),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["product", variables.productId],
-      });
-    },
-  });
-}
-
 export function useUpdateVariant() {
   const client = useApiClient();
   const productsApi = createProductsApi(client);
@@ -109,12 +69,10 @@ export function useUpdateVariant() {
     }: {
       productId: string;
       variantId: string;
-      body: Record<string, unknown>;
+      body: UpdateVariantBody;
     }) => productsApi.updateVariant(productId, variantId, body),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["product", variables.productId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["product", variables.productId] });
     },
   });
 }

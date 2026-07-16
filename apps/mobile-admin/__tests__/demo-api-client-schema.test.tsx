@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { createDemoApiClient } from "@/lib/demo-api-client";
 import { ApiError } from "@repo/mobile-shared/api/client";
+import {
+  productDetailSchema,
+  productListSchema,
+} from "@repo/mobile-shared/api/schemas/products";
+import { primaryVariant } from "@/lib/product-display";
 
 describe("createDemoApiClient — schema application", () => {
   it("applies a passed schema and returns the parsed value", async () => {
@@ -42,5 +47,30 @@ describe("createDemoApiClient — schema application", () => {
     const client = createDemoApiClient();
     const schema = z.object({ nope: z.string() });
     await expect(client.get("/stores", undefined, schema)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("createDemoApiClient — product fixtures match the real wire schema", () => {
+  it("serves /products as the real {data, meta} envelope", async () => {
+    const client = createDemoApiClient();
+    const res = await client.get("/products", undefined, productListSchema);
+    expect(res.data).toHaveLength(3);
+    expect(res.meta.total).toBe(3);
+  });
+
+  it("serves /products/:id as a bare product object", async () => {
+    const client = createDemoApiClient();
+    const res = await client.get("/products/p-2", undefined, productDetailSchema);
+    expect(res.title).toBe("Merino Beanie");
+  });
+
+  it("keeps a multi-variant fixture whose positions are OUT OF ORDER, like prod", async () => {
+    const client = createDemoApiClient();
+    const res = await client.get("/products", undefined, productListSchema);
+    const shirt = res.data.find((p) => p.id === "p-1")!;
+    // Array order must NOT match position order, or the fixture cannot catch a
+    // regression back to `variants[0]`.
+    expect(shirt.variants[0]!.position).not.toBe(0);
+    expect(primaryVariant(shirt)!.sku).toBe("LCS-001-S");
   });
 });

@@ -16,7 +16,7 @@ Every task's requirements implicitly include this section.
 
 - **Work from `apps/mobile-admin/`** for all gate commands.
 - **Gate 1 — tsc:** `npx tsc --noEmit --pretty false 2>&1 | grep -c "error TS"` → **2** for Tasks 1–5, **0** after Task 6. **`--pretty false` is MANDATORY** — without it tsc emits ANSI colour codes, the literal `error TS` never appears, `grep -c` returns **0 while real errors exist**, and the gate passes vacuously. **Count the errors — never grep by filename** (a per-file grep passed vacuously and missed 6 real errors in the previous session).
-- **Gate 2 — jest:** `npx jest` → all green, suite count **≥ 132** (today's baseline; it only goes up). jest's summary lines are ANSI-coloured too, so `grep "^Tests:"` silently matches nothing — **read the tail of the output**.
+- **Gate 2 — jest:** `npx jest` → **all green**, and the **test** count at or above the floor named in your task. Today's baseline is **132 tests across 17 suites** — do not confuse the two numbers. The floors are cumulative: T1 ≥136 · T2 ≥142 · T3 ≥148 · T4 ≥165 · T5 ≥171 · T6 ≥171. "All green" is the binding half; the floor only catches tests that silently vanished. jest's summary lines are ANSI-coloured, so `grep "^Tests:"` silently matches nothing — **read the tail of the output**.
 - **A single-file `npx jest <file>` HANGS FOREVER** for suites that render a react-query `QueryClient` — use `--forceExit` for single files. The full suite is fine.
 - **NEVER** run `npm ci` / `npm install` / `--package-lock-only` / `rm -rf node_modules`. Metro runs against this tree. **Never touch anything inside any `node_modules/`.** A previous implementer deleted a nested zod despite being told not to; it was unrecoverable.
 - **Do not add dependencies.** `expo-crypto` is NOT installed and cannot be. There is no `crypto.randomUUID` (Expo 56's winter runtime does not polyfill it — verified).
@@ -197,7 +197,7 @@ Expected: PASS, 4 tests.
 - [ ] **Step 5: Run both gates**
 
 Run: `cd apps/mobile-admin && npx jest 2>&1 | tail -8`
-Expected: all suites green, **≥ 133 tests** (132 baseline + 4 new, minus none).
+Expected: all green, **≥ 136 tests** (132 baseline + 4 new).
 
 Run: `cd apps/mobile-admin && npx tsc --noEmit --pretty false 2>&1 | grep -c "error TS"`
 Expected: **2** (the pre-existing `app/(tabs)/_layout.tsx` errors, fixed in Task 6). Any other number: read the actual errors with `npx tsc --noEmit --pretty false 2>&1 | grep "error TS"` and fix your regression.
@@ -639,7 +639,7 @@ Leave `page()` in place for now — `/orders`, `/products` and `/notifications` 
 - [ ] **Step 12: Run both gates**
 
 Run: `cd apps/mobile-admin && npx jest 2>&1 | tail -8`
-Expected: all green, **≥ 139 tests**.
+Expected: all green, **≥ 142 tests** (136 + 6 new).
 
 Run: `cd apps/mobile-admin && npx tsc --noEmit --pretty false 2>&1 | grep -c "error TS"`
 Expected: **2**. If higher, run `npx tsc --noEmit --pretty false 2>&1 | grep "error TS"` — the errors name every site still reading the old shape. Fix them; that is the leverage working as designed.
@@ -990,7 +990,7 @@ Note the money values here are plain numbers: `Order` is the **parsed** (post-`m
 - [ ] **Step 11: Run both gates**
 
 Run: `cd apps/mobile-admin && npx jest 2>&1 | tail -8`
-Expected: all green, **≥ 145 tests**.
+Expected: all green, **≥ 148 tests** (142 + 6 new).
 
 Run: `cd apps/mobile-admin && npx tsc --noEmit --pretty false 2>&1 | grep -c "error TS"`
 Expected: **2**.
@@ -1854,7 +1854,7 @@ function productDetail(id: string): ProductDetail {
 - [ ] **Step 17: Run both gates**
 
 Run: `cd apps/mobile-admin && npx jest 2>&1 | tail -8`
-Expected: all green, **≥ 162 tests**.
+Expected: all green, **≥ 165 tests** (148 + 7 schema + 10 display).
 
 Run: `cd apps/mobile-admin && npx tsc --noEmit --pretty false 2>&1 | grep -c "error TS"`
 Expected: **2**.
@@ -2216,7 +2216,7 @@ and in `resolve()`:
 - [ ] **Step 12: Run both gates**
 
 Run: `cd apps/mobile-admin && npx jest 2>&1 | tail -8`
-Expected: all green, **≥ 168 tests**.
+Expected: all green, **≥ 171 tests** (165 + 6 new).
 
 Run: `cd apps/mobile-admin && npx tsc --noEmit --pretty false 2>&1 | grep -c "error TS"`
 Expected: **2**.
@@ -2308,7 +2308,7 @@ If `Notifications.EventSubscription` is not exported under that name, use the `E
 - [ ] **Step 5: Verify the app still boots**
 
 Run: `cd apps/mobile-admin && npx jest 2>&1 | tail -8`
-Expected: all green, **≥ 168 tests**.
+Expected: all green, **≥ 171 tests** (Task 6 adds none).
 
 - [ ] **Step 6: Wire mobile into CI**
 

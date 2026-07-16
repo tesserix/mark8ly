@@ -1,4 +1,5 @@
-import type { createApiClient } from "@repo/mobile-shared/api/client";
+import type { z } from "zod";
+import { ApiError, type createApiClient } from "@repo/mobile-shared/api/client";
 import type {
   Customer,
   CustomerDetail,
@@ -175,14 +176,43 @@ function resolve(path: string): unknown {
   return page([]);
 }
 
+/**
+ * Applies a schema exactly the way the real client does (client.ts:169-182),
+ * including the console.error, so a demo-mode contract break is debugged the
+ * same way as a real one.
+ *
+ * This exists because the previous version cast every method through
+ * `as ApiClient[...]`, which silently DROPPED the schema argument — demo mode
+ * skipped validation entirely while looking like it did not. That let the
+ * fixtures drift into shapes no endpoint returns.
+ */
+function parseOrThrow<T>(path: string, data: unknown, schema?: z.ZodType<T>): T {
+  if (!schema) return data as T;
+  const parsed = schema.safeParse(data);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    const fieldPath = issue.path.join(".") || "(root)";
+    const detail = `${fieldPath}: ${issue.message}`;
+    console.error(`[demo-api] contract mismatch on ${path}: ${detail}`);
+    throw new ApiError(500, "contract_mismatch", detail);
+  }
+  return parsed.data;
+}
+
 export function createDemoApiClient(): ApiClient {
   return {
-    get: (async (path: string) => resolve(path)) as ApiClient["get"],
-    getTenant: (async (path: string) => resolve(path)) as ApiClient["getTenant"],
+    get: async <T>(path: string, _params?: Record<string, string>, schema?: z.ZodType<T>) =>
+      parseOrThrow(path, resolve(path), schema),
+    getTenant: async <T>(path: string, _params?: Record<string, string>, schema?: z.ZodType<T>) =>
+      parseOrThrow(path, resolve(path), schema),
     // Mutations succeed no-op: echo the body so optimistic UI has something.
-    post: (async (_path: string, body?: unknown) => body ?? { success: true }) as ApiClient["post"],
-    patch: (async (_path: string, body?: unknown) => body ?? { success: true }) as ApiClient["patch"],
-    delete: (async () => ({ success: true })) as ApiClient["delete"],
-    uploadMedia: (async () => ({ id: "demo-media", url: "" })) as ApiClient["uploadMedia"],
+    // A schema, if passed, is still applied — a demo mutation whose echo does
+    // not match its response schema SHOULD fail loudly rather than lie.
+    post: async <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
+      parseOrThrow(path, body ?? { success: true }, schema),
+    patch: async <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
+      parseOrThrow(path, body ?? { success: true }, schema),
+    delete: async <T>() => ({ success: true } as T),
+    uploadMedia: async () => ({ id: "demo-media", url: "" }),
   };
 }

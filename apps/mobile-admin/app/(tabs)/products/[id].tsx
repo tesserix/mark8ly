@@ -192,17 +192,6 @@ export default function ProductDetailScreen() {
     [id, updateVariantMutation],
   );
 
-  if (isLoading || !product) {
-    return (
-      <Screen>
-        <BackHeader eyebrow="PRODUCT" title="Loading…" />
-        <View style={styles.centered}>
-          <ActivityIndicator size="small" color={theme.colors.text} />
-        </View>
-      </Screen>
-    );
-  }
-
   if (error) {
     return (
       <Screen>
@@ -211,6 +200,17 @@ export default function ProductDetailScreen() {
           <Text preset="h3" color="danger">
             Failed to load product
           </Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (isLoading || !product) {
+    return (
+      <Screen>
+        <BackHeader eyebrow="PRODUCT" title="Loading…" />
+        <View style={styles.centered}>
+          <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       </Screen>
     );

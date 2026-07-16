@@ -56,7 +56,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
 export default function CustomerDetailScreen() {
   const dockPad = useDockClearance();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: customer, isLoading } = useCustomer(id);
+  const { data: customer, isLoading, error } = useCustomer(id);
 
   const blockMutation = useBlockCustomer();
   const unblockMutation = useUnblockCustomer();
@@ -82,6 +82,19 @@ export default function CustomerDetailScreen() {
       },
     ]);
   }, [customer, isBlocked, blockMutation, unblockMutation]);
+
+  if (error) {
+    return (
+      <Screen>
+        <BackHeader eyebrow="CUSTOMER" />
+        <View style={styles.centered}>
+          <Text preset="h3" color="danger">
+            Failed to load customer
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
 
   if (isLoading || !customer) {
     return (

@@ -31,7 +31,7 @@ import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { VariantEditor } from "@/components/products/VariantEditor";
 import { ImageViewer } from "@/components/products/ImageViewer";
 import { OptionsEditor } from "@/components/products/OptionsEditor";
-import { CategoryPicker } from "@/components/products/CategoryPicker";
+import { CategoryField } from "@/components/products/CategoryField";
 import { MediaGrid, computeReorderWrites } from "@/components/products/MediaGrid";
 import { useAddOptionHandler } from "@/lib/hooks/use-add-option-handler";
 
@@ -81,7 +81,8 @@ export default function ProductDetailScreen() {
   const updateVariantMutation = useUpdateVariant();
   const addMediaMutation = useAddProductMedia();
   const updateMediaMutation = useUpdateMedia();
-  const { data: categories } = useCategories();
+  const { data: categories, isLoading: categoriesLoading, error: categoriesError, refetch: refetchCategories } =
+    useCategories();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -416,10 +417,13 @@ export default function ProductDetailScreen() {
 
         <Eyebrow label="Categories" />
         <Card padding="md" style={styles.card}>
-          <CategoryPicker
+          <CategoryField
             categories={categories ?? []}
             selected={product.categories}
             onChange={handleCategoriesChange}
+            isLoading={categoriesLoading}
+            error={categoriesError}
+            onRetry={refetchCategories}
           />
         </Card>
 

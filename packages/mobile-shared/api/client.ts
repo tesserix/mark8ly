@@ -165,6 +165,12 @@ export function createApiClient(config: ApiClientConfig) {
       throw new ApiError(res.status, err.error ?? "unknown", err.message ?? res.statusText);
     }
 
+    // 204 No Content has an empty body — res.json() would throw on it.
+    // updateMedia and deleteMedia return 204; their callers ignore the result.
+    if (res.status === 204) {
+      return undefined as T;
+    }
+
     const data = await res.json();
     if (options?.schema) {
       const parsed = options.schema.safeParse(data);

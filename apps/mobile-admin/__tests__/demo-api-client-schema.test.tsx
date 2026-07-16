@@ -10,6 +10,16 @@ describe("createDemoApiClient — schema application", () => {
     expect(res.data[0]!.id).toBe("demo-store");
   });
 
+  it("returns the schema's transformed output, not the raw fixture", async () => {
+    const client = createDemoApiClient();
+    const schema = z.object({
+      data: z.array(z.object({ id: z.string().transform((s) => s.toUpperCase()) })),
+    });
+    const res = await client.get("/stores", undefined, schema);
+    // Raw fixture id is "demo-store"; only the parsed/transformed output is uppercased.
+    expect(res.data[0]!.id).toBe("DEMO-STORE");
+  });
+
   it("throws contract_mismatch naming the field path when the fixture does not match", async () => {
     const client = createDemoApiClient();
     // /stores fixture has no `nope` key — the schema must reject it.

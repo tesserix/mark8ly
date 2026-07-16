@@ -1,18 +1,37 @@
 import type { createApiClient } from "./client";
-import type { Customer, CustomerDetail, PaginatedResponse } from "./types";
+import {
+  customerDetailSchema,
+  customerListSchema,
+  type Customer,
+  type CustomerDetail,
+  type CustomerListResponse,
+} from "./schemas/customers";
 
 export interface ListCustomersParams {
   search?: string;
-  cursor?: string;
-  limit?: string;
+  status?: string;
+  page?: string;
+  page_size?: string;
 }
 
 export function createCustomersApi(client: ReturnType<typeof createApiClient>) {
   return {
     list: (params?: ListCustomersParams) =>
-      client.get<PaginatedResponse<Customer>>("/customers", params as Record<string, string>),
-    get: (id: string) => client.get<CustomerDetail>(`/customers/${id}`),
-    block: (id: string) => client.post(`/customers/${id}/block`),
+      client.get<CustomerListResponse>(
+        "/customers",
+        params as Record<string, string>,
+        customerListSchema,
+      ),
+    get: (id: string) =>
+      client.get<CustomerDetail>(`/customers/${id}`, undefined, customerDetailSchema),
+    /**
+     * `reason` is REQUIRED by the backend (BlockCustomerRequest,
+     * customers_dto.go:72-74 — `binding:"required"`). Omitting it, as this
+     * client used to, is an unconditional 400.
+     */
+    block: (id: string, reason: string) => client.post(`/customers/${id}/block`, { reason }),
     unblock: (id: string) => client.post(`/customers/${id}/unblock`),
   };
 }
+
+export type { Customer, CustomerDetail };

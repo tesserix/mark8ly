@@ -66,7 +66,7 @@ export default function CustomersScreen() {
         </View>
       ) : (
         <FlatList
-          data={data?.items ?? []}
+          data={data?.data ?? []}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}

@@ -8,8 +8,9 @@ export function useBlockCustomer() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => customersApi.block(id),
-    onSuccess: (_data, id) => {
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      customersApi.block(id, reason),
+    onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["customer", id] });
     },

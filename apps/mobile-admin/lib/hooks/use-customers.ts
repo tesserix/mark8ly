@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createCustomersApi } from "@repo/mobile-shared/api/customers";
-import type { Customer, CustomerDetail, PaginatedResponse } from "@repo/mobile-shared/api/types";
+import type { CustomerDetail } from "@repo/mobile-shared/api/types";
+import type { CustomerListResponse } from "@repo/mobile-shared/api/schemas/customers";
 import { useApiClient } from "@/lib/api-client";
 
 export function useCustomers(search?: string) {
   const client = useApiClient();
   const customersApi = createCustomersApi(client);
 
-  return useQuery<PaginatedResponse<Customer>>({
+  return useQuery<CustomerListResponse>({
     queryKey: ["customers", search],
     queryFn: () =>
       customersApi.list({

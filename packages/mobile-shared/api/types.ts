@@ -111,25 +111,6 @@ export interface Variant {
   stock: number;
 }
 
-export interface Customer {
-  id: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  phone: string | null;
-  order_count: number;
-  total_spent: number;
-  status: string;
-  created_at: string;
-}
-
-export interface CustomerDetail extends Customer {
-  avatar_url: string | null;
-  average_order_value: number;
-  recent_orders: RecentOrder[];
-  review_count: number;
-}
-
 export interface Notification {
   id: string;
   type: string;
@@ -143,3 +124,9 @@ export interface Notification {
 // Re-exported from the schema module so the type can never drift from the
 // validation again. Was a hand-written 3-field interface; the wire has 6.
 export type { Store } from "./schemas/stores";
+
+// Re-exported from the schema module so the type can never drift from the
+// validation again. The hand-written `Customer` required first_name/last_name
+// and `CustomerDetail` invented average_order_value/recent_orders/review_count
+// that the backend has never had.
+export type { Customer, CustomerDetail, CustomerAddress } from "./schemas/customers";

@@ -51,9 +51,11 @@ const DEMO_PRODUCTS: Product[] = [
 ];
 
 const DEMO_CUSTOMERS: Customer[] = [
-  { id: "c-1", email: "maya@example.com", first_name: "Maya", last_name: "Chen", phone: "+61 400 111 222", order_count: 6, total_spent: 48200, status: "active", created_at: iso(120) },
-  { id: "c-2", email: "leo@example.com", first_name: "Leo", last_name: "Park", phone: null, order_count: 2, total_spent: 15800, status: "active", created_at: iso(40) },
-  { id: "c-3", email: "ida@example.com", first_name: "Ida", last_name: "Rossi", phone: "+61 400 333 444", order_count: 1, total_spent: 5200, status: "active", created_at: iso(12) },
+  { id: "c-1", email: "maya@example.com", first_name: "Maya", last_name: "Chen", phone: "+61 400 111 222", tags: [], status: "active", marketing_opt_in: true, order_count: 6, total_spent: 48200, created_at: iso(120), updated_at: iso(2) },
+  { id: "c-2", email: "leo@example.com", first_name: "Leo", last_name: "Park", tags: [], status: "active", marketing_opt_in: false, order_count: 2, total_spent: 15800, created_at: iso(40), updated_at: iso(5) },
+  // No names at all — mirrors the ONLY real customer in prod, and is the case
+  // that would have caught this whole class two months ago.
+  { id: "c-3", email: "ida@example.com", tags: [], status: "active", marketing_opt_in: false, order_count: 0, total_spent: 0, created_at: iso(12), updated_at: iso(12) },
 ];
 
 const DEMO_DASHBOARD: DashboardResponse = {
@@ -108,6 +110,11 @@ function page<T>(items: T[]): PaginatedResponse<T> {
   return { items, total: items.length, next_cursor: null, has_more: false };
 }
 
+/** The real `{data, meta}` list envelope — see schema-helpers.paginated. */
+function paged<T>(items: T[]): { data: T[]; meta: { page: number; page_size: number; total: number; total_pages: number } } {
+  return { data: items, meta: { page: 1, page_size: 50, total: items.length, total_pages: 1 } };
+}
+
 function orderDetail(id: string): OrderDetail {
   const base = DEMO_ORDERS.find((o) => o.id === id) ?? DEMO_ORDERS[0]!;
   return {
@@ -140,13 +147,7 @@ function productDetail(id: string): ProductDetail {
 
 function customerDetail(id: string): CustomerDetail {
   const base = DEMO_CUSTOMERS.find((c) => c.id === id) ?? DEMO_CUSTOMERS[0]!;
-  return {
-    ...base,
-    avatar_url: null,
-    average_order_value: base.order_count ? Math.round(base.total_spent / base.order_count) : 0,
-    recent_orders: DEMO_DASHBOARD.recent_orders.slice(0, 2),
-    review_count: 0,
-  };
+  return { ...base, addresses: [] };
 }
 
 // Match the raw path the hooks pass (e.g. "/dashboard", "/orders", "/orders/o-1001").
@@ -169,7 +170,7 @@ function resolve(path: string): unknown {
 
   const customerId = clean.match(/^\/customers\/(.+)$/);
   if (customerId) return customerDetail(customerId[1]!);
-  if (clean === "/customers") return page(DEMO_CUSTOMERS);
+  if (clean === "/customers") return paged(DEMO_CUSTOMERS);
 
   // Notifications, and any endpoint we haven't canned: safe empty page so
   // list screens render an empty state instead of crashing.

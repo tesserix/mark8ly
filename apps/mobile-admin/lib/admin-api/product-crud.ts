@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as FileSystem from "expo-file-system/legacy";
 import {
   createProductsApi,
@@ -7,6 +7,7 @@ import {
   type UpdateVariantBody,
   type ProductMedia,
 } from "@repo/mobile-shared/api/products";
+import { createCategoriesApi } from "@repo/mobile-shared/api/categories";
 import { useApiClient } from "@/lib/api-client";
 import {
   computeContentHash,
@@ -173,5 +174,24 @@ export function useAddProductMedia() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["product", variables.productId] });
     },
+  });
+}
+
+/**
+ * Categories change rarely and the picker needs them on every product edit —
+ * a 5-minute staleTime keeps the sheet instant without going stale enough to
+ * mislead.
+ */
+export function useCategories() {
+  const client = useApiClient();
+  const categoriesApi = createCategoriesApi(client);
+
+  return useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const res = await categoriesApi.list();
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
   });
 }

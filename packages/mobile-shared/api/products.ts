@@ -54,11 +54,22 @@ export interface UpdateProductOptionBody {
 }
 
 /**
+ * A variant as sent inside an option-matrix PATCH. Only produced by
+ * buildOptionMatrix — never hand-constructed — because `variants` is a full
+ * desired matrix that soft-deletes anything omitted. `id` present = preserve an
+ * existing variant; absent = a new combination.
+ */
+export interface VariantMatrixInput {
+  id?: string;
+  sku: string;
+  price: number;
+  inventory_quantity: number;
+  currency_code: string;
+  option_values: { option_name: string; value: string }[];
+}
+
+/**
  * PATCH /products/:id body (UpdateProductRequest, validation.go:296).
- *
- * `variants` is deliberately absent. UpdateAggregateRequest.Variants is a FULL
- * DESIRED MATRIX — applyVariantsDiff soft-deletes any existing variant missing
- * from it. Variant edits go through updateVariant() instead. Do not add it here.
  *
  * Sending `options`, `removed_variant_ids` or `category_ids` routes the handler
  * through the aggregate path (products.go:172); a body of scalars alone routes
@@ -73,6 +84,11 @@ export interface UpdateProductBody {
   removed_variant_ids?: string[];
   category_ids?: string[];
   primary_category_id?: string;
+  /**
+   * ONLY set from buildOptionMatrix's output, and only alongside `options`.
+   * A full desired matrix — applyVariantsDiff soft-deletes anything missing.
+   */
+  variants?: VariantMatrixInput[];
 }
 
 /**

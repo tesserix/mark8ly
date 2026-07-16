@@ -18,6 +18,7 @@ import {
   Text,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { deriveSku } from "@/lib/sku";
 
 // Was 4 — the "Photos" step is gone. Media upload needs a 3-step signed-URL
 // flow (POST /media/upload-url -> PUT -> POST /media) that this app does not
@@ -31,15 +32,6 @@ const STATUS_OPTIONS: { key: ProductStatus; label: string }[] = [
   { key: "draft", label: "Draft" },
   { key: "active", label: "Active" },
 ];
-
-/**
- * CreateProductVariantInput.SKU is `binding:"required,max=100"` — a product
- * cannot be created without one. When the merchant leaves SKU blank we derive
- * a stable one from the title rather than fail the request.
- */
-function deriveSku(title: string): string {
-  return `${title.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 40)}-1`;
-}
 
 function StepDots({ current, total }: { current: number; total: number }) {
   return (

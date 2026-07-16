@@ -50,7 +50,11 @@ The handoff asserted all four lists share `{data, meta}`. Three of its claims ar
    to show low stock. Worse than a 400: it lies.
 6. **Every price renders in the wrong currency.** `formatCurrency` hardcodes `currency: "USD"` in
    `ProductRow.tsx:12`, `customers/[id].tsx:27` and elsewhere. The Bondi store is **AUD** and each
-   variant carries `currency_code: "AUD"`.
+   variant carries `currency_code: "AUD"`. **Fixed for products only** (unit 3): each variant carries
+   its own `currency_code`, so the fix is local. **Customers cannot be fixed here** — the customer
+   wire shape has no currency field at all (`customers_dto.go:21-38`); the only source is the active
+   store's `currency_code`, which needs store context threaded into the screen. Recorded as a
+   follow-up, not silently left.
 7. **Two `_layout.tsx` type errors are real runtime bugs**, not baseline noise.
    `Notifications.removeNotificationSubscription` no longer exists on the module — the unmount cleanup
    **throws today**. `shouldShowAlert` was superseded by `shouldShowBanner`/`shouldShowList`.
@@ -205,7 +209,8 @@ nowhere), `cancel` needs `reason`, `refund` needs `refund_request_id`.
 - Variant edit: send `inventory_quantity`, not `stock` (finding 11) — today's stock edits are
   silently discarded.
 - Screens read `title`/`variants[]`/`media[]` via those helpers.
-- `formatCurrency` takes a currency code; drop the hardcoded USD.
+- `formatMoney(amount, currencyCode?)` replaces the USD-hardcoded `formatCurrency` **on the product
+  surfaces** (finding 6). Customer money stays USD-wrong — no currency exists on that wire shape.
 - Inactive tab → Draft (`status=draft`). Low Stock tab removed.
 - `create` needs `title` + `variants[]` (min 1) — the current body always 400s.
 - Media upload's multipart POST hits a JSON endpoint expecting a 3-step signed-URL flow

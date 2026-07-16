@@ -53,9 +53,9 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatTile({ label, value }: { label: string; value: string }) {
+function StatTile({ label, value, divider }: { label: string; value: string; divider?: boolean }) {
   return (
-    <View style={styles.statTile}>
+    <View style={[styles.statTile, divider ? styles.statTileDivider : null]}>
       <Text preset="h3" color="text">
         {value}
       </Text>
@@ -166,10 +166,11 @@ export default function CustomerDetailScreen() {
           </View>
         </View>
 
+        <Hairline style={styles.statsRule} />
         <View style={styles.statsRow}>
           <StatTile label="Orders" value={String(customer.order_count)} />
-          <StatTile label="Spent" value={formatCurrency(customer.total_spent)} />
-          <StatTile label="Avg" value={formatCurrency(averageOrderValue)} />
+          <StatTile label="Spent" value={formatCurrency(customer.total_spent)} divider />
+          <StatTile label="Avg" value={formatCurrency(averageOrderValue)} divider />
         </View>
 
         <View style={styles.actions}>
@@ -238,19 +239,23 @@ const styles = StyleSheet.create({
   infoValue: { flex: 2 },
   statsRow: {
     flexDirection: "row",
-    gap: theme.spacing.sm,
     marginHorizontal: theme.spacing.lg,
     marginBottom: theme.spacing.md,
   },
+  statsRule: {
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+  },
   statTile: {
     flex: 1,
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radii.md,
-    borderWidth: theme.hairline,
-    borderColor: theme.colors.hairline,
     paddingVertical: theme.spacing.md,
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 2,
+  },
+  statTileDivider: {
+    borderLeftWidth: theme.hairline,
+    borderLeftColor: theme.colors.hairline,
+    paddingLeft: theme.spacing.md,
   },
   actions: {
     paddingHorizontal: theme.spacing.lg,

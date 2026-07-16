@@ -1,5 +1,14 @@
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { configure, fireEvent, render, waitFor } from '@testing-library/react-native';
 import LoginScreen from '../app/login';
+
+// LoginScreen's in-flight → idle re-render takes ~700ms even in isolation on a
+// fast machine (jest-expo render + the auth/query stack), leaving almost no
+// headroom under RTL's default 1000ms async timeout. On a loaded CI runner the
+// re-render crosses 1000ms and the "Signing in…" waitFor times out — a
+// deterministic CI failure that passes locally. Raise the ceiling for this
+// file; the assertions still fail if the condition never holds, they just get
+// enough time on a slow runner.
+configure({ asyncUtilTimeout: 5000 });
 import { signInWithGoogleNative } from '@/lib/social-auth';
 import { AuthCancelledError } from '@repo/mobile-shared/auth/errors';
 import { useAuthNoticeStore } from '@repo/mobile-shared/stores/auth-notice';

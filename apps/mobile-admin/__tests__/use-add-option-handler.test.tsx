@@ -15,6 +15,7 @@ jest.mock("@gorhom/bottom-sheet", () => {
       return null;
     }),
     BottomSheetView: ({ children }: { children?: React.ReactNode }) => children ?? null,
+    BottomSheetScrollView: ({ children }: { children?: React.ReactNode }) => children ?? null,
   };
 });
 // `react-native`'s index.js does `require('./Libraries/Alert/Alert').default`
@@ -24,9 +25,14 @@ jest.mock("@gorhom/bottom-sheet", () => {
 jest.mock("react-native/Libraries/Alert/Alert", () => ({
   default: { alert: jest.fn() },
 }));
+jest.mock("expo-haptics", () => ({
+  notificationAsync: jest.fn(),
+  NotificationFeedbackType: { Success: "success" },
+}));
 
 import { renderHook } from "@testing-library/react-native";
 import { Alert } from "react-native";
+import * as Haptics from "expo-haptics";
 import { useAddOptionHandler } from "@/lib/hooks/use-add-option-handler";
 
 // Minimal ProductDetail-shaped fixture — same shape used by
@@ -52,6 +58,7 @@ const product = {
 describe("useAddOptionHandler", () => {
   beforeEach(() => {
     (Alert.alert as jest.Mock).mockClear();
+    (Haptics.notificationAsync as jest.Mock).mockClear();
   });
 
   it("mutates with EXACTLY buildOptionMatrix's {options, variants} output — never a hand-built variants array", () => {
@@ -72,6 +79,33 @@ describe("useAddOptionHandler", () => {
     // it would silently soft-delete a real variant's price/stock/sales history.
     expect(variants.some((v) => v.id === "v1")).toBe(true);
     expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it("fires a success haptic when the option PATCH succeeds", () => {
+    const mutate = jest.fn((_vars, opts) => {
+      opts?.onSuccess?.();
+    });
+    const { result } = renderHook(() =>
+      useAddOptionHandler("p1", product, { mutate } as never),
+    );
+
+    result.current({ name: "Size", values: ["S", "M"] });
+
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith("success");
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it("does NOT fire a success haptic when the PATCH fails", () => {
+    const mutate = jest.fn((_vars, opts) => {
+      opts?.onError?.(new Error("network down"));
+    });
+    const { result } = renderHook(() =>
+      useAddOptionHandler("p1", product, { mutate } as never),
+    );
+
+    result.current({ name: "Size", values: ["S"] });
+
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
   });
 
   it("alerts instead of mutating when the axis is invalid (OptionMatrixError), never sending a partial matrix", () => {

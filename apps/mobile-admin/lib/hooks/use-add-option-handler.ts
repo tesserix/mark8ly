@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { Alert } from "react-native";
+import * as Haptics from "expo-haptics";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import type { ProductDetail } from "@repo/mobile-shared/api/schemas/products";
 import type { UpdateProductOptionBody } from "@repo/mobile-shared/api/products";
@@ -35,6 +36,9 @@ export function useAddOptionHandler(
         updateMutation.mutate(
           { id, body: { options, variants } },
           {
+            onSuccess: () => {
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            },
             onError: (err: unknown) => {
               Alert.alert(
                 "Error",

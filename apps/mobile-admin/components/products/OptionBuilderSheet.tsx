@@ -1,6 +1,13 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
-import { View, Pressable, StyleSheet } from "react-native";
-import { BottomSheetModal } from "@gorhom/bottom-sheet";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
+import { View, Pressable, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { AlertTriangle, X } from "lucide-react-native";
 import { Text, FieldInput } from "@/components/ui";
 import { theme } from "@/lib/theme";
@@ -30,6 +37,20 @@ export function buildOptionSubmission(
   if (trimmedName === "" || dedupedValues.length === 0) return null;
   return { name: trimmedName, values: dedupedValues };
 }
+
+/**
+ * @gorhom/bottom-sheet ships its own copy of @types/react, whose `ReactNode`
+ * includes `bigint`; this project's does not, so its components trip TS2786
+ * ("cannot be used as a JSX component"). Re-type it through this project's
+ * React to the props we actually pass — runtime is unaffected. (The sibling
+ * `BottomSheetView` was dodged entirely via a plain `View`; this scroll
+ * wrapper has no plain-View equivalent, hence the cast.)
+ */
+const ScrollBody = BottomSheetScrollView as unknown as ComponentType<{
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  keyboardShouldPersistTaps?: "always" | "never" | "handled";
+  children?: ReactNode;
+}>;
 
 export interface OptionBuilderSheetHandle {
   present: () => void;
@@ -80,7 +101,7 @@ export const OptionBuilderSheet = forwardRef<OptionBuilderSheetHandle, OptionBui
 
     return (
       <BottomSheetModal ref={modalRef} snapPoints={["60%"]} enableDynamicSizing={false}>
-        <View style={styles.root}>
+        <ScrollBody contentContainerStyle={styles.root} keyboardShouldPersistTaps="handled">
           <Text preset="h3" color="text">
             New option
           </Text>
@@ -159,14 +180,14 @@ export const OptionBuilderSheet = forwardRef<OptionBuilderSheetHandle, OptionBui
               </Text>
             </Pressable>
           </View>
-        </View>
+        </ScrollBody>
       </BottomSheetModal>
     );
   },
 );
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: theme.spacing.lg, gap: theme.spacing.lg },
+  root: { flexGrow: 1, padding: theme.spacing.lg, gap: theme.spacing.lg },
   valuesBlock: { gap: theme.spacing.xs },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs },
   chip: {

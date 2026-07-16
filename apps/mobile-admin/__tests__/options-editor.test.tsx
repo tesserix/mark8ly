@@ -23,6 +23,7 @@ jest.mock("@gorhom/bottom-sheet", () => {
       return null;
     }),
     BottomSheetView: ({ children }: { children?: React.ReactNode }) => children ?? null,
+    BottomSheetScrollView: ({ children }: { children?: React.ReactNode }) => children ?? null,
   };
 });
 

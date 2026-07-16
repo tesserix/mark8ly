@@ -36,6 +36,24 @@ describe("product detail screen composition", () => {
     expect(source).not.toMatch(/updateMutation\.mutate\([\s\S]{0,200}variants:/);
   });
 
+  it("use-add-option-handler builds `variants` ONLY from buildOptionMatrix, never by hand", () => {
+    // The add-option PATCH (the ONE place that legitimately sends `variants`)
+    // moved out of [id].tsx into this hook, so the [id].tsx guard above no
+    // longer covers it. `variants` is a FULL DESIRED MATRIX — a hand-built
+    // array literal here would soft-delete every existing variant it omits.
+    const handlerSource = require("fs").readFileSync(
+      require("path").join(__dirname, "../lib/hooks/use-add-option-handler.ts"),
+      "utf8",
+    );
+    // Anchor: the safe producer must actually be present, or this guard is
+    // vacuous. buildOptionMatrix is the only sanctioned source of `variants`.
+    expect(handlerSource).toContain("buildOptionMatrix");
+    // The only `variants` sent must be buildOptionMatrix's destructured output
+    // (`const { options, variants } = buildOptionMatrix(...)`), never a
+    // hand-built `variants: [ ... ]` literal in a PATCH body.
+    expect(handlerSource).not.toMatch(/variants:\s*\[/);
+  });
+
   it("stayed small after composing — it was 571 lines before extraction", () => {
     expect(source.split("\n").length).toBeLessThan(500);
   });

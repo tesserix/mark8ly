@@ -27,6 +27,33 @@ jest.mock("@gorhom/bottom-sheet", () => {
   };
 });
 
+// OptionBuilderSheet now animates its value chips (Animated.View +
+// FadeIn/FadeOut/LinearTransition), so it pulls in react-native-reanimated at
+// module load time — the real module throws under jest without a full
+// worklets setup. Same minimal virtual mock as option-builder-sheet.test.tsx
+// (BottomSheetModal above returns null, so the chips themselves never render
+// here — this mock only needs to satisfy the import).
+jest.mock("react-native-reanimated", () => {
+  const { View } = require("react-native");
+  class ChainableAnimation {
+    duration() {
+      return this;
+    }
+    easing() {
+      return this;
+    }
+  }
+  return {
+    __esModule: true,
+    default: { View },
+    FadeIn: new ChainableAnimation(),
+    FadeOut: new ChainableAnimation(),
+    LinearTransition: new ChainableAnimation(),
+    Easing: { bezier: () => (t: number) => t },
+    useReducedMotion: jest.fn(() => false),
+  };
+});
+
 import { render, fireEvent } from "@testing-library/react-native";
 import { OptionsEditor, toOptionRequestBodies } from "@/components/products/OptionsEditor";
 

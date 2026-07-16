@@ -18,6 +18,31 @@ jest.mock("@gorhom/bottom-sheet", () => {
     BottomSheetScrollView: ({ children }: { children?: React.ReactNode }) => children ?? null,
   };
 });
+// OptionBuilderSheet (reached via OptionsEditor's toOptionRequestBodies)
+// now animates its value chips (Animated.View + FadeIn/FadeOut/LinearTransition),
+// so it pulls in react-native-reanimated at module load time — the real
+// module throws under jest without a full worklets setup. Same minimal
+// virtual mock as option-builder-sheet.test.tsx.
+jest.mock("react-native-reanimated", () => {
+  const { View } = require("react-native");
+  class ChainableAnimation {
+    duration() {
+      return this;
+    }
+    easing() {
+      return this;
+    }
+  }
+  return {
+    __esModule: true,
+    default: { View },
+    FadeIn: new ChainableAnimation(),
+    FadeOut: new ChainableAnimation(),
+    LinearTransition: new ChainableAnimation(),
+    Easing: { bezier: () => (t: number) => t },
+    useReducedMotion: jest.fn(() => false),
+  };
+});
 // `react-native`'s index.js does `require('./Libraries/Alert/Alert').default`
 // (see node_modules/react-native/index.js), so the mock module needs a
 // `default` key — a plain `{ alert: fn }` export leaves `Alert` undefined

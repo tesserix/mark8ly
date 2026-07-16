@@ -8,9 +8,16 @@ import {
 } from "react";
 import { View, Pressable, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  useReducedMotion,
+} from "react-native-reanimated";
 import { AlertTriangle, X } from "lucide-react-native";
 import { Text, FieldInput } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { DISCLOSURE_EASING, DISCLOSURE_EXIT_DURATION } from "./disclosure-motion";
 import type { UpdateProductOptionBody } from "@repo/mobile-shared/api/products";
 
 /**
@@ -67,6 +74,7 @@ export const OptionBuilderSheet = forwardRef<OptionBuilderSheetHandle, OptionBui
     const [name, setName] = useState("");
     const [values, setValues] = useState<string[]>([]);
     const [draft, setDraft] = useState("");
+    const reduceMotion = useReducedMotion();
 
     useImperativeHandle(ref, () => ({
       present: () => {
@@ -122,7 +130,22 @@ export const OptionBuilderSheet = forwardRef<OptionBuilderSheetHandle, OptionBui
             {values.length > 0 ? (
               <View style={styles.chips}>
                 {values.map((value) => (
-                  <View key={value} style={styles.chip}>
+                  <Animated.View
+                    key={value}
+                    testID={`option-chip-${value}`}
+                    layout={reduceMotion ? undefined : LinearTransition.duration(DISCLOSURE_EXIT_DURATION).easing(DISCLOSURE_EASING)}
+                    entering={
+                      reduceMotion
+                        ? undefined
+                        : FadeIn.duration(DISCLOSURE_EXIT_DURATION).easing(DISCLOSURE_EASING)
+                    }
+                    exiting={
+                      reduceMotion
+                        ? undefined
+                        : FadeOut.duration(DISCLOSURE_EXIT_DURATION).easing(DISCLOSURE_EASING)
+                    }
+                    style={styles.chip}
+                  >
                     <Text preset="caption" color="text">
                       {value}
                     </Text>
@@ -134,7 +157,7 @@ export const OptionBuilderSheet = forwardRef<OptionBuilderSheetHandle, OptionBui
                     >
                       <X size={12} color={theme.colors.textTertiary} strokeWidth={2.5} />
                     </Pressable>
-                  </View>
+                  </Animated.View>
                 ))}
               </View>
             ) : null}

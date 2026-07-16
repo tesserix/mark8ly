@@ -1,7 +1,9 @@
 import { View, TouchableOpacity, StyleSheet } from "react-native";
+import Animated, { FadeIn, FadeOut, useReducedMotion } from "react-native-reanimated";
 import { X } from "lucide-react-native";
 import { Card, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { DISCLOSURE_DURATION, DISCLOSURE_EASING, DISCLOSURE_EXIT_DURATION } from "./disclosure-motion";
 import type { CreatedBannerSection } from "@/lib/hooks/use-created-banner";
 
 interface CreateNextStepsBannerProps {
@@ -22,43 +24,57 @@ const CHIPS: { key: CreatedBannerSection; label: string }[] = [
  * press), dismissible; a normal edit visit never shows it.
  */
 export function CreateNextStepsBanner({ title, onJump, onDismiss }: CreateNextStepsBannerProps) {
+  const reduceMotion = useReducedMotion();
+
   return (
-    <Card variant="ghost" padding="md" style={styles.card}>
-      <View style={styles.header}>
-        <View style={styles.copy}>
-          <Text preset="h3" color="text">
-            {`Nice — '${title}' is live.`}
-          </Text>
-          <Text preset="caption" color="textSecondary">
-            Add photos, options, and extra variants whenever you&apos;re ready.
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={onDismiss}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Dismiss"
-        >
-          <X size={18} color={theme.colors.textTertiary} strokeWidth={1.75} />
-        </TouchableOpacity>
-      </View>
-      <View style={styles.chips}>
-        {CHIPS.map((chip) => (
-          <TouchableOpacity
-            key={chip.key}
-            style={styles.chip}
-            onPress={() => onJump(chip.key)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={chip.label}
-          >
-            <Text preset="caption" color="text">
-              {chip.label}
+    <Animated.View
+      testID="create-next-steps-banner"
+      entering={
+        reduceMotion ? undefined : FadeIn.duration(DISCLOSURE_DURATION).easing(DISCLOSURE_EASING)
+      }
+      exiting={
+        reduceMotion
+          ? undefined
+          : FadeOut.duration(DISCLOSURE_EXIT_DURATION).easing(DISCLOSURE_EASING)
+      }
+    >
+      <Card variant="ghost" padding="md" style={styles.card}>
+        <View style={styles.header}>
+          <View style={styles.copy}>
+            <Text preset="h3" color="text">
+              {`Nice — '${title}' is live.`}
             </Text>
+            <Text preset="caption" color="textSecondary">
+              Add photos, options, and extra variants whenever you&apos;re ready.
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={onDismiss}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss"
+          >
+            <X size={18} color={theme.colors.textTertiary} strokeWidth={1.75} />
           </TouchableOpacity>
-        ))}
-      </View>
-    </Card>
+        </View>
+        <View style={styles.chips}>
+          {CHIPS.map((chip) => (
+            <TouchableOpacity
+              key={chip.key}
+              style={styles.chip}
+              onPress={() => onJump(chip.key)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={chip.label}
+            >
+              <Text preset="caption" color="text">
+                {chip.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Card>
+    </Animated.View>
   );
 }
 

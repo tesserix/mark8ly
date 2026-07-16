@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Plus } from "lucide-react-native";
+import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import { useProducts } from "../../../lib/hooks/use-products";
 import { ProductRow } from "../../../components/ProductRow";
 import {
@@ -19,6 +20,7 @@ import {
   SegmentedControl,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { DISCLOSURE_EASING } from "@/components/products/disclosure-motion";
 import type { Product } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
@@ -44,6 +46,7 @@ function useDebounce(value: string, delay: number): string {
 export default function ProductsScreen() {
   const dockPad = useDockClearance();
   const router = useRouter();
+  const reduceMotion = useReducedMotion();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchText, setSearchText] = useState("");
   const debouncedSearch = useDebounce(searchText, 300);
@@ -89,29 +92,35 @@ export default function ProductsScreen() {
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : (
-        <FlatList
-          data={data?.data ?? []}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={refetch}
-              tintColor={theme.colors.text}
-            />
-          }
-          ListEmptyComponent={
-            <EmptyState
-              title="No products yet"
-              message={
-                debouncedSearch
-                  ? "Try a different search term."
-                  : "Add your first product to get started."
-              }
-            />
-          }
-        />
+        <Animated.View
+          testID="products-list-wrap"
+          style={styles.listWrap}
+          entering={reduceMotion ? undefined : FadeIn.duration(180).easing(DISCLOSURE_EASING)}
+        >
+          <FlatList
+            data={data?.data ?? []}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefetching}
+                onRefresh={refetch}
+                tintColor={theme.colors.text}
+              />
+            }
+            ListEmptyComponent={
+              <EmptyState
+                title="No products yet"
+                message={
+                  debouncedSearch
+                    ? "Try a different search term."
+                    : "Add your first product to get started."
+                }
+              />
+            }
+          />
+        </Animated.View>
       )}
 
       <TouchableOpacity
@@ -131,6 +140,9 @@ const styles = StyleSheet.create({
   search: {
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xs,
+  },
+  listWrap: {
+    flex: 1,
   },
   list: {
     flexGrow: 1,

@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Pressable, View, StyleSheet } from "react-native";
-import Animated, { FadeIn, FadeOut, useReducedMotion } from "react-native-reanimated";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 import { ChevronDown } from "lucide-react-native";
 import { Text, StatusBadge, type StatusTone } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/product-display";
-import { DISCLOSURE_DURATION, DISCLOSURE_EASING, useChevronRotationStyle } from "./disclosure-motion";
+import { disclosureEntering, disclosureExiting, useChevronRotationStyle } from "./disclosure-motion";
 import { VariantEditor, variantLabel } from "./VariantEditor";
 import type { ProductVariant } from "@repo/mobile-shared/api/schemas/products";
 import type { UpdateVariantBody } from "@repo/mobile-shared/api/products";
@@ -88,12 +88,8 @@ export function VariantRow({ variant, onUpdate, defaultOpen = false }: VariantRo
       {open ? (
         <Animated.View
           testID="variant-row-body"
-          entering={
-            reduceMotion ? undefined : FadeIn.duration(DISCLOSURE_DURATION).easing(DISCLOSURE_EASING)
-          }
-          exiting={
-            reduceMotion ? undefined : FadeOut.duration(DISCLOSURE_DURATION).easing(DISCLOSURE_EASING)
-          }
+          entering={reduceMotion ? undefined : disclosureEntering}
+          exiting={reduceMotion ? undefined : disclosureExiting}
         >
           <VariantEditor variant={variant} onUpdate={onUpdate} />
         </Animated.View>

@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { Pressable, View, StyleSheet } from "react-native";
-import Animated, { FadeIn, FadeOut, useReducedMotion } from "react-native-reanimated";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 import { ChevronDown } from "lucide-react-native";
 import { Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
-import { DISCLOSURE_DURATION, DISCLOSURE_EASING, useChevronRotationStyle } from "./disclosure-motion";
+import { disclosureEntering, disclosureExiting, useChevronRotationStyle } from "./disclosure-motion";
 
 interface SectionDisclosureProps {
   title: string;
@@ -46,12 +46,8 @@ export function SectionDisclosure({ title, defaultOpen = false, children }: Sect
       {open ? (
         <Animated.View
           testID="section-disclosure-body"
-          entering={
-            reduceMotion ? undefined : FadeIn.duration(DISCLOSURE_DURATION).easing(DISCLOSURE_EASING)
-          }
-          exiting={
-            reduceMotion ? undefined : FadeOut.duration(DISCLOSURE_DURATION).easing(DISCLOSURE_EASING)
-          }
+          entering={reduceMotion ? undefined : disclosureEntering}
+          exiting={reduceMotion ? undefined : disclosureExiting}
         >
           {children}
         </Animated.View>

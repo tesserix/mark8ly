@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
+import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import { useOrders } from "../../../lib/hooks/use-orders";
 import { OrderRow } from "../../../components/OrderRow";
 import {
@@ -17,6 +18,7 @@ import {
   SegmentedControl,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { DISCLOSURE_EASING } from "@/components/products/disclosure-motion";
 import type { Order } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
@@ -45,6 +47,7 @@ function useDebounce(value: string, delay: number): string {
 export default function OrdersScreen() {
   const dockPad = useDockClearance();
   const router = useRouter();
+  const reduceMotion = useReducedMotion();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchText, setSearchText] = useState("");
   const debouncedSearch = useDebounce(searchText, 300);
@@ -87,29 +90,35 @@ export default function OrdersScreen() {
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : (
-        <FlatList
-          data={data?.data ?? []}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={refetch}
-              tintColor={theme.colors.text}
-            />
-          }
-          ListEmptyComponent={
-            <EmptyState
-              title="No orders found"
-              message={
-                debouncedSearch
-                  ? "Try a different search term."
-                  : "Orders will appear here once placed."
-              }
-            />
-          }
-        />
+        <Animated.View
+          testID="orders-list-wrap"
+          style={styles.listWrap}
+          entering={reduceMotion ? undefined : FadeIn.duration(180).easing(DISCLOSURE_EASING)}
+        >
+          <FlatList
+            data={data?.data ?? []}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefetching}
+                onRefresh={refetch}
+                tintColor={theme.colors.text}
+              />
+            }
+            ListEmptyComponent={
+              <EmptyState
+                title="No orders found"
+                message={
+                  debouncedSearch
+                    ? "Try a different search term."
+                    : "Orders will appear here once placed."
+                }
+              />
+            }
+          />
+        </Animated.View>
       )}
     </Screen>
   );
@@ -119,6 +128,9 @@ const styles = StyleSheet.create({
   search: {
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xs,
+  },
+  listWrap: {
+    flex: 1,
   },
   list: {
     flexGrow: 1,

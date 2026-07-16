@@ -9,7 +9,10 @@ import { Dock } from "@/components/navigation/Dock";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    // shouldShowAlert is deprecated in expo-notifications 56; the banner/list
+    // pair replaces it and both are required by NotificationBehavior.
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -17,7 +20,7 @@ Notifications.setNotificationHandler({
 
 function usePushSetup() {
   const router = useRouter();
-  const responseListener = useRef<Notifications.Subscription>();
+  const responseListener = useRef<Notifications.EventSubscription | undefined>(undefined);
   const client = useApiClient();
   const notificationsApi = createNotificationsApi(client);
 
@@ -35,9 +38,9 @@ function usePushSetup() {
       });
 
     return () => {
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
-      }
+      // expo-notifications 56 removed Notifications.removeNotificationSubscription;
+      // calling it threw. Subscriptions remove themselves.
+      responseListener.current?.remove();
     };
   }, []);
 }

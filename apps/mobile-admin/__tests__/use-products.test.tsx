@@ -3,7 +3,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { useProducts } from "@/lib/hooks/use-products";
 
-const REAL_RESPONSE = {
+// The real api module is mocked below, so this never goes through
+// productListSchema (it would fail — no meta, no variants). It's a stub
+// for the mocked list() call, not a stand-in for a real wire payload.
+const MOCK_RESPONSE = {
   data: [
     {
       id: "product-1",
@@ -43,7 +46,7 @@ describe("useProducts", () => {
   });
 
   it("sends page_size=100 to the API client", async () => {
-    __mockList.mockResolvedValue(REAL_RESPONSE);
+    __mockList.mockResolvedValue(MOCK_RESPONSE);
     const { result } = renderHook(() => useProducts(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(__mockList).toHaveBeenCalledWith({
@@ -52,7 +55,7 @@ describe("useProducts", () => {
   });
 
   it("merges page_size with status parameter", async () => {
-    __mockList.mockResolvedValue(REAL_RESPONSE);
+    __mockList.mockResolvedValue(MOCK_RESPONSE);
     const { result } = renderHook(() => useProducts({ status: "active" }), {
       wrapper,
     });
@@ -64,7 +67,7 @@ describe("useProducts", () => {
   });
 
   it("merges page_size with search parameter", async () => {
-    __mockList.mockResolvedValue(REAL_RESPONSE);
+    __mockList.mockResolvedValue(MOCK_RESPONSE);
     const { result } = renderHook(() => useProducts({ search: "test" }), {
       wrapper,
     });
@@ -76,7 +79,7 @@ describe("useProducts", () => {
   });
 
   it("merges page_size with both status and search parameters", async () => {
-    __mockList.mockResolvedValue(REAL_RESPONSE);
+    __mockList.mockResolvedValue(MOCK_RESPONSE);
     const { result } = renderHook(
       () => useProducts({ status: "active", search: "test" }),
       { wrapper }

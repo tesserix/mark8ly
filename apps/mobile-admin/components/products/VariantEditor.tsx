@@ -151,7 +151,14 @@ export function VariantEditor({ variant, onUpdate }: VariantEditorProps) {
 }
 
 const styles = StyleSheet.create({
-  root: { gap: theme.spacing.sm, paddingVertical: theme.spacing.md },
+  // The Variants Card is padding={0} so the inter-variant hairlines span full
+  // width; the editor supplies its own horizontal inset so fields don't run to
+  // the card edge.
+  root: {
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+  },
   row: { flexDirection: "row", gap: theme.spacing.md },
   field: { flex: 1, gap: theme.spacing.xs },
   input: {

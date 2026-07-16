@@ -120,6 +120,16 @@ export interface CreateMediaBody {
   alt?: string;
 }
 
+/**
+ * PATCH /products/{id}/media/{mediaId} (UpdateMediaWireRequest,
+ * validation.go:85). Returns 204 No Content — there is no body to parse, so
+ * no schema is passed. Reorder is a `position` patch; position 0 is the hero.
+ */
+export interface UpdateMediaBody {
+  alt?: string;
+  position?: number;
+}
+
 export function createProductsApi(client: ReturnType<typeof createApiClient>) {
   return {
     list: (params?: ListProductsParams) =>
@@ -150,6 +160,8 @@ export function createProductsApi(client: ReturnType<typeof createApiClient>) {
       ),
     createMedia: (productId: string, body: CreateMediaBody) =>
       client.post<ProductMedia>(`/products/${productId}/media`, body, productMediaSchema),
+    updateMedia: (productId: string, mediaId: string, body: UpdateMediaBody) =>
+      client.patch(`/products/${productId}/media/${mediaId}`, body),
   };
 }
 

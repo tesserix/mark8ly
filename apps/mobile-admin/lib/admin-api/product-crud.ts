@@ -5,6 +5,7 @@ import {
   type CreateProductBody,
   type UpdateProductBody,
   type UpdateVariantBody,
+  type UpdateMediaBody,
   type ProductMedia,
 } from "@repo/mobile-shared/api/products";
 import { createCategoriesApi } from "@repo/mobile-shared/api/categories";
@@ -79,6 +80,27 @@ export function useUpdateVariant() {
       variantId: string;
       body: UpdateVariantBody;
     }) => productsApi.updateVariant(productId, variantId, body),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["product", variables.productId] });
+    },
+  });
+}
+
+export function useUpdateMedia() {
+  const client = useApiClient();
+  const productsApi = createProductsApi(client);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      productId,
+      mediaId,
+      body,
+    }: {
+      productId: string;
+      mediaId: string;
+      body: UpdateMediaBody;
+    }) => productsApi.updateMedia(productId, mediaId, body),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["product", variables.productId] });
     },

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { View, TextInput, StyleSheet } from "react-native";
-import { Text } from "@/components/ui";
+import { View, StyleSheet } from "react-native";
+import { FieldInput } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { SectionDisclosure } from "./SectionDisclosure";
 import type { ProductVariant } from "@repo/mobile-shared/api/schemas/products";
@@ -15,14 +15,6 @@ export function variantLabel(variant: ProductVariant): string {
     return variant.option_values.map((o) => o.value).join(" / ");
   }
   return variant.sku;
-}
-
-function FieldLabel({ label }: { label: string }) {
-  return (
-    <Text preset="caption" color="textTertiary">
-      {label}
-    </Text>
-  );
 }
 
 interface NumericFieldProps {
@@ -53,9 +45,8 @@ function NumericField({ label, accessibilityLabel, initial, integer, onCommit }:
 
   return (
     <View style={styles.field}>
-      <FieldLabel label={label} />
-      <TextInput
-        style={styles.input}
+      <FieldInput
+        label={label}
         value={text}
         onChangeText={setText}
         onBlur={handleBlur}
@@ -84,9 +75,8 @@ export function VariantEditor({ variant, onUpdate }: VariantEditorProps) {
   return (
     <View style={styles.root}>
       <View style={styles.field}>
-        <FieldLabel label="SKU" />
-        <TextInput
-          style={styles.input}
+        <FieldInput
+          label="SKU"
           value={sku}
           onChangeText={setSku}
           onBlur={handleSkuBlur}
@@ -160,13 +150,4 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: theme.spacing.md },
   shippingBody: { gap: theme.spacing.sm, paddingTop: theme.spacing.xs },
   field: { flex: 1, gap: theme.spacing.xs },
-  input: {
-    height: 44,
-    borderWidth: theme.hairline,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radii.md,
-    paddingHorizontal: theme.spacing.sm,
-    color: theme.colors.text,
-    backgroundColor: theme.colors.elevated,
-  },
 });

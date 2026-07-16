@@ -23,6 +23,34 @@ describe("product detail screen composition", () => {
     expect(source).toContain("<ImageViewer");
   });
 
+  it("renders the editorial header with the productThumb and a StatusBadge", () => {
+    expect(source).toContain("productThumb(product)");
+    expect(source).toContain("<StatusBadge");
+  });
+
+  it("never spends moss on the header status badge — success IS moss", () => {
+    // 🔴 The one-accent rule this task exists to enforce: the header badge
+    // must never resolve to the `success` tone (StatusBadge.TONE.success is
+    // a solid moss fill). It maps active -> "neutral" (solid ink) instead.
+    expect(source).not.toMatch(/tone=\{?["']?success/);
+  });
+
+  it("keeps the Photos and option-add affordances ink at rest, moss only on press", () => {
+    // Both affordances read the Pressable `pressed` render-prop rather than
+    // hardcoding `color="accent"` — moss is reserved for the header Save.
+    expect(source).toMatch(/pressed\s*\?\s*"accent"\s*:\s*"text"/);
+  });
+
+  it("migrated the Details card's Title/Description inputs to FieldInput", () => {
+    expect(source).toMatch(/<FieldInput\s*\n\s*label="Title"/);
+    expect(source).toContain('label="Description"');
+    expect(source).not.toContain("<TextInput");
+  });
+
+  it("uses ghost cards with a top Hairline for Details/Options/Categories", () => {
+    expect(source.match(/variant="ghost"/g)?.length).toBe(3);
+  });
+
   it("never sends `variants` on a product PATCH — that matrix soft-deletes", () => {
     // UpdateAggregateRequest.Variants is a FULL DESIRED MATRIX; applyVariantsDiff
     // soft-deletes anything missing from it. Variant edits go through the

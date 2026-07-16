@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { View, TextInput, Pressable, StyleSheet } from "react-native";
+import { View, Pressable, StyleSheet } from "react-native";
 import { Plus, X } from "lucide-react-native";
-import { Text } from "@/components/ui";
+import { FieldInput, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { ProductOption } from "@repo/mobile-shared/api/schemas/products";
 import type { UpdateProductOptionBody } from "@repo/mobile-shared/api/products";
@@ -98,13 +98,11 @@ export function OptionsEditor({ options, onChange, onAddOption }: OptionsEditorP
                 </View>
               ))}
             </View>
-            <TextInput
-              style={styles.input}
+            <FieldInput
               value={drafts[option.name] ?? ""}
               onChangeText={(t) => setDrafts((d) => ({ ...d, [option.name]: t }))}
               onSubmitEditing={() => addValue(option.name)}
               placeholder={`Add a ${option.name.toLowerCase()}…`}
-              placeholderTextColor={theme.colors.textTertiary}
               accessibilityLabel={`Add a value to ${option.name}`}
               returnKeyType="done"
             />
@@ -118,10 +116,14 @@ export function OptionsEditor({ options, onChange, onAddOption }: OptionsEditorP
         accessibilityRole="button"
         accessibilityLabel="Add an option"
       >
-        <Plus size={16} color={theme.colors.accent} strokeWidth={2.5} />
-        <Text preset="bodyEmphasis" color="accent">
-          Add option
-        </Text>
+        {({ pressed }) => (
+          <>
+            <Plus size={16} color={pressed ? theme.colors.accent : theme.colors.text} strokeWidth={2.5} />
+            <Text preset="bodyEmphasis" color={pressed ? "accent" : "text"}>
+              Add option
+            </Text>
+          </>
+        )}
       </Pressable>
 
       <OptionBuilderSheet ref={sheetRef} onSubmit={onAddOption} />
@@ -153,15 +155,6 @@ const styles = StyleSheet.create({
     borderRadius: theme.radii.sm,
     borderWidth: theme.hairline,
     borderColor: theme.colors.border,
-    backgroundColor: theme.colors.elevated,
-  },
-  input: {
-    height: 44,
-    borderWidth: theme.hairline,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radii.md,
-    paddingHorizontal: theme.spacing.sm,
-    color: theme.colors.text,
     backgroundColor: theme.colors.elevated,
   },
 });

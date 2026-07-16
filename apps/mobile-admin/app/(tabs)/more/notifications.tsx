@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import {
   View,
   FlatList,
@@ -48,23 +47,23 @@ function formatRelativeTime(dateString: string): string {
 
 function NotificationItem({
   notification,
-  onPress,
 }: {
   notification: Notification;
-  onPress: (n: Notification) => void;
 }) {
   const dotColor = TYPE_DOT[notification.type] ?? theme.colors.text;
   const isUnread = !notification.is_read;
   const message = notification.message ?? "";
 
   return (
-    <TouchableOpacity
+    <View
       style={[styles.row, isUnread && styles.rowUnread]}
-      onPress={() => onPress(notification)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
+      accessible={true}
       accessibilityLabel={`${notification.title}, ${message}, ${isUnread ? "unread" : "read"}`}
     >
+      {/* Not interactive: the wire has no deep_link (it sends resource_type/ */}
+      {/* resource_id), so there is nowhere to navigate. Rendered as a plain View — */}
+      {/* a TouchableOpacity with a no-op onPress would dim on press and announce */}
+      {/* itself as a "button" to screen readers while doing nothing. */}
       {isUnread ? <View style={[styles.unreadBar, { backgroundColor: dotColor }]} /> : null}
       <View style={[styles.dot, { backgroundColor: dotColor }]} />
       <View style={styles.content}>
@@ -83,7 +82,7 @@ function NotificationItem({
           {formatRelativeTime(notification.created_at)}
         </Text>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -92,12 +91,6 @@ export default function NotificationsScreen() {
   const markAllRead = useMarkAllRead();
 
   const hasUnread = data?.notifications.some((n) => !n.is_read) ?? false;
-
-  // The wire has no deep_link — it sends resource_type/resource_id instead.
-  // Mapping those to routes would be pure guesswork: the endpoint is empty in
-  // prod, so no real notification has ever been observed. Deferred until there
-  // is data to verify against.
-  const handlePress = useCallback((_notification: Notification) => {}, []);
 
   return (
     <Screen>
@@ -130,7 +123,7 @@ export default function NotificationsScreen() {
       ) : (
         <FlatList
           data={data?.notifications ?? []}
-          renderItem={({ item }) => <NotificationItem notification={item} onPress={handlePress} />}
+          renderItem={({ item }) => <NotificationItem notification={item} />}
           keyExtractor={(item) => item.id}
           ItemSeparatorComponent={() => <Hairline />}
           contentContainerStyle={styles.list}

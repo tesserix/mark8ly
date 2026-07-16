@@ -630,3 +630,48 @@ func TestAPI_AdminProducts_Authz_RequireAdminOnCreate_StaffDenied_404(t *testing
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
 }
+
+// A categories-only PATCH must persist. This pins already-correct behaviour
+// that had no direct coverage: such a request matches neither the aggregate
+// path (no options/variants) nor the basics path (UpdateBasicsRequest has no
+// CategoryIDs field), and is instead handled by the third, independent
+// section of the Patch handler — products.go:215, which calls
+// UpdateCategoryLinks. That section's guard exists to avoid double-firing
+// when the aggregate path already replaced the links in its own tx; this
+// test locks in the categories-only case it is responsible for.
+func TestAPI_AdminProducts_Patch_CategoryIDsOnly_Persists(t *testing.T) {
+	env := setupTestRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+
+	pid, _, _ := seedProductViaService(t, env, storeID, tenantID)
+	catID := seedCategoryViaRepo(t, env, storeID, tenantID, "Swimwear", "swimwear-"+uuid.NewString()[:6])
+
+	w := request(t, env.router, http.MethodPatch,
+		"/api/v1/admin/stores/"+storeID+"/products/"+pid,
+		map[string]any{"category_ids": []string{catID}},
+		authHeaders(userID, tenantID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch category_ids: want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Read it back — a 200 alone proves nothing here; that was the bug.
+	w2 := request(t, env.router, http.MethodGet,
+		"/api/v1/admin/stores/"+storeID+"/products/"+pid, nil,
+		authHeaders(userID, tenantID))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("get product: want 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var got struct {
+		Categories []struct {
+			ID string `json:"id"`
+		} `json:"categories"`
+	}
+	if err := json.Unmarshal(w2.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got.Categories) != 1 || got.Categories[0].ID != catID {
+		t.Fatalf("category link not persisted: got %+v, want [%s]", got.Categories, catID)
+	}
+}

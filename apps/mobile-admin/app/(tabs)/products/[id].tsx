@@ -244,7 +244,11 @@ export default function ProductDetailScreen() {
               accessibilityLabel={`${product.title} thumbnail`}
             />
           ) : (
-            <View style={[styles.headerThumb, styles.headerThumbPlaceholder]}>
+            <View
+              style={[styles.headerThumb, styles.headerThumbPlaceholder]}
+              accessible
+              accessibilityLabel="No product image"
+            >
               <Package size={24} color={theme.colors.textTertiary} strokeWidth={1.5} />
             </View>
           )}
@@ -331,7 +335,10 @@ export default function ProductDetailScreen() {
                 onValueChange={setIsActive}
                 trackColor={{
                   false: theme.colors.border,
-                  true: theme.colors.accent,
+                  // Ink, not moss — moss on this screen is reserved for the
+                  // header Save action; a second moss element at rest here
+                  // (next to Save) is the one-accent violation this pass fixes.
+                  true: theme.colors.text,
                 }}
                 thumbColor={theme.colors.inverse}
               />

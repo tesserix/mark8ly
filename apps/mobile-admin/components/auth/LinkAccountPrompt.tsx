@@ -8,6 +8,7 @@ import {
   signInWithAppleNative,
   signInWithGoogleNative,
 } from '@/lib/social-auth';
+import { theme } from '@/lib/theme';
 import { Text } from '../ui/Text';
 
 export interface LinkAccountPromptProps {
@@ -109,8 +110,10 @@ export function LinkAccountPrompt({
                 accessibilityLabel="Password"
                 className="min-h-touch rounded border border-border bg-paper px-4 font-sans text-body text-ink"
                 placeholder="Password"
-                placeholderTextColor="#7A766E"
+                placeholderTextColor={theme.colors.textTertiary}
                 secureTextEntry
+                textContentType="password"
+                autoComplete="password"
                 value={password}
                 onChangeText={setPassword}
               />

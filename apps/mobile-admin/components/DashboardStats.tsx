@@ -38,11 +38,11 @@ function StatCard({
       {trend ? (
         <View style={styles.trendRow}>
           {positive ? (
-            <ArrowUpRight size={12} color={theme.colors.accent} strokeWidth={2.25} />
+            <ArrowUpRight size={12} color={theme.colors.text} strokeWidth={2.25} />
           ) : (
             <ArrowDownRight size={12} color={theme.colors.danger} strokeWidth={2.25} />
           )}
-          <Text preset="caption" color={positive ? "accent" : "danger"}>
+          <Text preset="caption" color={positive ? "text" : "danger"}>
             {Math.abs(trend.pct).toFixed(1)}%
           </Text>
         </View>

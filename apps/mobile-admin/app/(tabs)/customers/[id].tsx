@@ -122,7 +122,7 @@ export default function CustomerDetailScreen() {
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         <View style={styles.profile}>
           <View style={styles.avatar}>
-            <Text preset="h2" color="inverse">
+            <Text preset="h2" color="text">
               {initial}
             </Text>
           </View>
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: theme.spacing.md,

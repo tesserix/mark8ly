@@ -39,7 +39,7 @@ export function CustomerRow({ customer, onPress }: CustomerRowProps) {
       accessibilityLabel={`${displayName}, ${customer.email}, ${customer.order_count} orders, ${formatCurrency(customer.total_spent)} spent`}
     >
       <View style={styles.avatar}>
-        <Text preset="bodyEmphasis" color="inverse">
+        <Text preset="bodyEmphasis" color="text">
           {getInitial(customer)}
         </Text>
       </View>
@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -20,9 +20,12 @@ import type { Notification } from "@repo/mobile-shared/api/types";
 // Real values from notification/models.go:16-30. The previous map used
 // order/payment/alert/system, which match NOTHING the backend emits, so every
 // notification silently fell through to the default colour.
+// new_order/order_fulfilled use a neutral ink tone, not moss — a per-row dot
+// repeats once per notification, and moss is reserved for the single "Mark
+// all" header action (one-accent-per-view).
 const TYPE_DOT: Record<string, string> = {
-  new_order: theme.colors.accent,
-  order_fulfilled: theme.colors.accent,
+  new_order: theme.colors.textSecondary,
+  order_fulfilled: theme.colors.textSecondary,
   order_cancelled: theme.colors.danger,
   payment_received: theme.colors.warning,
   low_stock: theme.colors.warning,

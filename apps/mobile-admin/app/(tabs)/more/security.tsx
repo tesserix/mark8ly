@@ -155,7 +155,7 @@ export default function SecurityScreen(): React.JSX.Element {
                     accessibilityRole="button"
                     accessibilityLabel={`Link ${m.label}`}
                   >
-                    <Text preset="bodyEmphasis" color="accent">
+                    <Text preset="bodyEmphasis" color="text">
                       Link
                     </Text>
                   </TouchableOpacity>

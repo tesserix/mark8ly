@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.md,
   },
   chip: {
-    minHeight: 36,
+    minHeight: theme.touchTarget,
     justifyContent: "center",
     paddingHorizontal: theme.spacing.md,
     borderRadius: theme.radii.pill,

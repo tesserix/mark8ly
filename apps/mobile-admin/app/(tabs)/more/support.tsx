@@ -65,8 +65,11 @@ export default function PlatformSupportScreen() {
     () => ({
       background: theme.colors.background,
       surface: theme.colors.surfaceAlt,
-      bubbleOwn: theme.colors.accent,
-      textOnOwn: theme.colors.palette.white,
+      // Outgoing bubbles are neutral ink-on-elevated, not moss — every message
+      // the merchant sends would otherwise repeat the accent. Moss stays
+      // reserved for the single Send/submit action below (`primary`).
+      bubbleOwn: theme.colors.elevated,
+      textOnOwn: theme.colors.text,
       text: theme.colors.text,
       textSecondary: theme.colors.textSecondary,
       border: theme.colors.border,

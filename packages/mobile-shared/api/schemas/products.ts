@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { decimalNumber, money, paginated } from "../schema-helpers";
+import { categoryRefSchema } from "./categories";
 
 /**
  * Wire truth for the admin product endpoints. Verified 2026-07-16 against
@@ -95,7 +96,9 @@ export const productSchema = z.object({
   seo_title: z.string().optional(),
   seo_description: z.string().optional(),
   primary_category_id: z.string().optional(),
-  categories: z.array(z.unknown()),
+  // AdminCategoryRef (dto.go:165) — id/name/slug only, NOT the full category
+  // record that GET /categories returns. Was z.array(z.unknown()).
+  categories: z.array(categoryRefSchema),
   options: z.array(productOptionSchema),
   variants: z.array(productVariantSchema),
   media: z.array(productMediaSchema),

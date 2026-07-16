@@ -326,7 +326,7 @@ export default function ProductDetailScreen() {
             accessibilityLabel={saveLabel}
             hitSlop={8}
           >
-            <Text preset="bodyEmphasis" color="accent">
+            <Text preset="bodyEmphasis" color="accent" numberOfLines={1}>
               {saveLabel}
             </Text>
           </TouchableOpacity>

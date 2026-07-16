@@ -62,5 +62,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   center: { flex: 1, alignItems: "center", paddingHorizontal: theme.spacing.sm },
-  right: { width: 44, alignItems: "flex-end", paddingRight: theme.spacing.sm },
+  // minWidth, NOT width: a fixed 44 is wide enough for the back chevron but not
+  // for a text rightSlot — "Saving…"/"Saved" wrapped to two lines ("Save"/"d"),
+  // and "Mark all" on the notifications screen has the same problem. `center`
+  // is flex:1 so it yields the space; this can only ever grow the slot.
+  right: { minWidth: 44, alignItems: "flex-end", paddingRight: theme.spacing.sm },
 });

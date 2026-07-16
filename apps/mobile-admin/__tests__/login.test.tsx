@@ -81,12 +81,16 @@ describe('LoginScreen', () => {
     mockSignIn.mockReturnValue(deferred);
 
     const { getByLabelText, findByText, queryByText } = render(<LoginScreen />);
-    const button = getByLabelText('Sign in');
-    fireEvent.press(button);
+    fireEvent.press(getByLabelText('Sign in'));
 
     // In-flight: label flips to the busy state and the button reports disabled.
     expect(await findByText('Signing in…')).toBeTruthy();
-    expect(button.props.accessibilityState?.disabled).toBe(true);
+    // Re-query rather than reusing an instance captured before the press: the
+    // press triggers a re-render, so a reference held from before it can read
+    // stale props. That raced on CI (green locally, red on a slower runner)
+    // while asserting the very state the re-render produces. The
+    // accessibilityLabel stays "Sign in" in both states (app/login.tsx:142).
+    expect(getByLabelText('Sign in').props.accessibilityState?.disabled).toBe(true);
 
     resolveSignIn();
 

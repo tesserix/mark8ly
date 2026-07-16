@@ -187,6 +187,16 @@ export default function ProductDetailScreen() {
           }, SAVED_ACKNOWLEDGEMENT_MS);
         },
         onError: (err) => {
+          // Drop any in-flight "Saved" from a previous success. Without this a
+          // save that fails within SAVED_ACKNOWLEDGEMENT_MS of a successful one
+          // leaves the button reading "Saved" while an error alert is on screen
+          // — an acknowledgement that lies, which is the whole thing this
+          // acknowledgement exists to prevent.
+          if (savedTimerRef.current) {
+            clearTimeout(savedTimerRef.current);
+            savedTimerRef.current = null;
+          }
+          setJustSaved(false);
           Alert.alert("Error", getErrorMessage(err, "Failed to save product. Please try again."));
         },
       },

@@ -3,7 +3,6 @@ import {
   View,
   ScrollView,
   TextInput,
-  Image,
   Switch,
   TouchableOpacity,
   Alert,
@@ -18,6 +17,8 @@ import {
   useDeleteMedia,
   useUpdateVariant,
   useAddProductMedia,
+  useCategories,
+  useUpdateMedia,
 } from "../../../lib/admin-api/product-crud";
 import {
   BackHeader,
@@ -28,11 +29,17 @@ import {
   Text,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
-import type { UpdateVariantBody } from "@repo/mobile-shared/api/products";
+import type {
+  UpdateVariantBody,
+  UpdateProductOptionBody,
+} from "@repo/mobile-shared/api/products";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { VariantEditor } from "@/components/products/VariantEditor";
 import { ImageViewer } from "@/components/products/ImageViewer";
+import { OptionsEditor } from "@/components/products/OptionsEditor";
+import { CategoryPicker } from "@/components/products/CategoryPicker";
+import { MediaGrid } from "@/components/products/MediaGrid";
 
 /** How long the transient "Saved" acknowledgement stays visible. */
 const SAVED_ACKNOWLEDGEMENT_MS = 2000;
@@ -64,6 +71,8 @@ export default function ProductDetailScreen() {
   const deleteMediaMutation = useDeleteMedia();
   const updateVariantMutation = useUpdateVariant();
   const addMediaMutation = useAddProductMedia();
+  const updateMediaMutation = useUpdateMedia();
+  const { data: categories } = useCategories();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -214,6 +223,38 @@ export default function ProductDetailScreen() {
     [id, updateVariantMutation],
   );
 
+  // Options and categories both route through UpdateAggregate (products.go:172).
+  // Send ONLY the changed section — never bundle `variants` in, because
+  // UpdateAggregateRequest.Variants is a full desired matrix that soft-deletes
+  // anything it omits.
+  const handleOptionsChange = useCallback(
+    (options: UpdateProductOptionBody[]) => {
+      updateMutation.mutate({ id, body: { options } });
+    },
+    [id, updateMutation],
+  );
+
+  const handleCategoriesChange = useCallback(
+    (category_ids: string[]) => {
+      updateMutation.mutate({ id, body: { category_ids } });
+    },
+    [id, updateMutation],
+  );
+
+  const handleReorderMedia = useCallback(
+    (mediaId: string, position: number) => {
+      updateMediaMutation.mutate({ productId: id, mediaId, body: { position } });
+    },
+    [id, updateMediaMutation],
+  );
+
+  const handleAltChange = useCallback(
+    (mediaId: string, alt: string) => {
+      updateMediaMutation.mutate({ productId: id, mediaId, body: { alt } });
+    },
+    [id, updateMediaMutation],
+  );
+
   if (error) {
     return (
       <Screen>
@@ -283,28 +324,13 @@ export default function ProductDetailScreen() {
         />
         <Card padding="md" style={styles.card}>
           {media.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.galleryRow}
-            >
-              {media.map((m) => (
-                <TouchableOpacity
-                  key={m.id}
-                  onPress={() => setViewerImage({ uri: m.url, alt: m.alt })}
-                  onLongPress={() => handleDeleteExistingMedia(m.id)}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    m.alt
-                      ? `${m.alt}. Tap to view. Long press to delete.`
-                      : "Product image. Tap to view. Long press to delete."
-                  }
-                >
-                  <Image source={{ uri: m.url }} style={styles.mediaThumb} />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <MediaGrid
+              media={media}
+              onReorder={handleReorderMedia}
+              onAltChange={handleAltChange}
+              onPress={(m) => setViewerImage({ uri: m.url, alt: m.alt })}
+              onLongPress={handleDeleteExistingMedia}
+            />
           ) : (
             <Text preset="caption" color="textTertiary">
               No images yet.
@@ -355,6 +381,20 @@ export default function ProductDetailScreen() {
           </View>
         </Card>
 
+        <Eyebrow label="Options" />
+        <Card padding="md" style={styles.card}>
+          <OptionsEditor options={product.options} onChange={handleOptionsChange} />
+        </Card>
+
+        <Eyebrow label="Categories" />
+        <Card padding="md" style={styles.card}>
+          <CategoryPicker
+            categories={categories ?? []}
+            selected={product.categories}
+            onChange={handleCategoriesChange}
+          />
+        </Card>
+
         {/* Price, SKU and stock live on the VARIANT, not the product — the
             product-level fields this screen used to edit are not on the wire. */}
         <Eyebrow label="Variants" />
@@ -392,13 +432,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-  },
-  galleryRow: { gap: theme.spacing.sm },
-  mediaThumb: {
-    width: 96,
-    height: 96,
-    borderRadius: theme.radii.md,
-    backgroundColor: theme.colors.surfaceAlt,
   },
   fieldLabel: {
     marginTop: theme.spacing.sm,

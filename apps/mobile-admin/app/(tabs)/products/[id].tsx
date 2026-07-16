@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   ScrollView,
@@ -9,13 +9,17 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
+  Modal,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
 import { useProduct } from "../../../lib/hooks/use-products";
 import {
   useUpdateProduct,
   useDeleteMedia,
   useUpdateVariant,
+  useAddProductMedia,
 } from "../../../lib/admin-api/product-crud";
 import {
   BackHeader,
@@ -30,6 +34,9 @@ import type { ProductVariant } from "@repo/mobile-shared/api/types";
 import type { UpdateVariantBody } from "@repo/mobile-shared/api/products";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
+
+/** How long the transient "Saved" acknowledgement stays visible. */
+const SAVED_ACKNOWLEDGEMENT_MS = 2000;
 
 /**
  * This branch went to real trouble to make contract-mismatch messages name
@@ -128,11 +135,22 @@ export default function ProductDetailScreen() {
   const updateMutation = useUpdateProduct();
   const deleteMediaMutation = useDeleteMedia();
   const updateVariantMutation = useUpdateVariant();
+  const addMediaMutation = useAddProductMedia();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [initialized, setInitialized] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [viewerImage, setViewerImage] = useState<{ uri: string; alt?: string } | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // A `setTimeout` firing after unmount would set state on a dead component.
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    };
+  }, []);
 
   if (product && !initialized) {
     setTitle(product.title);
@@ -157,6 +175,17 @@ export default function ProductDetailScreen() {
         },
       },
       {
+        onSuccess: () => {
+          // Save -> Saving… -> Saved (~2s) -> Save. Success is otherwise
+          // invisible: react-query refetches identical data, so nothing on
+          // screen changes without this acknowledgement.
+          setJustSaved(true);
+          if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+          savedTimerRef.current = setTimeout(() => {
+            setJustSaved(false);
+            savedTimerRef.current = null;
+          }, SAVED_ACKNOWLEDGEMENT_MS);
+        },
         onError: (err) => {
           Alert.alert("Error", getErrorMessage(err, "Failed to save product. Please try again."));
         },
@@ -177,6 +206,58 @@ export default function ProductDetailScreen() {
     },
     [id, deleteMediaMutation],
   );
+
+  const handleAddMedia = useCallback(async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          "Permission needed",
+          "Allow photo library access in Settings to add product images.",
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.8,
+      });
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      if (!asset) return;
+
+      const currentMediaCount = product?.media.length ?? 0;
+      addMediaMutation.mutate(
+        {
+          productId: id,
+          asset: {
+            uri: asset.uri,
+            fileName: asset.fileName,
+            fileSize: asset.fileSize,
+            mimeType: asset.mimeType,
+          },
+          position: currentMediaCount,
+        },
+        {
+          onError: (err) => {
+            // A silent upload failure is the exact bug class this project
+            // exists to kill — always surface it.
+            Alert.alert(
+              "Error",
+              getErrorMessage(err, "Failed to upload image. Please try again."),
+            );
+          },
+        },
+      );
+    } catch (err) {
+      // requestMediaLibraryPermissionsAsync/launchImageLibraryAsync can
+      // themselves reject (e.g. platform picker errors). onPress doesn't
+      // await this handler, so an uncaught rejection here would be a
+      // silent failure — the exact class this project exists to kill.
+      Alert.alert("Error", getErrorMessage(err, "Failed to open the image picker."));
+    }
+  }, [id, product?.media.length, addMediaMutation]);
 
   const handleVariantUpdate = useCallback(
     (variantId: string, body: UpdateVariantBody) => {
@@ -216,7 +297,7 @@ export default function ProductDetailScreen() {
     );
   }
 
-  const saveLabel = updateMutation.isPending ? "Saving…" : "Save";
+  const saveLabel = updateMutation.isPending ? "Saving…" : justSaved ? "Saved" : "Save";
   // The wire returns media and variants UNSORTED — a real product came back
   // as positions 2,3,4,0,1. Sort for display; never mutate the query cache.
   const media = [...product.media].sort((a, b) => a.position - b.position);
@@ -243,7 +324,22 @@ export default function ProductDetailScreen() {
       />
 
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
-        <Eyebrow label="Photos" />
+        <Eyebrow
+          label="Photos"
+          rightSlot={
+            <TouchableOpacity
+              onPress={handleAddMedia}
+              disabled={addMediaMutation.isPending}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={addMediaMutation.isPending ? "Uploading image" : "Add image"}
+            >
+              <Text preset="caption" color="accent">
+                {addMediaMutation.isPending ? "Uploading…" : "Add"}
+              </Text>
+            </TouchableOpacity>
+          }
+        />
         <Card padding="md" style={styles.card}>
           {media.length > 0 ? (
             <ScrollView
@@ -254,13 +350,14 @@ export default function ProductDetailScreen() {
               {media.map((m) => (
                 <TouchableOpacity
                   key={m.id}
+                  onPress={() => setViewerImage({ uri: m.url, alt: m.alt })}
                   onLongPress={() => handleDeleteExistingMedia(m.id)}
                   activeOpacity={0.85}
                   accessibilityRole="button"
                   accessibilityLabel={
                     m.alt
-                      ? `${m.alt}. Long press to delete.`
-                      : "Product image. Long press to delete."
+                      ? `${m.alt}. Tap to view. Long press to delete.`
+                      : "Product image. Tap to view. Long press to delete."
                   }
                 >
                   <Image source={{ uri: m.url }} style={styles.mediaThumb} />
@@ -337,7 +434,50 @@ export default function ProductDetailScreen() {
           )}
         </Card>
       </ScrollView>
+
+      <Modal
+        visible={viewerImage !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewerImage(null)}
+      >
+        <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
+      </Modal>
     </Screen>
+  );
+}
+
+interface ImageViewerProps {
+  image: { uri: string; alt?: string } | null;
+  onClose: () => void;
+}
+
+/** Full-screen, dismissable viewer for a tapped product image. */
+function ImageViewer({ image, onClose }: ImageViewerProps) {
+  const insets = useSafeAreaInsets();
+
+  if (!image) return null;
+
+  return (
+    <View style={styles.viewerBackdrop}>
+      <TouchableOpacity
+        style={[styles.viewerClose, { top: insets.top + theme.spacing.md }]}
+        onPress={onClose}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Close image viewer"
+      >
+        <Text preset="bodyEmphasis" color="inverse">
+          Close
+        </Text>
+      </TouchableOpacity>
+      <Image
+        source={{ uri: image.uri }}
+        style={styles.viewerImage}
+        resizeMode="contain"
+        accessibilityLabel={image.alt ?? "Product image"}
+      />
+    </View>
   );
 }
 
@@ -359,6 +499,23 @@ const styles = StyleSheet.create({
     height: 96,
     borderRadius: theme.radii.md,
     backgroundColor: theme.colors.surfaceAlt,
+  },
+  viewerBackdrop: {
+    flex: 1,
+    backgroundColor: theme.colors.text,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  viewerClose: {
+    position: "absolute",
+    right: theme.spacing.lg,
+    zIndex: 1,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
+  viewerImage: {
+    width: "100%",
+    height: "80%",
   },
   fieldLabel: {
     marginTop: theme.spacing.sm,

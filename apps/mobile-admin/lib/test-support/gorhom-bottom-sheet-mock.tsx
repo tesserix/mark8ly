@@ -18,6 +18,10 @@ export const BottomSheetModal = require("react").forwardRef(
   },
 );
 
+export function BottomSheetModalProvider({ children }: { children?: React.ReactNode }) {
+  return children ?? null;
+}
+
 export function BottomSheetView({ children }: { children?: React.ReactNode }) {
   return children ?? null;
 }

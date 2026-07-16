@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Alert, ActivityIndicator, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCreateProduct, useUpdateProduct, useCategories } from "../../../lib/admin-api/product-crud";
 import { BackHeader, Card, Eyebrow, FieldInput, Screen, SegmentedControl, Text } from "@/components/ui";
 import { CategoryField } from "@/components/products/CategoryField";
 import { theme } from "@/lib/theme";
 import { deriveSku } from "@/lib/sku";
 import { getErrorMessage } from "@/lib/product-alerts";
-import { useDockClearance } from "@/components/navigation/dock-metrics";
 import type { CategoryRef } from "@repo/mobile-shared/api/schemas/categories";
 
 /** The backend enum is draft|active|archived — "inactive" is a 400. */
@@ -23,7 +24,10 @@ const FOOTER_CLEARANCE = 104;
 
 export default function NewProductScreen() {
   const router = useRouter();
-  const dockPad = useDockClearance();
+  // This screen is presented as a MODAL (products/_layout.tsx) — it covers the
+  // tab dock, so clear the home indicator with the safe-area inset, NOT
+  // useDockClearance() (which would float the footer ~100px above dead space).
+  const insets = useSafeAreaInsets();
   const createMutation = useCreateProduct();
   const updateMutation = useUpdateProduct();
   const { data: categories, isLoading: categoriesLoading, error: categoriesError, refetch: refetchCategories } =
@@ -129,13 +133,20 @@ export default function NewProductScreen() {
   );
 
   return (
-    <Screen>
-      <BackHeader eyebrow="NEW PRODUCT" title="New product" />
+    // This modal screen sits ABOVE the root BottomSheetModalProvider, so it
+    // needs its own provider — otherwise CategoryField's picker sheet presents
+    // behind the modal and nothing appears to happen. (Gestures still work via
+    // the root GestureHandlerRootView, which covers react-native-screens modals.)
+    <BottomSheetModalProvider>
+      {/* topInset=false: the modal card is already presented below the notch,
+          so Screen's own safe-area top padding would double it. */}
+      <Screen topInset={false}>
+        <BackHeader eyebrow="NEW PRODUCT" title="New product" />
 
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: dockPad + FOOTER_CLEARANCE }]}
-        keyboardShouldPersistTaps="handled"
-      >
+          <ScrollView
+            contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + FOOTER_CLEARANCE }]}
+            keyboardShouldPersistTaps="handled"
+          >
         <Eyebrow label="Essentials" />
         <Card variant="ghost" padding="md" style={styles.card}>
           <FieldInput
@@ -223,7 +234,7 @@ export default function NewProductScreen() {
         </Card>
       </ScrollView>
 
-      <View style={[styles.footer, { bottom: dockPad }]}>
+      <View style={[styles.footer, { bottom: insets.bottom }]}>
         <TouchableOpacity
           style={[styles.draftBtn, isBusy && styles.disabled]}
           onPress={() => handleSubmit(true)}
@@ -253,7 +264,8 @@ export default function NewProductScreen() {
           )}
         </TouchableOpacity>
       </View>
-    </Screen>
+      </Screen>
+    </BottomSheetModalProvider>
   );
 }
 

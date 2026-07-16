@@ -40,18 +40,63 @@ export interface CreateProductBody {
   variants: CreateProductVariantBody[];
 }
 
+/**
+ * REQUEST shape for a product option (CreateProductOptionInput,
+ * validation.go:251-254). `values` is `string[]` HERE.
+ *
+ * The RESPONSE (productOptionSchema) sends `[{id, value, position}]` for the
+ * same field name. These are two different shapes and must never be swapped —
+ * doing so would blank the product list the moment any product has options.
+ */
+export interface UpdateProductOptionBody {
+  name: string;
+  values: string[];
+}
+
+/**
+ * PATCH /products/:id body (UpdateProductRequest, validation.go:296).
+ *
+ * `variants` is deliberately absent. UpdateAggregateRequest.Variants is a FULL
+ * DESIRED MATRIX — applyVariantsDiff soft-deletes any existing variant missing
+ * from it. Variant edits go through updateVariant() instead. Do not add it here.
+ *
+ * Sending `options`, `removed_variant_ids` or `category_ids` routes the handler
+ * through the aggregate path (products.go:172); a body of scalars alone routes
+ * through basics. Send only what changed.
+ */
 export interface UpdateProductBody {
   title?: string;
   description?: string;
   status?: string;
   tags?: string[];
+  options?: UpdateProductOptionBody[];
+  removed_variant_ids?: string[];
+  category_ids?: string[];
+  primary_category_id?: string;
 }
 
-/** UpdateVariantRequest (validation.go:43-55). There is no `stock` field. */
+/**
+ * UpdateVariantRequest (validation.go:43-58) — the variant quick-PATCH. There
+ * is no `stock` field; it is `inventory_quantity`.
+ *
+ * This endpoint accepts SKU and all the shipping fields, which is why weight
+ * and dimensions need no aggregate call.
+ */
 export interface UpdateVariantBody {
   sku?: string;
+  barcode?: string;
   price?: number;
+  compare_at_price?: number;
+  cost_price?: number;
+  weight_grams?: number;
+  length_cm?: number;
+  width_cm?: number;
+  height_cm?: number;
   inventory_quantity?: number;
+  /** deny | continue */
+  inventory_policy?: string;
+  low_stock_threshold?: number;
+  position?: number;
 }
 
 /** Request body for `POST /products/{id}/media/upload-url`. */

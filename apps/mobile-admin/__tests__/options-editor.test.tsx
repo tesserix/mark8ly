@@ -35,6 +35,17 @@ describe("toOptionRequestBodies", () => {
     expect(first!.values).toEqual(["S", "M"]);
   });
 
+  it("orders options by position — Color (pos 1) listed first still lands after Size (pos 0)", () => {
+    const OUT_OF_ORDER = [
+      { id: "o2", name: "Color", position: 1, values: [{ id: "v3", value: "Red", position: 0 }] },
+      { id: "o1", name: "Size", position: 0, values: [{ id: "v1", value: "S", position: 0 }] },
+    ];
+    expect(toOptionRequestBodies(OUT_OF_ORDER as never)).toEqual([
+      { name: "Size", values: ["S"] },
+      { name: "Color", values: ["Red"] },
+    ]);
+  });
+
   it("returns [] for a product with no options", () => {
     expect(toOptionRequestBodies([])).toEqual([]);
   });

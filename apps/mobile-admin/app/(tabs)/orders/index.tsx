@@ -25,7 +25,7 @@ type FilterKey = "all" | "pending" | "confirmed" | "completed" | "cancelled";
 const FILTERS: { key: FilterKey; label: string; status?: string }[] = [
   { key: "all", label: "All" },
   // One real status per tab. The backend matches status exactly
-  // (orders.go:174 `status = ?`), so a comma-joined "pending,confirmed"
+  // (orders.go:170 `status = ?`), so a comma-joined "pending,confirmed"
   // silently matches nothing — which is what this tab used to do.
   { key: "pending", label: "Pending", status: "pending" },
   { key: "confirmed", label: "Confirmed", status: "confirmed" },

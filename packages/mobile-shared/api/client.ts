@@ -173,8 +173,8 @@ export function createApiClient(config: ApiClientConfig) {
         // 31 mismatches hide for two months. 500 (not 401/403) because this is
         // our bug, not the user's — it must never reach the sign-out paths.
         const issue = parsed.error.issues[0];
-        const fieldPath = issue.path.join(".") || "(root)";
-        const detail = `${fieldPath}: ${issue.message}`;
+        const fieldPath = issue?.path.join(".") || "(root)";
+        const detail = `${fieldPath}: ${issue?.message ?? "Invalid input"}`;
         console.error(`[api] contract mismatch on ${path}: ${detail}`);
         throw new ApiError(500, "contract_mismatch", detail);
       }

@@ -30,10 +30,10 @@ import {
   Text,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
-import type { ProductVariant } from "@repo/mobile-shared/api/types";
 import type { UpdateVariantBody } from "@repo/mobile-shared/api/products";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
+import { VariantEditor } from "@/components/products/VariantEditor";
 
 /** How long the transient "Saved" acknowledgement stays visible. */
 const SAVED_ACKNOWLEDGEMENT_MS = 2000;
@@ -53,77 +53,6 @@ function FieldLabel({ label }: { label: string }) {
     <Text preset="caption" color="textSecondary" style={styles.fieldLabel}>
       {label}
     </Text>
-  );
-}
-
-/**
- * The wire has no variant name. A variant is described by its option values
- * ("M / Blue"); every product's option_values is `[]` today, so the SKU —
- * which every real variant has — is the honest fallback.
- */
-function variantLabel(variant: ProductVariant): string {
-  if (variant.option_values.length > 0) {
-    return variant.option_values.map((o) => o.value).join(" / ");
-  }
-  return variant.sku;
-}
-
-interface VariantRowProps {
-  variant: ProductVariant;
-  onUpdate: (variantId: string, body: UpdateVariantBody) => void;
-}
-
-function VariantRow({ variant, onUpdate }: VariantRowProps) {
-  const [price, setPrice] = useState(String(variant.price));
-  const [stock, setStock] = useState(String(variant.inventory_quantity));
-  const label = variantLabel(variant);
-
-  const handleBlurPrice = () => {
-    const parsed = parseFloat(price);
-    if (!isNaN(parsed) && parsed !== variant.price) onUpdate(variant.id, { price: parsed });
-  };
-  const handleBlurStock = () => {
-    const parsed = parseInt(stock, 10);
-    // `inventory_quantity`, NOT `stock` — UpdateVariantRequest has no `stock`
-    // field, so the old body's stock edits were discarded with a 200.
-    if (!isNaN(parsed) && parsed !== variant.inventory_quantity) {
-      onUpdate(variant.id, { inventory_quantity: parsed });
-    }
-  };
-
-  return (
-    <View style={styles.variantRow}>
-      <Text preset="bodyEmphasis" color="text">
-        {label}
-      </Text>
-      <Text preset="caption" color="textTertiary">
-        SKU · {variant.sku}
-      </Text>
-      <View style={styles.variantFields}>
-        <View style={styles.variantField}>
-          <FieldLabel label={`Price (${variant.currency_code})`} />
-          <TextInput
-            style={styles.variantInput}
-            value={price}
-            onChangeText={setPrice}
-            onBlur={handleBlurPrice}
-            keyboardType="decimal-pad"
-            accessibilityLabel={`${label} price`}
-          />
-        </View>
-        <View style={styles.variantField}>
-          <FieldLabel label="Stock" />
-          <TextInput
-            style={styles.variantInput}
-            value={stock}
-            onChangeText={setStock}
-            onBlur={handleBlurStock}
-            keyboardType="number-pad"
-            accessibilityLabel={`${label} stock`}
-          />
-        </View>
-      </View>
-    </View>
   );
 }
 
@@ -430,7 +359,7 @@ export default function ProductDetailScreen() {
             variants.map((v, i) => (
               <View key={v.id}>
                 {i > 0 ? <Hairline /> : null}
-                <VariantRow variant={v} onUpdate={handleVariantUpdate} />
+                <VariantEditor variant={v} onUpdate={handleVariantUpdate} />
               </View>
             ))
           ) : (
@@ -548,29 +477,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-  },
-  variantRow: {
-    paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.md,
-    gap: 4,
-  },
-  variantFields: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    marginTop: theme.spacing.sm,
-  },
-  variantField: { flex: 1 },
-  variantInput: {
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: theme.radii.sm,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs,
-    fontFamily: theme.fonts.sans,
-    fontSize: 14,
-    color: theme.colors.text,
-    borderWidth: theme.hairline,
-    borderColor: theme.colors.hairline,
-    minHeight: 36,
   },
   empty: {
     paddingHorizontal: theme.spacing.md,

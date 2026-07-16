@@ -10,6 +10,41 @@ export function sortMedia(media: ProductMedia[]): ProductMedia[] {
   return [...media].sort((a, b) => a.position - b.position);
 }
 
+/** One row of the reorder swap: which media id moves to which position. */
+export interface MediaReorderWrite {
+  id: string;
+  position: number;
+}
+
+/**
+ * The two writes needed to move a photo to `newPosition`.
+ *
+ * 🔴 A single-row position PATCH CANNOT reorder a list. The backend
+ * `UpdateMedia` (service_single_media.go) writes only the row it is handed and
+ * does NOT shift the sibling already sitting at that position — so a one-row
+ * write leaves two photos sharing a position, and the storefront hero (position
+ * 0) flips between refetches. The reorder UI is adjacent move-earlier /
+ * move-later, so the correct operation is a SWAP: give the moved item the
+ * target slot and hand its old slot to whoever held it. Two PATCHes, never one.
+ *
+ * Returns `[]` when there is nothing to swap (unknown id, empty target slot, or
+ * a no-op onto its own position) so the two writes can never collide or
+ * duplicate a position. Pure; find-by-position, so array order does not matter.
+ */
+export function computeReorderWrites(
+  media: ProductMedia[],
+  movedId: string,
+  newPosition: number,
+): MediaReorderWrite[] {
+  const moved = media.find((m) => m.id === movedId);
+  const displaced = media.find((m) => m.position === newPosition);
+  if (!moved || !displaced || moved.id === displaced.id) return [];
+  return [
+    { id: moved.id, position: newPosition },
+    { id: displaced.id, position: moved.position },
+  ];
+}
+
 interface MediaGridProps {
   media: ProductMedia[];
   onReorder: (mediaId: string, position: number) => void;

@@ -39,7 +39,7 @@ import { VariantEditor } from "@/components/products/VariantEditor";
 import { ImageViewer } from "@/components/products/ImageViewer";
 import { OptionsEditor } from "@/components/products/OptionsEditor";
 import { CategoryPicker } from "@/components/products/CategoryPicker";
-import { MediaGrid } from "@/components/products/MediaGrid";
+import { MediaGrid, computeReorderWrites } from "@/components/products/MediaGrid";
 
 /** How long the transient "Saved" acknowledgement stays visible. */
 const SAVED_ACKNOWLEDGEMENT_MS = 2000;
@@ -52,6 +52,21 @@ const SAVED_ACKNOWLEDGEMENT_MS = 2000;
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) return error.message;
   return fallback;
+}
+
+/**
+ * react-query mutate() options that surface a failure as an Alert. A silent
+ * mutation failure — the UI reverting on refetch with no word to the merchant —
+ * is the exact bug class this branch exists to kill, and these routes have real
+ * reachable failures (a 400 on removing an option's last value, a 429 from the
+ * 60 req/min limiter, network/500).
+ */
+function alertOnError(fallback: string) {
+  return {
+    onError: (err: unknown) => {
+      Alert.alert("Error", getErrorMessage(err, fallback));
+    },
+  };
 }
 
 function FieldLabel({ label }: { label: string }) {
@@ -147,7 +162,11 @@ export default function ProductDetailScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteMediaMutation.mutate({ productId: id, mediaId }),
+          onPress: () =>
+            deleteMediaMutation.mutate(
+              { productId: id, mediaId },
+              alertOnError("Failed to delete image. Please try again."),
+            ),
         },
       ]);
     },
@@ -213,11 +232,7 @@ export default function ProductDetailScreen() {
     (variantId: string, body: UpdateVariantBody) => {
       updateVariantMutation.mutate(
         { productId: id, variantId, body },
-        {
-          onError: (err) => {
-            Alert.alert("Error", getErrorMessage(err, "Failed to save variant. Please try again."));
-          },
-        },
+        alertOnError("Failed to save variant. Please try again."),
       );
     },
     [id, updateVariantMutation],
@@ -229,28 +244,46 @@ export default function ProductDetailScreen() {
   // anything it omits.
   const handleOptionsChange = useCallback(
     (options: UpdateProductOptionBody[]) => {
-      updateMutation.mutate({ id, body: { options } });
+      updateMutation.mutate(
+        { id, body: { options } },
+        alertOnError("Failed to update options. Please try again."),
+      );
     },
     [id, updateMutation],
   );
 
   const handleCategoriesChange = useCallback(
     (category_ids: string[]) => {
-      updateMutation.mutate({ id, body: { category_ids } });
+      updateMutation.mutate(
+        { id, body: { category_ids } },
+        alertOnError("Failed to update categories. Please try again."),
+      );
     },
     [id, updateMutation],
   );
 
   const handleReorderMedia = useCallback(
-    (mediaId: string, position: number) => {
-      updateMediaMutation.mutate({ productId: id, mediaId, body: { position } });
+    (mediaId: string, newPosition: number) => {
+      // 🔴 Adjacent SWAP, not a single-row write. The backend does not shift
+      // siblings, so a lone position PATCH would leave two photos sharing a
+      // slot (see computeReorderWrites). Move both rows, or neither.
+      const writes = computeReorderWrites(product?.media ?? [], mediaId, newPosition);
+      for (const write of writes) {
+        updateMediaMutation.mutate(
+          { productId: id, mediaId: write.id, body: { position: write.position } },
+          alertOnError("Failed to reorder photos. Please try again."),
+        );
+      }
     },
-    [id, updateMediaMutation],
+    [id, product?.media, updateMediaMutation],
   );
 
   const handleAltChange = useCallback(
     (mediaId: string, alt: string) => {
-      updateMediaMutation.mutate({ productId: id, mediaId, body: { alt } });
+      updateMediaMutation.mutate(
+        { productId: id, mediaId, body: { alt } },
+        alertOnError("Failed to update alt text. Please try again."),
+      );
     },
     [id, updateMediaMutation],
   );

@@ -27,7 +27,13 @@ describe("product detail screen composition", () => {
     // UpdateAggregateRequest.Variants is a FULL DESIRED MATRIX; applyVariantsDiff
     // soft-deletes anything missing from it. Variant edits go through the
     // variant quick-PATCH instead.
-    expect(source).not.toMatch(/updateProduct[\s\S]{0,200}variants:/);
+    //
+    // Anchored on the REAL call token: this screen invokes the product PATCH as
+    // `updateMutation.mutate(...)`, never the lowercase `updateProduct`. The old
+    // regex anchored on `updateProduct`, which appears nowhere here, so it
+    // matched nothing and guarded nothing — it would have passed even for
+    // `updateMutation.mutate({ id, body: { variants: [] } })`.
+    expect(source).not.toMatch(/updateMutation\.mutate\([\s\S]{0,200}variants:/);
   });
 
   it("stayed small after composing — it was 571 lines before extraction", () => {

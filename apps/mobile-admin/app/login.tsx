@@ -96,7 +96,7 @@ export default function LoginScreen() {
     <SafeAreaView className="flex-1 bg-paper">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-          <View className="flex-1 justify-center px-6">
+          <View className="flex-1 px-6 pt-16">
             <Text preset="eyebrow" className="text-moss">
               Merchant admin
             </Text>

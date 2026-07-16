@@ -1,6 +1,6 @@
 import { View, StyleSheet } from "react-native";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react-native";
-import { Card, Text } from "@/components/ui";
+import { Hairline, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { DashboardStats as DashboardStatsType } from "@repo/mobile-shared/api/types";
 
@@ -17,102 +17,90 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-function StatCard({
-  label,
-  value,
-  trend,
-}: {
-  label: string;
-  value: string;
-  trend?: { pct: number };
-}) {
-  const positive = trend ? trend.pct >= 0 : false;
+function StatRow({ label, value }: { label: string; value: string }) {
   return (
-    <Card style={styles.card} padding="md">
-      <Text preset="eyebrow" color="textTertiary">
+    <View style={styles.row}>
+      <Text preset="body" color="textSecondary">
         {label}
       </Text>
-      <Text preset="h2" color="text" style={styles.cardValue}>
-        {value}
-      </Text>
-      {trend ? (
-        <View style={styles.trendRow}>
-          {positive ? (
-            <ArrowUpRight size={12} color={theme.colors.text} strokeWidth={2.25} />
-          ) : (
-            <ArrowDownRight size={12} color={theme.colors.danger} strokeWidth={2.25} />
-          )}
-          <Text preset="caption" color={positive ? "text" : "danger"}>
-            {Math.abs(trend.pct).toFixed(1)}%
-          </Text>
-        </View>
-      ) : null}
-    </Card>
-  );
-}
-
-function CompactStat({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={styles.compactCard}>
       <Text preset="h3" color="text">
         {value}
-      </Text>
-      <Text preset="caption" color="textTertiary" style={styles.compactLabel}>
-        {label}
       </Text>
     </View>
   );
 }
 
 export function DashboardStats({ stats }: Props) {
+  const positive = stats.revenue_change_pct >= 0;
+
   return (
     <View style={styles.container}>
-      <View style={styles.row}>
-        <StatCard label="Today" value={formatCurrency(stats.revenue_today)} />
-        <StatCard label="This week" value={formatCurrency(stats.revenue_week)} />
-      </View>
-      <View style={styles.row}>
-        <StatCard
-          label="This month"
-          value={formatCurrency(stats.revenue_month)}
-          trend={{ pct: stats.revenue_change_pct }}
-        />
-        <StatCard label="Customers" value={String(stats.customers_total)} />
+      {/* Hero: this month's revenue is the headline number — large serif
+          numeral, left-aligned, with its own trend line. */}
+      <View style={styles.hero}>
+        <Text preset="eyebrow" color="textTertiary">
+          This month
+        </Text>
+        <Text preset="display" color="text" style={styles.heroValue}>
+          {formatCurrency(stats.revenue_month)}
+        </Text>
+        <View style={styles.trendRow}>
+          {positive ? (
+            <ArrowUpRight size={14} color={theme.colors.text} strokeWidth={2.25} />
+          ) : (
+            <ArrowDownRight size={14} color={theme.colors.danger} strokeWidth={2.25} />
+          )}
+          <Text preset="caption" color={positive ? "text" : "danger"}>
+            {Math.abs(stats.revenue_change_pct).toFixed(1)}%
+          </Text>
+        </View>
       </View>
 
-      <View style={[styles.compactStrip, styles.row]}>
-        <CompactStat label="Today" value={stats.orders_today} />
-        <CompactStat label="Pending" value={stats.orders_pending} />
-        <CompactStat label="Fulfilled" value={stats.orders_fulfilled} />
-        <CompactStat label="Cancelled" value={stats.orders_cancelled} />
+      <Hairline style={styles.heroDivider} />
+
+      {/* Secondary metrics: left-aligned, hairline-separated rows — smaller
+          than the hero, not an equal-size card grid. */}
+      <View style={styles.list}>
+        <StatRow label="Today" value={formatCurrency(stats.revenue_today)} />
+        <Hairline />
+        <StatRow label="This week" value={formatCurrency(stats.revenue_week)} />
+        <Hairline />
+        <StatRow label="Customers" value={String(stats.customers_total)} />
+      </View>
+
+      <View style={styles.list}>
+        <Text preset="eyebrow" color="textTertiary" style={styles.listLabel}>
+          Orders
+        </Text>
+        <StatRow label="Today" value={String(stats.orders_today)} />
+        <Hairline />
+        <StatRow label="Pending" value={String(stats.orders_pending)} />
+        <Hairline />
+        <StatRow label="Fulfilled" value={String(stats.orders_fulfilled)} />
+        <Hairline />
+        <StatRow label="Cancelled" value={String(stats.orders_cancelled)} />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: theme.spacing.sm },
-  row: { flexDirection: "row", gap: theme.spacing.sm },
-  card: { flex: 1, minHeight: 92 },
-  cardValue: { marginTop: theme.spacing.xs },
+  container: { gap: theme.spacing.lg },
+  hero: { gap: theme.spacing.xs },
+  heroValue: { marginTop: theme.spacing.xs },
   trendRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginTop: theme.spacing.xs,
+    marginTop: 2,
   },
-  compactStrip: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radii.md,
-    borderWidth: theme.hairline,
-    borderColor: theme.colors.hairline,
-    padding: theme.spacing.md,
-    marginTop: theme.spacing.xs,
-  },
-  compactCard: {
-    flex: 1,
+  heroDivider: { marginTop: theme.spacing.xs },
+  list: { gap: 0 },
+  listLabel: { marginBottom: theme.spacing.xs },
+  row: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: theme.spacing.xs,
+    justifyContent: "space-between",
+    paddingVertical: theme.spacing.sm,
   },
-  compactLabel: { marginTop: 2 },
 });

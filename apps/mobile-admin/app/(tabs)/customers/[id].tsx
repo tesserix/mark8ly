@@ -10,7 +10,7 @@ import {
 import { useLocalSearchParams } from "expo-router";
 import { useCustomer } from "../../../lib/hooks/use-customers";
 import { useBlockCustomer, useUnblockCustomer } from "../../../lib/admin-api/customer-actions";
-import { BackHeader, Screen, StatusBadge, Text } from "@/components/ui";
+import { BackHeader, Hairline, Screen, StatusBadge, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
@@ -38,6 +38,19 @@ function getInitial(firstName: string | undefined, lastName: string | undefined,
 function getDisplayName(firstName: string | undefined, lastName: string | undefined, email: string): string {
   if (firstName || lastName) return [firstName, lastName].filter(Boolean).join(" ");
   return email;
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.infoRow}>
+      <Text preset="caption" color="textTertiary" style={styles.infoLabel}>
+        {label}
+      </Text>
+      <Text preset="body" color="text" style={styles.infoValue}>
+        {value}
+      </Text>
+    </View>
+  );
 }
 
 function StatTile({ label, value }: { label: string; value: string }) {
@@ -121,30 +134,36 @@ export default function CustomerDetailScreen() {
       <BackHeader eyebrow="CUSTOMER" title={displayName} />
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         <View style={styles.profile}>
-          <View style={styles.avatar}>
-            <Text preset="h2" color="text">
-              {initial}
-            </Text>
-          </View>
-          <Text preset="h1" color="text" align="center" style={styles.profileName}>
-            {displayName}
-          </Text>
-          <Text preset="body" color="textSecondary" align="center">
-            {customer.email}
-          </Text>
-          {customer.phone ? (
-            <Text preset="caption" color="textTertiary" align="center">
-              {customer.phone}
-            </Text>
-          ) : null}
-          <Text preset="caption" color="textTertiary" align="center" style={styles.joined}>
-            Joined {formatDate(customer.created_at)}
-          </Text>
-          {isBlocked ? (
-            <View style={styles.blockedRow}>
-              <StatusBadge label="Blocked" tone="danger" />
+          <View style={styles.identityRow}>
+            <View style={styles.avatar}>
+              <Text preset="h2" color="text">
+                {initial}
+              </Text>
             </View>
-          ) : null}
+            <View style={styles.identity}>
+              <Text preset="h2" color="text">
+                {displayName}
+              </Text>
+              <Text preset="body" color="textSecondary">
+                {customer.email}
+              </Text>
+              {isBlocked ? (
+                <View style={styles.blockedRow}>
+                  <StatusBadge label="Blocked" tone="danger" />
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.infoList}>
+            {customer.phone ? (
+              <>
+                <InfoRow label="Phone" value={customer.phone} />
+                <Hairline />
+              </>
+            ) : null}
+            <InfoRow label="Joined" value={formatDate(customer.created_at)} />
+          </View>
         </View>
 
         <View style={styles.statsRow}>
@@ -191,7 +210,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xl,
     paddingBottom: theme.spacing.xl,
-    alignItems: "center",
+  },
+  identityRow: {
+    flexDirection: "row",
+    gap: theme.spacing.md,
   },
   avatar: {
     width: 72,
@@ -200,11 +222,20 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: theme.spacing.md,
   },
-  profileName: { marginBottom: 2 },
-  joined: { marginTop: theme.spacing.xs },
-  blockedRow: { marginTop: theme.spacing.sm },
+  identity: {
+    flex: 1,
+    justifyContent: "center",
+    gap: 2,
+  },
+  blockedRow: { marginTop: theme.spacing.xs },
+  infoList: { marginTop: theme.spacing.lg },
+  infoRow: {
+    flexDirection: "row",
+    paddingVertical: theme.spacing.sm,
+  },
+  infoLabel: { flex: 1 },
+  infoValue: { flex: 2 },
   statsRow: {
     flexDirection: "row",
     gap: theme.spacing.sm,

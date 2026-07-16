@@ -35,7 +35,10 @@ didn't exist. `new.tsx` and the FAB's `router.push` were both fine all along. Fi
 `useDockClearance()` at the call site, the hook the Dock already exports for exactly this and
 which the same screen's FlatList already used (`index.tsx:96`). Verified on the simulator.
 
-`#1` — **Product form depth.** Client-only. No backend change.
+`#1` — **Product form depth.** Client work **plus a one-line backend fix** (the `category_ids`
+trap below). An earlier draft of this spec claimed "client-only, zero backend" — **that was
+wrong**, asserted from the route table without tracing category writes to the DB. Corrected
+2026-07-16 before planning.
 
 `#2` — **Re-crop existing media.** Backend route registration + a mobile crop UI.
 
@@ -47,12 +50,13 @@ Mobile has its own route surface: `services/marketplace-api/internal/handlers/ad
 (`RegisterAdminMobile`), GIP bearer auth + a 60 req/min per-user rate limiter, mounted at
 `/mobile/admin/stores/:storeId`. It is **not** the same registration as the web's `routes.go`.
 
-**Everything sub-project #1 needs already exists on that surface.** In detail:
+**Almost everything sub-project #1 needs already exists on that surface** — the one exception is
+`category_ids`, see the trap below. In detail:
 
 | Need | Endpoint / struct | Evidence |
 |---|---|---|
 | Options + variants | `PATCH /products/:id` | `mobile_routes.go:62` |
-| Categories list | `GET /categories` | `mobile_routes.go:95` |
+| Categories list | `GET /categories` → `{data: [...]}`, **no meta** — use the existing `dataOnly` helper, not `paginated` | `mobile_routes.go:95`, `categories.go:44` |
 | Media alt + reorder | `PATCH /products/:id/media/:mediaId` | `mobile_routes.go:75` |
 | Variant edit | `PATCH /products/:id/variants/:variantId` | `mobile_routes.go:86` |
 
@@ -93,6 +97,55 @@ Carried from the prior session, still load-bearing:
 - Customer names are Go `omitempty` → **absent, not null** → `.optional()`, never `.nullable()`.
 - `/products` is `{data, meta}`, 161 products, default `page_size=20`, max 100.
 
+### 🔴 `category_ids` is silently discarded — backend fix required (LOCKED: fix the handler)
+
+Traced end to end 2026-07-16:
+- `service_aggregate.go:266` — the aggregate **does** apply links:
+  `if req.CategoryIDs != nil { ReplaceCategoryLinksInTx(...) }`.
+- `UpdateBasicsRequest` (`service.go:171`) has **no `CategoryIDs` field** — basics physically
+  cannot set them, and `toServiceUpdateBasicsRequest` never maps it.
+- The handler branch (`products.go:172`) routes to the aggregate **only** when
+  `Options != nil || Variants != nil || RemovedVariantIDs != nil`. **`CategoryIDs` is absent from
+  that condition.**
+
+**Therefore `PATCH {category_ids: [...]}` returns 200 OK and silently does nothing.** And
+`PATCH {category_ids, title}` saves the title while still dropping the categories — an invisible
+failure. Same species as the old `stock` field that 200'd while discarding edits.
+
+**Decision (user, 2026-07-16): fix the handler.** Add `|| req.CategoryIDs != nil` to the aggregate
+branch condition. Safe because `UpdateAggregate` is nil-safe by construction: `Options == nil` →
+`desiredOptions = optionSpecsFromExisting(existing.Options)`; the options diff is guarded by
+`if req.Options != nil`; the variants diff by `if req.Variants != nil || req.RemovedVariantIDs != nil`.
+So a categories-only PATCH applies scalars + category links and touches nothing else.
+
+This is a latent bug for the **web** admin too. Web likely never hits it because its ProductForm
+submits options+variants on every save — **UNVERIFIED, do not repeat as fact.**
+
+**Do NOT "work around" this by sending `variants` from the client to force the aggregate.**
+`UpdateAggregateRequest.Variants` is a **full desired matrix** and `applyVariantsDiff` soft-deletes
+anything missing from it. Getting it wrong destroys real variants — and 8 of the 12 active
+products are multi-variant.
+
+### The variant quick-PATCH already carries SKU, weight and dimensions
+
+`UpdateVariantRequest` (`validation.go:43`) accepts `sku`, `barcode`, `price`, `compare_at_price`,
+`cost_price`, `currency_code`, `weight_grams`, `length_cm`, `width_cm`, `height_cm`,
+`inventory_quantity`, `inventory_policy`, `low_stock_threshold`, `position` — all optional pointers.
+
+So **SKU/weight/dimension edits need no aggregate**: they extend the existing
+`PATCH /products/:id/variants/:variantId` path that `VariantRow` + `useUpdateVariant` already use.
+**The aggregate is needed only for options** (and for `category_ids`, per the fix above).
+
+### Decimals arrive QUOTED — dimensions included
+
+`AdminVariantResponse` (`dto.go:127`) returns `weight_grams` (`*int` → plain number) but
+`length_cm`/`width_cm`/`height_cm`/`cost_price`/`compare_at_price` as `*decimal.Decimal` — which
+marshals **quoted**, exactly like `price`. They need the same `number|string` union as `money`,
+**not** `z.number()`. All are `omitempty` pointers → **absent, not null** → `.optional()`.
+
+The current `productVariantSchema` is missing all seven of: `barcode`, `cost_price`,
+`weight_grams`, `length_cm`, `width_cm`, `height_cm`, `low_stock_threshold`.
+
 ### 🔴 The options request/response asymmetry — the trap that must not return
 
 `CreateProductOptionInput` (`validation.go:251`) is:
@@ -121,8 +174,15 @@ option. **Request and response options MUST be separate schemas**, and a test mu
 
 New, one job each:
 - `packages/mobile-shared/api/schemas/products.ts` — replace `categories: z.array(z.unknown())`
-  (it punted) with a real schema; add separate request/response option schemas.
-- `packages/mobile-shared/api/categories.ts` — wraps `GET /categories`.
+  (it punted) with a real schema; add the 7 missing variant fields; add separate request/response
+  option schemas.
+- `packages/mobile-shared/api/schemas/categories.ts` — new. **Two different shapes, don't conflate:**
+  - `product.categories[]` is `AdminCategoryRef` (`dto.go:165`) — a lean `{id, name, slug}`.
+  - `GET /categories` returns `AdminCategoryResponse` (`dto.go:14`) — the full record:
+    `{id, store_id, parent_id?, name, slug, description?, image_url?, position, is_active,
+    featured, created_at, updated_at}`.
+  - **Categories are a TREE** (`parent_id`). The picker must not pretend they're flat.
+- `packages/mobile-shared/api/categories.ts` — wraps `GET /categories` using `dataOnly`.
 - `components/products/OptionsEditor.tsx`
 - `components/products/VariantEditor.tsx` — price, stock, SKU, weight, dimensions
 - `components/products/CategoryPicker.tsx`
@@ -201,6 +261,11 @@ No Skia, no canvas, **no new dependency**. This matters: `npm install` is forbid
 - vitest in `packages/mobile-shared` (83 today).
 - **Pinning test for the options request/response asymmetry** — request `values: string[]`,
   response `values: [{id, value, position}]`. Non-negotiable.
+- **Go integration test that a categories-only PATCH actually persists** — the regression guard for
+  the `category_ids` fix. It must fail before the handler change and pass after.
+- Schema tests live in `apps/mobile-admin/__tests__/schemas-*.test.tsx` (**jest**), following
+  `schemas-products.test.tsx`'s pattern of parsing a **verbatim prod payload**. `mobile-shared`'s
+  vitest covers only support/haptics/deep-links — no schema tests there.
 - **Pinning test that `url` carries the storage key**, extending the existing
   `__tests__/add-product-media.test.tsx`.
 - Unit tests for the crop rect conversion (#2), independent of the UI.

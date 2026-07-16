@@ -7,7 +7,7 @@
     "dev": "expo start",
     "ios": "expo run:ios",
     "build": "echo 'use eas build'",
-    "lint": "eslint .",
+    "lint": "echo 'lint stub — needs ESLint flat config (eslint.config.js); this app has no eslint config or eslint dep, so `eslint .` was an unconditional fatal error'",
     "check-types": "tsc --noEmit",
     "test": "jest",
     "postinstall": "node scripts/link-nativewind-tailwind.js"

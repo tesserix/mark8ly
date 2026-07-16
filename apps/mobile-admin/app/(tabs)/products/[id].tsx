@@ -9,9 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
-  Modal,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
 import { useProduct } from "../../../lib/hooks/use-products";
@@ -34,6 +32,7 @@ import type { UpdateVariantBody } from "@repo/mobile-shared/api/products";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { VariantEditor } from "@/components/products/VariantEditor";
+import { ImageViewer } from "@/components/products/ImageViewer";
 
 /** How long the transient "Saved" acknowledgement stays visible. */
 const SAVED_ACKNOWLEDGEMENT_MS = 2000;
@@ -148,7 +147,8 @@ export default function ProductDetailScreen() {
 
   const handleAddMedia = useCallback(async () => {
     try {
-      // Deliberately NO requestMediaLibraryPermissionsAsync() here.
+      // Deliberately no library-permission request here (pinned by the
+      // regression test in __tests__/add-product-media.test.tsx).
       // launchImageLibraryAsync uses the system picker (PHPicker on iOS), which
       // runs out-of-process and needs no library permission. Asking anyway opts
       // into the legacy permission flow: choosing "Limited Access" drops the
@@ -159,6 +159,10 @@ export default function ProductDetailScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         quality: 0.8,
+        // The system cropper, shown after the photo is chosen and before upload.
+        // Orthogonal to permission — see the comment above; do NOT add a
+        // permission request alongside it.
+        allowsEditing: true,
       });
       if (result.canceled) return;
 
@@ -372,49 +376,8 @@ export default function ProductDetailScreen() {
         </Card>
       </ScrollView>
 
-      <Modal
-        visible={viewerImage !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setViewerImage(null)}
-      >
-        <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
-      </Modal>
+      <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
     </Screen>
-  );
-}
-
-interface ImageViewerProps {
-  image: { uri: string; alt?: string } | null;
-  onClose: () => void;
-}
-
-/** Full-screen, dismissable viewer for a tapped product image. */
-function ImageViewer({ image, onClose }: ImageViewerProps) {
-  const insets = useSafeAreaInsets();
-
-  if (!image) return null;
-
-  return (
-    <View style={styles.viewerBackdrop}>
-      <TouchableOpacity
-        style={[styles.viewerClose, { top: insets.top + theme.spacing.md }]}
-        onPress={onClose}
-        hitSlop={12}
-        accessibilityRole="button"
-        accessibilityLabel="Close image viewer"
-      >
-        <Text preset="bodyEmphasis" color="inverse">
-          Close
-        </Text>
-      </TouchableOpacity>
-      <Image
-        source={{ uri: image.uri }}
-        style={styles.viewerImage}
-        resizeMode="contain"
-        accessibilityLabel={image.alt ?? "Product image"}
-      />
-    </View>
   );
 }
 
@@ -436,23 +399,6 @@ const styles = StyleSheet.create({
     height: 96,
     borderRadius: theme.radii.md,
     backgroundColor: theme.colors.surfaceAlt,
-  },
-  viewerBackdrop: {
-    flex: 1,
-    backgroundColor: theme.colors.text,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  viewerClose: {
-    position: "absolute",
-    right: theme.spacing.lg,
-    zIndex: 1,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-  },
-  viewerImage: {
-    width: "100%",
-    height: "80%",
   },
   fieldLabel: {
     marginTop: theme.spacing.sm,

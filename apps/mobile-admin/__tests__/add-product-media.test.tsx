@@ -134,3 +134,22 @@ describe("uploadProductMedia", () => {
     );
   });
 });
+
+// tsconfig scopes `types` to ["jest"] only, so Node's ambient globals aren't
+// picked up automatically — declare the one this file's fs.readFileSync
+// call below needs, rather than widening the project-wide tsconfig.
+declare const __dirname: string;
+
+describe("image picker options", () => {
+  it("requests the system cropper and never asks for library permission", () => {
+    // Guard for 51d2e80b: requestMediaLibraryPermissionsAsync opts into the
+    // legacy flow, where "Limited Access" strands the user in iOS's
+    // limited-library management sheet and the real picker never opens.
+    const source = require("fs").readFileSync(
+      require("path").join(__dirname, "../app/(tabs)/products/[id].tsx"),
+      "utf8",
+    );
+    expect(source).toContain("allowsEditing: true");
+    expect(source).not.toContain("requestMediaLibraryPermissionsAsync");
+  });
+});

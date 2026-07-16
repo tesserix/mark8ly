@@ -262,135 +262,131 @@ export default function ProductDetailScreen() {
         ) : null}
 
         {/* Movement 1 — Presentation: how the product looks (photos, copy). */}
-        <View>
-          <View onLayout={(e) => registerSectionOffset("photos", e.nativeEvent.layout.y)}>
-            <Eyebrow
-              label="Photos"
-              rightSlot={
-                <Pressable
-                  onPress={handleAddMedia}
-                  disabled={addMediaMutation.isPending}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel={addMediaMutation.isPending ? "Uploading image" : "Add image"}
-                >
-                  {({ pressed }) => (
-                    <Text preset="caption" color={pressed ? "accent" : "text"}>
-                      {addMediaMutation.isPending ? "Uploading…" : "Add"}
-                    </Text>
-                  )}
-                </Pressable>
-              }
-            />
-            <Card padding="md" style={styles.card}>
-              {media.length > 0 ? (
-                <MediaGrid
-                  media={media}
-                  onReorder={handleReorderMedia}
-                  onAltChange={handleAltChange}
-                  onPress={(m) => setViewerImage({ uri: m.url, alt: m.alt })}
-                  onLongPress={handleDeleteExistingMedia}
-                />
-              ) : (
-                <Text preset="caption" color="textTertiary">
-                  No images yet.
-                </Text>
-              )}
-            </Card>
-          </View>
+        <View onLayout={(e) => registerSectionOffset("photos", e.nativeEvent.layout.y)}>
+          <Eyebrow
+            label="Photos"
+            rightSlot={
+              <Pressable
+                onPress={handleAddMedia}
+                disabled={addMediaMutation.isPending}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={addMediaMutation.isPending ? "Uploading image" : "Add image"}
+              >
+                {({ pressed }) => (
+                  <Text preset="caption" color={pressed ? "accent" : "text"}>
+                    {addMediaMutation.isPending ? "Uploading…" : "Add"}
+                  </Text>
+                )}
+              </Pressable>
+            }
+          />
+          <Card padding="md" style={styles.card}>
+            {media.length > 0 ? (
+              <MediaGrid
+                media={media}
+                onReorder={handleReorderMedia}
+                onAltChange={handleAltChange}
+                onPress={(m) => setViewerImage({ uri: m.url, alt: m.alt })}
+                onLongPress={handleDeleteExistingMedia}
+              />
+            ) : (
+              <Text preset="caption" color="textTertiary">
+                No images yet.
+              </Text>
+            )}
+          </Card>
+        </View>
 
-          <View>
-            <Eyebrow label="Details" />
-            <Card variant="ghost" padding="md" style={styles.card}>
-              <Hairline style={styles.cardTopHairline} />
-              <FieldInput
-                label="Title"
-                value={title}
-                onChangeText={setTitle}
-                placeholder="Product title"
-              />
-              <FieldInput
-                label="Description"
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Describe your product…"
-                multiline
-                numberOfLines={4}
-              />
-              <Hairline style={styles.fieldDivider} />
-              <View style={styles.switchRow}>
-                <View>
-                  <Text preset="bodyEmphasis" color="text">
-                    Active
-                  </Text>
-                  <Text preset="caption" color="textTertiary">
-                    Visible in the storefront
-                  </Text>
-                </View>
-                <Switch
-                  value={isActive}
-                  onValueChange={setIsActive}
-                  trackColor={{
-                    false: theme.colors.border,
-                    true: theme.colors.accent,
-                  }}
-                  thumbColor={theme.colors.inverse}
-                />
+        <View>
+          <Eyebrow label="Details" />
+          <Card variant="ghost" padding="md" style={styles.card}>
+            <Hairline style={styles.cardTopHairline} />
+            <FieldInput
+              label="Title"
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Product title"
+            />
+            <FieldInput
+              label="Description"
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Describe your product…"
+              multiline
+              numberOfLines={4}
+            />
+            <Hairline style={styles.fieldDivider} />
+            <View style={styles.switchRow}>
+              <View>
+                <Text preset="bodyEmphasis" color="text">
+                  Active
+                </Text>
+                <Text preset="caption" color="textTertiary">
+                  Visible in the storefront
+                </Text>
               </View>
-            </Card>
-          </View>
+              <Switch
+                value={isActive}
+                onValueChange={setIsActive}
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.accent,
+                }}
+                thumbColor={theme.colors.inverse}
+              />
+            </View>
+          </Card>
         </View>
 
         {/* Movement 2 — Commerce: how the product sells (options, categories, variants). */}
+        <View onLayout={(e) => registerSectionOffset("options", e.nativeEvent.layout.y)}>
+          <Eyebrow label="Options" style={styles.movementBreak} />
+          <Card variant="ghost" padding="md" style={styles.card}>
+            <Hairline style={styles.cardTopHairline} />
+            <OptionsEditor options={product.options} onChange={handleOptionsChange} onAddOption={handleAddOption} />
+          </Card>
+        </View>
+
         <View>
-          <View onLayout={(e) => registerSectionOffset("options", e.nativeEvent.layout.y)}>
-            <Eyebrow label="Options" style={styles.movementBreak} />
-            <Card variant="ghost" padding="md" style={styles.card}>
-              <Hairline style={styles.cardTopHairline} />
-              <OptionsEditor options={product.options} onChange={handleOptionsChange} onAddOption={handleAddOption} />
-            </Card>
-          </View>
+          <Eyebrow label="Categories" />
+          <Card variant="ghost" padding="md" style={styles.card}>
+            <Hairline style={styles.cardTopHairline} />
+            <CategoryField
+              categories={categories ?? []}
+              selected={product.categories}
+              onChange={handleCategoriesChange}
+              isLoading={categoriesLoading}
+              error={categoriesError}
+              onRetry={refetchCategories}
+            />
+          </Card>
+        </View>
 
-          <View>
-            <Eyebrow label="Categories" />
-            <Card variant="ghost" padding="md" style={styles.card}>
-              <Hairline style={styles.cardTopHairline} />
-              <CategoryField
-                categories={categories ?? []}
-                selected={product.categories}
-                onChange={handleCategoriesChange}
-                isLoading={categoriesLoading}
-                error={categoriesError}
-                onRetry={refetchCategories}
-              />
-            </Card>
-          </View>
-
-          {/* Price, SKU and stock live on the VARIANT, not the product — the
-              product-level fields this screen used to edit are not on the wire. */}
-          <View onLayout={(e) => registerSectionOffset("variants", e.nativeEvent.layout.y)}>
-            <Eyebrow label="Variants" />
-            <Card padding={0} style={styles.card}>
-              {variants.length > 0 ? (
-                variants.map((v, i) => (
-                  <View key={v.id}>
-                    {i > 0 ? <Hairline /> : null}
-                    <VariantRow
-                      variant={v}
-                      onUpdate={handleVariantUpdate}
-                      defaultOpen={variants.length === 1}
-                    />
-                  </View>
-                ))
-              ) : (
-                <View style={styles.empty}>
-                  <Text preset="caption" color="textTertiary">
-                    No variants yet.
-                  </Text>
+        {/* Price, SKU and stock live on the VARIANT, not the product — the
+            product-level fields this screen used to edit are not on the wire. */}
+        <View onLayout={(e) => registerSectionOffset("variants", e.nativeEvent.layout.y)}>
+          <Eyebrow label="Variants" />
+          <Card padding={0} style={styles.card}>
+            {variants.length > 0 ? (
+              variants.map((v, i) => (
+                <View key={v.id}>
+                  {i > 0 ? <Hairline /> : null}
+                  <VariantRow
+                    variant={v}
+                    onUpdate={handleVariantUpdate}
+                    defaultOpen={variants.length === 1}
+                  />
                 </View>
-              )}
-            </Card>
-          </View>
+              ))
+            ) : (
+              <View style={styles.empty}>
+                <Text preset="caption" color="textTertiary">
+                  No variants yet.
+                </Text>
+              </View>
+            )}
+          </Card>
         </View>
       </ScrollView>
 

@@ -220,6 +220,24 @@ function parseOrThrow<T>(path: string, data: unknown, schema?: z.ZodType<T>): T 
   return parsed.data;
 }
 
+/**
+ * Product create/update pass `productDetailSchema` to validate the response
+ * (see products.ts `create`/`update`). A `CreateProductBody`/`UpdateProductBody`
+ * request — no `id`, `store_id`, `handle`, `media`, `created_at`, etc. — can
+ * never satisfy that schema, so echoing the request body back (as the
+ * generic mutation path below does) would make every demo product Save/Create
+ * throw `contract_mismatch` on a well-formed request. Serve a real product
+ * fixture instead: PATCH resolves the product being edited (falling back to
+ * the first demo product), POST always resolves the first one. Other mutation
+ * paths have no response schema today, so the generic echo is still correct
+ * for them.
+ */
+function productMutationResult(path: string): Product {
+  const productId = path.match(/^\/products\/([^/]+)$/);
+  if (productId) return productDetail(productId[1]!);
+  return DEMO_PRODUCTS[0]!;
+}
+
 export function createDemoApiClient(): ApiClient {
   return {
     get: async <T>(path: string, _params?: Record<string, string>, schema?: z.ZodType<T>) =>
@@ -229,10 +247,18 @@ export function createDemoApiClient(): ApiClient {
     // Mutations succeed no-op: echo the body so optimistic UI has something.
     // A schema, if passed, is still applied — a demo mutation whose echo does
     // not match its response schema SHOULD fail loudly rather than lie.
-    post: async <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
-      parseOrThrow(path, body ?? { success: true }, schema),
-    patch: async <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
-      parseOrThrow(path, body ?? { success: true }, schema),
+    post: async <T>(path: string, body?: unknown, schema?: z.ZodType<T>) => {
+      const clean = path.split("?")[0]!.replace(/\/+$/, "");
+      if (clean === "/products") return parseOrThrow(path, productMutationResult(clean), schema);
+      return parseOrThrow(path, body ?? { success: true }, schema);
+    },
+    patch: async <T>(path: string, body?: unknown, schema?: z.ZodType<T>) => {
+      const clean = path.split("?")[0]!.replace(/\/+$/, "");
+      if (/^\/products\/[^/]+$/.test(clean)) {
+        return parseOrThrow(path, productMutationResult(clean), schema);
+      }
+      return parseOrThrow(path, body ?? { success: true }, schema);
+    },
     delete: async <T>() => ({ success: true } as T),
     uploadMedia: async () => ({ id: "demo-media", url: "" }),
   };

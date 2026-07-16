@@ -28,7 +28,18 @@ import {
 import { theme } from "@/lib/theme";
 import type { ProductVariant } from "@repo/mobile-shared/api/types";
 import type { UpdateVariantBody } from "@repo/mobile-shared/api/products";
+import { ApiError } from "@repo/mobile-shared/api/client";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
+
+/**
+ * This branch went to real trouble to make contract-mismatch messages name
+ * the offending field (see client.ts's ApiError construction) — surface that
+ * instead of a generic string wherever we have it.
+ */
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) return error.message;
+  return fallback;
+}
 
 function FieldLabel({ label }: { label: string }) {
   return (
@@ -135,15 +146,22 @@ export default function ProductDetailScreen() {
       Alert.alert("Validation", "Product title is required.");
       return;
     }
-    updateMutation.mutate({
-      id,
-      body: {
-        title: title.trim(),
-        description: description.trim() || undefined,
-        // The enum is draft|active|archived — "inactive" is a hard 400.
-        status: isActive ? "active" : "draft",
+    updateMutation.mutate(
+      {
+        id,
+        body: {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          // The enum is draft|active|archived — "inactive" is a hard 400.
+          status: isActive ? "active" : "draft",
+        },
       },
-    });
+      {
+        onError: (err) => {
+          Alert.alert("Error", getErrorMessage(err, "Failed to save product. Please try again."));
+        },
+      },
+    );
   }, [id, title, description, isActive, updateMutation]);
 
   const handleDeleteExistingMedia = useCallback(
@@ -162,7 +180,14 @@ export default function ProductDetailScreen() {
 
   const handleVariantUpdate = useCallback(
     (variantId: string, body: UpdateVariantBody) => {
-      updateVariantMutation.mutate({ productId: id, variantId, body });
+      updateVariantMutation.mutate(
+        { productId: id, variantId, body },
+        {
+          onError: (err) => {
+            Alert.alert("Error", getErrorMessage(err, "Failed to save variant. Please try again."));
+          },
+        },
+      );
     },
     [id, updateVariantMutation],
   );

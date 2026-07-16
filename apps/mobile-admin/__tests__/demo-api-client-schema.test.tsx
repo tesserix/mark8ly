@@ -74,3 +74,35 @@ describe("createDemoApiClient — product fixtures match the real wire schema", 
     expect(primaryVariant(shirt)!.sku).toBe("LCS-001-S");
   });
 });
+
+// Regression guard for the demo product Save/Create bug: create/update pass
+// productDetailSchema to validate the RESPONSE, but a CreateProductBody /
+// UpdateProductBody request has none of id/store_id/handle/media/created_at.
+// Echoing the request body back (as the generic mutation path does for every
+// other endpoint) made every demo product Save silently throw
+// contract_mismatch. POST/PATCH /products must resolve to a real fixture.
+describe("createDemoApiClient — product mutations satisfy productDetailSchema", () => {
+  it("POST /products resolves to a real product fixture, not an echo of the request body", async () => {
+    const client = createDemoApiClient();
+    const body = { title: "Brand New Thing", variants: [{ sku: "BNT-1", price: 10 }] };
+    const res = await client.post("/products", body, productDetailSchema);
+    // If this were an echo, `store_id`/`handle`/`media`/`created_at` would be
+    // missing and productDetailSchema would already have thrown above.
+    expect(res.id).toBeTruthy();
+    expect(res.store_id).toBe("demo-store");
+  });
+
+  it("PATCH /products/:id resolves to the matching product fixture, not an echo of the request body", async () => {
+    const client = createDemoApiClient();
+    const res = await client.patch("/products/p-2", { title: "Renamed Beanie" }, productDetailSchema);
+    expect(res.id).toBe("p-2");
+    // The response is the canned fixture, not the request body's title.
+    expect(res.title).toBe("Merino Beanie");
+  });
+
+  it("PATCH /products/:unknown-id falls back to the first product fixture", async () => {
+    const client = createDemoApiClient();
+    const res = await client.patch("/products/does-not-exist", { title: "X" }, productDetailSchema);
+    expect(res.id).toBe("p-1");
+  });
+});

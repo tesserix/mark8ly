@@ -51,18 +51,46 @@ Go 1.26 + Gin + GORM (marketplace-api).
 
 ---
 
-### Task 1: Fix the `category_ids` silent-discard bug (backend)
+### Task 1: ✅ COMPLETE — premise RETRACTED. Do not re-attempt. Do not deploy.
 
-`PATCH {category_ids: [...]}` currently returns **200 OK and does nothing**. The aggregate applies
-category links (`service_aggregate.go:266`), but the handler only routes there when
-`options`/`variants`/`removed_variant_ids` are present. `UpdateBasicsRequest` has no `CategoryIDs`
-field at all, so the basics path physically cannot set them.
+**There was never a bug.** This task originally mandated widening the `products.go:172` branch to
+include `CategoryIDs`. **That was wrong, and the change would have caused a real regression.**
 
-Safe because `UpdateAggregate` is nil-safe: `Options == nil` → `optionSpecsFromExisting(existing.Options)`;
-options diff guarded by `if req.Options != nil`; variants diff by
-`if req.Variants != nil || req.RemovedVariantIDs != nil`.
+`Patch` has a **THIRD** section (`products.go:212-220`) that already handles the categories-only
+case via `UpdateCategoryLinks`. It has existed since `products.go`'s first commit (`7836c7f6`);
+`5424f7cb` later **added** its guard precisely to stop it double-firing. Widening line 172 would
+make the aggregate fire **while section 3's guard still passes** → category links written twice and
+**two** `product.updated` outbox events per request (double webhooks / reindex / cache invalidation).
 
-The test hits the **web** admin route; the handler is shared, so it proves the fix for mobile too.
+Caught because the implementer ran this task's own prescribed RED test against unmodified `main`
+and **it passed**. The plan author had read `products.go:166-205` and stopped before section 3.
+
+**`products.go` was NOT modified. No deploy needed. The categories feature needs no backend work.**
+
+What shipped instead (both keepers):
+1. `test(marketplace-api): pin that a categories-only product patch persists` — retained as
+   permanent regression coverage for behaviour that was correct but untested.
+2. `fix(marketplace-api): repair seedProductViaService vendor id and option matrix` — a real,
+   pre-existing bug found on the way: the shared helper set no `VendorID` (`products.vendor_id` has
+   been NOT NULL since migration `000028`) and built a 2-variant/0-option matrix that
+   `ValidateMatrix` rejects. **Unblocked 19 previously-failing tests; broke none.**
+
+🔴 **The Go integration suite needs the `integration` build tag AND a live Postgres.**
+`go test ./internal/handlers/admin/` **silently runs nothing** — green there proves nothing:
+```bash
+docker compose -f infra/dev/docker-compose.yml --project-directory infra/dev up -d postgres
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
+  go test -tags=integration ./internal/handlers/admin/
+```
+**17 tests still fail on `main`, all pre-existing and unrelated** — measured against a real baseline
+worktree at `115fd0c3`, not asserted: 36 failures before → 17 after, i.e. **19 fixed, 0 newly
+broken** (`comm -13` on the sorted sets returns empty). The 17: **12 × `vendor_id` via
+`createOneHTTP`** (the same gap, different seed path — deliberately left alone as out of scope),
+1 promo unique-constraint, 1 refund 404, 1 shipment FK, 2 × `stores.created_at` schema drift.
+Tracked as a follow-up; **not caused by this plan**.
+
+The original task text below is preserved for the record. **Do not execute it.**
 
 **Files:**
 - Modify: `services/marketplace-api/internal/handlers/admin/products.go:172`
@@ -2323,9 +2351,13 @@ git commit -m "feat(mobile-admin): compose options, categories and media section
 
 ---
 
-## Deploying Task 1
+## Deploying Task 1 — NOT NEEDED
 
-Task 1 touches `marketplace-api`, which **does** deploy (unlike mobile-admin, which ships via
+**Task 1 changed no production code** (see its retraction above). Both commits are test-only, so
+there is **nothing to promote**. The section below is retained only in case a future task in this
+plan ever does touch `marketplace-api`.
+
+Were a deploy needed: `marketplace-api` **does** deploy (unlike mobile-admin, which ships via
 `eas build` → TestFlight and has no prod deploy at all).
 
 - Images promote via **Kargo Freight (uat→smoke→prod)**, NOT by editing ArgoCD `image.tag`.

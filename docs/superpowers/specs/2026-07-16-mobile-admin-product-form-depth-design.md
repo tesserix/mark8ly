@@ -35,10 +35,12 @@ didn't exist. `new.tsx` and the FAB's `router.push` were both fine all along. Fi
 `useDockClearance()` at the call site, the hook the Dock already exports for exactly this and
 which the same screen's FlatList already used (`index.tsx:96`). Verified on the simulator.
 
-`#1` — **Product form depth.** Client work **plus a one-line backend fix** (the `category_ids`
-trap below). An earlier draft of this spec claimed "client-only, zero backend" — **that was
-wrong**, asserted from the route table without tracing category writes to the DB. Corrected
-2026-07-16 before planning.
+`#1` — **Product form depth.** Client-only; no backend change.
+
+(History, because both errors are instructive: the first draft said "client-only, zero backend"
+asserted from the route table. A second draft "corrected" that to claim a `category_ids` bug
+requiring a handler fix — **also wrong**, from a partial read of the handler. Verified empirically
+2026-07-16: client-only was right, for the wrong reasons. See the `category_ids` section below.)
 
 `#2` — **Re-crop existing media.** Backend route registration + a mobile crop UI.
 
@@ -50,8 +52,8 @@ Mobile has its own route surface: `services/marketplace-api/internal/handlers/ad
 (`RegisterAdminMobile`), GIP bearer auth + a 60 req/min per-user rate limiter, mounted at
 `/mobile/admin/stores/:storeId`. It is **not** the same registration as the web's `routes.go`.
 
-**Almost everything sub-project #1 needs already exists on that surface** — the one exception is
-`category_ids`, see the trap below. In detail:
+**Everything sub-project #1 needs already exists on that surface**, `category_ids` included
+(verified empirically — see below). In detail:
 
 | Need | Endpoint / struct | Evidence |
 |---|---|---|
@@ -97,31 +99,46 @@ Carried from the prior session, still load-bearing:
 - Customer names are Go `omitempty` → **absent, not null** → `.optional()`, never `.nullable()`.
 - `/products` is `{data, meta}`, 161 products, default `page_size=20`, max 100.
 
-### 🔴 `category_ids` is silently discarded — backend fix required (LOCKED: fix the handler)
+### ✅ `category_ids` WORKS TODAY — an earlier draft of this spec was WRONG
 
-Traced end to end 2026-07-16:
-- `service_aggregate.go:266` — the aggregate **does** apply links:
-  `if req.CategoryIDs != nil { ReplaceCategoryLinksInTx(...) }`.
-- `UpdateBasicsRequest` (`service.go:171`) has **no `CategoryIDs` field** — basics physically
-  cannot set them, and `toServiceUpdateBasicsRequest` never maps it.
-- The handler branch (`products.go:172`) routes to the aggregate **only** when
-  `Options != nil || Variants != nil || RemovedVariantIDs != nil`. **`CategoryIDs` is absent from
-  that condition.**
+**RETRACTED 2026-07-16, before any code shipped.** An earlier draft claimed
+`PATCH {category_ids: [...]}` returned 200 while silently discarding the edit, and mandated a
+one-line handler fix. **That claim was false, and the "fix" would have caused a real regression.**
 
-**Therefore `PATCH {category_ids: [...]}` returns 200 OK and silently does nothing.** And
-`PATCH {category_ids, title}` saves the title while still dropping the categories — an invisible
-failure. Same species as the old `stock` field that 200'd while discarding edits.
+What is actually true: `Patch` (`products.go`) has **THREE** independent sections, not two. The
+third (`products.go:212-220`) handles exactly the categories-only case:
 
-**Decision (user, 2026-07-16): fix the handler.** Add `|| req.CategoryIDs != nil` to the aggregate
-branch condition. Safe because `UpdateAggregate` is nil-safe by construction: `Options == nil` →
-`desiredOptions = optionSpecsFromExisting(existing.Options)`; the options diff is guarded by
-`if req.Options != nil`; the variants diff by `if req.Variants != nil || req.RemovedVariantIDs != nil`.
-So a categories-only PATCH applies scalars + category links and touches nothing else.
+```go
+// 3. Category link replacement. If the aggregate path already ran
+//    and the request also carried CategoryIDs, UpdateAggregate already
+//    handled them in the same tx, so skip the secondary call.
+if req.CategoryIDs != nil && req.Options == nil && req.Variants == nil && req.RemovedVariantIDs == nil {
+    h.svc.UpdateCategoryLinks(ctx, id, storeID, tenantID, *req.CategoryIDs)
+}
+```
 
-This is a latent bug for the **web** admin too. Web likely never hits it because its ProductForm
-submits options+variants on every save — **UNVERIFIED, do not repeat as fact.**
+It has existed since `products.go`'s first commit (`7836c7f6`), and `5424f7cb` later **added** its
+guard specifically to stop it double-firing when the aggregate already handled categories.
 
-**Do NOT "work around" this by sending `variants` from the client to force the aggregate.**
+**Proven empirically:** the mandated RED test (`TestAPI_AdminProducts_Patch_CategoryIDsOnly_Persists`)
+**passed against unmodified `main`** on its first run, against a real Postgres. It is now committed
+as permanent regression coverage.
+
+**Why the "fix" was dangerous:** widening the line-172 condition to include `CategoryIDs` would make
+the aggregate fire for a categories-only PATCH — while section 3's guard (which only checks
+Options/Variants/RemovedVariantIDs) **still passes**. Result: category links written twice and
+**two** `product.updated` outbox events per request — double webhooks, reindexes and cache
+invalidations downstream. It would have re-broken precisely what `5424f7cb` fixed.
+
+**So the categories feature needs NO backend work. Sub-project #1 is client-only after all.**
+
+**How this spec got it wrong — the lesson, again:** the author read `products.go:166-205`, saw the
+if/else-if branch, observed `CategoryIDs` was absent from it, and **stopped reading before section 3** —
+a claim asserted from a partial read of a function, in a spec whose own Landmines section warns
+against exactly that. It was caught only because the implementing subagent ran the falsifying
+command instead of trusting the brief. **Read the whole function. Run the falsifying command.**
+
+**Still true and still load-bearing — do NOT send `variants` from the client.**
 `UpdateAggregateRequest.Variants` is a **full desired matrix** and `applyVariantsDiff` soft-deletes
 anything missing from it. Getting it wrong destroys real variants — and 8 of the 12 active
 products are multi-variant.
@@ -261,8 +278,14 @@ No Skia, no canvas, **no new dependency**. This matters: `npm install` is forbid
 - vitest in `packages/mobile-shared` (83 today).
 - **Pinning test for the options request/response asymmetry** — request `values: string[]`,
   response `values: [{id, value, position}]`. Non-negotiable.
-- **Go integration test that a categories-only PATCH actually persists** — the regression guard for
-  the `category_ids` fix. It must fail before the handler change and pass after.
+- **Go integration test that a categories-only PATCH actually persists** — SHIPPED. It pins
+  already-correct behaviour that had no direct coverage. (It passed on first run against unmodified
+  `main`, which is how the fictional `category_ids` bug was caught.)
+- Running the Go integration suite needs Docker + Postgres + the `integration` build tag:
+  `docker compose -f infra/dev/docker-compose.yml --project-directory infra/dev up -d postgres`,
+  then `TEST_DATABASE_URL=postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable
+  go test -tags=integration ./internal/handlers/admin/`. **Without `-tags=integration` the suite
+  silently doesn't run** — a green `go test ./internal/handlers/admin/` proves nothing.
 - Schema tests live in `apps/mobile-admin/__tests__/schemas-*.test.tsx` (**jest**), following
   `schemas-products.test.tsx`'s pattern of parsing a **verbatim prod payload**. `mobile-shared`'s
   vitest covers only support/haptics/deep-links — no schema tests there.

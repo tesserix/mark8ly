@@ -145,8 +145,12 @@ describe("image picker options", () => {
     // Guard for 51d2e80b: requestMediaLibraryPermissionsAsync opts into the
     // legacy flow, where "Limited Access" strands the user in iOS's
     // limited-library management sheet and the real picker never opens.
+    //
+    // Moved from app/(tabs)/products/[id].tsx to lib/hooks/use-product-media-handlers.ts
+    // (Task 5's enabling extraction, to keep [id].tsx under its pinned
+    // line-count gate) — repointed here, same guard, same behaviour.
     const source = require("fs").readFileSync(
-      require("path").join(__dirname, "../app/(tabs)/products/[id].tsx"),
+      require("path").join(__dirname, "../lib/hooks/use-product-media-handlers.ts"),
       "utf8",
     );
     expect(source).toContain("allowsEditing: true");

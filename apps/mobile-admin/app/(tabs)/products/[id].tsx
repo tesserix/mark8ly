@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
 import { useProduct } from "../../../lib/hooks/use-products";
 import {
@@ -26,42 +25,20 @@ import type {
   UpdateVariantBody,
   UpdateProductOptionBody,
 } from "@repo/mobile-shared/api/products";
-import { ApiError } from "@repo/mobile-shared/api/client";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { VariantEditor } from "@/components/products/VariantEditor";
 import { ImageViewer } from "@/components/products/ImageViewer";
 import { OptionsEditor } from "@/components/products/OptionsEditor";
 import { CategoryField } from "@/components/products/CategoryField";
-import { MediaGrid, computeReorderWrites } from "@/components/products/MediaGrid";
+import { MediaGrid } from "@/components/products/MediaGrid";
+import { CreateNextStepsBanner } from "@/components/products/CreateNextStepsBanner";
 import { useAddOptionHandler } from "@/lib/hooks/use-add-option-handler";
+import { useProductMediaHandlers } from "@/lib/hooks/use-product-media-handlers";
+import { useCreatedBanner } from "@/lib/hooks/use-created-banner";
+import { getErrorMessage, alertOnError } from "@/lib/product-alerts";
 
 /** How long the transient "Saved" acknowledgement stays visible. */
 const SAVED_ACKNOWLEDGEMENT_MS = 2000;
-
-/**
- * This branch went to real trouble to make contract-mismatch messages name
- * the offending field (see client.ts's ApiError construction) — surface that
- * instead of a generic string wherever we have it.
- */
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) return error.message;
-  return fallback;
-}
-
-/**
- * react-query mutate() options that surface a failure as an Alert. A silent
- * mutation failure — the UI reverting on refetch with no word to the merchant —
- * is the exact bug class this branch exists to kill, and these routes have real
- * reachable failures (a 400 on removing an option's last value, a 429 from the
- * 60 req/min limiter, network/500).
- */
-function alertOnError(fallback: string) {
-  return {
-    onError: (err: unknown) => {
-      Alert.alert("Error", getErrorMessage(err, fallback));
-    },
-  };
-}
 
 function FieldLabel({ label }: { label: string }) {
   return (
@@ -73,7 +50,7 @@ function FieldLabel({ label }: { label: string }) {
 
 export default function ProductDetailScreen() {
   const dockPad = useDockClearance();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, created } = useLocalSearchParams<{ id: string; created?: string }>();
   const { data: product, isLoading, error } = useProduct(id);
 
   const updateMutation = useUpdateProduct();
@@ -91,6 +68,9 @@ export default function ProductDetailScreen() {
   const [justSaved, setJustSaved] = useState(false);
   const [viewerImage, setViewerImage] = useState<{ uri: string; alt?: string } | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const { show: showCreatedBanner, dismiss: dismissCreatedBanner, registerSectionOffset, jumpTo } =
+    useCreatedBanner(created, scrollViewRef);
 
   // A `setTimeout` firing after unmount would set state on a dead component.
   useEffect(() => {
@@ -150,78 +130,8 @@ export default function ProductDetailScreen() {
     );
   }, [id, title, description, isActive, updateMutation]);
 
-  const handleDeleteExistingMedia = useCallback(
-    (mediaId: string) => {
-      Alert.alert("Delete Image", "Remove this image from the product?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () =>
-            deleteMediaMutation.mutate(
-              { productId: id, mediaId },
-              alertOnError("Failed to delete image. Please try again."),
-            ),
-        },
-      ]);
-    },
-    [id, deleteMediaMutation],
-  );
-
-  const handleAddMedia = useCallback(async () => {
-    try {
-      // Deliberately no library-permission request here (pinned by the
-      // regression test in __tests__/add-product-media.test.tsx).
-      // launchImageLibraryAsync uses the system picker (PHPicker on iOS), which
-      // runs out-of-process and needs no library permission. Asking anyway opts
-      // into the legacy permission flow: choosing "Limited Access" drops the
-      // user into iOS's limited-library management sheet — a grid with an X and
-      // no confirm button — from which the real picker never opens. Observed on
-      // a simulator. `components/ProductMediaPicker.tsx` has always called the
-      // picker directly for the same reason.
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        quality: 0.8,
-        // The system cropper, shown after the photo is chosen and before upload.
-        // Orthogonal to permission — see the comment above; do NOT add a
-        // permission request alongside it.
-        allowsEditing: true,
-      });
-      if (result.canceled) return;
-
-      const asset = result.assets[0];
-      if (!asset) return;
-
-      const currentMediaCount = product?.media.length ?? 0;
-      addMediaMutation.mutate(
-        {
-          productId: id,
-          asset: {
-            uri: asset.uri,
-            fileName: asset.fileName,
-            fileSize: asset.fileSize,
-            mimeType: asset.mimeType,
-          },
-          position: currentMediaCount,
-        },
-        {
-          onError: (err) => {
-            // A silent upload failure is the exact bug class this project
-            // exists to kill — always surface it.
-            Alert.alert(
-              "Error",
-              getErrorMessage(err, "Failed to upload image. Please try again."),
-            );
-          },
-        },
-      );
-    } catch (err) {
-      // launchImageLibraryAsync can itself reject (platform picker errors).
-      // onPress doesn't await this handler, so an uncaught rejection here
-      // would be a silent failure — the exact class this project exists to kill.
-      Alert.alert("Error", getErrorMessage(err, "Failed to open the image picker."));
-    }
-  }, [id, product?.media.length, addMediaMutation]);
+  const { handleAddMedia, handleDeleteExistingMedia, handleReorderMedia, handleAltChange } =
+    useProductMediaHandlers({ id, product, addMediaMutation, deleteMediaMutation, updateMediaMutation });
 
   const handleVariantUpdate = useCallback(
     (variantId: string, body: UpdateVariantBody) => {
@@ -256,32 +166,6 @@ export default function ProductDetailScreen() {
       );
     },
     [id, updateMutation],
-  );
-
-  const handleReorderMedia = useCallback(
-    (mediaId: string, newPosition: number) => {
-      // 🔴 Adjacent SWAP, not a single-row write. The backend does not shift
-      // siblings, so a lone position PATCH would leave two photos sharing a
-      // slot (see computeReorderWrites). Move both rows, or neither.
-      const writes = computeReorderWrites(product?.media ?? [], mediaId, newPosition);
-      for (const write of writes) {
-        updateMediaMutation.mutate(
-          { productId: id, mediaId: write.id, body: { position: write.position } },
-          alertOnError("Failed to reorder photos. Please try again."),
-        );
-      }
-    },
-    [id, product?.media, updateMediaMutation],
-  );
-
-  const handleAltChange = useCallback(
-    (mediaId: string, alt: string) => {
-      updateMediaMutation.mutate(
-        { productId: id, mediaId, body: { alt } },
-        alertOnError("Failed to update alt text. Please try again."),
-      );
-    },
-    [id, updateMediaMutation],
   );
 
   if (error) {
@@ -334,38 +218,47 @@ export default function ProductDetailScreen() {
         }
       />
 
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
-        <Eyebrow
-          label="Photos"
-          rightSlot={
-            <TouchableOpacity
-              onPress={handleAddMedia}
-              disabled={addMediaMutation.isPending}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={addMediaMutation.isPending ? "Uploading image" : "Add image"}
-            >
-              <Text preset="caption" color="accent">
-                {addMediaMutation.isPending ? "Uploading…" : "Add"}
+      <ScrollView
+        ref={scrollViewRef}
+        contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}
+      >
+        {showCreatedBanner ? (
+          <CreateNextStepsBanner title={product.title} onJump={jumpTo} onDismiss={dismissCreatedBanner} />
+        ) : null}
+
+        <View onLayout={(e) => registerSectionOffset("photos", e.nativeEvent.layout.y)}>
+          <Eyebrow
+            label="Photos"
+            rightSlot={
+              <TouchableOpacity
+                onPress={handleAddMedia}
+                disabled={addMediaMutation.isPending}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={addMediaMutation.isPending ? "Uploading image" : "Add image"}
+              >
+                <Text preset="caption" color="accent">
+                  {addMediaMutation.isPending ? "Uploading…" : "Add"}
+                </Text>
+              </TouchableOpacity>
+            }
+          />
+          <Card padding="md" style={styles.card}>
+            {media.length > 0 ? (
+              <MediaGrid
+                media={media}
+                onReorder={handleReorderMedia}
+                onAltChange={handleAltChange}
+                onPress={(m) => setViewerImage({ uri: m.url, alt: m.alt })}
+                onLongPress={handleDeleteExistingMedia}
+              />
+            ) : (
+              <Text preset="caption" color="textTertiary">
+                No images yet.
               </Text>
-            </TouchableOpacity>
-          }
-        />
-        <Card padding="md" style={styles.card}>
-          {media.length > 0 ? (
-            <MediaGrid
-              media={media}
-              onReorder={handleReorderMedia}
-              onAltChange={handleAltChange}
-              onPress={(m) => setViewerImage({ uri: m.url, alt: m.alt })}
-              onLongPress={handleDeleteExistingMedia}
-            />
-          ) : (
-            <Text preset="caption" color="textTertiary">
-              No images yet.
-            </Text>
-          )}
-        </Card>
+            )}
+          </Card>
+        </View>
 
         <Eyebrow label="Details" />
         <Card padding="md" style={styles.card}>
@@ -410,10 +303,12 @@ export default function ProductDetailScreen() {
           </View>
         </Card>
 
-        <Eyebrow label="Options" />
-        <Card padding="md" style={styles.card}>
-          <OptionsEditor options={product.options} onChange={handleOptionsChange} onAddOption={handleAddOption} />
-        </Card>
+        <View onLayout={(e) => registerSectionOffset("options", e.nativeEvent.layout.y)}>
+          <Eyebrow label="Options" />
+          <Card padding="md" style={styles.card}>
+            <OptionsEditor options={product.options} onChange={handleOptionsChange} onAddOption={handleAddOption} />
+          </Card>
+        </View>
 
         <Eyebrow label="Categories" />
         <Card padding="md" style={styles.card}>
@@ -429,23 +324,25 @@ export default function ProductDetailScreen() {
 
         {/* Price, SKU and stock live on the VARIANT, not the product — the
             product-level fields this screen used to edit are not on the wire. */}
-        <Eyebrow label="Variants" />
-        <Card padding={0} style={styles.card}>
-          {variants.length > 0 ? (
-            variants.map((v, i) => (
-              <View key={v.id}>
-                {i > 0 ? <Hairline /> : null}
-                <VariantEditor variant={v} onUpdate={handleVariantUpdate} />
+        <View onLayout={(e) => registerSectionOffset("variants", e.nativeEvent.layout.y)}>
+          <Eyebrow label="Variants" />
+          <Card padding={0} style={styles.card}>
+            {variants.length > 0 ? (
+              variants.map((v, i) => (
+                <View key={v.id}>
+                  {i > 0 ? <Hairline /> : null}
+                  <VariantEditor variant={v} onUpdate={handleVariantUpdate} />
+                </View>
+              ))
+            ) : (
+              <View style={styles.empty}>
+                <Text preset="caption" color="textTertiary">
+                  No variants yet.
+                </Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.empty}>
-              <Text preset="caption" color="textTertiary">
-                No variants yet.
-              </Text>
-            </View>
-          )}
-        </Card>
+            )}
+          </Card>
+        </View>
       </ScrollView>
 
       <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />

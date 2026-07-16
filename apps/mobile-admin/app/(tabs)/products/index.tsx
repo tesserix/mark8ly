@@ -115,7 +115,7 @@ export default function ProductsScreen() {
       )}
 
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { bottom: dockPad }]}
         onPress={() => router.push("/(tabs)/products/new")}
         activeOpacity={0.85}
         accessibilityRole="button"
@@ -141,10 +141,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // `bottom` is applied at the call site from useDockClearance() — the dock
+  // is absolutely positioned and renders above this, so a static bottom
+  // (it was theme.spacing.lg) parked the FAB underneath it and Add-product
+  // was unreachable.
   fab: {
     position: "absolute",
     right: theme.spacing.lg,
-    bottom: theme.spacing.lg,
     width: 56,
     height: 56,
     borderRadius: 28,

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { View, TextInput, Pressable, StyleSheet } from "react-native";
-import { X } from "lucide-react-native";
+import { Plus, X } from "lucide-react-native";
 import { Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { ProductOption } from "@repo/mobile-shared/api/schemas/products";
 import type { UpdateProductOptionBody } from "@repo/mobile-shared/api/products";
+import { OptionBuilderSheet, type OptionBuilderSheetHandle } from "./OptionBuilderSheet";
 
 /**
  * Converts the RESPONSE option shape into the REQUEST one.
@@ -34,10 +35,13 @@ interface OptionsEditorProps {
    * the whole variant matrix against what it is given.
    */
   onChange: (options: UpdateProductOptionBody[]) => void;
+  /** Called with a single new axis (name + values) confirmed in the builder sheet. */
+  onAddOption: (option: UpdateProductOptionBody) => void;
 }
 
-export function OptionsEditor({ options, onChange }: OptionsEditorProps) {
+export function OptionsEditor({ options, onChange, onAddOption }: OptionsEditorProps) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const sheetRef = useRef<OptionBuilderSheetHandle>(null);
   const current = toOptionRequestBodies(options);
 
   const addValue = (optionName: string) => {
@@ -62,46 +66,82 @@ export function OptionsEditor({ options, onChange }: OptionsEditorProps) {
 
   return (
     <View style={styles.root}>
-      {current.map((option) => (
-        <View key={option.name} style={styles.option}>
-          <Text preset="bodyEmphasis" color="text">
-            {option.name}
+      {current.length === 0 ? (
+        <View style={styles.empty}>
+          <Text preset="body" color="text">
+            This product has one variant.
           </Text>
-          <View style={styles.chips}>
-            {option.values.map((value) => (
-              <View key={value} style={styles.chip}>
-                <Text preset="caption" color="text">
-                  {value}
-                </Text>
-                <Pressable
-                  onPress={() => removeValue(option.name, value)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${value} from ${option.name}`}
-                  hitSlop={8}
-                >
-                  <X size={12} color={theme.colors.textTertiary} strokeWidth={2.5} />
-                </Pressable>
-              </View>
-            ))}
-          </View>
-          <TextInput
-            style={styles.input}
-            value={drafts[option.name] ?? ""}
-            onChangeText={(t) => setDrafts((d) => ({ ...d, [option.name]: t }))}
-            onSubmitEditing={() => addValue(option.name)}
-            placeholder={`Add a ${option.name.toLowerCase()}…`}
-            placeholderTextColor={theme.colors.textTertiary}
-            accessibilityLabel={`Add a value to ${option.name}`}
-            returnKeyType="done"
-          />
+          <Text preset="caption" color="textTertiary">
+            Add an option like Size or Colour to sell variations.
+          </Text>
         </View>
-      ))}
+      ) : (
+        current.map((option) => (
+          <View key={option.name} style={styles.option}>
+            <Text preset="bodyEmphasis" color="text">
+              {option.name}
+            </Text>
+            <View style={styles.chips}>
+              {option.values.map((value) => (
+                <View key={value} style={styles.chip}>
+                  <Text preset="caption" color="text">
+                    {value}
+                  </Text>
+                  <Pressable
+                    onPress={() => removeValue(option.name, value)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${value} from ${option.name}`}
+                    hitSlop={8}
+                  >
+                    <X size={12} color={theme.colors.textTertiary} strokeWidth={2.5} />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+            <TextInput
+              style={styles.input}
+              value={drafts[option.name] ?? ""}
+              onChangeText={(t) => setDrafts((d) => ({ ...d, [option.name]: t }))}
+              onSubmitEditing={() => addValue(option.name)}
+              placeholder={`Add a ${option.name.toLowerCase()}…`}
+              placeholderTextColor={theme.colors.textTertiary}
+              accessibilityLabel={`Add a value to ${option.name}`}
+              returnKeyType="done"
+            />
+          </View>
+        ))
+      )}
+
+      <Pressable
+        style={styles.addRow}
+        onPress={() => sheetRef.current?.present()}
+        accessibilityRole="button"
+        accessibilityLabel="Add an option"
+      >
+        <Plus size={16} color={theme.colors.accent} strokeWidth={2.5} />
+        <Text preset="bodyEmphasis" color="accent">
+          Add option
+        </Text>
+      </Pressable>
+
+      <OptionBuilderSheet ref={sheetRef} onSubmit={onAddOption} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { gap: theme.spacing.md },
+  empty: { gap: theme.spacing.xs },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.xs,
+    height: 44,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+  },
   option: { gap: theme.spacing.sm },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs },
   chip: {

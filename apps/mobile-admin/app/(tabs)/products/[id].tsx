@@ -20,14 +20,7 @@ import {
   useCategories,
   useUpdateMedia,
 } from "../../../lib/admin-api/product-crud";
-import {
-  BackHeader,
-  Card,
-  Eyebrow,
-  Hairline,
-  Screen,
-  Text,
-} from "@/components/ui";
+import { BackHeader, Card, Eyebrow, Hairline, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type {
   UpdateVariantBody,
@@ -40,6 +33,7 @@ import { ImageViewer } from "@/components/products/ImageViewer";
 import { OptionsEditor } from "@/components/products/OptionsEditor";
 import { CategoryPicker } from "@/components/products/CategoryPicker";
 import { MediaGrid, computeReorderWrites } from "@/components/products/MediaGrid";
+import { useAddOptionHandler } from "@/lib/hooks/use-add-option-handler";
 
 /** How long the transient "Saved" acknowledgement stays visible. */
 const SAVED_ACKNOWLEDGEMENT_MS = 2000;
@@ -252,6 +246,7 @@ export default function ProductDetailScreen() {
     [id, updateMutation],
   );
 
+  const handleAddOption = useAddOptionHandler(id, product, updateMutation);
   const handleCategoriesChange = useCallback(
     (category_ids: string[]) => {
       updateMutation.mutate(
@@ -416,7 +411,7 @@ export default function ProductDetailScreen() {
 
         <Eyebrow label="Options" />
         <Card padding="md" style={styles.card}>
-          <OptionsEditor options={product.options} onChange={handleOptionsChange} />
+          <OptionsEditor options={product.options} onChange={handleOptionsChange} onAddOption={handleAddOption} />
         </Card>
 
         <Eyebrow label="Categories" />

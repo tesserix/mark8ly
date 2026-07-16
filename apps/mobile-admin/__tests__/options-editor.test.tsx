@@ -7,6 +7,24 @@ jest.mock("lucide-react-native", () => {
   const IconStub = () => null;
   return new Proxy({}, { get: () => IconStub });
 });
+// OptionsEditor now renders <OptionBuilderSheet>, which mounts a real
+// @gorhom/bottom-sheet BottomSheetModal — that pulls in react-native-reanimated,
+// which throws under jest without a full worklets/logger setup this project
+// doesn't have. Stub the two pieces OptionsEditor's tree touches; the sheet's
+// own behaviour is pinned in __tests__/option-builder-sheet.test.tsx against
+// the pure buildOptionSubmission function instead (portal content is not
+// practical to unit-test here — see that file's header comment).
+jest.mock("@gorhom/bottom-sheet", () => {
+  const React = require("react");
+  return {
+    __esModule: true,
+    BottomSheetModal: React.forwardRef((_props: unknown, ref: React.Ref<unknown>) => {
+      React.useImperativeHandle(ref, () => ({ present: () => {}, dismiss: () => {} }));
+      return null;
+    }),
+    BottomSheetView: ({ children }: { children?: React.ReactNode }) => children ?? null,
+  };
+});
 
 import { render, fireEvent } from "@testing-library/react-native";
 import { OptionsEditor, toOptionRequestBodies } from "@/components/products/OptionsEditor";
@@ -55,7 +73,7 @@ describe("OptionsEditor", () => {
   it("emits the COMPLETE desired option set when a value is added", () => {
     const onChange = jest.fn();
     const { getByLabelText } = render(
-      <OptionsEditor options={RESPONSE_OPTIONS as never} onChange={onChange} />,
+      <OptionsEditor options={RESPONSE_OPTIONS as never} onChange={onChange} onAddOption={() => {}} />,
     );
     const input = getByLabelText("Add a value to Size");
     fireEvent.changeText(input, "L");
@@ -66,7 +84,7 @@ describe("OptionsEditor", () => {
   it("emits the set without the removed value", () => {
     const onChange = jest.fn();
     const { getByLabelText } = render(
-      <OptionsEditor options={RESPONSE_OPTIONS as never} onChange={onChange} />,
+      <OptionsEditor options={RESPONSE_OPTIONS as never} onChange={onChange} onAddOption={() => {}} />,
     );
     fireEvent.press(getByLabelText("Remove M from Size"));
     expect(onChange).toHaveBeenCalledWith([{ name: "Size", values: ["S"] }]);
@@ -75,7 +93,7 @@ describe("OptionsEditor", () => {
   it("ignores a blank value rather than sending an empty string", () => {
     const onChange = jest.fn();
     const { getByLabelText } = render(
-      <OptionsEditor options={RESPONSE_OPTIONS as never} onChange={onChange} />,
+      <OptionsEditor options={RESPONSE_OPTIONS as never} onChange={onChange} onAddOption={() => {}} />,
     );
     const input = getByLabelText("Add a value to Size");
     fireEvent.changeText(input, "   ");
@@ -86,11 +104,29 @@ describe("OptionsEditor", () => {
   it("ignores a duplicate value — the backend keys variants off the tuple", () => {
     const onChange = jest.fn();
     const { getByLabelText } = render(
-      <OptionsEditor options={RESPONSE_OPTIONS as never} onChange={onChange} />,
+      <OptionsEditor options={RESPONSE_OPTIONS as never} onChange={onChange} onAddOption={() => {}} />,
     );
     const input = getByLabelText("Add a value to Size");
     fireEvent.changeText(input, "S");
     fireEvent(input, "submitEditing");
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("OptionsEditor empty state", () => {
+  it("shows guidance and an add-option affordance when there are no options", () => {
+    const { getByText, getByLabelText } = render(
+      <OptionsEditor options={[]} onChange={() => {}} onAddOption={() => {}} />,
+    );
+    expect(getByText(/one variant/i)).toBeTruthy();
+    expect(getByLabelText("Add an option")).toBeTruthy();
+  });
+
+  it("still shows the add-option affordance once an option already exists", () => {
+    const { getByLabelText, queryByText } = render(
+      <OptionsEditor options={RESPONSE_OPTIONS as never} onChange={() => {}} onAddOption={() => {}} />,
+    );
+    expect(getByLabelText("Add an option")).toBeTruthy();
+    expect(queryByText(/one variant/i)).toBeNull();
   });
 });

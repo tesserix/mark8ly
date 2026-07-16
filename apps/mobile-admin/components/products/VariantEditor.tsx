@@ -83,10 +83,6 @@ export function VariantEditor({ variant, onUpdate }: VariantEditorProps) {
 
   return (
     <View style={styles.root}>
-      <Text preset="bodyEmphasis" color="text">
-        {variantLabel(variant)}
-      </Text>
-
       <View style={styles.field}>
         <FieldLabel label="SKU" />
         <TextInput

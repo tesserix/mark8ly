@@ -56,10 +56,18 @@ describe("stockTone", () => {
     expect(result.label).toBe(`Low: ${LOW_STOCK}`);
   });
 
-  it("maps LOW_STOCK + 1 to success — a tone that would pass with a constant tone is worthless", () => {
+  it("maps LOW_STOCK + 1 to muted (not success) — healthy stock must not spend the moss accent", () => {
     const result = stockTone(LOW_STOCK + 1);
-    expect(result.tone).toBe("success");
+    expect(result.tone).toBe("muted");
     expect(result.label).toBe(`${LOW_STOCK + 1} in stock`);
+  });
+
+  it("distinguishes out-of-stock from healthy-stock by label even though both are muted", () => {
+    const outOfStock = stockTone(0);
+    const healthy = stockTone(LOW_STOCK + 1);
+    expect(outOfStock.tone).toBe("muted");
+    expect(healthy.tone).toBe("muted");
+    expect(outOfStock.label).not.toBe(healthy.label);
   });
 });
 
@@ -111,5 +119,31 @@ describe("VariantRow", () => {
       <VariantRow variant={soleVariant as never} onUpdate={jest.fn()} />,
     );
     expect(queryByLabelText("SKU")).toBeNull();
+  });
+});
+
+describe("VariantRow — reduced motion", () => {
+  const reanimated = jest.requireMock("react-native-reanimated") as {
+    useReducedMotion: jest.Mock;
+  };
+
+  afterEach(() => {
+    reanimated.useReducedMotion.mockReturnValue(false);
+  });
+
+  it("passes an undefined (instant) entering animation on the body when reduced motion is enabled", () => {
+    reanimated.useReducedMotion.mockReturnValue(true);
+    const { getByTestId } = render(
+      <VariantRow variant={BASE_VARIANT as never} onUpdate={jest.fn()} defaultOpen />,
+    );
+    expect(getByTestId("variant-row-body").props.entering).toBeUndefined();
+  });
+
+  it("passes a real entering animation on the body when reduced motion is off", () => {
+    reanimated.useReducedMotion.mockReturnValue(false);
+    const { getByTestId } = render(
+      <VariantRow variant={BASE_VARIANT as never} onUpdate={jest.fn()} defaultOpen />,
+    );
+    expect(getByTestId("variant-row-body").props.entering).toBeDefined();
   });
 });

@@ -17,11 +17,23 @@ import type { UpdateVariantBody } from "@repo/mobile-shared/api/products";
  */
 export const LOW_STOCK = 5;
 
-/** Stock count -> badge tone + label. Pure, so the boundary is cheap to pin exactly. */
+/**
+ * Stock count -> badge tone + label. Pure, so the boundary is cheap to pin exactly.
+ *
+ * Controller decision: the healthy (>LOW_STOCK) case does NOT use tone
+ * "success" (StatusBadge renders it as a solid moss fill). The design
+ * system's one-moss-accent-per-view rule is non-negotiable and outranks the
+ * spec's tone enumeration — a healthy-stock product would otherwise show a
+ * solid-moss badge on every variant row alongside the header's moss "Save",
+ * spending the accent many times per screen. Healthy and out-of-stock both
+ * read as "muted" (quiet, no accent); only the actionable low-stock middle
+ * state draws the functional amber "warning" tone. Label text — not badge
+ * color — distinguishes the two muted states.
+ */
 export function stockTone(quantity: number): { tone: StatusTone; label: string } {
   if (quantity === 0) return { tone: "muted", label: "Out of stock" };
   if (quantity <= LOW_STOCK) return { tone: "warning", label: `Low: ${quantity}` };
-  return { tone: "success", label: `${quantity} in stock` };
+  return { tone: "muted", label: `${quantity} in stock` };
 }
 
 interface VariantRowProps {

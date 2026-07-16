@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { money, paginated } from "../schema-helpers";
+import { decimalNumber, money, paginated } from "../schema-helpers";
 
 /**
  * Wire truth for the admin product endpoints. Verified 2026-07-16 against
@@ -22,11 +22,21 @@ export const variantOptionValueSchema = z.object({
 export const productVariantSchema = z.object({
   id: z.string(),
   sku: z.string(),
+  barcode: z.string().optional(),
   price: money,
   compare_at_price: money.optional(),
+  cost_price: money.optional(),
   currency_code: z.string(),
+  // Shipping fields (AdminVariantResponse, dto.go:135-138). weight_grams is a
+  // Go *int -> a plain number; the *_cm fields are *decimal.Decimal and arrive
+  // QUOTED like price. All are omitempty -> absent, never null.
+  weight_grams: z.number().optional(),
+  length_cm: decimalNumber.optional(),
+  width_cm: decimalNumber.optional(),
+  height_cm: decimalNumber.optional(),
   inventory_quantity: z.number(),
   inventory_policy: z.string(),
+  low_stock_threshold: z.number().optional(),
   option_values: z.array(variantOptionValueSchema),
   /**
    * The wire does NOT sort variants by position — a real product came back

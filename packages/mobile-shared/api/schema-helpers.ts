@@ -16,6 +16,14 @@ export const money = z
   .transform(Number)
   .pipe(z.number().finite());
 
+/**
+ * Non-money decimals (variant dimensions) have the SAME wire reality as money:
+ * shopspring/decimal quotes them, so they arrive as "30.5" not 30. Aliased
+ * rather than duplicated — the parsing rules are identical, only the meaning
+ * differs, and `money.length_cm` would read as nonsense.
+ */
+export const decimalNumber = money;
+
 /** Every paginated list endpoint returns this meta block. */
 export const pageMeta = z.object({
   page: z.number(),

@@ -1,4 +1,4 @@
-import { productSchema, productListSchema } from "@repo/mobile-shared/api/schemas/products";
+import { productSchema, productListSchema, productVariantSchema } from "@repo/mobile-shared/api/schemas/products";
 
 // A verbatim product from prod (2026-07-16), trimmed to the fields that matter.
 const REAL_PRODUCT = {
@@ -121,5 +121,57 @@ describe("productSchema", () => {
       option_value_id: "optval-s",
       value: "Small",
     });
+  });
+});
+
+describe("productVariantSchema — shipping fields", () => {
+  const BASE = {
+    id: "3eabedcb",
+    sku: "TBS-PBLR-XS-S",
+    price: "199",
+    currency_code: "AUD",
+    inventory_quantity: 0,
+    inventory_policy: "deny",
+    option_values: [],
+    position: 0,
+  };
+
+  it("parses quoted decimal dimensions into numbers", () => {
+    const parsed = productVariantSchema.parse({
+      ...BASE,
+      weight_grams: 450,
+      length_cm: "30.5",
+      width_cm: "20",
+      height_cm: "10.25",
+    });
+    expect(parsed.weight_grams).toBe(450);
+    expect(parsed.length_cm).toBe(30.5);
+    expect(parsed.width_cm).toBe(20);
+    expect(parsed.height_cm).toBe(10.25);
+  });
+
+  it("treats omitted shipping fields as absent, not null (Go omitempty)", () => {
+    const parsed = productVariantSchema.parse(BASE);
+    expect(parsed.weight_grams).toBeUndefined();
+    expect(parsed.length_cm).toBeUndefined();
+    expect(parsed.barcode).toBeUndefined();
+    expect(parsed.cost_price).toBeUndefined();
+    expect(parsed.low_stock_threshold).toBeUndefined();
+  });
+
+  it("parses barcode, cost_price and low_stock_threshold", () => {
+    const parsed = productVariantSchema.parse({
+      ...BASE,
+      barcode: "9310779300005",
+      cost_price: "88.40",
+      low_stock_threshold: 5,
+    });
+    expect(parsed.barcode).toBe("9310779300005");
+    expect(parsed.cost_price).toBe(88.4);
+    expect(parsed.low_stock_threshold).toBe(5);
+  });
+
+  it("rejects an empty-string dimension rather than silently reading it as 0", () => {
+    expect(() => productVariantSchema.parse({ ...BASE, length_cm: "" })).toThrow();
   });
 });

@@ -2,9 +2,13 @@ import type { createApiClient } from "./client";
 import {
   productDetailSchema,
   productListSchema,
+  productMediaSchema,
+  mediaUploadUrlSchema,
   type Product,
   type ProductDetail,
   type ProductListResponse,
+  type ProductMedia,
+  type MediaUploadUrl,
 } from "./schemas/products";
 
 export interface ListProductsParams {
@@ -50,6 +54,27 @@ export interface UpdateVariantBody {
   inventory_quantity?: number;
 }
 
+/** Request body for `POST /products/{id}/media/upload-url`. */
+export interface CreateMediaUploadUrlBody {
+  content_hash: string;
+  filename: string;
+  content_type: string;
+}
+
+/**
+ * Request body for `POST /products/{id}/media`. `url` must be the raw
+ * `storage_key` — the backend builds the public CDN URL itself and ignores
+ * whatever else is sent here (`service_single_media.go:91-97`). Never send a
+ * CDN URL in this field.
+ */
+export interface CreateMediaBody {
+  storage_key: string;
+  url: string;
+  position: number;
+  media_type?: string;
+  alt?: string;
+}
+
 export function createProductsApi(client: ReturnType<typeof createApiClient>) {
   return {
     list: (params?: ListProductsParams) =>
@@ -72,7 +97,15 @@ export function createProductsApi(client: ReturnType<typeof createApiClient>) {
       client.patch(`/products/${productId}/variants/${variantId}`, body),
     deleteMedia: (productId: string, mediaId: string) =>
       client.delete(`/products/${productId}/media/${mediaId}`),
+    createMediaUploadUrl: (productId: string, body: CreateMediaUploadUrlBody) =>
+      client.post<MediaUploadUrl>(
+        `/products/${productId}/media/upload-url`,
+        body,
+        mediaUploadUrlSchema,
+      ),
+    createMedia: (productId: string, body: CreateMediaBody) =>
+      client.post<ProductMedia>(`/products/${productId}/media`, body, productMediaSchema),
   };
 }
 
-export type { Product, ProductDetail };
+export type { Product, ProductDetail, ProductMedia, MediaUploadUrl };

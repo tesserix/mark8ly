@@ -101,3 +101,16 @@ export type ProductDetail = z.infer<typeof productDetailSchema>;
 
 export const productListSchema = paginated(productSchema);
 export type ProductListResponse = z.infer<typeof productListSchema>;
+
+/**
+ * Response shape for `POST /products/{id}/media/upload-url`
+ * (`UploadURLResponse`, validation.go:68-72). The field is `url`, not
+ * `upload_url` — that alias only exists because the web admin proxies this
+ * call through a Next route that renames it.
+ */
+export const mediaUploadUrlSchema = z.object({
+  url: z.string(),
+  storage_key: z.string(),
+  expires_at: z.string(),
+});
+export type MediaUploadUrl = z.infer<typeof mediaUploadUrlSchema>;

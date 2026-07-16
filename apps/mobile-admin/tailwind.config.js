@@ -23,7 +23,10 @@ module.exports = {
         ink: {
           DEFAULT: '#0E0E0C',
           soft: '#45433E',
-          muted: '#7A766E',
+          // Was #7A766E (~4.18:1 on paper — fails WCAG AA). Aligned to
+          // lib/theme.ts textTertiary (#5C5953, ~6.45:1) so both token
+          // sources agree.
+          muted: '#5C5953',
           faint: '#A09C92',
         },
         moss: {
@@ -77,7 +80,11 @@ module.exports = {
         none: '0px',
         sm: '4px',
         DEFAULT: '6px',
-        md: '10px',
+        // Aligned to theme.ts radii.md (6px) — was 10px, colliding with the
+        // same "md" name at a different value. Zero `rounded-md` usages
+        // found in the app (grepped 2026-07-17), so safe to realign rather
+        // than just document the drift.
+        md: '6px',
         lg: '14px',
         full: '9999px',
       },

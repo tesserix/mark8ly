@@ -29,7 +29,7 @@ export function SegmentedControl<T extends string>({
             key={seg.key}
             onPress={() => onChange(seg.key)}
             activeOpacity={0.7}
-            accessibilityRole="button"
+            accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             accessibilityLabel={`Filter: ${seg.label}`}
             style={[styles.tab, active && styles.tabActive]}
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
   tab: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: 8,
-    minHeight: 36,
+    minHeight: theme.touchTarget,
     justifyContent: "center",
     borderBottomWidth: 1.5,
     borderBottomColor: "transparent",

@@ -19,8 +19,13 @@ interface StatusBadgeProps {
 const TONE: Record<StatusTone, { bg: string; fg: string; border?: string }> = {
   neutral: { bg: theme.colors.text, fg: theme.colors.inverse },
   info: { bg: theme.colors.surfaceAlt, fg: theme.colors.text, border: theme.colors.hairline },
-  success: { bg: theme.colors.accent, fg: theme.colors.inverse },
-  warning: { bg: theme.colors.warning, fg: theme.colors.inverse },
+  // Tint, not a solid accent fill — keeps the one moss accent reserved for
+  // primary actions instead of spending it on every success chip. Moss on
+  // this tint is ~8.35:1 (see fix-batch-1-report.md).
+  success: { bg: theme.colors.accentTint, fg: theme.colors.accent },
+  // Dark text on amber — white/inverse on amber was ~2.98:1 (fails AA).
+  // Ink on amber is ~5.09:1.
+  warning: { bg: theme.colors.warning, fg: theme.colors.text },
   danger: { bg: theme.colors.danger, fg: theme.colors.inverse },
   muted: { bg: "transparent", fg: theme.colors.textSecondary, border: theme.colors.hairline },
 };

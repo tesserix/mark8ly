@@ -43,14 +43,14 @@ const mono = Platform.select({
 
 const palette = {
   paper: "#F7F6F2",
-  paperWarm: "#FAFAF6",
-  bone: "#E5E4DF",
+  paperWarm: "#FAF8F2",
+  bone: "#E2DFD6",
   ink: "#0E0E0C",
-  inkSoft: "#3A3A36",
+  inkSoft: "#45433E",
   moss: "#2D4A2B",
-  mossSoft: "#3F6A3D",
-  crimson: "#8B2020",
-  amber: "#B08A30",
+  mossSoft: "#3D5F38",
+  crimson: "#8B2E20",
+  amber: "#B5751F",
   white: "#FFFFFF",
 } as const;
 
@@ -65,12 +65,18 @@ export const theme = {
 
     text: palette.ink,
     textSecondary: palette.inkSoft,
-    textTertiary: "rgba(14, 14, 12, 0.5)",
+    // Canonical --ink-500. Was rgba(14, 14, 12, 0.5) (~3.56:1 on paper —
+    // fails WCAG AA). #5C5953 clears 4.5:1 (see fix-batch-1-report.md).
+    textTertiary: "#5C5953",
+    // Decorative/placeholder only — not used as real body/label text
+    // anywhere in the app today (grepped 2026-07-17). If a future usage
+    // promotes it to real copy, it must be re-checked against AA.
     textMuted: "rgba(14, 14, 12, 0.35)",
     inverse: palette.paper,
 
     accent: palette.moss,
     accentSoft: palette.mossSoft,
+    accentTint: "#E8EEE2",
     success: palette.moss,
     warning: palette.amber,
     danger: palette.crimson,

@@ -56,7 +56,7 @@ const styles = StyleSheet.create({
     borderWidth: theme.hairline,
     borderColor: theme.colors.hairline,
     paddingHorizontal: theme.spacing.md,
-    height: 40,
+    height: theme.touchTarget,
   },
   input: {
     flex: 1,

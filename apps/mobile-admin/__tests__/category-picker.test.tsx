@@ -98,6 +98,27 @@ describe("CategoryPicker", () => {
     expect(onChange).toHaveBeenCalledWith([]);
   });
 
+  it("emits in tree render order even when the incoming selection is out of order", () => {
+    // c1 is a root, c2 its child, c3 another root → tree order is [c1, c2, c3].
+    const treeCats = [cat("c1", "Swimwear"), cat("c2", "Bikinis", "c1"), cat("c3", "Towels")];
+    const onChange = jest.fn();
+    const { getByLabelText } = render(
+      <CategoryPicker
+        categories={treeCats as never}
+        // Deliberately reversed vs. tree order. A `[...next]` (Set-insertion)
+        // impl would carry this order through and emit ["c2","c1","c3"].
+        selected={[
+          { id: "c2", name: "Bikinis", slug: "bikinis" },
+          { id: "c1", name: "Swimwear", slug: "swimwear" },
+        ]}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.press(getByLabelText("Towels"));
+    // Must be tree order, not the order ids entered the Set.
+    expect(onChange).toHaveBeenCalledWith(["c1", "c2", "c3"]);
+  });
+
   it("renders gracefully with an empty categories array", () => {
     const onChange = jest.fn();
     const { queryByRole } = render(

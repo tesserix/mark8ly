@@ -12,9 +12,14 @@ export interface CategoryNode {
 /**
  * Flattens the category tree into a render order, depth-tagged.
  *
- * Robust to bad data on purpose: a category whose parent_id points at a
- * category that doesn't exist (or at itself) is surfaced at root rather than
- * silently dropped — an invisible category is worse than an oddly-placed one.
+ * Handles two single-node bad-data cases on purpose: a category whose parent_id
+ * points at a category that doesn't exist (an orphan), or at itself (a
+ * self-reference), is surfaced at root rather than silently dropped — an
+ * invisible category is worse than an oddly-placed one. Note this is NOT
+ * general cycle safety: the members of a multi-node cycle (A→B, B→A) each have
+ * a "real" parent in the map, so none reach `roots` and none are walked — they
+ * won't appear at all. The backend's category tree can't form such cycles, so
+ * this isn't guarded; only the single self-reference is.
  */
 export function sortCategoryTree(categories: Category[]): CategoryNode[] {
   const byId = new Map(categories.map((c) => [c.id, c]));

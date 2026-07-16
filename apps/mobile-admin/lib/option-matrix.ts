@@ -88,9 +88,21 @@ export function buildOptionMatrix(
   if (desiredOptions.length === 0) {
     throw new OptionMatrixError("At least one option is required.");
   }
+  // Two options sharing a name would produce colliding tuple keys (the key is
+  // built from option_name), silently corrupting the existing→desired mapping.
+  const optionNames = new Set(desiredOptions.map((opt) => opt.name));
+  if (optionNames.size !== desiredOptions.length) {
+    throw new OptionMatrixError("Two options share a name.");
+  }
   for (const opt of desiredOptions) {
     if (opt.values.length === 0) {
       throw new OptionMatrixError(`Option "${opt.name}" needs at least one value.`);
+    }
+    // A duplicated value yields two identical tuples, both resolving to the
+    // same existing variant — the matrix would carry a real id twice and the
+    // full-desired-matrix PATCH would be corrupt. Reject before expanding.
+    if (new Set(opt.values).size !== opt.values.length) {
+      throw new OptionMatrixError(`Option "${opt.name}" has duplicate values.`);
     }
   }
 

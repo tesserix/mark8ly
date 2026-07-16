@@ -170,6 +170,24 @@ describe("buildOptionMatrix — fail loud", () => {
     );
   });
 
+  it("throws when an axis has duplicate values (would emit a duplicated existing id)", () => {
+    // Without the guard, cartesian(["S","S","M"]) yields two (S) tuples, both
+    // resolving to v1 → the matrix would carry id:"v1" TWICE, silently
+    // corrupting a full-desired-matrix PATCH. Must reject at the source.
+    expect(() =>
+      buildOptionMatrix(singleVariantProduct, [{ name: "Size", values: ["S", "S", "M"] }]),
+    ).toThrow(OptionMatrixError);
+  });
+
+  it("throws when two options share a name (duplicate tuple keys)", () => {
+    expect(() =>
+      buildOptionMatrix(singleVariantProduct, [
+        { name: "Size", values: ["S", "M"] },
+        { name: "Size", values: ["Red", "Blue"] },
+      ]),
+    ).toThrow(OptionMatrixError);
+  });
+
   it("throws when two existing variants collide onto the same desired tuple", () => {
     // Two existing variants distinguished only by an axis ("Colour") that is
     // being dropped entirely — both collapse onto Size=S.

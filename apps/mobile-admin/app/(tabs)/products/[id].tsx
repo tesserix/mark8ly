@@ -219,15 +219,14 @@ export default function ProductDetailScreen() {
 
   const handleAddMedia = useCallback(async () => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert(
-          "Permission needed",
-          "Allow photo library access in Settings to add product images.",
-        );
-        return;
-      }
-
+      // Deliberately NO requestMediaLibraryPermissionsAsync() here.
+      // launchImageLibraryAsync uses the system picker (PHPicker on iOS), which
+      // runs out-of-process and needs no library permission. Asking anyway opts
+      // into the legacy permission flow: choosing "Limited Access" drops the
+      // user into iOS's limited-library management sheet — a grid with an X and
+      // no confirm button — from which the real picker never opens. Observed on
+      // a simulator. `components/ProductMediaPicker.tsx` has always called the
+      // picker directly for the same reason.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         quality: 0.8,
@@ -261,10 +260,9 @@ export default function ProductDetailScreen() {
         },
       );
     } catch (err) {
-      // requestMediaLibraryPermissionsAsync/launchImageLibraryAsync can
-      // themselves reject (e.g. platform picker errors). onPress doesn't
-      // await this handler, so an uncaught rejection here would be a
-      // silent failure — the exact class this project exists to kill.
+      // launchImageLibraryAsync can itself reject (platform picker errors).
+      // onPress doesn't await this handler, so an uncaught rejection here
+      // would be a silent failure — the exact class this project exists to kill.
       Alert.alert("Error", getErrorMessage(err, "Failed to open the image picker."));
     }
   }, [id, product?.media.length, addMediaMutation]);

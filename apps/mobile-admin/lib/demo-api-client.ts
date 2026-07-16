@@ -4,9 +4,9 @@ import type {
   Customer,
   CustomerDetail,
   DashboardResponse,
+  Notification,
   Order,
   OrderDetail,
-  PaginatedResponse,
   Product,
   ProductDetail,
   Store,
@@ -129,14 +129,15 @@ const DEMO_DASHBOARD: DashboardResponse = {
   },
 };
 
-function page<T>(items: T[]): PaginatedResponse<T> {
-  return { items, total: items.length, next_cursor: null, has_more: false };
-}
-
 /** The real `{data, meta}` list envelope — see schema-helpers.paginated. */
 function paged<T>(items: T[]): { data: T[]; meta: { page: number; page_size: number; total: number; total_pages: number } } {
   return { data: items, meta: { page: 1, page_size: 50, total: items.length, total_pages: 1 } };
 }
+
+const DEMO_NOTIFICATIONS: Notification[] = [
+  { id: "n-1", type: "new_order", title: "New order #1001", message: "Maya Chen placed an order", resource_type: "order", resource_id: "o-1001", is_read: false, created_at: iso(0) },
+  { id: "n-2", type: "low_stock", title: "Low stock: Merino Beanie", message: "7 remaining", is_read: true, created_at: iso(2) },
+];
 
 function orderDetail(id: string): OrderDetail {
   const base = DEMO_ORDERS.find((o) => o.id === id) ?? DEMO_ORDERS[0]!;
@@ -186,9 +187,14 @@ function resolve(path: string): unknown {
   if (customerId) return customerDetail(customerId[1]!);
   if (clean === "/customers") return paged(DEMO_CUSTOMERS);
 
-  // Notifications, and any endpoint we haven't canned: safe empty page so
-  // list screens render an empty state instead of crashing.
-  return page([]);
+  if (clean === "/notifications") {
+    return { notifications: DEMO_NOTIFICATIONS, page: 1, per_page: 20, total: DEMO_NOTIFICATIONS.length };
+  }
+
+  // Any endpoint we have not canned. `paged` mirrors the real {data, meta}
+  // envelope that every list endpoint except /notifications uses, so an
+  // un-canned list renders an empty state instead of failing validation.
+  return paged([]);
 }
 
 /**

@@ -53,7 +53,7 @@ export default function MoreScreen() {
   const router = useRouter();
   const env = useEnvironment();
   const { data: notifications } = useNotifications();
-  const unreadCount = notifications?.items.filter((n) => !n.read).length ?? 0;
+  const unreadCount = notifications?.notifications.filter((n) => !n.is_read).length ?? 0;
 
   const browserUrl = env.adminWebUrl;
 

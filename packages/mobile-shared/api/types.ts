@@ -1,15 +1,11 @@
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  next_cursor: string | null;
-  has_more: boolean;
-}
-
 // Re-exported from the schema module so types can never drift from validation
 // again. The hand-written versions invented `name`/`total_sold`/`stock` and a
 // 5-field setup checklist; the wire has `title`/`units_sold`/`quantity` and 8.
-// Imported (not just re-exported) because CustomerDetail below references
-// RecentOrder locally — a bare `export type {} from` does not bind the name.
+// Imported (not just re-exported) for consistency with the Order re-export
+// pattern below. Nothing in this file references these names locally any
+// more — Task 2 deleted the hand-written CustomerDetail, the last local
+// user of RecentOrder — but the import+export pair is harmless and kept so
+// this block doesn't need special-casing relative to the rest of the file.
 import type {
   DashboardStats,
   RecentOrder,
@@ -95,15 +91,11 @@ export type {
   ProductMedia,
 } from "./schemas/products";
 
-export interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  body: string;
-  read: boolean;
-  deep_link: string | null;
-  created_at: string;
-}
+// Re-exported from the schema module so the type can never drift from
+// validation again. The hand-written version invented `body`, `read` and
+// `deep_link` — the wire sends `message` (optional), `is_read`, and
+// resource_type/resource_id; there is no deep_link anywhere in the backend.
+export type { Notification } from "./schemas/notifications";
 
 // Re-exported from the schema module so the type can never drift from the
 // validation again. Was a hand-written 3-field interface; the wire has 6.

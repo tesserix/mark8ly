@@ -34,3 +34,27 @@ export const paginated = <T extends z.ZodTypeAny>(item: T) =>
  */
 export const dataOnly = <T extends z.ZodTypeAny>(item: T) =>
   z.object({ data: z.array(item) });
+
+/**
+ * The odd envelope out: `{<key>: [...], page, per_page, total}`.
+ *
+ * Only /notifications uses it (notifications.go:85) — every other list
+ * endpoint returns `{data, meta}`. Verified live 2026-07-16:
+ * `{"notifications":[],"page":1,"per_page":20,"total":0}`.
+ *
+ * Named `legacy` because this SHOULD be normalised to `paginated` server-side
+ * one day; until then the app must not pretend the shape is something it is
+ * not. Note `per_page` here vs `page_size` in pageMeta — also inconsistent,
+ * also real.
+ */
+export const legacyPaged = <K extends string, T extends z.ZodTypeAny>(key: K, item: T) =>
+  z.object({
+    [key]: z.array(item),
+    page: z.number(),
+    per_page: z.number(),
+    total: z.number(),
+  } as { [P in K]: z.ZodArray<T> } & {
+    page: z.ZodNumber;
+    per_page: z.ZodNumber;
+    total: z.ZodNumber;
+  });

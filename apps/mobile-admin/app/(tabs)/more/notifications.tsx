@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
-import { useRouter } from "expo-router";
 import { useNotifications, useMarkAllRead } from "../../../lib/hooks/use-notifications";
 import {
   BackHeader,
@@ -19,11 +18,18 @@ import {
 import { theme } from "@/lib/theme";
 import type { Notification } from "@repo/mobile-shared/api/types";
 
+// Real values from notification/models.go:16-30. The previous map used
+// order/payment/alert/system, which match NOTHING the backend emits, so every
+// notification silently fell through to the default colour.
 const TYPE_DOT: Record<string, string> = {
-  order: theme.colors.accent,
-  payment: theme.colors.warning,
-  alert: theme.colors.danger,
-  system: theme.colors.text,
+  new_order: theme.colors.accent,
+  order_fulfilled: theme.colors.accent,
+  order_cancelled: theme.colors.danger,
+  payment_received: theme.colors.warning,
+  low_stock: theme.colors.warning,
+  return_requested: theme.colors.warning,
+  review_submitted: theme.colors.text,
+  system_alert: theme.colors.danger,
 };
 
 function formatRelativeTime(dateString: string): string {
@@ -48,7 +54,8 @@ function NotificationItem({
   onPress: (n: Notification) => void;
 }) {
   const dotColor = TYPE_DOT[notification.type] ?? theme.colors.text;
-  const isUnread = !notification.read;
+  const isUnread = !notification.is_read;
+  const message = notification.message ?? "";
 
   return (
     <TouchableOpacity
@@ -56,7 +63,7 @@ function NotificationItem({
       onPress={() => onPress(notification)}
       activeOpacity={0.6}
       accessibilityRole="button"
-      accessibilityLabel={`${notification.title}, ${notification.body}, ${isUnread ? "unread" : "read"}`}
+      accessibilityLabel={`${notification.title}, ${message}, ${isUnread ? "unread" : "read"}`}
     >
       {isUnread ? <View style={[styles.unreadBar, { backgroundColor: dotColor }]} /> : null}
       <View style={[styles.dot, { backgroundColor: dotColor }]} />
@@ -70,7 +77,7 @@ function NotificationItem({
           {notification.title}
         </Text>
         <Text preset="caption" color="textSecondary" numberOfLines={2} style={styles.body}>
-          {notification.body}
+          {message}
         </Text>
         <Text preset="caption" color="textTertiary">
           {formatRelativeTime(notification.created_at)}
@@ -81,18 +88,16 @@ function NotificationItem({
 }
 
 export default function NotificationsScreen() {
-  const router = useRouter();
   const { data, isLoading, isRefetching, refetch } = useNotifications();
   const markAllRead = useMarkAllRead();
 
-  const hasUnread = data?.items.some((n) => !n.read) ?? false;
+  const hasUnread = data?.notifications.some((n) => !n.is_read) ?? false;
 
-  const handlePress = useCallback(
-    (notification: Notification) => {
-      if (notification.deep_link) router.push(notification.deep_link as never);
-    },
-    [router],
-  );
+  // The wire has no deep_link — it sends resource_type/resource_id instead.
+  // Mapping those to routes would be pure guesswork: the endpoint is empty in
+  // prod, so no real notification has ever been observed. Deferred until there
+  // is data to verify against.
+  const handlePress = useCallback((_notification: Notification) => {}, []);
 
   return (
     <Screen>
@@ -124,7 +129,7 @@ export default function NotificationsScreen() {
         </View>
       ) : (
         <FlatList
-          data={data?.items ?? []}
+          data={data?.notifications ?? []}
           renderItem={({ item }) => <NotificationItem notification={item} onPress={handlePress} />}
           keyExtractor={(item) => item.id}
           ItemSeparatorComponent={() => <Hairline />}

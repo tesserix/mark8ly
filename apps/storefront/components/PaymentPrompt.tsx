@@ -63,19 +63,23 @@ function loadRazorpay(): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false);
   if (window.Razorpay) return Promise.resolve(true);
   return new Promise((resolve) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      `script[src="${RZP_SCRIPT}"]`,
-    );
-    if (existing) {
-      existing.addEventListener("load", () => resolve(!!window.Razorpay));
-      existing.addEventListener("error", () => resolve(false));
-      return;
-    }
+    // A previously-injected tag that already failed (CSP block, offline,
+    // adblock) has ALREADY fired its load/error event. Attaching fresh
+    // listeners to it would wait for an event that can never come again,
+    // leaving the button on "Opening…" forever with no error — so drop
+    // the dead tag and retry from scratch instead.
+    document
+      .querySelectorAll<HTMLScriptElement>(`script[src="${RZP_SCRIPT}"]`)
+      .forEach((tag) => tag.remove());
+
     const s = document.createElement("script");
     s.src = RZP_SCRIPT;
     s.async = true;
     s.onload = () => resolve(!!window.Razorpay);
-    s.onerror = () => resolve(false);
+    s.onerror = () => {
+      s.remove();
+      resolve(false);
+    };
     document.head.appendChild(s);
   });
 }
@@ -145,7 +149,7 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
     }
 
     const amountPaise = Math.round(Number.parseFloat(pending.amount) * 100);
-    const rzp = new window.Razorpay({
+    const rzpOptions = {
       key: pending.publicKey,
       amount: amountPaise,
       currency: pending.currencyCode,
@@ -194,8 +198,21 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
         ondismiss: () => setBusy(false),
       },
       theme: { color: resolveAccentHex() },
-    });
-    rzp.open();
+    };
+
+    try {
+      new window.Razorpay(rzpOptions).open();
+    } catch (e) {
+      // Without this the throw escapes the async handler, `busy` is never
+      // cleared, and the button stays on "Opening…" with nothing to
+      // explain why.
+      setError(
+        e instanceof Error
+          ? `Could not open the payment window: ${e.message}`
+          : "Could not open the payment window. Please try again.",
+      );
+      setBusy(false);
+    }
   }
 
   return (

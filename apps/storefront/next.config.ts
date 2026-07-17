@@ -49,13 +49,20 @@ const nextConfig: NextConfig = {
             // Google sign-in, so GSI is not loaded here directly. The
             // allowlist is kept in sync with admin + onboarding so any
             // future inline use (e.g. one-tap on storefront) is unblocked.
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client",
+            // checkout.razorpay.com serves the Razorpay checkout SDK that
+            // components/PaymentPrompt.tsx injects. Without it the script
+            // is blocked and "Pay now" can never open — every INR order
+            // stays stuck at "reserved, awaiting payment".
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://checkout.razorpay.com",
             "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data:",
             "connect-src 'self' https: wss:",
             "frame-ancestors 'self'",
-            "frame-src 'self' https://accounts.google.com/gsi/",
+            // Razorpay renders its checkout modal (and the bank/UPI
+            // redirect flows) in iframes from api.razorpay.com — allowing
+            // only the script leaves the modal blank.
+            "frame-src 'self' https://accounts.google.com/gsi/ https://api.razorpay.com https://checkout.razorpay.com",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",

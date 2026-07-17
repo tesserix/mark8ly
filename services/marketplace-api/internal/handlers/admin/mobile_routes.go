@@ -93,6 +93,10 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 			cats := storeRoute.Group("/categories")
 			{
 				cats.GET("", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff), deps.CategoryHandler.List)
+				// Create mirrors the web admin route (RoleAdmin) so merchants can
+				// add a category from the mobile picker. Reuses the same handler,
+				// DTO, and service as POST /api/v1/admin/stores/:storeId/categories.
+				cats.POST("", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.CategoryHandler.Create)
 			}
 		}
 

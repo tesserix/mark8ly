@@ -8,19 +8,13 @@ import {
   StyleSheet,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useCustomer } from "../../../lib/hooks/use-customers";
 import { useBlockCustomer, useUnblockCustomer } from "../../../lib/admin-api/customer-actions";
 import { BackHeader, Hairline, Screen, StatusBadge, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { formatMoney } from "@/lib/money";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
 
 function formatDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString("en-US", {
@@ -70,6 +64,7 @@ export default function CustomerDetailScreen() {
   const dockPad = useDockClearance();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: customer, isLoading, error } = useCustomer(id);
+  const currencyCode = useTenantStore((s) => s.activeStore?.currency_code);
 
   const blockMutation = useBlockCustomer();
   const unblockMutation = useUnblockCustomer();
@@ -169,8 +164,8 @@ export default function CustomerDetailScreen() {
         <Hairline style={styles.statsRule} />
         <View style={styles.statsRow}>
           <StatTile label="Orders" value={String(customer.order_count)} />
-          <StatTile label="Spent" value={formatCurrency(customer.total_spent)} divider />
-          <StatTile label="Avg" value={formatCurrency(averageOrderValue)} divider />
+          <StatTile label="Spent" value={formatMoney(customer.total_spent, currencyCode)} divider />
+          <StatTile label="Avg" value={formatMoney(averageOrderValue, currencyCode)} divider />
         </View>
 
         <View style={styles.actions}>

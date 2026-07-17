@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
+import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useCustomers } from "../../../lib/hooks/use-customers";
 import { CustomerRow } from "../../../components/CustomerRow";
 import {
@@ -36,6 +37,7 @@ export default function CustomersScreen() {
   const reduceMotion = useReducedMotion();
   const [searchText, setSearchText] = useState("");
   const debouncedSearch = useDebounce(searchText, 300);
+  const currencyCode = useTenantStore((s) => s.activeStore?.currency_code);
 
   const { data, isLoading, isRefetching, refetch } = useCustomers(
     debouncedSearch || undefined,
@@ -47,8 +49,10 @@ export default function CustomersScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: Customer }) => <CustomerRow customer={item} onPress={handlePress} />,
-    [handlePress],
+    ({ item }: { item: Customer }) => (
+      <CustomerRow customer={item} onPress={handlePress} currencyCode={currencyCode} />
+    ),
+    [handlePress, currencyCode],
   );
 
   return (

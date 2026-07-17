@@ -1,19 +1,14 @@
 import { View, TouchableOpacity, StyleSheet } from "react-native";
 import { Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { formatMoney } from "@/lib/money";
 import type { Customer } from "@repo/mobile-shared/api/types";
 
 interface CustomerRowProps {
   customer: Customer;
   onPress: (customer: Customer) => void;
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
+  /** The active store's currency code (e.g. "AUD"); undefined falls back to a plain amount. */
+  currencyCode?: string;
 }
 
 function getInitial(customer: Customer): string {
@@ -28,15 +23,16 @@ function getDisplayName(customer: Customer): string {
   return customer.email;
 }
 
-export function CustomerRow({ customer, onPress }: CustomerRowProps) {
+export function CustomerRow({ customer, onPress, currencyCode }: CustomerRowProps) {
   const displayName = getDisplayName(customer);
+  const spent = formatMoney(customer.total_spent, currencyCode);
   return (
     <TouchableOpacity
       style={styles.container}
       onPress={() => onPress(customer)}
       activeOpacity={0.6}
       accessibilityRole="button"
-      accessibilityLabel={`${displayName}, ${customer.email}, ${customer.order_count} orders, ${formatCurrency(customer.total_spent)} spent`}
+      accessibilityLabel={`${displayName}, ${customer.email}, ${customer.order_count} orders, ${spent} spent`}
     >
       <View style={styles.avatar}>
         <Text preset="bodyEmphasis" color="text">
@@ -53,7 +49,7 @@ export function CustomerRow({ customer, onPress }: CustomerRowProps) {
       </View>
       <View style={styles.stats}>
         <Text preset="bodyEmphasis" color="text">
-          {formatCurrency(customer.total_spent)}
+          {spent}
         </Text>
         <Text preset="caption" color="textTertiary">
           {customer.order_count} {customer.order_count === 1 ? "order" : "orders"}

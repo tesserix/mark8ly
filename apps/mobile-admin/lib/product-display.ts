@@ -1,5 +1,9 @@
 import type { Product, ProductVariant } from "@repo/mobile-shared/api/types";
 
+// formatMoney lives in ./money (shared with the customers screens); re-exported
+// here so existing product-screen imports keep resolving through product-display.
+export { formatMoney } from "./money";
+
 /**
  * Variant/media picking, in one place so `variants[0]` never scatters across
  * screens — and because `variants[0]` is WRONG.
@@ -45,18 +49,3 @@ export function productThumb(product: Product): string | undefined {
   return [...product.media].sort((a, b) => a.position - b.position)[0]!.url;
 }
 
-/**
- * Formats money in the currency the wire actually reported. Every price in
- * this app used to render as USD via a hardcoded Intl option, while the store
- * is AUD and every variant carries currency_code: "AUD".
- */
-export function formatMoney(amount: number, currencyCode?: string): string {
-  if (!currencyCode) {
-    return new Intl.NumberFormat("en-AU", { minimumFractionDigits: 2 }).format(amount);
-  }
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: currencyCode,
-    minimumFractionDigits: 2,
-  }).format(amount);
-}

@@ -242,13 +242,18 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     }
   }
 
-  const canSubmit = slugAvailability.state === "available" && !pending && !screenshotUploading;
+  // Only disable while genuinely busy. Gating the button on slug
+  // availability left a mystery-disabled submit on first load (NN/g:
+  // disabled buttons must explain themselves) — instead, submitting
+  // with an unavailable slug surfaces the error and focuses the field.
+  const canSubmit = !pending && !screenshotUploading;
 
   function onValid(values: FormValues) {
     setSubmitError(null);
 
     if (slugAvailability.state !== "available") {
       setSubmitError("Please pick an available store URL.");
+      document.getElementById("slug")?.focus();
       return;
     }
 
@@ -498,9 +503,18 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
             </span>
           </label>
 
-          {isMigrating && (
+          {/* Always mounted; grid-rows 0fr→1fr glides the evidence panel
+              open instead of jump-cutting it into the layout. */}
+          <div
+            className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+              isMigrating ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+            }`}
+            inert={!isMigrating || undefined}
+            aria-hidden={!isMigrating}
+          >
+            <div className="overflow-hidden">
             <div
-              className="mt-3 space-y-4 border-l-2 border-moss-200 pl-4"
+              className="mt-3 space-y-4 border-l-2 border-moss-200 pl-4 pb-1"
               data-testid="migration-evidence-panel"
             >
               {/* WHOIS URL */}
@@ -578,7 +592,8 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
                 </p>
               )}
             </div>
-          )}
+            </div>
+          </div>
         </fieldset>
 
         {/* Server-level submit error */}

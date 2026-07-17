@@ -22,6 +22,24 @@ export default function WelcomePage() {
       description="You&rsquo;re signed in. Step into the admin dashboard to add your first product, shape your storefront, and confirm your settings."
     >
       <div className="border-t border-border-subtle pt-10">
+        {/* Head start — same 20% the admin checklist opens with, so the
+            momentum promise carries across apps without a reset to zero. */}
+        <div className="mb-10 max-w-md">
+          <div className="flex items-baseline justify-between">
+            <p className="eyebrow">Store setup</p>
+            <p className="font-serif text-xl font-medium text-moss-700 tabular-nums">
+              20%
+            </p>
+          </div>
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-ink-900/10">
+            <div className="h-full w-1/5 rounded-full bg-moss-700 motion-safe:animate-[fadeInUp_0.6s_ease-out_both]" />
+          </div>
+          <p className="mt-3 text-sm text-foreground-secondary">
+            Creating your store already completed the first steps. Finish the
+            checklist in your admin to go live.
+          </p>
+        </div>
+
         <WelcomeCta />
 
         <dl className="mt-16 grid gap-10 border-t border-border-subtle pt-10 sm:grid-cols-2">

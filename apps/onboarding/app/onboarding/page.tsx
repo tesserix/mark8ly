@@ -43,7 +43,10 @@ export default async function OnboardingPage() {
         </div>
       </header>
 
-      <main id="main" className="flex-1">
+      <main
+        id="main"
+        className="flex-1 motion-safe:animate-[fadeInUp_0.35s_ease-out_both]"
+      >
         <div className="mx-auto grid max-w-6xl gap-12 px-6 pb-20 pt-16 sm:pt-20 lg:grid-cols-[1fr_1.2fr] lg:gap-16">
           <section>
             <p className="eyebrow mb-5">Open your store</p>

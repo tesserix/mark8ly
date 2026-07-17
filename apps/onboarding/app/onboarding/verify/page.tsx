@@ -15,6 +15,7 @@ export const metadata = {
 export default function VerifyPage() {
   return (
     <PostSubmitShell
+      step={2}
       eyebrow="Verification in progress"
       title="We’re preparing your workspace."
       description="We&apos;re confirming your email and moving your session forward. This usually takes a moment."

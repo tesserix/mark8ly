@@ -125,6 +125,13 @@ type dlShipmentEntry struct {
 type dlCreateResponse struct {
 	UploadWBN string      `json:"upload_wbn"`
 	Packages  []dlPackage `json:"packages"`
+	// Rmk carries the failure reason when Delhivery rejects the request
+	// outright and returns NO packages at all — e.g.
+	// {"rmk":"ClientWarehouse matching query does not exist.","packages":[]}.
+	// Without parsing it the only signal left is an empty slice, and the
+	// operator gets a raw body dump instead of the actual reason.
+	Rmk   string `json:"rmk"`
+	Error bool   `json:"error"`
 }
 
 type dlPackage struct {
@@ -286,6 +293,16 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 			err, truncate(string(bodyBytes), 400))
 	}
 	if len(cr.Packages) == 0 {
+		// Delhivery reports a whole-request rejection as a top-level rmk with
+		// packages:[] — the "ClientWarehouse matching query does not exist"
+		// case lands here. Route it through the classifier so the operator
+		// gets the remediation rather than a truncated body dump; the
+		// classifier's warehouse branch existed but was unreachable, because
+		// this early return sits above the per-package one.
+		if remark := strings.TrimSpace(cr.Rmk); remark != "" {
+			return nil, classifyDelhiveryCreateError(remark, in.FromAddress.Name,
+				in.FromAddress.PostalCode, in.ToAddress.PostalCode, false)
+		}
 		return nil, fmt.Errorf("delhivery: create shipment: empty packages (body=%s)",
 			truncate(string(bodyBytes), 400))
 	}

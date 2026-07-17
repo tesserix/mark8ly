@@ -9,11 +9,22 @@ import (
 	"gorm.io/gorm"
 )
 
+// PushPublisher publishes a device-push event for a merchant notification, so
+// the store's admin devices get a banner in addition to the in-app entry.
+// Optional — a nil publisher leaves notifications in-app only. Implemented by
+// pushevents.Publisher.
+type PushPublisher interface {
+	PublishPush(ctx context.Context, storeID uuid.UUID, notifType, title, body, deepLink string)
+}
+
 // ServiceConfig groups dependencies for the notification service.
 type ServiceConfig struct {
 	DB     *gorm.DB
 	Repo   Repository
 	Logger *slog.Logger
+	// Pusher, when set, receives every successfully-created merchant
+	// notification and fans it out to the store's admin devices. Nil-safe.
+	Pusher PushPublisher
 }
 
 // Service implements notification CRUD and preference management.
@@ -21,6 +32,7 @@ type Service struct {
 	db     *gorm.DB
 	repo   Repository
 	logger *slog.Logger
+	pusher PushPublisher
 }
 
 // NewService constructs a notification Service.
@@ -29,6 +41,7 @@ func NewService(cfg ServiceConfig) *Service {
 		db:     cfg.DB,
 		repo:   cfg.Repo,
 		logger: cfg.Logger,
+		pusher: cfg.Pusher,
 	}
 }
 
@@ -78,7 +91,11 @@ func (s *Service) MarkAllReadForCustomer(ctx context.Context, storeID uuid.UUID,
 // for non-toggleable types like system_alert. Feature code should prefer
 // CreateIfEnabled so merchant preferences are honored.
 func (s *Service) Create(ctx context.Context, n *Notification) error {
-	return s.repo.Create(ctx, s.db, n)
+	if err := s.repo.Create(ctx, s.db, n); err != nil {
+		return err
+	}
+	s.emitPush(ctx, n)
+	return nil
 }
 
 // CreateIfEnabled inserts a notification only when the store's preferences
@@ -95,7 +112,40 @@ func (s *Service) CreateIfEnabled(ctx context.Context, n *Notification) (bool, e
 	if err := s.repo.Create(ctx, s.db, n); err != nil {
 		return false, err
 	}
+	s.emitPush(ctx, n)
 	return true, nil
+}
+
+// emitPush fans a freshly-created MERCHANT notification out to the store's
+// admin devices. Customer (storefront) notifications carry a recipient and
+// are never pushed to admins. Nil-safe on the publisher.
+func (s *Service) emitPush(ctx context.Context, n *Notification) {
+	if s.pusher == nil || n.RecipientUserID != nil {
+		return
+	}
+	body := ""
+	if n.Message != nil {
+		body = *n.Message
+	}
+	s.pusher.PublishPush(ctx, n.StoreID, string(n.Type), n.Title, body, pushDeepLink(n))
+}
+
+// pushDeepLink maps a notification's resource to a mobile-admin route the push
+// tap can open. Unknown/absent resources yield "" (tap just opens the app).
+func pushDeepLink(n *Notification) string {
+	if n.ResourceType == nil || n.ResourceID == nil {
+		return ""
+	}
+	switch *n.ResourceType {
+	case "order", "return":
+		return "/orders/" + n.ResourceID.String()
+	case "product":
+		return "/products/" + n.ResourceID.String()
+	case "review":
+		return "/reviews/" + n.ResourceID.String()
+	default:
+		return ""
+	}
 }
 
 // uiPreferenceDefaults mirrors DEFAULT_PREFS in

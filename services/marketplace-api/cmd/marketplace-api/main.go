@@ -95,6 +95,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/promo"
 	"github.com/mark8ly/marketplace-api/internal/push"
+	"github.com/mark8ly/marketplace-api/internal/pushevents"
 	"github.com/mark8ly/marketplace-api/internal/refund"
 	"github.com/mark8ly/marketplace-api/internal/review"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
@@ -476,10 +477,26 @@ func main() {
 	// storefront modes can share a single service instance: storefront
 	// checkout + review submission emit merchant notifications via this
 	// service, while admin exposes the CRUD endpoints.
+	// Merchant device push (mobile-admin): every in-app notification also
+	// fans out to the store's admin devices. Publishing to Pub/Sub keeps the
+	// notification write decoupled from push delivery. Disabled (in-app only)
+	// when project/topic are unset. Typed-nil trap avoided by keeping a real
+	// nil interface until a publisher is actually built.
+	var pushPublisher notification.PushPublisher
+	if cfg.GCPProjectID != "" && cfg.PushEventsTopic != "" {
+		if pub, err := pushevents.NewPublisher(context.Background(), cfg.GCPProjectID, cfg.PushEventsTopic, log); err != nil {
+			log.Error("push events publisher init failed; merchant push disabled", "error", err)
+		} else {
+			pushPublisher = pub
+			defer pub.Close()
+		}
+	}
+
 	notificationSvc := notification.NewService(notification.ServiceConfig{
 		DB:     conn,
 		Repo:   notification.NewRepository(),
 		Logger: log,
+		Pusher: pushPublisher,
 	})
 
 	// Shared outbound email transport — every mailer below (ticket,
@@ -1012,6 +1029,7 @@ func main() {
 	// Mobile admin deps — Bearer auth for external mobile clients.
 	var mobileDeps admin.MobileDeps
 	var pushWebhookHandler gin.HandlerFunc
+	var pubsubPushHandler gin.HandlerFunc
 	if m == mode.Admin || m == mode.Both {
 		var tokenVerifier auth.TokenVerifier
 		if cfg.GIPProjectID != "" {
@@ -1033,6 +1051,16 @@ func main() {
 		pushTokenHandler := admin.NewPushTokenHandler(pushRepo, log)
 		pushSender := push.NewSender(&http.Client{Timeout: 10 * time.Second})
 		pushWebhookHandler = push.NewWebhookHandler(pushSender, pushRepo, log)
+		// Public, OIDC-authenticated Pub/Sub push delivery. Mounted at
+		// /pubsub/merchant-push (see route registration). Safe to expose:
+		// it verifies the caller is our push subscription before any work.
+		pubsubPushHandler = push.NewPubsubPushHandler(push.PubsubPushConfig{
+			Sender:         pushSender,
+			Repo:           pushRepo,
+			Logger:         log,
+			Audience:       cfg.PushOIDCAudience,
+			ServiceAccount: cfg.PushOIDCServiceAccount,
+		})
 
 		// Team management proxies platform-api's internal team endpoints.
 		// Reuses the SAME platform client config as the storefront store
@@ -1803,6 +1831,10 @@ func main() {
 		if pushWebhookHandler != nil {
 			r.POST("/internal/push-webhook", pushWebhookHandler)
 		}
+		if pubsubPushHandler != nil {
+			// Public path (OIDC-verified in-handler) — Pub/Sub push delivery.
+			r.POST("/pubsub/merchant-push", pubsubPushHandler)
+		}
 		if vendorHandler != nil {
 			vendorHandler.RegisterRoutes(r.Group("/internal"))
 		}
@@ -1867,6 +1899,10 @@ func main() {
 			}
 			if pushWebhookHandler != nil {
 				engine.POST("/internal/push-webhook", pushWebhookHandler)
+			}
+			if pubsubPushHandler != nil {
+				// Public path (OIDC-verified in-handler) — Pub/Sub push delivery.
+				engine.POST("/pubsub/merchant-push", pubsubPushHandler)
 			}
 			if vendorHandler != nil {
 				vendorHandler.RegisterRoutes(engine.Group("/internal"))

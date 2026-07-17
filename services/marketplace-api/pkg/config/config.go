@@ -200,6 +200,24 @@ type Config struct {
 	// clusters that share the same GCP project by scoping IAM
 	// bindings via resource.name.startsWith.
 	SecretNamePrefix string `envconfig:"SECRET_NAME_PREFIX" default:"mark8ly-dev"`
+
+	// --- Merchant device push (mobile-admin) ---
+	// PushEventsTopic is the Pub/Sub topic merchant notifications are
+	// published to; a push subscription delivers them to the OIDC-gated
+	// /pubsub/merchant-push endpoint, which fans out to the store's admin
+	// devices via the Expo Push API. Empty disables publishing (the
+	// notification stays in-app only).
+	PushEventsTopic string `envconfig:"MARKETPLACE_PUSH_TOPIC" default:""`
+	// PushOIDCAudience is the audience claim the push subscription stamps
+	// on its OIDC token (typically the public endpoint URL). The handler
+	// rejects any token whose aud differs. Empty disables verification —
+	// only acceptable for local/dev, never prod.
+	PushOIDCAudience string `envconfig:"PUSH_OIDC_AUDIENCE" default:""`
+	// PushOIDCServiceAccount is the service-account email the push
+	// subscription authenticates as. The handler rejects tokens whose
+	// email claim differs, so only our subscription can invoke the
+	// endpoint. Empty disables the email check.
+	PushOIDCServiceAccount string `envconfig:"PUSH_OIDC_SERVICE_ACCOUNT" default:""`
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

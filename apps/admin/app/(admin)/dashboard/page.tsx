@@ -136,12 +136,25 @@ function DashboardContent({
               label="Revenue today"
               value={formatCurrency(stats.revenue_today, currencyCode)}
               changePercent={stats.revenue_change_pct}
-              sparkline={<RevenueSparkline data={stats.revenue_trend} />}
+              sparkline={
+                <RevenueSparkline
+                  data={stats.revenue_trend}
+                  currencyCode={currencyCode}
+                />
+              }
             />
+            {/* Subtitle shows the actionable all-time backlog, not a
+                today-scoped breakdown — "2 pending / 1 fulfilled" under a
+                "6 today" headline read as contradictory arithmetic. */}
             <StatCard
               label="Orders today"
               value={String(stats.orders_today)}
-              subtitle={`${stats.orders_pending} pending / ${stats.orders_fulfilled} fulfilled`}
+              subtitle={
+                stats.orders_pending > 0
+                  ? `${stats.orders_pending} awaiting fulfillment`
+                  : undefined
+              }
+              href="/orders?status=pending"
             />
             <StatCard
               label="Total customers"

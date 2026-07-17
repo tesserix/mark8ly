@@ -25,33 +25,38 @@ export function StatCard({
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-tertiary">
         {label}
       </p>
-      <div className="mt-3 flex items-end justify-between gap-4">
-        <div className="space-y-1">
-          <p className="font-serif text-4xl font-medium tabular-nums text-foreground">
-            {value}
-          </p>
-          <div className="flex items-center gap-2">
-            {changePercent !== undefined && changePercent !== 0 && (
-              <span
-                className={`text-xs font-medium ${
-                  changePercent > 0
-                    ? "text-[color:var(--moss-700)]"
-                    : "text-[color:var(--signal)]"
-                }`}
-              >
-                {changePercent > 0 ? "+" : ""}
-                {changePercent.toFixed(1)}%
-              </span>
-            )}
-            {subtitle && (
-              <span className="text-xs text-foreground-secondary">
-                {subtitle}
-              </span>
-            )}
-          </div>
+      <div className="mt-3 space-y-1">
+        <p className="font-serif text-4xl font-medium tabular-nums text-foreground">
+          {value}
+        </p>
+        <div className="flex items-center gap-2">
+          {changePercent !== undefined && changePercent !== 0 && (
+            <span
+              className={`text-xs font-medium ${
+                changePercent > 0
+                  ? "text-[color:var(--moss-700)]"
+                  : "text-[color:var(--signal)]"
+              }`}
+            >
+              {changePercent > 0 ? "+" : ""}
+              {changePercent.toFixed(1)}%
+            </span>
+          )}
+          {subtitle && (
+            <span className="text-xs text-foreground-secondary">
+              {subtitle}
+            </span>
+          )}
         </div>
-        {sparkline && <div className="shrink-0">{sparkline}</div>}
       </div>
+      {/* Full-width under the value so the trend line reads as part of
+          THIS stat — right-aligned next to the cell edge it visually
+          attached to the neighbouring card's number. */}
+      {sparkline && (
+        <div className="mt-3" aria-hidden="true">
+          {sparkline}
+        </div>
+      )}
     </>
   );
 

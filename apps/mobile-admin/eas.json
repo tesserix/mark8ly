@@ -22,9 +22,10 @@
       "android": { "buildType": "apk" },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "",
-        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": ""
+        "GIP_TENANT_ID": "MP-Internal-e986p",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a"
       }
     },
     "preview": {
@@ -33,9 +34,30 @@
       "ios": { "resourceClass": "m-medium" },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "",
-        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": ""
+        "GIP_TENANT_ID": "MP-Internal-e986p",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "ios": { "resourceClass": "m-medium" },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
+        "GIP_TENANT_ID": "MP-Internal-e986p",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleTeamId": "2CRHRRYBPL",
+        "ascAppId": "REPLACE_WITH_MARK8LY_ADMIN_ASC_APP_ID"
       }
     }
   }

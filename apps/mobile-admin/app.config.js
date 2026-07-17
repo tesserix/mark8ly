@@ -20,6 +20,10 @@ const PRODUCTION = {
 module.exports = {
   expo: {
     name: PRODUCTION.name,
+    // Expo account that owns the EAS project — same org as the Home-Chef
+    // apps, so `eas login` / credentials are shared. `eas init` creates the
+    // mark8ly-admin project under this org and fills extra.eas.projectId.
+    owner: 'tesserix-org',
     slug: 'mark8ly-admin',
     scheme: 'mark8ly-admin',
     version: '1.0.0',

@@ -6,7 +6,8 @@
 // product detail page. Receives product + variant data as props from
 // the server component. On click, calls useCart().add().
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
+import Link from "next/link";
 import { useCart } from "./CartProvider";
 import type { CartItemTaxCategory } from "@/lib/cart";
 
@@ -53,19 +54,15 @@ export function AddToCartButton({
   widthCm,
   heightCm,
 }: AddToCartButtonProps) {
-  const { add } = useCart();
-  const [justAdded, setJustAdded] = useState(false);
-  // Track the "Added ✓" revert timer so rapid clicks or unmount during
-  // the 1.5s feedback window don't leak timers or stomp on fresh state.
-  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { add, items, updateQty } = useCart();
 
-  useEffect(() => {
-    return () => {
-      if (feedbackTimerRef.current !== null) {
-        clearTimeout(feedbackTimerRef.current);
-      }
-    };
-  }, []);
+  // Drive the control off real cart state rather than a transient "just
+  // added" flag: the quantity then survives navigation and matches the
+  // cart badge, instead of reverting to "Add to cart" after 1.5s and
+  // leaving the shopper unsure whether the click registered.
+  const inCart = items.find(
+    (i) => i.productId === productId && i.variantId === variantId,
+  );
 
   const handleClick = useCallback(() => {
     add({
@@ -85,17 +82,15 @@ export function AddToCartButton({
       widthCm,
       heightCm,
     });
-    setJustAdded(true);
-    if (feedbackTimerRef.current !== null) {
-      clearTimeout(feedbackTimerRef.current);
-    }
-    feedbackTimerRef.current = setTimeout(() => {
-      setJustAdded(false);
-      feedbackTimerRef.current = null;
-    }, 1500);
     // Lazy-import to keep the button dep-light on SSR.
     import("@/lib/toast").then(({ toast }) =>
-      toast({ title: `${title} added to cart`, tone: "success" }),
+      toast({
+        title: `${title} added to cart`,
+        tone: "success",
+        // Without this the shopper has to hunt for the cart in the nav —
+        // the toast is the one moment we know they want to go there.
+        action: { label: "View cart", href: "/cart" },
+      }),
     );
   }, [
     add,
@@ -139,13 +134,56 @@ export function AddToCartButton({
     );
   }
 
+  // Already in the cart → hand over a quantity stepper so the shopper can
+  // adjust in place instead of clicking "Add to cart" repeatedly and
+  // guessing how many they now have.
+  if (inCart) {
+    const setQty = (next: number) => updateQty(productId, variantId, next);
+    return (
+      <div className="mt-2 flex w-fit items-center gap-3">
+        <div className="inline-flex items-center rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15">
+          <button
+            type="button"
+            onClick={() => setQty(inCart.qty - 1)}
+            aria-label={
+              inCart.qty === 1 ? `Remove ${title} from cart` : `Decrease ${title} quantity`
+            }
+            className="px-4 py-3 text-sm leading-none transition-opacity hover:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+          >
+            −
+          </button>
+          <span
+            aria-live="polite"
+            className="min-w-[2.5rem] text-center text-sm tabular-nums"
+          >
+            {inCart.qty}
+          </span>
+          <button
+            type="button"
+            onClick={() => setQty(inCart.qty + 1)}
+            aria-label={`Increase ${title} quantity`}
+            className="px-4 py-3 text-sm leading-none transition-opacity hover:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+          >
+            +
+          </button>
+        </div>
+        <Link
+          href="/cart"
+          className="text-sm underline underline-offset-4 hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+        >
+          View cart
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={handleClick}
       className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
     >
-      {justAdded ? "Added ✓" : "Add to cart"}
+      Add to cart
     </button>
   );
 }

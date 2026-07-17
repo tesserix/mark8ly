@@ -8,12 +8,23 @@
 
 export type ToastTone = "success" | "error" | "info" | "warn";
 
+export interface ToastAction {
+  label: string;
+  href: string;
+}
+
 export interface ToastInput {
   title: string;
   description?: string;
   tone?: ToastTone;
   /** Milliseconds before auto-dismiss. Defaults to 3500. */
   duration?: number;
+  /**
+   * Optional link rendered inside the toast — e.g. "View cart" after an
+   * add-to-cart. Keep the label short; the toast is one line of chrome,
+   * not a dialog.
+   */
+  action?: ToastAction;
 }
 
 export const TOAST_EVENT = "mark8ly:toast";

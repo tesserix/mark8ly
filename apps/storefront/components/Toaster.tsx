@@ -6,6 +6,7 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { TOAST_EVENT, type ToastInput, type ToastTone } from "@/lib/toast";
 
 interface ToastRecord extends ToastInput {
@@ -88,6 +89,14 @@ export function Toaster() {
           <p className="text-sm font-medium">{t.title}</p>
           {t.description && (
             <p className="mt-1 text-xs opacity-80">{t.description}</p>
+          )}
+          {t.action && (
+            <Link
+              href={t.action.href}
+              className="mt-1.5 inline-block text-xs font-medium underline underline-offset-2 hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              {t.action.label}
+            </Link>
           )}
         </div>
       ))}

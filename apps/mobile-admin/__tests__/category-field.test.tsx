@@ -39,7 +39,7 @@ jest.mock("expo-haptics", () => ({
   selectionAsync: jest.fn(),
 }));
 
-import { render } from "@testing-library/react-native";
+import { render, fireEvent, waitFor } from "@testing-library/react-native";
 import { sortCategoryTree } from "@/components/products/CategoryPicker";
 import { filterTree } from "@/components/products/CategoryPickerSheet";
 import { CategoryField } from "@/components/products/CategoryField";
@@ -152,5 +152,41 @@ describe("CategoryField", () => {
       <CategoryField categories={[]} selected={[]} onChange={jest.fn()} error={new Error("network")} />,
     );
     expect(getByLabelText("Couldn't load categories, tap to retry")).toBeTruthy();
+  });
+});
+
+describe("CategoryField — create new category", () => {
+  it("hides the create affordance when onCreateCategory is not provided", () => {
+    const { queryByLabelText } = render(
+      <CategoryField categories={[cat("c1", "Clothes")]} selected={[]} onChange={jest.fn()} />,
+    );
+    expect(queryByLabelText("New category")).toBeNull();
+  });
+
+  it("creates, auto-selects, and APPLIES the new category even before the refetch adds it to the list", async () => {
+    const onChange = jest.fn();
+    const created = cat("new-1", "Hats");
+    const onCreateCategory = jest.fn().mockResolvedValue(created);
+
+    const { getByLabelText } = render(
+      <CategoryField
+        categories={[cat("c1", "Clothes")]}
+        selected={[]}
+        onChange={onChange}
+        onCreateCategory={onCreateCategory}
+      />,
+    );
+
+    fireEvent.press(getByLabelText("New category"));
+    fireEvent.changeText(getByLabelText("New category name"), "Hats");
+    fireEvent.press(getByLabelText("Create category"));
+
+    await waitFor(() => expect(onCreateCategory).toHaveBeenCalledWith("Hats"));
+
+    // The `categories` prop still only contains Clothes (the refetch hasn't
+    // flowed back), yet Done must apply the staged new id — proves the
+    // refetch-race drop guard in handleDone's `extras`.
+    fireEvent.press(getByLabelText("Done"));
+    expect(onChange).toHaveBeenCalledWith(expect.arrayContaining(["new-1"]));
   });
 });

@@ -43,3 +43,22 @@ export type Category = z.infer<typeof categorySchema>;
  */
 export const categoryListSchema = dataOnly(categorySchema);
 export type CategoryListResponse = z.infer<typeof categoryListSchema>;
+
+/**
+ * POST body for creating a category from the app. Only `name` is required —
+ * the backend generates the slug from the name and defaults the rest
+ * (validation.go `CreateCategoryRequest`, `binding:"required,max=200"`). Trim +
+ * length-bound so we fail fast client-side instead of on a 400.
+ */
+export const createCategoryBodySchema = z.object({
+  name: z.string().trim().min(1).max(200),
+});
+export type CreateCategoryBody = z.infer<typeof createCategoryBodySchema>;
+
+/**
+ * `POST /categories` returns the created category under `{data}`
+ * (categories.go `Create` → `gin.H{"data": ...}`) — NOT a bare object and NOT
+ * the `{data: []}` list envelope. Validate the whole response, then read `.data`.
+ */
+export const categoryCreateResponseSchema = z.object({ data: categorySchema });
+export type CategoryCreateResponse = z.infer<typeof categoryCreateResponseSchema>;

@@ -20,6 +20,7 @@ import {
   useAddProductMedia,
   useCategories,
   useUpdateMedia,
+  useCreateCategory,
 } from "../../../lib/admin-api/product-crud";
 import {
   BackHeader,
@@ -63,6 +64,7 @@ export default function ProductDetailScreen() {
   const updateVariantMutation = useUpdateVariant();
   const addMediaMutation = useAddProductMedia();
   const updateMediaMutation = useUpdateMedia();
+  const createCategory = useCreateCategory();
   const { data: categories, isLoading: categoriesLoading, error: categoriesError, refetch: refetchCategories } =
     useCategories();
 
@@ -366,6 +368,8 @@ export default function ProductDetailScreen() {
               isLoading={categoriesLoading}
               error={categoriesError}
               onRetry={refetchCategories}
+              onCreateCategory={(name) => createCategory.mutateAsync({ name }).then((res) => res.data)}
+              isCreatingCategory={createCategory.isPending}
             />
           </Card>
         </View>

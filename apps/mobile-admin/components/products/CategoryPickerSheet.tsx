@@ -1,10 +1,11 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type ComponentType } from "react";
-import { View, Pressable, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Pressable, ActivityIndicator, Alert, StyleSheet } from "react-native";
 import { BottomSheetModal, BottomSheetFlatList as GorhomBottomSheetFlatList } from "@gorhom/bottom-sheet";
 import * as Haptics from "expo-haptics";
-import { Check } from "lucide-react-native";
-import { Text, SearchField, EmptyState } from "@/components/ui";
+import { Check, Plus } from "lucide-react-native";
+import { Text, SearchField, EmptyState, FieldInput } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { ApiError } from "@repo/mobile-shared/api/client";
 import type { Category, CategoryRef } from "@repo/mobile-shared/api/schemas/categories";
 import { sortCategoryTree, type CategoryNode } from "./CategoryPicker";
 
@@ -48,13 +49,28 @@ interface CategoryPickerSheetProps {
   onApply: (ids: string[]) => void;
   /** Categories are still loading — shows a spinner instead of the tree. */
   isLoading?: boolean;
+  /**
+   * Create a new category by name; resolves to the created category, which the
+   * sheet then stages (selects) so it's part of the applied set. Absent → the
+   * "＋ New category" affordance is hidden.
+   */
+  onCreate?: (name: string) => Promise<Category>;
+  /** A create request is in flight — disables the create control + shows a spinner. */
+  isCreating?: boolean;
 }
 
 export const CategoryPickerSheet = forwardRef<CategoryPickerSheetHandle, CategoryPickerSheetProps>(
-  function CategoryPickerSheet({ categories, selected, onApply, isLoading = false }, ref) {
+  function CategoryPickerSheet(
+    { categories, selected, onApply, isLoading = false, onCreate, isCreating = false },
+    ref,
+  ) {
     const modalRef = useRef<BottomSheetModal>(null);
     const [query, setQuery] = useState("");
     const [staged, setStaged] = useState<Set<string>>(new Set());
+    // The inline "new category" composer: `composing` toggles the name field,
+    // `newName` holds its draft.
+    const [composing, setComposing] = useState(false);
+    const [newName, setNewName] = useState("");
 
     useImperativeHandle(ref, () => ({
       present: () => {
@@ -63,6 +79,8 @@ export const CategoryPickerSheet = forwardRef<CategoryPickerSheetHandle, Categor
         // never leak into the next one.
         setStaged(new Set(selected.map((c) => c.id)));
         setQuery("");
+        setComposing(false);
+        setNewName("");
         modalRef.current?.present();
       },
     }));
@@ -83,10 +101,35 @@ export const CategoryPickerSheet = forwardRef<CategoryPickerSheetHandle, Categor
       });
     };
 
+    const handleCreate = async () => {
+      const name = newName.trim();
+      if (name === "" || !onCreate) return;
+      try {
+        const created = await onCreate(name);
+        // Stage the new category immediately. The ["categories"] refetch that
+        // follows brings it into `nodes` (where it shows a Check); until then
+        // handleDone's `extras` guards it from being dropped.
+        setStaged((prev) => new Set(prev).add(created.id));
+        setNewName("");
+        setComposing(false);
+      } catch (err) {
+        // Duplicate slug / validation / network all surface here — never swallow.
+        Alert.alert(
+          "Couldn't create category",
+          err instanceof ApiError ? err.message : "Please try again.",
+        );
+      }
+    };
+
     const handleDone = () => {
       // Preserve the store's own ordering rather than Set insertion order —
       // same rule as CategoryPicker.toggle.
-      onApply(nodes.map((n) => n.category.id).filter((id) => staged.has(id)));
+      const ordered = nodes.map((n) => n.category.id).filter((id) => staged.has(id));
+      // A just-created category may not be in `nodes` yet (its refetch is in
+      // flight) — append any staged id the tree doesn't know about so a fresh
+      // selection is never dropped on Done.
+      const extras = [...staged].filter((id) => !ordered.includes(id));
+      onApply([...ordered, ...extras]);
       modalRef.current?.dismiss();
     };
 
@@ -116,6 +159,63 @@ export const CategoryPickerSheet = forwardRef<CategoryPickerSheetHandle, Categor
             style={styles.search}
           />
 
+          {onCreate ? (
+            composing ? (
+              <View style={styles.composer}>
+                <View style={styles.composerInput}>
+                  <FieldInput
+                    value={newName}
+                    onChangeText={setNewName}
+                    onSubmitEditing={handleCreate}
+                    placeholder="New category name"
+                    accessibilityLabel="New category name"
+                    autoFocus
+                    returnKeyType="done"
+                    editable={!isCreating}
+                  />
+                </View>
+                <Pressable
+                  style={[
+                    styles.createBtn,
+                    (newName.trim() === "" || isCreating) && styles.createBtnDisabled,
+                  ]}
+                  onPress={handleCreate}
+                  disabled={newName.trim() === "" || isCreating}
+                  accessibilityRole="button"
+                  accessibilityLabel="Create category"
+                >
+                  {isCreating ? (
+                    <ActivityIndicator size="small" color={theme.colors.inverse} />
+                  ) : (
+                    <Text preset="bodyEmphasis" color="inverse">
+                      Create
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                style={styles.addRow}
+                onPress={() => setComposing(true)}
+                accessibilityRole="button"
+                accessibilityLabel="New category"
+              >
+                {({ pressed }) => (
+                  <>
+                    <Plus
+                      size={16}
+                      color={pressed ? theme.colors.accent : theme.colors.text}
+                      strokeWidth={2.5}
+                    />
+                    <Text preset="bodyEmphasis" color={pressed ? "accent" : "text"}>
+                      New category
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            )
+          ) : null}
+
           {isLoading ? (
             <View style={styles.centered} testID="category-picker-loading">
               <ActivityIndicator size="small" color={theme.colors.text} />
@@ -123,7 +223,11 @@ export const CategoryPickerSheet = forwardRef<CategoryPickerSheetHandle, Categor
           ) : categories.length === 0 ? (
             <EmptyState
               title="No categories yet"
-              message="Categories are created from the web admin — this app doesn't support adding them yet."
+              message={
+                onCreate
+                  ? "Add your first category with ＋ New category above."
+                  : "Categories are created from the web admin — this app doesn't support adding them yet."
+              }
             />
           ) : visibleNodes.length === 0 ? (
             <Text preset="body" color="textTertiary" style={styles.noResults}>
@@ -169,6 +273,18 @@ const styles = StyleSheet.create({
   root: { flex: 1, padding: theme.spacing.lg, gap: theme.spacing.md },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   search: { marginBottom: theme.spacing.xs },
+  addRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, height: 44 },
+  composer: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  composerInput: { flex: 1 },
+  createBtn: {
+    paddingHorizontal: theme.spacing.lg,
+    height: 44,
+    borderRadius: theme.radii.md,
+    backgroundColor: theme.colors.text,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  createBtnDisabled: { opacity: 0.4 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   noResults: { paddingVertical: theme.spacing.lg },
   listContent: { paddingBottom: theme.spacing.huge },

@@ -20,6 +20,10 @@ interface CategoryFieldProps {
   /** Categories failed to load — field becomes a retry affordance instead of opening the sheet. */
   error?: unknown;
   onRetry?: () => void;
+  /** Create a new category by name; resolves to the created category. Passed to
+   *  the picker sheet's "＋ New category" flow. Absent → the affordance hides. */
+  onCreateCategory?: (name: string) => Promise<Category>;
+  isCreatingCategory?: boolean;
 }
 
 export function CategoryField({
@@ -29,6 +33,8 @@ export function CategoryField({
   isLoading = false,
   error,
   onRetry,
+  onCreateCategory,
+  isCreatingCategory,
 }: CategoryFieldProps) {
   const sheetRef = useRef<CategoryPickerSheetHandle>(null);
 
@@ -96,6 +102,8 @@ export function CategoryField({
         selected={selected}
         onApply={onChange}
         isLoading={isLoading}
+        onCreate={onCreateCategory}
+        isCreating={isCreatingCategory}
       />
     </>
   );

@@ -3,7 +3,12 @@ import { View, Alert, ActivityIndicator, TouchableOpacity, ScrollView, StyleShee
 import { useRouter } from "expo-router";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCreateProduct, useUpdateProduct, useCategories } from "../../../lib/admin-api/product-crud";
+import {
+  useCreateProduct,
+  useUpdateProduct,
+  useCategories,
+  useCreateCategory,
+} from "../../../lib/admin-api/product-crud";
 import { BackHeader, Card, Eyebrow, FieldInput, Screen, SegmentedControl, Text } from "@/components/ui";
 import { CategoryField } from "@/components/products/CategoryField";
 import { theme } from "@/lib/theme";
@@ -30,6 +35,7 @@ export default function NewProductScreen() {
   const insets = useSafeAreaInsets();
   const createMutation = useCreateProduct();
   const updateMutation = useUpdateProduct();
+  const createCategory = useCreateCategory();
   const { data: categories, isLoading: categoriesLoading, error: categoriesError, refetch: refetchCategories } =
     useCategories();
 
@@ -230,6 +236,8 @@ export default function NewProductScreen() {
             isLoading={categoriesLoading}
             error={categoriesError}
             onRetry={refetchCategories}
+            onCreateCategory={(name) => createCategory.mutateAsync({ name }).then((res) => res.data)}
+            isCreatingCategory={createCategory.isPending}
           />
         </Card>
       </ScrollView>

@@ -1,8 +1,11 @@
 import type { createApiClient } from "./client";
 import {
   categoryListSchema,
+  categoryCreateResponseSchema,
   type Category,
   type CategoryListResponse,
+  type CreateCategoryBody,
+  type CategoryCreateResponse,
 } from "./schemas/categories";
 
 /**
@@ -14,7 +17,9 @@ export function createCategoriesApi(client: ReturnType<typeof createApiClient>) 
   return {
     list: () =>
       client.get<CategoryListResponse>("/categories", undefined, categoryListSchema),
+    create: (body: CreateCategoryBody) =>
+      client.post<CategoryCreateResponse>("/categories", body, categoryCreateResponseSchema),
   };
 }
 
-export type { Category, CategoryListResponse };
+export type { Category, CategoryListResponse, CreateCategoryBody, CategoryCreateResponse };

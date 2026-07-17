@@ -56,6 +56,7 @@ jest.mock("@/lib/admin-api/product-crud", () => ({
     error: undefined,
     refetch: jest.fn(),
   }),
+  useCreateCategory: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
 
 import { render, fireEvent } from "@testing-library/react-native";

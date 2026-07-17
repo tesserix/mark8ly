@@ -9,6 +9,7 @@ import {
   type ProductMedia,
 } from "@repo/mobile-shared/api/products";
 import { createCategoriesApi } from "@repo/mobile-shared/api/categories";
+import type { CreateCategoryBody } from "@repo/mobile-shared/api/categories";
 import { useApiClient } from "@/lib/api-client";
 import {
   computeContentHash,
@@ -215,5 +216,23 @@ export function useCategories() {
       return res.data;
     },
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Creates a category, then invalidates the ["categories"] query so the picker
+ * refetches and the new category appears. Returns the created category (the
+ * caller stages/selects it by id). The backend derives the slug from the name.
+ */
+export function useCreateCategory() {
+  const client = useApiClient();
+  const categoriesApi = createCategoriesApi(client);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (body: CreateCategoryBody) => categoriesApi.create(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+    },
   });
 }

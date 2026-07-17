@@ -32,6 +32,11 @@ interface Props {
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
 
+// Migration fast-path (§5.1.1) is hidden from the UI until the flow is
+// tested end-to-end — everyone signs up as a new store. Flip to true to
+// restore the question; all validation and submit wiring stays intact.
+const MIGRATION_UI_ENABLED = false;
+
 // §5.1.1: when migration_type === "migrating", at least one of
 // whois_url or screenshot_file must be present.
 const schema = z
@@ -472,6 +477,7 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
         </div>
 
         {/* ── Migration fast-path (§5.1.1) ──────────────────── */}
+        {MIGRATION_UI_ENABLED && (
         <fieldset className="space-y-3">
           <legend className="text-sm font-medium text-foreground">
             {signupCopy.migrationHeading}
@@ -595,6 +601,7 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
             </div>
           </div>
         </fieldset>
+        )}
 
         {/* Server-level submit error */}
         {submitError && (

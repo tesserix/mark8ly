@@ -16,11 +16,20 @@ import {
   PageHeader,
   Screen,
   SearchField,
+  SegmentedControl,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { DISCLOSURE_EASING } from "@/components/products/disclosure-motion";
 import type { Customer } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
+
+type FilterKey = "all" | "active" | "blocked";
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "active", label: "Active" },
+  { key: "blocked", label: "Blocked" },
+];
 
 function useDebounce(value: string, delay: number): string {
   const [debounced, setDebounced] = useState(value);
@@ -35,18 +44,34 @@ export default function CustomersScreen() {
   const dockPad = useDockClearance();
   const router = useRouter();
   const reduceMotion = useReducedMotion();
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchText, setSearchText] = useState("");
   const debouncedSearch = useDebounce(searchText, 300);
   const currencyCode = useTenantStore((s) => s.activeStore?.currency_code);
 
-  const { data, isLoading, isRefetching, refetch } = useCustomers(
-    debouncedSearch || undefined,
-  );
+  const {
+    data,
+    isLoading,
+    isRefetching,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useCustomers({
+    ...(activeFilter !== "all" ? { status: activeFilter } : {}),
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+  });
+
+  const customers = data?.pages.flatMap((page) => page.data) ?? [];
 
   const handlePress = useCallback(
     (customer: Customer) => router.push(`/(tabs)/customers/${customer.id}`),
     [router],
   );
+
+  const handleEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const renderItem = useCallback(
     ({ item }: { item: Customer }) => (
@@ -66,6 +91,11 @@ export default function CustomersScreen() {
           accessibilityLabel="Search customers"
         />
       </View>
+      <SegmentedControl<FilterKey>
+        segments={FILTERS}
+        value={activeFilter}
+        onChange={setActiveFilter}
+      />
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
@@ -78,10 +108,12 @@ export default function CustomersScreen() {
           entering={reduceMotion ? undefined : FadeIn.duration(180).easing(DISCLOSURE_EASING)}
         >
           <FlatList
-            data={data?.data ?? []}
+            data={customers}
             renderItem={renderItem}
             keyExtractor={(item) => item.id}
             contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
             refreshControl={
               <RefreshControl
                 refreshing={isRefetching}
@@ -89,12 +121,19 @@ export default function CustomersScreen() {
                 tintColor={theme.colors.text}
               />
             }
+            ListFooterComponent={
+              isFetchingNextPage ? (
+                <View style={styles.footer}>
+                  <ActivityIndicator size="small" color={theme.colors.text} />
+                </View>
+              ) : null
+            }
             ListEmptyComponent={
               <EmptyState
                 title="No customers yet"
                 message={
-                  debouncedSearch
-                    ? "Try a different search term."
+                  debouncedSearch || activeFilter !== "all"
+                    ? "Try a different search or filter."
                     : "Customers appear here once they sign up."
                 }
               />
@@ -110,7 +149,6 @@ const styles = StyleSheet.create({
   search: {
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xs,
-    paddingBottom: theme.spacing.sm,
   },
   listWrap: {
     flex: 1,
@@ -118,6 +156,10 @@ const styles = StyleSheet.create({
   list: {
     flexGrow: 1,
     paddingBottom: theme.spacing.huge,
+  },
+  footer: {
+    paddingVertical: theme.spacing.lg,
+    alignItems: "center",
   },
   centered: {
     flex: 1,

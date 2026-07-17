@@ -42,12 +42,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout mark8ly
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: mark8ly
 
       - name: Checkout tesserix-k8s
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: tesserix/tesserix-k8s
           token: ${{ secrets.TESSERIX_K8S_BOT }}

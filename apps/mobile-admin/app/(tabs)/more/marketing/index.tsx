@@ -1,6 +1,6 @@
 import { ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import { Megaphone, Ticket, Users } from "lucide-react-native";
+import { Award, Gift, Megaphone, Ticket, Users } from "lucide-react-native";
 import { BackHeader, Screen } from "@/components/ui";
 import { MarketingRow } from "@/components/marketing/MarketingRow";
 import { theme } from "@/lib/theme";
@@ -34,6 +34,18 @@ export default function MarketingHubScreen() {
           label="Segments"
           description="Group customers to target campaigns"
           onPress={() => router.push("/(tabs)/more/marketing/segments")}
+        />
+        <MarketingRow
+          icon={<Gift size={ICON_SIZE} color={theme.colors.text} strokeWidth={ICON_STROKE} />}
+          label="Gift cards"
+          description="Issue and track gift cards"
+          onPress={() => router.push("/(tabs)/more/marketing/gift-cards")}
+        />
+        <MarketingRow
+          icon={<Award size={ICON_SIZE} color={theme.colors.text} strokeWidth={ICON_STROKE} />}
+          label="Loyalty"
+          description="Points program, members and referrals"
+          onPress={() => router.push("/(tabs)/more/marketing/loyalty")}
         />
       </ScrollView>
     </Screen>

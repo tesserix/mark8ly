@@ -1,6 +1,8 @@
 import { createCouponsApi } from "@repo/mobile-shared/api/coupons";
 import { createCampaignsApi } from "@repo/mobile-shared/api/campaigns";
 import { createSegmentsApi } from "@repo/mobile-shared/api/segments";
+import { createGiftCardsApi } from "@repo/mobile-shared/api/gift-cards";
+import { createLoyaltyApi } from "@repo/mobile-shared/api/loyalty";
 
 type Call = { method: string; path: string; body?: unknown };
 
@@ -21,6 +23,10 @@ function fakeClient() {
     },
     patch: (path: string, body?: unknown) => {
       calls.push({ method: "PATCH", path, body });
+      return stub();
+    },
+    put: (path: string, body?: unknown) => {
+      calls.push({ method: "PUT", path, body });
       return stub();
     },
     delete: (path: string) => {
@@ -98,6 +104,48 @@ describe("createSegmentsApi routes", () => {
       "POST /segments",
       "PATCH /segments/s1",
       "DELETE /segments/s1",
+    ]);
+  });
+});
+
+describe("createGiftCardsApi routes", () => {
+  it("targets /gift-cards paths and verbs (issue + read only)", async () => {
+    const { client, calls } = fakeClient();
+    const api = createGiftCardsApi(client);
+    await api.list();
+    await api.get("g1");
+    await api.issue({ initial_balance: 50, currency_code: "AUD" });
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      "GET /gift-cards",
+      "GET /gift-cards/g1",
+      "POST /gift-cards",
+    ]);
+  });
+});
+
+describe("createLoyaltyApi routes", () => {
+  it("targets /loyalty paths incl. PUT program + member adjust", async () => {
+    const { client, calls } = fakeClient();
+    const api = createLoyaltyApi(client);
+    await api.getProgram();
+    await api.updateProgram({
+      is_active: true,
+      points_per_unit: 1,
+      points_currency: "AUD",
+      min_redeem_points: 500,
+      points_value: 0.01,
+    });
+    await api.listMembers();
+    await api.getMember("m1");
+    await api.adjustPoints("m1", { points: 100, description: "goodwill" });
+    await api.listReferrals();
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      "GET /loyalty/program",
+      "PUT /loyalty/program",
+      "GET /loyalty/members",
+      "GET /loyalty/members/m1",
+      "POST /loyalty/members/m1/adjust",
+      "GET /loyalty/referrals",
     ]);
   });
 });

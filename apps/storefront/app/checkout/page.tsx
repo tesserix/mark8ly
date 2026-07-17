@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { toast } from "@/lib/toast";
+import { isIndia, isInPhoneValid, normalizeInPhone } from "@/lib/checkout/phone";
 import { CouponInput } from "@/components/checkout/CouponInput";
 import { GiftCardInput } from "@/components/checkout/GiftCardInput";
 import { LoyaltyRedemption } from "@/components/checkout/LoyaltyRedemption";
@@ -91,11 +92,6 @@ const EMPTY_ADDRESS: AddressFields = {
   phone: "",
 };
 
-// Indian mobile numbers are 10 digits starting with 6/7/8/9. Delhivery
-// rejects shipment-create for IN destinations with an empty phone, so
-// we enforce the format client-side as well as server-side.
-const IN_PHONE_RE = /^[6-9]\d{9}$/;
-
 function isAddressFilled(a: AddressFields): boolean {
   // Require both first and last name (two whitespace-separated tokens)
   // — single-word names previously got duplicated to satisfy carriers
@@ -109,8 +105,8 @@ function isAddressFilled(a: AddressFields): boolean {
     a.city.trim() !== "" &&
     a.country_code.trim().length === 2;
   if (!basicsOk) return false;
-  if (a.country_code.trim().toUpperCase() === "IN") {
-    return IN_PHONE_RE.test(a.phone.trim());
+  if (isIndia(a.country_code)) {
+    return isInPhoneValid(a.phone);
   }
   return true;
 }
@@ -124,7 +120,12 @@ function toCheckoutAddress(a: AddressFields): CheckoutAddressBody {
     region: a.region.trim() || undefined,
     postal_code: a.postal_code.trim() || undefined,
     country_code: a.country_code.trim().toUpperCase(),
-    phone: a.phone.trim() || undefined,
+    // Send the normalized 10-digit form for IN — Delhivery's
+    // shipment-create rejects a "+91 " prefixed number.
+    phone:
+      (isIndia(a.country_code)
+        ? normalizeInPhone(a.phone)
+        : a.phone.trim()) || undefined,
   };
 }
 
@@ -1161,6 +1162,14 @@ function AddressForm({ address, onChange, shipsToCountries }: AddressFormProps) 
   const inputClass =
     "mt-1 w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-surface)] px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]";
 
+  // Only complain once they've actually typed something — an empty field
+  // is incomplete, not wrong, and the placeholder already states the
+  // format.
+  const showPhoneError =
+    isIndia(address.country_code) &&
+    address.phone.trim() !== "" &&
+    !isInPhoneValid(address.phone);
+
   return (
     <div className="mt-4 grid gap-4 sm:grid-cols-2">
       <div>
@@ -1273,21 +1282,29 @@ function AddressForm({ address, onChange, shipsToCountries }: AddressFormProps) 
           id="ship-phone"
           type="tel"
           autoComplete="shipping tel"
-          required={address.country_code.trim().toUpperCase() === "IN"}
-          pattern={
-            address.country_code.trim().toUpperCase() === "IN"
-              ? "[6-9][0-9]{9}"
-              : undefined
-          }
+          required={isIndia(address.country_code)}
           value={address.phone}
           onChange={(e) => update("phone", e.target.value)}
+          aria-invalid={showPhoneError || undefined}
+          aria-describedby={showPhoneError ? "ship-phone-error" : undefined}
           className={inputClass}
           placeholder={
-            address.country_code.trim().toUpperCase() === "IN"
-              ? "10-digit mobile e.g. 9876543210"
-              : ""
+            isIndia(address.country_code) ? "10-digit mobile e.g. 9876543210" : ""
           }
         />
+        {/* Without this the number is silently rejected: the Place order
+            button just stays dead and the shipping section claims the
+            address is missing. */}
+        {showPhoneError && (
+          <p
+            id="ship-phone-error"
+            role="alert"
+            className="mt-1.5 text-sm text-[color:var(--storefront-danger)]"
+          >
+            This store ships to India, so we need a 10-digit Indian mobile
+            starting with 6–9. A +91 prefix, spaces, and dashes are fine.
+          </p>
+        )}
       </div>
       <div>
         <label htmlFor="ship-country" className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]">

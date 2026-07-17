@@ -451,6 +451,16 @@ function RefundForm({
     Number.parseFloat(grandTotal) - Number.parseFloat(refundedAmount)
   ).toFixed(2);
 
+  // "Fully refunded" has exactly one correct amount — the refundable
+  // remainder — so fill it in rather than make the merchant retype a figure
+  // already shown directly above the field. Switching back to partial clears
+  // it, so a full amount can't be submitted as a partial refund by accident.
+  // A manual edit afterwards still wins; this only seeds the value.
+  const selectPaymentStatus = (next: PaymentStatus) => {
+    setPaymentStatus(next);
+    setAmount(next === "refunded" ? remaining : "");
+  };
+
   const submit = () => {
     setError(undefined);
     startTransition(async () => {
@@ -505,6 +515,26 @@ function RefundForm({
         }}
         className="flex flex-col gap-4"
       >
+        {/* Refund type leads: it's the decision the merchant actually makes,
+            and picking "Fully refunded" fills in the amount below — which
+            only reads correctly when the cause sits above the effect. */}
+        <div className="flex flex-col gap-2">
+          <FieldLabel>Mark order as</FieldLabel>
+          <Select
+            value={paymentStatus}
+            onValueChange={(value) => selectPaymentStatus(value as PaymentStatus)}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="partially_refunded">
+                Partially refunded
+              </SelectItem>
+              <SelectItem value="refunded">Fully refunded</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <label className="flex flex-col gap-2">
           <FieldLabel>Amount</FieldLabel>
           <input
@@ -518,25 +548,6 @@ function RefundForm({
             className={inputCls}
           />
         </label>
-        <div className="flex flex-col gap-2">
-          <FieldLabel>Mark order as</FieldLabel>
-          <Select
-            value={paymentStatus}
-            onValueChange={(value) =>
-              setPaymentStatus(value as PaymentStatus)
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="partially_refunded">
-                Partially refunded
-              </SelectItem>
-              <SelectItem value="refunded">Fully refunded</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
         <label className="flex flex-col gap-2">
           <FieldLabel>Note (optional)</FieldLabel>
           <input

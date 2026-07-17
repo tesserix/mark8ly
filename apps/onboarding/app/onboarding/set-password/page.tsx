@@ -45,6 +45,7 @@ export default async function SetPasswordPage({ searchParams }: PageProps) {
 
   return (
     <PostSubmitShell
+      step={3}
       eyebrow="Final step"
       title="Finish creating your account."
       description="Your email is verified. Add a password or continue with Google so we can open your admin dashboard."

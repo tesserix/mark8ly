@@ -51,6 +51,12 @@ const palette = {
   mossSoft: "#3D5F38",
   crimson: "#8B2E20",
   amber: "#B5751F",
+  // Amber as a badge TINT + a deep bronze for text on it — the warning
+  // equivalent of accentTint/accent (moss). Dark-bronze #7A4A0F on the
+  // #F4E6CB tint is ~6:1, comfortably AA, and reads far better than ink on
+  // the saturated solid amber (~5:1, perceptually marginal).
+  amberTint: "#F4E6CB",
+  amberDeep: "#7A4A0F",
   white: "#FFFFFF",
 } as const;
 
@@ -79,6 +85,8 @@ export const theme = {
     accentTint: "#E8EEE2",
     success: palette.moss,
     warning: palette.amber,
+    warningTint: palette.amberTint,
+    warningInk: palette.amberDeep,
     danger: palette.crimson,
 
     palette,

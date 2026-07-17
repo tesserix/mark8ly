@@ -23,9 +23,10 @@ const TONE: Record<StatusTone, { bg: string; fg: string; border?: string }> = {
   // primary actions instead of spending it on every success chip. Moss on
   // this tint is ~8.35:1 (see fix-batch-1-report.md).
   success: { bg: theme.colors.accentTint, fg: theme.colors.accent },
-  // Dark text on amber — white/inverse on amber was ~2.98:1 (fails AA).
-  // Ink on amber is ~5.09:1.
-  warning: { bg: theme.colors.warning, fg: theme.colors.text },
+  // Amber TINT with deep-bronze text (~6:1) — a tint like `success`, not a
+  // solid fill. Ink on the saturated solid amber was AA-passing (~5:1) but
+  // perceptually marginal; white/inverse on amber (~2.98:1) failed outright.
+  warning: { bg: theme.colors.warningTint, fg: theme.colors.warningInk },
   danger: { bg: theme.colors.danger, fg: theme.colors.inverse },
   muted: { bg: "transparent", fg: theme.colors.textSecondary, border: theme.colors.hairline },
 };

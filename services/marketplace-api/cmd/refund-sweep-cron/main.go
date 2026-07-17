@@ -38,6 +38,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// KNOWN GAP: no secret store is wired here, so GatewayFor cannot resolve
+	// the gsm:// credential references on payment_gateway_configs and every
+	// gateway re-drive fails (loudly — see orderrefund.resolveCred). The
+	// sweep still runs and rows stay 'pending' for a later attempt, which is
+	// the same outcome as before, when the raw reference was handed to the
+	// gateway and came back 401. Closing this needs GCP_PROJECT_ID /
+	// SECRET_NAME_PREFIX / SHIPPING_SECRET_STORE in the CronJob env plus
+	// Secret Manager access for its service account (tesserix-k8s), so it is
+	// deliberately out of scope of the API-path fix.
 	res := orderrefund.NewResolver(conn)
 	pay := payment.NewService(payment.NewRepository(conn))
 	orders := order.NewService(conn, order.NewRepository(), outbox.NewRepository(conn))

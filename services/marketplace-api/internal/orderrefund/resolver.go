@@ -13,6 +13,8 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 )
 
@@ -30,10 +32,53 @@ type PaymentContext struct {
 // Resolver reads payment_transactions and payment_gateway_configs to
 // answer "what did this order pay with, and how do we talk to that
 // gateway."
-type Resolver struct{ db *gorm.DB }
+type Resolver struct {
+	db *gorm.DB
+	// secretStore resolves the credential references stored on
+	// payment_gateway_configs. The columns are named *_encrypted but hold
+	// an opaque reference — "gsm://..." once rewrapped, legacy inline
+	// "aes:" ciphertext before that — so they are NEVER usable as-is.
+	secretStore carriersecrets.Store
+	// encryptor is the fallback for inline-mode deployments with no Store.
+	encryptor crypto.Encryptor
+}
 
 // NewResolver constructs a Resolver bound to db.
+//
+// Wire WithSecretStore (or WithEncryptor) before use: without one,
+// GatewayFor cannot turn the stored references into real credentials and
+// refunds fail at the gateway.
 func NewResolver(db *gorm.DB) *Resolver { return &Resolver{db: db} }
+
+// WithSecretStore wires the credential resolver. Chainable.
+func (r *Resolver) WithSecretStore(s carriersecrets.Store) *Resolver {
+	r.secretStore = s
+	return r
+}
+
+// WithEncryptor wires the inline-mode fallback. Chainable.
+func (r *Resolver) WithEncryptor(e crypto.Encryptor) *Resolver {
+	r.encryptor = e
+	return r
+}
+
+// resolveCred turns a stored credential reference into plaintext. Mirrors
+// the Store-first / Encryptor-fallback pattern used by the checkout path
+// (handlers/storefront/checkout_ext.go resolveCred).
+func (r *Resolver) resolveCred(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
+	}
+	if r.secretStore != nil {
+		return r.secretStore.Get(ctx, ref)
+	}
+	if r.encryptor == nil {
+		// Returning ref here would send "gsm://projects/..." to the gateway
+		// as an API key — which is exactly the 401 this guard prevents.
+		return "", fmt.Errorf("orderrefund: no secret store or encryptor wired — cannot resolve gateway credentials")
+	}
+	return r.encryptor.Decrypt(ref)
+}
 
 // PaymentContextForOrder returns the captured payment for an order. Only rows
 // with status='captured' count (that is what the capture webhook / client-verify
@@ -103,5 +148,17 @@ func (r *Resolver) GatewayFor(ctx context.Context, storeID uuid.UUID, provider s
 		}
 		return nil, err
 	}
-	return payment.NewGateway(provider, cfg.APIKey, cfg.SecretKey, cfg.Mode)
+	// api_key_encrypted / secret_key_encrypted hold references, not
+	// credentials. Passing them straight to payment.NewGateway sent
+	// Razorpay the literal "gsm://projects/..." string as its API key and
+	// every refund came back 401 Authentication failed.
+	apiKey, err := r.resolveCred(ctx, cfg.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("orderrefund: resolve %s api_key: %w", provider, err)
+	}
+	secretKey, err := r.resolveCred(ctx, cfg.SecretKey)
+	if err != nil {
+		return nil, fmt.Errorf("orderrefund: resolve %s secret_key: %w", provider, err)
+	}
+	return payment.NewGateway(provider, apiKey, secretKey, cfg.Mode)
 }

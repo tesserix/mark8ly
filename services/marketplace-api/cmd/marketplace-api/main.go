@@ -612,7 +612,7 @@ func main() {
 		// (returns, paid cancels).
 		refundGatewayEnabled := os.Getenv("REFUND_GATEWAY_ENABLED") == "true"
 		paymentSvc := payment.NewService(payment.NewRepository(conn))
-		refundResolver := orderrefund.NewResolver(conn)
+		refundResolver := orderrefund.NewResolver(conn).WithSecretStore(carrierSecretStore).WithEncryptor(apiKeyEncryptor)
 		refundCoordinator := orderrefund.NewCoordinator(conn, refundResolver, paymentSvc, orderSvc, orderRepo, refundGatewayEnabled)
 		log.Info("refund coordinator wired (admin)", "gateway_enabled", refundGatewayEnabled)
 		// Order document mailer — invoice on accept, receipt on delivery.
@@ -1199,7 +1199,7 @@ func main() {
 		// block and out of reach here in a mode.Storefront-only process.
 		refundGatewayEnabledSF := os.Getenv("REFUND_GATEWAY_ENABLED") == "true"
 		paymentSvcSF := payment.NewService(payment.NewRepository(conn))
-		refundResolverSF := orderrefund.NewResolver(conn)
+		refundResolverSF := orderrefund.NewResolver(conn).WithSecretStore(carrierSecretStore).WithEncryptor(apiKeyEncryptor)
 		refundCoordinatorSF := orderrefund.NewCoordinator(conn, refundResolverSF, paymentSvcSF, orderSvcSF, orderRepoSF, refundGatewayEnabledSF)
 		log.Info("refund coordinator wired (storefront)", "gateway_enabled", refundGatewayEnabledSF)
 

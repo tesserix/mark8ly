@@ -118,7 +118,8 @@ module.exports = {
           ]),
     ],
     extra: {
-      eas: { projectId: 'your-eas-project-id' },
+      // extra.eas.projectId is intentionally absent until `eas init` creates
+      // the project under tesserix-org and prints the real UUID to paste here.
       ...PRODUCTION.extra,
     },
   },

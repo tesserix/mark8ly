@@ -118,8 +118,8 @@ module.exports = {
           ]),
     ],
     extra: {
-      // extra.eas.projectId is intentionally absent until `eas init` creates
-      // the project under tesserix-org and prints the real UUID to paste here.
+      // EAS project @tesserix-org/mark8ly-admin (created via `eas init`).
+      eas: { projectId: '91d5bf29-4062-401d-b19d-170bb97ce5cc' },
       ...PRODUCTION.extra,
     },
   },

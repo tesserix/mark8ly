@@ -817,6 +817,10 @@ func main() {
 		// Dashboard D1 wiring.
 		dashboardHandler := admin.NewDashboardHandler(conn, log)
 
+		// Setup-progress realtime wiring (snapshot + SSE + WS) — shares
+		// the dashboard's checklist computation.
+		setupProgressHandler := admin.NewSetupProgressHandler(conn, log)
+
 		// Tickets D2 wiring — uses the shared ticketSvc hoisted above so
 		// the storefront /support/tickets endpoint and the admin dashboard
 		// read/write the same rows through the same service instance.
@@ -1003,6 +1007,7 @@ func main() {
 			AuditLogsHandler:         auditLogsHandler,
 			NotificationsHandler:     notificationsHandler,
 			DashboardHandler:         dashboardHandler,
+			SetupProgressHandler:     setupProgressHandler,
 			TicketsHandler:           ticketsHandler,
 			BrandingHandler:          brandingHandler,
 			PagesHandler:             pagesHandler,

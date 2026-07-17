@@ -1667,6 +1667,19 @@ export interface SetupChecklist {
   has_shipping_carrier: boolean;
   has_return_policy: boolean;
   has_custom_domain: boolean;
+  has_first_order: boolean;
+}
+
+/**
+ * Envelope returned by the setup-progress snapshot/SSE/WS endpoints.
+ * completed_steps counts the always-complete "store created" pseudo-step,
+ * so a brand-new store starts at 2/10 = 20%.
+ */
+export interface SetupProgress {
+  checklist: SetupChecklist;
+  completed_steps: number;
+  total_steps: number;
+  percent: number;
 }
 
 export interface DashboardResponse {

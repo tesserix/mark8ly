@@ -3,6 +3,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useGiftCard } from "@/lib/hooks/use-gift-cards";
 import { BackHeader, Eyebrow, Hairline, Screen, StatusBadge, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { formatMoney } from "@/lib/money";
 import { giftCardStatusTone, titleize } from "@/lib/gift-card-display";
 import type { GiftCardTxn } from "@repo/mobile-shared/api/types";
@@ -54,6 +55,7 @@ function TxnRow({ txn, currency }: { txn: GiftCardTxn; currency: string }) {
 export default function GiftCardDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: card, isLoading, error } = useGiftCard(id);
+  const dockPad = useDockClearance();
 
   if (error) {
     return (
@@ -87,7 +89,7 @@ export default function GiftCardDetailScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="GIFT CARD" title={card.code_display} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         <View style={styles.heading}>
           <Text preset="h1" color="text">
             {formatMoney(card.current_balance, currency)}

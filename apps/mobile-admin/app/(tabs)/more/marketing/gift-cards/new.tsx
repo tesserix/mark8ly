@@ -6,11 +6,13 @@ import { ApiError } from "@repo/mobile-shared/api/client";
 import { useIssueGiftCard } from "@/lib/admin-api/gift-card-actions";
 import { BackHeader, FieldInput, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 export default function NewGiftCardScreen() {
   const router = useRouter();
   const storeCurrency = useTenantStore((s) => s.activeStore?.currency_code) || "AUD";
   const issue = useIssueGiftCard();
+  const dockPad = useDockClearance();
 
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState(storeCurrency);
@@ -48,7 +50,7 @@ export default function NewGiftCardScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="MARKETING" title="Issue gift card" />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]} keyboardShouldPersistTaps="handled">
         <FieldInput
           label="Amount"
           value={amount}

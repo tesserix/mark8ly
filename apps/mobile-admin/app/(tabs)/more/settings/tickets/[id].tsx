@@ -13,6 +13,7 @@ import { useTicket } from "@/lib/hooks/use-tickets";
 import { useReplyTicket, useUpdateTicketStatus } from "@/lib/admin-api/ticket-actions";
 import { BackHeader, Eyebrow, FieldInput, Hairline, Screen, StatusBadge, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { TICKET_STATUS_TONE, titleizeStatus } from "./index";
 import type { TicketReply } from "@repo/mobile-shared/api/types";
 
@@ -55,6 +56,7 @@ export default function TicketDetailScreen() {
   const { data: ticket, isLoading, error } = useTicket(id);
   const reply = useReplyTicket();
   const updateStatus = useUpdateTicketStatus();
+  const dockPad = useDockClearance();
 
   const [draft, setDraft] = useState("");
 
@@ -115,7 +117,7 @@ export default function TicketDetailScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="TICKET" title={`#${ticket.ticket_number}`} />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]} keyboardShouldPersistTaps="handled">
         <View style={styles.heading}>
           <Text preset="h2" color="text">
             {ticket.subject}

@@ -14,6 +14,7 @@ import { COUPON_TYPES } from "@repo/mobile-shared/api/schemas/coupons";
 import { useCreateCoupon } from "@/lib/admin-api/coupon-actions";
 import { BackHeader, FieldInput, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 const TYPE_LABEL: Record<string, string> = {
   percentage: "% off",
@@ -31,6 +32,7 @@ function parseOptionalNumber(raw: string): number | undefined {
 export default function NewCouponScreen() {
   const router = useRouter();
   const create = useCreateCoupon();
+  const dockPad = useDockClearance();
 
   const [code, setCode] = useState("");
   const [title, setTitle] = useState("");
@@ -99,7 +101,7 @@ export default function NewCouponScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="MARKETING" title="New coupon" />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]} keyboardShouldPersistTaps="handled">
         <FieldInput
           label="Code"
           value={code}

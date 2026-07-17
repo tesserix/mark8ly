@@ -6,12 +6,14 @@ import { useCreateCampaign } from "@/lib/admin-api/campaign-actions";
 import { useSegments } from "@/lib/hooks/use-segments";
 import { BackHeader, FieldInput, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 export default function NewCampaignScreen() {
   const router = useRouter();
   const create = useCreateCampaign();
   const { data: segmentsData } = useSegments();
   const segments = segmentsData?.data ?? [];
+  const dockPad = useDockClearance();
 
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
@@ -44,7 +46,7 @@ export default function NewCampaignScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="MARKETING" title="New campaign" />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]} keyboardShouldPersistTaps="handled">
         <FieldInput label="Name" value={name} onChangeText={setName} placeholder="Summer sale blast" />
         <FieldInput
           label="Subject (optional)"

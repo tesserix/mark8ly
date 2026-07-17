@@ -7,6 +7,7 @@ import { useUpdateSegment, useDeleteSegment } from "@/lib/admin-api/segment-acti
 import { SegmentForm, type SegmentFormValues } from "@/components/marketing/SegmentForm";
 import { BackHeader, Hairline, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 export default function SegmentDetailScreen() {
   const router = useRouter();
@@ -14,6 +15,7 @@ export default function SegmentDetailScreen() {
   const { data: segment, isLoading, error } = useSegment(id);
   const update = useUpdateSegment();
   const del = useDeleteSegment();
+  const dockPad = useDockClearance();
 
   const onSave = useCallback(
     (values: SegmentFormValues) => {
@@ -79,7 +81,7 @@ export default function SegmentDetailScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="SEGMENT" title={segment.name} />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]} keyboardShouldPersistTaps="handled">
         <Text preset="caption" color="textTertiary">
           {segment.member_count} {segment.member_count === 1 ? "member" : "members"}
         </Text>

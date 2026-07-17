@@ -14,6 +14,7 @@ import { useCoupon } from "@/lib/hooks/use-coupons";
 import { usePatchCoupon, useDeleteCoupon } from "@/lib/admin-api/coupon-actions";
 import { BackHeader, Eyebrow, Hairline, Screen, StatusBadge, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { formatMoney } from "@/lib/money";
 import { formatCouponValue, couponStatusTone } from "@/lib/coupon-display";
 
@@ -51,6 +52,7 @@ export default function CouponDetailScreen() {
   const { data, isLoading, error } = useCoupon(id);
   const patch = usePatchCoupon();
   const del = useDeleteCoupon();
+  const dockPad = useDockClearance();
 
   const busy = patch.isPending || del.isPending;
   const coupon = data?.data;
@@ -120,7 +122,7 @@ export default function CouponDetailScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="COUPON" title={coupon.code} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         <View style={styles.heading}>
           <Text preset="h1" color="text">
             {coupon.code}

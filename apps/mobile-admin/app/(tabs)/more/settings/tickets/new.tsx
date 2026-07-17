@@ -5,6 +5,7 @@ import { ApiError } from "@repo/mobile-shared/api/client";
 import { useCreateTicket } from "@/lib/admin-api/ticket-actions";
 import { BackHeader, FieldInput, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 
@@ -15,6 +16,7 @@ function titleize(value: string): string {
 export default function NewTicketScreen() {
   const router = useRouter();
   const create = useCreateTicket();
+  const dockPad = useDockClearance();
 
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -40,7 +42,7 @@ export default function NewTicketScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="SETTINGS" title="New ticket" />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]} keyboardShouldPersistTaps="handled">
         <FieldInput label="Subject" value={subject} onChangeText={setSubject} placeholder="What's it about?" />
         <FieldInput
           label="Description"

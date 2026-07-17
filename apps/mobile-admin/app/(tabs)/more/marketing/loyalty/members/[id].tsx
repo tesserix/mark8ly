@@ -6,6 +6,7 @@ import { useLoyaltyMember } from "@/lib/hooks/use-loyalty";
 import { useAdjustPoints } from "@/lib/admin-api/loyalty-actions";
 import { BackHeader, Eyebrow, FieldInput, Hairline, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 import type { LoyaltyTxn } from "@repo/mobile-shared/api/types";
 
 function formatDate(iso: string): string {
@@ -61,6 +62,7 @@ export default function LoyaltyMemberScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading, error } = useLoyaltyMember(id);
   const adjust = useAdjustPoints();
+  const dockPad = useDockClearance();
 
   const [points, setPoints] = useState("");
   const [reason, setReason] = useState("");
@@ -121,7 +123,7 @@ export default function LoyaltyMemberScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="MEMBER" title={member.customer_name || member.customer_email} />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]} keyboardShouldPersistTaps="handled">
         <View style={styles.heading}>
           <Text preset="h1" color="text">
             {member.points_balance} pts

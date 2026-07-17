@@ -6,10 +6,12 @@ import { useCreateSegment } from "@/lib/admin-api/segment-actions";
 import { SegmentForm, type SegmentFormValues } from "@/components/marketing/SegmentForm";
 import { BackHeader, Screen } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 export default function NewSegmentScreen() {
   const router = useRouter();
   const create = useCreateSegment();
+  const dockPad = useDockClearance();
 
   const onSubmit = useCallback(
     (values: SegmentFormValues) => {
@@ -28,7 +30,7 @@ export default function NewSegmentScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="MARKETING" title="New segment" />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]} keyboardShouldPersistTaps="handled">
         <SegmentForm submitLabel="Create segment" isSubmitting={create.isPending} onSubmit={onSubmit} />
       </ScrollView>
     </Screen>

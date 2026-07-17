@@ -8,6 +8,7 @@ import { useUpdateLoyaltyProgram } from "@/lib/admin-api/loyalty-actions";
 import { MarketingRow } from "@/components/marketing/MarketingRow";
 import { BackHeader, Eyebrow, EmptyState, Screen, StatusBadge, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 import type { LoyaltyProgram } from "@repo/mobile-shared/api/types";
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -43,6 +44,7 @@ export default function LoyaltyScreen() {
   const router = useRouter();
   const { data: program, isLoading, error } = useLoyaltyProgram();
   const update = useUpdateLoyaltyProgram();
+  const dockPad = useDockClearance();
 
   const onToggle = useCallback(
     (next: boolean) => {
@@ -102,7 +104,7 @@ export default function LoyaltyScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="MARKETING" title="Loyalty" />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         {!program ? (
           <>
             <EmptyState

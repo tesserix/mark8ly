@@ -19,6 +19,7 @@ import {
 } from "@/lib/admin-api/campaign-actions";
 import { BackHeader, Eyebrow, Hairline, Screen, StatusBadge, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { formatMoney } from "@/lib/money";
 import { campaignStatusTone, titleizeStatus } from "@/lib/campaign-display";
 
@@ -40,6 +41,7 @@ export default function CampaignDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const currency = useTenantStore((s) => s.activeStore?.currency_code) || "AUD";
   const { data: campaign, isLoading, error } = useCampaign(id);
+  const dockPad = useDockClearance();
 
   const send = useSendCampaign();
   const pause = usePauseCampaign();
@@ -121,7 +123,7 @@ export default function CampaignDetailScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="CAMPAIGN" title={campaign.name} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         <View style={styles.heading}>
           <Text preset="h1" color="text">
             {campaign.name}

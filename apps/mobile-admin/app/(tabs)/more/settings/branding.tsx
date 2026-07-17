@@ -4,6 +4,7 @@ import { ApiError } from "@repo/mobile-shared/api/client";
 import { useBranding, useUpdateBranding } from "@/lib/hooks/use-branding";
 import { BackHeader, Eyebrow, FieldInput, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 import type { Branding } from "@repo/mobile-shared/api/types";
 import type { BrandingUpdateBody } from "@repo/mobile-shared/api/branding";
 
@@ -32,6 +33,7 @@ export default function BrandingScreen() {
 
 function BrandingForm({ branding }: { branding: Branding }) {
   const update = useUpdateBranding();
+  const dockPad = useDockClearance();
 
   const [tagline, setTagline] = useState(branding.tagline ?? "");
   const [announcementText, setAnnouncementText] = useState(branding.announcement_text ?? "");
@@ -86,7 +88,10 @@ function BrandingForm({ branding }: { branding: Branding }) {
   ]);
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}
+      keyboardShouldPersistTaps="handled"
+    >
       <Eyebrow label="Storefront" />
       <FieldInput label="Tagline" value={tagline} onChangeText={setTagline} placeholder="A short line under your name" />
 

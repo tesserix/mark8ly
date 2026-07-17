@@ -6,6 +6,7 @@ import { ASSIGNABLE_ROLES } from "@repo/mobile-shared/api/schemas/team";
 import { useInviteTeamMember } from "@/lib/admin-api/team-actions";
 import { BackHeader, FieldInput, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 const ROLE_HINT: Record<string, string> = {
   admin: "Manage everything except billing and ownership",
@@ -24,6 +25,7 @@ function looksLikeEmail(value: string): boolean {
 export default function InviteTeammateScreen() {
   const router = useRouter();
   const invite = useInviteTeamMember();
+  const dockPad = useDockClearance();
 
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<string>("staff");
@@ -48,7 +50,7 @@ export default function InviteTeammateScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="TEAM" title="Invite teammate" />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]} keyboardShouldPersistTaps="handled">
         <FieldInput
           label="Email"
           value={email}

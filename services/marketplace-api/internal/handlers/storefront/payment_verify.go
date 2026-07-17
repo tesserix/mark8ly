@@ -87,13 +87,16 @@ func (h *WebhookHandler) HandleVerifyPayment(c *gin.Context) {
 	}
 
 	// Razorpay's checkout signature: HMAC-SHA256(order|payment, secret).
-	// Prefer the dedicated webhook secret over the API secret (spec §2.6);
-	// both are envelope-encrypted at rest — unwrap before HMAC.
+	// Prefer the dedicated webhook secret over the API secret (spec §2.6).
+	// Resolve via decryptAPIKey, NOT the Encryptor directly: once a row has
+	// been rewrapped its column holds a "gsm://" reference, and Decrypt only
+	// understands the legacy inline "aes:" envelope — it answers "not an
+	// AES-encrypted value" and every payment 503s. The Store handles both.
 	signingCipher := cfg.WebhookSecretEncrypted
 	if signingCipher == "" {
 		signingCipher = cfg.SecretKeyEncrypted
 	}
-	secretKey, err := h.resolveWebhookSecret(signingCipher)
+	secretKey, err := h.decryptAPIKey(ctx, signingCipher)
 	if err != nil {
 		h.logError("verify-payment: decrypt signing secret failed", "err", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "gateway not configured"})

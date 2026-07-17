@@ -130,17 +130,6 @@ func (h *WebhookHandler) decryptAPIKey(ctx context.Context, stored string) (stri
 	return h.encryptor.Decrypt(stored)
 }
 
-// resolveWebhookSecret is the legacy (non-context) wrapper kept for
-// compatibility with storefront-adjacent callers (payment_verify) that
-// don't thread context through. New call sites should prefer
-// decryptAPIKey, which routes via the Store when wired.
-func (h *WebhookHandler) resolveWebhookSecret(stored string) (string, error) {
-	if h.encryptor == nil || stored == "" {
-		return stored, nil
-	}
-	return h.encryptor.Decrypt(stored)
-}
-
 // maybeRewrapWebhookRow migrates legacy inline references on a
 // payment_gateway_configs row to gsm://. Best-effort — failures only
 // log because the read already succeeded.

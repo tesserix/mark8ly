@@ -29,11 +29,16 @@ Requires test-mode API keys (`rzp_test_...`) configured in the store's payment s
 
 | Purpose | Network | Number | CVV | Expiry |
 |---|---|---|---|---|
-| Domestic (India) success | Visa | `4628 9499 7226 2986` | any 3 digits | any future date |
-| International success | Mastercard | `5105 1051 0510 5100` | any 3 digits | any future date |
+| Domestic (India) success | Visa credit | `4718 6091 0820 4366` | any 3 digits | any future date |
+| International success | Mastercard credit | `5104 0155 5555 5558` | any 3 digits | any future date |
+| International success | Mastercard debit | `5104 0600 0000 0008` | any 3 digits | any future date |
+| Failure (incorrect OTP/verification) | Visa | `4100 2800 0000 0009` | any 3 digits | any future date |
 
 - Cardholder name/email/phone: anything (Razorpay docs use "Gaurav Kumar").
-- The international Mastercard requires completing the address-verification form at checkout.
+- **Use the domestic Visa card** unless international payments are enabled on the
+  Razorpay account — international cards fail with "International cards not allowed"
+  by default. Cards like `4628 9499 7226 2986` / `5105 1051 0510 5100` are from the
+  docs' international section and hit this error.
 
 ### OTP screen (test mode mock — no real SMS)
 

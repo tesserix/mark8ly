@@ -107,6 +107,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/lifecycle"
 	"github.com/mark8ly/marketplace-api/internal/subscription/planchange"
 	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
+	"github.com/mark8ly/marketplace-api/internal/teamproxy"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
@@ -1033,6 +1034,18 @@ func main() {
 		pushSender := push.NewSender(&http.Client{Timeout: 10 * time.Second})
 		pushWebhookHandler = push.NewWebhookHandler(pushSender, pushRepo, log)
 
+		// Team management proxies platform-api's internal team endpoints.
+		// Reuses the SAME platform client config as the storefront store
+		// lookups (already wired in prod), so no new chart env is needed.
+		// Nil when the platform URL is unset — the routes then stay unmounted.
+		var teamHandler *admin.TeamHandler
+		if cfg.PlatformAPIURL != "" {
+			teamHandler = admin.NewTeamHandler(
+				teamproxy.NewClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil), log)
+		} else {
+			log.Info("team: platform client not configured (MARKETPLACE_PLATFORM_API_URL empty); team routes disabled")
+		}
+
 		mobileDeps = admin.MobileDeps{
 			Deps:             adminDeps,
 			TokenVerifier:    tokenVerifier,
@@ -1040,6 +1053,7 @@ func main() {
 			// Merchant→platform support chat (#119) — bridges to otto's
 			// platform tenant. Nil otto client => routes return 503.
 			PlatformSupportHandler: admin.NewPlatformSupportHandler(ottoChatClient, cfg.OttoWSPublicBase, log),
+			TeamHandler:            teamHandler,
 		}
 	}
 
@@ -1242,7 +1256,7 @@ func main() {
 			CustomerAccountHandler:       customerAccountHandler,
 			CustomerNotificationsHandler: customerNotificationsHandler,
 			CustomerService:              customerSvc,
-			CustomerSessionSecret:  cfg.CustomerSessionSecret,
+			CustomerSessionSecret:        cfg.CustomerSessionSecret,
 			// C3 reviews.
 			ReviewsHandler: sfReviewsHandler,
 			// C4 wishlists.

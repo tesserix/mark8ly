@@ -15,6 +15,9 @@ type MobileDeps struct {
 	// PlatformSupportHandler bridges merchant→platform support chat to
 	// otto's platform tenant. Nil when otto isn't wired.
 	PlatformSupportHandler *PlatformSupportHandler
+	// TeamHandler proxies tenant team management to platform-api. Nil when
+	// the platform client isn't configured (MARKETPLACE_PLATFORM_API_URL empty).
+	TeamHandler *TeamHandler
 }
 
 // RegisterAdminMobile mounts the mobile admin route group. Uses GIPBearerAuth
@@ -385,6 +388,33 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 				tickets.PATCH("/:id",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsEditRole),
 					deps.TicketsHandler.UpdateStatus)
+			}
+		}
+
+		// Team / staff — proxies platform-api's tenant team endpoints. Mounted
+		// under the store group so the mobile client's store-prefixed requests
+		// resolve; TeamHandler reads tenant_id + actor UID from the bearer token
+		// and ignores :storeId. Members are staff-visible; invitations + role
+		// changes are Admin-gated (platform-api enforces the finer owner/admin
+		// guard using the actor UID).
+		if deps.TeamHandler != nil {
+			team := storeRoute.Group("/team")
+			{
+				team.GET("/members",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+					deps.TeamHandler.ListMembers)
+				team.PATCH("/members/role",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.TeamHandler.UpdateRole)
+				team.GET("/invitations",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.TeamHandler.ListInvitations)
+				team.POST("/invitations",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.TeamHandler.Invite)
+				team.DELETE("/invitations/:invId",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.TeamHandler.Revoke)
 			}
 		}
 

@@ -74,6 +74,7 @@ type SetupChecklist struct {
 	HasShippingCarrier bool `json:"has_shipping_carrier"`
 	HasReturnPolicy    bool `json:"has_return_policy"`
 	HasCustomDomain    bool `json:"has_custom_domain"`
+	HasFirstOrder      bool `json:"has_first_order"`
 }
 
 // DashboardResponse is the top-level envelope returned by GET .../dashboard.
@@ -322,28 +323,9 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 		})
 	}
 
-	// Setup checklist — individual EXISTS queries.
-	var checklist SetupChecklist
-	checklist.HasStore = true // always true if we got here (store middleware passed)
-
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM products WHERE store_id = ? AND tenant_id = ?)`,
-		storeID, tenantID).Scan(&checklist.HasProduct)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM store_branding
-		WHERE store_id = ? AND tenant_id = ?
-		AND logo_url IS NOT NULL AND logo_url != '')`,
-		storeID, tenantID).Scan(&checklist.HasBrandAssets)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM payment_gateway_configs WHERE store_id = ? AND tenant_id = ?)`,
-		storeID, tenantID).Scan(&checklist.HasPaymentProvider)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM shipping_carrier_configs WHERE store_id = ? AND tenant_id = ?)`,
-		storeID, tenantID).Scan(&checklist.HasShippingCarrier)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM store_branding
-		WHERE store_id = ? AND tenant_id = ?
-		AND return_policy IS NOT NULL AND return_policy != '')`,
-		storeID, tenantID).Scan(&checklist.HasReturnPolicy)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM custom_domains WHERE store_id = ? AND tenant_id = ?)`,
-		storeID, tenantID).Scan(&checklist.HasCustomDomain)
-	db.Raw(`SELECT EXISTS(SELECT 1 FROM store_branding WHERE store_id = ? AND tenant_id = ?)`,
-		storeID, tenantID).Scan(&checklist.HasStorefrontTheme)
+	// Setup checklist — shared with the setup-progress endpoints (see
+	// setupprogress.go) so the dashboard and the realtime stream agree.
+	checklist := computeSetupChecklist(db, storeID, tenantID)
 
 	resp := DashboardResponse{
 		Stats:          stats,

@@ -76,6 +76,7 @@ type Deps struct {
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
 	DashboardHandler         *DashboardHandler
+	SetupProgressHandler     *SetupProgressHandler
 	TicketsHandler           *TicketsHandler
 	ShipmentsHandler         *ShipmentsHandler
 	BrandingHandler          *BrandingHandler
@@ -795,6 +796,16 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			metrics.GET("/orders", deps.DashboardHandler.GetOrdersMetrics)
 			metrics.GET("/customers", deps.DashboardHandler.GetCustomersMetrics)
 			metrics.GET("/reviews", deps.DashboardHandler.GetReviewsMetrics)
+		}
+
+		// Setup progress — snapshot + realtime (SSE / WebSocket) for the
+		// dashboard onboarding checklist.
+		if deps.SetupProgressHandler != nil {
+			setup := storeRoute.Group("/dashboard/setup-progress")
+			setup.Use(deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff))
+			setup.GET("", deps.SetupProgressHandler.Get)
+			setup.GET("/stream", deps.SetupProgressHandler.Stream)
+			setup.GET("/ws", deps.SetupProgressHandler.WS)
 		}
 
 		// Tickets — D2.

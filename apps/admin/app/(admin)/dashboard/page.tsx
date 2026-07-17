@@ -116,7 +116,7 @@ function DashboardContent({
 
   return (
     <>
-      <SetupChecklist checklist={setup_checklist} />
+      <SetupChecklist checklist={setup_checklist} storeId={storeId} />
 
       {isNewStore ? (
         <section className="flex flex-col items-start gap-3 border-t border-border-subtle py-10">

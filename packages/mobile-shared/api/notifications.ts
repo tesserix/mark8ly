@@ -20,8 +20,13 @@ export function createNotificationsApi(client: ReturnType<typeof createApiClient
      * the list is always empty in prod, so the "Mark all" button never renders.
      */
     markAllRead: () => client.patch("/notifications/read-all"),
+    /** Returns the server-side token id so the caller can later delete it. */
     registerPushToken: (token: string, platform: string, deviceId: string) =>
-      client.post("/push-tokens", { token, platform, device_id: deviceId }),
+      client.post<{ id: string }>("/push-tokens", {
+        token,
+        platform,
+        device_id: deviceId,
+      }),
     deletePushToken: (tokenId: string) => client.delete(`/push-tokens/${tokenId}`),
   };
 }

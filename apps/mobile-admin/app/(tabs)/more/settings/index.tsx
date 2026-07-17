@@ -1,6 +1,6 @@
 import { ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import { Palette, ScrollText, LifeBuoy, Users } from "lucide-react-native";
+import { Palette, ScrollText, LifeBuoy, Users, Bell } from "lucide-react-native";
 import { BackHeader, Screen } from "@/components/ui";
 import { MarketingRow } from "@/components/marketing/MarketingRow";
 import { theme } from "@/lib/theme";
@@ -22,6 +22,12 @@ export default function StoreSettingsHubScreen() {
           label="Branding"
           description="Storefront tagline, announcement, socials"
           onPress={() => router.push("/(tabs)/more/settings/branding")}
+        />
+        <MarketingRow
+          icon={<Bell size={ICON_SIZE} color={theme.colors.text} strokeWidth={ICON_STROKE} />}
+          label="Notifications"
+          description="Push alerts for orders, stock and more"
+          onPress={() => router.push("/(tabs)/more/settings/notifications")}
         />
         <MarketingRow
           icon={<Users size={ICON_SIZE} color={theme.colors.text} strokeWidth={ICON_STROKE} />}

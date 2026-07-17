@@ -3,6 +3,7 @@ import { Tabs, useRouter } from "expo-router";
 import * as Notifications from "expo-notifications";
 import { createNotificationsApi } from "@repo/mobile-shared/api/notifications";
 import { registerForPushNotifications } from "@repo/mobile-shared/push/registration";
+import { tokenStorage } from "@repo/mobile-shared/auth/token-storage";
 import { useApiClient } from "@/lib/api-client";
 import { TenantGate } from "@/components/TenantGate";
 import { Dock } from "@/components/navigation/Dock";
@@ -25,9 +26,15 @@ function usePushSetup() {
   const notificationsApi = createNotificationsApi(client);
 
   useEffect(() => {
-    registerForPushNotifications(async (token, platform, deviceId) => {
-      await notificationsApi.registerPushToken(token, platform, deviceId);
-    }).catch(console.warn);
+    // Respect the device-level opt-out from Settings > Notifications: skip
+    // registration entirely when the user has turned push off.
+    (async () => {
+      if (!(await tokenStorage.getPushEnabled())) return;
+      await registerForPushNotifications(async (token, platform, deviceId) => {
+        const res = await notificationsApi.registerPushToken(token, platform, deviceId);
+        if (res?.id) await tokenStorage.setPushTokenId(res.id);
+      });
+    })().catch(console.warn);
 
     responseListener.current =
       Notifications.addNotificationResponseReceivedListener((response) => {

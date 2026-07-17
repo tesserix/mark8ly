@@ -95,18 +95,10 @@ export default function CustomersScreen() {
             accessibilityRole="button"
             accessibilityLabel="View customer reviews"
           >
-            {({ pressed }) => (
-              <>
-                <Star
-                  size={16}
-                  color={pressed ? theme.colors.accent : theme.colors.text}
-                  strokeWidth={1.75}
-                />
-                <Text preset="caption" color={pressed ? "accent" : "text"}>
-                  Reviews
-                </Text>
-              </>
-            )}
+            <Star size={16} color={theme.colors.text} strokeWidth={1.75} />
+            <Text preset="caption" color="text">
+              Reviews
+            </Text>
           </Pressable>
         }
       />

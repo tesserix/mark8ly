@@ -8,6 +8,7 @@ import {
   Megaphone,
   Settings,
   ShieldCheck,
+  Store,
   UserRound,
 } from "lucide-react-native";
 import { useNotifications } from "../../../lib/hooks/use-notifications";
@@ -67,6 +68,13 @@ export default function MoreScreen() {
           label="Marketing"
           accessibilityLabel="Marketing — coupons, campaigns, loyalty and more"
           onPress={() => router.push("/(tabs)/more/marketing")}
+        />
+        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
+        <Row
+          icon={<Store size={18} color={theme.colors.text} strokeWidth={1.75} />}
+          label="Store settings"
+          accessibilityLabel="Store settings — branding, support tickets, audit log"
+          onPress={() => router.push("/(tabs)/more/settings")}
         />
         <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
         <Row

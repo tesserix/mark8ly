@@ -59,6 +59,13 @@ export type {
   LoyaltyMemberDetail,
 } from "./schemas/loyalty";
 
+// Store settings — branding (subset), audit log, support tickets. Branding
+// GET/PUT and ticket get/mutations return BARE objects; audit + ticket lists
+// are `{data, meta}` (ticket list adds `counts`).
+export type { Branding } from "./schemas/branding";
+export type { AuditLogEntry } from "./schemas/audit-log";
+export type { Ticket, TicketReply } from "./schemas/tickets";
+
 // Re-exported from the schema module so the types can never drift from the
 // validation again. The hand-written versions were entirely fictional:
 // `name`, `price`, `compare_at_price`, `sku`, `stock`, `thumbnail_url`,

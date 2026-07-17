@@ -61,8 +61,12 @@ export function AdminPage({
   // Width is owned by the (admin) layout's <main> wrapper (max-w-5xl).
   // AdminPage only handles the inner header + rhythm — no container
   // wrapper of its own, so pages don't double-nest max-widths.
+  //
+  // The entrance animation smooths the skeleton→content swap on route
+  // changes (M3 "emphasized decelerate" feel via ease-out-expo). Guarded
+  // by motion-safe; prefers-reduced-motion users get an instant swap.
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 motion-safe:animate-[fadeInUp_0.35s_var(--ease-out)_both]">
       <header className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0 flex-1 space-y-3">

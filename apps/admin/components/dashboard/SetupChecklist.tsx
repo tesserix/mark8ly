@@ -181,8 +181,18 @@ export function SetupChecklist({ checklist, storeId }: SetupChecklistProps) {
         />
       </div>
 
-      {!collapsed && (
-        <div className="mt-6 space-y-6">
+      {/* Always mounted; grid-rows 0fr→1fr animates the height so
+          expand/collapse glides instead of jump-cutting. inert + hidden
+          keep the collapsed content out of tab order and the a11y tree. */}
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+          collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+        }`}
+        inert={collapsed || undefined}
+        aria-hidden={collapsed}
+      >
+        <div className="overflow-hidden">
+          <div className="mt-6 space-y-6 pb-1">
           {phases.map((phase) => {
             const phaseItems = items.filter((item) => item.phase === phase);
             return (
@@ -235,8 +245,9 @@ export function SetupChecklist({ checklist, storeId }: SetupChecklistProps) {
               </div>
             );
           })}
+          </div>
         </div>
-      )}
+      </div>
     </section>
   );
 }

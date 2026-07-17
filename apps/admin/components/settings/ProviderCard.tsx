@@ -200,14 +200,14 @@ export function ProviderCard({
         className="grid transition-[grid-template-rows] duration-300 ease-in-out"
         style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
       >
+        {/* px-1 below is not decoration: this wrapper needs overflow-hidden
+            for the grid-rows expand animation, which clips anything drawn
+            outside the box — including the focus-visible:outline-offset-2
+            ring on the full-width inputs at the left and right edges. The
+            inset gives the ring room to render instead of being sheared
+            off. */}
         <div className="overflow-hidden">
           {expanded && (
-            {/* px-1 is not decoration: the wrapper above needs
-                overflow-hidden for the grid-rows expand animation, which
-                clips anything drawn outside this box — including the
-                focus-visible:outline-offset-2 ring on the full-width
-                inputs at the left and right edges. The inset gives the
-                ring room to render instead of being sheared off. */}
             <div className="border-t border-border-subtle px-1 pb-5 pt-5">
               {children}
             </div>

@@ -1,6 +1,7 @@
 import { createBrandingApi } from "@repo/mobile-shared/api/branding";
 import { createAuditLogApi } from "@repo/mobile-shared/api/audit-log";
 import { createTicketsApi } from "@repo/mobile-shared/api/tickets";
+import { createTeamApi } from "@repo/mobile-shared/api/team";
 
 type Call = { method: string; path: string; body?: unknown };
 
@@ -65,5 +66,26 @@ describe("createTicketsApi routes", () => {
     ]);
     expect(calls[3]!.body).toEqual({ content: "hello" });
     expect(calls[4]!.body).toEqual({ status: "resolved" });
+  });
+});
+
+describe("createTeamApi routes", () => {
+  it("targets /team paths + verbs; role/invite bodies", async () => {
+    const { client, calls } = fakeClient();
+    const api = createTeamApi(client);
+    await api.listMembers();
+    await api.updateRole("x@b.com", "admin");
+    await api.listInvitations();
+    await api.invite("new@b.com", "staff");
+    await api.revoke("inv1");
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      "GET /team/members",
+      "PATCH /team/members/role",
+      "GET /team/invitations",
+      "POST /team/invitations",
+      "DELETE /team/invitations/inv1",
+    ]);
+    expect(calls[1]!.body).toEqual({ email: "x@b.com", new_role: "admin" });
+    expect(calls[3]!.body).toEqual({ email: "new@b.com", role: "staff" });
   });
 });

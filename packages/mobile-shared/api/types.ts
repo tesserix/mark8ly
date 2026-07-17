@@ -65,6 +65,7 @@ export type {
 export type { Branding } from "./schemas/branding";
 export type { AuditLogEntry } from "./schemas/audit-log";
 export type { Ticket, TicketReply } from "./schemas/tickets";
+export type { TeamMember, TeamInvitation, AssignableRole } from "./schemas/team";
 
 // Re-exported from the schema module so the types can never drift from the
 // validation again. The hand-written versions were entirely fictional:

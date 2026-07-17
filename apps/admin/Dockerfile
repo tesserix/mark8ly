@@ -67,16 +67,18 @@ ENV NEXT_PUBLIC_GIP_PROJECT_ID=$NEXT_PUBLIC_GIP_PROJECT_ID \
 # Rotation caveat: BuildKit does not include secret contents in the layer
 # cache key, and CI caches this stage (cache-from/to: type=gha). Changing
 # only the secret will NOT rebuild this layer — bust the cache explicitly.
+# Fingerprint of the encryption key, passed by CI. Its only job is to
+# land in this layer's cache key: BuildKit excludes secret CONTENTS from
+# the cache key, so without this a rotated key would hit the cached build
+# and keep baking the old one. Never the key itself — just a hash of it.
+ARG SERVER_ACTIONS_KEY_FP=""
 RUN --mount=type=secret,id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY \
     NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/NEXT_SERVER_ACTIONS_ENCRYPTION_KEY 2>/dev/null || true)"; \
     if [ -z "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" ]; then \
-      echo "############################################################"; \
-      echo "WARNING: NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is empty."; \
-      echo "Next.js will generate a RANDOM key for this build, so every"; \
-      echo "Server Action ID changes and any tab open across the next"; \
-      echo "deploy will fail with UnrecognizedActionError."; \
-      echo "In CI this means the repo secret is missing — fix it."; \
-      echo "############################################################"; \
+      echo "WARNING: NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is empty — Next.js"; \
+      echo "will use a RANDOM per-build key, so Server Action IDs churn on"; \
+      echo "every deploy. CI fails earlier on this; a local build without"; \
+      echo "--secret is expected to land here."; \
     fi; \
     export NEXT_SERVER_ACTIONS_ENCRYPTION_KEY; \
     npm run build --workspace=@mark8ly/admin

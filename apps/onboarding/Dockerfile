@@ -63,6 +63,8 @@ ENV NEXT_PUBLIC_GIP_PROJECT_ID=$NEXT_PUBLIC_GIP_PROJECT_ID \
 # Pins the Server Action ID hash salt so action IDs stay stable across
 # builds. See apps/admin/Dockerfile for the full rationale and the
 # rotation/cache caveat.
+# Cache-key carrier for the encryption key — see apps/admin/Dockerfile.
+ARG SERVER_ACTIONS_KEY_FP=""
 RUN --mount=type=secret,id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY \
     NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/NEXT_SERVER_ACTIONS_ENCRYPTION_KEY 2>/dev/null || true)"; \
     if [ -z "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" ]; then \

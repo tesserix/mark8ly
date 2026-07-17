@@ -49,11 +49,16 @@ const nextConfig: NextConfig = {
             // Google sign-in, so GSI is not loaded here directly. The
             // allowlist is kept in sync with admin + onboarding so any
             // future inline use (e.g. one-tap on storefront) is unblocked.
-            // checkout.razorpay.com serves the Razorpay checkout SDK that
-            // components/PaymentPrompt.tsx injects. Without it the script
-            // is blocked and "Pay now" can never open — every INR order
-            // stays stuck at "reserved, awaiting payment".
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://checkout.razorpay.com",
+            // Razorpay is allowlisted by wildcard, per their own documented
+            // CSP (docs/payments/payment-gateway/cordova-integration).
+            // Enumerating hosts does not work here: PaymentPrompt only
+            // names checkout.razorpay.com, but that SDK pulls further
+            // scripts at runtime (cdn.razorpay.com risk-detection, and
+            // lumberjack.razorpay.com telemetry) which no amount of
+            // reading our own source reveals. Each missed host is a
+            // silent prod-only breakage, so trust the payment
+            // processor's domain rather than guess its subdomains.
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://*.razorpay.com",
             "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data:",
@@ -61,8 +66,9 @@ const nextConfig: NextConfig = {
             "frame-ancestors 'self'",
             // Razorpay renders its checkout modal (and the bank/UPI
             // redirect flows) in iframes from api.razorpay.com — allowing
-            // only the script leaves the modal blank.
-            "frame-src 'self' https://accounts.google.com/gsi/ https://api.razorpay.com https://checkout.razorpay.com",
+            // only the script leaves the modal blank. Wildcarded for the
+            // same reason as script-src above.
+            "frame-src 'self' https://accounts.google.com/gsi/ https://*.razorpay.com",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",

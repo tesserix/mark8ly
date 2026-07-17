@@ -1,0 +1,114 @@
+name: Mobile Admin - EAS Build
+
+# Cloud-builds the Expo app apps/mobile-admin on Expo's EAS Build service.
+# The mobile app is NOT a Docker image — it ships as a native iOS/Android
+# binary built by EAS, so this is a separate path from the GHCR/ArgoCD
+# web + marketplace-api workflows.
+#
+# Manual-only (workflow_dispatch) on purpose: native builds consume EAS
+# minutes, so we never auto-build on push. Pick platform + profile + submit at
+# run time. Builds are queued with --no-wait (the runner returns immediately;
+# track progress at https://expo.dev/accounts/tesserix-org/projects/mark8ly-admin).
+#
+# Requires the EXPO_TOKEN repo secret — an Expo access token for the
+# tesserix-org account that owns the @tesserix-org/mark8ly-admin EAS project.
+# Create one at https://expo.dev/accounts/tesserix-org/settings/access-tokens
+# then add it:  gh secret set EXPO_TOKEN --repo tesserix/mark8ly
+#
+# submit=true appends --auto-submit, which after the build uploads to
+# TestFlight using submit.production in eas.json (appleTeamId + ascAppId). For
+# that to run non-interactively in CI, the EAS project must already hold the
+# iOS credentials — set them up ONCE locally (needs an Apple login):
+#   cd apps/mobile-admin
+#   eas credentials     # iOS → Distribution cert + provisioning profile
+#   eas credentials     # iOS → App Store Connect API Key (for submit)
+# After that one-time setup, this workflow builds + submits with no GitHub
+# secrets beyond EXPO_TOKEN (and GHCR_PAT for the @tesserix registry install).
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Target platform
+        type: choice
+        options: [ios, android, all]
+        default: ios
+      profile:
+        description: EAS build profile (from eas.json)
+        type: choice
+        options: [preview, production, development]
+        default: production
+      submit:
+        description: Submit to TestFlight / Play internal after build
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-admin-eas-${{ inputs.platform }}-${{ inputs.profile }}-${{ inputs.submit }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: EAS build (mobile-admin)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          # The root .npmrc pins @tesserix/* to GitHub Packages, so the install
+          # needs an authed registry to pull the design system.
+          registry-url: "https://npm.pkg.github.com"
+
+      - name: Verify EXPO_TOKEN is configured
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::EXPO_TOKEN secret is not set. Add it with: gh secret set EXPO_TOKEN --repo tesserix/mark8ly"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        # eas build evaluates app.config.js + Expo config plugins on the runner
+        # before queuing the cloud build, so node_modules must be present.
+        # `npm ci` installs exactly from the lockfile (no drift) and runs the
+        # mobile-admin postinstall (nativewind/tailwind link).
+        run: npm ci --legacy-peer-deps
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GHCR_PAT }}
+
+      - name: Set up EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Queue EAS build
+        working-directory: apps/mobile-admin
+        # --auto-submit (when submit=true) chains a TestFlight submission after
+        # the build on EAS servers, using submit.<profile> in eas.json.
+        run: |
+          eas build \
+            --platform "${{ inputs.platform }}" \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            --no-wait \
+            ${{ inputs.submit && '--auto-submit' || '' }}
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## EAS build queued"
+            echo ""
+            echo "- **App:** mobile-admin"
+            echo "- **Platform:** ${{ inputs.platform }}"
+            echo "- **Profile:** ${{ inputs.profile }}"
+            echo "- **Submit to TestFlight:** ${{ inputs.submit }}"
+            echo "- Track builds: https://expo.dev/accounts/tesserix-org/projects/mark8ly-admin"
+          } >> "$GITHUB_STEP_SUMMARY"

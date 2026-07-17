@@ -43,6 +43,22 @@ export type {
 // mutations return the bare object.
 export type { Shipment, ShipmentAdvanceStatus } from "./schemas/shipments";
 
+// Marketing hub — all schema-derived from the marketing DTOs. Every marketing
+// endpoint wraps its payload in `{data: ...}` (unlike orders/reviews). See each
+// schema file for the exact envelope + pointer/omitempty nullability notes.
+export type { Coupon, CouponUsage, CouponType } from "./schemas/coupons";
+export type { Campaign } from "./schemas/campaigns";
+export type { Segment } from "./schemas/segments";
+export type { GiftCard, GiftCardTxn, GiftCardDetail } from "./schemas/gift-cards";
+export type {
+  LoyaltyProgram,
+  LoyaltyTier,
+  LoyaltyMember,
+  LoyaltyTxn,
+  Referral,
+  LoyaltyMemberDetail,
+} from "./schemas/loyalty";
+
 // Re-exported from the schema module so the types can never drift from the
 // validation again. The hand-written versions were entirely fictional:
 // `name`, `price`, `compare_at_price`, `sku`, `stock`, `thumbnail_url`,

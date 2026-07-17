@@ -66,3 +66,26 @@ export const legacyPaged = <K extends string, T extends z.ZodTypeAny>(key: K, it
     per_page: z.ZodNumber;
     total: z.ZodNumber;
   });
+
+/**
+ * The marketing handlers wrap EVERYTHING in `{data: ...}` (unlike orders/reviews
+ * which return bare objects from get/mutations). A single resource comes back as
+ * `{data: <obj>}`; the api layer parses this and returns `.data`.
+ */
+export const enveloped = <T extends z.ZodTypeAny>(item: T) => z.object({ data: item });
+
+/** `{data: <obj> | null}` — loyalty GetProgram returns `{data: null}` when the
+ *  store has never configured a program. */
+export const envelopedNullable = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({ data: item.nullable() });
+
+/** Coupons list envelope: `{data: [...], total, page}` (coupons.go:73) — NOT the
+ *  standard `{data, meta}`; there is no page_size/total_pages here. */
+export const envelopedListTotalPage = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({ data: z.array(item), total: z.number(), page: z.number() });
+
+/** Loyalty list envelope: `{data: [...], meta: {total, page, limit}}` (loyalty.go)
+ *  — a THIRD meta shape (total/page/limit, not page/page_size/total/total_pages). */
+export const loyaltyMeta = z.object({ total: z.number(), page: z.number(), limit: z.number() });
+export const loyaltyPaged = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({ data: z.array(item), meta: loyaltyMeta });

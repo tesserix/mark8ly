@@ -199,6 +199,8 @@ export function createApiClient(config: ApiClientConfig) {
       request<T>("POST", path, { body, schema }),
     patch: <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
       request<T>("PATCH", path, { body, schema }),
+    put: <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
+      request<T>("PUT", path, { body, schema }),
     delete: <T>(path: string) => request<T>("DELETE", path),
     uploadMedia: async (path: string, formData: FormData) => {
       const storeId = config.getStoreId();

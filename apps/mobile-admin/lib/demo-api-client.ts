@@ -256,6 +256,8 @@ export function createDemoApiClient(): ApiClient {
       }
       return parseOrThrow(path, body ?? { success: true }, schema);
     },
+    put: async <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
+      parseOrThrow(path, body ?? { success: true }, schema),
     delete: async <T>() => ({ success: true } as T),
     uploadMedia: async () => ({ id: "demo-media", url: "" }),
   };

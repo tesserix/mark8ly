@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ExternalLink,
   LifeBuoy,
+  Megaphone,
   Settings,
   ShieldCheck,
   UserRound,
@@ -61,6 +62,13 @@ export default function MoreScreen() {
     <Screen>
       <PageHeader eyebrow="MORE" title="Settings" />
       <Card padding={0} style={styles.card}>
+        <Row
+          icon={<Megaphone size={18} color={theme.colors.text} strokeWidth={1.75} />}
+          label="Marketing"
+          accessibilityLabel="Marketing — coupons, campaigns, loyalty and more"
+          onPress={() => router.push("/(tabs)/more/marketing")}
+        />
+        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
         <Row
           icon={<Bell size={18} color={theme.colors.text} strokeWidth={1.75} />}
           label="Notifications"

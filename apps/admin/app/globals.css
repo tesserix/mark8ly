@@ -122,6 +122,24 @@
   }
 }
 
+/* ============================================================
+   Motion keyframes — shared entrance animation. error.tsx and
+   AdminPage reference fadeInUp via Tailwind arbitrary animation
+   values; the keyframes must exist globally or those classes
+   silently no-op.
+   ============================================================ */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

@@ -52,7 +52,18 @@ interface RawRequestInit {
   url: string;
   headers?: Record<string, string>;
   formData?: FormData;
+  /** Per-request abort deadline. Defaults to REQUEST_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
+
+// A stalled connection (opened, no response) otherwise leaves fetch pending
+// forever — and with it react-query stuck in `isLoading`, freezing TenantGate
+// and every gated screen on a spinner with no recovery. An AbortController
+// deadline turns that hang into a rejection the retry/error UI can surface.
+// Knative scale-to-zero cold starts are the slow-but-legitimate case, so the
+// default is generous; uploads get their own longer budget.
+const REQUEST_TIMEOUT_MS = 20_000;
+const UPLOAD_TIMEOUT_MS = 60_000;
 
 export function createApiClient(config: ApiClientConfig) {
   // Single-flight token refresh — if two parallel requests both get a
@@ -84,7 +95,34 @@ export function createApiClient(config: ApiClientConfig) {
       headers["Content-Type"] = "application/json";
       body = JSON.stringify(init.body);
     }
-    return fetch(init.url, { method: init.method, headers, body });
+
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      init.timeoutMs ?? REQUEST_TIMEOUT_MS,
+    );
+    try {
+      return await fetch(init.url, {
+        method: init.method,
+        headers,
+        body,
+        signal: controller.signal,
+      });
+    } catch (err) {
+      // AbortController fires an AbortError; translate it into a clean,
+      // retryable ApiError so callers get a real message instead of a raw
+      // DOMException (and never a hung promise).
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new ApiError(
+          408,
+          "timeout",
+          "The request timed out. Check your connection and try again.",
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async function execute(init: RawRequestInit): Promise<Response> {
@@ -213,6 +251,7 @@ export function createApiClient(config: ApiClientConfig) {
         formData,
         isStoreScoped: true,
         url,
+        timeoutMs: UPLOAD_TIMEOUT_MS,
       });
       if (!res.ok) throw new ApiError(res.status, "upload_failed", "Media upload failed");
       return res.json();

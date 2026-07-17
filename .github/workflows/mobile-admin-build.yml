@@ -26,6 +26,12 @@ name: Mobile Admin - EAS Build
 # secrets beyond EXPO_TOKEN (and GHCR_PAT for the @tesserix registry install).
 
 on:
+  # Push a release tag to build + ship to TestFlight automatically, e.g.:
+  #   git tag mobile-admin-v1.0.0 && git push origin mobile-admin-v1.0.0
+  # Tag builds are always iOS / production / --auto-submit.
+  push:
+    tags:
+      - "mobile-admin-v*"
   workflow_dispatch:
     inputs:
       platform:
@@ -47,7 +53,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mobile-admin-eas-${{ inputs.platform }}-${{ inputs.profile }}-${{ inputs.submit }}
+  group: mobile-admin-eas-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -90,15 +96,15 @@ jobs:
 
       - name: Queue EAS build
         working-directory: apps/mobile-admin
-        # --auto-submit (when submit=true) chains a TestFlight submission after
-        # the build on EAS servers, using submit.<profile> in eas.json.
+        # Tag pushes → always ios / production / --auto-submit (TestFlight).
+        # Manual runs use the chosen inputs; --auto-submit only when submit=true.
         run: |
           eas build \
-            --platform "${{ inputs.platform }}" \
-            --profile "${{ inputs.profile }}" \
+            --platform "${{ inputs.platform || 'ios' }}" \
+            --profile "${{ inputs.profile || 'production' }}" \
             --non-interactive \
             --no-wait \
-            ${{ inputs.submit && '--auto-submit' || '' }}
+            ${{ (github.event_name == 'push' || inputs.submit) && '--auto-submit' || '' }}
 
       - name: Summary
         if: always()

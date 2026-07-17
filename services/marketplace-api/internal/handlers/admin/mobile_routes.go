@@ -211,6 +211,133 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 			}
 		}
 
+		// ── Marketing hub ── mirrors web routes.go 449-635. Handlers are
+		// shared with web (all on Deps, MobileDeps embeds Deps → no main.go
+		// wiring); this only re-exposes the same routes on the mobile group,
+		// each guarded on its handler so a partial deployment stays clean.
+
+		// Coupons (routes.go:449-469) — Staff view, Admin mutate.
+		if deps.CouponHandler != nil {
+			coupons := storeRoute.Group("/coupons")
+			{
+				coupons.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+					deps.CouponHandler.List)
+				coupons.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.CouponHandler.Create)
+				coupons.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+					deps.CouponHandler.Get)
+				coupons.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.CouponHandler.Patch)
+				coupons.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.CouponHandler.Delete)
+			}
+		}
+
+		// Gift cards (routes.go:471-485).
+		if deps.GiftCardHandler != nil {
+			gc := storeRoute.Group("/gift-cards")
+			{
+				gc.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsViewRole),
+					deps.GiftCardHandler.List)
+				gc.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsEditRole),
+					deps.GiftCardHandler.Issue)
+				gc.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsViewRole),
+					deps.GiftCardHandler.Get)
+			}
+		}
+
+		// Loyalty program (routes.go:487-513).
+		if deps.LoyaltyHandler != nil {
+			loyaltyGroup := storeRoute.Group("/loyalty")
+			{
+				loyaltyGroup.GET("/program",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyViewRole),
+					deps.LoyaltyHandler.GetProgram)
+				loyaltyGroup.PUT("/program",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyEditRole),
+					deps.LoyaltyHandler.UpdateProgram)
+				members := loyaltyGroup.Group("/members")
+				{
+					members.GET("",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyViewRole),
+						deps.LoyaltyHandler.ListMembers)
+					members.GET("/:id",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyViewRole),
+						deps.LoyaltyHandler.GetMember)
+					members.POST("/:id/adjust",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyEditRole),
+						deps.LoyaltyHandler.AdjustPoints)
+				}
+				loyaltyGroup.GET("/referrals",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.LoyaltyViewRole),
+					deps.LoyaltyHandler.ListReferrals)
+			}
+		}
+
+		// Campaigns (routes.go:531-563) — View list/get, Edit mutate + lifecycle.
+		if deps.CampaignHandler != nil {
+			campaigns := storeRoute.Group("/campaigns")
+			{
+				campaigns.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsViewRole),
+					deps.CampaignHandler.List)
+				campaigns.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Create)
+				campaigns.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsViewRole),
+					deps.CampaignHandler.Get)
+				campaigns.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Patch)
+				campaigns.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Delete)
+				campaigns.POST("/:id/send",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Send)
+				campaigns.POST("/:id/schedule",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Schedule)
+				campaigns.POST("/:id/pause",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Pause)
+				campaigns.POST("/:id/resume",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.CampaignHandler.Resume)
+			}
+		}
+
+		// Segments (routes.go:615-635) — reuse Campaigns roles.
+		if deps.SegmentHandler != nil {
+			segments := storeRoute.Group("/segments")
+			{
+				segments.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsViewRole),
+					deps.SegmentHandler.List)
+				segments.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.SegmentHandler.Create)
+				segments.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsViewRole),
+					deps.SegmentHandler.Get)
+				segments.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.SegmentHandler.Update)
+				segments.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.CampaignsEditRole),
+					deps.SegmentHandler.Delete)
+			}
+		}
+
 		// Push tokens
 		if deps.PushTokenHandler != nil {
 			pushTokens := storeRoute.Group("/push-tokens")

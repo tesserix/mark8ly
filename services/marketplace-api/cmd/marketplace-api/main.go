@@ -1109,7 +1109,7 @@ func main() {
 			Logger: log,
 		})
 		giftCardThemeLoaderSF := giftcard.NewStoreThemeLoader(conn, giftCardBrandingSvcSF, cfg.StorefrontBaseURLTemplate)
-		giftCardGatewayResolver := giftcard.NewDBGatewayResolver(conn)
+		giftCardGatewayResolver := giftcard.NewDBGatewayResolver(conn).WithSecretStore(carrierSecretStore).WithEncryptor(apiKeyEncryptor)
 		giftCardSvcSF := giftcard.NewServiceWithMailer(conn, giftCardRepoSF, giftCardMailerSF, giftCardThemeLoaderSF, log).
 			WithGatewayResolver(giftCardGatewayResolver)
 		giftCardSFHandler := storefront.NewGiftCardStorefrontHandler(giftCardSvcSF, log)

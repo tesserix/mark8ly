@@ -7,6 +7,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 )
 
@@ -29,6 +31,42 @@ func (paymentGatewayConfigRow) TableName() string { return "payment_gateway_conf
 // product checkout — no separate gift card payment config.
 type DBGatewayResolver struct {
 	db *gorm.DB
+	// secretStore resolves the credential references held by the
+	// *_encrypted columns ("gsm://..." once rewrapped, legacy inline
+	// "aes:" before). They are never usable as credentials as-is.
+	secretStore carriersecrets.Store
+	// encryptor is the fallback for inline-mode deployments.
+	encryptor crypto.Encryptor
+}
+
+// WithSecretStore wires the credential resolver. Chainable.
+func (r *DBGatewayResolver) WithSecretStore(s carriersecrets.Store) *DBGatewayResolver {
+	r.secretStore = s
+	return r
+}
+
+// WithEncryptor wires the inline-mode fallback. Chainable.
+func (r *DBGatewayResolver) WithEncryptor(e crypto.Encryptor) *DBGatewayResolver {
+	r.encryptor = e
+	return r
+}
+
+// resolveCred turns a stored credential reference into plaintext. Same
+// Store-first / Encryptor-fallback contract as the checkout and refund
+// paths — see handlers/storefront/checkout_ext.go resolveCred.
+func (r *DBGatewayResolver) resolveCred(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
+	}
+	if r.secretStore != nil {
+		return r.secretStore.Get(ctx, ref)
+	}
+	if r.encryptor == nil {
+		// Returning ref would hand "gsm://projects/..." to the gateway as an
+		// API key — a 401 with no usable diagnostic. Fail loudly instead.
+		return "", fmt.Errorf("giftcard: no secret store or encryptor wired — cannot resolve gateway credentials")
+	}
+	return r.encryptor.Decrypt(ref)
 }
 
 // NewDBGatewayResolver constructs the resolver.
@@ -51,7 +89,18 @@ func (r *DBGatewayResolver) ResolveCheckoutGateway(ctx context.Context, storeID 
 		return nil, fmt.Errorf("giftcard: no active payment config for %q: %w", provider, err)
 	}
 
-	gw, err := payment.NewGateway(provider, cfg.APIKey, cfg.SecretKey, cfg.Mode)
+	// The *_encrypted columns hold references, not credentials — passing
+	// them through verbatim is what made refunds 401 (see orderrefund).
+	apiKey, err := r.resolveCred(ctx, cfg.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("giftcard: resolve %s api_key: %w", provider, err)
+	}
+	secretKey, err := r.resolveCred(ctx, cfg.SecretKey)
+	if err != nil {
+		return nil, fmt.Errorf("giftcard: resolve %s secret_key: %w", provider, err)
+	}
+
+	gw, err := payment.NewGateway(provider, apiKey, secretKey, cfg.Mode)
 	if err != nil {
 		return nil, fmt.Errorf("giftcard: gateway init: %w", err)
 	}

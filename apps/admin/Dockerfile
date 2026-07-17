@@ -54,7 +54,32 @@ ENV NEXT_PUBLIC_GIP_PROJECT_ID=$NEXT_PUBLIC_GIP_PROJECT_ID \
     NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=$NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN \
     NEXT_TELEMETRY_DISABLED=1
 
-RUN npm run build --workspace=@mark8ly/admin
+# Server Action IDs are hashed with this key as the salt (Next.js wires
+# it to serverReferenceHashSalt), so an unset key means a random one per
+# build and every action ID churns on every deploy — breaking Server
+# Actions in any tab opened before the rollout. Pinning it keeps IDs
+# stable across builds whose action source didn't change.
+#
+# Mounted as a BuildKit secret rather than an ARG so it stays out of
+# `docker history`. Next.js bakes the key into the build manifest, which
+# is what the runtime falls back to — so no runtime env var is needed.
+#
+# Rotation caveat: BuildKit does not include secret contents in the layer
+# cache key, and CI caches this stage (cache-from/to: type=gha). Changing
+# only the secret will NOT rebuild this layer — bust the cache explicitly.
+RUN --mount=type=secret,id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY \
+    NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/NEXT_SERVER_ACTIONS_ENCRYPTION_KEY 2>/dev/null || true)"; \
+    if [ -z "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" ]; then \
+      echo "############################################################"; \
+      echo "WARNING: NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is empty."; \
+      echo "Next.js will generate a RANDOM key for this build, so every"; \
+      echo "Server Action ID changes and any tab open across the next"; \
+      echo "deploy will fail with UnrecognizedActionError."; \
+      echo "In CI this means the repo secret is missing — fix it."; \
+      echo "############################################################"; \
+    fi; \
+    export NEXT_SERVER_ACTIONS_ENCRYPTION_KEY; \
+    npm run build --workspace=@mark8ly/admin
 
 # ─── runtime ───────────────────────────────────────────────────────────
 # base-node-runtime-22: libc6-compat, tini PID 1, USER 10001 (nextjs).

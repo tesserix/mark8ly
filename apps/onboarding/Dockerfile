@@ -60,7 +60,18 @@ ENV NEXT_PUBLIC_GIP_PROJECT_ID=$NEXT_PUBLIC_GIP_PROJECT_ID \
     NEXT_PUBLIC_ADMIN_URL_TEMPLATE=$NEXT_PUBLIC_ADMIN_URL_TEMPLATE \
     NEXT_TELEMETRY_DISABLED=1
 
-RUN npm run build --workspace=@mark8ly/onboarding
+# Pins the Server Action ID hash salt so action IDs stay stable across
+# builds. See apps/admin/Dockerfile for the full rationale and the
+# rotation/cache caveat.
+RUN --mount=type=secret,id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY \
+    NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/NEXT_SERVER_ACTIONS_ENCRYPTION_KEY 2>/dev/null || true)"; \
+    if [ -z "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" ]; then \
+      echo "WARNING: NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is empty — Next.js"; \
+      echo "will use a RANDOM per-build key, so Server Action IDs churn on"; \
+      echo "every deploy. In CI this means the repo secret is missing."; \
+    fi; \
+    export NEXT_SERVER_ACTIONS_ENCRYPTION_KEY; \
+    npm run build --workspace=@mark8ly/onboarding
 
 # ─── runtime ───────────────────────────────────────────────────────────
 # base-node-runtime-22: libc6-compat, tini PID 1, USER 10001 (nextjs).

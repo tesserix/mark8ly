@@ -193,8 +193,15 @@ jobs:
           # GitHub Packages without baking the token into a layer.
           # Go Dockerfiles ignore this secret since their build doesn't
           # touch GitHub Packages.
+          # NEXT_SERVER_ACTIONS_ENCRYPTION_KEY pins the Server Action ID
+          # hash salt. Without it Next.js generates a random key per
+          # build, so every action ID changes on every deploy and any
+          # tab open across a rollout gets UnrecognizedActionError. The
+          # Next.js Dockerfiles mount it around `npm run build`; Go
+          # Dockerfiles ignore it.
           secrets: |
             NODE_AUTH_TOKEN=${{ secrets.GHCR_PAT }}
+            NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
           # Public Next.js config baked into the client bundle at build
           # time. Go service Dockerfiles ignore unknown ARGs, so it's safe
           # to pass these for every image in the matrix.

@@ -106,3 +106,14 @@ export type { Store } from "./schemas/stores";
 // and `CustomerDetail` invented average_order_value/recent_orders/review_count
 // that the backend has never had.
 export type { Customer, CustomerDetail, CustomerAddress } from "./schemas/customers";
+
+// Re-exported from the schema module so the types can never drift from the
+// validation. Reviews had no schema at all before — the app punted with
+// z.unknown(); this is the real wire shape from reviews_dto.go.
+export type {
+  Review,
+  ReviewMedia,
+  ReviewReply,
+  ReviewStatus,
+  ReviewListResponse,
+} from "./schemas/reviews";

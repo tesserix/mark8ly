@@ -2,11 +2,13 @@ import { useState, useCallback, useEffect } from "react";
 import {
   View,
   FlatList,
+  Pressable,
   RefreshControl,
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { Star } from "lucide-react-native";
 import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useCustomers } from "../../../lib/hooks/use-customers";
@@ -17,6 +19,7 @@ import {
   Screen,
   SearchField,
   SegmentedControl,
+  Text,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { DISCLOSURE_EASING } from "@/components/products/disclosure-motion";
@@ -82,7 +85,31 @@ export default function CustomersScreen() {
 
   return (
     <Screen>
-      <PageHeader eyebrow="CUSTOMERS" title="People" />
+      <PageHeader
+        eyebrow="CUSTOMERS"
+        title="People"
+        rightSlot={
+          <Pressable
+            style={styles.reviewsLink}
+            onPress={() => router.push("/(tabs)/customers/reviews")}
+            accessibilityRole="button"
+            accessibilityLabel="View customer reviews"
+          >
+            {({ pressed }) => (
+              <>
+                <Star
+                  size={16}
+                  color={pressed ? theme.colors.accent : theme.colors.text}
+                  strokeWidth={1.75}
+                />
+                <Text preset="caption" color={pressed ? "accent" : "text"}>
+                  Reviews
+                </Text>
+              </>
+            )}
+          </Pressable>
+        }
+      />
       <View style={styles.search}>
         <SearchField
           value={searchText}
@@ -149,6 +176,12 @@ const styles = StyleSheet.create({
   search: {
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xs,
+  },
+  reviewsLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minHeight: 44,
   },
   listWrap: {
     flex: 1,

@@ -5,6 +5,8 @@ export default function CustomersLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="[id]" />
+      <Stack.Screen name="reviews/index" />
+      <Stack.Screen name="reviews/[id]" />
     </Stack>
   );
 }

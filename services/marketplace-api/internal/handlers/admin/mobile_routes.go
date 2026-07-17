@@ -338,6 +338,56 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 			}
 		}
 
+		// ── Store settings ── mirrors web routes.go. Handlers shared with web
+		// (all on Deps). CSV export + logo upload-url are intentionally NOT
+		// exposed on mobile (file streams / signed-upload flows are web-only).
+
+		// Branding (routes.go:849-862) — GET + PUT. The mobile UI edits only
+		// the text basics; the PUT body is all-optional (partial update).
+		if deps.BrandingHandler != nil {
+			branding := storeRoute.Group("/branding")
+			{
+				branding.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.BrandingViewRole),
+					deps.BrandingHandler.Get)
+				branding.PUT("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.BrandingEditRole),
+					deps.BrandingHandler.Update)
+			}
+		}
+
+		// Audit logs (routes.go:774-787) — read-only list. Export CSV deferred.
+		if deps.AuditLogsHandler != nil {
+			auditLogs := storeRoute.Group("/audit-logs")
+			{
+				auditLogs.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.AuditLogsViewRole),
+					deps.AuditLogsHandler.List)
+			}
+		}
+
+		// Support tickets (routes.go:802-820) — full: list/create/get/reply/status.
+		if deps.TicketsHandler != nil {
+			tickets := storeRoute.Group("/tickets")
+			{
+				tickets.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsViewRole),
+					deps.TicketsHandler.List)
+				tickets.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsEditRole),
+					deps.TicketsHandler.Create)
+				tickets.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsViewRole),
+					deps.TicketsHandler.Get)
+				tickets.POST("/:id/reply",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsEditRole),
+					deps.TicketsHandler.Reply)
+				tickets.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.TicketsEditRole),
+					deps.TicketsHandler.UpdateStatus)
+			}
+		}
+
 		// Push tokens
 		if deps.PushTokenHandler != nil {
 			pushTokens := storeRoute.Group("/push-tokens")

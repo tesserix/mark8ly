@@ -32,6 +32,12 @@ export interface RefundOrderBody {
   reason?: string;
 }
 
+/** POST .../invoice|receipt/email → `{sent, recipient}` (orders.go:663). */
+export interface EmailDocumentResult {
+  sent: boolean;
+  recipient: string;
+}
+
 export function createOrdersApi(client: ReturnType<typeof createApiClient>) {
   return {
     list: (params?: ListOrdersParams) =>
@@ -52,6 +58,19 @@ export function createOrdersApi(client: ReturnType<typeof createApiClient>) {
       client.post<OrderDetail>(`/orders/${id}/cancel`, { reason }, orderDetailSchema),
     /** refund_request_id is REQUIRED; amount omitted ⇒ full remaining balance. */
     refund: (id: string, body: RefundOrderBody) => client.post(`/orders/${id}/refund`, body),
+    /**
+     * Resend the invoice email. Optional `note` renders as a "Note from
+     * {store}" block. Returns `{sent, recipient}`. 422 when the order has no
+     * customer email on file (orders.go:651).
+     */
+    emailInvoice: (id: string, note?: string) =>
+      client.post<EmailDocumentResult>(`/orders/${id}/invoice/email`, note ? { note } : {}),
+    /**
+     * Resend the receipt email. Gated on shipment delivery — a 409
+     * ("not_delivered", orders.go:622) means no delivered shipment yet.
+     */
+    emailReceipt: (id: string, note?: string) =>
+      client.post<EmailDocumentResult>(`/orders/${id}/receipt/email`, note ? { note } : {}),
   };
 }
 

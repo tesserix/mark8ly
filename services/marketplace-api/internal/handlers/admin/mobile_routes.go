@@ -122,6 +122,46 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 				orders.POST("/:id/refund",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersRefundRole),
 					deps.OrdersHandler.Refund)
+
+				// Customer-facing document emails — mirror routes.go:302-310.
+				// Resend the invoice / receipt on demand (same handlers, same
+				// authz as web; only the route group differs).
+				orders.POST("/:id/invoice/email",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+					deps.OrdersHandler.EmailInvoice)
+				orders.POST("/:id/receipt/email",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+					deps.OrdersHandler.EmailReceipt)
+
+				// Shipments — mirror routes.go:312-355. Guarded on the
+				// handler so a deployment without shipping wired stays
+				// route-clean. Handler/service/DTO shared with web.
+				if deps.ShipmentsHandler != nil {
+					orders.POST("/:id/shipments",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.Create)
+					orders.GET("/:id/shipments",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+						deps.ShipmentsHandler.GetByOrder)
+					orders.PATCH("/:id/shipments/:shipmentId/status",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.UpdateStatus)
+					orders.GET("/:id/shipments/:shipmentId/label",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+						deps.ShipmentsHandler.DownloadLabel)
+					orders.POST("/:id/shipments/:shipmentId/label/email",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.EmailLabel)
+					orders.POST("/:id/shipments/:shipmentId/tracking/refresh",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.RefreshTracking)
+					orders.DELETE("/:id/shipments/:shipmentId",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.Delete)
+					orders.POST("/:id/shipments/:shipmentId/pickup/schedule",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.SchedulePickup)
+				}
 			}
 		}
 

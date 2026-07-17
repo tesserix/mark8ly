@@ -38,6 +38,11 @@ export type {
   OrderTaxLine,
 } from "./schemas/orders";
 
+// Shipment DTO for the order detail's shipping panel — schema-derived from
+// ShipmentResponse (shipments.go). GET returns the bare object OR null; the
+// mutations return the bare object.
+export type { Shipment, ShipmentAdvanceStatus } from "./schemas/shipments";
+
 // Re-exported from the schema module so the types can never drift from the
 // validation again. The hand-written versions were entirely fictional:
 // `name`, `price`, `compare_at_price`, `sku`, `stock`, `thumbnail_url`,

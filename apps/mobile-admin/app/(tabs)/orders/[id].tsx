@@ -6,6 +6,8 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
@@ -22,6 +24,8 @@ import { formatMoney } from "@/lib/money";
 import { OrderStatusBadges } from "@/components/orders/OrderStatusBadges";
 import { CancelReasonSheet, type CancelReasonSheetHandle } from "@/components/orders/CancelReasonSheet";
 import { RefundSheet, type RefundSheetHandle } from "@/components/orders/RefundSheet";
+import { ShippingPanel } from "@/components/orders/ShippingPanel";
+import { useEmailInvoice, useEmailReceipt } from "@/lib/admin-api/shipment-actions";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import type { OrderItem, OrderAddress } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
@@ -141,6 +145,8 @@ export default function OrderDetailScreen() {
   const fulfillMutation = useFulfillOrder();
   const cancelMutation = useCancelOrder();
   const refundMutation = useRefundOrder();
+  const emailInvoiceMutation = useEmailInvoice();
+  const emailReceiptMutation = useEmailReceipt();
   const cancelSheetRef = useRef<CancelReasonSheetHandle>(null);
   const refundSheetRef = useRef<RefundSheetHandle>(null);
 
@@ -192,6 +198,46 @@ export default function OrderDetailScreen() {
     },
     [id, refundMutation],
   );
+
+  const handleEmailInvoice = useCallback(() => {
+    emailInvoiceMutation.mutate(
+      { orderId: id },
+      {
+        onSuccess: (res) =>
+          Alert.alert("Invoice sent", `Emailed to ${res.recipient}.`),
+        onError: (err) => {
+          const msg =
+            err instanceof ApiError && err.status === 422
+              ? "This order has no customer email on file."
+              : err instanceof ApiError
+                ? err.message
+                : "Couldn't send the invoice. Please try again.";
+          Alert.alert("Couldn't send invoice", msg);
+        },
+      },
+    );
+  }, [id, emailInvoiceMutation]);
+
+  const handleEmailReceipt = useCallback(() => {
+    emailReceiptMutation.mutate(
+      { orderId: id },
+      {
+        onSuccess: (res) =>
+          Alert.alert("Receipt sent", `Emailed to ${res.recipient}.`),
+        onError: (err) => {
+          const msg =
+            err instanceof ApiError && err.status === 409
+              ? "The receipt is available only after the shipment is delivered."
+              : err instanceof ApiError && err.status === 422
+                ? "This order has no customer email on file."
+                : err instanceof ApiError
+                  ? err.message
+                  : "Couldn't send the receipt. Please try again.";
+          Alert.alert("Couldn't send receipt", msg);
+        },
+      },
+    );
+  }, [id, emailReceiptMutation]);
 
   if (error) {
     return (
@@ -293,6 +339,36 @@ export default function OrderDetailScreen() {
           </>
         ) : null}
 
+        <ShippingPanel
+          orderId={id}
+          orderStatus={order.status}
+          defaultCarrier={order.shipping_carrier}
+          defaultService={order.shipping_service}
+        />
+
+        <Eyebrow label="Documents" style={styles.section} />
+        <View style={styles.card}>
+          <View style={styles.docRow}>
+            <ActionButton
+              variant="secondary"
+              label={emailInvoiceMutation.isPending ? "Sending…" : "Email invoice"}
+              onPress={handleEmailInvoice}
+              disabled={emailInvoiceMutation.isPending || emailReceiptMutation.isPending}
+              style={styles.flex1}
+            />
+            <ActionButton
+              variant="secondary"
+              label={emailReceiptMutation.isPending ? "Sending…" : "Email receipt"}
+              onPress={handleEmailReceipt}
+              disabled={emailInvoiceMutation.isPending || emailReceiptMutation.isPending}
+              style={styles.flex1}
+            />
+          </View>
+          <Text preset="caption" color="textTertiary">
+            The receipt sends only after the shipment is delivered.
+          </Text>
+        </View>
+
         <View style={styles.actions}>
           {order.status === "pending" ? (
             <ActionButton
@@ -348,11 +424,13 @@ function ActionButton({
   label,
   onPress,
   disabled,
+  style,
 }: {
   variant: "primary" | "secondary" | "danger";
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
 }) {
   const btnStyle =
     variant === "primary"
@@ -363,7 +441,7 @@ function ActionButton({
   const color = variant === "primary" ? "inverse" : variant === "danger" ? "danger" : "text";
   return (
     <TouchableOpacity
-      style={[btnStyle, disabled && styles.btnDisabled]}
+      style={[btnStyle, disabled && styles.btnDisabled, style]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.85}
@@ -406,6 +484,8 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
   },
   addressBlock: { paddingVertical: theme.spacing.md, gap: 2 },
+  docRow: { flexDirection: "row", gap: theme.spacing.md, marginBottom: theme.spacing.sm },
+  flex1: { flex: 1 },
   actions: {
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xl,

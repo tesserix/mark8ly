@@ -1,6 +1,11 @@
 import type { createApiClient } from "./client";
-import type { OrderDetail } from "./types";
-import { orderListSchema, type Order, type OrderListResponse } from "./schemas/orders";
+import {
+  orderDetailSchema,
+  orderListSchema,
+  type Order,
+  type OrderDetail,
+  type OrderListResponse,
+} from "./schemas/orders";
 
 export interface ListOrdersParams {
   status?: string;
@@ -10,26 +15,44 @@ export interface ListOrdersParams {
   page_size?: string;
 }
 
+export interface ConfirmOrderBody {
+  /** Optional payment-status change on confirm (e.g. "authorized" | "paid"). */
+  payment_status?: string;
+  reason?: string;
+}
+
+export interface RefundOrderBody {
+  /** Omit for a full remaining-balance refund. */
+  amount?: number;
+  /**
+   * REQUIRED idempotency scope — a stable id per refund attempt, reused on
+   * retry (RefundOrderRequest.refund_request_id). Generate with `randomId()`.
+   */
+  refund_request_id: string;
+  reason?: string;
+}
+
 export function createOrdersApi(client: ReturnType<typeof createApiClient>) {
   return {
     list: (params?: ListOrdersParams) =>
       client.get<OrderListResponse>("/orders", params as Record<string, string>, orderListSchema),
-    /**
-     * NO schema, deliberately. OrderDetail is still the hand-written
-     * (and largely fictional) type: `line_items`, `shipping_address`,
-     * `timeline`, `tracking_number`, `payment_method` and
-     * `payment_transaction_id` do not exist on the wire. Attaching a schema
-     * here would turn a broken screen into a thrown contract_mismatch
-     * without fixing anything. The detail rewrite is its own sub-project —
-     * see docs/superpowers/specs/2026-07-16-mobile-admin-lists-bcd-design.md.
-     */
-    get: (id: string) => client.get<OrderDetail>(`/orders/${id}`),
-    confirm: (id: string) => client.post(`/orders/${id}/confirm`),
-    fulfill: (id: string, trackingNumber: string) =>
-      client.post(`/orders/${id}/fulfill`, { tracking_number: trackingNumber }),
-    cancel: (id: string, reason?: string) => client.post(`/orders/${id}/cancel`, { reason }),
-    refund: (id: string, amount: number) => client.post(`/orders/${id}/refund`, { amount }),
+    // get/confirm/fulfill/cancel all return a BARE AdminOrderResponse
+    // (items[]/addresses[], tax_lines only on get). refund returns a different
+    // RefundOrderResponse, so it stays unschema'd.
+    get: (id: string) =>
+      client.get<OrderDetail>(`/orders/${id}`, undefined, orderDetailSchema),
+    /** ConfirmOrderRequest: optional payment_status + reason. */
+    confirm: (id: string, body?: ConfirmOrderBody) =>
+      client.post<OrderDetail>(`/orders/${id}/confirm`, body ?? {}, orderDetailSchema),
+    /** MarkFulfilled ignores the body — the old tracking_number was a no-op. */
+    fulfill: (id: string) =>
+      client.post<OrderDetail>(`/orders/${id}/fulfill`, {}, orderDetailSchema),
+    /** CancelOrderRequest.reason is REQUIRED (binding) — omitting it is a 400. */
+    cancel: (id: string, reason: string) =>
+      client.post<OrderDetail>(`/orders/${id}/cancel`, { reason }, orderDetailSchema),
+    /** refund_request_id is REQUIRED; amount omitted ⇒ full remaining balance. */
+    refund: (id: string, body: RefundOrderBody) => client.post(`/orders/${id}/refund`, body),
   };
 }
 
-export type { Order };
+export type { Order, OrderDetail };

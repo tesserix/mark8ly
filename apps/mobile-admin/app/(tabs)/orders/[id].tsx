@@ -1,15 +1,14 @@
-import { useState, useCallback } from "react";
+import { useCallback, useRef } from "react";
 import {
   View,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-  Modal,
   Alert,
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useOrder } from "../../../lib/hooks/use-orders";
 import {
   useConfirmOrder,
@@ -17,37 +16,18 @@ import {
   useCancelOrder,
   useRefundOrder,
 } from "../../../lib/admin-api/order-actions";
-import {
-  BackHeader,
-  Card,
-  Eyebrow,
-  Hairline,
-  Screen,
-  StatusBadge,
-  Text,
-  type StatusTone,
-} from "@/components/ui";
+import { BackHeader, Eyebrow, Hairline, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
-import type { LineItem, Address } from "@repo/mobile-shared/api/types";
+import { formatMoney } from "@/lib/money";
+import { OrderStatusBadges } from "@/components/orders/OrderStatusBadges";
+import { CancelReasonSheet, type CancelReasonSheetHandle } from "@/components/orders/CancelReasonSheet";
+import { RefundSheet, type RefundSheetHandle } from "@/components/orders/RefundSheet";
+import { ApiError } from "@repo/mobile-shared/api/client";
+import type { OrderItem, OrderAddress } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
-const STATUS_TONE: Record<string, StatusTone> = {
-  pending: "warning",
-  confirmed: "success",
-  fulfilled: "neutral",
-  cancelled: "danger",
-};
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString("en-US", {
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-AU", {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -56,162 +36,175 @@ function formatDate(dateString: string): string {
   });
 }
 
-function formatAddress(address: Address): string {
-  const parts = [address.line1];
-  if (address.line2) parts.push(address.line2);
-  parts.push(`${address.city}, ${address.state} ${address.postal_code}`);
-  parts.push(address.country);
-  return parts.join("\n");
+const LIFECYCLE = ["pending", "confirmed", "fulfilled"] as const;
+const LIFECYCLE_LABEL: Record<string, string> = {
+  pending: "Placed",
+  confirmed: "Confirmed",
+  fulfilled: "Fulfilled",
+};
+
+function Lifecycle({ status }: { status: string }) {
+  if (status === "cancelled") {
+    return (
+      <View style={styles.lifecycleRow}>
+        <Text preset="caption" color="danger">
+          Cancelled
+        </Text>
+      </View>
+    );
+  }
+  const activeIndex = LIFECYCLE.indexOf(status as (typeof LIFECYCLE)[number]);
+  return (
+    <View style={styles.lifecycleRow}>
+      {LIFECYCLE.map((step, i) => {
+        const done = i <= activeIndex;
+        return (
+          <View key={step} style={styles.lifecycleStep}>
+            <View style={[styles.lifecycleDot, done ? styles.lifecycleDotDone : null]} />
+            <Text preset="caption" color={done ? "text" : "textTertiary"}>
+              {LIFECYCLE_LABEL[step]}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
 }
 
-function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value) return null;
+function ItemRow({ item, currency }: { item: OrderItem; currency: string }) {
   return (
-    <View style={styles.infoRow}>
-      <Text preset="caption" color="textTertiary" style={styles.infoLabel}>
+    <View style={styles.item}>
+      <View style={styles.itemInfo}>
+        <Text preset="bodyEmphasis" color="text" numberOfLines={2}>
+          {item.title_snapshot}
+        </Text>
+        {item.option_summary ? (
+          <Text preset="caption" color="textTertiary">
+            {item.option_summary}
+          </Text>
+        ) : null}
+        <Text preset="caption" color="textSecondary">
+          {item.quantity} × {formatMoney(item.unit_price, currency)} · {item.sku_snapshot}
+        </Text>
+      </View>
+      <Text preset="bodyEmphasis" color="text">
+        {formatMoney(item.line_total, currency)}
+      </Text>
+    </View>
+  );
+}
+
+function TotalRow({ label, value, emphasis }: { label: string; value: string; emphasis?: boolean }) {
+  return (
+    <View style={styles.totalRow}>
+      <Text preset={emphasis ? "bodyEmphasis" : "body"} color={emphasis ? "text" : "textSecondary"}>
         {label}
       </Text>
-      <Text preset="body" color="text" style={styles.infoValue}>
+      <Text preset={emphasis ? "h3" : "body"} color="text">
         {value}
       </Text>
     </View>
   );
 }
 
-function LineItemRow({ item }: { item: LineItem }) {
-  const total = item.quantity * item.unit_price;
-  return (
-    <View style={styles.lineItem}>
-      <View style={styles.lineThumb} />
-      <View style={styles.lineInfo}>
-        <Text preset="bodyEmphasis" color="text" numberOfLines={1}>
-          {item.product_name}
-        </Text>
-        {item.variant_name ? (
-          <Text preset="caption" color="textTertiary">
-            {item.variant_name}
-          </Text>
-        ) : null}
-        <Text preset="caption" color="textSecondary">
-          {item.quantity} × {formatCurrency(item.unit_price)}
-        </Text>
-      </View>
-      <Text preset="bodyEmphasis" color="text">
-        {formatCurrency(total)}
-      </Text>
-    </View>
+function AddressBlock({ address }: { address: OrderAddress }) {
+  const cityLine = [address.city, [address.region, address.postal_code].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+  const lines = [address.line1, address.line2, cityLine, address.country_code, address.phone].filter(
+    (l): l is string => Boolean(l),
   );
-}
-
-function InputModal({
-  visible, title, placeholder, value, onChangeText, onSubmit, onCancel, submitLabel, keyboardType,
-}: {
-  visible: boolean;
-  title: string;
-  placeholder: string;
-  value: string;
-  onChangeText: (text: string) => void;
-  onSubmit: () => void;
-  onCancel: () => void;
-  submitLabel: string;
-  keyboardType?: "default" | "decimal-pad";
-}) {
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text preset="h3" color="text" style={styles.modalTitle}>
-            {title}
-          </Text>
-          <TextInput
-            style={styles.modalInput}
-            placeholder={placeholder}
-            placeholderTextColor={theme.colors.textTertiary}
-            value={value}
-            onChangeText={onChangeText}
-            keyboardType={keyboardType ?? "default"}
-            autoFocus
-            accessibilityLabel={title}
-          />
-          <View style={styles.modalActions}>
-            <TouchableOpacity
-              style={styles.modalCancelBtn}
-              onPress={onCancel}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel"
-            >
-              <Text preset="bodyEmphasis" color="textSecondary">
-                Cancel
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalSubmitBtn}
-              onPress={onSubmit}
-              accessibilityRole="button"
-              accessibilityLabel={submitLabel}
-            >
-              <Text preset="bodyEmphasis" color="inverse">
-                {submitLabel}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    <View style={styles.addressBlock}>
+      <Text preset="caption" color="textTertiary">
+        {address.kind === "billing" ? "Billing" : "Shipping"}
+      </Text>
+      <Text preset="bodyEmphasis" color="text">
+        {address.name}
+      </Text>
+      {lines.map((line, i) => (
+        <Text key={i} preset="body" color="textSecondary">
+          {line}
+        </Text>
+      ))}
+    </View>
   );
 }
 
 export default function OrderDetailScreen() {
   const dockPad = useDockClearance();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: order, isLoading } = useOrder(id);
+  const { data: order, isLoading, error } = useOrder(id);
+  const storeCurrency = useTenantStore((s) => s.activeStore?.currency_code);
 
   const confirmMutation = useConfirmOrder();
   const fulfillMutation = useFulfillOrder();
   const cancelMutation = useCancelOrder();
   const refundMutation = useRefundOrder();
+  const cancelSheetRef = useRef<CancelReasonSheetHandle>(null);
+  const refundSheetRef = useRef<RefundSheetHandle>(null);
 
-  const [fulfillVisible, setFulfillVisible] = useState(false);
-  const [refundVisible, setRefundVisible] = useState(false);
-  const [trackingNumber, setTrackingNumber] = useState("");
-  const [refundAmount, setRefundAmount] = useState("");
+  const isMutating =
+    confirmMutation.isPending ||
+    fulfillMutation.isPending ||
+    cancelMutation.isPending ||
+    refundMutation.isPending;
 
   const handleConfirm = useCallback(() => {
-    Alert.alert("Confirm Order", "Mark this order as confirmed?", [
+    Alert.alert("Confirm order", "Mark this order as confirmed?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Confirm", onPress: () => confirmMutation.mutate(id) },
+      { text: "Confirm", onPress: () => confirmMutation.mutate({ id }) },
+      {
+        text: "Confirm & mark paid",
+        onPress: () => confirmMutation.mutate({ id, body: { payment_status: "paid" } }),
+      },
     ]);
   }, [id, confirmMutation]);
 
   const handleFulfill = useCallback(() => {
-    if (!trackingNumber.trim()) return;
-    fulfillMutation.mutate(
-      { id, trackingNumber: trackingNumber.trim() },
-      { onSuccess: () => setFulfillVisible(false) },
-    );
-    setTrackingNumber("");
-  }, [id, trackingNumber, fulfillMutation]);
+    Alert.alert("Mark fulfilled", "Mark this order as fulfilled?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Fulfill", onPress: () => fulfillMutation.mutate(id) },
+    ]);
+  }, [id, fulfillMutation]);
 
-  const handleCancel = useCallback(() => {
-    Alert.alert(
-      "Cancel Order",
-      "Are you sure? This cannot be undone.",
-      [
-        { text: "No", style: "cancel" },
-        { text: "Cancel Order", style: "destructive", onPress: () => cancelMutation.mutate({ id }) },
-      ],
-    );
-  }, [id, cancelMutation]);
+  const handleCancelSubmit = useCallback(
+    (reason: string) => cancelMutation.mutate({ id, reason }),
+    [id, cancelMutation],
+  );
 
-  const handleRefund = useCallback(() => {
-    const amount = parseFloat(refundAmount);
-    if (isNaN(amount) || amount <= 0) return;
-    refundMutation.mutate(
-      { id, amount },
-      { onSuccess: () => setRefundVisible(false) },
+  const handleRefundSubmit = useCallback(
+    ({ amount, refundRequestId }: { amount?: number; refundRequestId: string }) => {
+      refundMutation.mutate(
+        { id, body: { amount, refund_request_id: refundRequestId } },
+        {
+          onError: (err) => {
+            const msg =
+              err instanceof ApiError && err.status === 503
+                ? "Refunds are not configured for this store yet."
+                : err instanceof ApiError
+                  ? err.message
+                  : "Couldn't issue the refund. Please try again.";
+            Alert.alert("Refund failed", msg);
+          },
+        },
+      );
+    },
+    [id, refundMutation],
+  );
+
+  if (error) {
+    return (
+      <Screen>
+        <BackHeader eyebrow="ORDER" />
+        <View style={styles.centered}>
+          <Text preset="h3" color="danger">
+            Failed to load order
+          </Text>
+        </View>
+      </Screen>
     );
-    setRefundAmount("");
-  }, [id, refundAmount, refundMutation]);
+  }
 
   if (isLoading || !order) {
     return (
@@ -224,12 +217,8 @@ export default function OrderDetailScreen() {
     );
   }
 
-  const tone = STATUS_TONE[order.status] ?? "neutral";
-  const isMutating =
-    confirmMutation.isPending ||
-    fulfillMutation.isPending ||
-    cancelMutation.isPending ||
-    refundMutation.isPending;
+  const currency = order.currency_code || storeCurrency || "AUD";
+  const refunded = order.refunded_amount > 0;
 
   return (
     <Screen>
@@ -239,221 +228,184 @@ export default function OrderDetailScreen() {
           <Text preset="h1" color="text">
             #{order.order_number}
           </Text>
-          <View style={styles.headingMeta}>
-            <StatusBadge label={order.status} tone={tone} />
-            <Text preset="caption" color="textTertiary">
-              {formatDate(order.created_at)}
-            </Text>
-          </View>
+          <OrderStatusBadges
+            status={order.status}
+            paymentStatus={order.payment_status}
+            fulfillmentStatus={order.fulfillment_status}
+          />
+          <Text preset="caption" color="textTertiary">
+            {formatDate(order.placed_at)}
+          </Text>
+          <Lifecycle status={order.status} />
         </View>
 
-        <Eyebrow label="Items" />
-        <Card padding={0} style={styles.card}>
-          {order.line_items.map((item, i) => (
+        <Eyebrow label="Items" style={styles.section} />
+        <View style={styles.card}>
+          {order.items.map((item, i) => (
             <View key={item.id}>
-              {i > 0 ? <Hairline inset={theme.spacing.lg} /> : null}
-              <LineItemRow item={item} />
+              {i > 0 ? <Hairline /> : null}
+              <ItemRow item={item} currency={currency} />
             </View>
           ))}
+        </View>
+
+        <Eyebrow label="Summary" style={styles.section} />
+        <View style={styles.card}>
+          <TotalRow label="Subtotal" value={formatMoney(order.subtotal, currency)} />
+          <TotalRow label="Shipping" value={formatMoney(order.shipping_total, currency)} />
+          <TotalRow label="Tax" value={formatMoney(order.tax_total, currency)} />
+          {order.tax_lines?.map((t, i) => (
+            <TotalRow key={i} label={`  ${t.description}`} value={formatMoney(t.amount, currency)} />
+          ))}
+          {order.discount_total > 0 ? (
+            <TotalRow label="Discount" value={`−${formatMoney(order.discount_total, currency)}`} />
+          ) : null}
           <Hairline />
-          <View style={styles.totalRow}>
-            <Text preset="body" color="textSecondary">
-              Total
+          <TotalRow label="Total" value={formatMoney(order.grand_total, currency)} emphasis />
+          {refunded ? (
+            <TotalRow label="Refunded" value={`−${formatMoney(order.refunded_amount, currency)}`} />
+          ) : null}
+        </View>
+
+        <Eyebrow label="Customer" style={styles.section} />
+        <View style={styles.card}>
+          {order.customer_name ? (
+            <Text preset="bodyEmphasis" color="text">
+              {order.customer_name}
             </Text>
-            <Text preset="h3" color="text">
-              {formatCurrency(order.grand_total)}
-            </Text>
-          </View>
-        </Card>
+          ) : null}
+          <Text preset="body" color="textSecondary">
+            {order.customer_email}
+          </Text>
+        </View>
 
-        <Eyebrow label="Customer" />
-        <Card style={styles.card}>
-          <InfoRow label="Name" value={order.customer_name} />
-          <InfoRow label="Email" value={order.customer_email} />
-        </Card>
+        {order.addresses.length > 0 ? (
+          <>
+            <Eyebrow label="Addresses" style={styles.section} />
+            <View style={styles.card}>
+              {order.addresses.map((address, i) => (
+                <View key={`${address.kind}-${i}`}>
+                  {i > 0 ? <Hairline /> : null}
+                  <AddressBlock address={address} />
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
 
-        <Eyebrow label="Shipping" />
-        <Card style={styles.card}>
-          {order.shipping_address ? (
-            <InfoRow label="Address" value={formatAddress(order.shipping_address)} />
-          ) : (
-            <Text preset="caption" color="textTertiary">
-              No shipping address.
-            </Text>
-          )}
-          <InfoRow label="Method" value={order.shipping_method} />
-          <InfoRow label="Tracking" value={order.tracking_number} />
-        </Card>
-
-        <Eyebrow label="Payment" />
-        <Card style={styles.card}>
-          <InfoRow label="Method" value={order.payment_method} />
-          <InfoRow label="Amount" value={formatCurrency(order.grand_total)} />
-          <InfoRow label="Transaction" value={order.payment_transaction_id} />
-        </Card>
-
-        {order.status !== "cancelled" ? (
-          <View style={styles.actions}>
-            {order.status === "pending" ? (
-              <PrimaryButton
-                label={confirmMutation.isPending ? "Confirming…" : "Confirm Order"}
-                onPress={handleConfirm}
-                disabled={isMutating}
-              />
-            ) : null}
-            {order.status === "confirmed" ? (
-              <PrimaryButton
-                label="Mark Fulfilled"
-                onPress={() => setFulfillVisible(true)}
-                disabled={isMutating}
-              />
-            ) : null}
-            {order.status === "fulfilled" ? (
-              <SecondaryButton
-                label="Refund"
-                onPress={() => setRefundVisible(true)}
-                disabled={isMutating}
-              />
-            ) : null}
-            <DangerButton
-              label={cancelMutation.isPending ? "Cancelling…" : "Cancel Order"}
-              onPress={handleCancel}
+        <View style={styles.actions}>
+          {order.status === "pending" ? (
+            <ActionButton
+              variant="primary"
+              label={confirmMutation.isPending ? "Confirming…" : "Confirm Order"}
+              onPress={handleConfirm}
               disabled={isMutating}
             />
-          </View>
-        ) : null}
+          ) : null}
+          {order.status === "confirmed" ? (
+            <ActionButton
+              variant="primary"
+              label={fulfillMutation.isPending ? "Fulfilling…" : "Mark Fulfilled"}
+              onPress={handleFulfill}
+              disabled={isMutating}
+            />
+          ) : null}
+          {order.payment_status === "paid" || order.payment_status === "partially_refunded" ? (
+            <ActionButton
+              variant="secondary"
+              label={refundMutation.isPending ? "Refunding…" : "Refund"}
+              onPress={() => refundSheetRef.current?.present()}
+              disabled={isMutating}
+            />
+          ) : null}
+          {order.status !== "cancelled" && order.status !== "fulfilled" ? (
+            <ActionButton
+              variant="danger"
+              label={cancelMutation.isPending ? "Cancelling…" : "Cancel Order"}
+              onPress={() => cancelSheetRef.current?.present()}
+              disabled={isMutating}
+            />
+          ) : null}
+        </View>
       </ScrollView>
 
-      <InputModal
-        visible={fulfillVisible}
-        title="Tracking Number"
-        placeholder="Enter tracking number"
-        value={trackingNumber}
-        onChangeText={setTrackingNumber}
-        onSubmit={handleFulfill}
-        onCancel={() => {
-          setFulfillVisible(false);
-          setTrackingNumber("");
-        }}
-        submitLabel={fulfillMutation.isPending ? "Saving…" : "Mark Fulfilled"}
+      <CancelReasonSheet
+        ref={cancelSheetRef}
+        onSubmit={handleCancelSubmit}
+        isSubmitting={cancelMutation.isPending}
       />
-
-      <InputModal
-        visible={refundVisible}
-        title="Refund Amount"
-        placeholder="0.00"
-        value={refundAmount}
-        onChangeText={setRefundAmount}
-        onSubmit={handleRefund}
-        onCancel={() => {
-          setRefundVisible(false);
-          setRefundAmount("");
-        }}
-        submitLabel={refundMutation.isPending ? "Processing…" : "Refund"}
-        keyboardType="decimal-pad"
+      <RefundSheet
+        ref={refundSheetRef}
+        onSubmit={handleRefundSubmit}
+        isSubmitting={refundMutation.isPending}
       />
     </Screen>
   );
 }
 
-function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+function ActionButton({
+  variant,
+  label,
+  onPress,
+  disabled,
+}: {
+  variant: "primary" | "secondary" | "danger";
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const btnStyle =
+    variant === "primary"
+      ? styles.btnPrimary
+      : variant === "danger"
+        ? styles.btnDanger
+        : styles.btnSecondary;
+  const color = variant === "primary" ? "inverse" : variant === "danger" ? "danger" : "text";
   return (
     <TouchableOpacity
-      style={[styles.btnPrimary, disabled && styles.btnDisabled]}
+      style={[btnStyle, disabled && styles.btnDisabled]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.85}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Text preset="bodyEmphasis" color="inverse">{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function SecondaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
-  return (
-    <TouchableOpacity
-      style={[styles.btnSecondary, disabled && styles.btnDisabled]}
-      onPress={onPress}
-      disabled={disabled}
-      activeOpacity={0.85}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Text preset="bodyEmphasis" color="text">{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function DangerButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
-  return (
-    <TouchableOpacity
-      style={[styles.btnDanger, disabled && styles.btnDisabled]}
-      onPress={onPress}
-      disabled={disabled}
-      activeOpacity={0.85}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Text preset="bodyEmphasis" color="danger">{label}</Text>
+      <Text preset="bodyEmphasis" color={color}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: {
-    paddingBottom: theme.spacing.huge,
-  },
+  scroll: { paddingBottom: theme.spacing.huge },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   heading: {
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.lg,
-    paddingBottom: theme.spacing.sm,
     gap: theme.spacing.sm,
   },
-  headingMeta: {
+  lifecycleRow: { flexDirection: "row", gap: theme.spacing.lg, marginTop: theme.spacing.xs },
+  lifecycleStep: { flexDirection: "row", alignItems: "center", gap: 6 },
+  lifecycleDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.border },
+  lifecycleDotDone: { backgroundColor: theme.colors.text },
+  section: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xl },
+  card: { paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.sm },
+  item: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-  },
-  card: {
-    marginHorizontal: theme.spacing.lg,
-  },
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  lineItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.md,
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     paddingVertical: theme.spacing.md,
     gap: theme.spacing.md,
   },
-  lineThumb: {
-    width: 40,
-    height: 40,
-    borderRadius: theme.radii.sm,
-    backgroundColor: theme.colors.background,
-  },
-  lineInfo: { flex: 1, gap: 2 },
+  itemInfo: { flex: 1, gap: 2 },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
   },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingVertical: theme.spacing.sm,
-    gap: theme.spacing.md,
-  },
-  infoLabel: { flex: 1 },
-  infoValue: { flex: 2, textAlign: "right" },
+  addressBlock: { paddingVertical: theme.spacing.md, gap: 2 },
   actions: {
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xl,
@@ -467,8 +419,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnSecondary: {
-    backgroundColor: theme.colors.elevated,
-    borderWidth: theme.hairline,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     height: 48,
     borderRadius: theme.radii.md,
@@ -476,7 +427,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnDanger: {
-    backgroundColor: "transparent",
     borderWidth: 1,
     borderColor: theme.colors.danger,
     height: 48,
@@ -485,52 +435,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnDisabled: { opacity: 0.5 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: theme.colors.overlay,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: theme.spacing.xl,
-  },
-  modalContent: {
-    backgroundColor: theme.colors.elevated,
-    borderRadius: theme.radii.lg,
-    padding: theme.spacing.xl,
-    width: "100%",
-    maxWidth: 360,
-    gap: theme.spacing.md,
-  },
-  modalTitle: { marginBottom: theme.spacing.xs },
-  modalInput: {
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: theme.radii.md,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    fontFamily: theme.fonts.sans,
-    fontSize: 15,
-    color: theme.colors.text,
-    borderWidth: theme.hairline,
-    borderColor: theme.colors.hairline,
-    minHeight: 44,
-  },
-  modalActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: theme.spacing.sm,
-    marginTop: theme.spacing.sm,
-  },
-  modalCancelBtn: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  modalSubmitBtn: {
-    backgroundColor: theme.colors.accent,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.radii.md,
-    minHeight: 44,
-    justifyContent: "center",
-  },
 });

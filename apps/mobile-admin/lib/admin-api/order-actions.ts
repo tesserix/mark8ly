@@ -1,58 +1,41 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createOrdersApi } from "@repo/mobile-shared/api/orders";
+import { createOrdersApi, type ConfirmOrderBody, type RefundOrderBody } from "@repo/mobile-shared/api/orders";
 import { useApiClient } from "@/lib/api-client";
 
-export function useConfirmOrder() {
+/** Every order mutation invalidates the ["orders"] prefix (list + detail). */
+function useOrderMutation<TVars>(
+  run: (api: ReturnType<typeof createOrdersApi>, vars: TVars) => Promise<unknown>,
+) {
   const client = useApiClient();
   const ordersApi = createOrdersApi(client);
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => ordersApi.confirm(id),
+    mutationFn: (vars: TVars) => run(ordersApi, vars),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
     },
   });
+}
+
+export function useConfirmOrder() {
+  return useOrderMutation<{ id: string; body?: ConfirmOrderBody }>((api, { id, body }) =>
+    api.confirm(id, body),
+  );
 }
 
 export function useFulfillOrder() {
-  const client = useApiClient();
-  const ordersApi = createOrdersApi(client);
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, trackingNumber }: { id: string; trackingNumber: string }) =>
-      ordersApi.fulfill(id, trackingNumber),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-    },
-  });
+  return useOrderMutation<string>((api, id) => api.fulfill(id));
 }
 
 export function useCancelOrder() {
-  const client = useApiClient();
-  const ordersApi = createOrdersApi(client);
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
-      ordersApi.cancel(id, reason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-    },
-  });
+  return useOrderMutation<{ id: string; reason: string }>((api, { id, reason }) =>
+    api.cancel(id, reason),
+  );
 }
 
 export function useRefundOrder() {
-  const client = useApiClient();
-  const ordersApi = createOrdersApi(client);
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, amount }: { id: string; amount: number }) =>
-      ordersApi.refund(id, amount),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-    },
-  });
+  return useOrderMutation<{ id: string; body: RefundOrderBody }>((api, { id, body }) =>
+    api.refund(id, body),
+  );
 }

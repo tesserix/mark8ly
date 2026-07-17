@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
+import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useOrders } from "../../../lib/hooks/use-orders";
 import { OrderRow } from "../../../components/OrderRow";
 import {
@@ -53,19 +54,29 @@ export default function OrdersScreen() {
   const debouncedSearch = useDebounce(searchText, 300);
 
   const selectedFilter = FILTERS.find((f) => f.key === activeFilter);
-  const { data, isLoading, isRefetching, refetch } = useOrders(
-    selectedFilter?.status,
-    debouncedSearch || undefined,
-  );
+  const currencyCode = useTenantStore((s) => s.activeStore?.currency_code);
+  const { data, isLoading, isRefetching, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useOrders({
+      ...(selectedFilter?.status ? { status: selectedFilter.status } : {}),
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    });
+
+  const orders = data?.pages.flatMap((page) => page.data) ?? [];
 
   const handleOrderPress = useCallback(
     (order: Order) => router.push(`/(tabs)/orders/${order.id}`),
     [router],
   );
 
+  const handleEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   const renderItem = useCallback(
-    ({ item }: { item: Order }) => <OrderRow order={item} onPress={handleOrderPress} />,
-    [handleOrderPress],
+    ({ item }: { item: Order }) => (
+      <OrderRow order={item} onPress={handleOrderPress} currencyCode={currencyCode} />
+    ),
+    [handleOrderPress, currencyCode],
   );
 
   return (
@@ -96,16 +107,25 @@ export default function OrdersScreen() {
           entering={reduceMotion ? undefined : FadeIn.duration(180).easing(DISCLOSURE_EASING)}
         >
           <FlatList
-            data={data?.data ?? []}
+            data={orders}
             renderItem={renderItem}
             keyExtractor={(item) => item.id}
             contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
             refreshControl={
               <RefreshControl
                 refreshing={isRefetching}
                 onRefresh={refetch}
                 tintColor={theme.colors.text}
               />
+            }
+            ListFooterComponent={
+              isFetchingNextPage ? (
+                <View style={styles.footer}>
+                  <ActivityIndicator size="small" color={theme.colors.text} />
+                </View>
+              ) : null
             }
             ListEmptyComponent={
               <EmptyState
@@ -135,6 +155,10 @@ const styles = StyleSheet.create({
   list: {
     flexGrow: 1,
     paddingBottom: theme.spacing.huge,
+  },
+  footer: {
+    paddingVertical: theme.spacing.lg,
+    alignItems: "center",
   },
   centered: {
     flex: 1,

@@ -52,3 +52,57 @@ export type Order = z.infer<typeof orderSchema>;
 
 export const orderListSchema = paginated(orderSchema);
 export type OrderListResponse = z.infer<typeof orderListSchema>;
+
+/**
+ * Order DETAIL shapes — from AdminOrderItemResponse / AdminAddressResponse /
+ * AdminOrderTaxLineResponse (orders_dto.go:124-196). Same list envelope caveat:
+ * `omitempty` Go pointers are ABSENT (`.optional()`), money is a quoted decimal.
+ *
+ * The list `orderSchema` keeps `items`/`addresses` as `z.array(z.unknown())`
+ * (the list UI never reads them); the DETAIL tightens them into real shapes and
+ * adds `tax_lines` (Get-only, omitempty). Fields the wire does NOT send —
+ * `line_items`, `shipping_address`, `timeline`, `tracking_number`,
+ * `payment_method`, `payment_transaction_id` — are deliberately absent.
+ */
+export const orderItemSchema = z.object({
+  id: z.string(),
+  product_id: z.string().optional(),
+  variant_id: z.string().optional(),
+  title_snapshot: z.string(),
+  sku_snapshot: z.string(),
+  option_summary: z.string().optional(),
+  unit_price: money,
+  quantity: z.number(),
+  line_total: money,
+  currency_code: z.string(),
+});
+export type OrderItem = z.infer<typeof orderItemSchema>;
+
+/** kind is "shipping" | "billing"; region/postal/line2/phone are omitempty. */
+export const orderAddressSchema = z.object({
+  kind: z.string(),
+  name: z.string(),
+  line1: z.string(),
+  line2: z.string().optional(),
+  city: z.string(),
+  region: z.string().optional(),
+  postal_code: z.string().optional(),
+  country_code: z.string(),
+  phone: z.string().optional(),
+});
+export type OrderAddress = z.infer<typeof orderAddressSchema>;
+
+export const orderTaxLineSchema = z.object({
+  description: z.string(),
+  rate: money,
+  amount: money,
+  jurisdiction: z.string().optional(),
+});
+export type OrderTaxLine = z.infer<typeof orderTaxLineSchema>;
+
+export const orderDetailSchema = orderSchema.extend({
+  items: z.array(orderItemSchema),
+  addresses: z.array(orderAddressSchema),
+  tax_lines: z.array(orderTaxLineSchema).optional(),
+});
+export type OrderDetail = z.infer<typeof orderDetailSchema>;

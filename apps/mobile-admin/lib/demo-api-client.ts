@@ -143,15 +143,12 @@ function orderDetail(id: string): OrderDetail {
   const base = DEMO_ORDERS.find((o) => o.id === id) ?? DEMO_ORDERS[0]!;
   return {
     ...base,
-    line_items: [
-      { id: "li-1", product_id: "p-1", product_name: "Linen Camp Shirt", variant_name: "M", quantity: 1, unit_price: 8900, thumbnail_url: null },
+    items: [
+      { id: "li-1", product_id: "p-1", variant_id: "v-1", title_snapshot: "Linen Camp Shirt", sku_snapshot: "LCS-M", option_summary: "Size: M", unit_price: 89, quantity: 1, line_total: 89, currency_code: "AUD" },
     ],
-    shipping_address: { line1: "12 Campbell Pde", line2: null, city: "Bondi Beach", state: "NSW", postal_code: "2026", country: "AU" },
-    shipping_method: "Standard",
-    tracking_number: null,
-    payment_method: "card",
-    payment_transaction_id: "demo_txn_001",
-    timeline: [{ type: "created", message: "Order placed", created_at: base.created_at }],
+    addresses: [
+      { kind: "shipping", name: "Maya Chen", line1: "12 Campbell Pde", city: "Bondi Beach", region: "NSW", postal_code: "2026", country_code: "AU" },
+    ],
   };
 }
 

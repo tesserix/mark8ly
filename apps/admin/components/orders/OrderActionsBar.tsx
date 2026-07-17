@@ -41,7 +41,7 @@ interface OrderActionsBarProps {
   order: AdminOrder;
 }
 
-type Panel = "none" | "confirm" | "cancel" | "refund";
+type Panel = "none" | "confirm" | "cancel" | "refund" | "fulfill";
 
 export function OrderActionsBar({ order }: OrderActionsBarProps) {
   const { toast } = useToast();
@@ -55,6 +55,19 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
   const canRefund =
     order.payment_status === "paid" ||
     order.payment_status === "partially_refunded";
+
+  // OrderStatus is deliberately orthogonal to PaymentStatus (see
+  // internal/order/status.go — "'refunded' is deliberately absent here and
+  // lives on PaymentStatus only", spec §7 / §2 decision 4). So a fully
+  // refunded order legitimately still sits at status="confirmed" and CAN
+  // be fulfilled — a goodwill refund where the goods still ship.
+  //
+  // Legal is not the same as likely, though. Shipping goods you've already
+  // refunded in full is the rare case, so it stops being the primary
+  // action and gains a confirm step; cancelling — which is what actually
+  // closes the order out and restocks — becomes primary instead. A
+  // PARTIAL refund changes nothing: the rest of the order still ships.
+  const isFullyRefunded = order.payment_status === "refunded";
 
   const close = useCallback(() => {
     setPanel("none");
@@ -85,6 +98,16 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
 
   return (
     <section aria-label="Order actions" className="flex flex-col gap-4">
+      {/* State the refund outright. Otherwise it can only be inferred from
+          the absence of "Issue refund", and the remaining fulfil/cancel
+          buttons read as though the order were still live. */}
+      {isFullyRefunded && (
+        <p className="text-sm text-foreground-secondary">
+          <span className="font-medium text-foreground">Fully refunded.</span>{" "}
+          The customer has been repaid in full — cancel to close this order
+          out and return the items to stock.
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         {canConfirm && (
@@ -101,16 +124,22 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
           <ActionButton
             label={pending ? "Marking…" : "Mark fulfilled"}
             icon={PackageCheck}
-            primary
+            primary={!isFullyRefunded}
+            active={panel === "fulfill"}
             disabled={pending}
-            onClick={runFulfill}
+            onClick={
+              isFullyRefunded
+                ? () => setPanel(panel === "fulfill" ? "none" : "fulfill")
+                : runFulfill
+            }
           />
         )}
         {canCancel && (
           <ActionButton
             label="Cancel order"
             icon={XCircle}
-            tone="danger"
+            primary={isFullyRefunded}
+            tone={isFullyRefunded ? "default" : "danger"}
             active={panel === "cancel"}
             disabled={pending}
             onClick={() => setPanel(panel === "cancel" ? "none" : "cancel")}
@@ -141,6 +170,36 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
         </p>
       )}
 
+      {panel === "fulfill" && (
+        <PanelShell title="Fulfil a refunded order?">
+          <p className="text-sm text-foreground-secondary">
+            This order has been <strong>fully refunded</strong> — the customer
+            has their money back. Marking it fulfilled says you are shipping
+            the goods anyway, and cannot be undone.
+          </p>
+          <p className="text-sm text-foreground-secondary">
+            If you meant to close this order out, cancel it instead — that
+            also returns the items to stock.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={runFulfill}
+              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              {pending ? "Marking…" : "Yes, mark fulfilled"}
+            </button>
+            <button
+              type="button"
+              onClick={close}
+              className="text-sm text-foreground-secondary underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              Cancel
+            </button>
+          </div>
+        </PanelShell>
+      )}
       {panel === "confirm" && (
         <ConfirmForm
           orderId={order.id}

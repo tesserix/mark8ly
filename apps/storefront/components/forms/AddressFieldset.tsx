@@ -7,6 +7,7 @@
 // tokens, so it visually adapts to the merchant's theme.
 
 import { useEffect, useRef, useState } from "react";
+import { isIndia, isInPhoneValid } from "@/lib/checkout/phone";
 
 import type { Country, State } from "@/lib/api/platform-api";
 
@@ -129,6 +130,13 @@ export function AddressFieldset({
 
   const update = (field: keyof AddressValue, fieldValue: string) =>
     onChange({ ...value, [field]: fieldValue });
+
+  // Only complain once something has been typed — an empty field is
+  // incomplete, not wrong, and the placeholder already states the format.
+  const showPhoneError =
+    isIndia(value.country) &&
+    value.phone.trim() !== "" &&
+    !isInPhoneValid(value.phone);
 
   const updateCountry = (code: string) => {
     onChange({ ...value, country: code, region: "" });
@@ -419,6 +427,9 @@ export function AddressFieldset({
             className="block text-sm text-[color:var(--storefront-text,var(--ink-900))]"
           >
             Phone
+            {isIndia(value.country) && (
+              <span className="ml-1 opacity-60">(required)</span>
+            )}
           </label>
           <input
             id={`${idPrefix}-phone`}
@@ -427,9 +438,26 @@ export function AddressFieldset({
             autoComplete={ac("tel")}
             value={value.phone}
             disabled={disabled}
+            required={isIndia(value.country)}
             onChange={(e) => update("phone", e.target.value)}
+            aria-invalid={showPhoneError || undefined}
+            aria-describedby={showPhoneError ? `${idPrefix}-phone-error` : undefined}
+            placeholder={isIndia(value.country) ? "10-digit mobile e.g. 9876543210" : ""}
             className={inputClass}
           />
+          {/* Carriers reject an IN delivery whose phone isn't a real mobile,
+              and this fieldset previously validated nothing at all — the
+              address saved fine and failed later, at shipment creation. */}
+          {showPhoneError && (
+            <p
+              id={`${idPrefix}-phone-error`}
+              role="alert"
+              className="mt-1.5 text-sm text-[color:var(--storefront-danger)]"
+            >
+              Enter a 10-digit Indian mobile starting with 6–9. A +91 prefix,
+              spaces, and dashes are fine.
+            </p>
+          )}
         </div>
       </div>
     </div>

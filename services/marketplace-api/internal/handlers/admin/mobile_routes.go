@@ -144,6 +144,33 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 			}
 		}
 
+		// Reviews (moderation) — mirrors web routes.go:590-611. Staff view,
+		// Admin mutate. Handler/DTO/service are shared with web; this only
+		// exposes the same routes on the mobile group (same split as categories).
+		if deps.ReviewsHandler != nil {
+			reviews := storeRoute.Group("/reviews")
+			{
+				reviews.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsViewRole),
+					deps.ReviewsHandler.List)
+				reviews.GET("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsViewRole),
+					deps.ReviewsHandler.Get)
+				reviews.POST("/:id/approve",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsEditRole),
+					deps.ReviewsHandler.Approve)
+				reviews.POST("/:id/reject",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsEditRole),
+					deps.ReviewsHandler.Reject)
+				reviews.POST("/:id/featured",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsEditRole),
+					deps.ReviewsHandler.ToggleFeatured)
+				reviews.POST("/:id/reply",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.ReviewsEditRole),
+					deps.ReviewsHandler.Reply)
+			}
+		}
+
 		// Push tokens
 		if deps.PushTokenHandler != nil {
 			pushTokens := storeRoute.Group("/push-tokens")

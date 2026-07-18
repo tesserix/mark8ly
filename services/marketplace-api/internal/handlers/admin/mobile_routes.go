@@ -438,6 +438,15 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 					deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsEditRole),
 					deps.NotificationsHandler.MarkAllRead)
 			}
+			// Per-type notification preferences — mirrors web routes.go.
+			// Same store scope, different path; store-wide (governs whether
+			// each notification type is generated at all, bell + push).
+			storeRoute.GET("/notification-preferences",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsViewRole),
+				deps.NotificationsHandler.GetPreferences)
+			storeRoute.PATCH("/notification-preferences",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.NotificationsEditRole),
+				deps.NotificationsHandler.UpdatePreferences)
 		}
 	}
 }

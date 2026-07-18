@@ -23,6 +23,7 @@ import {
 } from "@/components/products/media/MediaUploader";
 import type { MediaAction } from "@/components/products/media/MediaCard";
 import { MediaCropDialog } from "@/components/products/media/MediaCropDialog";
+import { useToast } from "@/components/feedback/Toaster";
 import type { CropBox } from "@/components/products/media/cropImage";
 import {
   belowMinShortEdge,
@@ -125,6 +126,7 @@ export function MediaTab({
   deleteMedia = defaultDeleteMedia,
   putBlob = defaultPutBlob,
 }: MediaTabProps): React.ReactElement {
+  const { toast } = useToast();
   const { control } = useFormContext<ProductFormValues>();
   const { fields, append, remove, replace, update } = useFieldArray({
     control,
@@ -242,7 +244,10 @@ export function MediaTab({
             { crop_box: { x: 0, y: 0, width: 0, height: 0 }, content_type: sourceMimeType },
             session,
           );
-          if (!res.ok) return;
+          if (!res.ok) {
+            toast.error(res.error.message || "Couldn't start cropping this image.");
+            return;
+          }
           setCropTarget({
             mediaId: media.id,
             sourceUrl: res.data.source_original_url,
@@ -253,7 +258,7 @@ export function MediaTab({
         })();
       }
     },
-    [deleteMedia, fields, gridItems, productId, recropMedia, remove, replace, session, storeId],
+    [deleteMedia, fields, gridItems, productId, recropMedia, remove, replace, session, storeId, toast],
   );
 
   const handleReorder = useCallback(
@@ -271,7 +276,10 @@ export function MediaTab({
       URL.revokeObjectURL(target.sourceUrl);
 
       const putRes = await putBlob(target.uploadUrl, blob);
-      if (!putRes.ok) return;
+      if (!putRes.ok) {
+        toast.error("Couldn't upload the cropped image. Please try again.");
+        return;
+      }
       const updateRes = await updateMedia(
         storeId,
         productId,
@@ -279,7 +287,10 @@ export function MediaTab({
         { storage_key: target.newStorageKey },
         session,
       );
-      if (!updateRes.ok) return;
+      if (!updateRes.ok) {
+        toast.error(updateRes.error.message || "Couldn't save the cropped image.");
+        return;
+      }
       const idx = fields.findIndex((f) => f.id === target.mediaId);
       const current = idx >= 0 ? fields[idx] : undefined;
       if (current) {
@@ -294,7 +305,7 @@ export function MediaTab({
         });
       }
     },
-    [cropTarget, fields, productId, putBlob, session, storeId, update, updateMedia],
+    [cropTarget, fields, productId, putBlob, session, storeId, update, updateMedia, toast],
   );
 
   const handleCropCancel = useCallback(() => {

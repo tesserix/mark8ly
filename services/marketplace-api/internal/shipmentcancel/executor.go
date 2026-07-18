@@ -226,11 +226,12 @@ func (e *Executor) execReversePickup(ctx context.Context, sh *shipping.ShipmentR
 		return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusFailed, Reason: reason}
 	}
 	rev, err := creator.CreateReverseShipment(ctx, shipping.ReverseShipmentRequest{
-		OrderID:       sh.OrderID.String(),
-		PickupFrom:    customer,
-		ReturnTo:      warehouse,
-		WarehouseName: warehouse.Name,
-		CurrencyCode:  sh.CurrencyCode,
+		OrderID:                sh.OrderID.String(),
+		PickupFrom:             customer,
+		ReturnTo:               warehouse,
+		WarehouseName:          warehouse.Name,
+		CurrencyCode:           sh.CurrencyCode,
+		OriginalTrackingNumber: sh.TrackingNumber,
 	})
 	if err != nil {
 		reason := cleanReason(err)

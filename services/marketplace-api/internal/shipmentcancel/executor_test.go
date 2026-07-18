@@ -303,6 +303,9 @@ func TestExecutor_Delivered_ReversePickup_Enabled(t *testing.T) {
 	if car.revReq.WarehouseName != "Warehouse A" {
 		t.Errorf("warehouse name = %q, want Warehouse A", car.revReq.WarehouseName)
 	}
+	if car.revReq.OriginalTrackingNumber != "WBN-DLV" {
+		t.Errorf("original tracking = %q, want WBN-DLV (needed for ShipEngine return-from-label)", car.revReq.OriginalTrackingNumber)
+	}
 	if len(store.created) != 1 {
 		t.Fatalf("reverse-leg rows = %d, want 1", len(store.created))
 	}

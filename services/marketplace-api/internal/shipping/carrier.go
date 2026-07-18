@@ -93,6 +93,12 @@ type ReverseShipmentRequest struct {
 	WarehouseName string
 	Items         []ParcelItem
 	CurrencyCode  string
+	// OriginalTrackingNumber is the forward shipment's tracking number.
+	// Carriers that build the return FROM the original label (ShipEngine's
+	// /v1/labels/{label_id}/return) resolve the original label from it.
+	// Delhivery and NinjaVan build the reverse order from the addresses and
+	// ignore it.
+	OriginalTrackingNumber string
 }
 
 // ReverseShipmentCreator is implemented by carriers that can create a reverse

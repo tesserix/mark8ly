@@ -137,11 +137,26 @@ export function ShippingConfigForm({
               autoComplete="off"
               value={apiKey}
               onChange={(e) => { setApiKey(e.target.value); setSuccess(false); }}
-              placeholder={existing ? "Enter new key to update" : "API key"}
+              placeholder={existing ? "Enter new key to replace" : "API key"}
               required={!existing}
               disabled={pending}
+              aria-describedby={existing ? `${provider}-api-key-hint` : undefined}
               className={inputClass}
             />
+            {/* Only send a key when the merchant types one — a blank field
+                keeps the stored credential (see the shipping upsert action).
+                Show the masked key so they can tell one is set and aren't
+                left guessing whether the empty box means "no key". */}
+            {existing?.api_key && (
+              <p
+                id={`${provider}-api-key-hint`}
+                className="text-xs text-[color:var(--ink-900)]/55"
+              >
+                A key is saved (<span className="font-mono">{existing.api_key}</span>).
+                Leave this blank to keep it — you only need to enter a key to
+                replace it.
+              </p>
+            )}
           </Field>
           <Field label="Secret key" htmlFor={`${provider}-secret-key`}>
             <input

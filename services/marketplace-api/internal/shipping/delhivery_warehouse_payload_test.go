@@ -103,3 +103,28 @@ func TestDelhivery_UpsertWarehouse_ExplicitFieldsOverrideDefault(t *testing.T) {
 		t.Errorf("email = %v, want it sent when present", createBody["email"])
 	}
 }
+
+// Delhivery returns 201 (not 200) when a warehouse is newly created. Treating
+// only 200 as success logged a false "upsert failed" whose message was
+// literally "A new client warehouse has been created" (verified live).
+func TestDelhivery_UpsertWarehouse_Accepts201Created(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/backend/clientwarehouse/edit/" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"error":"ClientWarehouse matching query does not exist"}`)
+			return
+		}
+		// create/ → 201 with Delhivery's success envelope.
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `<?xml version="1.0"?><root><data><message>A new client warehouse has been created in HQ(Delhivery).</message></data></root>`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	if err := c.UpsertWarehouse(context.Background(), Warehouse{
+		Name: "demo-store", Phone: "9028889903", Address: "x", City: "y",
+		PinCode: "751012", CountryCode: "IN", Region: "Odisha",
+	}); err != nil {
+		t.Fatalf("201 Created must be success, got error: %v", err)
+	}
+}

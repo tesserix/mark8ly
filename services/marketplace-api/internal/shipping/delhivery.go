@@ -661,13 +661,13 @@ func (c *DelhiveryCarrier) UpsertWarehouse(ctx context.Context, wh Warehouse) er
 	if editErr != nil {
 		return fmt.Errorf("delhivery: upsert warehouse: edit request: %w", editErr)
 	}
-	if editStatus == http.StatusOK && !delhiveryWarehouseMissing(editBody) {
+	if httpSuccess(editStatus) && !delhiveryWarehouseMissing(editBody) {
 		return nil
 	}
 
 	// Step 2: edit reported the warehouse doesn't exist → create it.
-	// Any other non-200 on edit is surfaced as-is so ops can see it.
-	if editStatus != http.StatusOK && !delhiveryWarehouseMissing(editBody) {
+	// Any other non-2xx on edit is surfaced as-is so ops can see it.
+	if !httpSuccess(editStatus) && !delhiveryWarehouseMissing(editBody) {
 		return fmt.Errorf("Delhivery rejected the pickup location: %s",
 			delhiveryWarehouseMessage(editBody))
 	}
@@ -676,7 +676,11 @@ func (c *DelhiveryCarrier) UpsertWarehouse(ctx context.Context, wh Warehouse) er
 	if createErr != nil {
 		return fmt.Errorf("delhivery: upsert warehouse: create request: %w", createErr)
 	}
-	if createStatus != http.StatusOK {
+	// Delhivery returns 201 Created (not 200) for a brand-new warehouse, so
+	// accept any 2xx. Checking == 200 treated a successful create as a
+	// failure — logged a false "upsert failed" whose "error" was actually
+	// "A new client warehouse has been created" (verified live 2026-07-18).
+	if !httpSuccess(createStatus) {
 		return fmt.Errorf("Delhivery rejected the pickup location: %s",
 			delhiveryWarehouseMessage(createBody))
 	}
@@ -704,6 +708,12 @@ func delhiveryWarehouseMessage(body string) string {
 		}
 	}
 	return "the carrier returned an error"
+}
+
+// httpSuccess reports whether code is any 2xx. Delhivery's warehouse
+// endpoints use 200 for edit and 201 for create.
+func httpSuccess(code int) bool {
+	return code >= 200 && code < 300
 }
 
 func betweenTags(s, open, close string) string {

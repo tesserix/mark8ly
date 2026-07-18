@@ -682,10 +682,20 @@ func (c *DelhiveryCarrier) doWarehouseRequest(ctx context.Context, path string, 
 // delhiveryWarehouseMissing detects the "fall through to create" signal.
 // Delhivery's edit endpoint returns this exact phrase as part of a JSON
 // envelope when the name doesn't resolve to an existing warehouse.
+// delhiveryWarehouseMissing reports whether an edit/ response means "this
+// warehouse isn't registered yet, fall through to create/". Delhivery says
+// this at least three different ways depending on endpoint:
+//   - create shipment (JSON): "ClientWarehouse matching query does not exist."
+//   - edit warehouse (XML):   "<message>warehouse does not exists</message>"
+// so match on the stable core ("warehouse" + "does not exist") rather than
+// one exact phrasing. This was a live bug: the edit/ 400 above wasn't
+// recognised as "missing", so create/ never ran and the pickup location was
+// never created on Delhivery despite the admin save succeeding.
 func delhiveryWarehouseMissing(body string) bool {
 	lower := strings.ToLower(body)
-	return strings.Contains(lower, "clientwarehouse matching query does not exist") ||
-		strings.Contains(lower, "warehouse matching query does not exist")
+	return strings.Contains(lower, "warehouse") &&
+		(strings.Contains(lower, "does not exist") || // covers "exist" and "exists"
+			strings.Contains(lower, "matching query does not exist"))
 }
 
 // SchedulePickup requests a Delhivery pickup-executive dispatch for the

@@ -103,18 +103,41 @@ export function DashboardStats({ stats, currencyCode }: Props) {
         />
       </View>
 
-      <View style={styles.list}>
+      {/* Orders: an editorial stat strip — big serif numerals with labels
+          beneath, not a table of rows. Pending takes the single moss accent
+          when there's something waiting, since it's the actionable count. */}
+      <View style={styles.section}>
         <Text preset="eyebrow" color="textTertiary" style={styles.listLabel}>
           Orders
         </Text>
-        <StatRow label="Today" value={String(stats.orders_today)} />
-        <Hairline />
-        <StatRow label="Pending" value={String(stats.orders_pending)} />
-        <Hairline />
-        <StatRow label="Fulfilled" value={String(stats.orders_fulfilled)} />
-        <Hairline />
-        <StatRow label="Cancelled" value={String(stats.orders_cancelled)} />
+        <View style={styles.statStrip}>
+          <StatItem label="Today" value={stats.orders_today} />
+          <StatItem label="Pending" value={stats.orders_pending} accent={stats.orders_pending > 0} />
+          <StatItem label="Fulfilled" value={stats.orders_fulfilled} />
+          <StatItem label="Cancelled" value={stats.orders_cancelled} />
+        </View>
       </View>
+    </View>
+  );
+}
+
+function StatItem({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent?: boolean;
+}) {
+  return (
+    <View style={styles.statItem}>
+      <Text preset="h2" color={accent ? "accent" : "text"} style={styles.statItemValue}>
+        {String(value)}
+      </Text>
+      <Text preset="caption" color="textTertiary">
+        {label}
+      </Text>
     </View>
   );
 }
@@ -136,7 +159,15 @@ const styles = StyleSheet.create({
   },
   heroDivider: { marginTop: theme.spacing.xs },
   list: { gap: 0 },
+  section: { gap: theme.spacing.xs },
   listLabel: { marginBottom: theme.spacing.xs },
+  statStrip: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: theme.spacing.sm,
+  },
+  statItem: { flex: 1, gap: 2 },
+  statItemValue: { fontVariant: ["tabular-nums"] },
   row: {
     flexDirection: "row",
     alignItems: "center",

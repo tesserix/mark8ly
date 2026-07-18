@@ -92,19 +92,26 @@ type UpdateMediaWireRequest struct {
 
 // CropBox is the pixel-space crop rectangle the frontend applied to the
 // pristine original image before uploading the cropped result.
+//
+// Width/Height use gte=0 (not gt=0) because this box is currently only sent to
+// the recrop-PREPARE endpoint, which ignores it — the real crop happens in the
+// browser and is committed via storage_key. The prepare call therefore sends a
+// zero placeholder; requiring gt=0 here rejected that placeholder with 400 and
+// made "Crop" silently do nothing.
 type CropBox struct {
 	X      int `json:"x" binding:"gte=0"`
 	Y      int `json:"y" binding:"gte=0"`
-	Width  int `json:"width" binding:"gt=0"`
-	Height int `json:"height" binding:"gt=0"`
+	Width  int `json:"width" binding:"gte=0"`
+	Height int `json:"height" binding:"gte=0"`
 }
 
 // RecropMediaRequest is the wire body for
 // POST /products/:id/media/:mediaId/recrop. The crop_box + rotation are
 // metadata the client sends so the backend can log / audit the transform;
-// the actual pixel work happens in the browser.
+// the actual pixel work happens in the browser. crop_box is optional — the
+// prepare endpoint only needs filename + content_type.
 type RecropMediaRequest struct {
-	CropBox     CropBox `json:"crop_box" binding:"required"`
+	CropBox     CropBox `json:"crop_box"`
 	Rotation    int     `json:"rotation"`
 	Filename    string  `json:"filename" binding:"omitempty,max=200"`
 	ContentType string  `json:"content_type" binding:"omitempty,oneof=image/png image/jpeg image/webp"`

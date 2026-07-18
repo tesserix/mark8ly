@@ -15,6 +15,7 @@ import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { toast } from "@/lib/toast";
 import { isIndia, isInPhoneValid, normalizeInPhone } from "@/lib/checkout/phone";
+import { openRazorpayCheckout } from "@/lib/payments/razorpay";
 import { CouponInput } from "@/components/checkout/CouponInput";
 import { GiftCardInput } from "@/components/checkout/GiftCardInput";
 import { LoyaltyRedemption } from "@/components/checkout/LoyaltyRedemption";
@@ -92,23 +93,35 @@ const EMPTY_ADDRESS: AddressFields = {
   phone: "",
 };
 
-function isAddressFilled(a: AddressFields): boolean {
+// Returns human-readable reasons the shipping address can't be used yet,
+// ordered to match how the fields appear in the form. An empty list means
+// the address is ready. Callers that only need a yes/no use isAddressFilled,
+// which is derived from this so there's a single source of truth for the
+// rules and the messages the buyer sees.
+function getAddressBlockers(a: AddressFields): string[] {
+  const blockers: string[] = [];
   // Require both first and last name (two whitespace-separated tokens)
   // — single-word names previously got duplicated to satisfy carriers
   // like CouriersPlease, which then printed on the label as "Mahesh
   // Mahesh". Enforcing first+last at input time makes the duplication
   // unnecessary.
   const nameTokens = a.name.trim().split(/\s+/).filter(Boolean);
-  const basicsOk =
-    nameTokens.length >= 2 &&
-    a.line1.trim() !== "" &&
-    a.city.trim() !== "" &&
-    a.country_code.trim().length === 2;
-  if (!basicsOk) return false;
-  if (isIndia(a.country_code)) {
-    return isInPhoneValid(a.phone);
+  if (nameTokens.length === 0) {
+    blockers.push("Enter your full name");
+  } else if (nameTokens.length < 2) {
+    blockers.push("Enter your last name");
   }
-  return true;
+  if (a.line1.trim() === "") blockers.push("Enter your street address");
+  if (a.city.trim() === "") blockers.push("Enter your city");
+  if (a.country_code.trim().length !== 2) blockers.push("Select your country");
+  if (isIndia(a.country_code) && !isInPhoneValid(a.phone)) {
+    blockers.push("Enter a valid 10-digit phone number");
+  }
+  return blockers;
+}
+
+function isAddressFilled(a: AddressFields): boolean {
+  return getAddressBlockers(a).length === 0;
 }
 
 function toCheckoutAddress(a: AddressFields): CheckoutAddressBody {
@@ -213,13 +226,16 @@ export default function CheckoutPage() {
   const giftCardDeduction = Math.min(giftCardAmount, Math.max(0, totalBeforeGC));
   const total = totalBeforeGC - giftCardDeduction;
 
-  const canSubmit =
-    items.length > 0 &&
-    email.trim() !== "" &&
-    isAddressFilled(address) &&
-    selectedShipping !== "" &&
-    selectedProvider !== "" &&
-    !submitting;
+  // Every reason "Place order" can't proceed, in the order the buyer would
+  // work down the page. Rendered under the button so a disabled state always
+  // explains itself (e.g. a missing last name) instead of silently blocking.
+  const submitBlockers: string[] = [];
+  if (items.length === 0) submitBlockers.push("Add an item to your cart");
+  if (email.trim() === "") submitBlockers.push("Enter your email address");
+  submitBlockers.push(...getAddressBlockers(address));
+  if (selectedShipping === "") submitBlockers.push("Choose a shipping method");
+  if (selectedProvider === "") submitBlockers.push("Choose a payment method");
+  const canSubmit = submitBlockers.length === 0 && !submitting;
 
   // Fetch payment methods on mount
   useEffect(() => {
@@ -537,15 +553,11 @@ export default function CheckoutPage() {
       return;
     }
 
-    toast({
-      title: `Order ${result.order_number} placed`,
-      description: "Complete payment to confirm.",
-      tone: "success",
-    });
-
-    // Stash everything the order page needs to open the payment widget
+    // Stash everything the order page needs to re-open the payment widget
     // before clearing the cart. Keyed by order id so a customer juggling
-    // two checkouts in different tabs doesn't cross streams.
+    // two checkouts in different tabs doesn't cross streams. This is the
+    // fallback the "Pay now" button reads if the buyer dismisses the sheet
+    // we're about to open below.
     const grandTotal = (
       subtotal +
       Number.parseFloat(result.shipping_total ?? "0") +
@@ -598,8 +610,60 @@ export default function CheckoutPage() {
       }
     }
 
+    // Order is reserved server-side; empty the cart now (matches hosted
+    // checkout, where the redirect leaves an empty cart behind too).
     clear();
-    router.push(`/orders/${result.order_id}`);
+
+    // Open Razorpay right away — one click from "Place order" to the payment
+    // sheet, no intermediate "Pay now". On success we verify + confirm and
+    // land on the order page in its paid state; if the buyer dismisses the
+    // sheet or it errors, we still route to the order page where the stashed
+    // context powers the "Pay now" retry, so nobody is left with an
+    // unpayable reserved order.
+    const orderPath = `/orders/${result.order_id}`;
+    await openRazorpayCheckout(
+      {
+        orderId: result.order_id,
+        paymentToken: pending.paymentToken ?? "",
+        publicKey: pending.publicKey,
+        amount: pending.amount,
+        currencyCode: pending.currencyCode,
+        storeName: "",
+        customerName: pending.customerName,
+        customerEmail: pending.customerEmail,
+      },
+      {
+        onSuccess: () => {
+          if (typeof window !== "undefined") {
+            sessionStorage.removeItem(
+              `mark8ly.pendingPayment.${result.order_id}`,
+            );
+          }
+          toast({
+            title: "Payment received",
+            description: "Your order is confirmed.",
+            tone: "success",
+          });
+          router.push(orderPath);
+        },
+        onDismiss: () => {
+          toast({
+            title: `Order ${result.order_number} reserved`,
+            description: "Complete payment to confirm.",
+            tone: "success",
+          });
+          router.push(orderPath);
+        },
+        onError: (message) => {
+          toast({
+            title: "Couldn't complete payment",
+            description: message,
+            tone: "error",
+          });
+          router.push(orderPath);
+        },
+      },
+    );
   };
 
   if (items.length === 0 && !submitting) {
@@ -1113,6 +1177,21 @@ export default function CheckoutPage() {
           >
             {submitting ? "Placing order..." : "Place order"}
           </button>
+          {!submitting && submitBlockers.length > 0 && (
+            <div
+              aria-live="polite"
+              className="mt-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]"
+            >
+              <p className="font-medium opacity-80">
+                Before you can place your order:
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 opacity-70">
+                {submitBlockers.map((blocker) => (
+                  <li key={blocker}>{blocker}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
     </main>

@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
+import { openRazorpayCheckout } from "@/lib/payments/razorpay";
 
 interface PendingPayment {
   orderId: string;
@@ -28,60 +29,6 @@ interface PendingPayment {
   currencyCode: string;
   customerName?: string;
   customerEmail?: string;
-}
-
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => { open: () => void };
-  }
-}
-
-const RZP_SCRIPT = "https://checkout.razorpay.com/v1/checkout.js";
-const DEFAULT_ACCENT_HEX = "#2D4A2B";
-
-/**
- * Razorpay's `theme.color` API accepts a hex string. Read the live
- * `--storefront-accent` CSS var off <body> (where the theme style is
- * injected from layout.tsx) so the merchant's brand accent flows
- * through to the Razorpay widget — instead of shipping every customer
- * the hardcoded Mark8ly moss green. Falls back to the default hex if
- * the var resolves to something Razorpay wouldn't accept.
- */
-function resolveAccentHex(): string {
-  if (typeof window === "undefined") return DEFAULT_ACCENT_HEX;
-  const source = document.body ?? document.documentElement;
-  const raw = getComputedStyle(source)
-    .getPropertyValue("--storefront-accent")
-    .trim();
-  // Razorpay only reliably renders #RGB or #RRGGBB. Other formats
-  // (oklch, color-mix, named colors) would silently render black.
-  if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return raw;
-  return DEFAULT_ACCENT_HEX;
-}
-
-function loadRazorpay(): Promise<boolean> {
-  if (typeof window === "undefined") return Promise.resolve(false);
-  if (window.Razorpay) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    // A previously-injected tag that already failed (CSP block, offline,
-    // adblock) has ALREADY fired its load/error event. Attaching fresh
-    // listeners to it would wait for an event that can never come again,
-    // leaving the button on "Opening…" forever with no error — so drop
-    // the dead tag and retry from scratch instead.
-    document
-      .querySelectorAll<HTMLScriptElement>(`script[src="${RZP_SCRIPT}"]`)
-      .forEach((tag) => tag.remove());
-
-    const s = document.createElement("script");
-    s.src = RZP_SCRIPT;
-    s.async = true;
-    s.onload = () => resolve(!!window.Razorpay);
-    s.onerror = () => {
-      s.remove();
-      resolve(false);
-    };
-    document.head.appendChild(s);
-  });
 }
 
 interface Props {
@@ -141,46 +88,19 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
     if (!pending) return;
     setError(null);
     setBusy(true);
-    const ok = await loadRazorpay();
-    if (!ok || !window.Razorpay) {
-      setError("Could not load the Razorpay widget. Check your connection and try again.");
-      setBusy(false);
-      return;
-    }
-
-    const amountPaise = Math.round(Number.parseFloat(pending.amount) * 100);
-    const rzpOptions = {
-      key: pending.publicKey,
-      amount: amountPaise,
-      currency: pending.currencyCode,
-      name: storeName || "Storefront",
-      order_id: pending.paymentToken,
-      prefill: {
-        name: pending.customerName ?? "",
-        email: pending.customerEmail ?? "",
+    await openRazorpayCheckout(
+      {
+        orderId,
+        paymentToken: pending.paymentToken,
+        publicKey: pending.publicKey,
+        amount: pending.amount,
+        currencyCode: pending.currencyCode,
+        storeName,
+        customerName: pending.customerName,
+        customerEmail: pending.customerEmail,
       },
-      handler: async (resp: {
-        razorpay_order_id: string;
-        razorpay_payment_id: string;
-        razorpay_signature: string;
-      }) => {
-        try {
-          const verifyRes = await fetch(`/api/orders/${orderId}/verify-payment`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(resp),
-          });
-          if (!verifyRes.ok) {
-            const body = await verifyRes.text().catch(() => "");
-            setError(`Payment verification failed (${verifyRes.status}). ${body}`);
-            toast({
-              title: "Payment verification failed",
-              description: body || `HTTP ${verifyRes.status}`,
-              tone: "error",
-            });
-            setBusy(false);
-            return;
-          }
+      {
+        onSuccess: () => {
           sessionStorage.removeItem(`mark8ly.pendingPayment.${orderId}`);
           setPending(null);
           toast({
@@ -189,30 +109,19 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
             tone: "success",
           });
           router.refresh();
-        } catch (e) {
-          setError(e instanceof Error ? e.message : "Unknown error verifying payment.");
+        },
+        onDismiss: () => setBusy(false),
+        onError: (message) => {
+          setError(message);
+          toast({
+            title: "Payment could not be completed",
+            description: message,
+            tone: "error",
+          });
           setBusy(false);
-        }
+        },
       },
-      modal: {
-        ondismiss: () => setBusy(false),
-      },
-      theme: { color: resolveAccentHex() },
-    };
-
-    try {
-      new window.Razorpay(rzpOptions).open();
-    } catch (e) {
-      // Without this the throw escapes the async handler, `busy` is never
-      // cleared, and the button stays on "Opening…" with nothing to
-      // explain why.
-      setError(
-        e instanceof Error
-          ? `Could not open the payment window: ${e.message}`
-          : "Could not open the payment window. Please try again.",
-      );
-      setBusy(false);
-    }
+    );
   }
 
   return (

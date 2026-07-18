@@ -35,7 +35,11 @@ type OrdersHandler struct {
 	audit     *audit.Emitter           // optional — nil-safe; Emit is no-op when nil
 	notify    *notification.Service    // optional — nil-safe; notification.Emit skips when nil
 	refunds   *orderrefund.Coordinator // optional — nil disables the refund endpoint (503)
-	logger    *slog.Logger
+	// cancelForOrderFn, when set, cancels the order's shipments at the carrier
+	// (best-effort). Wired from shipmentcancel.Executor.CancelForOrder via
+	// WithShipmentCanceller. A func seam keeps the handler unit-testable.
+	cancelForOrderFn func(ctx context.Context, orderID uuid.UUID)
+	logger           *slog.Logger
 }
 
 // NewOrdersHandler constructs an OrdersHandler. docMailer is optional;
@@ -120,30 +124,23 @@ func (h *OrdersHandler) dispatchRefundEmail(orderID uuid.UUID, refundAmount, tot
 	}()
 }
 
-// shipmentBlocksCancel returns true when ANY shipment row exists for
-// the order. The store owner has "started delivery" the moment they cut
-// a shipping label — the carrier has been notified, the package is being
-// picked / packed, and there's typically a non-refundable shipping fee
-// already on the books. From that point on the right operation is a
-// refund (+ return-to-sender if the parcel is in transit), not a cancel.
-//
-// We deliberately do NOT inspect the shipment's status here: even a
-// freshly-created shipment in "pending" or "created" state should block
-// cancel — the act of generating the label is what kicks off delivery.
-func (h *OrdersHandler) shipmentBlocksCancel(ctx context.Context, orderID uuid.UUID) bool {
-	var count int64
-	if err := h.db.WithContext(ctx).
-		Table("shipments").
-		Where("order_id = ?", orderID).
-		Count(&count).Error; err != nil {
-		// DB error — fail open so a transient issue doesn't trap a
-		// merchant who legitimately needs to cancel. The state-machine
-		// guard in service.Cancel still catches fulfilled orders.
-		h.logger.Warn("shipmentBlocksCancel: count failed",
-			"order_id", orderID, "err", err)
-		return false
+// WithShipmentCanceller wires the best-effort carrier shipment-cancel for the
+// non-paid cancel path (paid cancels reach the carrier via the auto-refund →
+// coordinator hook). Nil-safe by omission.
+func (h *OrdersHandler) WithShipmentCanceller(fn func(ctx context.Context, orderID uuid.UUID)) *OrdersHandler {
+	h.cancelForOrderFn = fn
+	return h
+}
+
+// cancelShipmentsForNonPaid fires the direct shipment cancel only when the
+// order did NOT go through the auto-refund path (paid orders). This is the
+// single trigger site for cancels, so there's no double-hit with the
+// coordinator's post-refund hook.
+func (h *OrdersHandler) cancelShipmentsForNonPaid(ctx context.Context, orderID uuid.UUID, paymentStatus string) {
+	if h.cancelForOrderFn == nil || paymentStatus == string(order.PaymentStatusPaid) {
+		return
 	}
-	return count > 0
+	h.cancelForOrderFn(ctx, orderID)
 }
 
 // List handles GET /admin/stores/:storeId/orders.
@@ -428,17 +425,6 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
 		return
 	}
-	// Belt-and-braces: even though service.Cancel rejects fulfilled
-	// orders via the status machine, a confirmed order with an in-flight
-	// shipment must not silently slip through. Bounce here with a 409 so
-	// the merchant sees a clear "issue a refund / RTS instead" hint.
-	if h.shipmentBlocksCancel(c.Request.Context(), id) {
-		c.JSON(http.StatusConflict, gin.H{
-			"error":   "shipment_in_flight",
-			"message": "Cancel is unavailable once a shipping label has been generated. Issue a refund (and arrange a return-to-sender if the parcel is in transit) instead.",
-		})
-		return
-	}
 	if err := h.svc.Cancel(c.Request.Context(), nil, id, req.Reason); err != nil {
 		RespondErr(c, err, h.logger)
 		return
@@ -468,6 +454,19 @@ func (h *OrdersHandler) Cancel(c *gin.Context) {
 		}); rerr != nil {
 			h.logger.Warn("cancel auto-refund deferred", "order_id", id, "err", rerr)
 		}
+	}
+	// Cancel the order's shipment at the carrier. Paid orders reach the carrier
+	// through the auto-refund → coordinator hook above; only the non-paid path
+	// needs a direct call here. Detached + best-effort: never blocks or fails
+	// the cancel response.
+	{
+		oid := id
+		ps := o.PaymentStatus
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			h.cancelShipmentsForNonPaid(ctx, oid, ps)
+		}()
 	}
 	cancelMsg := "Order " + o.OrderNumber + " was cancelled."
 	notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{

@@ -25,6 +25,7 @@ import (
 	"cloud.google.com/go/storage"
 	firebase "firebase.google.com/go/v4"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"golang.org/x/sync/singleflight"
@@ -98,6 +99,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/pushevents"
 	"github.com/mark8ly/marketplace-api/internal/refund"
 	"github.com/mark8ly/marketplace-api/internal/review"
+	"github.com/mark8ly/marketplace-api/internal/shipmentcancel"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/signup"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -682,6 +684,28 @@ func main() {
 			WithEncryptor(apiKeyEncryptor).
 			WithSecretStore(carrierSecretStore).
 			WithLabelMailer(labelMailer)
+
+		// Shipment-cancel executor — resolves + executes the carrier action
+		// when an order is fully refunded or cancelled. Reuses the shipments
+		// handler's carrier-resolution path so credential decryption is not
+		// duplicated. Fired best-effort from the refund coordinator (full
+		// refunds), the orders Cancel handler (non-paid cancels), and the
+		// manual per-shipment endpoint.
+		shipmentCanceller := shipmentcancel.NewExecutor(shippingRepo, shipmentsHandler.CarrierForStore, log)
+		shipmentsHandler = shipmentsHandler.WithCanceller(shipmentCanceller)
+
+		// Production hook wraps the executor call in a detached goroutine so a
+		// slow carrier never blocks the refund/cancel response; the executor is
+		// already best-effort and never errors back.
+		cancelShipmentsAsync := func(_ context.Context, orderID uuid.UUID) {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				shipmentCanceller.CancelForOrder(ctx, orderID)
+			}()
+		}
+		refundCoordinator = refundCoordinator.WithShipmentCanceller(cancelShipmentsAsync)
+		ordersHandler = ordersHandler.WithShipmentCanceller(cancelShipmentsAsync)
 
 		// Public Delhivery webhook receiver — same carrier-secret resolution
 		// path as the shipments admin handler, wired to the admin handler's

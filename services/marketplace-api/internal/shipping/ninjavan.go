@@ -104,6 +104,9 @@ type nvOrderRequest struct {
 type nvParcel struct {
 	Dimensions nvDimensions `json:"dimensions"`
 	Items      []nvItem     `json:"items"`
+	// IsPickupRequired is set on reverse (Return) orders so NinjaVan schedules
+	// a pickup from the customer. Omitted (false) on forward parcels.
+	IsPickupRequired bool `json:"is_pickup_required,omitempty"`
 }
 
 type nvDimensions struct {
@@ -265,6 +268,70 @@ func (c *NinjaVanCarrier) CreateShipment(ctx context.Context, in ShipmentRequest
 		TrackingNumber:     or.TrackingNumber,
 		Carrier:            "ninjavan",
 		Service:            order.ServiceType + "_" + order.ServiceLevel,
+	}, nil
+}
+
+// CreateReverseShipment creates a NinjaVan return (reverse) order: NinjaVan
+// picks up FROM the customer (PickupFrom) and delivers TO the warehouse
+// (ReturnTo). The order type is service_type:"Return" with
+// parcel_job.is_pickup_required so NinjaVan schedules the pickup.
+//
+// NOTE: doc-derived, not live-verified. NinjaVan is also not resolvable via the
+// admin carrier path today (NewCarrier needs a country code that
+// ShipmentsHandler.CarrierForStore does not pass), so this is exercised at the
+// carrier level only until that wiring is fixed. Gated behind
+// REVERSE_PICKUP_ENABLED at the executor.
+func (c *NinjaVanCarrier) CreateReverseShipment(ctx context.Context, in ReverseShipmentRequest) (*Shipment, error) {
+	token, err := c.authenticate(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ninjavan: reverse shipment: auth: %w", err)
+	}
+	totalWeightGrams := 0
+	for _, item := range in.Items {
+		totalWeightGrams += item.WeightGrams * item.Quantity
+	}
+	if totalWeightGrams == 0 {
+		totalWeightGrams = 500 // NinjaVan requires a weight; same fallback as forward.
+	}
+
+	order := nvOrderRequest{
+		ServiceType:  "Return",
+		ServiceLevel: "Standard",
+		From:         toNVAddress(in.PickupFrom), // customer — pickup
+		To:           toNVAddress(in.ReturnTo),   // warehouse — return destination
+		ParcelJob: nvParcel{
+			Dimensions:       nvDimensions{Weight: float64(totalWeightGrams) / 1000.0},
+			Items:            []nvItem{{Description: "Return", Quantity: 1}},
+			IsPickupRequired: true,
+		},
+	}
+
+	country := c.country
+	if country == "" {
+		country = strings.ToLower(in.PickupFrom.CountryCode)
+	}
+	path := fmt.Sprintf("/%s/4.2/orders", country)
+	resp, err := c.doJSON(ctx, http.MethodPost, path, order, token)
+	if err != nil {
+		return nil, fmt.Errorf("ninjavan: reverse shipment: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("ninjavan: reverse shipment: unexpected status %d: %s",
+			resp.StatusCode, readBodyTrimmed(resp.Body))
+	}
+	var or nvOrderResponse
+	if err := json.NewDecoder(resp.Body).Decode(&or); err != nil {
+		return nil, fmt.Errorf("ninjavan: reverse shipment: decode: %w", err)
+	}
+	if or.TrackingNumber == "" {
+		return nil, fmt.Errorf("ninjavan: reverse shipment: no tracking number in response")
+	}
+	return &Shipment{
+		ProviderShipmentID: or.OrderID,
+		TrackingNumber:     or.TrackingNumber,
+		Carrier:            "ninjavan",
+		Service:            "return",
 	}, nil
 }
 

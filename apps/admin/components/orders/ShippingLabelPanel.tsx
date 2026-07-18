@@ -18,6 +18,7 @@ import {
 
 import { useToast } from "@/components/feedback/Toaster";
 import type { ShipmentResponse } from "@/lib/api/shipping-api";
+import { shipmentCancellationCopy } from "@/lib/copy/shipmentCancellation";
 
 import {
   createShipmentAction,
@@ -27,6 +28,7 @@ import {
   refreshShipmentTrackingAction,
   deleteShipmentAction,
   schedulePickupAction,
+  cancelShipmentAction,
   type ShippingActionResult,
 } from "@/app/(admin)/orders/[id]/shipping-actions";
 
@@ -193,6 +195,14 @@ function ShipmentDetails({
   // JSON error as "label.txt".
   const isStub = shipment.tracking_number.startsWith("TEST-DLV-");
 
+  // Cancel/return status. "succeeded" and "requested" are quiet
+  // confirmations (DetailRow); "failed" and "unsupported" need the
+  // merchant's attention (warning banner) — same split as isStub above.
+  const cancelNeedsAttention =
+    shipment.cancel_status === "failed" || shipment.cancel_status === "unsupported";
+  const cancelIsQuiet =
+    shipment.cancel_status === "succeeded" || shipment.cancel_status === "requested";
+
   const labelProxyURL = `/api/admin/stores/${storeId}/orders/${orderId}/shipments/${shipment.id}/label`;
 
   return (
@@ -212,6 +222,15 @@ function ShipmentDetails({
         <DetailRow label="Status" value={shipment.status} />
         {eta && <DetailRow label="ETA" value={eta} />}
         {pickup && <DetailRow label="Pickup" value={pickup} />}
+        {cancelIsQuiet && (
+          <DetailRow
+            label={shipmentCancellationCopy.detailRowLabel}
+            value={shipmentCancellationCopy.statusRowValue(
+              shipment.cancel_action,
+              shipment.cancel_status,
+            )}
+          />
+        )}
       </dl>
       {isStub && (
         <div
@@ -221,6 +240,19 @@ function ShipmentDetails({
           This shipment uses a mock tracking number from an earlier test run
           and won&apos;t produce a real label. Clear it and create a new
           shipment to generate a real waybill.
+        </div>
+      )}
+      {cancelNeedsAttention && (
+        <div
+          role="status"
+          className="rounded-md border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.06] px-4 py-3 text-xs text-[color:var(--warning)]"
+        >
+          {shipmentCancellationCopy.statusWarningMessage({
+            action: shipment.cancel_action,
+            status: shipment.cancel_status,
+            reason: shipment.cancel_reason,
+            trackingNumber: shipment.tracking_number,
+          })}
         </div>
       )}
       <LabelActions
@@ -267,6 +299,7 @@ function LabelActions({
   const [downloadPending, setDownloadPending] = useState(false);
   const [downloadErr, setDownloadErr] = useState<string | null>(null);
   const [deletePending, deleteStartTransition] = useTransition();
+  const [cancelShipmentPending, cancelShipmentStartTransition] = useTransition();
   // Pickup reschedule popover state. Kept local to LabelActions so the
   // rest of the panel doesn't need to know the slot catalogue.
   const [showReschedule, setShowReschedule] = useState(false);
@@ -373,6 +406,29 @@ function LabelActions({
     [storeId, orderId, shipment.id, rescheduleDate, rescheduleSlot, onUpdated, toast],
   );
 
+  // Manual "Cancel / return shipment" — the merchant-triggered
+  // counterpart to the backend's auto-cancel-on-refund/cancel behavior.
+  // The cancel endpoint returns only the outcome (action/status/reason),
+  // so we refetch the shipment afterwards to pick up the new
+  // cancel_action/cancel_status/cancel_reason fields for display.
+  const cancelReturnShipment = useCallback(() => {
+    cancelShipmentStartTransition(async () => {
+      const r = await cancelShipmentAction(storeId, orderId, shipment.id);
+      if (!r.ok) {
+        toast.error(
+          shipmentCancellationCopy.toastErrorTitle,
+          r.error?.message ?? "Please try again.",
+        );
+        return;
+      }
+      toast.success(shipmentCancellationCopy.toastSuccessTitle);
+      const fresh = await getShipmentAction(storeId, orderId);
+      if (fresh) {
+        onUpdated(fresh);
+      }
+    });
+  }, [storeId, orderId, shipment.id, onUpdated, toast]);
+
   const clearShipment = useCallback(() => {
     deleteStartTransition(async () => {
       const r = await deleteShipmentAction(storeId, orderId, shipment.id);
@@ -419,6 +475,16 @@ function LabelActions({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-secondary">
         <TextLink onClick={refresh} disabled={refreshPending || isStub}>
           {refreshPending ? "Syncing tracking…" : "Refresh tracking"}
+        </TextLink>
+        <span aria-hidden="true" className="text-foreground-tertiary">·</span>
+        <TextLink
+          onClick={cancelReturnShipment}
+          disabled={cancelShipmentPending || isStub}
+          tone={shipment.cancel_status === "failed" ? "danger" : "default"}
+        >
+          {cancelShipmentPending
+            ? shipmentCancellationCopy.manualActionPending
+            : shipmentCancellationCopy.manualActionLabel}
         </TextLink>
         <span aria-hidden="true" className="text-foreground-tertiary">·</span>
         <TextLink

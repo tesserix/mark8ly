@@ -16,9 +16,11 @@ import {
   refreshShipmentTracking,
   deleteShipment,
   schedulePickup,
+  cancelShipment,
   type CreateShipmentInput,
   type SchedulePickupInput,
   type ShipmentResponse,
+  type ShipmentCancelOutcome,
 } from "@/lib/api/shipping-api";
 
 export interface ShippingActionResult {
@@ -231,6 +233,49 @@ export async function schedulePickupAction(
   if (!ctx) return noSession();
 
   const result = await schedulePickup(ctx.storeId, orderId, shipmentId, input, {
+    userId: ctx.userId,
+    tenantId: ctx.tenantId,
+  });
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: { code: result.error.code, message: result.error.message },
+    };
+  }
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true, data: result.data };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Manually cancel/return a shipment. Mirrors refreshShipmentTrackingAction
+// but the underlying endpoint returns an outcome, not the full shipment —
+// callers refetch via getShipmentAction to pick up the new cancel_* fields.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ShipmentCancelActionResult {
+  ok: boolean;
+  data?: ShipmentCancelOutcome;
+  error?: {
+    code: string;
+    message: string;
+    field?: string;
+  };
+}
+
+export async function cancelShipmentAction(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+): Promise<ShipmentCancelActionResult> {
+  const ctx = await readContext(storeId);
+  if (!ctx) {
+    return {
+      ok: false,
+      error: { code: "no_session", message: "Your session has expired. Please sign in again." },
+    };
+  }
+
+  const result = await cancelShipment(ctx.storeId, orderId, shipmentId, {
     userId: ctx.userId,
     tenantId: ctx.tenantId,
   });

@@ -28,6 +28,7 @@ import { Check, CreditCard, PackageCheck, XCircle } from "lucide-react";
 
 import { useToast } from "@/components/feedback/Toaster";
 import type { AdminOrder, PaymentStatus } from "@/lib/api/marketplace-api";
+import { shipmentCancellationCopy } from "@/lib/copy/shipmentCancellation";
 
 import {
   cancelOrderAction,
@@ -39,11 +40,20 @@ import {
 
 interface OrderActionsBarProps {
   order: AdminOrder;
+  /**
+   * Current shipment status, if a shipment exists for this order.
+   * Threaded from the order-detail page (which already loads the
+   * shipment for the lifecycle stepper) so the cancel/refund review
+   * steps can disclose the shipment consequence before the merchant
+   * confirms — full refund and order cancel both auto-cancel/return
+   * the shipment on the backend.
+   */
+  shipmentStatus?: string | null;
 }
 
 type Panel = "none" | "confirm" | "cancel" | "refund" | "fulfill";
 
-export function OrderActionsBar({ order }: OrderActionsBarProps) {
+export function OrderActionsBar({ order, shipmentStatus }: OrderActionsBarProps) {
   const { toast } = useToast();
   const [panel, setPanel] = useState<Panel>("none");
   const [pending, startTransition] = useTransition();
@@ -212,6 +222,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
           orderId={order.id}
           storeId={order.store_id}
           customerEmail={order.customer_email}
+          shipmentStatus={shipmentStatus}
           onDone={(msg) => (msg ? onSuccess("Order cancelled", msg) : close())}
         />
       )}
@@ -223,6 +234,7 @@ export function OrderActionsBar({ order }: OrderActionsBarProps) {
           refundedAmount={order.refunded_amount}
           currencyCode={order.currency_code}
           customerEmail={order.customer_email}
+          shipmentStatus={shipmentStatus}
           onDone={(msg) => (msg ? onSuccess("Refund issued", msg) : close())}
         />
       )}
@@ -404,14 +416,24 @@ interface CancelFormProps {
   storeId: string;
   orderId: string;
   customerEmail: string;
+  shipmentStatus?: string | null;
   onDone: (msg?: string) => void;
 }
 
-function CancelForm({ storeId, orderId, customerEmail, onDone }: CancelFormProps) {
+function CancelForm({
+  storeId,
+  orderId,
+  customerEmail,
+  shipmentStatus,
+  onDone,
+}: CancelFormProps) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<OrderActionResult["error"] | undefined>();
   const [reason, setReason] = useState("");
   const [step, setStep] = useState<"form" | "review">("form");
+
+  const shipmentConsequence =
+    shipmentCancellationCopy.consequenceByShipmentStatus(shipmentStatus);
 
   const submit = () => {
     setError(undefined);
@@ -433,6 +455,9 @@ function CancelForm({ storeId, orderId, customerEmail, onDone }: CancelFormProps
           <p>You are about to <strong>cancel</strong> this order. This cannot be undone.</p>
           <p className="opacity-70">Customer ({customerEmail}) will be notified.</p>
           {reason && <p className="opacity-70">Reason: {reason}</p>}
+          {shipmentConsequence && (
+            <p className="opacity-70">{shipmentConsequence}</p>
+          )}
         </div>
         <FormError error={error} />
         <div className="flex items-center gap-3">
@@ -481,6 +506,7 @@ interface RefundFormProps {
   refundedAmount: string;
   currencyCode: string;
   customerEmail: string;
+  shipmentStatus?: string | null;
   onDone: (msg?: string) => void;
 }
 
@@ -491,6 +517,7 @@ function RefundForm({
   refundedAmount,
   currencyCode,
   customerEmail,
+  shipmentStatus,
   onDone,
 }: RefundFormProps) {
   const [pending, startTransition] = useTransition();
@@ -540,6 +567,10 @@ function RefundForm({
 
   if (step === "review") {
     const label = paymentStatus === "refunded" ? "fully refunded" : "partially refunded";
+    const shipmentConsequence =
+      paymentStatus === "refunded"
+        ? shipmentCancellationCopy.consequenceByShipmentStatus(shipmentStatus)
+        : null;
     return (
       <PanelShell title="Review refund">
         <div className="flex flex-col gap-3 text-sm text-[color:var(--ink-900)]">
@@ -552,6 +583,9 @@ function RefundForm({
             This cannot be undone.
           </p>
           {reason && <p className="opacity-70">Note: {reason}</p>}
+          {shipmentConsequence && (
+            <p className="opacity-70">{shipmentConsequence}</p>
+          )}
         </div>
         <FormError error={error} />
         <div className="flex items-center gap-3">

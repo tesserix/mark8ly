@@ -41,7 +41,30 @@ export interface ShipmentResponse {
   pickup_request_id?: string;
   /** UTC timestamp combining pickup date + slot start. */
   pickup_scheduled_for?: string;
+  /**
+   * Set when the backend has auto-cancelled/returned this shipment
+   * (full refund or order cancel) or when a manual cancel was
+   * requested via cancelShipment(). Omitted when no cancel/return has
+   * ever been attempted on this shipment.
+   */
+  cancel_action?: "cancel_forward" | "rto" | "reverse_pickup";
+  /** Outcome of the cancel_action above. Omitted alongside cancel_action. */
+  cancel_status?: "succeeded" | "failed" | "unsupported" | "requested";
+  /** Carrier or backend detail explaining a failed/unsupported outcome. */
+  cancel_reason?: string;
   created_at: string;
+}
+
+/**
+ * Response from the manual cancel/return endpoint. Distinct from
+ * ShipmentResponse — it reports only the outcome of the cancel attempt,
+ * not the full shipment record (callers refetch the shipment for that).
+ */
+export interface ShipmentCancelOutcome {
+  shipment_id: string;
+  action: "cancel_forward" | "rto" | "reverse_pickup";
+  status: "succeeded" | "failed" | "unsupported" | "requested";
+  reason?: string;
 }
 
 export interface CreateShipmentInput {
@@ -269,6 +292,33 @@ export async function refreshShipmentTracking(
     return { ok: false, error: await parseMutationError(res) };
   }
   return { ok: true, data: (await res.json()) as ShipmentResponse };
+}
+
+/**
+ * Manually cancel or return a shipment (pickup cancellation, RTO, or
+ * reverse pickup depending on the shipment's current lifecycle state).
+ * Mirrors refreshShipmentTracking: POST, no body. Used by the admin
+ * "Cancel / return shipment" text link — the merchant-triggered
+ * counterpart to the backend's auto-cancel-on-refund/cancel behavior.
+ * Returns only the cancel outcome; callers refetch the shipment to see
+ * the updated cancel_action/cancel_status/cancel_reason fields.
+ */
+export async function cancelShipment(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<ShipmentCancelOutcome>> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/shipments/${shipmentId}/cancel`;
+  const res = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    headers: commonHeaders(session),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as ShipmentCancelOutcome };
 }
 
 /**

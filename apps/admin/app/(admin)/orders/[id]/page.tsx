@@ -82,7 +82,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
         {/* Aside — sticky action workspace. All three sections use the
             hairline system; no elevated cards inside. */}
         <aside className="flex flex-col gap-8 lg:sticky lg:top-8 lg:self-start">
-          <OrderActionsBar order={order} />
+          <OrderActionsBar order={order} shipmentStatus={shipment?.status ?? null} />
           <div className="border-t border-border-subtle pt-8">
             <ShippingLabelPanel
               storeId={currentStore.id}

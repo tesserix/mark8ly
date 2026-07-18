@@ -13,6 +13,9 @@ interface RefundSheetProps {
   /** amount omitted ⇒ full remaining balance; refundRequestId is the idempotency scope. */
   onSubmit: (args: { amount?: number; refundRequestId: string }) => void;
   isSubmitting?: boolean;
+  /** Whether this order has a shipment — a full refund also cancels/returns
+   *  it at the carrier server-side, so the sheet surfaces that impact. */
+  hasShipment?: boolean;
 }
 
 /**
@@ -23,7 +26,7 @@ interface RefundSheetProps {
  * Amount is optional: blank = full remaining balance.
  */
 export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
-  function RefundSheet({ onSubmit, isSubmitting = false }, ref) {
+  function RefundSheet({ onSubmit, isSubmitting = false, hasShipment = false }, ref) {
     const modalRef = useRef<BottomSheetModal>(null);
     const requestIdRef = useRef<string>("");
     const [amount, setAmount] = useState("");
@@ -39,6 +42,9 @@ export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
     const parsed = amount.trim() === "" ? undefined : Number(amount);
     const amountValid = parsed === undefined || (Number.isFinite(parsed) && parsed > 0);
     const canSubmit = amountValid && !isSubmitting;
+    // Only a FULL refund (blank amount) auto-cancels/returns the shipment
+    // server-side — a partial refund leaves it untouched.
+    const isFullRefund = amount.trim() === "";
 
     const handleSubmit = () => {
       if (!amountValid) return;
@@ -60,7 +66,7 @@ export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
             Refund order
           </Text>
           <Text preset="body" color="textSecondary">
-            Leave the amount blank to refund the full remaining balance.
+            This can&apos;t be undone. Leave the amount blank to refund the full remaining balance.
           </Text>
           <FieldInput
             label="Amount"
@@ -72,6 +78,13 @@ export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
             autoFocus
             editable={!isSubmitting}
           />
+          {hasShipment && isFullRefund ? (
+            <View style={styles.shipmentNote}>
+              <Text preset="caption" color={theme.colors.warningInk}>
+                A full refund will also cancel or return this shipment with the carrier.
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.actions}>
             <Pressable
               style={styles.cancelBtn}
@@ -107,6 +120,11 @@ export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
 
 const styles = StyleSheet.create({
   root: { flex: 1, padding: theme.spacing.lg, gap: theme.spacing.md },
+  shipmentNote: {
+    backgroundColor: theme.colors.warningTint,
+    borderRadius: theme.radii.sm,
+    padding: theme.spacing.sm,
+  },
   actions: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.sm },
   cancelBtn: {
     flex: 1,

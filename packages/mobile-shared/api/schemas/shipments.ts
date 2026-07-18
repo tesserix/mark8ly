@@ -31,6 +31,19 @@ export const shipmentSchema = z.object({
   pickup_request_id: z.string().optional(),
   pickup_scheduled_for: z.string().optional(),
   created_at: z.string(),
+  /**
+   * Cancel/return outcome fields (ShipmentResponse.CancelAction/CancelStatus/
+   * CancelReason, shipments.go:359-361). Plain `string` + `omitempty` →
+   * ABSENT (not null) for shipments that never had a cancel/return
+   * attempted → `.optional()`, same convention as `pickup_request_id`
+   * above. `cancel_action`/`cancel_status` are closed vocabularies
+   * server-side ("cancel_forward"|"rto"|"reverse_pickup" and
+   * "succeeded"|"failed"|"unsupported"|"requested") but modelled as bare
+   * strings so an added value never trips the parse.
+   */
+  cancel_action: z.string().optional(),
+  cancel_status: z.string().optional(),
+  cancel_reason: z.string().optional(),
 });
 export type Shipment = z.infer<typeof shipmentSchema>;
 

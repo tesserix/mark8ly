@@ -35,6 +35,19 @@ export interface DeleteShipmentResult {
 }
 
 /**
+ * POST .../shipments/:id/cancel → shipmentcancel.Outcome (executor.go:43-48).
+ * The manual "Cancel / return shipment" button — no body. `status` is one of
+ * "succeeded" | "failed" | "unsupported"; `reason` is only present on a
+ * non-"succeeded" outcome (`omitempty`).
+ */
+export interface CancelShipmentResult {
+  shipment_id: string;
+  action: string;
+  status: string;
+  reason?: string;
+}
+
+/**
  * Admin shipment management for a single order. Mirrors the WEB routes
  * (routes.go:312-355), now exposed on the mobile group. `get` returns the bare
  * ShipmentResponse OR null; every mutation that touches a shipment returns the
@@ -77,6 +90,14 @@ export function createShipmentsApi(client: ReturnType<typeof createApiClient>) {
       ),
     remove: (orderId: string, shipmentId: string) =>
       client.delete<DeleteShipmentResult>(`/orders/${orderId}/shipments/${shipmentId}`),
+    /**
+     * Manual "Cancel / return shipment" — resolves the shipment's lifecycle
+     * state and takes the matching carrier action (routes.go:360). Best-
+     * effort server-side: a non-"succeeded" `status` is a normal response,
+     * not a thrown ApiError — callers should check `status`/`reason`.
+     */
+    cancel: (orderId: string, shipmentId: string) =>
+      client.post<CancelShipmentResult>(`/orders/${orderId}/shipments/${shipmentId}/cancel`, {}),
   };
 }
 

@@ -26,7 +26,10 @@ import { CancelReasonSheet, type CancelReasonSheetHandle } from "@/components/or
 import { RefundSheet, type RefundSheetHandle } from "@/components/orders/RefundSheet";
 import { ShippingPanel } from "@/components/orders/ShippingPanel";
 import { useEmailInvoice, useEmailReceipt } from "@/lib/admin-api/shipment-actions";
+import { useShipment } from "@/lib/hooks/use-shipment";
+import { useApiClient } from "@/lib/api-client";
 import { ApiError } from "@repo/mobile-shared/api/client";
+import { createShipmentsApi } from "@repo/mobile-shared/api/shipments";
 import type { OrderItem, OrderAddress } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
@@ -140,6 +143,8 @@ export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: order, isLoading, error } = useOrder(id);
   const storeCurrency = useTenantStore((s) => s.activeStore?.currency_code);
+  const { data: shipment } = useShipment(id);
+  const apiClient = useApiClient();
 
   const confirmMutation = useConfirmOrder();
   const fulfillMutation = useFulfillOrder();
@@ -175,8 +180,44 @@ export default function OrderDetailScreen() {
   }, [id, fulfillMutation]);
 
   const handleCancelSubmit = useCallback(
-    (reason: string) => cancelMutation.mutate({ id, reason }),
-    [id, cancelMutation],
+    (reason: string) =>
+      cancelMutation.mutate(
+        { id, reason },
+        {
+          onError: (err) => {
+            const msg =
+              err instanceof ApiError && err.status === 409
+                ? "This order can no longer be cancelled — it may already be fulfilled or cancelled."
+                : err instanceof ApiError
+                  ? err.message
+                  : "Couldn't cancel the order. Please try again.";
+            Alert.alert("Cancel failed", msg);
+          },
+          onSuccess: async () => {
+            // The order cancel itself always succeeds independently of the
+            // shipment — the server cancels/returns the shipment with the
+            // carrier best-effort and records the outcome on the shipment
+            // row (never on this response). Follow up with one read so a
+            // carrier-side failure isn't silent. Best-effort: swallow — the
+            // order cancel already went through, this is an informational
+            // extra, and the shipment panel still shows the true state.
+            try {
+              const updated = await createShipmentsApi(apiClient).get(id);
+              if (updated?.cancel_status === "failed" || updated?.cancel_status === "unsupported") {
+                Alert.alert(
+                  "Shipment needs attention",
+                  updated.cancel_reason
+                    ? `The order was cancelled, but the shipment couldn't be cancelled with the carrier: ${updated.cancel_reason}`
+                    : "The order was cancelled, but the shipment couldn't be cancelled with the carrier. You may need to contact them directly.",
+                );
+              }
+            } catch {
+              // See comment above — this check is a bonus, not load-bearing.
+            }
+          },
+        },
+      ),
+    [id, cancelMutation, apiClient],
   );
 
   const handleRefundSubmit = useCallback(
@@ -414,6 +455,7 @@ export default function OrderDetailScreen() {
         ref={refundSheetRef}
         onSubmit={handleRefundSubmit}
         isSubmitting={refundMutation.isPending}
+        hasShipment={!!shipment}
       />
     </Screen>
   );

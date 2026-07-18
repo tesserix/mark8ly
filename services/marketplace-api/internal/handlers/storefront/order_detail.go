@@ -350,12 +350,21 @@ type timelineRow struct {
 
 func (timelineRow) TableName() string { return "order_events" }
 
+// customerHiddenEventKinds are order_events kinds that carry operational
+// signal for the merchant only and must never appear on the buyer-facing
+// storefront timeline. loadTimeline filters them out at the query level so
+// a new admin-only kind can't leak just by being written to order_events.
+var customerHiddenEventKinds = []string{
+	string(order.EventKindPickupFailed),
+}
+
 func (h *OrderDetailHandler) loadTimeline(ctx context.Context, orderID uuid.UUID) []storefrontTimelineEntry {
 	var rows []timelineRow
 	if err := h.db.WithContext(ctx).
 		Table("order_events").
 		Select("kind", "payload", "to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created_at").
 		Where("order_id = ?", orderID).
+		Where("kind NOT IN ?", customerHiddenEventKinds).
 		Order("created_at ASC").
 		Find(&rows).Error; err != nil {
 		return []storefrontTimelineEntry{}

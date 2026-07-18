@@ -360,6 +360,12 @@ type ShipmentResponse struct {
 	CancelStatus string    `json:"cancel_status,omitempty"`
 	CancelReason string    `json:"cancel_reason,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+	// PickupWarning is set only on the create response when the label
+	// succeeded but auto-scheduling the pickup did not (e.g. wallet
+	// balance too low, account limits). Empty for every other case and
+	// for list/get reads. The admin surfaces it so a silently-skipped
+	// pickup no longer looks like a fully-completed shipment.
+	PickupWarning string `json:"pickup_warning,omitempty"`
 }
 
 func toShipmentResponse(rec *shipping.ShipmentRecord) ShipmentResponse {
@@ -749,9 +755,10 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	// row is already committed and the merchant can retry via the
 	// manual reschedule endpoint. Runs before the timeline event so
 	// a successful pickup shows up on the same render cycle.
+	var pickupWarning string
 	if carrierCfg.AutoSchedulePickup {
 		if ps, ok := carrier.(shipping.PickupScheduler); ok {
-			h.tryAutoSchedulePickup(ctx, rec, ps, carrierCfg)
+			pickupWarning = h.tryAutoSchedulePickup(ctx, rec, ps, carrierCfg)
 		}
 	}
 
@@ -761,21 +768,25 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	h.appendShipmentEvent(ctx, orderID, rec, order.EventKindShipmentCreated,
 		"Shipping label created — package will be picked up shortly.")
 
-	c.JSON(http.StatusCreated, toShipmentResponse(rec))
+	resp := toShipmentResponse(rec)
+	resp.PickupWarning = pickupWarning
+	c.JSON(http.StatusCreated, resp)
 }
 
 // tryAutoSchedulePickup calls SchedulePickup with the next-business-day
-// default and persists the pr_id on the shipment row. Errors log WARN
-// but never return — the caller's Create response must not fail just
-// because Delhivery's pickup endpoint had a hiccup. Duplicates (same
-// warehouse + date already booked) are treated as success so the
-// merchant isn't punished for retrying a shipment on the same day.
+// default and persists the pr_id on the shipment row. It never fails the
+// caller's Create response just because the pickup endpoint had a hiccup —
+// instead it returns a merchant-facing warning string (empty on success)
+// AND writes an admin-only pickup_failed timeline event, so a silently-
+// skipped pickup is visible instead of looking like a done shipment.
+// Duplicates (same warehouse + date already booked) are treated as success
+// so the merchant isn't punished for retrying a shipment on the same day.
 func (h *ShipmentsHandler) tryAutoSchedulePickup(
 	ctx context.Context,
 	rec *shipping.ShipmentRecord,
 	ps shipping.PickupScheduler,
 	cfg *shipping.CarrierConfig,
-) {
+) string {
 	slot := strings.TrimSpace(cfg.DefaultPickupSlotStart)
 	if slot == "" {
 		slot = "14:00:00"
@@ -797,14 +808,22 @@ func (h *ShipmentsHandler) tryAutoSchedulePickup(
 				"date", date.Format("2006-01-02"),
 				"err", err)
 		}
-		return
+		// The label is valid — only the pickup dispatch failed. Record an
+		// admin-only timeline event and hand a warning back to the create
+		// response so the merchant knows to schedule a pickup manually.
+		warning := fmt.Sprintf(
+			"Pickup wasn't scheduled automatically: %s. The shipping label is valid — schedule a pickup for this shipment once resolved.",
+			err.Error())
+		h.appendShipmentEvent(ctx, rec.OrderID, rec,
+			order.EventKindPickupFailed, warning)
+		return warning
 	}
 	// Success or duplicate — persist the pickup metadata and append a
 	// timeline event either way. The duplicate path still has a valid
 	// ScheduledFor on the Pickup so the admin UI "Pickup: <time>" row
 	// renders even though the carrier didn't echo back a fresh id.
 	if p == nil {
-		return
+		return ""
 	}
 	updates := map[string]any{
 		"pickup_request_id":    p.ProviderPickupID,
@@ -819,7 +838,9 @@ func (h *ShipmentsHandler) tryAutoSchedulePickup(
 			h.logger.Warn("shipments: persist pickup metadata failed",
 				"shipment_id", rec.ID.String(), "err", err)
 		}
-		return
+		// Carrier accepted the pickup; only our metadata write failed.
+		// Not a merchant-facing problem — no warning.
+		return ""
 	}
 	rec.PickupRequestID = p.ProviderPickupID
 	rec.PickupScheduledFor = &p.ScheduledFor
@@ -837,6 +858,7 @@ func (h *ShipmentsHandler) tryAutoSchedulePickup(
 			"scheduled_for", p.ScheduledFor,
 			"duplicate", errors.Is(err, shipping.ErrPickupAlreadyScheduled))
 	}
+	return ""
 }
 
 // nextBusinessDay returns the next Mon–Sat date after t. Delhivery

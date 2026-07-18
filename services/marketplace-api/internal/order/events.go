@@ -41,6 +41,14 @@ const (
 	// "Pickup scheduled for Fri, Apr 21" even before the waybill has
 	// moved off Manifested.
 	EventKindPickupScheduled EventKind = "pickup_scheduled"
+	// EventKindPickupFailed fires when auto-scheduling a carrier pickup
+	// failed after the label was created (wallet balance, account limits,
+	// carrier hiccup). It's an operational signal for the merchant only —
+	// the label is still valid and a manual pickup can be scheduled — so
+	// it is deliberately EXCLUDED from the customer-facing storefront
+	// timeline (see loadTimeline's admin-only kinds). Never surface it to
+	// buyers.
+	EventKindPickupFailed EventKind = "pickup_failed"
 )
 
 // ShipmentEventPayload is written for every shipment lifecycle event.

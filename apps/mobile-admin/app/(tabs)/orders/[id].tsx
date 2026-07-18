@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   View,
   ScrollView,
@@ -9,6 +9,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import * as Haptics from "expo-haptics";
 import { useLocalSearchParams } from "expo-router";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useOrder } from "../../../lib/hooks/use-orders";
@@ -154,6 +155,8 @@ export default function OrderDetailScreen() {
   const emailReceiptMutation = useEmailReceipt();
   const cancelSheetRef = useRef<CancelReasonSheetHandle>(null);
   const refundSheetRef = useRef<RefundSheetHandle>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [refundError, setRefundError] = useState<string | null>(null);
 
   const isMutating =
     confirmMutation.isPending ||
@@ -180,7 +183,8 @@ export default function OrderDetailScreen() {
   }, [id, fulfillMutation]);
 
   const handleCancelSubmit = useCallback(
-    (reason: string) =>
+    (reason: string) => {
+      setCancelError(null);
       cancelMutation.mutate(
         { id, reason },
         {
@@ -191,9 +195,12 @@ export default function OrderDetailScreen() {
                 : err instanceof ApiError
                   ? err.message
                   : "Couldn't cancel the order. Please try again.";
-            Alert.alert("Cancel failed", msg);
+            setCancelError(msg);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           },
           onSuccess: async () => {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            cancelSheetRef.current?.dismiss();
             // The order cancel itself always succeeds independently of the
             // shipment — the server cancels/returns the shipment with the
             // carrier best-effort and records the outcome on the shipment
@@ -216,12 +223,14 @@ export default function OrderDetailScreen() {
             }
           },
         },
-      ),
+      );
+    },
     [id, cancelMutation, apiClient],
   );
 
   const handleRefundSubmit = useCallback(
     ({ amount, refundRequestId }: { amount?: number; refundRequestId: string }) => {
+      setRefundError(null);
       refundMutation.mutate(
         { id, body: { amount, refund_request_id: refundRequestId } },
         {
@@ -232,7 +241,12 @@ export default function OrderDetailScreen() {
                 : err instanceof ApiError
                   ? err.message
                   : "Couldn't issue the refund. Please try again.";
-            Alert.alert("Refund failed", msg);
+            setRefundError(msg);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          },
+          onSuccess: () => {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            refundSheetRef.current?.dismiss();
           },
         },
       );
@@ -431,7 +445,10 @@ export default function OrderDetailScreen() {
             <ActionButton
               variant="secondary"
               label={refundMutation.isPending ? "Refunding…" : "Refund"}
-              onPress={() => refundSheetRef.current?.present()}
+              onPress={() => {
+                setRefundError(null);
+                refundSheetRef.current?.present();
+              }}
               disabled={isMutating}
             />
           ) : null}
@@ -439,7 +456,10 @@ export default function OrderDetailScreen() {
             <ActionButton
               variant="danger"
               label={cancelMutation.isPending ? "Cancelling…" : "Cancel Order"}
-              onPress={() => cancelSheetRef.current?.present()}
+              onPress={() => {
+                setCancelError(null);
+                cancelSheetRef.current?.present();
+              }}
               disabled={isMutating}
             />
           ) : null}
@@ -450,12 +470,18 @@ export default function OrderDetailScreen() {
         ref={cancelSheetRef}
         onSubmit={handleCancelSubmit}
         isSubmitting={cancelMutation.isPending}
+        hasShipment={!!shipment}
+        carrier={shipment?.provider}
+        error={cancelError}
       />
       <RefundSheet
         ref={refundSheetRef}
         onSubmit={handleRefundSubmit}
         isSubmitting={refundMutation.isPending}
         hasShipment={!!shipment}
+        refundableAmount={Math.max(order.grand_total - order.refunded_amount, 0)}
+        currencyCode={currency}
+        error={refundError}
       />
     </Screen>
   );

@@ -1,47 +1,76 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { View, Pressable, ActivityIndicator, StyleSheet } from "react-native";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
+import * as Haptics from "expo-haptics";
 import { Text, FieldInput } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 export interface CancelReasonSheetHandle {
   present: () => void;
+  /** Called by the parent once the mutation resolves successfully — the
+   *  sheet no longer dismisses itself optimistically on submit. */
+  dismiss: () => void;
 }
 
 interface CancelReasonSheetProps {
   onSubmit: (reason: string) => void;
   isSubmitting?: boolean;
+  /** Whether this order has a shipment — cancelling the order also cancels
+   *  it with the carrier server-side, so the sheet surfaces that impact. */
+  hasShipment?: boolean;
+  /** Carrier label for the shipment-impact line (e.g. "Delhivery"). Falls
+   *  back to a generic "carrier" when absent. */
+  carrier?: string;
+  /** Latest submit error, surfaced inline. The sheet stays open on failure
+   *  so the merchant can retry without re-opening it. */
+  error?: string | null;
+}
+
+function titleize(value?: string): string | undefined {
+  if (!value) return undefined;
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 /**
  * Cancelling an order requires a reason — CancelOrderRequest.Reason is
  * `binding:"required"`, so the old reason-less mobile cancel was an
  * unconditional 400. Mirror BlockReasonSheet.
+ *
+ * The sheet does NOT dismiss itself on submit — it stays open with the
+ * submit button showing a spinner until the parent's mutation settles, then
+ * calls `dismiss()` on success or passes `error` back in on failure.
  */
 export const CancelReasonSheet = forwardRef<CancelReasonSheetHandle, CancelReasonSheetProps>(
-  function CancelReasonSheet({ onSubmit, isSubmitting = false }, ref) {
+  function CancelReasonSheet(
+    { onSubmit, isSubmitting = false, hasShipment = false, carrier, error = null },
+    ref,
+  ) {
     const modalRef = useRef<BottomSheetModal>(null);
     const [reason, setReason] = useState("");
 
     useImperativeHandle(ref, () => ({
       present: () => {
         setReason("");
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         modalRef.current?.present();
       },
+      dismiss: () => modalRef.current?.dismiss(),
     }));
 
     const canSubmit = reason.trim() !== "" && !isSubmitting;
+    const shipmentNote = hasShipment
+      ? ` The ${titleize(carrier) ?? "carrier"} shipment will also be cancelled.`
+      : "";
 
     const handleSubmit = () => {
       if (reason.trim() === "") return;
       onSubmit(reason.trim());
-      modalRef.current?.dismiss();
     };
 
     return (
       <BottomSheetModal
         ref={modalRef}
-        snapPoints={["48%"]}
+        snapPoints={["52%"]}
         enablePanDownToClose
         enableDynamicSizing={false}
         keyboardBehavior="interactive"
@@ -52,7 +81,7 @@ export const CancelReasonSheet = forwardRef<CancelReasonSheetHandle, CancelReaso
             Cancel order
           </Text>
           <Text preset="body" color="textSecondary">
-            This can&apos;t be undone. Add a reason for your records.
+            This can&apos;t be undone. Add a reason for your records.{shipmentNote}
           </Text>
           <FieldInput
             label="Reason"
@@ -65,10 +94,16 @@ export const CancelReasonSheet = forwardRef<CancelReasonSheetHandle, CancelReaso
             returnKeyType="done"
             editable={!isSubmitting}
           />
+          {error ? (
+            <Text preset="caption" color="danger">
+              {error}
+            </Text>
+          ) : null}
           <View style={styles.actions}>
             <Pressable
-              style={styles.keepBtn}
+              style={[styles.keepBtn, isSubmitting && styles.disabled]}
               onPress={() => modalRef.current?.dismiss()}
+              disabled={isSubmitting}
               accessibilityRole="button"
               accessibilityLabel="Keep order"
             >

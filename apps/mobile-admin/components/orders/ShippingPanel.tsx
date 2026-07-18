@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { View, Pressable, Alert, ActivityIndicator, StyleSheet } from "react-native";
+import * as Haptics from "expo-haptics";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { Text, Eyebrow, Hairline, StatusBadge, type StatusTone } from "@/components/ui";
@@ -12,6 +13,7 @@ import {
   useSchedulePickup,
   useDeleteShipment,
   useEmailLabel,
+  useCancelShipment,
 } from "@/lib/admin-api/shipment-actions";
 import { EmailLabelSheet, type EmailLabelSheetHandle } from "./EmailLabelSheet";
 import type { Shipment } from "@repo/mobile-shared/api/types";
@@ -27,6 +29,15 @@ const SHIPMENT_TONE: Record<string, StatusTone> = {
   out_for_delivery: "info",
   delivered: "success",
   exception: "danger",
+};
+
+// cancel_status vocabulary (shipments.go CancelStatus): requested is a
+// carrier call in flight/queued, succeeded/failed/unsupported are terminal.
+const CANCEL_TONE: Record<string, StatusTone> = {
+  requested: "info",
+  succeeded: "success",
+  failed: "danger",
+  unsupported: "warning",
 };
 
 // Advance-status forward order. A status can only move to a later step.
@@ -143,16 +154,20 @@ function ShipmentDetails({ orderId, shipment }: { orderId: string; shipment: Shi
   const pickup = useSchedulePickup();
   const del = useDeleteShipment();
   const emailLabel = useEmailLabel();
+  const cancelShipment = useCancelShipment();
 
   const isStub = shipment.tracking_number.startsWith("TEST-DLV-");
   const eta = formatDate(shipment.estimated_delivery);
   const pickupAt = formatPickup(shipment.pickup_scheduled_for);
+  const carrierLabel = shipment.provider ? titleize(shipment.provider) : "the carrier";
+  const alreadyCancelled = shipment.cancel_status === "succeeded";
   const busy =
     updateStatus.isPending ||
     refresh.isPending ||
     pickup.isPending ||
     del.isPending ||
-    emailLabel.isPending;
+    emailLabel.isPending ||
+    cancelShipment.isPending;
 
   const curIndex = STATUS_ORDER.indexOf(shipment.status);
   const advance = useCallback(
@@ -205,9 +220,10 @@ function ShipmentDetails({ orderId, shipment }: { orderId: string; shipment: Shi
   }, [orderId, shipment.id, pickup]);
 
   const onDelete = useCallback(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert(
-      "Delete shipment",
-      "Clear this shipment so you can create a new label? This does not cancel a carrier pickup.",
+      "Delete shipment record",
+      "Removes this shipment from the order so you can create a new label. It does NOT cancel or return anything with the carrier — use “Cancel / return shipment” for that.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -217,17 +233,56 @@ function ShipmentDetails({ orderId, shipment }: { orderId: string; shipment: Shi
             del.mutate(
               { orderId, shipmentId: shipment.id },
               {
-                onError: (err) =>
+                onSuccess: () =>
+                  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
+                onError: (err) => {
+                  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
                   Alert.alert(
                     "Couldn't delete shipment",
                     err instanceof ApiError ? err.message : "Please try again.",
-                  ),
+                  );
+                },
               },
             ),
         },
       ],
     );
   }, [orderId, shipment.id, del]);
+
+  const onCancelReturn = useCallback(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    Alert.alert(
+      "Cancel / return shipment",
+      `Ask ${carrierLabel} to cancel this shipment, or arrange a return if it's already been picked up? We'll show the outcome below.`,
+      [
+        { text: "Keep shipment", style: "cancel" },
+        {
+          text: "Cancel shipment",
+          style: "destructive",
+          onPress: () =>
+            cancelShipment.mutate(
+              { orderId, shipmentId: shipment.id },
+              {
+                onSuccess: (result) => {
+                  void Haptics.notificationAsync(
+                    result.status === "succeeded"
+                      ? Haptics.NotificationFeedbackType.Success
+                      : Haptics.NotificationFeedbackType.Warning,
+                  );
+                },
+                onError: (err) => {
+                  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                  Alert.alert(
+                    "Couldn't cancel shipment",
+                    err instanceof ApiError ? err.message : "Please try again.",
+                  );
+                },
+              },
+            ),
+        },
+      ],
+    );
+  }, [orderId, shipment.id, carrierLabel, cancelShipment]);
 
   const onEmailLabel = useCallback(
     (recipient: string) => {
@@ -267,6 +322,33 @@ function ShipmentDetails({ orderId, shipment }: { orderId: string; shipment: Shi
         </View>
       ) : null}
 
+      {shipment.cancel_status ? (
+        <>
+          <View style={styles.detailRow}>
+            <Text preset="caption" color="textTertiary">
+              Cancel / return
+            </Text>
+            <StatusBadge
+              label={titleize(shipment.cancel_status)}
+              tone={CANCEL_TONE[shipment.cancel_status] ?? "muted"}
+            />
+          </View>
+          {shipment.cancel_reason ? (
+            <Text preset="caption" color="textTertiary">
+              {shipment.cancel_reason}
+            </Text>
+          ) : null}
+          {shipment.cancel_status === "unsupported" ? (
+            <View style={styles.stubNote}>
+              <Text preset="caption" color={theme.colors.warningInk}>
+                This carrier stage can&apos;t be auto-cancelled — arrange the return manually with{" "}
+                {carrierLabel} using {shipment.tracking_number || "the tracking number"}.
+              </Text>
+            </View>
+          ) : null}
+        </>
+      ) : null}
+
       <Hairline />
 
       <Text preset="caption" color="textTertiary">
@@ -292,9 +374,38 @@ function ShipmentDetails({ orderId, shipment }: { orderId: string; shipment: Shi
       <View style={styles.chipRow}>
         <ActionChip label="Email label" onPress={() => emailSheetRef.current?.present()} disabled={busy || isStub} />
         <ActionChip label={refresh.isPending ? "Syncing…" : "Refresh tracking"} onPress={onRefresh} disabled={busy || isStub} />
-        <ActionChip label="Schedule pickup" onPress={onSchedulePickup} disabled={busy} />
-        <ActionChip label="Delete" onPress={onDelete} disabled={busy} tone="danger" />
+        <ActionChip label={pickup.isPending ? "Scheduling…" : "Schedule pickup"} onPress={onSchedulePickup} disabled={busy} />
       </View>
+
+      {!alreadyCancelled ? (
+        <>
+          <Hairline />
+          <Text preset="caption" color="textTertiary">
+            Carrier cancel / return
+          </Text>
+          <View style={styles.chipRow}>
+            <ActionChip
+              label={cancelShipment.isPending ? "Cancelling…" : "Cancel / return shipment"}
+              onPress={onCancelReturn}
+              disabled={busy || isStub}
+              tone="danger-solid"
+            />
+          </View>
+        </>
+      ) : null}
+
+      <Hairline />
+      <View style={styles.chipRow}>
+        <ActionChip
+          label={del.isPending ? "Deleting…" : "Delete shipment"}
+          onPress={onDelete}
+          disabled={busy}
+          tone="muted"
+        />
+      </View>
+      <Text preset="caption" color="textTertiary">
+        Local record only — doesn&apos;t contact the carrier.
+      </Text>
 
       <EmailLabelSheet ref={emailSheetRef} onSubmit={onEmailLabel} isSubmitting={emailLabel.isPending} />
     </View>
@@ -413,17 +524,28 @@ function ActionChip({
   label: string;
   onPress: () => void;
   disabled?: boolean;
-  tone?: "default" | "danger";
+  /** "danger-solid" is the primary carrier-cancel action (filled, high
+   *  contrast). "muted" is the secondary local-record Delete — visually
+   *  de-emphasized so the two don't read as duplicate destructive actions. */
+  tone?: "default" | "danger" | "danger-solid" | "muted";
 }) {
+  const chipStyle = [
+    styles.chip,
+    tone === "danger-solid" && styles.chipDangerSolid,
+    tone === "muted" && styles.chipMuted,
+    disabled && styles.disabled,
+  ];
+  const textColor =
+    tone === "danger-solid" ? "inverse" : tone === "danger" ? "danger" : tone === "muted" ? "textTertiary" : "text";
   return (
     <Pressable
-      style={[styles.chip, disabled && styles.disabled]}
+      style={chipStyle}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Text preset="caption" color={tone === "danger" ? "danger" : "text"}>
+      <Text preset="caption" color={textColor}>
         {label}
       </Text>
     </Pressable>
@@ -468,6 +590,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   chipSelected: { backgroundColor: theme.colors.text, borderColor: theme.colors.text },
+  chipMuted: { borderColor: theme.colors.hairline },
+  chipDangerSolid: { backgroundColor: theme.colors.danger, borderColor: theme.colors.danger },
   createBtn: {
     borderWidth: 1,
     borderColor: theme.colors.border,

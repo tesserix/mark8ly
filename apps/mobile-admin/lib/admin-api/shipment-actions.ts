@@ -65,6 +65,27 @@ export function useEmailLabel() {
 }
 
 /**
+ * Manual "Cancel / return shipment" — bypasses `useShipmentMutation`'s
+ * generic `Promise<unknown>` signature so the mutation's `data` stays typed
+ * as `CancelShipmentResult` (callers read `.status`/`.reason` from
+ * `onSuccess`). A non-"succeeded" `status` is a normal response, not a
+ * thrown `ApiError` — see `shipments.ts`'s `cancel()` doc comment.
+ */
+export function useCancelShipment() {
+  const client = useApiClient();
+  const shipmentsApi = createShipmentsApi(client);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ orderId, shipmentId }: { orderId: string; shipmentId: string }) =>
+      shipmentsApi.cancel(orderId, shipmentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+    },
+  });
+}
+
+/**
  * Invoice / receipt document resend. Not a shipment mutation — hits the
  * orders api — but shares the ["orders"] invalidation so any downstream
  * document-state read refreshes. No detail refetch is strictly needed; the

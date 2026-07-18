@@ -668,8 +668,8 @@ func (c *DelhiveryCarrier) UpsertWarehouse(ctx context.Context, wh Warehouse) er
 	// Step 2: edit reported the warehouse doesn't exist → create it.
 	// Any other non-200 on edit is surfaced as-is so ops can see it.
 	if editStatus != http.StatusOK && !delhiveryWarehouseMissing(editBody) {
-		return fmt.Errorf("delhivery: upsert warehouse: edit status=%d body=%s",
-			editStatus, truncate(editBody, 400))
+		return fmt.Errorf("Delhivery rejected the pickup location: %s",
+			delhiveryWarehouseMessage(editBody))
 	}
 
 	createBody, createStatus, createErr := c.doWarehouseRequest(ctx, "/api/backend/clientwarehouse/create/", payload)
@@ -677,10 +677,46 @@ func (c *DelhiveryCarrier) UpsertWarehouse(ctx context.Context, wh Warehouse) er
 		return fmt.Errorf("delhivery: upsert warehouse: create request: %w", createErr)
 	}
 	if createStatus != http.StatusOK {
-		return fmt.Errorf("delhivery: upsert warehouse: create status=%d body=%s",
-			createStatus, truncate(createBody, 400))
+		return fmt.Errorf("Delhivery rejected the pickup location: %s",
+			delhiveryWarehouseMessage(createBody))
 	}
 	return nil
+}
+
+// delhiveryWarehouseMessage pulls the human-readable reason out of a
+// clientwarehouse response so it can be shown to a merchant WITHOUT dumping
+// the whole XML/JSON body (which leaks the full request echo — address,
+// phone, business hours — into the admin UI). Handles Delhivery's XML
+// (<message>…</message>) and JSON ("message"/"rmk") shapes; falls back to a
+// short generic line when neither is present.
+func delhiveryWarehouseMessage(body string) string {
+	if m := betweenTags(body, "<message>", "</message>"); m != "" {
+		return m
+	}
+	for _, key := range []string{`"message":"`, `"rmk":"`, `"error":"`} {
+		if i := strings.Index(body, key); i >= 0 {
+			rest := body[i+len(key):]
+			if j := strings.Index(rest, `"`); j >= 0 {
+				if v := strings.TrimSpace(rest[:j]); v != "" {
+					return v
+				}
+			}
+		}
+	}
+	return "the carrier returned an error"
+}
+
+func betweenTags(s, open, close string) string {
+	i := strings.Index(s, open)
+	if i < 0 {
+		return ""
+	}
+	rest := s[i+len(open):]
+	j := strings.Index(rest, close)
+	if j < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:j])
 }
 
 // doWarehouseRequest is a small helper around the clientwarehouse/*

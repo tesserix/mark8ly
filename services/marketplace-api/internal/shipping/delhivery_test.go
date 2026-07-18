@@ -337,8 +337,13 @@ func TestDelhivery_UpsertWarehouse_SurfacesOtherErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "status=500") {
-		t.Errorf("expected status=500 in error, got %v", err)
+	// The error surfaces Delhivery's reason cleanly — no raw body dump, no
+	// status code noise (merchant-facing; see delhiveryWarehouseMessage).
+	if !strings.Contains(err.Error(), "internal server blew up") {
+		t.Errorf("expected the carrier reason in error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "{") || strings.Contains(err.Error(), "body=") {
+		t.Errorf("error should not dump the raw body, got %v", err)
 	}
 }
 

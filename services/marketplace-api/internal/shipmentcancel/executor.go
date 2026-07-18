@@ -2,6 +2,8 @@ package shipmentcancel
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 
@@ -10,12 +12,17 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 )
 
+// errEmptyAddress is returned by parseShipmentAddress when the stored ship_from
+// / ship_to JSONB blob is empty — a shipment we can't build a reverse leg from.
+var errEmptyAddress = errors.New("empty address")
+
 // ShipmentStore is the narrow persistence surface the executor needs.
 // shipping.Repository satisfies it.
 type ShipmentStore interface {
 	ListShipmentsByOrderID(ctx context.Context, orderID uuid.UUID) ([]shipping.ShipmentRecord, error)
 	GetShipmentByID(ctx context.Context, id uuid.UUID) (*shipping.ShipmentRecord, error)
 	SetShipmentCancelState(ctx context.Context, shipmentID uuid.UUID, action, status, reason string) error
+	CreateShipment(ctx context.Context, rec *shipping.ShipmentRecord) error
 }
 
 // CarrierResolver builds a carrier client for a (store, provider). Kept as a
@@ -44,14 +51,25 @@ type Outcome struct {
 // is best-effort: it records the outcome and never returns a fatal error to
 // the refund/cancel caller.
 type Executor struct {
-	store   ShipmentStore
-	resolve CarrierResolver
-	logger  *slog.Logger
+	store                ShipmentStore
+	resolve              CarrierResolver
+	logger               *slog.Logger
+	reversePickupEnabled bool
 }
 
 // NewExecutor constructs an Executor. logger may be nil.
 func NewExecutor(store ShipmentStore, resolve CarrierResolver, logger *slog.Logger) *Executor {
 	return &Executor{store: store, resolve: resolve, logger: logger}
+}
+
+// WithReversePickup enables the Phase 3 delivered-shipment reverse pickup. OFF
+// by default: creating a reverse pickup dispatches a real courier to the
+// customer and the Delhivery payload is not yet live-verified. Mirrors the
+// REFUND_GATEWAY_ENABLED kill switch. When off, delivered shipments record
+// `unsupported`.
+func (e *Executor) WithReversePickup(enabled bool) *Executor {
+	e.reversePickupEnabled = enabled
+	return e
 }
 
 // CancelForOrder resolves + executes the action for every shipment on the
@@ -106,11 +124,7 @@ func (e *Executor) resolveAndExecute(ctx context.Context, sh *shipping.ShipmentR
 		return e.execReturnToOrigin(ctx, sh)
 
 	case ActionReversePickup:
-		// Phase 3 handles delivered shipments; until then, record so the admin
-		// sees it and arranges the return manually with the carrier.
-		reason := "This shipment was delivered — arrange the return manually with the carrier."
-		e.record(ctx, sh.ID, ActionReversePickup, statusUnsupported, reason)
-		return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusUnsupported, Reason: reason}
+		return e.execReversePickup(ctx, sh)
 
 	default:
 		return Outcome{ShipmentID: sh.ID, Action: ActionNoop, Status: statusNone}
@@ -172,6 +186,108 @@ func (e *Executor) execReturnToOrigin(ctx context.Context, sh *shipping.Shipment
 	}
 	e.record(ctx, sh.ID, ActionTriggerRTO, statusSucceeded, "")
 	return Outcome{ShipmentID: sh.ID, Action: ActionTriggerRTO, Status: statusSucceeded}
+}
+
+// execReversePickup creates a reverse (return) pickup for a delivered shipment
+// and inserts a new reverse-leg row. Gated by the reversePickupEnabled kill
+// switch. Carriers without the capability, or a disabled flag, record
+// `unsupported` (the manual notice); a carrier rejection records `failed`.
+func (e *Executor) execReversePickup(ctx context.Context, sh *shipping.ShipmentRecord) Outcome {
+	if !e.reversePickupEnabled {
+		reason := "Automatic reverse pickup is turned off — arrange the return manually with the carrier."
+		e.record(ctx, sh.ID, ActionReversePickup, statusUnsupported, reason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusUnsupported, Reason: reason}
+	}
+	carrier, failReason := e.resolveCarrier(ctx, sh)
+	if failReason != "" {
+		e.record(ctx, sh.ID, ActionReversePickup, statusFailed, failReason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusFailed, Reason: failReason}
+	}
+	creator, ok := carrier.(shipping.ReverseShipmentCreator)
+	if !ok {
+		reason := "This carrier can't create a reverse pickup automatically — arrange the return manually with the carrier."
+		e.record(ctx, sh.ID, ActionReversePickup, statusUnsupported, reason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusUnsupported, Reason: reason}
+	}
+	// Reverse the stored addresses: pickup FROM the customer (forward ship_to),
+	// return TO the warehouse (forward ship_from).
+	warehouse, err := parseShipmentAddress(sh.ShipFrom)
+	if err != nil {
+		reason := "Could not read the shipment's warehouse address — arrange the return manually."
+		e.warn("shipmentcancel: parse ship_from failed", "shipment_id", sh.ID.String(), "err", err)
+		e.record(ctx, sh.ID, ActionReversePickup, statusFailed, reason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusFailed, Reason: reason}
+	}
+	customer, err := parseShipmentAddress(sh.ShipTo)
+	if err != nil {
+		reason := "Could not read the shipment's delivery address — arrange the return manually."
+		e.warn("shipmentcancel: parse ship_to failed", "shipment_id", sh.ID.String(), "err", err)
+		e.record(ctx, sh.ID, ActionReversePickup, statusFailed, reason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusFailed, Reason: reason}
+	}
+	rev, err := creator.CreateReverseShipment(ctx, shipping.ReverseShipmentRequest{
+		OrderID:       sh.OrderID.String(),
+		PickupFrom:    customer,
+		ReturnTo:      warehouse,
+		WarehouseName: warehouse.Name,
+		CurrencyCode:  sh.CurrencyCode,
+	})
+	if err != nil {
+		reason := cleanReason(err)
+		e.warn("shipmentcancel: reverse pickup failed", "shipment_id", sh.ID.String(), "carrier", sh.Carrier, "err", err)
+		e.record(ctx, sh.ID, ActionReversePickup, statusFailed, reason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusFailed, Reason: reason}
+	}
+	// Insert the reverse leg as a new shipment row. Its addresses are swapped
+	// (pickup from customer → return to warehouse). Marked cancel_action/status
+	// so a repeat CancelForOrder skips it (it is itself a reverse action, not a
+	// forward shipment to be cancelled). A DB failure here doesn't undo the
+	// carrier pickup that already succeeded — log and still record success.
+	revRec := &shipping.ShipmentRecord{
+		TenantID:       sh.TenantID,
+		StoreID:        sh.StoreID,
+		OrderID:        sh.OrderID,
+		Carrier:        sh.Carrier,
+		TrackingNumber: rev.TrackingNumber,
+		Status:         "pending",
+		ShipFrom:       sh.ShipTo,   // reverse origin = customer
+		ShipTo:         sh.ShipFrom, // reverse destination = warehouse
+		CurrencyCode:   sh.CurrencyCode,
+		CancelAction:   string(ActionReversePickup),
+		CancelStatus:   statusSucceeded,
+	}
+	if err := e.store.CreateShipment(ctx, revRec); err != nil {
+		e.warn("shipmentcancel: persist reverse-leg row failed", "shipment_id", sh.ID.String(), "reverse_waybill", rev.TrackingNumber, "err", err)
+	}
+	reason := "Reverse pickup created: " + rev.TrackingNumber
+	e.record(ctx, sh.ID, ActionReversePickup, statusSucceeded, reason)
+	return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusSucceeded, Reason: reason}
+}
+
+// parseShipmentAddress decodes a shipments.ship_from/ship_to JSONB blob into a
+// carrier Address. The keys match what handlers/admin/shipments.go writes on
+// label create.
+func parseShipmentAddress(raw []byte) (shipping.Address, error) {
+	if len(raw) == 0 {
+		return shipping.Address{}, errEmptyAddress
+	}
+	var a struct {
+		Name        string `json:"name"`
+		Line1       string `json:"line1"`
+		Line2       string `json:"line2"`
+		City        string `json:"city"`
+		Region      string `json:"region"`
+		PostalCode  string `json:"postal_code"`
+		CountryCode string `json:"country_code"`
+		Phone       string `json:"phone"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return shipping.Address{}, err
+	}
+	return shipping.Address{
+		Name: a.Name, Line1: a.Line1, Line2: a.Line2, City: a.City,
+		Region: a.Region, PostalCode: a.PostalCode, CountryCode: a.CountryCode, Phone: a.Phone,
+	}, nil
 }
 
 func (e *Executor) record(ctx context.Context, id uuid.UUID, action Action, status, reason string) {

@@ -66,7 +66,10 @@ function statusTone(status: string): StatusTone {
     case "fulfilled":
       return "success";
     case "refunded":
-      return "danger";
+      // A refund is neutral-to-positive for the customer — danger
+      // (oxblood) is reserved for actual problems per the design
+      // system, so this reads as success (moss) instead.
+      return "success";
     case "cancelled":
     default:
       return "neutral";

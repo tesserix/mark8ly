@@ -7,8 +7,10 @@
 "use client";
 
 import { useState, useTransition, useRef, useEffect } from "react";
+import type { KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "@/lib/toast";
 
 interface Props {
   orderId: string;
@@ -47,6 +49,7 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const returnTypeRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const canCancel = CANCELLABLE.has(orderStatus) && shipmentStatus === null;
   const isDelivered = shipmentStatus === "delivered";
@@ -139,11 +142,59 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
         }
         setDone(true);
         setOpen(false);
+        toast({
+          title:
+            mode === "cancel"
+              ? "Cancellation requested"
+              : returnType === "replace"
+                ? "Replacement requested"
+                : "Return requested",
+          description:
+            mode === "cancel"
+              ? "We've received your request and will confirm shortly."
+              : "Our team will review your request and reach out.",
+          tone: "success",
+        });
         router.refresh();
       } catch {
         setError("Network error. Please try again.");
       }
     });
+  }
+
+  const RETURN_TYPE_OPTIONS = ["return", "replace"] as const;
+
+  // WAI-ARIA APG radiogroup pattern: arrow keys move selection with
+  // wraparound, Home/End jump to the ends, and only the checked radio
+  // is in the tab order (roving tabindex) so Tab skips past the group
+  // as a single stop.
+  function handleReturnTypeKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) {
+    let nextIndex = index;
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        nextIndex = (index + 1) % RETURN_TYPE_OPTIONS.length;
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        nextIndex =
+          (index - 1 + RETURN_TYPE_OPTIONS.length) % RETURN_TYPE_OPTIONS.length;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = RETURN_TYPE_OPTIONS.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    setReturnType(RETURN_TYPE_OPTIONS[nextIndex] ?? RETURN_TYPE_OPTIONS[0]);
+    returnTypeRefs.current[nextIndex]?.focus();
   }
 
   function handleClose() {
@@ -170,10 +221,14 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
       <dialog
         ref={dialogRef}
         onClose={handleClose}
+        aria-labelledby="cancel-return-modal-title"
         className="m-auto w-full max-w-md rounded-lg border border-[color:var(--storefront-text,var(--ink-900))]/10 bg-[color:var(--storefront-surface)] p-0 shadow-md backdrop:bg-[color:var(--storefront-text,var(--ink-900))]/30"
       >
         <div className="px-6 py-5">
-          <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))]">
+          <h2
+            id="cancel-return-modal-title"
+            className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))]"
+          >
             {mode === "cancel" ? "Why are you cancelling?" : "Return or replace?"}
           </h2>
           <p className="mt-1 text-xs text-[color:var(--storefront-text,var(--ink-900))]/50">
@@ -184,13 +239,18 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
 
           {mode === "return" && (
             <div className="mt-4 flex gap-2" role="radiogroup" aria-label="Request type">
-              {(["return", "replace"] as const).map((t) => (
+              {RETURN_TYPE_OPTIONS.map((t, index) => (
                 <button
                   key={t}
+                  ref={(el) => {
+                    returnTypeRefs.current[index] = el;
+                  }}
                   type="button"
                   role="radio"
                   aria-checked={returnType === t}
+                  tabIndex={returnType === t ? 0 : -1}
                   onClick={() => setReturnType(t)}
+                  onKeyDown={(e) => handleReturnTypeKeyDown(e, index)}
                   className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium capitalize transition-colors ${
                     returnType === t
                       ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))]/5 text-[color:var(--storefront-text,var(--ink-900))]"
@@ -204,6 +264,9 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
           )}
 
           <fieldset className="mt-4 space-y-2">
+            <legend className="sr-only">
+              {mode === "cancel" ? "Reason for cancellation" : "Reason for return"}
+            </legend>
             {reasons.map((r) => (
               <label
                 key={r}

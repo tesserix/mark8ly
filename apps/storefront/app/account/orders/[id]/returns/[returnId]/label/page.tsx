@@ -9,6 +9,7 @@ import { notFound } from "next/navigation";
 
 import { resolveStoreSlug } from "@/lib/slug";
 import { fetchOrder } from "@/lib/api/checkout-api";
+import { PrintReturnLabelButton } from "@/components/account/PrintReturnLabelButton";
 
 interface StorefrontReturn {
   id: string;
@@ -204,7 +205,7 @@ export default async function ReturnLabelPage({ params }: PageProps) {
 
       {/* Print button + no-print hides when the customer prints */}
       <div className="mx-auto mt-6 max-w-2xl text-center print:hidden">
-        <PrintActions />
+        <PrintReturnLabelButton />
       </div>
     </div>
   );
@@ -253,24 +254,5 @@ function BarcodeBlock({ value }: { value: string }) {
       />
       <p className="mt-1 font-mono text-[10px] tracking-widest">{value}</p>
     </div>
-  );
-}
-
-function PrintActions() {
-  return (
-    <form
-      action="javascript:window.print()"
-      className="inline-flex items-center gap-3"
-    >
-      <button
-        type="submit"
-        className="rounded-md bg-black px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-      >
-        Print this page
-      </button>
-      <span className="text-xs text-black/50">
-        Quote {"{RMA}"} if you contact support.
-      </span>
-    </form>
   );
 }

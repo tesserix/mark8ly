@@ -72,6 +72,12 @@ type Coordinator struct {
 	orders    *order.Service
 	orderRepo order.Repository
 	enabled   bool
+	// cancelShipments, when set, is fired best-effort after a FULL refund
+	// settles so the order's pre-pickup shipment is cancelled at the carrier.
+	// A func field (not the executor type) keeps this package free of a
+	// shipping/shipmentcancel import. Production wraps the call in a detached
+	// goroutine; the hook itself never errors back.
+	cancelShipments func(ctx context.Context, orderID uuid.UUID)
 }
 
 // NewCoordinator constructs a Coordinator. enabled gates whether Refund is
@@ -257,11 +263,32 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 		return RefundResult{}, err
 	}
 
+	// Full refund settled — cancel the pre-pickup shipment at the carrier.
+	// Best-effort: the hook records + logs any failure and never affects this
+	// result (the money already moved).
+	c.maybeCancelShipments(ctx, cmd.OrderID, target)
+
 	return RefundResult{
 		ProviderRefundID: ref.ProviderRefundID,
 		Amount:           amount,
 		PaymentStatus:    target,
 	}, nil
+}
+
+// WithShipmentCanceller wires the best-effort post-full-refund shipment cancel
+// hook. Nil-safe by omission.
+func (c *Coordinator) WithShipmentCanceller(fn func(ctx context.Context, orderID uuid.UUID)) *Coordinator {
+	c.cancelShipments = fn
+	return c
+}
+
+// maybeCancelShipments fires the shipment-cancel hook only for a full refund.
+// Partial refunds still ship the un-refunded items, so they must not cancel.
+func (c *Coordinator) maybeCancelShipments(ctx context.Context, orderID uuid.UUID, target order.PaymentStatus) {
+	if c.cancelShipments == nil || target != order.PaymentStatusRefunded {
+		return
+	}
+	c.cancelShipments(ctx, orderID)
 }
 
 // lockOrder reads an order FOR UPDATE, serialising concurrent refunds on the

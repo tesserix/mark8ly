@@ -57,6 +57,15 @@ func TestDelhivery_UpsertWarehouse_CreatePayloadHasRequiredFields(t *testing.T) 
 	if _, present := createBody["email"]; present {
 		t.Errorf("empty email should be omitted, but payload has: %v", createBody["email"])
 	}
+
+	// Country must be the full name, not the ISO code — "IN" fails create/
+	// with a generic 400 (verified live 2026-07-18).
+	if createBody["country"] != "India" {
+		t.Errorf("country = %v, want \"India\" (not the ISO code)", createBody["country"])
+	}
+	if createBody["return_country"] != "India" {
+		t.Errorf("return_country = %v, want \"India\"", createBody["return_country"])
+	}
 }
 
 // An explicit ContactPerson / RegisteredName overrides the name default.

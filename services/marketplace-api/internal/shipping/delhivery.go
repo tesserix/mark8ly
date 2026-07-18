@@ -405,6 +405,19 @@ func classifyDelhiveryCreateError(remarks, warehouseName, fromPin, toPin string,
 	}
 }
 
+// delhiveryCountryName maps an ISO-3166 alpha-2 code to the country name
+// Delhivery's clientwarehouse endpoints expect. Delhivery is India-domestic,
+// so IN is the only case that matters; anything else (including an already
+// full name) passes through unchanged so we never blank the field.
+func delhiveryCountryName(code string) string {
+	switch strings.ToUpper(strings.TrimSpace(code)) {
+	case "IN":
+		return "India"
+	default:
+		return code
+	}
+}
+
 // firstNonEmpty returns the first argument that isn't blank after trimming,
 // or "" if all are blank.
 func firstNonEmpty(vals ...string) string {
@@ -612,12 +625,20 @@ func (c *DelhiveryCarrier) UpsertWarehouse(ctx context.Context, wh Warehouse) er
 	contactPerson := firstNonEmpty(wh.ContactPerson, wh.Name)
 	registeredName := firstNonEmpty(wh.RegisteredName, wh.Name)
 
+	// Delhivery's clientwarehouse create/edit wants the full country NAME
+	// ("India"), not the ISO-3166 code ("IN"). Sending "IN" fails create/
+	// with a generic 400 "some error while creating/updating warehouse" —
+	// verified live 2026-07-18: the identical payload with "India" returned
+	// 201. Map the code; fall back to whatever was stored for anything
+	// unmapped rather than blanking it.
+	country := delhiveryCountryName(wh.CountryCode)
+
 	payload := map[string]any{
 		"name":            wh.Name,
 		"phone":           wh.Phone,
 		"address":         wh.Address,
 		"city":            wh.City,
-		"country":         wh.CountryCode,
+		"country":         country,
 		"pin":             wh.PinCode,
 		"contact_person":  contactPerson,
 		"registered_name": registeredName,
@@ -625,7 +646,7 @@ func (c *DelhiveryCarrier) UpsertWarehouse(ctx context.Context, wh Warehouse) er
 		"return_pin":      wh.PinCode,
 		"return_city":     wh.City,
 		"return_state":    wh.Region,
-		"return_country":  wh.CountryCode,
+		"return_country":  country,
 	}
 	// Send email only when we have one — Delhivery validates the format, so
 	// an empty string can bounce the whole request where an omitted field

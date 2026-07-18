@@ -581,22 +581,78 @@ func min(a, b int) int {
 	return b
 }
 
+// CancelShipment cancels a forward waybill via /api/p/edit with
+// cancellation:true. Delhivery returns HTTP 200 even when the cancel fails,
+// with an XML body: <root><status>Success|Failure</status><error>…</error></root>.
+// So we must inspect the body, not just the status code — an earlier reliance
+// on the status code alone would record every failure as a success.
+//
+// On failure we surface ONLY Delhivery's <error>/<message> text, never the raw
+// body. (Cancelling the waybill is enough: Delhivery moves a pickup package to
+// "Cancelled" on its side; we deliberately do NOT touch the scheduled pickup
+// request, which can bundle other live waybills.)
 func (c *DelhiveryCarrier) CancelShipment(ctx context.Context, shipmentID string) error {
+	if strings.TrimSpace(shipmentID) == "" {
+		return fmt.Errorf("delhivery: cancel shipment: waybill is required")
+	}
 	body := map[string]string{
-		"waybill": shipmentID,
+		"waybill":      shipmentID,
 		"cancellation": "true",
 	}
-
 	resp, err := c.doJSONRequest(ctx, http.MethodPost, "/api/p/edit", body)
 	if err != nil {
 		return fmt.Errorf("delhivery: cancel shipment: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("delhivery: cancel shipment: unexpected status %d", resp.StatusCode)
+	raw, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return fmt.Errorf("delhivery: cancel shipment: read body: %w", readErr)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("delhivery: cancel shipment: %s", delhiveryCancelMessage(string(raw)))
+	}
+	if !delhiveryCancelSucceeded(string(raw)) {
+		return fmt.Errorf("delhivery: cancel shipment: %s", delhiveryCancelMessage(string(raw)))
 	}
 	return nil
+}
+
+// delhiveryCancelSucceeded reports whether an /api/p/edit response indicates a
+// successful cancel. Delhivery's XML uses <status>Success</status>; some
+// endpoints echo JSON "status":true / "status":"Success". Absence of a clear
+// success signal is treated as failure (fail-closed on an ambiguous body).
+func delhiveryCancelSucceeded(body string) bool {
+	if s := betweenTags(body, "<status>", "</status>"); s != "" {
+		return strings.EqualFold(s, "success")
+	}
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, `"status":true`) ||
+		strings.Contains(lower, `"status": "success"`) ||
+		strings.Contains(lower, `"status":"success"`)
+}
+
+// delhiveryCancelMessage pulls Delhivery's short cancel-failure reason out of
+// the response, preferring the XML <error>/<message> tags and the JSON
+// "error"/"rmk" keys. Never returns the whole body. Falls back to a generic
+// line so the caller always has something safe to show.
+func delhiveryCancelMessage(body string) string {
+	if m := betweenTags(body, "<error>", "</error>"); m != "" {
+		return m
+	}
+	if m := betweenTags(body, "<message>", "</message>"); m != "" {
+		return m
+	}
+	for _, key := range []string{`"error":"`, `"rmk":"`, `"message":"`} {
+		if i := strings.Index(body, key); i >= 0 {
+			rest := body[i+len(key):]
+			if j := strings.Index(rest, `"`); j >= 0 {
+				if v := strings.TrimSpace(rest[:j]); v != "" {
+					return v
+				}
+			}
+		}
+	}
+	return "the carrier rejected the cancellation"
 }
 
 // UpsertWarehouse keeps one.delhivery.com → Settings → Pickup Locations

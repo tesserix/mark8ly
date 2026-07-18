@@ -627,3 +627,60 @@ func TestDelhivery_FetchLabel_StreamsPDF(t *testing.T) {
 		t.Errorf("URL missing wbns param: %q", gotURL)
 	}
 }
+
+func TestDelhivery_CancelShipment_Success(t *testing.T) {
+	var gotPath, gotAuth, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `<?xml version="1.0" encoding="utf-8"?><root><error></error><status>Success</status><waybill>WBN123</waybill></root>`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "tok", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	if err := c.CancelShipment(context.Background(), "WBN123"); err != nil {
+		t.Fatalf("CancelShipment success returned %v", err)
+	}
+	if gotPath != "/api/p/edit" {
+		t.Errorf("path = %q, want /api/p/edit", gotPath)
+	}
+	if gotAuth != "Token tok" {
+		t.Errorf("auth = %q, want Token tok", gotAuth)
+	}
+	if !strings.Contains(gotBody, `"cancellation"`) || !strings.Contains(gotBody, "WBN123") {
+		t.Errorf("body = %q, want waybill + cancellation", gotBody)
+	}
+}
+
+func TestDelhivery_CancelShipment_FailureBodyOn200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK) // Delhivery returns 200 even on failure
+		_, _ = io.WriteString(w, `<?xml version="1.0"?><root><error>Incorrect Waybill/OrderID, please try again</error><status>Failure</status><waybill></waybill></root>`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "tok", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	err := c.CancelShipment(context.Background(), "BAD")
+	if err == nil {
+		t.Fatal("CancelShipment on <status>Failure</status> returned nil, want error")
+	}
+	if !strings.Contains(err.Error(), "Incorrect Waybill") {
+		t.Errorf("error = %q, want the <error> text", err.Error())
+	}
+}
+
+func TestDelhivery_CancelShipment_Non2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `<root><error>Invalid token</error></root>`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "tok", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	if err := c.CancelShipment(context.Background(), "WBN"); err == nil {
+		t.Fatal("CancelShipment on 401 returned nil, want error")
+	}
+}

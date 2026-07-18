@@ -186,3 +186,55 @@ func TestExecutor_MissingTrackingNumber_Failed(t *testing.T) {
 		t.Errorf("carrier called with no tracking number, want 0")
 	}
 }
+
+// fakeRTOCarrier implements shipping.Carrier AND shipping.ReturnToOriginer.
+type fakeRTOCarrier struct {
+	fakeCarrier
+	rtoCalls int
+	rtoErr   error
+}
+
+func (f *fakeRTOCarrier) ReturnToOrigin(_ context.Context, _ string) error {
+	f.rtoCalls++
+	return f.rtoErr
+}
+
+func TestExecutor_InTransit_RTO_Success(t *testing.T) {
+	oid, sid := uuid.New(), uuid.New()
+	store := &fakeStore{byOrder: map[uuid.UUID][]shipping.ShipmentRecord{
+		oid: {{ID: sid, Carrier: "delhivery", TrackingNumber: "WBN1", Status: "in_transit"}},
+	}}
+	car := &fakeRTOCarrier{}
+	e := NewExecutor(store, resolverFor(car), nil)
+
+	out := e.CancelForOrder(context.Background(), oid)
+	if len(out) != 1 || out[0].Status != "succeeded" || out[0].Action != ActionTriggerRTO {
+		t.Fatalf("outcomes = %+v, want rto/succeeded", out)
+	}
+	if car.rtoCalls != 1 {
+		t.Errorf("ReturnToOrigin calls = %d, want 1", car.rtoCalls)
+	}
+	if car.calls != 0 {
+		t.Errorf("CancelShipment called %d times, want 0 (RTO path)", car.calls)
+	}
+	if store.sets[0].Action != string(ActionTriggerRTO) || store.sets[0].Status != "succeeded" {
+		t.Errorf("recorded = %+v, want rto/succeeded", store.sets)
+	}
+}
+
+func TestExecutor_InTransit_RTO_CarrierFailure(t *testing.T) {
+	oid, sid := uuid.New(), uuid.New()
+	store := &fakeStore{byOrder: map[uuid.UUID][]shipping.ShipmentRecord{
+		oid: {{ID: sid, Carrier: "delhivery", TrackingNumber: "WBN1", Status: "out_for_delivery"}},
+	}}
+	car := &fakeRTOCarrier{rtoErr: errors.New("delhivery: cancel shipment: Not cancellable in current state")}
+	e := NewExecutor(store, resolverFor(car), nil)
+
+	out := e.CancelForOrder(context.Background(), oid)
+	if len(out) != 1 || out[0].Status != "failed" || out[0].Action != ActionTriggerRTO {
+		t.Fatalf("outcomes = %+v, want rto/failed", out)
+	}
+	if store.sets[0].Reason != "Not cancellable in current state" {
+		t.Errorf("reason = %q, want cleaned carrier reason", store.sets[0].Reason)
+	}
+}

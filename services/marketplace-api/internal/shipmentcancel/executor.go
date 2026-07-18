@@ -102,30 +102,41 @@ func (e *Executor) resolveAndExecute(ctx context.Context, sh *shipping.ShipmentR
 	case ActionCancelForward:
 		return e.execCancelForward(ctx, sh)
 
-	case ActionTriggerRTO, ActionReversePickup:
-		// Phase 2/3 handle these; until then, record so the admin sees it and
-		// arranges the return manually with the carrier.
-		reason := "This shipment has left for delivery — arrange the return manually with the carrier."
-		e.record(ctx, sh.ID, action, statusUnsupported, reason)
-		return Outcome{ShipmentID: sh.ID, Action: action, Status: statusUnsupported, Reason: reason}
+	case ActionTriggerRTO:
+		return e.execReturnToOrigin(ctx, sh)
+
+	case ActionReversePickup:
+		// Phase 3 handles delivered shipments; until then, record so the admin
+		// sees it and arranges the return manually with the carrier.
+		reason := "This shipment was delivered — arrange the return manually with the carrier."
+		e.record(ctx, sh.ID, ActionReversePickup, statusUnsupported, reason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionReversePickup, Status: statusUnsupported, Reason: reason}
 
 	default:
 		return Outcome{ShipmentID: sh.ID, Action: ActionNoop, Status: statusNone}
 	}
 }
 
-func (e *Executor) execCancelForward(ctx context.Context, sh *shipping.ShipmentRecord) Outcome {
+// resolveCarrier validates the tracking number and builds the carrier for a
+// shipment. A non-empty failureReason means the caller should record a
+// `failed` outcome with it and stop.
+func (e *Executor) resolveCarrier(ctx context.Context, sh *shipping.ShipmentRecord) (carrier shipping.Carrier, failureReason string) {
 	if strings.TrimSpace(sh.TrackingNumber) == "" {
-		reason := "No tracking number on the shipment — nothing to cancel with the carrier."
-		e.record(ctx, sh.ID, ActionCancelForward, statusFailed, reason)
-		return Outcome{ShipmentID: sh.ID, Action: ActionCancelForward, Status: statusFailed, Reason: reason}
+		return nil, "No tracking number on the shipment — nothing to send to the carrier."
 	}
-	carrier, err := e.resolve(ctx, sh.StoreID, sh.Carrier)
+	c, err := e.resolve(ctx, sh.StoreID, sh.Carrier)
 	if err != nil {
-		reason := "Could not reach the carrier to cancel — retry from the shipment."
 		e.warn("shipmentcancel: resolve carrier failed", "shipment_id", sh.ID.String(), "carrier", sh.Carrier, "err", err)
-		e.record(ctx, sh.ID, ActionCancelForward, statusFailed, reason)
-		return Outcome{ShipmentID: sh.ID, Action: ActionCancelForward, Status: statusFailed, Reason: reason}
+		return nil, "Could not reach the carrier — retry from the shipment."
+	}
+	return c, ""
+}
+
+func (e *Executor) execCancelForward(ctx context.Context, sh *shipping.ShipmentRecord) Outcome {
+	carrier, failReason := e.resolveCarrier(ctx, sh)
+	if failReason != "" {
+		e.record(ctx, sh.ID, ActionCancelForward, statusFailed, failReason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionCancelForward, Status: statusFailed, Reason: failReason}
 	}
 	if err := carrier.CancelShipment(ctx, sh.TrackingNumber); err != nil {
 		reason := cleanReason(err)
@@ -135,6 +146,32 @@ func (e *Executor) execCancelForward(ctx context.Context, sh *shipping.ShipmentR
 	}
 	e.record(ctx, sh.ID, ActionCancelForward, statusSucceeded, "")
 	return Outcome{ShipmentID: sh.ID, Action: ActionCancelForward, Status: statusSucceeded}
+}
+
+// execReturnToOrigin returns an in-transit shipment to origin. Carriers that
+// don't implement ReturnToOriginer record an `unsupported` outcome (the manual
+// notice); a carrier rejection (e.g. a state that can't RTO) records `failed`
+// with the carrier's clean reason — also a manual notice.
+func (e *Executor) execReturnToOrigin(ctx context.Context, sh *shipping.ShipmentRecord) Outcome {
+	carrier, failReason := e.resolveCarrier(ctx, sh)
+	if failReason != "" {
+		e.record(ctx, sh.ID, ActionTriggerRTO, statusFailed, failReason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionTriggerRTO, Status: statusFailed, Reason: failReason}
+	}
+	rtoer, ok := carrier.(shipping.ReturnToOriginer)
+	if !ok {
+		reason := "This carrier can't return an in-transit shipment automatically — arrange the return manually with the carrier."
+		e.record(ctx, sh.ID, ActionTriggerRTO, statusUnsupported, reason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionTriggerRTO, Status: statusUnsupported, Reason: reason}
+	}
+	if err := rtoer.ReturnToOrigin(ctx, sh.TrackingNumber); err != nil {
+		reason := cleanReason(err)
+		e.warn("shipmentcancel: carrier RTO failed", "shipment_id", sh.ID.String(), "carrier", sh.Carrier, "err", err)
+		e.record(ctx, sh.ID, ActionTriggerRTO, statusFailed, reason)
+		return Outcome{ShipmentID: sh.ID, Action: ActionTriggerRTO, Status: statusFailed, Reason: reason}
+	}
+	e.record(ctx, sh.ID, ActionTriggerRTO, statusSucceeded, "")
+	return Outcome{ShipmentID: sh.ID, Action: ActionTriggerRTO, Status: statusSucceeded}
 }
 
 func (e *Executor) record(ctx context.Context, id uuid.UUID, action Action, status, reason string) {

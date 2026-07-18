@@ -617,6 +617,18 @@ func (c *DelhiveryCarrier) CancelShipment(ctx context.Context, shipmentID string
 	return nil
 }
 
+// ReturnToOrigin triggers an RTO for an in-transit shipment. Delhivery exposes
+// no separate RTO endpoint: cancelling an in-transit prepaid/COD shipment via
+// /api/p/edit (cancellation:true) moves it to "Returned" (RTO to the client
+// warehouse). The request/response is therefore identical to CancelShipment —
+// we delegate rather than duplicate. Delhivery rejects states outside
+// "Manifested/In Transit/Pending/Open/Scheduled" (e.g. out-for-delivery) with
+// <status>Failure</status>, which surfaces as a clean error the caller records
+// as a manual-notice fallback.
+func (c *DelhiveryCarrier) ReturnToOrigin(ctx context.Context, shipmentID string) error {
+	return c.CancelShipment(ctx, shipmentID)
+}
+
 // delhiveryCancelSucceeded reports whether an /api/p/edit response indicates a
 // successful cancel. Delhivery's XML uses <status>Success</status>; some
 // endpoints echo JSON "status":true / "status":"Success". Absence of a clear

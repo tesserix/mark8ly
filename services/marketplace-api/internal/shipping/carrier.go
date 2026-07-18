@@ -72,6 +72,16 @@ type PickupScheduler interface {
 	SchedulePickup(ctx context.Context, req PickupRequest) (*Pickup, error)
 }
 
+// ReturnToOriginer is implemented by carriers that can proactively return an
+// already-picked-up / in-transit shipment to its origin (RTO). Delhivery is
+// the first implementor: it has no distinct RTO endpoint — cancelling an
+// in-transit prepaid/COD shipment via /api/p/edit moves it to "Returned"
+// (RTO to the client warehouse). Carriers that don't implement this record an
+// "unsupported" outcome so the merchant arranges the return manually.
+type ReturnToOriginer interface {
+	ReturnToOrigin(ctx context.Context, trackingNumber string) error
+}
+
 // PickupRequest is the minimal input for SchedulePickup. Delhivery is
 // the pinning implementation: the carrier only cares about the date
 // (YYYY-MM-DD) and a start-of-slot time; any time-of-day on Date is

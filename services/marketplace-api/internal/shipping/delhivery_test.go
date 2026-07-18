@@ -684,3 +684,40 @@ func TestDelhivery_CancelShipment_Non2xx(t *testing.T) {
 		t.Fatal("CancelShipment on 401 returned nil, want error")
 	}
 }
+
+func TestDelhivery_ReturnToOrigin_UsesCancelEndpoint(t *testing.T) {
+	var gotPath, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `<root><status>Success</status><waybill>WBN9</waybill></root>`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "tok", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	if err := c.ReturnToOrigin(context.Background(), "WBN9"); err != nil {
+		t.Fatalf("ReturnToOrigin returned %v", err)
+	}
+	if gotPath != "/api/p/edit" {
+		t.Errorf("path = %q, want /api/p/edit", gotPath)
+	}
+	if !strings.Contains(gotBody, `"cancellation"`) || !strings.Contains(gotBody, "WBN9") {
+		t.Errorf("body = %q, want cancellation + waybill", gotBody)
+	}
+}
+
+func TestDelhivery_ReturnToOrigin_SurfacesFailureBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `<root><error>Not cancellable in current state</error><status>Failure</status></root>`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "tok", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	err := c.ReturnToOrigin(context.Background(), "WBN9")
+	if err == nil || !strings.Contains(err.Error(), "Not cancellable") {
+		t.Fatalf("ReturnToOrigin err = %v, want the <error> text", err)
+	}
+}

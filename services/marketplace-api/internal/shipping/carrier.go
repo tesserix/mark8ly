@@ -82,6 +82,27 @@ type ReturnToOriginer interface {
 	ReturnToOrigin(ctx context.Context, trackingNumber string) error
 }
 
+// ReverseShipmentRequest describes a return pickup: Delhivery collects FROM the
+// customer (PickupFrom, the forward destination) and returns TO the warehouse
+// (ReturnTo, the forward origin). WarehouseName is the registered pickup
+// location name (case-sensitive) sent as pickup_location.name.
+type ReverseShipmentRequest struct {
+	OrderID       string
+	PickupFrom    Address
+	ReturnTo      Address
+	WarehouseName string
+	Items         []ParcelItem
+	CurrencyCode  string
+}
+
+// ReverseShipmentCreator is implemented by carriers that can create a reverse
+// (return) pickup. Delhivery reuses its order-creation call with
+// payment_mode:"Pickup" + return_* keys; the reverse leg auto-schedules.
+// Carriers that don't implement this record an "unsupported" outcome.
+type ReverseShipmentCreator interface {
+	CreateReverseShipment(ctx context.Context, in ReverseShipmentRequest) (*Shipment, error)
+}
+
 // PickupRequest is the minimal input for SchedulePickup. Delhivery is
 // the pinning implementation: the carrier only cares about the date
 // (YYYY-MM-DD) and a start-of-slot time; any time-of-day on Date is

@@ -721,3 +721,56 @@ func TestDelhivery_ReturnToOrigin_SurfacesFailureBody(t *testing.T) {
 		t.Fatalf("ReturnToOrigin err = %v, want the <error> text", err)
 	}
 }
+
+func TestDelhivery_CreateReverseShipment_PickupPayload(t *testing.T) {
+	var gotPath, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_ = r.ParseForm()
+		gotBody = r.FormValue("data")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"packages":[{"waybill":"REV123","status":"Success","serviceable":true,"remarks":[]}]}`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "tok", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	sh, err := c.CreateReverseShipment(context.Background(), ReverseShipmentRequest{
+		OrderID:       "ORD-1-RET",
+		PickupFrom:    Address{Name: "Jane Doe", Line1: "42 Example Lane", City: "Mumbai", Region: "MH", PostalCode: "400001", CountryCode: "IN", Phone: "9111111111"},
+		ReturnTo:      Address{Name: "Warehouse A", Line1: "1 Store Rd", City: "Bengaluru", Region: "Karnataka", PostalCode: "560001", CountryCode: "IN", Phone: "9000000000"},
+		WarehouseName: "Warehouse A",
+		Items:         []ParcelItem{{Title: "Mug", Quantity: 1, WeightGrams: 500}},
+	})
+	if err != nil {
+		t.Fatalf("CreateReverseShipment: %v", err)
+	}
+	if sh.TrackingNumber != "REV123" {
+		t.Errorf("waybill = %q, want REV123", sh.TrackingNumber)
+	}
+	if gotPath != "/api/cmu/create.json" {
+		t.Errorf("path = %q, want /api/cmu/create.json", gotPath)
+	}
+	for _, want := range []string{`"payment_mode":"Pickup"`, `"name":"Jane Doe"`, `"pin":"400001"`,
+		`"return_add":"1 Store Rd"`, `"return_pin":"560001"`, `"return_phone":"9000000000"`} {
+		if !strings.Contains(gotBody, want) {
+			t.Errorf("data payload missing %s\ngot: %s", want, gotBody)
+		}
+	}
+}
+
+func TestDelhivery_CreateReverseShipment_FailureRemark(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"packages":[{"waybill":"","status":"Fail","serviceable":true,"remarks":["Return pin not serviceable"]}]}`)
+	}))
+	defer srv.Close()
+
+	c := &DelhiveryCarrier{apiKey: "tok", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	_, err := c.CreateReverseShipment(context.Background(), ReverseShipmentRequest{
+		OrderID: "ORD-2", PickupFrom: Address{PostalCode: "400001", Phone: "9"}, ReturnTo: Address{PostalCode: "560001"},
+		WarehouseName: "W", Items: []ParcelItem{{Quantity: 1, WeightGrams: 500}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "serviceable") {
+		t.Fatalf("err = %v, want the remark surfaced", err)
+	}
+}

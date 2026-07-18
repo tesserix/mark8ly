@@ -108,6 +108,14 @@ type dlShipmentEntry struct {
 	ProductDesc   string  `json:"products_desc"`
 	Weight        float64 `json:"weight"` // grams
 	TotalAmount   float64 `json:"total_amount"`
+	// Reverse-pickup only (payment_mode:"Pickup"). Omitted on forward shipments.
+	ReturnName    string `json:"return_name,omitempty"`
+	ReturnAdd     string `json:"return_add,omitempty"`
+	ReturnPin     string `json:"return_pin,omitempty"`
+	ReturnCity    string `json:"return_city,omitempty"`
+	ReturnState   string `json:"return_state,omitempty"`
+	ReturnCountry string `json:"return_country,omitempty"`
+	ReturnPhone   string `json:"return_phone,omitempty"`
 }
 
 // dlCreateResponse mirrors Delhivery's /api/cmu/create.json response.
@@ -274,7 +282,13 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 		return nil, fmt.Errorf("delhivery: create shipment: %w", err)
 	}
 	defer resp.Body.Close()
+	return c.parseDelhiveryCreateResponse(resp, in.FromAddress.Name, in.FromAddress.PostalCode, in.ToAddress.PostalCode)
+}
 
+// parseDelhiveryCreateResponse turns a /api/cmu/create.json HTTP response into
+// a Shipment or a classified error. Shared by forward CreateShipment and
+// reverse CreateReverseShipment — both use the identical response schema.
+func (c *DelhiveryCarrier) parseDelhiveryCreateResponse(resp *http.Response, warehouseName, fromPin, toPin string) (*Shipment, error) {
 	// Read the raw body so we can include the provider's error text in
 	// our error message — otherwise the operator sees a generic
 	// "API returned failure" and has no way to self-serve.
@@ -300,8 +314,7 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 		// classifier's warehouse branch existed but was unreachable, because
 		// this early return sits above the per-package one.
 		if remark := strings.TrimSpace(cr.Rmk); remark != "" {
-			return nil, classifyDelhiveryCreateError(remark, in.FromAddress.Name,
-				in.FromAddress.PostalCode, in.ToAddress.PostalCode, false)
+			return nil, classifyDelhiveryCreateError(remark, warehouseName, fromPin, toPin, false)
 		}
 		return nil, fmt.Errorf("delhivery: create shipment: empty packages (body=%s)",
 			truncate(string(bodyBytes), 400))
@@ -314,8 +327,7 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 	// most specific remediation.
 	if strings.EqualFold(pkg.Status, "Fail") || pkg.Waybill == "" {
 		remark := joinRemarks(pkg.Remarks)
-		return nil, classifyDelhiveryCreateError(remark, in.FromAddress.Name,
-			in.FromAddress.PostalCode, in.ToAddress.PostalCode, pkg.Serviceable)
+		return nil, classifyDelhiveryCreateError(remark, warehouseName, fromPin, toPin, pkg.Serviceable)
 	}
 
 	return &Shipment{
@@ -324,6 +336,69 @@ func (c *DelhiveryCarrier) CreateShipment(ctx context.Context, in ShipmentReques
 		Carrier:            "delhivery",
 		Service:            "standard",
 	}, nil
+}
+
+// CreateReverseShipment creates a Delhivery reverse (return) pickup, reusing
+// /api/cmu/create.json with payment_mode:"Pickup". The consignee fields carry
+// the customer (PickupFrom) — where Delhivery collects — and the return_* keys
+// carry the warehouse (ReturnTo) — where the parcel is returned. Delhivery
+// auto-schedules the reverse leg, so no separate pickup request is needed.
+//
+// NOTE (unverified): the exact return_country format and default parcel weight
+// are doc-derived, not verified against a live delivered shipment. Gated behind
+// REVERSE_PICKUP_ENABLED at the executor.
+func (c *DelhiveryCarrier) CreateReverseShipment(ctx context.Context, in ReverseShipmentRequest) (*Shipment, error) {
+	totalWeightGrams := 0
+	for _, item := range in.Items {
+		totalWeightGrams += item.WeightGrams * item.Quantity
+	}
+	if totalWeightGrams == 0 {
+		totalWeightGrams = 500 // Delhivery rejects zero weight; same fallback as forward.
+	}
+	productDesc := "Return"
+
+	shipmentData := dlShipmentData{}
+	shipmentData.PickupLocation.Name = in.WarehouseName
+	shipmentData.PickupLocation.AddLine1 = in.ReturnTo.Line1
+	shipmentData.PickupLocation.City = in.ReturnTo.City
+	shipmentData.PickupLocation.PinCode = in.ReturnTo.PostalCode
+	shipmentData.PickupLocation.Country = in.ReturnTo.CountryCode
+	shipmentData.PickupLocation.Phone = in.ReturnTo.Phone
+	shipmentData.PickupLocation.State = in.ReturnTo.Region
+	shipmentData.Shipments = []dlShipmentEntry{
+		{
+			Name:          in.PickupFrom.Name,
+			Add:           in.PickupFrom.Line1,
+			City:          in.PickupFrom.City,
+			Pin:           in.PickupFrom.PostalCode,
+			State:         in.PickupFrom.Region,
+			Country:       in.PickupFrom.CountryCode,
+			Phone:         in.PickupFrom.Phone,
+			OrderID:       in.OrderID,
+			PaymentMode:   "Pickup",
+			ProductDesc:   productDesc,
+			Weight:        float64(totalWeightGrams),
+			ReturnName:    firstNonEmpty(in.ReturnTo.Name, in.WarehouseName),
+			ReturnAdd:     in.ReturnTo.Line1,
+			ReturnPin:     in.ReturnTo.PostalCode,
+			ReturnCity:    in.ReturnTo.City,
+			ReturnState:   in.ReturnTo.Region,
+			ReturnCountry: delhiveryCountryName(in.ReturnTo.CountryCode),
+			ReturnPhone:   in.ReturnTo.Phone,
+		},
+	}
+
+	dataJSON, err := json.Marshal(shipmentData)
+	if err != nil {
+		return nil, fmt.Errorf("delhivery: create reverse shipment: marshal data: %w", err)
+	}
+	form := url.Values{"format": {"json"}, "data": {string(dataJSON)}}
+	resp, err := c.doForm(ctx, "/api/cmu/create.json", form)
+	if err != nil {
+		return nil, fmt.Errorf("delhivery: create reverse shipment: %w", err)
+	}
+	defer resp.Body.Close()
+	return c.parseDelhiveryCreateResponse(resp, in.WarehouseName, in.ReturnTo.PostalCode, in.PickupFrom.PostalCode)
 }
 
 // joinRemarks flattens Delhivery's remarks array into a single string

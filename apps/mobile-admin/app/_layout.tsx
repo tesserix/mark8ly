@@ -2,7 +2,7 @@ import '../global.css';
 
 import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
-import { Slot, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
@@ -66,7 +66,18 @@ function AuthGate() {
     SplashScreen.hideAsync();
   }, [user, loading, segments, router, clearTenant, qc]);
 
-  return <Slot />;
+  // Root stack (not Slot) so screens outside the tab group — like the
+  // notifications inbox — push as cards ABOVE the tabs. Launching the inbox
+  // from the dashboard bell no longer corrupts the More tab's saved stack
+  // state (which used to leave the More dock button reopening notifications
+  // and back popping to the dashboard).
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="notifications" />
+    </Stack>
+  );
 }
 
 export default function RootLayout() {

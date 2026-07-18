@@ -6,7 +6,6 @@ export default function MoreLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="marketing" />
       <Stack.Screen name="settings" />
-      <Stack.Screen name="notifications" />
       <Stack.Screen name="account" />
       <Stack.Screen name="security" />
       <Stack.Screen name="support" />

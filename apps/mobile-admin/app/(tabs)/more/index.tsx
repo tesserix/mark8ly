@@ -81,7 +81,7 @@ export default function MoreScreen() {
           icon={<Bell size={18} color={theme.colors.text} strokeWidth={1.75} />}
           label="Notifications"
           accessibilityLabel={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
-          onPress={() => router.push("/(tabs)/more/notifications")}
+          onPress={() => router.push("/notifications")}
           trailing={
             unreadCount > 0 ? (
               <View style={styles.badge}>

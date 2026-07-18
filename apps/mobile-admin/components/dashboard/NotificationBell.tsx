@@ -18,7 +18,7 @@ export function NotificationBell() {
 
   return (
     <TouchableOpacity
-      onPress={() => router.push("/(tabs)/more/notifications")}
+      onPress={() => router.push("/notifications")}
       hitSlop={10}
       activeOpacity={0.6}
       accessibilityRole="button"

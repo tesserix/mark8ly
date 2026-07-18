@@ -6,7 +6,8 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
-import { useNotifications, useMarkAllRead } from "../../../lib/hooks/use-notifications";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNotifications, useMarkAllRead } from "@/lib/hooks/use-notifications";
 import {
   BackHeader,
   EmptyState,
@@ -15,7 +16,6 @@ import {
   Text,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
-import { useDockClearance } from "@/components/navigation/dock-metrics";
 import type { Notification } from "@repo/mobile-shared/api/types";
 
 // Real values from notification/models.go:16-30. The previous map used
@@ -93,7 +93,7 @@ function NotificationItem({
 export default function NotificationsScreen() {
   const { data, isLoading, isRefetching, refetch } = useNotifications();
   const markAllRead = useMarkAllRead();
-  const dockPad = useDockClearance();
+  const insets = useSafeAreaInsets();
 
   const hasUnread = data?.notifications.some((n) => !n.is_read) ?? false;
 
@@ -131,7 +131,10 @@ export default function NotificationsScreen() {
           renderItem={({ item }) => <NotificationItem notification={item} />}
           keyExtractor={(item) => item.id}
           ItemSeparatorComponent={() => <Hairline />}
-          contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
+          contentContainerStyle={[
+            styles.list,
+            { paddingBottom: insets.bottom + theme.spacing.huge },
+          ]}
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}
@@ -149,7 +152,7 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  list: { flexGrow: 1, paddingBottom: theme.spacing.huge },
+  list: { flexGrow: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   row: {
     flexDirection: "row",

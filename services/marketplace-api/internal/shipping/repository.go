@@ -61,6 +61,14 @@ type ShipmentRecord struct {
 	PickupRequestID    string     `gorm:"column:pickup_request_id;type:varchar(100)"`
 	PickupScheduledFor *time.Time `gorm:"column:pickup_scheduled_for"`
 
+	// Cancel/return action taken when the order was refunded or cancelled.
+	// Written best-effort by internal/shipmentcancel; NOT touched on the
+	// normal create/track path. Defaults keep pre-feature rows valid.
+	CancelAction      string     `gorm:"column:cancel_action;type:varchar(20);not null;default:none"`
+	CancelStatus      string     `gorm:"column:cancel_status;type:varchar(20);not null;default:none"`
+	CancelReason      string     `gorm:"column:cancel_reason;type:text"`
+	CancelRequestedAt *time.Time `gorm:"column:cancel_requested_at"`
+
 	// Response-shape only — never touch the DB. Callers map these after
 	// reading a row, and the carrier layer sets them on create.
 	Provider           string `gorm:"-"`
@@ -127,8 +135,10 @@ type Repository interface {
 	// existence of other shipments — callers treat a
 	// not-found the same way as a success.
 	GetShipmentByTrackingNumber(ctx context.Context, carrier, trackingNumber string) (*ShipmentRecord, error)
+	ListShipmentsByOrderID(ctx context.Context, orderID uuid.UUID) ([]ShipmentRecord, error)
 	ListShipmentsByStore(ctx context.Context, storeID uuid.UUID, limit, offset int) ([]ShipmentRecord, int64, error)
 	UpdateShipmentStatus(ctx context.Context, id uuid.UUID, status string) error
+	SetShipmentCancelState(ctx context.Context, shipmentID uuid.UUID, action, status, reason string) error
 
 	// Carrier configs
 	GetCarrierConfig(ctx context.Context, storeID, provider string) (*CarrierConfig, error)
@@ -201,6 +211,39 @@ func (r *gormRepository) GetShipmentByTrackingNumber(ctx context.Context, carrie
 		return nil, fmt.Errorf("shipping: get shipment by tracking number: %w", err)
 	}
 	return &rec, nil
+}
+
+func (r *gormRepository) ListShipmentsByOrderID(ctx context.Context, orderID uuid.UUID) ([]ShipmentRecord, error) {
+	var recs []ShipmentRecord
+	if err := r.db.WithContext(ctx).
+		Where("order_id = ?", orderID).
+		Order("created_at ASC").
+		Find(&recs).Error; err != nil {
+		return nil, fmt.Errorf("shipping: list shipments by order id: %w", err)
+	}
+	return recs, nil
+}
+
+// SetShipmentCancelState records the outcome of a carrier cancel/return
+// attempt on a shipment. Stamps cancel_requested_at + updated_at to now().
+func (r *gormRepository) SetShipmentCancelState(ctx context.Context, shipmentID uuid.UUID, action, status, reason string) error {
+	res := r.db.WithContext(ctx).
+		Table("shipments").
+		Where("id = ?", shipmentID).
+		Updates(map[string]any{
+			"cancel_action":       action,
+			"cancel_status":       status,
+			"cancel_reason":       reason,
+			"cancel_requested_at": time.Now().UTC(),
+			"updated_at":          time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("shipping: set shipment cancel state: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("shipping: shipment not found")
+	}
+	return nil
 }
 
 func (r *gormRepository) ListShipmentsByStore(ctx context.Context, storeID uuid.UUID, limit, offset int) ([]ShipmentRecord, int64, error) {

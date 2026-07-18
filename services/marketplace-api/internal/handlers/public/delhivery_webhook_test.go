@@ -62,10 +62,16 @@ func (f *fakeShippingRepo) GetShipmentByID(context.Context, uuid.UUID) (*shippin
 func (f *fakeShippingRepo) GetShipmentByOrderID(context.Context, uuid.UUID) (*shipping.ShipmentRecord, error) {
 	panic("not implemented")
 }
+func (f *fakeShippingRepo) ListShipmentsByOrderID(context.Context, uuid.UUID) ([]shipping.ShipmentRecord, error) {
+	panic("not implemented")
+}
 func (f *fakeShippingRepo) ListShipmentsByStore(context.Context, uuid.UUID, int, int) ([]shipping.ShipmentRecord, int64, error) {
 	panic("not implemented")
 }
 func (f *fakeShippingRepo) UpdateShipmentStatus(context.Context, uuid.UUID, string) error {
+	panic("not implemented")
+}
+func (f *fakeShippingRepo) SetShipmentCancelState(context.Context, uuid.UUID, string, string, string) error {
 	panic("not implemented")
 }
 func (f *fakeShippingRepo) ListCarrierConfigs(context.Context, string) ([]shipping.CarrierConfig, error) {

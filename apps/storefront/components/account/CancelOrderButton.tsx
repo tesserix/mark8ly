@@ -8,6 +8,7 @@
 
 import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface Props {
   orderId: string;
@@ -72,9 +73,23 @@ export function CancelOrderButton({ orderId, orderStatus, shipmentStatus }: Prop
 
   if (!mode) {
     if (isInFlight) {
+      // A shipment is created (status "pending") the instant a shipping
+      // label is cut — well before the parcel physically moves. The old
+      // copy here claimed the order was "in transit," which is false and
+      // left the customer with no path forward. Mirror the backend's
+      // actual guard (see marketplace-api order_detail.go's shipment_in_flight
+      // 409) and give them a real next step instead of a dead end.
       return (
-        <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/50 italic">
-          This order is in transit — cancellation is no longer available.
+        <p className="max-w-sm text-xs leading-relaxed text-[color:var(--storefront-text,var(--ink-900))]/70">
+          A shipping label has already been created for this order, so it
+          can&apos;t be cancelled online.{" "}
+          <Link
+            href="/contact"
+            className="font-medium text-[color:var(--storefront-accent,var(--moss-700))] underline decoration-1 underline-offset-2 hover:opacity-80"
+          >
+            Contact the store
+          </Link>{" "}
+          to arrange a return and refund.
         </p>
       );
     }

@@ -38,20 +38,38 @@ function iconFor(kind: string): string {
   if (kind === "payment_recorded") return "$";
   if (kind === "fulfilled") return "✓";
   if (kind === "cancelled") return "×";
+  // Return/refund lifecycle — mirrors the return_requested → approved →
+  // received → refunded (or rejected) states surfaced by ReturnStatusBanner.
+  if (kind === "return_requested") return "↩";
+  if (kind === "return_approved") return "✓";
+  if (kind === "return_received") return "✓";
+  if (kind === "return_refunded") return "$";
+  if (kind === "return_rejected") return "×";
   return "•";
 }
 
-function toneFor(kind: string): string {
-  if (kind === "shipment_delivered" || kind === "fulfilled") {
-    return "border-[color:var(--storefront-success)] bg-[color:var(--storefront-success-bg)] text-[color:var(--storefront-success)]";
+type EventTone = "success" | "danger" | "warning" | "neutral";
+
+// Semantic status per event kind, driving both the stepper circle/label
+// styling and the "new event" toast tone below. Delivered/fulfilled and
+// their return-flow equivalents (approved/refunded) all read as positive
+// outcomes; exception/cancelled/rejected read as negative or cautionary.
+function toneFor(kind: string): EventTone {
+  if (
+    kind === "shipment_delivered" ||
+    kind === "fulfilled" ||
+    kind === "return_approved" ||
+    kind === "return_refunded"
+  ) {
+    return "success";
   }
   if (kind === "shipment_exception" || kind === "cancelled") {
-    return "border-[color:var(--storefront-danger-border)] bg-[color:var(--storefront-danger-bg)] text-[color:var(--storefront-danger)]";
+    return "danger";
   }
-  if (kind.startsWith("shipment_")) {
-    return "border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]";
+  if (kind === "return_rejected") {
+    return "warning";
   }
-  return "border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]";
+  return "neutral";
 }
 
 function fmtDate(iso: string): string {
@@ -64,6 +82,56 @@ function fmtDate(iso: string): string {
     });
   } catch {
     return iso;
+  }
+}
+
+// Module-scope (not a per-render closure) so both the stepper labels and
+// the "new event" toast title below can reuse the same humanized copy.
+function shortLabelFor(kind: string, description?: string): string {
+  if (description && description.length > 0 && description.length <= 28) {
+    // Use the backend-provided copy when it fits on one line of a
+    // stepper pill; fall back to a predictable short label otherwise.
+    return description.replace(/\.$/, "");
+  }
+  switch (kind) {
+    case "order_placed":
+      return "Placed";
+    case "payment_recorded":
+      return "Paid";
+    case "status_changed":
+    case "confirmed":
+      return "Confirmed";
+    case "fulfilled":
+      return "Fulfilled";
+    case "shipment_created":
+      return "Label created";
+    case "pickup_scheduled":
+      return "Pickup scheduled";
+    case "shipment_in_transit":
+      return "In transit";
+    case "shipment_out_for_delivery":
+      return "Out for delivery";
+    case "shipment_delivered":
+      return "Delivered";
+    case "shipment_exception":
+      return "Exception";
+    case "cancelled":
+      return "Cancelled";
+    // Return/refund lifecycle — previously fell through to the raw
+    // snake_case kind (e.g. "return_requested") because these cases
+    // didn't exist yet.
+    case "return_requested":
+      return "Return requested";
+    case "return_approved":
+      return "Return approved";
+    case "return_received":
+      return "Return received";
+    case "return_refunded":
+      return "Refund issued";
+    case "return_rejected":
+      return "Return declined";
+    default:
+      return kind.replace(/_/g, " ");
   }
 }
 
@@ -105,14 +173,17 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
         if (nextKey !== seenKey) {
           // A new event arrived since the last poll — pop a toast.
           if (nextLast && seenKey !== "") {
+            const tone = toneFor(nextLast.kind);
             toast({
-              title: nextLast.description || nextLast.kind,
+              title: shortLabelFor(nextLast.kind, nextLast.description),
               tone:
-                nextLast.kind === "shipment_delivered"
+                tone === "success"
                   ? "success"
-                  : nextLast.kind === "shipment_exception"
+                  : tone === "danger"
                     ? "error"
-                    : "info",
+                    : tone === "warning"
+                      ? "warn"
+                      : "info",
             });
           }
           seenKey = nextKey;
@@ -170,40 +241,6 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
   // render as the current step so the operator sees the final state
   // explicitly instead of a quiet green-on-green chain.
   const lastIdx = events.length - 1;
-  const shortLabelFor = (kind: string, description?: string): string => {
-    if (description && description.length > 0 && description.length <= 28) {
-      // Use the backend-provided copy when it fits on one line of a
-      // stepper pill; fall back to a predictable short label otherwise.
-      return description.replace(/\.$/, "");
-    }
-    switch (kind) {
-      case "order_placed":
-        return "Placed";
-      case "payment_recorded":
-        return "Paid";
-      case "status_changed":
-      case "confirmed":
-        return "Confirmed";
-      case "fulfilled":
-        return "Fulfilled";
-      case "shipment_created":
-        return "Label created";
-      case "pickup_scheduled":
-        return "Pickup scheduled";
-      case "shipment_in_transit":
-        return "In transit";
-      case "shipment_out_for_delivery":
-        return "Out for delivery";
-      case "shipment_delivered":
-        return "Delivered";
-      case "shipment_exception":
-        return "Exception";
-      case "cancelled":
-        return "Cancelled";
-      default:
-        return kind.replace(/_/g, " ");
-    }
-  };
 
   return (
     <section aria-labelledby="timeline-heading" className="mt-8">
@@ -271,20 +308,31 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
             {events.map((e, i) => {
               const isLast = i === lastIdx;
               const done = i < lastIdx;
-              const isError =
-                e.kind === "shipment_exception" || e.kind === "cancelled";
+              // Negative (shipment_exception/cancelled) and cautionary
+              // (return_rejected) kinds override the position-based
+              // color below. Positive kinds (delivered/fulfilled and the
+              // return_approved/return_refunded equivalents) intentionally
+              // get no override — the normal isLast/done moss coloring
+              // already reads as "success", same treatment as before.
+              const tone = toneFor(e.kind);
+              const isError = tone === "danger";
+              const isWarning = tone === "warning";
               const circleTone = isError
                 ? "border-[color:var(--storefront-danger)] bg-[color:var(--storefront-danger-bg)] text-[color:var(--storefront-danger)]"
-                : isLast
-                  ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))] text-[color:var(--storefront-on-accent,#fff)] shadow-sm ring-4 ring-[color:var(--storefront-accent,var(--moss-700))]/15"
-                  : done
-                    ? "border-[color:var(--storefront-accent,var(--moss-700))]/80 bg-[color:var(--storefront-accent,var(--moss-700))]/90 text-[color:var(--storefront-on-accent,#fff)]"
-                    : "border-[color:var(--storefront-text,var(--ink-900))]/25 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]/60";
+                : isWarning
+                  ? "border-[color:var(--storefront-warning)] bg-[color:var(--storefront-warning-bg)] text-[color:var(--storefront-warning)]"
+                  : isLast
+                    ? "border-[color:var(--storefront-accent,var(--moss-700))] bg-[color:var(--storefront-accent,var(--moss-700))] text-[color:var(--storefront-on-accent,#fff)] shadow-sm ring-4 ring-[color:var(--storefront-accent,var(--moss-700))]/15"
+                    : done
+                      ? "border-[color:var(--storefront-accent,var(--moss-700))]/80 bg-[color:var(--storefront-accent,var(--moss-700))]/90 text-[color:var(--storefront-on-accent,#fff)]"
+                      : "border-[color:var(--storefront-text,var(--ink-900))]/25 bg-[color:var(--storefront-background,var(--paper-200))] text-[color:var(--storefront-text,var(--ink-900))]/60";
               const labelTone = isError
                 ? "text-[color:var(--storefront-danger)]"
-                : isLast
-                  ? "text-[color:var(--storefront-text,var(--ink-900))] font-semibold"
-                  : "text-[color:var(--storefront-text,var(--ink-900))]/80";
+                : isWarning
+                  ? "text-[color:var(--storefront-warning)]"
+                  : isLast
+                    ? "text-[color:var(--storefront-text,var(--ink-900))] font-semibold"
+                    : "text-[color:var(--storefront-text,var(--ink-900))]/80";
               return (
                 <li
                   key={`${e.kind}-${e.occurred_at}-${i}`}

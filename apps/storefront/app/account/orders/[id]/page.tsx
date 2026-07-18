@@ -14,6 +14,7 @@ import { fetchOrder, type Order, type OrderItem } from "@/lib/api/checkout-api";
 import { OrderTimeline } from "@/components/OrderTimeline";
 import { CancelOrderButton } from "@/components/account/CancelOrderButton";
 import { ReturnStatusBanner } from "@/components/account/ReturnStatusBanner";
+import { RefundProcessingBanner } from "@/components/account/RefundProcessingBanner";
 import { invoiceNumberFromOrder, receiptNumberFromOrder } from "@/lib/invoices/numbering";
 
 export const dynamic = "force-dynamic";
@@ -122,6 +123,13 @@ export default async function AccountOrderPage({ params }: PageProps) {
         orderId={order.id}
         initialShipment={order.shipment ?? null}
         initialTimeline={order.timeline ?? []}
+      />
+
+      <RefundProcessingBanner
+        orderStatus={order.status}
+        paymentStatus={order.payment_status}
+        grandTotal={order.grand_total}
+        refundedAmount={order.refunded_amount}
       />
 
       <section>

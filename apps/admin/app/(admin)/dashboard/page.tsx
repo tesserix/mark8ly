@@ -3,8 +3,10 @@ import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { fetchDashboard } from "@/lib/api/marketplace-api";
 import type { DashboardResponse } from "@/lib/api/marketplace-api";
 
-import { StatCard } from "@/components/dashboard/StatCard";
-import { RevenueSparkline } from "@/components/dashboard/RevenueSparkline";
+import Link from "next/link";
+
+import { DashboardHero } from "@/components/dashboard/DashboardHero";
+import { OrdersStatStrip } from "@/components/dashboard/OrdersStatStrip";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 import { RecentOrders } from "@/components/dashboard/RecentOrders";
 import { TopProducts } from "@/components/dashboard/TopProducts";
@@ -130,47 +132,31 @@ function DashboardContent({
         </section>
       ) : (
         <>
-          {/* Stat cards — 4 across on desktop, 2x2 tablet, 1 on mobile */}
-          <div className="grid grid-cols-1 gap-px border border-border-subtle sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Revenue today"
-              value={formatCurrency(stats.revenue_today, currencyCode)}
-              changePercent={stats.revenue_change_pct}
-              sparkline={
-                <RevenueSparkline
-                  data={stats.revenue_trend}
-                  currencyCode={currencyCode}
-                />
-              }
-            />
-            {/* Subtitle shows the actionable all-time backlog, not a
-                today-scoped breakdown — "2 pending / 1 fulfilled" under a
-                "6 today" headline read as contradictory arithmetic. */}
-            <StatCard
-              label="Orders today"
-              value={String(stats.orders_today)}
-              subtitle={
-                stats.orders_pending > 0
-                  ? `${stats.orders_pending} awaiting fulfillment`
-                  : undefined
-              }
-              href="/orders?status=pending"
-            />
-            <StatCard
-              label="Total customers"
-              value={String(stats.customers_total)}
-              subtitle={
-                stats.customers_new_this_week > 0
-                  ? `+${stats.customers_new_this_week} this week`
-                  : undefined
-              }
-            />
-            <StatCard
-              label="Pending reviews"
-              value={String(stats.pending_reviews)}
+          {/* Editorial masthead — this-month revenue hero + secondary column,
+              replacing the old equal-weight 4-card grid. */}
+          <DashboardHero stats={stats} currencyCode={currencyCode} />
+
+          {/* Orders as an editorial stat strip. */}
+          <OrdersStatStrip stats={stats} />
+
+          {/* Pending reviews — surfaced only when there's something to act on. */}
+          {stats.pending_reviews > 0 && (
+            <Link
               href="/customers/reviews?status=pending"
-            />
-          </div>
+              className="flex items-baseline justify-between gap-4 border-t border-border-subtle pt-6 transition-colors hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              <span className="text-sm text-foreground-secondary">
+                <span className="font-serif text-2xl font-medium tabular-nums text-foreground">
+                  {stats.pending_reviews}
+                </span>{" "}
+                {stats.pending_reviews === 1 ? "review" : "reviews"} awaiting
+                moderation
+              </span>
+              <span className="text-sm font-medium text-[color:var(--moss-700)]">
+                Review →
+              </span>
+            </Link>
+          )}
 
           {/* Range-scoped analytics — Sales / Orders / Customers / Reviews */}
           <AnalyticsSection storeId={storeId} currencyCode={currencyCode} />
@@ -187,17 +173,4 @@ function DashboardContent({
       )}
     </>
   );
-}
-
-function formatCurrency(amount: number, currencyCode: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currencyCode,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  } catch {
-    return `${currencyCode} ${amount.toFixed(0)}`;
-  }
 }

@@ -2,6 +2,7 @@ package shipping
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -71,5 +72,53 @@ func TestShipEngine_CancelShipment_NoLabelFound(t *testing.T) {
 	c := &ShipEngineCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
 	if err := c.CancelShipment(context.Background(), "UNKNOWN"); err == nil {
 		t.Fatal("CancelShipment with no matching label returned nil, want error")
+	}
+}
+
+func TestShipEngine_CreateReverseShipment_ReturnFromLabel(t *testing.T) {
+	var listQuery, returnPath, returnBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/labels":
+			listQuery = r.URL.Query().Get("tracking_number")
+			_, _ = w.Write([]byte(`{"labels":[{"label_id":"se-out-1","tracking_number":"FWD1"}]}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/return"):
+			returnPath = r.URL.Path
+			b, _ := io.ReadAll(r.Body)
+			returnBody = string(b)
+			_, _ = w.Write([]byte(`{"label_id":"se-ret-9","tracking_number":"RET9","is_return_label":true,"outbound_label_id":"se-out-1"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := &ShipEngineCarrier{apiKey: "k", mode: "live", baseURL: srv.URL, client: srv.Client()}
+	sh, err := c.CreateReverseShipment(context.Background(), ReverseShipmentRequest{
+		OriginalTrackingNumber: "FWD1",
+		PickupFrom:             Address{Name: "Jane", PostalCode: "94105", CountryCode: "US"},
+		ReturnTo:               Address{Name: "WH", PostalCode: "10001", CountryCode: "US"},
+	})
+	if err != nil {
+		t.Fatalf("CreateReverseShipment: %v", err)
+	}
+	if sh.TrackingNumber != "RET9" || sh.ProviderShipmentID != "se-ret-9" {
+		t.Errorf("shipment = %+v, want RET9 / se-ret-9", sh)
+	}
+	if listQuery != "FWD1" {
+		t.Errorf("label lookup tracking = %q, want FWD1", listQuery)
+	}
+	if returnPath != "/v1/labels/se-out-1/return" {
+		t.Errorf("return path = %q, want /v1/labels/se-out-1/return", returnPath)
+	}
+	if !strings.Contains(returnBody, "charge_event") {
+		t.Errorf("return body missing charge_event: %s", returnBody)
+	}
+}
+
+func TestShipEngine_CreateReverseShipment_RequiresOriginalTracking(t *testing.T) {
+	c := &ShipEngineCarrier{apiKey: "k", mode: "live", baseURL: "http://unused", client: &http.Client{}}
+	if _, err := c.CreateReverseShipment(context.Background(), ReverseShipmentRequest{}); err == nil {
+		t.Fatal("CreateReverseShipment without OriginalTrackingNumber returned nil, want error")
 	}
 }

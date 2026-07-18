@@ -499,6 +499,55 @@ func (c *ShipEngineCarrier) labelIDForTracking(ctx context.Context, trackingNumb
 	return lr.Labels[0].LabelID, nil
 }
 
+// CreateReverseShipment creates a ShipEngine return label for a delivered
+// shipment, using the return-from-label endpoint
+// (POST /v1/labels/{label_id}/return). ShipEngine reverses the ship_from /
+// ship_to addresses and reuses the original carrier + service automatically, so
+// we only need the original label — resolved from the forward tracking number.
+//
+// NOTE: ShipEngine returns are DOMESTIC ONLY and not every carrier/service
+// supports them; an unsupported route surfaces as a clean error the executor
+// records as `failed` (a manual notice). Gated behind REVERSE_PICKUP_ENABLED at
+// the executor.
+func (c *ShipEngineCarrier) CreateReverseShipment(ctx context.Context, in ReverseShipmentRequest) (*Shipment, error) {
+	if strings.TrimSpace(in.OriginalTrackingNumber) == "" {
+		return nil, fmt.Errorf("shipengine: reverse shipment: original tracking number is required")
+	}
+	labelID, err := c.labelIDForTracking(ctx, in.OriginalTrackingNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	// charge_event carrier_default defers to the carrier's standard billing
+	// behaviour, matching how the forward label is charged.
+	body := map[string]string{"charge_event": "carrier_default"}
+	path := fmt.Sprintf("/v1/labels/%s/return", labelID)
+	resp, err := c.doJSON(ctx, http.MethodPost, path, body)
+	if err != nil {
+		return nil, fmt.Errorf("shipengine: reverse shipment: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("shipengine: reverse shipment: %s", shipEngineErrorMessage(respBody, resp.StatusCode))
+	}
+
+	var lr seLabelResponse
+	if err := json.Unmarshal(respBody, &lr); err != nil {
+		return nil, fmt.Errorf("shipengine: reverse shipment: decode: %w", err)
+	}
+	if lr.TrackingNumber == "" {
+		return nil, fmt.Errorf("shipengine: reverse shipment: no tracking number in return response")
+	}
+	return &Shipment{
+		ProviderShipmentID: lr.LabelID,
+		TrackingNumber:     lr.TrackingNumber,
+		LabelURL:           lr.LabelDownload.PDF,
+		Carrier:            "shipengine",
+		Service:            "return",
+	}, nil
+}
+
 // shipEngineErrorMessage pulls ShipEngine's short error text out of an error
 // response body ({"errors":[{"message":...}]}) for a clean merchant-facing
 // message, falling back to the status code.

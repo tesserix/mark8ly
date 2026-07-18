@@ -691,7 +691,14 @@ func main() {
 		// duplicated. Fired best-effort from the refund coordinator (full
 		// refunds), the orders Cancel handler (non-paid cancels), and the
 		// manual per-shipment endpoint.
-		shipmentCanceller := shipmentcancel.NewExecutor(shippingRepo, shipmentsHandler.CarrierForStore, log)
+		// REVERSE_PICKUP_ENABLED gates the Phase 3 delivered-shipment reverse
+		// pickup (creates a live courier dispatch; payload not yet live-verified).
+		// Default off, mirroring REFUND_GATEWAY_ENABLED — delivered shipments
+		// record `unsupported` until this is flipped on after verification.
+		reversePickupEnabled := os.Getenv("REVERSE_PICKUP_ENABLED") == "true"
+		shipmentCanceller := shipmentcancel.NewExecutor(shippingRepo, shipmentsHandler.CarrierForStore, log).
+			WithReversePickup(reversePickupEnabled)
+		log.Info("shipment-cancel executor wired", "reverse_pickup_enabled", reversePickupEnabled)
 		shipmentsHandler = shipmentsHandler.WithCanceller(shipmentCanceller)
 
 		// Production hook wraps the executor call in a detached goroutine so a

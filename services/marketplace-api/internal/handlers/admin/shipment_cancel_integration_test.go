@@ -28,9 +28,15 @@ import (
 type recordingCarrier struct {
 	cancelCalls int
 	rtoCalls    int
+	revCalls    int
 	lastWaybill string
 	err         error
 	rtoErr      error
+}
+
+func (r *recordingCarrier) CreateReverseShipment(_ context.Context, _ shipping.ReverseShipmentRequest) (*shipping.Shipment, error) {
+	r.revCalls++
+	return &shipping.Shipment{TrackingNumber: "REV-INT", ProviderShipmentID: "REV-INT", Carrier: "delhivery"}, nil
 }
 
 func (r *recordingCarrier) CancelShipment(_ context.Context, waybill string) error {
@@ -203,5 +209,58 @@ func TestFullRefund_InTransit_TriggersRTO(t *testing.T) {
 	}
 	if row.CancelAction != "rto" || row.CancelStatus != "succeeded" {
 		t.Fatalf("cancel state = %s/%s, want rto/succeeded", row.CancelAction, row.CancelStatus)
+	}
+}
+
+func coordinatorWithCancellerReverse(db *gorm.DB, car shipping.Carrier) *orderrefund.Coordinator {
+	exec := shipmentcancel.NewExecutor(
+		shipping.NewRepository(db),
+		func(context.Context, uuid.UUID, string) (shipping.Carrier, error) { return car, nil },
+		nil,
+	).WithReversePickup(true)
+	return newTestRefundCoordinator(db, &fakeGateway{}).
+		WithShipmentCanceller(func(ctx context.Context, oid uuid.UUID) { exec.CancelForOrder(ctx, oid) })
+}
+
+func TestFullRefund_Delivered_CreatesReversePickup(t *testing.T) {
+	env := setupOrdersRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+	headers := authHeaders(userID, tenantID)
+	base := "/api/v1/admin/stores/" + storeID + "/orders"
+
+	orderID := createAndConfirmOrder(t, env, base, headers, "100.00")
+	tUUID, sUUID, oUUID := uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID)
+	seedCapturedPaymentTxn(t, env.db, tUUID, sUUID, oUUID, "100.00")
+	seedActiveGatewayConfig(t, env.db, tUUID, sUUID)
+	seedShipmentWithStatus(t, env.db, tUUID, sUUID, oUUID, "WBN-DELIVERED", "delivered")
+
+	car := &recordingCarrier{}
+	coord := coordinatorWithCancellerReverse(env.db, car)
+
+	if _, err := coord.Refund(context.Background(), orderrefund.RefundCommand{
+		OrderID: oUUID, Amount: nil, Reason: "test", Actor: "test", ScopeID: "req-rev",
+	}); err != nil {
+		t.Fatalf("Refund: %v", err)
+	}
+	if car.revCalls != 1 {
+		t.Fatalf("CreateReverseShipment calls = %d, want 1", car.revCalls)
+	}
+	var fwd struct{ CancelAction, CancelStatus string }
+	if err := env.db.Table("shipments").Select("cancel_action", "cancel_status").
+		Where("order_id = ? AND tracking_number = ?", oUUID, "WBN-DELIVERED").Scan(&fwd).Error; err != nil {
+		t.Fatalf("reload forward: %v", err)
+	}
+	if fwd.CancelAction != "reverse_pickup" || fwd.CancelStatus != "succeeded" {
+		t.Fatalf("forward = %s/%s, want reverse_pickup/succeeded", fwd.CancelAction, fwd.CancelStatus)
+	}
+	var revCount int64
+	if err := env.db.Table("shipments").
+		Where("order_id = ? AND tracking_number = ?", oUUID, "REV-INT").Count(&revCount).Error; err != nil {
+		t.Fatalf("count reverse leg: %v", err)
+	}
+	if revCount != 1 {
+		t.Fatalf("reverse-leg rows = %d, want 1", revCount)
 	}
 }

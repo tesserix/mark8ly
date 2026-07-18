@@ -37,9 +37,12 @@ export async function saveShippingConfig(
   if (!canEditSettings(role)) {
     return { ok: false, code: "forbidden", message: "You do not have permission to edit settings." };
   }
-  if (!input.api_key.trim()) {
-    return { ok: false, code: "validation", message: "API key is required." };
-  }
+  // Intentionally NOT requiring api_key here. A blank key on an existing
+  // carrier means "keep the stored credential" so the merchant can edit
+  // the warehouse address (or fees, or mode) without re-entering the key.
+  // The backend distinguishes create from edit and returns a proper
+  // "api_key is required" error only when creating a brand-new carrier,
+  // so this check would just wrongly block every warehouse-only edit.
 
   const result = await upsertShippingConfig(storeId, provider, input, { userId, tenantId });
   if (!result.ok) {

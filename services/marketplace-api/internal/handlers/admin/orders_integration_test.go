@@ -28,6 +28,7 @@ var ordersTables = []string{
 	"order_events",
 	"order_addresses",
 	"order_items",
+	"shipments",
 	"return_items",
 	"returns",
 	"refund_transactions",

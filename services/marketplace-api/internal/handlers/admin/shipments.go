@@ -24,6 +24,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
+	"github.com/mark8ly/marketplace-api/internal/shipmentcancel"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -60,7 +61,10 @@ type ShipmentsHandler struct {
 	// `any` keeps the tuple-struct unexported while still letting
 	// cross-package tests register a factory.
 	carrierFactory func(provider string, sh any) (shipping.Carrier, bool)
-	logger         *slog.Logger
+	// canceller resolves + executes the carrier cancel/return action for a
+	// shipment (manual button). Nil-safe: the endpoint returns 503 when unwired.
+	canceller *shipmentcancel.Executor
+	logger    *slog.Logger
 }
 
 // NewShipmentsHandler constructs a ShipmentsHandler. docMailer is
@@ -103,6 +107,56 @@ func (h *ShipmentsHandler) WithSecretStore(s carriersecrets.Store) *ShipmentsHan
 func (h *ShipmentsHandler) WithLabelMailer(m LabelMailer) *ShipmentsHandler {
 	h.labelMailer = m
 	return h
+}
+
+// WithCanceller wires the shipment-cancel executor for the manual per-shipment
+// cancel endpoint. Chainable, nil-safe by omission.
+func (h *ShipmentsHandler) WithCanceller(e *shipmentcancel.Executor) *ShipmentsHandler {
+	h.canceller = e
+	return h
+}
+
+// CarrierForStore builds a carrier client for a (store, provider), reusing the
+// same credential-resolution path as label creation. Exposed so the
+// shipmentcancel executor can resolve a carrier without duplicating decrypt
+// logic (wired as its CarrierResolver in main.go).
+func (h *ShipmentsHandler) CarrierForStore(ctx context.Context, storeID uuid.UUID, provider string) (shipping.Carrier, error) {
+	provider = strings.ToLower(provider)
+	cfg, err := h.repo.GetCarrierConfig(ctx, storeID.String(), provider)
+	if err != nil {
+		return nil, fmt.Errorf("shipments: carrier config for %q: %w", provider, err)
+	}
+	apiKey, secretKey, err := h.resolveCarrierCreds(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("shipments: resolve carrier creds: %w", err)
+	}
+	h.maybeRewrapCarrierCreds(ctx, cfg, apiKey, secretKey)
+	return shipping.NewCarrier(provider, apiKey, secretKey, cfg.Mode)
+}
+
+// CancelShipment handles POST
+// /admin/stores/:storeId/orders/:id/shipments/:shipmentId/cancel — the manual
+// "Cancel / return shipment" button. Resolves the current lifecycle state and
+// executes the matching carrier action for that one shipment.
+func (h *ShipmentsHandler) CancelShipment(c *gin.Context) {
+	shipmentID, err := uuid.Parse(c.Param("shipmentId"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("shipmentId", "must be a uuid"), h.logger)
+		return
+	}
+	if h.canceller == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "service_unavailable",
+			"message": "Shipment cancellation is not configured.",
+		})
+		return
+	}
+	outcome, err := h.canceller.CancelShipmentByID(c.Request.Context(), shipmentID)
+	if err != nil {
+		RespondErr(c, apperrors.NotFound("shipment"), h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, outcome)
 }
 
 // decryptCarrierCreds resolves the carrier-config's stored ciphertext
@@ -298,7 +352,14 @@ type ShipmentResponse struct {
 	// before the pickup flow shipped leave them null.
 	PickupRequestID    string     `json:"pickup_request_id,omitempty"`
 	PickupScheduledFor *time.Time `json:"pickup_scheduled_for,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
+	// Cancel/return outcome recorded when the order was refunded or cancelled.
+	// Omitted for the common "none" case so untouched shipments stay clean;
+	// present values let the admin show "Cancelled at carrier" / a failure
+	// reason to retry.
+	CancelAction string    `json:"cancel_action,omitempty"`
+	CancelStatus string    `json:"cancel_status,omitempty"`
+	CancelReason string    `json:"cancel_reason,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 func toShipmentResponse(rec *shipping.ShipmentRecord) ShipmentResponse {
@@ -317,8 +378,20 @@ func toShipmentResponse(rec *shipping.ShipmentRecord) ShipmentResponse {
 		DeliveredAt:        rec.DeliveredAt,
 		PickupRequestID:    rec.PickupRequestID,
 		PickupScheduledFor: rec.PickupScheduledFor,
+		CancelAction:       omitNone(rec.CancelAction),
+		CancelStatus:       omitNone(rec.CancelStatus),
+		CancelReason:       rec.CancelReason,
 		CreatedAt:          rec.CreatedAt,
 	}
+}
+
+// omitNone returns "" for the sentinel "none" so the cancel_* fields drop out
+// of the JSON for shipments that never had a cancel/return attempted.
+func omitNone(s string) string {
+	if s == "none" {
+		return ""
+	}
+	return s
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -354,6 +354,12 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					orders.POST("/:id/shipments/:shipmentId/pickup/schedule",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
 						deps.ShipmentsHandler.SchedulePickup)
+					// Manual "Cancel / return shipment" — resolves the
+					// shipment's lifecycle state and takes the matching
+					// carrier action (Phase 1: pre-pickup forward cancel).
+					orders.POST("/:id/shipments/:shipmentId/cancel",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.CancelShipment)
 				}
 			}
 		}

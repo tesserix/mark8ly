@@ -23,18 +23,25 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 )
 
-// recordingCarrier implements shipping.Carrier and counts CancelShipment calls.
-// Every other method is unused in this suite.
+// recordingCarrier implements shipping.Carrier AND shipping.ReturnToOriginer,
+// counting CancelShipment / ReturnToOrigin calls. Every other method is unused.
 type recordingCarrier struct {
 	cancelCalls int
+	rtoCalls    int
 	lastWaybill string
 	err         error
+	rtoErr      error
 }
 
 func (r *recordingCarrier) CancelShipment(_ context.Context, waybill string) error {
 	r.cancelCalls++
 	r.lastWaybill = waybill
 	return r.err
+}
+func (r *recordingCarrier) ReturnToOrigin(_ context.Context, waybill string) error {
+	r.rtoCalls++
+	r.lastWaybill = waybill
+	return r.rtoErr
 }
 func (r *recordingCarrier) GetRates(context.Context, shipping.RateRequest) ([]shipping.Rate, error) {
 	return nil, nil
@@ -48,19 +55,19 @@ func (r *recordingCarrier) GetTracking(context.Context, string) (*shipping.Track
 func (r *recordingCarrier) ProviderName() string        { return "delhivery" }
 func (r *recordingCarrier) SupportedCountries() []string { return []string{"IN"} }
 
-// seedPendingShipment inserts a manifested (status='pending') delhivery
-// shipment for the order, the state the reported bug leaves live after a
-// refund. ship_from/ship_to are NOT NULL jsonb on the table.
-func seedPendingShipment(t *testing.T, db *gorm.DB, tenantID, storeID, orderID uuid.UUID, waybill string) {
+// seedShipmentWithStatus inserts a delhivery shipment for the order in the
+// given lifecycle status ('pending' = pre-pickup, 'in_transit' = picked up,
+// etc). ship_from/ship_to are NOT NULL jsonb on the table.
+func seedShipmentWithStatus(t *testing.T, db *gorm.DB, tenantID, storeID, orderID uuid.UUID, waybill, status string) {
 	t.Helper()
 	err := db.Exec(
 		`INSERT INTO shipments
 			(id, tenant_id, store_id, order_id, carrier, tracking_number, status, ship_from, ship_to, currency_code, created_at, updated_at)
-		 VALUES (gen_random_uuid(), ?, ?, ?, 'delhivery', ?, 'pending', '{}'::jsonb, '{}'::jsonb, 'INR', now(), now())`,
-		tenantID, storeID, orderID, waybill,
+		 VALUES (gen_random_uuid(), ?, ?, ?, 'delhivery', ?, ?, '{}'::jsonb, '{}'::jsonb, 'INR', now(), now())`,
+		tenantID, storeID, orderID, waybill, status,
 	).Error
 	if err != nil {
-		t.Fatalf("seedPendingShipment: %v", err)
+		t.Fatalf("seedShipmentWithStatus(%s): %v", status, err)
 	}
 }
 
@@ -89,7 +96,7 @@ func TestFullRefund_CancelsPendingShipment(t *testing.T) {
 	tUUID, sUUID, oUUID := uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID)
 	seedCapturedPaymentTxn(t, env.db, tUUID, sUUID, oUUID, "100.00")
 	seedActiveGatewayConfig(t, env.db, tUUID, sUUID)
-	seedPendingShipment(t, env.db, tUUID, sUUID, oUUID, "WBN-INT-1")
+	seedShipmentWithStatus(t, env.db, tUUID, sUUID, oUUID, "WBN-INT-1", "pending")
 
 	car := &recordingCarrier{}
 	coord := coordinatorWithCanceller(env.db, car)
@@ -135,7 +142,7 @@ func TestPartialRefund_DoesNotCancelShipment(t *testing.T) {
 	tUUID, sUUID, oUUID := uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID)
 	seedCapturedPaymentTxn(t, env.db, tUUID, sUUID, oUUID, "100.00")
 	seedActiveGatewayConfig(t, env.db, tUUID, sUUID)
-	seedPendingShipment(t, env.db, tUUID, sUUID, oUUID, "WBN-INT-2")
+	seedShipmentWithStatus(t, env.db, tUUID, sUUID, oUUID, "WBN-INT-2", "pending")
 
 	car := &recordingCarrier{}
 	coord := coordinatorWithCanceller(env.db, car)
@@ -159,5 +166,42 @@ func TestPartialRefund_DoesNotCancelShipment(t *testing.T) {
 	}
 	if status != "none" {
 		t.Fatalf("shipment cancel_status = %q on partial refund, want none", status)
+	}
+}
+
+func TestFullRefund_InTransit_TriggersRTO(t *testing.T) {
+	env := setupOrdersRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+	headers := authHeaders(userID, tenantID)
+	base := "/api/v1/admin/stores/" + storeID + "/orders"
+
+	orderID := createAndConfirmOrder(t, env, base, headers, "100.00")
+	tUUID, sUUID, oUUID := uuid.MustParse(tenantID), uuid.MustParse(storeID), uuid.MustParse(orderID)
+	seedCapturedPaymentTxn(t, env.db, tUUID, sUUID, oUUID, "100.00")
+	seedActiveGatewayConfig(t, env.db, tUUID, sUUID)
+	seedShipmentWithStatus(t, env.db, tUUID, sUUID, oUUID, "WBN-INT-RTO", "in_transit")
+
+	car := &recordingCarrier{}
+	coord := coordinatorWithCanceller(env.db, car)
+
+	if _, err := coord.Refund(context.Background(), orderrefund.RefundCommand{
+		OrderID: oUUID, Amount: nil, Reason: "test", Actor: "test", ScopeID: "req-rto",
+	}); err != nil {
+		t.Fatalf("Refund: %v", err)
+	}
+
+	if car.rtoCalls != 1 || car.cancelCalls != 0 {
+		t.Fatalf("rtoCalls=%d cancelCalls=%d, want 1/0", car.rtoCalls, car.cancelCalls)
+	}
+	var row struct{ CancelAction, CancelStatus string }
+	if err := env.db.Table("shipments").
+		Select("cancel_action", "cancel_status").
+		Where("order_id = ?", oUUID).Scan(&row).Error; err != nil {
+		t.Fatalf("reload shipment: %v", err)
+	}
+	if row.CancelAction != "rto" || row.CancelStatus != "succeeded" {
+		t.Fatalf("cancel state = %s/%s, want rto/succeeded", row.CancelAction, row.CancelStatus)
 	}
 }

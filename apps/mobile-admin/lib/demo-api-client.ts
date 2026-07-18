@@ -188,6 +188,19 @@ function resolve(path: string): unknown {
     return { notifications: DEMO_NOTIFICATIONS, page: 1, per_page: 20, total: DEMO_NOTIFICATIONS.length };
   }
 
+  if (clean === "/notification-preferences") {
+    return {
+      store_id: DEMO_STORE.id,
+      preferences: {
+        new_order: true,
+        low_stock: true,
+        return_requested: true,
+        payment_received: true,
+        review_submitted: false,
+      },
+    };
+  }
+
   // Any endpoint we have not canned. `paged` mirrors the real {data, meta}
   // envelope that every list endpoint except /notifications uses, so an
   // un-canned list renders an empty state instead of failing validation.

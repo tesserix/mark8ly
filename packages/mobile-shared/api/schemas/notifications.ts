@@ -34,3 +34,28 @@ export type Notification = z.infer<typeof notificationSchema>;
 
 export const notificationListSchema = legacyPaged("notifications", notificationSchema);
 export type NotificationListResponse = z.infer<typeof notificationListSchema>;
+
+/**
+ * Per-type notification preferences — the closed set of user-toggleable types
+ * (notifications.go `allowedPreferenceKeys`). Each key is optional on the wire:
+ * a partial PATCH overwrites the whole JSONB, so a stored row may carry a
+ * subset; any absent key falls back to enabled (the backend default). Callers
+ * must treat missing as `true` and always PATCH the full set.
+ */
+export const notificationPreferencesSchema = z.object({
+  new_order: z.boolean().optional(),
+  low_stock: z.boolean().optional(),
+  return_requested: z.boolean().optional(),
+  payment_received: z.boolean().optional(),
+  review_submitted: z.boolean().optional(),
+});
+export type NotificationPreferences = z.infer<typeof notificationPreferencesSchema>;
+
+/** GET/PATCH .../notification-preferences envelope (notifications.go). */
+export const notificationPreferencesResponseSchema = z.object({
+  store_id: z.string().optional(),
+  preferences: notificationPreferencesSchema,
+});
+export type NotificationPreferencesResponse = z.infer<
+  typeof notificationPreferencesResponseSchema
+>;

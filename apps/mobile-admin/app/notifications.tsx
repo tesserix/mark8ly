@@ -7,6 +7,8 @@ import {
   StyleSheet,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+import { SlidersHorizontal } from "lucide-react-native";
 import { useNotifications, useMarkAllRead } from "@/lib/hooks/use-notifications";
 import {
   BackHeader,
@@ -94,6 +96,7 @@ export default function NotificationsScreen() {
   const { data, isLoading, isRefetching, refetch } = useNotifications();
   const markAllRead = useMarkAllRead();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const hasUnread = data?.notifications.some((n) => !n.is_read) ?? false;
 
@@ -103,21 +106,35 @@ export default function NotificationsScreen() {
         eyebrow="NOTIFICATIONS"
         title="Inbox"
         rightSlot={
-          hasUnread ? (
+          <View style={styles.headerActions}>
+            {hasUnread ? (
+              <TouchableOpacity
+                onPress={() => markAllRead.mutate()}
+                disabled={markAllRead.isPending}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  markAllRead.isPending ? "Marking all as read" : "Mark all as read"
+                }
+              >
+                <Text preset="caption" color="accent">
+                  {markAllRead.isPending ? "Marking…" : "Mark all"}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
-              onPress={() => markAllRead.mutate()}
-              disabled={markAllRead.isPending}
+              onPress={() => router.push("/(tabs)/more/settings/notifications")}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={
-                markAllRead.isPending ? "Marking all as read" : "Mark all as read"
-              }
+              accessibilityLabel="Notification settings"
             >
-              <Text preset="caption" color="accent">
-                {markAllRead.isPending ? "Marking…" : "Mark all"}
-              </Text>
+              <SlidersHorizontal
+                size={20}
+                color={theme.colors.text}
+                strokeWidth={1.75}
+              />
             </TouchableOpacity>
-          ) : null
+          </View>
         }
       />
 
@@ -152,6 +169,11 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.md,
+  },
   list: { flexGrow: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   row: {

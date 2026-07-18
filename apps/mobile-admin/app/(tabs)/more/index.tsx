@@ -1,26 +1,24 @@
-import { View, TouchableOpacity, Linking, StyleSheet } from "react-native";
-import { useRouter } from "expo-router";
+import { View, ScrollView, TouchableOpacity, StyleSheet } from "react-native";
+import { useRouter, type Href } from "expo-router";
 import {
   Bell,
+  BellRing,
   ChevronRight,
-  ExternalLink,
   LifeBuoy,
   Megaphone,
+  Palette,
+  ScrollText,
   Settings,
   ShieldCheck,
-  Store,
+  Ticket,
   UserRound,
+  Users,
+  type LucideIcon,
 } from "lucide-react-native";
 import { useNotifications } from "../../../lib/hooks/use-notifications";
-import { useEnvironment } from "@repo/mobile-shared/config/env";
-import {
-  Card,
-  Hairline,
-  PageHeader,
-  Screen,
-  Text,
-} from "@/components/ui";
+import { Card, Hairline, PageHeader, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 const APP_VERSION = "1.0.0";
 
@@ -51,92 +49,115 @@ function Row({ icon, label, trailing, onPress, accessibilityLabel }: RowProps) {
   );
 }
 
+interface NavItem {
+  key: string;
+  icon: LucideIcon;
+  label: string;
+  a11y: string;
+  href: Href;
+  /** Only the inbox row uses this — renders the unread pill. */
+  showUnread?: boolean;
+}
+
+// Grouped sections replace the old flat list. Store settings is flattened up
+// one level (no intermediate hub); the two notification entries are named
+// apart — "Notifications" is the inbox, "Notification settings" is the
+// per-type push controls.
+const SECTIONS: ReadonlyArray<{ title: string; items: readonly NavItem[] }> = [
+  {
+    title: "Store",
+    items: [
+      { key: "branding", icon: Palette, label: "Branding", a11y: "Branding — storefront tagline, announcement, socials", href: "/(tabs)/more/settings/branding" },
+      { key: "team", icon: Users, label: "Team", a11y: "Team — members, roles and invitations", href: "/(tabs)/more/settings/team" },
+      { key: "tickets", icon: Ticket, label: "Support tickets", a11y: "Support tickets — customer support requests", href: "/(tabs)/more/settings/tickets" },
+      { key: "audit", icon: ScrollText, label: "Audit log", a11y: "Audit log — recent activity in your store", href: "/(tabs)/more/settings/audit-logs" },
+      { key: "notif-settings", icon: BellRing, label: "Notification settings", a11y: "Notification settings — which alerts your store sends", href: "/(tabs)/more/settings/notifications" },
+    ],
+  },
+  {
+    title: "General",
+    items: [
+      { key: "marketing", icon: Megaphone, label: "Marketing", a11y: "Marketing — coupons, campaigns, loyalty and more", href: "/(tabs)/more/marketing" },
+      { key: "notifications", icon: Bell, label: "Notifications", a11y: "Notifications inbox", href: "/notifications", showUnread: true },
+      { key: "account", icon: UserRound, label: "Account", a11y: "Account settings", href: "/(tabs)/more/account" },
+      { key: "security", icon: ShieldCheck, label: "Security", a11y: "Security and sign-in methods", href: "/(tabs)/more/security" },
+    ],
+  },
+  {
+    title: "Platform",
+    items: [
+      { key: "support", icon: LifeBuoy, label: "Tesserix Support", a11y: "Chat with Tesserix platform support", href: "/(tabs)/more/support" },
+    ],
+  },
+];
+
 export default function MoreScreen() {
   const router = useRouter();
-  const env = useEnvironment();
+  const dockPad = useDockClearance();
   const { data: notifications } = useNotifications();
   const unreadCount = notifications?.notifications.filter((n) => !n.is_read).length ?? 0;
-
-  const browserUrl = env.adminWebUrl;
 
   return (
     <Screen>
       <PageHeader eyebrow="MORE" title="Settings" />
-      <Card padding={0} style={styles.card}>
-        <Row
-          icon={<Megaphone size={18} color={theme.colors.text} strokeWidth={1.75} />}
-          label="Marketing"
-          accessibilityLabel="Marketing — coupons, campaigns, loyalty and more"
-          onPress={() => router.push("/(tabs)/more/marketing")}
-        />
-        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
-        <Row
-          icon={<Store size={18} color={theme.colors.text} strokeWidth={1.75} />}
-          label="Store settings"
-          accessibilityLabel="Store settings — branding, support tickets, audit log"
-          onPress={() => router.push("/(tabs)/more/settings")}
-        />
-        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
-        <Row
-          icon={<Bell size={18} color={theme.colors.text} strokeWidth={1.75} />}
-          label="Notifications"
-          accessibilityLabel={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
-          onPress={() => router.push("/notifications")}
-          trailing={
-            unreadCount > 0 ? (
-              <View style={styles.badge}>
-                <Text preset="caption" color="inverse" style={styles.badgeLabel}>
-                  {unreadCount > 99 ? "99+" : String(unreadCount)}
-                </Text>
-              </View>
-            ) : null
-          }
-        />
-        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
-        <Row
-          icon={<UserRound size={18} color={theme.colors.text} strokeWidth={1.75} />}
-          label="Account"
-          accessibilityLabel="Account settings"
-          onPress={() => router.push("/(tabs)/more/account")}
-        />
-        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
-        <Row
-          icon={<ShieldCheck size={18} color={theme.colors.text} strokeWidth={1.75} />}
-          label="Security"
-          accessibilityLabel="Security and sign-in methods"
-          onPress={() => router.push("/(tabs)/more/security")}
-        />
-        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
-        <Row
-          icon={<LifeBuoy size={18} color={theme.colors.text} strokeWidth={1.75} />}
-          label="Tesserix Support"
-          accessibilityLabel="Chat with Tesserix platform support"
-          onPress={() => router.push("/(tabs)/more/support")}
-        />
-        <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
-        <Row
-          icon={<ExternalLink size={18} color={theme.colors.text} strokeWidth={1.75} />}
-          label="Open in Browser"
-          accessibilityLabel="Open admin dashboard in browser"
-          onPress={() => Linking.openURL(browserUrl)}
-        />
-      </Card>
+      <ScrollView contentContainerStyle={[styles.body, { paddingBottom: dockPad }]}>
+        {SECTIONS.map((section) => (
+          <View key={section.title} style={styles.section}>
+            <Text preset="eyebrow" color="textTertiary" style={styles.sectionLabel}>
+              {section.title}
+            </Text>
+            <Card padding={0}>
+              {section.items.map((item, i) => {
+                const Icon = item.icon;
+                const showBadge = item.showUnread && unreadCount > 0;
+                return (
+                  <View key={item.key}>
+                    {i > 0 ? (
+                      <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
+                    ) : null}
+                    <Row
+                      icon={<Icon size={18} color={theme.colors.text} strokeWidth={1.75} />}
+                      label={item.label}
+                      accessibilityLabel={
+                        showBadge ? `${item.a11y}, ${unreadCount} unread` : item.a11y
+                      }
+                      onPress={() => router.push(item.href)}
+                      trailing={
+                        showBadge ? (
+                          <View style={styles.badge}>
+                            <Text preset="caption" color="inverse" style={styles.badgeLabel}>
+                              {unreadCount > 99 ? "99+" : String(unreadCount)}
+                            </Text>
+                          </View>
+                        ) : null
+                      }
+                    />
+                  </View>
+                );
+              })}
+            </Card>
+          </View>
+        ))}
 
-      <View style={styles.footer}>
-        <Settings size={14} color={theme.colors.textTertiary} strokeWidth={1.75} />
-        <Text preset="caption" color="textTertiary">
-          Mark8ly Admin · v{APP_VERSION}
-        </Text>
-      </View>
+        <View style={styles.footer}>
+          <Settings size={14} color={theme.colors.textTertiary} strokeWidth={1.75} />
+          <Text preset="caption" color="textTertiary">
+            Mark8ly Admin · v{APP_VERSION}
+          </Text>
+        </View>
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    marginHorizontal: theme.spacing.lg,
-    marginTop: theme.spacing.xs,
+  body: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xs,
+    gap: theme.spacing.lg,
   },
+  section: { gap: theme.spacing.sm },
+  sectionLabel: { paddingHorizontal: theme.spacing.xs },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -159,7 +180,6 @@ const styles = StyleSheet.create({
   },
   badgeLabel: { fontSize: 10, fontWeight: "700" },
   footer: {
-    marginTop: "auto",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",

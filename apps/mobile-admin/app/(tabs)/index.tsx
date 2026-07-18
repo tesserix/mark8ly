@@ -280,7 +280,7 @@ export default function DashboardScreen() {
                   secondary={`${setupDone} of ${CHECKLIST_ITEMS} steps done`}
                   trailing={`${Math.round((setupDone / CHECKLIST_ITEMS) * 100)}%`}
                   trailingTone="accent"
-                  onPress={() => router.push("/(tabs)/more/settings")}
+                  onPress={() => router.push("/(tabs)/more")}
                   accessibilityLabel={`Store setup ${setupDone} of ${CHECKLIST_ITEMS} steps complete`}
                 />
               </Section>

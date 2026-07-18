@@ -10,9 +10,13 @@
 //   toast.success("Saved");
 //   toast.error("Couldn't save", "Try again in a moment.");
 //   toast.info("Heads up");
+//   toast.warning("Heads up", "Needs manual follow-up.");
 //
 // Toasts render in the bottom-right, stack vertically, auto-dismiss at
-// 4s (errors stick longer at 6s). Each toast can be dismissed manually.
+// 4s (errors stick longer at 6s). "warning" toasts do NOT auto-dismiss —
+// they're for outcomes that need the merchant's attention (e.g. a carrier
+// cancel that failed) and shouldn't disappear before they're read. Every
+// toast, warning included, can still be dismissed manually.
 
 import {
   createContext,
@@ -26,7 +30,7 @@ import {
 } from "react";
 import { CheckCircle2, AlertTriangle, Info, X } from "lucide-react";
 
-type ToastVariant = "success" | "error" | "info";
+type ToastVariant = "success" | "error" | "info" | "warning";
 
 interface ToastItem {
   id: string;
@@ -40,6 +44,8 @@ interface ToastApi {
   success: (title: string, description?: string) => void;
   error: (title: string, description?: string) => void;
   info: (title: string, description?: string) => void;
+  /** Non-auto-dismissing — reserved for outcomes needing manual attention. */
+  warning: (title: string, description?: string) => void;
   dismiss: (id: string) => void;
 }
 
@@ -49,10 +55,12 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+// 0 means "no auto-dismiss timer" — see push() below.
 const DEFAULT_DURATIONS: Record<ToastVariant, number> = {
   success: 4000,
   info: 4000,
   error: 6000,
+  warning: 0,
 };
 
 export function Toaster({ children }: { children: ReactNode }) {
@@ -76,8 +84,11 @@ export function Toaster({ children }: { children: ReactNode }) {
           : `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const durationMs = DEFAULT_DURATIONS[variant];
       setItems((prev) => [...prev, { id, variant, title, description, durationMs }]);
-      const timer = setTimeout(() => dismiss(id), durationMs);
-      timersRef.current.set(id, timer);
+      // durationMs === 0 (warning) stays on screen until manually dismissed.
+      if (durationMs > 0) {
+        const timer = setTimeout(() => dismiss(id), durationMs);
+        timersRef.current.set(id, timer);
+      }
     },
     [dismiss],
   );
@@ -87,6 +98,7 @@ export function Toaster({ children }: { children: ReactNode }) {
       success: (title, description) => push("success", title, description),
       error: (title, description) => push("error", title, description),
       info: (title, description) => push("info", title, description),
+      warning: (title, description) => push("warning", title, description),
       dismiss,
     }),
     [push, dismiss],
@@ -119,6 +131,7 @@ export function useToast(): ToastContextValue {
         success: () => {},
         error: () => {},
         info: () => {},
+        warning: () => {},
         dismiss: () => {},
       },
     };
@@ -157,7 +170,7 @@ function ToastCard({
   const Icon =
     item.variant === "success"
       ? CheckCircle2
-      : item.variant === "error"
+      : item.variant === "error" || item.variant === "warning"
         ? AlertTriangle
         : Info;
 
@@ -166,18 +179,22 @@ function ToastCard({
       ? "border-l-[3px] border-l-[color:var(--moss-700,#3a5a40)]"
       : item.variant === "error"
         ? "border-l-[3px] border-l-[color:var(--signal,#C23B22)]"
-        : "border-l-[3px] border-l-[color:var(--ink-900,#1f1f1f)]";
+        : item.variant === "warning"
+          ? "border-l-[3px] border-l-[color:var(--warning,#B08D2B)]"
+          : "border-l-[3px] border-l-[color:var(--ink-900,#1f1f1f)]";
 
   const iconColor =
     item.variant === "success"
       ? "text-[color:var(--moss-700,#3a5a40)]"
       : item.variant === "error"
         ? "text-[color:var(--signal,#C23B22)]"
-        : "text-[color:var(--ink-900,#1f1f1f)] opacity-70";
+        : item.variant === "warning"
+          ? "text-[color:var(--warning,#B08D2B)]"
+          : "text-[color:var(--ink-900,#1f1f1f)] opacity-70";
 
   return (
     <div
-      role={item.variant === "error" ? "alert" : "status"}
+      role={item.variant === "error" || item.variant === "warning" ? "alert" : "status"}
       className={[
         "pointer-events-auto flex items-start gap-3 rounded-md bg-[color:var(--background-elevated,white)] px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.10),0_2px_6px_rgba(0,0,0,0.06)] ring-1 ring-[color:var(--ink-900,#1f1f1f)]/5",
         "animate-[toastIn_180ms_ease-out]",

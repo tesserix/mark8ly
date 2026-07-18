@@ -37,6 +37,7 @@ import {
   refundOrderAction,
   type OrderActionResult,
 } from "@/app/(admin)/orders/[id]/actions";
+import { getShipmentAction } from "@/app/(admin)/orders/[id]/shipping-actions";
 
 interface OrderActionsBarProps {
   order: AdminOrder;
@@ -92,6 +93,43 @@ export function OrderActionsBar({ order, shipmentStatus }: OrderActionsBarProps)
     [close, toast],
   );
 
+  // Cancel and full-refund both auto-cancel/return the shipment on the
+  // backend, but the server action only reports {ok, error} — it's silent
+  // on whether that shipment side-effect actually landed. A carrier
+  // cancel that comes back "failed" or "unsupported" is exactly the kind
+  // of thing a merchant must not find out about by accident later, so we
+  // refetch the shipment right after the mutation and escalate to a
+  // non-auto-dismissing warning toast instead of the plain success one
+  // when that's the case.
+  const onSuccessWithShipmentCheck = useCallback(
+    (kind: "cancel" | "refund", title: string, description?: string) => {
+      close();
+      void (async () => {
+        const fresh = await getShipmentAction(order.store_id, order.id);
+        const needsAttention =
+          fresh?.cancel_status === "failed" ||
+          fresh?.cancel_status === "unsupported";
+        if (fresh && needsAttention) {
+          toast.warning(
+            shipmentCancellationCopy.postActionShipmentIssueTitle(
+              kind,
+              fresh.cancel_status,
+            ),
+            shipmentCancellationCopy.statusWarningMessage({
+              action: fresh.cancel_action,
+              status: fresh.cancel_status,
+              reason: fresh.cancel_reason,
+              trackingNumber: fresh.tracking_number,
+            }),
+          );
+          return;
+        }
+        toast.success(title, description);
+      })();
+    },
+    [close, order.store_id, order.id, toast],
+  );
+
   const runFulfill = () => {
     setError(null);
     startTransition(async () => {
@@ -114,8 +152,9 @@ export function OrderActionsBar({ order, shipmentStatus }: OrderActionsBarProps)
       {isFullyRefunded && (
         <p className="text-sm text-foreground-secondary">
           <span className="font-medium text-foreground">Fully refunded.</span>{" "}
-          The customer has been repaid in full — cancel to close this order
-          out and return the items to stock.
+          The customer has been repaid in full, and any shipment was already
+          cancelled or returned as part of that refund — cancel the order to
+          close it out and return the items to stock.
         </p>
       )}
 
@@ -223,7 +262,11 @@ export function OrderActionsBar({ order, shipmentStatus }: OrderActionsBarProps)
           storeId={order.store_id}
           customerEmail={order.customer_email}
           shipmentStatus={shipmentStatus}
-          onDone={(msg) => (msg ? onSuccess("Order cancelled", msg) : close())}
+          onDone={(msg) =>
+            msg
+              ? onSuccessWithShipmentCheck("cancel", "Order cancelled", msg)
+              : close()
+          }
         />
       )}
       {panel === "refund" && (
@@ -235,7 +278,17 @@ export function OrderActionsBar({ order, shipmentStatus }: OrderActionsBarProps)
           currencyCode={order.currency_code}
           customerEmail={order.customer_email}
           shipmentStatus={shipmentStatus}
-          onDone={(msg) => (msg ? onSuccess("Refund issued", msg) : close())}
+          onDone={(msg, wasFullRefund) => {
+            if (!msg) {
+              close();
+              return;
+            }
+            if (wasFullRefund) {
+              onSuccessWithShipmentCheck("refund", "Refund issued", msg);
+            } else {
+              onSuccess("Refund issued", msg);
+            }
+          }}
         />
       )}
     </section>
@@ -507,7 +560,12 @@ interface RefundFormProps {
   currencyCode: string;
   customerEmail: string;
   shipmentStatus?: string | null;
-  onDone: (msg?: string) => void;
+  /**
+   * wasFullRefund lets the caller decide whether to run the post-action
+   * shipment-outcome check — only a full refund auto-cancels/returns the
+   * shipment on the backend, a partial refund never touches it.
+   */
+  onDone: (msg?: string, wasFullRefund?: boolean) => void;
 }
 
 function RefundForm({
@@ -561,7 +619,10 @@ function RefundForm({
         setStep("form");
         return;
       }
-      onDone(`${currencyCode} ${amount} refunded to ${customerEmail}.`);
+      onDone(
+        `${currencyCode} ${amount} refunded to ${customerEmail}.`,
+        paymentStatus === "refunded",
+      );
     });
   };
 

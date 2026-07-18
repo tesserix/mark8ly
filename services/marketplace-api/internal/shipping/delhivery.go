@@ -363,6 +363,21 @@ func joinRemarks(rs []string) string {
 //     merchant side (enable the route on one.delhivery.com → Pricing
 //     / Services) or use a destination pincode they already serve.
 //  5. Anything else — bubble the remarks verbatim so ops can triage.
+// WarehouseNotRegisteredError is returned when Delhivery rejects a shipment
+// because the pickup location named in the request doesn't exist on the
+// merchant's Delhivery account. The label path catches this with errors.As
+// to attempt UpsertWarehouse and retry, rather than dead-ending the merchant.
+type WarehouseNotRegisteredError struct {
+	WarehouseName string
+	Remarks       string
+}
+
+func (e *WarehouseNotRegisteredError) Error() string {
+	return fmt.Sprintf(
+		"delhivery: warehouse %q is not registered on your Delhivery account — open one.delhivery.com → Settings → Pickup Locations and add one named exactly %q (case-sensitive), then retry. (carrier: %s)",
+		e.WarehouseName, e.WarehouseName, e.Remarks)
+}
+
 func classifyDelhiveryCreateError(remarks, warehouseName, fromPin, toPin string, serviceable bool) error {
 	lower := strings.ToLower(remarks)
 	switch {
@@ -370,9 +385,10 @@ func classifyDelhiveryCreateError(remarks, warehouseName, fromPin, toPin string,
 		return fmt.Errorf(
 			"delhivery: customer phone number is required on the shipping address — ask the customer to add their phone and retry. (carrier: %s)", remarks)
 	case strings.Contains(lower, "clientwarehouse") && strings.Contains(lower, "does not exist"):
-		return fmt.Errorf(
-			"delhivery: warehouse %q is not registered on your Delhivery account — open one.delhivery.com → Settings → Pickup Locations and add one named exactly %q (case-sensitive), then retry. (carrier: %s)",
-			warehouseName, warehouseName, remarks)
+		// Typed so the label path can catch it (errors.As) and try to
+		// self-register the warehouse before giving up. The message is the
+		// fallback shown only when auto-registration ALSO fails.
+		return &WarehouseNotRegisteredError{WarehouseName: warehouseName, Remarks: remarks}
 	case strings.Contains(lower, "invalid token") || strings.Contains(lower, "unauthorized"):
 		return fmt.Errorf(
 			"delhivery: API token rejected — verify the token in Settings → Shipping matches the one on one.delhivery.com → Settings → API. (carrier: %s)",
@@ -387,6 +403,17 @@ func classifyDelhiveryCreateError(remarks, warehouseName, fromPin, toPin string,
 		}
 		return fmt.Errorf("delhivery: create shipment: %s", remarks)
 	}
+}
+
+// firstNonEmpty returns the first argument that isn't blank after trimming,
+// or "" if all are blank.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func truncate(s string, n int) string {
@@ -576,19 +603,35 @@ func (c *DelhiveryCarrier) UpsertWarehouse(ctx context.Context, wh Warehouse) er
 		return fmt.Errorf("delhivery: upsert warehouse: name is required")
 	}
 
+	// Delhivery's clientwarehouse create requires contact_person and
+	// registered_name in addition to the address (per their API docs). We
+	// don't collect either separately yet, so default both to the warehouse
+	// name — the standard pattern for single-location accounts, where the
+	// pickup name IS the registered client name. A dedicated field can
+	// override this later without changing the wire shape.
+	contactPerson := firstNonEmpty(wh.ContactPerson, wh.Name)
+	registeredName := firstNonEmpty(wh.RegisteredName, wh.Name)
+
 	payload := map[string]any{
 		"name":            wh.Name,
-		"email":           wh.Email,
 		"phone":           wh.Phone,
 		"address":         wh.Address,
 		"city":            wh.City,
 		"country":         wh.CountryCode,
 		"pin":             wh.PinCode,
+		"contact_person":  contactPerson,
+		"registered_name": registeredName,
 		"return_address":  wh.Address,
 		"return_pin":      wh.PinCode,
 		"return_city":     wh.City,
 		"return_state":    wh.Region,
 		"return_country":  wh.CountryCode,
+	}
+	// Send email only when we have one — Delhivery validates the format, so
+	// an empty string can bounce the whole request where an omitted field
+	// is accepted.
+	if e := strings.TrimSpace(wh.Email); e != "" {
+		payload["email"] = e
 	}
 
 	// Step 1: try edit/. If the warehouse is already registered under

@@ -533,6 +533,51 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		o.CurrencyCode,
 		carrier,
 	)
+	// Self-heal: Delhivery rejects a label when its pickup location isn't
+	// registered on the carrier's side. The admin save is supposed to
+	// register it, but that sync is best-effort and can silently fail
+	// (it did in prod: warehouse saved locally, never reached Delhivery).
+	// Rather than dead-end the merchant, register the warehouse on demand
+	// and retry the shipment once.
+	var whErr *shipping.WarehouseNotRegisteredError
+	if errors.As(err, &whErr) {
+		if syncer, ok := carrier.(shipping.WarehouseSyncer); ok {
+			wh := shipping.Warehouse{
+				Name:        carrierCfg.WarehouseName,
+				Phone:       carrierCfg.WarehousePhone,
+				Email:       o.CustomerEmail,
+				Address:     strings.TrimSpace(carrierCfg.WarehouseLine1 + " " + carrierCfg.WarehouseLine2),
+				City:        carrierCfg.WarehouseCity,
+				PinCode:     carrierCfg.WarehousePostal,
+				CountryCode: carrierCfg.WarehouseCountry,
+				Region:      carrierCfg.WarehouseRegion,
+			}
+			if regErr := syncer.UpsertWarehouse(ctx, wh); regErr != nil {
+				// Registration itself failed — that's the real blocker, so
+				// surface it instead of the downstream "not registered".
+				if h.logger != nil {
+					h.logger.Error("shipments: warehouse auto-register failed",
+						"order_id", orderID.String(), "provider", provider,
+						"warehouse", carrierCfg.WarehouseName, "err", regErr.Error())
+				}
+				c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+					"error":   "warehouse_register_failed",
+					"message": "Couldn't register your pickup location with " + provider + ": " + regErr.Error(),
+				})
+				return
+			}
+			if h.logger != nil {
+				h.logger.Info("shipments: warehouse auto-registered, retrying label",
+					"order_id", orderID.String(), "provider", provider,
+					"warehouse", carrierCfg.WarehouseName)
+			}
+			shipment, err = h.svc.CreateShipment(
+				ctx, orderID.String(), fromAddress, toAddress,
+				parcelItems, req.Service, o.CurrencyCode, carrier,
+			)
+		}
+	}
+
 	if err != nil {
 		// Temporary verbose surface — bubble the upstream carrier error
 		// so the admin UI shows something actionable instead of "internal

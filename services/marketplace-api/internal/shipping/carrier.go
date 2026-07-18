@@ -45,6 +45,11 @@ type Warehouse struct {
 	PinCode     string
 	CountryCode string
 	Region      string
+	// ContactPerson and RegisteredName are Delhivery clientwarehouse
+	// requirements. Optional here — carriers that don't need them ignore
+	// them, and Delhivery defaults both to Name when empty.
+	ContactPerson  string
+	RegisteredName string
 }
 
 // WarehouseSyncer is implemented by carriers that can accept an upsert

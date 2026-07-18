@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -422,19 +423,95 @@ func (c *ShipEngineCarrier) GetTracking(ctx context.Context, trackingNumber stri
 	}, nil
 }
 
-func (c *ShipEngineCarrier) CancelShipment(ctx context.Context, shipmentID string) error {
-	path := fmt.Sprintf("/v1/labels/%s/void", shipmentID)
+// CancelShipment voids the ShipEngine label for a shipment. Two ShipEngine
+// specifics this pins:
+//
+//  1. Void takes ShipEngine's label_id, NOT the tracking number we persist on
+//     the shipment row (the label_id is returned at creation but not stored).
+//     So we first resolve the label_id via the List Labels query.
+//  2. The void endpoint returns HTTP 200 even when the void is REFUSED (label
+//     already used / shipped); the real outcome is in the `approved` flag. An
+//     earlier version checked only the status code and voided by the tracking
+//     number, so every cancel hit the wrong endpoint and a refused void would
+//     have read as success (same class of bug as Delhivery's 200-on-failure).
+func (c *ShipEngineCarrier) CancelShipment(ctx context.Context, trackingNumber string) error {
+	if strings.TrimSpace(trackingNumber) == "" {
+		return fmt.Errorf("shipengine: cancel shipment: tracking number is required")
+	}
+	labelID, err := c.labelIDForTracking(ctx, trackingNumber)
+	if err != nil {
+		return err
+	}
 
+	path := fmt.Sprintf("/v1/labels/%s/void", labelID)
 	resp, err := c.doJSON(ctx, http.MethodPut, path, nil)
 	if err != nil {
 		return fmt.Errorf("shipengine: cancel shipment: %w", err)
 	}
 	defer resp.Body.Close()
-
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("shipengine: cancel shipment: unexpected status %d", resp.StatusCode)
+		return fmt.Errorf("shipengine: cancel shipment: %s", shipEngineErrorMessage(body, resp.StatusCode))
+	}
+
+	var vr struct {
+		Approved bool   `json:"approved"`
+		Message  string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &vr); err != nil {
+		return fmt.Errorf("shipengine: cancel shipment: decode void response: %w", err)
+	}
+	if !vr.Approved {
+		msg := strings.TrimSpace(vr.Message)
+		if msg == "" {
+			msg = "the carrier refused the void"
+		}
+		return fmt.Errorf("shipengine: cancel shipment: %s", msg)
 	}
 	return nil
+}
+
+// labelIDForTracking resolves ShipEngine's label_id for a tracking number via
+// the List Labels query. Needed because void takes the label_id, which we do
+// not persist on the shipment row.
+func (c *ShipEngineCarrier) labelIDForTracking(ctx context.Context, trackingNumber string) (string, error) {
+	path := "/v1/labels?tracking_number=" + url.QueryEscape(trackingNumber)
+	resp, err := c.doJSON(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return "", fmt.Errorf("shipengine: cancel shipment: resolve label: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("shipengine: cancel shipment: resolve label: unexpected status %d: %s",
+			resp.StatusCode, readBodyTrimmed(resp.Body))
+	}
+	var lr struct {
+		Labels []struct {
+			LabelID string `json:"label_id"`
+		} `json:"labels"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
+		return "", fmt.Errorf("shipengine: cancel shipment: resolve label: decode: %w", err)
+	}
+	if len(lr.Labels) == 0 || lr.Labels[0].LabelID == "" {
+		return "", fmt.Errorf("shipengine: cancel shipment: no label found for tracking number %s", trackingNumber)
+	}
+	return lr.Labels[0].LabelID, nil
+}
+
+// shipEngineErrorMessage pulls ShipEngine's short error text out of an error
+// response body ({"errors":[{"message":...}]}) for a clean merchant-facing
+// message, falling back to the status code.
+func shipEngineErrorMessage(body []byte, status int) string {
+	var e struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if json.Unmarshal(body, &e) == nil && len(e.Errors) > 0 && strings.TrimSpace(e.Errors[0].Message) != "" {
+		return e.Errors[0].Message
+	}
+	return fmt.Sprintf("unexpected status %d", status)
 }
 
 // --- helpers ---

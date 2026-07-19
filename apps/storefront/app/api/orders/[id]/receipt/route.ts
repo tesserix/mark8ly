@@ -10,12 +10,13 @@ import { NextResponse } from "next/server";
 import { decodeSessionForScope } from "@/lib/session";
 import { resolveStoreSlug } from "@/lib/slug";
 import { pdfResponseHeaders, renderOrderDocumentPDF } from "@/lib/invoices/render";
+import { documentUnauthorizedResponse } from "@/lib/invoices/authGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await ctx.params;
@@ -33,7 +34,9 @@ export async function GET(
   const sessionCookie = cookieStore.get("mp_customer_session")?.value ?? "";
   const session = decodeSessionForScope(sessionCookie, { storeSlug: slug });
   if (!session) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    // Logged-out email click → bounce through sign-in to the order page
+    // instead of dead-ending in raw JSON.
+    return documentUnauthorizedResponse(req, id);
   }
 
   const result = await renderOrderDocumentPDF({

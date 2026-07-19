@@ -11,6 +11,19 @@ export const metadata: Metadata = {
 };
 
 /**
+ * Sanitize the `next` query param into a safe same-origin redirect target.
+ * Only site-relative paths ("/account/orders/…") are allowed — anything that
+ * could point off-site (protocol-relative "//evil", backslash tricks, absolute
+ * URLs) falls back to the account home. This is the open-redirect guard for
+ * the "sign in and come back" flow used by invoice/receipt email links.
+ */
+function sanitizeNextPath(next: string | undefined): string {
+  if (!next || !next.startsWith("/")) return "/account";
+  if (next.startsWith("//") || next.includes("\\")) return "/account";
+  return next;
+}
+
+/**
  * /sign-in — customer sign-in page.
  *
  * Server component reads the store context + GIP config from env, then
@@ -18,7 +31,13 @@ export const metadata: Metadata = {
  * Identity Toolkit directly (browser → Google), gets an id_token, and
  * hands it to a server action that mints the session via auth-bff.
  */
-export default async function SignInPage() {
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
+  const safeNext = sanitizeNextPath(next);
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
@@ -56,7 +75,7 @@ export default async function SignInPage() {
         <CustomerSignInForm
           gipConfig={gipConfig}
           storeSlug={storeSlug}
-          returnUrl={`${origin}/account`}
+          returnUrl={`${origin}${safeNext}`}
         />
       </main>
     </div>

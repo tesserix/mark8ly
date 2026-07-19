@@ -25,15 +25,23 @@ function isBrowserNavigation(req: Request): boolean {
  * Response to send from an invoice/receipt route when the session is missing.
  * Navigations redirect to sign-in with a return path to the order page;
  * everything else gets a 401 JSON body.
+ *
+ * The redirect Location is RELATIVE on purpose. Behind Istio the route's
+ * `req.url` host is the pod's internal bind address (0.0.0.0:3000), so building
+ * an absolute URL from it would send the browser to 0.0.0.0. A site-relative
+ * Location is resolved by the browser against the real request URL
+ * (my-store.mark8ly.com), which is exactly what we want.
  */
 export function documentUnauthorizedResponse(
   req: Request,
   orderId: string,
 ): Response {
   if (isBrowserNavigation(req)) {
-    const target = new URL("/sign-in", req.url);
-    target.searchParams.set("next", `/account/orders/${orderId}`);
-    return NextResponse.redirect(target, 302);
+    const next = encodeURIComponent(`/account/orders/${orderId}`);
+    return new NextResponse(null, {
+      status: 302,
+      headers: { Location: `/sign-in?next=${next}` },
+    });
   }
   return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 }

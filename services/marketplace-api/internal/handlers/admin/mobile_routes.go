@@ -30,24 +30,31 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 
 	bearerAuth := auth.GIPBearerAuth(deps.TokenVerifier)
 	rateLimiter := auth.NewPerUserRateLimiter(60, 10) // 60 req/min, burst 10
+	// Fails closed for callers with no tenant bound to their identity.
+	// GIPBearerAuth intentionally lets a claimless-but-validly-signed token
+	// through (a 401 there made the mobile client sign the user out and
+	// bounce to /login), so this guard supplies the authorization half —
+	// as 404, never 401. Mounted at group level so routes without an
+	// explicit RequireTenantRelation are still protected.
+	requireTenant := auth.RequireTenantClaim()
 
 	// Platform support chat — merchant admin → Tesserix platform team.
 	// Not store-scoped: it rides the admin's tenant from the bearer token,
 	// so any authenticated merchant admin can open a platform chat.
 	if deps.PlatformSupportHandler != nil {
-		ps := router.Group("/mobile/admin/platform-support", bearerAuth, rateLimiter)
+		ps := router.Group("/mobile/admin/platform-support", bearerAuth, requireTenant, rateLimiter)
 		deps.PlatformSupportHandler.Register(ps)
 	}
 
 	// Tenant-wide routes
 	if deps.StoresHandler != nil {
-		mobileRoot := router.Group("/mobile/admin", bearerAuth, rateLimiter)
+		mobileRoot := router.Group("/mobile/admin", bearerAuth, requireTenant, rateLimiter)
 		mobileRoot.GET("/stores",
 			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
 			deps.StoresHandler.List)
 	}
 
-	storeRoute := router.Group("/mobile/admin/stores/:storeId", bearerAuth, rateLimiter, deps.StoresMiddleware)
+	storeRoute := router.Group("/mobile/admin/stores/:storeId", bearerAuth, requireTenant, rateLimiter, deps.StoresMiddleware)
 	{
 		// Dashboard
 		if deps.DashboardHandler != nil {

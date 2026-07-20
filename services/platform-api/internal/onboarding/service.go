@@ -310,6 +310,18 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		}); err != nil {
 			return err
 		}
+		// Stamp the owner's tenant_id GIP custom claim. marketplace-api's
+		// mobile auth resolves the caller's tenant from this claim alone,
+		// so without it the owner authenticates but every mobile API call
+		// is refused — which the app renders as a login bounce loop. Rides
+		// the same transaction/outbox as the FGA tuple so it is retried
+		// until it lands rather than silently locking the owner out.
+		if err := outbox.Enqueue(tx, GIPClaimOutboxKind, gipClaimPayload{
+			UserID:   req.OwnerUserID,
+			TenantID: t.ID,
+		}); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {

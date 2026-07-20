@@ -246,6 +246,9 @@ func main() {
 	// dev machines without real GIP credentials fall through to GIP's
 	// default behaviour via auth-bff.
 	var authHandler *auth.Handler
+	// Hoisted: the outbox drainer also needs this client, to stamp the
+	// owner's tenant_id GIP custom claim after onboarding completes.
+	var gipAdmin *gipadmin.AdminClient
 	if cfg.GIPProjectID != "" && cfg.GIPTenantID != "" && cfg.GIPWebAPIKey != "" {
 		admin, adminErr := gipadmin.New(context.Background(), gipadmin.Config{
 			ProjectID: cfg.GIPProjectID,
@@ -256,6 +259,7 @@ func main() {
 			log.Error("gipadmin: init", "err", adminErr)
 			log.Warn("auth: password reset disabled — gipadmin init failed")
 		} else {
+			gipAdmin = admin
 			authSvc := auth.NewService(auth.Config{
 				Admin:             admin,
 				Sender:            sender,
@@ -279,6 +283,14 @@ func main() {
 	drainer := outbox.NewDrainer(conn, log, outbox.Config{})
 	if fga != nil {
 		drainer.Register(onboarding.FGAOutboxKind, onboarding.NewFGAOutboxHandler(fga))
+	}
+	if gipAdmin != nil {
+		drainer.Register(onboarding.GIPClaimOutboxKind, onboarding.NewGIPClaimOutboxHandler(gipAdmin))
+	} else {
+		// Unregistered kinds stay pending rather than erroring, so the
+		// rows drain once GIP credentials are configured. Loud, because
+		// mobile-admin login is broken for every new tenant until then.
+		log.Warn("outbox: gip tenant-claim handler NOT registered — mobile admin login will fail for new tenants")
 	}
 
 	// ─── HTTP routes ───────────────────────────────────────────────────

@@ -19,9 +19,12 @@ import { z } from "zod";
 import { Input } from "@tesserix/web";
 import { Field } from "@repo/ui/field";
 import { GoogleMark } from "@repo/ui/google-mark";
+import { AppleMark } from "@repo/ui/apple-mark";
 
-import { signInWithPassword, signInWithGoogle, GIPError } from "@/lib/gip/signup";
+import { signInWithPassword, signInWithGoogle, signInWithApple, GIPError } from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
+import { getAppleCredential } from "@/lib/gip/apple-js";
+import { appleSignInEnabled } from "@/lib/config";
 import { linkGoogleToInternalPassword } from "@/lib/gip/link";
 import { signIn, confirmMFALogin } from "@/app/login/actions";
 import { prepareCrossDomainNavigation } from "@/lib/auth/cross-domain-handoff";
@@ -78,6 +81,7 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [googlePending, setGooglePending] = useState(false);
+  const [applePending, setApplePending] = useState(false);
   const [needConfirmation, setNeedConfirmation] = useState<{
     email: string;
     pendingIdpCredential: string;
@@ -106,7 +110,7 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
     defaultValues: { email: "", password: "" },
   });
 
-  const disabled = pending || googlePending;
+  const disabled = pending || googlePending || applePending;
 
   function onValid(values: FormValues) {
     setSubmitError(null);
@@ -169,6 +173,35 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
       return;
     }
     await goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
+  }
+
+  async function handleApple() {
+    setSubmitError(null);
+    setApplePending(true);
+    try {
+      const { idToken: appleToken, nonce } = await getAppleCredential();
+      const result = await signInWithApple(appleToken, nonce);
+      if (result.kind === "needConfirmation") {
+        // Same linking prompt as Google: GIP already has this email under
+        // another provider and wants proof before joining them.
+        setNeedConfirmation({
+          email: result.email,
+          pendingIdpCredential: result.pendingIdpCredential,
+        });
+        return;
+      }
+      await completeSignIn(result.idToken, result.uid);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      // Closing Apple's popup is a normal user action, not an error worth
+      // shouting about.
+      if (msg.includes("popup_closed") || msg.includes("user_cancelled")) {
+        return;
+      }
+      setSubmitError(msg ? `Apple sign-in failed: ${msg}` : "Apple sign-in failed");
+    } finally {
+      setApplePending(false);
+    }
   }
 
   async function handleGoogle() {
@@ -388,6 +421,21 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
           <GoogleMark />
           {googlePending ? "Opening Google…" : "Continue with Google"}
         </button>
+
+        {/* Rendered only when a Services ID is configured. Apple treats web
+            as a separate client from the iOS app, so until that exists the
+            button would fail at Apple rather than in our code. */}
+        {appleSignInEnabled && (
+          <button
+            type="button"
+            onClick={handleApple}
+            disabled={disabled}
+            className="mt-3 inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <AppleMark />
+            {applePending ? "Opening Apple…" : "Continue with Apple"}
+          </button>
+        )}
 
         <p className="text-center text-xs text-foreground-tertiary">
           Don&apos;t have a store yet?{" "}

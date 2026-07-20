@@ -278,3 +278,90 @@ export async function signUp(
     expiresIn: parseInt(signupBody.expiresIn, 10),
   };
 }
+
+/**
+ * Exchanges an Apple identity token for a GIP id_token in our tenant pool.
+ *
+ * Same shape as signInWithGoogle — including the needConfirmation branch,
+ * which fires when GIP has an existing account with this email under a
+ * different provider and the caller must re-authenticate to link.
+ *
+ * The nonce must be the one getAppleCredential() bound into Apple's token;
+ * GIP verifies the pair, which is what stops the token being replayed.
+ *
+ * Caveat worth knowing: if the user picks Apple's "Hide My Email", Apple
+ * reports a @privaterelay.appleid.com address rather than their real one.
+ * GIP therefore sees a different email, no conflict is raised, and a
+ * SEPARATE account is created. Email-based linking cannot fix that — the
+ * user must link Apple from account settings while already signed in.
+ */
+export async function signInWithApple(
+  appleIdToken: string,
+  nonce: string,
+): Promise<GoogleSignInResult> {
+  if (!publicConfig.gipApiKey) {
+    throw new GIPError("config_missing", "GIP Web API key is not configured");
+  }
+  if (!publicConfig.gipTenantId) {
+    throw new GIPError("config_missing", "GIP tenant id is not configured");
+  }
+
+  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${publicConfig.gipApiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tenantId: publicConfig.gipTenantId,
+      requestUri:
+        typeof window !== "undefined" ? window.location.origin : "https://admin.mark8ly.com",
+      postBody: `id_token=${encodeURIComponent(appleIdToken)}&providerId=apple.com&nonce=${encodeURIComponent(nonce)}`,
+      returnSecureToken: true,
+      returnIdpCredential: true,
+    }),
+  });
+
+  if (!res.ok) {
+    let body: { error?: { message?: string } } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new GIPError(
+      "apple_signin_failed",
+      body.error?.message ?? `HTTP ${res.status}`,
+    );
+  }
+
+  const data = (await res.json()) as {
+    localId?: string;
+    idToken?: string;
+    refreshToken?: string;
+    expiresIn?: string;
+    needConfirmation?: boolean;
+    email?: string;
+    oauthIdToken?: string;
+    verifiedProvider?: string[];
+  };
+
+  if (data.needConfirmation && data.email && data.oauthIdToken) {
+    return {
+      kind: "needConfirmation",
+      email: data.email,
+      pendingIdpCredential: data.oauthIdToken,
+      verifiedProvider: data.verifiedProvider ?? [],
+    };
+  }
+
+  if (!data.localId || !data.idToken || !data.refreshToken || !data.expiresIn) {
+    throw new GIPError("malformed_response", "GIP response missing required fields");
+  }
+
+  return {
+    kind: "ok",
+    uid: data.localId,
+    idToken: data.idToken,
+    refreshToken: data.refreshToken,
+    expiresIn: parseInt(data.expiresIn, 10),
+  };
+}

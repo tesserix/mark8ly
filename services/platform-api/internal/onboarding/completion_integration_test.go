@@ -305,8 +305,21 @@ func TestIntegration_Complete_DuplicateSlugRollsBackEverything(t *testing.T) {
 // ─── fakeVendorClient ────────────────────────────────────────────────────────
 
 type fakeVendorClient struct {
-	calls []struct{ tenantID, name, slug string }
-	err   error
+	calls      []struct{ tenantID, name, slug string }
+	storeCalls []marketplaceapi.Store
+	err        error
+}
+
+// EnsureSelfStore mirrors the platform-api store row into marketplace-api.
+// Added to the VendorEnsurer interface in Phase Q; recorded here so tests
+// can assert on it.
+func (f *fakeVendorClient) EnsureSelfStore(_ context.Context, s marketplaceapi.Store) (*marketplaceapi.Store, error) {
+	f.storeCalls = append(f.storeCalls, s)
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := s
+	return &out, nil
 }
 
 func (f *fakeVendorClient) EnsureSelfVendor(_ context.Context, tenantID, name, slug string) (*marketplaceapi.Vendor, error) {

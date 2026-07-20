@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -52,6 +53,18 @@ func (f *fakeRepo) GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, e
 		}
 	}
 	return nil, apperrors.NotFound("tenant_not_found", "no")
+}
+
+func (f *fakeRepo) OwnerEmailExists(ctx context.Context, email string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	for _, t := range f.byID {
+		if strings.ToLower(strings.TrimSpace(t.OwnerEmail)) == normalized {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (f *fakeRepo) ListByIDs(ctx context.Context, ids []string) ([]Tenant, error) {

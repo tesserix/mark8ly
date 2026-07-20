@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
@@ -23,6 +24,15 @@ type Repository interface {
 	// GIP identity back to a Mark8ly tenant before calling auth-bff
 	// /auth/auto-login. v1 assumption: a UID owns at most one tenant.
 	GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, error)
+	// OwnerEmailExists reports whether any tenant is already owned by the
+	// given email. Comparison is case-insensitive to match the
+	// tenants_owner_email_unique index (migration 0014), so
+	// Founder@example.com and founder@example.com collide.
+	//
+	// An admin email is globally unique across tenants: one email owns at
+	// most one tenant. Callers use this to reject a duplicate at the START
+	// of onboarding rather than letting it fail at the final insert.
+	OwnerEmailExists(ctx context.Context, email string) (bool, error)
 	UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error)
 	// ListByIDs returns tenant rows for each id in the given slice.
 	// Used by Phase P multi-tenant membership lookups.
@@ -71,6 +81,21 @@ func (r *gormRepository) GetByOwnerUserID(ctx context.Context, uid string) (*Ten
 		return nil, fmt.Errorf("tenant: get by owner uid %q: %w", uid, err)
 	}
 	return &t, nil
+}
+
+func (r *gormRepository) OwnerEmailExists(ctx context.Context, email string) (bool, error) {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	if normalized == "" {
+		return false, nil
+	}
+	var count int64
+	err := r.db.WithContext(ctx).Model(&Tenant{}).
+		Where("lower(owner_email) = ?", normalized).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("tenant: owner email exists %q: %w", normalized, err)
+	}
+	return count > 0, nil
 }
 
 func (r *gormRepository) ListByIDs(ctx context.Context, ids []string) ([]Tenant, error) {

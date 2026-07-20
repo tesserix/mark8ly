@@ -114,6 +114,15 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Session, erro
 		return nil, apperrors.BadRequest("invalid_email", "valid email is required")
 	}
 
+	// An admin email is globally unique across tenants. Reject here, at
+	// step 1 of the wizard, rather than letting the merchant fill in the
+	// whole form and hit the failure at the final insert (or worse, at
+	// GIP's EMAIL_EXISTS on the set-password screen, which reads as an
+	// auth error rather than "pick a different email").
+	if err := s.ensureOwnerEmailAvailable(ctx, email); err != nil {
+		return nil, err
+	}
+
 	sess := &Session{
 		Email:  email,
 		Draft:  json.RawMessage(`{}`),
@@ -123,6 +132,35 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Session, erro
 		return nil, err
 	}
 	return sess, nil
+}
+
+// ensureOwnerEmailAvailable rejects an email that already owns a tenant.
+//
+// This is the authoritative cross-tenant admin-email guard. It runs on
+// BOTH Create (fail fast at step 1) and Complete (non-bypassable — a
+// client calling POST /onboarding/sessions/:id/complete directly still
+// hits it). The frontend check in apps/onboarding/app/onboarding/
+// actions.ts is a UX affordance only; this is the enforcement point.
+//
+// The DB-level backstop is the tenants_owner_email_unique index
+// (migration 0014), which closes the TOCTOU window between this check
+// and the insert — two concurrent onboardings for the same email make
+// one of them fail at CreateInTx with a 23505 rather than both landing.
+func (s *Service) ensureOwnerEmailAvailable(ctx context.Context, email string) error {
+	if s.tenantRepo == nil {
+		return nil
+	}
+	exists, err := s.tenantRepo.OwnerEmailExists(ctx, email)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return apperrors.Conflict(
+			"owner_email_already_in_use",
+			"This email is already an admin of another store. Please use a different email address — an admin email must be unique across stores.",
+		)
+	}
+	return nil
 }
 
 // Get returns a session by ID.
@@ -216,6 +254,13 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		return nil, apperrors.BadRequest("email_not_verified", "email must be verified before completion")
 	}
 
+	// Re-check at completion. Create already rejected a duplicate, but a
+	// tenant may have claimed this email while the wizard was open, and
+	// a direct API call skips Create's check entirely.
+	if err := s.ensureOwnerEmailAvailable(ctx, req.OwnerEmail); err != nil {
+		return nil, err
+	}
+
 	// Phase Q: onboarding creates BOTH a tenant (the company) and a
 	// default store (the first storefront) in the same transaction.
 	// The merchant's "business name" becomes both the tenant.name
@@ -226,8 +271,10 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 	t := &tenant.Tenant{
 		Name:        req.BusinessName,
 		OwnerUserID: req.OwnerUserID,
-		OwnerEmail:  req.OwnerEmail,
-		Status:      tenant.StatusActive,
+		// Store normalized so the row matches what the case-insensitive
+		// uniqueness check and the lower(owner_email) index compare on.
+		OwnerEmail: strings.ToLower(strings.TrimSpace(req.OwnerEmail)),
+		Status:     tenant.StatusActive,
 	}
 	st := &store.Store{
 		Slug:            req.Slug,

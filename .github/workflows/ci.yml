@@ -239,6 +239,7 @@ jobs:
             NEXT_PUBLIC_MARKETING_URL=${{ secrets.NEXT_PUBLIC_MARKETING_URL }}
             NEXT_PUBLIC_ADMIN_URL_TEMPLATE=${{ secrets.NEXT_PUBLIC_ADMIN_URL_TEMPLATE }}
             NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=${{ secrets.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN }}
+            NEXT_PUBLIC_APPLE_SERVICES_ID=com.mark8ly.admin.web
 
       - name: Trivy scan (fail on CRITICAL + HIGH)
         # Gate tightened from CRITICAL-only to CRITICAL,HIGH so a new

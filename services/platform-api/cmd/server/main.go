@@ -225,20 +225,6 @@ func main() {
 	// secret disables it (dev convenience).
 	auditClient := audit.New(cfg.MarketplaceAPIURL, cfg.AuditIngestSecret, log)
 
-	invitationSvc := invitation.NewService(invitation.Config{
-		Repo:       invitation.NewRepository(conn),
-		TenantRepo: tenantRepo,
-		StoreRepo:  storeRepo,
-		FGA:        fga,
-		Sender:     sender,
-		Loader:     templateLoader,
-		EmailFrom:  cfg.EmailFrom,
-		AcceptURL:  acceptURL,
-		Recorder:   invitationRec,
-		Audit:      auditClient,
-	})
-	invitationHandler := invitation.NewHandler(invitationSvc)
-
 	// ─── Password reset (Phase: GIP-aware branded flow) ────────────────
 	// Wires the /internal/auth/password-reset/* endpoints used by the
 	// admin BFF. Requires GIP_PROJECT_ID, GIP_TENANT_ID, and
@@ -246,8 +232,9 @@ func main() {
 	// dev machines without real GIP credentials fall through to GIP's
 	// default behaviour via auth-bff.
 	var authHandler *auth.Handler
-	// Hoisted: the outbox drainer also needs this client, to stamp the
-	// owner's tenant_id GIP custom claim after onboarding completes.
+	// Hoisted: the outbox drainer needs this client to stamp the owner's
+	// tenant_id GIP custom claim after onboarding completes, and the
+	// invitation service needs it to stamp the same claim on accept.
 	var gipAdmin *gipadmin.AdminClient
 	if cfg.GIPProjectID != "" && cfg.GIPTenantID != "" && cfg.GIPWebAPIKey != "" {
 		admin, adminErr := gipadmin.New(context.Background(), gipadmin.Config{
@@ -278,6 +265,28 @@ func main() {
 	} else {
 		log.Warn("auth: password reset disabled — missing GIP_PROJECT_ID/GIP_TENANT_ID/GIP_WEB_API_KEY")
 	}
+
+	// Assign through a typed interface variable only when non-nil, so the
+	// invitation service's nil check isn't defeated by a typed-nil pointer.
+	var inviteClaims invitation.TenantClaimSetter
+	if gipAdmin != nil {
+		inviteClaims = gipAdmin
+	}
+
+	invitationSvc := invitation.NewService(invitation.Config{
+		Repo:       invitation.NewRepository(conn),
+		TenantRepo: tenantRepo,
+		StoreRepo:  storeRepo,
+		FGA:        fga,
+		Sender:     sender,
+		Loader:     templateLoader,
+		EmailFrom:  cfg.EmailFrom,
+		AcceptURL:  acceptURL,
+		Recorder:   invitationRec,
+		Audit:      auditClient,
+		Claims:     inviteClaims,
+	})
+	invitationHandler := invitation.NewHandler(invitationSvc)
 
 	// ─── Outbox drainer ────────────────────────────────────────────────
 	drainer := outbox.NewDrainer(conn, log, outbox.Config{})

@@ -31,11 +31,11 @@ import (
 // auth-bff side does check-with-retry to close the race.
 //
 // This test verifies:
-//   1. After Complete returns, the tenant row exists
-//   2. After Complete returns, the session is marked completed
-//   3. After Complete returns, the outbox row exists with status='pending'
-//   4. After the drainer ticks, the outbox row is 'completed'
-//   5. After the drainer ticks, the FakeClient has the membership tuple
+//  1. After Complete returns, the tenant row exists
+//  2. After Complete returns, the session is marked completed
+//  3. After Complete returns, the outbox row exists with status='pending'
+//  4. After the drainer ticks, the outbox row is 'completed'
+//  5. After the drainer ticks, the FakeClient has the membership tuple
 func TestIntegration_Complete_TenantAndOutboxCommitAtomically(t *testing.T) {
 	db := testdb.NewDB(t,
 		"outbox_events",
@@ -49,11 +49,11 @@ func TestIntegration_Complete_TenantAndOutboxCommitAtomically(t *testing.T) {
 	tenantRepo := tenant.NewRepository(db)
 	onboardingRepo := NewRepository(db)
 	svc := NewService(Config{
-		DB:         db,
-		Repo:       onboardingRepo,
-		TenantRepo: tenantRepo,
-		Sender:     notification.NoopSender{},
-		EmailFrom:  "noreply@test.local",
+		DB:           db,
+		Repo:         onboardingRepo,
+		TenantRepo:   tenantRepo,
+		Sender:       notification.NoopSender{},
+		EmailFrom:    "noreply@test.local",
 		SupportEmail: "help@test.local",
 	})
 
@@ -132,10 +132,28 @@ func TestIntegration_Complete_TenantAndOutboxCommitAtomically(t *testing.T) {
 		t.Errorf("payload.TenantID = %q, want %q", payload.TenantID, res.TenantID)
 	}
 
+	// ─── Step 3b: GIP claim outbox row exists, pending ─────────────────
+	var claimEv outbox.Event
+	if err := db.Where("kind = ?", GIPClaimOutboxKind).First(&claimEv).Error; err != nil {
+		t.Fatalf("gip claim outbox row missing: %v", err)
+	}
+	if claimEv.Status != outbox.StatusPending {
+		t.Errorf("gip claim outbox row Status = %q, want pending", claimEv.Status)
+	}
+	var claimPayload gipClaimPayload
+	if err := json.Unmarshal(claimEv.Payload, &claimPayload); err != nil {
+		t.Fatalf("unmarshal gip claim payload: %v", err)
+	}
+	if claimPayload.UserID != "gip-uid-completion" || claimPayload.TenantID != res.TenantID {
+		t.Errorf("gip claim payload = %+v, want uid gip-uid-completion tenant %s", claimPayload, res.TenantID)
+	}
+
 	// ─── Step 4 + 5: drainer ticks, outbox completes, FGA has tuple ────
 	fake := authz.NewFake()
+	claimSetter := &recordingClaimSetter{}
 	d := outbox.NewDrainer(db, slog.New(slog.NewTextHandler(io.Discard, nil)), outbox.Config{})
 	d.Register(FGAOutboxKind, NewFGAOutboxHandler(fake))
+	d.Register(GIPClaimOutboxKind, NewGIPClaimOutboxHandler(claimSetter))
 
 	if err := d.Tick(ctx); err != nil {
 		t.Fatalf("drainer tick: %v", err)
@@ -153,6 +171,29 @@ func TestIntegration_Complete_TenantAndOutboxCommitAtomically(t *testing.T) {
 	if !fake.HasOwnership("gip-uid-completion", res.TenantID) {
 		t.Error("FGA ownership tuple was NOT written after drainer tick")
 	}
+
+	// ─── Step 6: claim event drained and the claim setter invoked ──────
+	if err := db.Where("kind = ?", GIPClaimOutboxKind).First(&claimEv).Error; err != nil {
+		t.Fatal(err)
+	}
+	if claimEv.Status != outbox.StatusCompleted {
+		t.Errorf("after drain: gip claim outbox Status = %q, want completed", claimEv.Status)
+	}
+	if len(claimSetter.calls) != 1 ||
+		claimSetter.calls[0].uid != "gip-uid-completion" ||
+		claimSetter.calls[0].tenantID != res.TenantID {
+		t.Errorf("claim setter calls = %+v, want one call for gip-uid-completion/%s", claimSetter.calls, res.TenantID)
+	}
+}
+
+// recordingClaimSetter records EnsureTenantClaim invocations.
+type recordingClaimSetter struct {
+	calls []struct{ uid, tenantID string }
+}
+
+func (r *recordingClaimSetter) EnsureTenantClaim(_ context.Context, uid, tenantID string) error {
+	r.calls = append(r.calls, struct{ uid, tenantID string }{uid, tenantID})
+	return nil
 }
 
 // TestIntegration_Complete_RejectsUnverifiedSession ensures completion

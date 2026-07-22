@@ -15,27 +15,75 @@ auto-merge, across the three surfaces:
 
 ---
 
-## 0. Test-data setup (do this first)
+## 0. Test accounts & the one-account walkthrough
 
-You deleted all merchants except two, so create clean accounts to test with.
+### Which email to use
 
-- [ ] **PW-STORE** — onboard a fresh merchant at `mark8ly.com` using **email +
-      password**. Note the email, password, and the store slug. This is your
-      password-only account **with a store**.
-- [ ] **GOOGLE-STORE** — onboard a second merchant using **Continue with
-      Google** (a Google account you control). Password-less, has a store.
-- [ ] **APPLE-ID** — an Apple ID you can sign in with on both a browser and an
-      iPhone. Have **one** that shares its email with PW-STORE (for linking)
-      and be ready to also try **Hide My Email**.
-- [ ] Confirm each onboarded account lands on its admin dashboard at least once
-      (proves the `tenant_id` claim was written and the store resolves).
+**Primary account: `mahesh.sangawar@gmail.com` — use it for password, Google,
+AND Apple.** This single email is the best test account because it exercises
+the whole auto-merge feature on one identity you fully control:
 
-Existing live accounts you can also use (both have stores + correct claims):
-`demo@mark8ly.com` (password → The Bondi Store), `parimiti03@gmail.com`
-(Google → The Facade Factory).
+| Provider | Why this email works |
+|---|---|
+| **Password** | You own the Gmail inbox → you receive the onboarding OTP and set the password |
+| **Google** | It *is* your Google account |
+| **Apple** | It is your Apple ID email (choose **Share My Email**, not Hide, so Apple returns this same address) |
+
+> As of this cleanup it is a **clean slate** — no GIP account, no store — so
+> you onboard it fresh in step ① below. One email → all three providers → same
+> store is exactly the "flexibility" behaviour we want to prove.
+
+Existing live accounts (already have stores + correct claims), usable if you
+know their credentials: `demo@mark8ly.com` (password → The Bondi Store),
+`parimiti03@gmail.com` (Google → The Facade Factory).
+
+### The single-account merge walkthrough (run this in order)
+
+This one sequence covers the happy path for all three providers **and** the
+auto-merge. Do it on web admin first, then repeat the sign-ins on mobile.
+
+- [ ] **① Create it with a PASSWORD.** Go to `mark8ly.com`, onboard with
+      `mahesh.sangawar@gmail.com` → verify the OTP from your Gmail → set a
+      password (≥8 chars, **write it down**) → note the store slug. This
+      creates the GIP account (password provider) + store + `tenant_id` claim.
+- [ ] **② Password sign-in.** Go to `{slug}-admin.mark8ly.com` → sign in with
+      the email + password → dashboard loads. *(Password provider ✓)*
+- [ ] **③ Add Google (merge).** On the login page click **Continue with
+      Google** → pick `mahesh.sangawar@gmail.com`. Same email → **link prompt**
+      → re-enter your **password** → Google is linked. *(Now password + Google
+      both sign you into the same store.)*
+- [ ] **④ Add Apple (merge) — SHARE My Email.** Click **Sign in with Apple** →
+      authenticate → **choose "Share My Email"** (critical: Hide My Email would
+      fork a separate account — that's test C5, not this one). Same email →
+      **link prompt** → re-auth with password or Google → Apple is linked.
+- [ ] **⑤ Prove the flexibility.** Sign out and sign back in three times — once
+      with **password**, once with **Google**, once with **Apple** — each must
+      land on the **same** store. *(This is the whole point of auto-merge.)*
+
+After ⑤ you've covered A1, B1, C3, E1, E2, E3, and E7 on one account. The
+sections below add the negative paths, edge cases, and mobile.
+
+**Do you need a second email?** Not required. The Hide My Email test (C5) even
+produces a no-store account for you (the relay address), so you can test the
+"No store yet" empty state without a second real inbox. If you *have* a spare
+Google account, it's handy for the "fresh provider, no store" cases (B3, C1).
 
 **Expected baseline for every "happy" sign-in:** you land on the admin
 dashboard for your store, no error toast, no redirect loop.
+
+### Label legend (used in sections A–G below)
+
+The detailed sections use short labels — here's what they map to for you:
+
+| Label | Your concrete account |
+|---|---|
+| **PW-STORE** | `mahesh.sangawar@gmail.com` after step ① (email + your password) |
+| **GOOGLE-STORE** | `mahesh.sangawar@gmail.com` via Google (after step ③ links it), or a spare Google account |
+| **APPLE-ID** | your Apple ID = `mahesh.sangawar@gmail.com`; **Share My Email** for merge tests, **Hide My Email** for C5 |
+
+Since all three are the same email here, the "linking" sections (E) are the
+main event; the per-provider happy paths (A1/B1/C1) are already covered by the
+walkthrough above.
 
 ---
 

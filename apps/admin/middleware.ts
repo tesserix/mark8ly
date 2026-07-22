@@ -124,6 +124,41 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  // Social sign-in (Google GSI / Apple JS) only works on the canonical
+  // login origin — it's the only host registered as an Authorized
+  // JavaScript origin with Google and a Website URL with Apple. A
+  // /login render on a tenant host shows social buttons that ALWAYS
+  // fail (Google `origin_mismatch`, Apple `invalid_client`), so bounce
+  // it to the canonical host instead. This runs AFTER the
+  // slug-existence check above so unonboarded slugs still 404, and
+  // BEFORE the PUBLIC_PREFIXES short-circuit that would otherwise
+  // render the form in place. A returnUrl already carried on the
+  // request is preserved when valid; otherwise the tenant's /dashboard
+  // is the post-auth landing (canonical /login 404s without a valid
+  // returnUrl, so we must always send one).
+  if (
+    (hostKind.kind === "slug" || hostKind.kind === "custom_admin") &&
+    (pathname === "/login" || pathname === "/login/")
+  ) {
+    const canonical =
+      deriveCanonicalLoginOrigin(req) ?? (CANONICAL_LOGIN_ORIGIN || null);
+    if (canonical) {
+      // Same RSC-prefetch guard as redirectToLogin — a cross-origin 3xx
+      // on a prefetch poisons the RSC cache; the real click still gets
+      // the redirect.
+      if (isRscPrefetch(req)) {
+        return new NextResponse(null, { status: 401 });
+      }
+      const carried = req.nextUrl.searchParams.get("returnUrl");
+      const returnUrl = isValidSlugReturnUrl(carried)
+        ? (carried as string)
+        : `${externalOrigin(req)}/dashboard`;
+      const loginUrl = new URL("/login", canonical);
+      loginUrl.searchParams.set("returnUrl", returnUrl);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
   // Public pricing page — geo-localize currency from CF-IPCountry before RSC
   // render. No auth or tenant extraction needed; the page is unauthenticated.
   if (pathname === "/pricing" || pathname.startsWith("/pricing/")) {

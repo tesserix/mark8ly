@@ -24,5 +24,14 @@ export const publicConfig = {
   appleServicesId: process.env.NEXT_PUBLIC_APPLE_SERVICES_ID ?? "",
 } as const;
 
-/** True when web Sign in with Apple is fully configured. */
-export const appleSignInEnabled = Boolean(publicConfig.appleServicesId);
+/**
+ * Web Sign in with Apple is deliberately DISABLED (2026-07-22). The full
+ * chain (Services ID com.mark8ly.admin.web, domains + return URLs, GIP
+ * apple.com provider with code-flow key) is configured and the consent
+ * screen renders, but Apple's popup flow dies at the final verification
+ * step ("Failed to verify your identity") on the canonical login origin.
+ * Mobile Apple sign-in is unaffected and stays live. To re-attempt web,
+ * restore `Boolean(publicConfig.appleServicesId)` — all plumbing
+ * (apple-js.ts, SignInForm handler) is intact behind this flag.
+ */
+export const appleSignInEnabled = false;

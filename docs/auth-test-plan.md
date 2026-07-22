@@ -220,6 +220,17 @@ Install the current TestFlight build. Apple/Google here use **native** SDKs.
       while signed in on the *real* account, go to **Settings → Security →
       Link Apple** and confirm it binds the Apple identity (relay and all) to
       the existing account. After that, Apple sign-in reaches the store.
+
+  > **Can we just disable "Hide My Email"? No.** Because we request the Apple
+  > **email scope** (needed to match Apple to an existing Google/password
+  > account), Apple *always* shows the Share/Hide choice — there is no config
+  > to force Share, and App Store Guideline 4.8 requires honoring the user's
+  > choice. Apps that don't show the option request Apple sign-in *without*
+  > email scope (auth-only, no email) — not viable for our email-keyed merge.
+  > So "choose Share My Email" in the tests above is a **test convenience** to
+  > exercise the merge path, not something we can enforce in production. The
+  > durable answer for Hide-My-Email users is the link-while-signed-in flow,
+  > or (future) supporting multiple identities per owner.
 - [ ] **G2 Apple-first has no store (web).** An Apple ID that never onboarded
       can't create a store from the login page (onboarding lacks Apple) — it
       dead-ends at "No store yet." Confirm this is graceful, not a crash.

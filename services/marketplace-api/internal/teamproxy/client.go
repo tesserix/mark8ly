@@ -168,6 +168,14 @@ func (c *Client) RevokeInvitation(ctx context.Context, tenantID, invID, actorUID
 	return c.do(ctx, http.MethodDelete, "/internal/tenants/"+tenantID+"/invitations/"+invID, body, nil)
 }
 
+// DeleteTenantAccount asks platform-api to delete the actor's account. For an
+// owner this tears down the tenant; for staff it removes only their membership.
+// platform-api is authoritative for the owner-vs-staff decision.
+func (c *Client) DeleteTenantAccount(ctx context.Context, tenantID, actorUID string) error {
+	body := map[string]string{"uid": actorUID}
+	return c.do(ctx, http.MethodDelete, "/internal/tenants/"+tenantID+"/account", body, nil)
+}
+
 // UpdateMemberRole changes a member's tenant role. Target identified by email.
 func (c *Client) UpdateMemberRole(ctx context.Context, tenantID, email, newRole, actorUID string) (*RoleResult, error) {
 	body := map[string]string{"email": email, "new_role": newRole, "uid": actorUID}

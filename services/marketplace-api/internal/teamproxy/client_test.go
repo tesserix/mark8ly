@@ -115,6 +115,42 @@ func TestRevokeInvitation(t *testing.T) {
 	}
 }
 
+func TestDeleteTenantAccount_SendsAuthAndBody(t *testing.T) {
+	var cap captured
+	srv := newTestServer(t, http.StatusNoContent, "", &cap)
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "secret", srv.Client())
+	if err := c.DeleteTenantAccount(context.Background(), "t1", "u1"); err != nil {
+		t.Fatalf("DeleteTenantAccount: %v", err)
+	}
+	if cap.method != http.MethodDelete || cap.path != "/internal/tenants/t1/account" {
+		t.Fatalf("wrong request: %s %s", cap.method, cap.path)
+	}
+	if cap.auth != "secret" {
+		t.Fatalf("missing internal auth header, got %q", cap.auth)
+	}
+	if cap.body["uid"] != "u1" {
+		t.Fatalf("missing uid: %+v", cap.body)
+	}
+}
+
+func TestDeleteTenantAccount_Forbidden(t *testing.T) {
+	var cap captured
+	srv := newTestServer(t, 403, `{"error":"forbidden","message":"only the owner can delete the tenant"}`, &cap)
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "secret", srv.Client())
+	err := c.DeleteTenantAccount(context.Background(), "t1", "u1")
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+	if apiErr.Status != 403 || apiErr.Code != "forbidden" {
+		t.Fatalf("wrong APIError: %+v", apiErr)
+	}
+}
+
 func TestAPIErrorPropagates(t *testing.T) {
 	var cap captured
 	srv := newTestServer(t, 403, `{"error":"forbidden","message":"an admin cannot change another admin"}`, &cap)

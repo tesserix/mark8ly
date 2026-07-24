@@ -123,6 +123,11 @@ type Client interface {
 	// flow. The returned ids are unenriched — the caller joins
 	// against the tenants table via tenant.ListByIDs.
 	ListMemberTenants(ctx context.Context, userID string) ([]string, error)
+
+	// DeleteTuple removes user:<userID> <relation> tenant:<tenantID>. Idempotent.
+	DeleteTuple(ctx context.Context, userID, relation, tenantID string) error
+	// DeleteStoreParent removes tenant:<tenantID> parent store:<storeID>. Idempotent.
+	DeleteStoreParent(ctx context.Context, storeID, tenantID string) error
 }
 
 // fgaClient is the OpenFGA-backed implementation of Client.
@@ -342,6 +347,47 @@ func (c *fgaClient) write(ctx context.Context, userID, relation, tenantID string
 			return nil
 		}
 		return fmt.Errorf("authz: write %s tuple: %w", relation, err)
+	}
+	return nil
+}
+
+// DeleteTuple removes the tuple `user:<userID> <relation> tenant:<tenantID>`.
+// Used by account teardown to unwind ownership/role tuples. Idempotent:
+// deleting an already-absent tuple returns nil rather than an error.
+func (c *fgaClient) DeleteTuple(ctx context.Context, userID, relation, tenantID string) error {
+	body := client.ClientWriteRequest{
+		Deletes: []client.ClientTupleKeyWithoutCondition{{
+			User:     "user:" + userID,
+			Relation: relation,
+			Object:   "tenant:" + tenantID,
+		}},
+	}
+	_, err := c.api.Write(ctx).Body(body).Execute()
+	if err != nil {
+		if isAlreadyExistsError(err) { // missing tuple → validation error → treat as done
+			return nil
+		}
+		return fmt.Errorf("authz: delete %s tuple: %w", relation, err)
+	}
+	return nil
+}
+
+// DeleteStoreParent removes the tuple `tenant:<tenantID> parent store:<storeID>`.
+// Idempotent: deleting an already-absent tuple returns nil rather than an error.
+func (c *fgaClient) DeleteStoreParent(ctx context.Context, storeID, tenantID string) error {
+	body := client.ClientWriteRequest{
+		Deletes: []client.ClientTupleKeyWithoutCondition{{
+			User:     "tenant:" + tenantID,
+			Relation: "parent",
+			Object:   "store:" + storeID,
+		}},
+	}
+	_, err := c.api.Write(ctx).Body(body).Execute()
+	if err != nil {
+		if isAlreadyExistsError(err) {
+			return nil
+		}
+		return fmt.Errorf("authz: delete store parent: %w", err)
 	}
 	return nil
 }

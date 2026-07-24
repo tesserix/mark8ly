@@ -307,6 +307,31 @@ func (f *FakeClient) ListMemberTenants(ctx context.Context, userID string) ([]st
 	return out, nil
 }
 
+// DeleteTuple removes the user:<userID> <relation> tenant:<tenantID>
+// tuple if present. Idempotent: deleting an already-absent tuple (or
+// an unrecognized relation) is a no-op that returns nil, mirroring
+// the real client's tolerance of OpenFGA's "tuple not found" error.
+func (f *FakeClient) DeleteTuple(ctx context.Context, userID, relation, tenantID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if m, ok := f.roles[Role(relation)]; ok {
+		delete(m, userID+"|"+tenantID)
+	}
+	return nil
+}
+
+// DeleteStoreParent removes the store→tenant parent tuple if it
+// matches. Idempotent: deleting an already-absent (or mismatched)
+// pair is a no-op that returns nil.
+func (f *FakeClient) DeleteStoreParent(ctx context.Context, storeID, tenantID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.storeParents[storeID] == tenantID {
+		delete(f.storeParents, storeID)
+	}
+	return nil
+}
+
 func (f *FakeClient) hasAnyRoleLocked(userID, tenantID string) bool {
 	key := userID + "|" + tenantID
 	for _, r := range allRoles {

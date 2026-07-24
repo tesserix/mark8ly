@@ -13,13 +13,15 @@ import (
 
 // fakeRepo is an in-memory Repository for unit tests.
 type fakeRepo struct {
-	mu   sync.Mutex
-	byID map[string]*Tenant
+	mu       sync.Mutex
+	byID     map[string]*Tenant
+	storeIDs map[string][]string
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		byID: map[string]*Tenant{},
+		byID:     map[string]*Tenant{},
+		storeIDs: map[string][]string{},
 	}
 }
 
@@ -77,6 +79,26 @@ func (f *fakeRepo) ListByIDs(ctx context.Context, ids []string) ([]Tenant, error
 		}
 	}
 	return out, nil
+}
+
+// storeIDs and deleted support the account-deletion teardown path
+// (ListStoreIDs / DeleteInTx). Kept minimal: no real GORM tx semantics,
+// just enough in-memory state for Task 4's service-level tests.
+func (f *fakeRepo) ListStoreIDs(ctx context.Context, tx *gorm.DB, tenantID string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.storeIDs[tenantID], nil
+}
+
+func (f *fakeRepo) DeleteInTx(ctx context.Context, tx *gorm.DB, tenantID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.byID[tenantID]; !ok {
+		return apperrors.NotFound("tenant_not_found", "no")
+	}
+	delete(f.byID, tenantID)
+	delete(f.storeIDs, tenantID)
+	return nil
 }
 
 func (f *fakeRepo) UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error) {

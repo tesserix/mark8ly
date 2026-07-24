@@ -161,3 +161,66 @@ func TestIntegration_GetByOwnerUserID_FoundAndNotFound(t *testing.T) {
 		t.Errorf("expected tenant_not_found, got %v", err)
 	}
 }
+
+// TestIntegration_DeleteInTx_ReconcilesOnboardingThenDeletes is the
+// account-deletion regression test. onboarding_sessions.tenant_id is ON
+// DELETE SET NULL, but the onboarding_sessions_completed_consistency CHECK
+// requires tenant_id to stay NOT NULL while status='completed'. Without
+// reconciling the session row first, deleting the tenant would null that
+// column and the tenant DELETE itself would fail the CHECK. This seeds a
+// tenant with a completed onboarding_session referencing it (raw SQL,
+// mirroring the shape onboarding.Session writes — importing the onboarding
+// package here would create an import cycle since it imports tenant) and
+// asserts DeleteInTx removes both rows.
+func TestIntegration_DeleteInTx_ReconcilesOnboardingThenDeletes(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := NewRepository(tx)
+	ctx := context.Background()
+
+	seed := newTenant("ToDelete Co", "uid-del-1", "todelete@test.local")
+	if err := repo.CreateInTx(ctx, tx, seed); err != nil {
+		t.Fatalf("CreateInTx: %v", err)
+	}
+
+	if err := tx.Exec(`
+		INSERT INTO onboarding_sessions (email, status, email_verified_at, tenant_id, completed_at)
+		VALUES (?, 'completed', NOW(), ?, NOW())
+	`, "todelete@test.local", seed.ID).Error; err != nil {
+		t.Fatalf("seed onboarding_sessions: %v", err)
+	}
+
+	if err := repo.DeleteInTx(ctx, tx, seed.ID); err != nil {
+		t.Fatalf("DeleteInTx: %v", err)
+	}
+
+	var tenantCount int64
+	if err := tx.Raw(`SELECT count(*) FROM tenants WHERE id = ?`, seed.ID).Scan(&tenantCount).Error; err != nil {
+		t.Fatalf("count tenants: %v", err)
+	}
+	if tenantCount != 0 {
+		t.Errorf("tenant still present after DeleteInTx")
+	}
+
+	var sessionCount int64
+	if err := tx.Raw(`SELECT count(*) FROM onboarding_sessions WHERE tenant_id = ?`, seed.ID).Scan(&sessionCount).Error; err != nil {
+		t.Fatalf("count onboarding_sessions: %v", err)
+	}
+	if sessionCount != 0 {
+		t.Errorf("onboarding_sessions row still present after DeleteInTx")
+	}
+}
+
+// TestIntegration_DeleteInTx_NotFound asserts the NotFound mapping for a
+// tenant id that doesn't exist, so callers (Task 4's teardown service) get
+// a typed apperrors.NotFound rather than a silent no-op.
+func TestIntegration_DeleteInTx_NotFound(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := NewRepository(tx)
+	ctx := context.Background()
+
+	err := repo.DeleteInTx(ctx, tx, "00000000-0000-0000-0000-000000000000")
+	ae, ok := apperrors.As(err)
+	if !ok || ae.Code != "tenant_not_found" {
+		t.Errorf("expected tenant_not_found, got %v", err)
+	}
+}

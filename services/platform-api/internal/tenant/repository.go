@@ -37,6 +37,24 @@ type Repository interface {
 	// ListByIDs returns tenant rows for each id in the given slice.
 	// Used by Phase P multi-tenant membership lookups.
 	ListByIDs(ctx context.Context, ids []string) ([]Tenant, error)
+	// ListStoreIDs returns the IDs of every store under the given tenant.
+	// Used by account-deletion teardown to remove FGA store-parent tuples
+	// BEFORE the DB cascade (stores ON DELETE CASCADE from tenants) removes
+	// the rows out from under it. If tx is nil, the repository's own db is
+	// used (read-only lookups don't require a transaction).
+	ListStoreIDs(ctx context.Context, tx *gorm.DB, tenantID string) ([]string, error)
+	// DeleteInTx deletes a tenant and everything that must be reconciled
+	// first. onboarding_sessions.tenant_id is ON DELETE SET NULL, but the
+	// onboarding_sessions_completed_consistency CHECK requires tenant_id to
+	// stay NOT NULL while status='completed' — so deleting the tenant
+	// without reconciling first would null that column and violate the
+	// CHECK, failing the tenant DELETE. DeleteInTx removes the tenant's
+	// onboarding_sessions rows first (their verification codes cascade via
+	// ON DELETE CASCADE), then deletes the tenant row. stores and
+	// invitations FK to tenants ON DELETE CASCADE, so they clean up
+	// automatically and are not touched here. Returns apperrors.NotFound if
+	// the tenant does not exist. Must run inside the caller's transaction.
+	DeleteInTx(ctx context.Context, tx *gorm.DB, tenantID string) error
 }
 
 // gormRepository is the GORM-backed implementation.
@@ -129,6 +147,40 @@ func (r *gormRepository) UpdateEditable(ctx context.Context, id string, patch ma
 		return nil, apperrors.NotFound("tenant_not_found", fmt.Sprintf("tenant %q does not exist", id))
 	}
 	return r.GetByID(ctx, id)
+}
+
+func (r *gormRepository) ListStoreIDs(ctx context.Context, tx *gorm.DB, tenantID string) ([]string, error) {
+	db := r.db
+	if tx != nil {
+		db = tx
+	}
+	var ids []string
+	if err := db.WithContext(ctx).
+		Table("stores").Where("tenant_id = ?", tenantID).Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("tenant: list store ids: %w", err)
+	}
+	return ids, nil
+}
+
+func (r *gormRepository) DeleteInTx(ctx context.Context, tx *gorm.DB, tenantID string) error {
+	// onboarding_sessions.tenant_id is ON DELETE SET NULL, but the
+	// onboarding_sessions_completed_consistency CHECK requires tenant_id
+	// NOT NULL when status='completed'. Deleting the tenant would null it and
+	// violate the CHECK. Delete the completed session rows first; their
+	// verification codes cascade (ON DELETE CASCADE).
+	if err := tx.WithContext(ctx).
+		Exec(`DELETE FROM onboarding_sessions WHERE tenant_id = ?`, tenantID).Error; err != nil {
+		return fmt.Errorf("tenant: reconcile onboarding_sessions: %w", err)
+	}
+	// stores + invitations FK to tenants ON DELETE CASCADE — removed automatically.
+	res := tx.WithContext(ctx).Exec(`DELETE FROM tenants WHERE id = ?`, tenantID)
+	if res.Error != nil {
+		return fmt.Errorf("tenant: delete: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("tenant_not_found", fmt.Sprintf("tenant %q does not exist", tenantID))
+	}
+	return nil
 }
 
 func (r *gormRepository) SlugExists(ctx context.Context, slug string) (bool, error) {

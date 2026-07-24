@@ -137,3 +137,38 @@ func TestVendorClient_UpdateSelfVendor_NotFound(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "404")
 }
+
+func TestVendorClient_PurgeTenant_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/internal/tenants/t1/purge", r.URL.Path)
+		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		require.Equal(t, "shared-secret", r.Header.Get("X-Internal-Auth"))
+
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		var got map[string][]string
+		require.NoError(t, json.Unmarshal(body, &got))
+		require.Equal(t, []string{"store-1", "store-2"}, got["store_ids"])
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewVendorClient(srv.URL, "shared-secret")
+	err := c.PurgeTenant(context.Background(), "t1", []string{"store-1", "store-2"})
+	require.NoError(t, err)
+}
+
+func TestVendorClient_PurgeTenant_BadStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"boom","message":"down"}`))
+	}))
+	defer srv.Close()
+
+	c := NewVendorClient(srv.URL)
+	err := c.PurgeTenant(context.Background(), "t1", []string{"store-1"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "500")
+}

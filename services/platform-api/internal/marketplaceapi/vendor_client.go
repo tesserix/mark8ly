@@ -182,3 +182,33 @@ func (c *VendorClient) EnsureSelfStore(ctx context.Context, s Store) (*Store, er
 	}
 	return &resp.Data, nil
 }
+
+// PurgeTenant asks marketplace-api to hard-delete all data owned by the
+// given tenant's stores. Called from the platform-api outbox drainer as
+// part of tenant deletion; a non-2xx response is returned as an error so
+// the drainer retries the purge on the next pass.
+func (c *VendorClient) PurgeTenant(ctx context.Context, tenantID string, storeIDs []string) error {
+	body, err := json.Marshal(map[string][]string{"store_ids": storeIDs})
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/internal/tenants/%s/purge", c.baseURL, tenantID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.addInternalAuth(req)
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("marketplace-api purge-tenant: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode >= 300 {
+		raw, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("marketplace-api purge-tenant %d: %s", res.StatusCode, string(raw))
+	}
+	return nil
+}

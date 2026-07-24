@@ -240,6 +240,9 @@ export function createApiClient(config: ApiClientConfig) {
     put: <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
       request<T>("PUT", path, { body, schema }),
     delete: <T>(path: string) => request<T>("DELETE", path),
+    /** DELETE against a tenant-wide path (skips the `/stores/{id}` prefix). */
+    deleteTenant: <T>(path: string): Promise<T> =>
+      request<T>("DELETE", path, { tenantScope: true }),
     uploadMedia: async (path: string, formData: FormData) => {
       const storeId = config.getStoreId();
       if (!storeId) {

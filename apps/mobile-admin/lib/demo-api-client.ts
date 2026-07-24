@@ -272,6 +272,9 @@ export function createDemoApiClient(): ApiClient {
     put: async <T>(path: string, body?: unknown, schema?: z.ZodType<T>) =>
       parseOrThrow(path, body ?? { success: true }, schema),
     delete: async <T>() => ({ success: true } as T),
+    // Account deletion is destructive and out of scope for a canned demo —
+    // resolve to void like a real 204 without touching any demo state.
+    deleteTenant: async <T>() => undefined as T,
     uploadMedia: async () => ({ id: "demo-media", url: "" }),
   };
 }

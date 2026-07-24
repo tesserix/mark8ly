@@ -172,17 +172,19 @@ export default function LoginScreen() {
               <Text preset="bodyEmphasis">Continue with Google</Text>
             </Pressable>
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Sign in with Apple"
-              disabled={submitting}
-              onPress={handleAppleSignIn}
-              className="mt-3 min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
-            >
-              <Text preset="bodyEmphasis" className="text-paper">
-                Sign in with Apple
-              </Text>
-            </Pressable>
+            {Platform.OS === 'ios' ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with Apple"
+                disabled={submitting}
+                onPress={handleAppleSignIn}
+                className="mt-3 min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
+              >
+                <Text preset="bodyEmphasis" className="text-paper">
+                  Sign in with Apple
+                </Text>
+              </Pressable>
+            ) : null}
 
             {linkTarget ? (
               <LinkAccountPrompt

@@ -110,11 +110,13 @@ export default function TeamScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
-      ) : members.error ? (
+      ) : (members.isError || invitations.isError) && memberList.length === 0 && inviteList.length === 0 ? (
         <View style={styles.centered}>
-          <Text preset="h3" color="danger">
-            Failed to load team
-          </Text>
+          <EmptyState
+            title="Couldn't load team"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { onRefresh(); } }}
+          />
         </View>
       ) : (
         <ScrollView

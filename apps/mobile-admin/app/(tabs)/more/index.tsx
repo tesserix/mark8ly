@@ -1,12 +1,14 @@
-import { View, ScrollView, TouchableOpacity, StyleSheet } from "react-native";
+import { View, ScrollView, TouchableOpacity, StyleSheet, Linking } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import {
   Bell,
   BellRing,
   ChevronRight,
+  FileText,
   LifeBuoy,
   Megaphone,
   Palette,
+  Scale,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -21,6 +23,11 @@ import { theme } from "@/lib/theme";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 const APP_VERSION = "1.0.0";
+
+// Live legal pages served from mark8ly.com — surfaced in-app so the privacy
+// policy stays reachable post-login (App Store 5.1.1(i) / Play requirement).
+const PRIVACY_URL = "https://mark8ly.com/privacy";
+const TERMS_URL = "https://mark8ly.com/terms";
 
 interface RowProps {
   icon: React.ReactNode;
@@ -138,6 +145,27 @@ export default function MoreScreen() {
             </Card>
           </View>
         ))}
+
+        <View style={styles.section}>
+          <Text preset="eyebrow" color="textTertiary" style={styles.sectionLabel}>
+            Legal
+          </Text>
+          <Card padding={0}>
+            <Row
+              icon={<FileText size={18} color={theme.colors.text} strokeWidth={1.75} />}
+              label="Privacy Policy"
+              accessibilityLabel="Privacy Policy — opens in your browser"
+              onPress={() => Linking.openURL(PRIVACY_URL)}
+            />
+            <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
+            <Row
+              icon={<Scale size={18} color={theme.colors.text} strokeWidth={1.75} />}
+              label="Terms of Service"
+              accessibilityLabel="Terms of Service — opens in your browser"
+              onPress={() => Linking.openURL(TERMS_URL)}
+            />
+          </Card>
+        </View>
 
         <View style={styles.footer}>
           <Settings size={14} color={theme.colors.textTertiary} strokeWidth={1.75} />

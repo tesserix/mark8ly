@@ -55,7 +55,7 @@ export default function OrdersScreen() {
 
   const selectedFilter = FILTERS.find((f) => f.key === activeFilter);
   const currencyCode = useTenantStore((s) => s.activeStore?.currency_code);
-  const { data, isLoading, isRefetching, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+  const { data, isLoading, isRefetching, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useOrders({
       ...(selectedFilter?.status ? { status: selectedFilter.status } : {}),
       ...(debouncedSearch ? { search: debouncedSearch } : {}),
@@ -99,6 +99,14 @@ export default function OrdersScreen() {
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      ) : isError && orders.length === 0 ? (
+        <View style={styles.centered}>
+          <EmptyState
+            title="Couldn't load orders"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { refetch(); } }}
+          />
         </View>
       ) : (
         <Animated.View

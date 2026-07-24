@@ -59,7 +59,7 @@ function LogRow({ entry }: { entry: AuditLogEntry }) {
 
 export default function AuditLogsScreen() {
   const dockPad = useDockClearance();
-  const { data, isLoading, isRefetching, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+  const { data, isLoading, isRefetching, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useAuditLogs();
 
   const entries = data?.pages.flatMap((page) => page.data) ?? [];
@@ -84,6 +84,14 @@ export default function AuditLogsScreen() {
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      ) : isError && entries.length === 0 ? (
+        <View style={styles.centered}>
+          <EmptyState
+            title="Couldn't load audit logs"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { refetch(); } }}
+          />
         </View>
       ) : (
         <FlatList

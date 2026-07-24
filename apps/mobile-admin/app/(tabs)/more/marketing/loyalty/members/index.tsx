@@ -40,7 +40,7 @@ function MemberRow({ member, onPress }: { member: LoyaltyMember; onPress: (m: Lo
 export default function LoyaltyMembersScreen() {
   const dockPad = useDockClearance();
   const router = useRouter();
-  const { data, isLoading, isRefetching, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+  const { data, isLoading, isRefetching, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useLoyaltyMembers();
 
   const members = data?.pages.flatMap((page) => page.data) ?? [];
@@ -65,6 +65,14 @@ export default function LoyaltyMembersScreen() {
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      ) : isError && members.length === 0 ? (
+        <View style={styles.centered}>
+          <EmptyState
+            title="Couldn't load members"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { refetch(); } }}
+          />
         </View>
       ) : (
         <FlatList

@@ -70,6 +70,7 @@ export default function TicketsScreen() {
     data,
     isLoading,
     isRefetching,
+    isError,
     refetch,
     fetchNextPage,
     hasNextPage,
@@ -115,6 +116,14 @@ export default function TicketsScreen() {
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      ) : isError && tickets.length === 0 ? (
+        <View style={styles.centered}>
+          <EmptyState
+            title="Couldn't load tickets"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { refetch(); } }}
+          />
         </View>
       ) : (
         <FlatList

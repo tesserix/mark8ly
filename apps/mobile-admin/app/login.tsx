@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@repo/mobile-shared/auth/provider';
 import { authErrorMessage } from '@repo/mobile-shared/auth/errors';
@@ -11,6 +11,11 @@ import { LinkAccountPrompt } from '../components/auth/LinkAccountPrompt';
 import { Text } from '../components/ui/Text';
 
 const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
+
+// Both stores require an in-app, reachable privacy policy for account-based
+// apps. These point at the live web pages served from mark8ly.com.
+const PRIVACY_URL = 'https://mark8ly.com/privacy';
+const TERMS_URL = 'https://mark8ly.com/terms';
 
 type LinkTarget = Extract<SocialSignInOutcome, { status: 'needs-link' }>;
 
@@ -196,6 +201,28 @@ export default function LoginScreen() {
                 onLinked={() => setLinkTarget(null)}
               />
             ) : null}
+
+            <View className="mt-8 flex-row items-center justify-center gap-3">
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel="Privacy Policy"
+                onPress={() => Linking.openURL(PRIVACY_URL)}
+              >
+                <Text preset="caption" className="underline">
+                  Privacy Policy
+                </Text>
+              </Pressable>
+              <Text preset="caption">·</Text>
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel="Terms of Service"
+                onPress={() => Linking.openURL(TERMS_URL)}
+              >
+                <Text preset="caption" className="underline">
+                  Terms of Service
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

@@ -1,5 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Alert, ActivityIndicator, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
+import {
+  View,
+  Alert,
+  ActivityIndicator,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -149,6 +158,12 @@ export default function NewProductScreen() {
       <Screen topInset={false}>
         <BackHeader eyebrow="NEW PRODUCT" title="New product" />
 
+        {/* Keep the floating footer (Create / Save) above the keyboard on iOS.
+            Android relies on the default adjustResize windowSoftInputMode. */}
+        <KeyboardAvoidingView
+          style={styles.kav}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
           <ScrollView
             contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + FOOTER_CLEARANCE }]}
             keyboardShouldPersistTaps="handled"
@@ -272,12 +287,14 @@ export default function NewProductScreen() {
           )}
         </TouchableOpacity>
       </View>
+        </KeyboardAvoidingView>
       </Screen>
     </BottomSheetModalProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  kav: { flex: 1 },
   scroll: { paddingTop: theme.spacing.md },
   card: { marginHorizontal: theme.spacing.lg, gap: theme.spacing.sm },
   row: { flexDirection: "row", gap: theme.spacing.sm },

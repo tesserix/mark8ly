@@ -56,9 +56,11 @@ export default function ProductsScreen() {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
   };
 
-  const { data, isLoading, isRefetching, refetch } = useProducts(
+  const { data, isLoading, isRefetching, isError, refetch } = useProducts(
     Object.keys(queryParams).length > 0 ? queryParams : undefined,
   );
+
+  const products = data?.data ?? [];
 
   const handlePress = useCallback(
     (product: Product) => router.push(`/(tabs)/products/${product.id}`),
@@ -91,6 +93,14 @@ export default function ProductsScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
+      ) : isError && products.length === 0 ? (
+        <View style={styles.centered}>
+          <EmptyState
+            title="Couldn't load products"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { refetch(); } }}
+          />
+        </View>
       ) : (
         <Animated.View
           testID="products-list-wrap"
@@ -98,7 +108,7 @@ export default function ProductsScreen() {
           entering={reduceMotion ? undefined : FadeIn.duration(180).easing(DISCLOSURE_EASING)}
         >
           <FlatList
-            data={data?.data ?? []}
+            data={products}
             renderItem={renderItem}
             keyExtractor={(item) => item.id}
             contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}

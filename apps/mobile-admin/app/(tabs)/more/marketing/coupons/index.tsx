@@ -37,6 +37,7 @@ export default function CouponsScreen() {
     data,
     isLoading,
     isRefetching,
+    isError,
     refetch,
     fetchNextPage,
     hasNextPage,
@@ -84,6 +85,14 @@ export default function CouponsScreen() {
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      ) : isError && coupons.length === 0 ? (
+        <View style={styles.centered}>
+          <EmptyState
+            title="Couldn't load coupons"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { refetch(); } }}
+          />
         </View>
       ) : (
         <FlatList

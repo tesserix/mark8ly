@@ -35,6 +35,7 @@ export default function GiftCardsScreen() {
     data,
     isLoading,
     isRefetching,
+    isError,
     refetch,
     fetchNextPage,
     hasNextPage,
@@ -80,6 +81,14 @@ export default function GiftCardsScreen() {
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      ) : isError && cards.length === 0 ? (
+        <View style={styles.centered}>
+          <EmptyState
+            title="Couldn't load gift cards"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { refetch(); } }}
+          />
         </View>
       ) : (
         <FlatList

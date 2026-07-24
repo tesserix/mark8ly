@@ -19,7 +19,7 @@ import { useDockClearance } from "@/components/navigation/dock-metrics";
 export default function SegmentsScreen() {
   const dockPad = useDockClearance();
   const router = useRouter();
-  const { data, isLoading, isRefetching, refetch } = useSegments();
+  const { data, isLoading, isRefetching, isError, refetch } = useSegments();
   const segments = data?.data ?? [];
 
   const handlePress = useCallback(
@@ -51,6 +51,14 @@ export default function SegmentsScreen() {
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      ) : isError && segments.length === 0 ? (
+        <View style={styles.centered}>
+          <EmptyState
+            title="Couldn't load segments"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { refetch(); } }}
+          />
         </View>
       ) : (
         <FlatList

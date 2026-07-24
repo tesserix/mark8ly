@@ -40,7 +40,7 @@ function ReferralRow({ referral }: { referral: Referral }) {
 
 export default function ReferralsScreen() {
   const dockPad = useDockClearance();
-  const { data, isLoading, isRefetching, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+  const { data, isLoading, isRefetching, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useReferrals();
 
   const referrals = data?.pages.flatMap((page) => page.data) ?? [];
@@ -57,6 +57,14 @@ export default function ReferralsScreen() {
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
           <ActivityIndicator size="small" color={theme.colors.text} />
+        </View>
+      ) : isError && referrals.length === 0 ? (
+        <View style={styles.centered}>
+          <EmptyState
+            title="Couldn't load referrals"
+            message="Something went wrong. Check your connection and try again."
+            action={{ label: "Try again", onPress: () => { refetch(); } }}
+          />
         </View>
       ) : (
         <FlatList

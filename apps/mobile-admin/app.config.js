@@ -66,7 +66,6 @@ module.exports = {
       supportsTablet: false,
       bundleIdentifier: PRODUCTION.bundleIdentifier,
       infoPlist: {
-        NSFaceIDUsageDescription: 'Use Face ID to unlock the admin app',
         NSCameraUsageDescription: 'Take product photos for your store',
         NSPhotoLibraryUsageDescription:
           'Select product images from your library',
@@ -87,6 +86,16 @@ module.exports = {
         backgroundColor: '#F7F6F2',
       },
       package: PRODUCTION.androidPackage,
+      // Mirror the iOS googleServicesFile wiring: real GIP/Firebase builds need
+      // the Android google-services.json copied into the native project at
+      // prebuild, or @react-native-firebase/app fails the Gradle build and
+      // Android auth never initializes. Demo builds skip Firebase entirely.
+      ...(USE_DEMO_AUTH
+        ? {}
+        : {
+            googleServicesFile:
+              process.env.GOOGLE_SERVICES_JSON || './google-services.json',
+          }),
       intentFilters: [
         {
           action: 'VIEW',
@@ -102,7 +111,6 @@ module.exports = {
       'expo-router',
       'expo-font',
       'expo-secure-store',
-      'expo-local-authentication',
       'expo-image-picker',
       'expo-notifications',
       ['expo-build-properties', { ios: { newArchEnabled: true, useFrameworks: 'static' } }],

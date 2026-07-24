@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
 	platformapi "github.com/mark8ly/platform-api"
+	"github.com/mark8ly/platform-api/internal/account"
 	"github.com/mark8ly/platform-api/internal/audit"
 	"github.com/mark8ly/platform-api/internal/auth"
 	"github.com/mark8ly/platform-api/internal/authz"
@@ -288,6 +289,22 @@ func main() {
 	})
 	invitationHandler := invitation.NewHandler(invitationSvc)
 
+	// ─── Account teardown (Task 5) ──────────────────────────────────────
+	// DeleteAccount unconditionally calls both fga.GetRole and
+	// gip.DeleteAccount with no internal nil-check (unlike tenantHandler,
+	// which nil-checks fga itself — see its doc comment), so wiring this
+	// handler with either dependency missing would panic on first call
+	// rather than degrading gracefully. Gate it the same way authHandler
+	// is gated above: skip registering the route in envs that lack the
+	// GIP credentials or a live OpenFGA store, and log why.
+	var accountHandler *account.Handler
+	if fga != nil && gipAdmin != nil {
+		accountSvc := account.NewService(conn, tenantRepo, fga, gipAdmin, outbox.Enqueue, log)
+		accountHandler = account.NewHandler(accountSvc)
+	} else {
+		log.Warn("account: teardown endpoint disabled — missing OpenFGA store or GIP_PROJECT_ID/GIP_TENANT_ID/GIP_WEB_API_KEY")
+	}
+
 	// ─── Outbox drainer ────────────────────────────────────────────────
 	drainer := outbox.NewDrainer(conn, log, outbox.Config{})
 	if fga != nil {
@@ -323,6 +340,9 @@ func main() {
 	invitationHandler.Register(v1, internal)
 	if authHandler != nil {
 		authHandler.Register(internal)
+	}
+	if accountHandler != nil {
+		accountHandler.Register(internal)
 	}
 	notification.NewHandler(templateLoader, sender, cfg.EmailFrom).Register(internal)
 

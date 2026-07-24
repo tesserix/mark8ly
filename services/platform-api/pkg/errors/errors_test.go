@@ -75,6 +75,7 @@ func TestHelpers_ReturnExpectedHTTPStatuses(t *testing.T) {
 		{"Conflict", Conflict, http.StatusConflict},
 		{"Internal", Internal, http.StatusInternalServerError},
 		{"Unauthorized", Unauthorized, http.StatusUnauthorized},
+		{"Forbidden", Forbidden, http.StatusForbidden},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

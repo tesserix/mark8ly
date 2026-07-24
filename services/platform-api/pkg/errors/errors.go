@@ -41,6 +41,7 @@ func Internal(code, msg string) *AppError    { return New(http.StatusInternalSer
 func Unauthorized(code, msg string) *AppError {
 	return New(http.StatusUnauthorized, code, msg)
 }
+func Forbidden(code, msg string) *AppError { return New(http.StatusForbidden, code, msg) }
 
 // As is a convenience to extract an *AppError from any error.
 func As(err error) (*AppError, bool) {

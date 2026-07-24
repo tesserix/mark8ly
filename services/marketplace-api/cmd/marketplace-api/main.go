@@ -1913,9 +1913,12 @@ func main() {
 		// run the destructive purge of a tenant's marketplace-api domain
 		// data (see internal/tenantpurge). Purge is idempotent, so replay
 		// on drainer retry is safe.
+		// Gated by InternalAuthSecret (MARKETPLACE_INTERNAL_AUTH_SECRET) —
+		// must match what VendorClient.PurgeTenant signs with, NOT
+		// AuditIngestSecret (different caller, different secret).
 		internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
 			return tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
-		}).Register(r.Group("/internal"), cfg.AuditIngestSecret)
+		}).Register(r.Group("/internal"), cfg.InternalAuthSecret)
 		if stripeBillingWebhookHandler != nil {
 			r.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
 		}
@@ -1997,9 +2000,12 @@ func main() {
 			// domain data (see internal/tenantpurge). Admin-only, matching
 			// the audit-ingest placement above. Purge is idempotent, so
 			// replay on drainer retry is safe.
+			// Gated by InternalAuthSecret (MARKETPLACE_INTERNAL_AUTH_SECRET) —
+			// must match what VendorClient.PurgeTenant signs with, NOT
+			// AuditIngestSecret (different caller, different secret).
 			internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
 				return tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
-			}).Register(engine.Group("/internal"), cfg.AuditIngestSecret)
+			}).Register(engine.Group("/internal"), cfg.InternalAuthSecret)
 			// Reverse custom-domain lookup (domain → slug). The admin
 			// middleware uses this to verify a custom-admin host
 			// (admin.<merchant>) before rendering. Originally only the

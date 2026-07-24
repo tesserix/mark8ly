@@ -18,6 +18,10 @@ type MobileDeps struct {
 	// TeamHandler proxies tenant team management to platform-api. Nil when
 	// the platform client isn't configured (MARKETPLACE_PLATFORM_API_URL empty).
 	TeamHandler *TeamHandler
+	// MobileAccountHandler proxies the mobile "delete my account" flow to
+	// platform-api (Apple App Store requires an in-app deletion path). Nil
+	// when the platform client isn't configured, same gate as TeamHandler.
+	MobileAccountHandler *MobileAccountHandler
 }
 
 // RegisterAdminMobile mounts the mobile admin route group. Uses GIPBearerAuth
@@ -44,6 +48,16 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	if deps.PlatformSupportHandler != nil {
 		ps := router.Group("/mobile/admin/platform-support", bearerAuth, requireTenant, rateLimiter)
 		deps.PlatformSupportHandler.Register(ps)
+	}
+
+	// Account deletion — proxies to platform-api. Not store-scoped: it rides
+	// the caller's tenant + UID from the bearer token, so any tenant member
+	// can delete their own account. No FGA/RequireTenantRelation gate here
+	// on purpose — platform-api is authoritative on owner-vs-staff teardown,
+	// and Apple requires the deletion path to work for staff too.
+	if deps.MobileAccountHandler != nil {
+		acct := router.Group("/mobile/admin/account", bearerAuth, requireTenant, rateLimiter)
+		acct.DELETE("", deps.MobileAccountHandler.Delete)
 	}
 
 	// Tenant-wide routes

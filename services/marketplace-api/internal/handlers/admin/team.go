@@ -33,6 +33,15 @@ func NewTeamHandler(client *teamproxy.Client, logger *slog.Logger) *TeamHandler 
 // forwarded with its own status + message so the mobile UI shows something
 // actionable (e.g. 403 role-guard). A transport failure is a 502.
 func (h *TeamHandler) respondErr(c *gin.Context, err error) {
+	respondProxyErr(c, err, h.logger)
+}
+
+// respondProxyErr maps a teamproxy error onto the wire. Shared by every
+// mobile handler that proxies to platform-api's internal endpoints (team,
+// account). A platform-api 4xx/5xx is forwarded with its own status + code +
+// message so the mobile UI shows something actionable (e.g. 403 role-guard).
+// A transport failure is a 502.
+func respondProxyErr(c *gin.Context, err error, logger *slog.Logger) {
 	var apiErr *teamproxy.APIError
 	if errors.As(err, &apiErr) {
 		code := apiErr.Code
@@ -41,17 +50,17 @@ func (h *TeamHandler) respondErr(c *gin.Context, err error) {
 		}
 		msg := apiErr.Message
 		if msg == "" {
-			msg = "The team service rejected the request."
+			msg = "The platform service rejected the request."
 		}
 		c.AbortWithStatusJSON(apiErr.Status, gin.H{"error": code, "message": msg})
 		return
 	}
-	if h.logger != nil {
-		h.logger.Error("team: platform-api call failed", "err", err)
+	if logger != nil {
+		logger.Error("platform-api call failed", "err", err)
 	}
 	c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
-		"error":   "team_unavailable",
-		"message": "The team service is unavailable. Please try again.",
+		"error":   "platform_unavailable",
+		"message": "The service is unavailable. Please try again.",
 	})
 }
 

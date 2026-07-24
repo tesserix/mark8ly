@@ -1098,16 +1098,20 @@ func main() {
 			ServiceAccount: cfg.PushOIDCServiceAccount,
 		})
 
-		// Team management proxies platform-api's internal team endpoints.
-		// Reuses the SAME platform client config as the storefront store
-		// lookups (already wired in prod), so no new chart env is needed.
-		// Nil when the platform URL is unset — the routes then stay unmounted.
+		// Team management + account deletion both proxy platform-api's
+		// internal endpoints, so they share one teamproxy client — reusing
+		// the SAME platform client config as the storefront store lookups
+		// (already wired in prod), so no new chart env is needed. Nil when
+		// the platform URL is unset — both handlers, and their routes,
+		// then stay unmounted.
 		var teamHandler *admin.TeamHandler
+		var mobileAccountHandler *admin.MobileAccountHandler
 		if cfg.PlatformAPIURL != "" {
-			teamHandler = admin.NewTeamHandler(
-				teamproxy.NewClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil), log)
+			teamClient := teamproxy.NewClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+			teamHandler = admin.NewTeamHandler(teamClient, log)
+			mobileAccountHandler = admin.NewMobileAccountHandler(teamClient, log)
 		} else {
-			log.Info("team: platform client not configured (MARKETPLACE_PLATFORM_API_URL empty); team routes disabled")
+			log.Info("team: platform client not configured (MARKETPLACE_PLATFORM_API_URL empty); team + account-deletion routes disabled")
 		}
 
 		mobileDeps = admin.MobileDeps{
@@ -1118,6 +1122,7 @@ func main() {
 			// platform tenant. Nil otto client => routes return 503.
 			PlatformSupportHandler: admin.NewPlatformSupportHandler(ottoChatClient, cfg.OttoWSPublicBase, log),
 			TeamHandler:            teamHandler,
+			MobileAccountHandler:   mobileAccountHandler,
 		}
 	}
 

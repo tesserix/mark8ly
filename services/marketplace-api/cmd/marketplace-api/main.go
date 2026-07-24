@@ -111,6 +111,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/planchange"
 	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
 	"github.com/mark8ly/marketplace-api/internal/teamproxy"
+	"github.com/mark8ly/marketplace-api/internal/tenantpurge"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
@@ -1908,6 +1909,13 @@ func main() {
 		// 301 to the merchant's verified custom domain.
 		internalsvc.NewStoreActiveDomainHandler(conn).
 			Register(r.Group("/internal"), cfg.AuditIngestSecret)
+		// Tenant hard-delete — platform-api's outbox drainer POSTs here to
+		// run the destructive purge of a tenant's marketplace-api domain
+		// data (see internal/tenantpurge). Purge is idempotent, so replay
+		// on drainer retry is safe.
+		internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
+			return tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+		}).Register(r.Group("/internal"), cfg.AuditIngestSecret)
 		if stripeBillingWebhookHandler != nil {
 			r.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
 		}
@@ -1984,6 +1992,14 @@ func main() {
 			// + storefront middlewares can hit whichever pod is local.
 			internalsvc.NewStoreActiveDomainHandler(conn).
 				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
+			// Tenant hard-delete — platform-api's outbox drainer POSTs here
+			// to run the destructive purge of a tenant's marketplace-api
+			// domain data (see internal/tenantpurge). Admin-only, matching
+			// the audit-ingest placement above. Purge is idempotent, so
+			// replay on drainer retry is safe.
+			internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
+				return tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+			}).Register(engine.Group("/internal"), cfg.AuditIngestSecret)
 			// Reverse custom-domain lookup (domain → slug). The admin
 			// middleware uses this to verify a custom-admin host
 			// (admin.<merchant>) before rendering. Originally only the

@@ -318,6 +318,13 @@ func main() {
 		// mobile-admin login is broken for every new tenant until then.
 		log.Warn("outbox: gip tenant-claim handler NOT registered — mobile admin login will fail for new tenants")
 	}
+	// vendorClient is unconditionally constructed above (Line ~189) — its
+	// HTTP calls degrade gracefully (returned as errors, retried by the
+	// drainer) rather than panicking, so no nil guard is needed here.
+	// Registered even when accountHandler is disabled: the teardown
+	// endpoint being off (missing FGA/GIP) doesn't mean no rows will ever
+	// need draining — e.g. rows enqueued before a config change rolls out.
+	drainer.Register(account.TenantDeletedOutboxKind, account.NewTenantDeletedHandler(vendorClient))
 
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)

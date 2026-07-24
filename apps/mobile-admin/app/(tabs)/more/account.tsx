@@ -1,18 +1,22 @@
-import { useCallback, useState } from "react";
-import { View, TouchableOpacity, Alert, StyleSheet } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { View, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { StoreSelector } from "../../../components/StoreSelector";
+import { useDeleteAccount } from "@/lib/admin-api/account-actions";
 import {
   BackHeader,
   Card,
   Eyebrow,
+  FieldInput,
   Hairline,
   Screen,
   Text,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
+
+const DELETE_CONFIRMATION_WORD = "DELETE";
 
 interface InfoRowProps {
   label: string;
@@ -36,6 +40,8 @@ export default function AccountScreen() {
   const { user, signOut } = useAuth();
   const activeStore = useTenantStore((s) => s.activeStore);
   const [storeSelectorVisible, setStoreSelectorVisible] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const deleteMutation = useDeleteAccount();
 
   const handleLogout = useCallback(() => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -43,6 +49,15 @@ export default function AccountScreen() {
       { text: "Sign Out", style: "destructive", onPress: () => signOut() },
     ]);
   }, [signOut]);
+
+  const canDeleteAccount = useMemo(
+    () => deleteConfirmText.trim() === DELETE_CONFIRMATION_WORD && !deleteMutation.isPending,
+    [deleteConfirmText, deleteMutation.isPending],
+  );
+
+  const handleDeleteAccount = useCallback(() => {
+    deleteMutation.mutate();
+  }, [deleteMutation]);
 
   return (
     <Screen>
@@ -92,6 +107,53 @@ export default function AccountScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.dangerZone}>
+        <Text preset="bodyEmphasis" color="danger">
+          Delete account
+        </Text>
+        <Text preset="caption" color="textTertiary" style={styles.dangerCopy}>
+          Deleting your account is permanent. If you own this store, your store and all its
+          data will be removed. This can&rsquo;t be undone.
+        </Text>
+        <FieldInput
+          label="Type DELETE to confirm"
+          value={deleteConfirmText}
+          onChangeText={setDeleteConfirmText}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          editable={!deleteMutation.isPending}
+          accessibilityLabel="Type DELETE to confirm account deletion"
+          style={styles.dangerInput}
+        />
+        <TouchableOpacity
+          style={[styles.deleteBtn, !canDeleteAccount ? styles.deleteBtnDisabled : null]}
+          onPress={handleDeleteAccount}
+          disabled={!canDeleteAccount}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Delete account"
+        >
+          {deleteMutation.isPending ? (
+            <ActivityIndicator size="small" color={theme.colors.danger} />
+          ) : (
+            <Text preset="bodyEmphasis" color="danger">
+              Delete account
+            </Text>
+          )}
+        </TouchableOpacity>
+        {deleteMutation.error ? (
+          <Text
+            preset="caption"
+            color="danger"
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            style={styles.dangerError}
+          >
+            {deleteMutation.error.message}
+          </Text>
+        ) : null}
+      </View>
+
       <StoreSelector
         visible={storeSelectorVisible}
         onClose={() => setStoreSelectorVisible(false)}
@@ -130,4 +192,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  dangerZone: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xxl,
+    gap: theme.spacing.sm,
+  },
+  dangerCopy: { lineHeight: 18 },
+  dangerInput: { marginTop: theme.spacing.xs },
+  deleteBtn: {
+    backgroundColor: "transparent",
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    borderColor: theme.colors.danger,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: theme.spacing.xs,
+  },
+  deleteBtnDisabled: { opacity: 0.4 },
+  dangerError: { marginTop: theme.spacing.xs },
 });

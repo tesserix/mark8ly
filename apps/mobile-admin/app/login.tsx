@@ -12,6 +12,11 @@ import { Text } from '../components/ui/Text';
 
 const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
 
+// Shown when an error can't be mapped to specific copy, so a sign-in failure
+// never leaves the form silent. `authErrorMessage` returns null ONLY for a
+// user-cancelled sheet — that case stays silent by design.
+const GENERIC_AUTH_ERROR = 'Something went wrong. Please try again.';
+
 // Both stores require an in-app, reachable privacy policy for account-based
 // apps. These point at the live web pages served from mark8ly.com.
 const PRIVACY_URL = 'https://mark8ly.com/privacy';
@@ -48,7 +53,10 @@ export default function LoginScreen() {
       await signIn(email, password);
     } catch (e: unknown) {
       const msg = authErrorMessage(e);
-      if (msg) setError(msg);
+      // null is the mapper's deliberate "user cancelled — stay silent" signal;
+      // anything else always surfaces copy, falling back to generic wording so
+      // an unmapped error never silently shows nothing.
+      if (msg !== null) setError(msg || GENERIC_AUTH_ERROR);
     } finally {
       setSubmitting(false);
     }
@@ -70,7 +78,10 @@ export default function LoginScreen() {
       if (outcome.status === 'needs-link') setLinkTarget(outcome);
     } catch (e: unknown) {
       const msg = authErrorMessage(e);
-      if (msg) setError(msg);
+      // null is the mapper's deliberate "user cancelled — stay silent" signal;
+      // anything else always surfaces copy, falling back to generic wording so
+      // an unmapped error never silently shows nothing.
+      if (msg !== null) setError(msg || GENERIC_AUTH_ERROR);
     } finally {
       setSubmitting(false);
     }
@@ -91,7 +102,10 @@ export default function LoginScreen() {
       if (outcome.status === 'needs-link') setLinkTarget(outcome);
     } catch (e: unknown) {
       const msg = authErrorMessage(e);
-      if (msg) setError(msg);
+      // null is the mapper's deliberate "user cancelled — stay silent" signal;
+      // anything else always surfaces copy, falling back to generic wording so
+      // an unmapped error never silently shows nothing.
+      if (msg !== null) setError(msg || GENERIC_AUTH_ERROR);
     } finally {
       setSubmitting(false);
     }

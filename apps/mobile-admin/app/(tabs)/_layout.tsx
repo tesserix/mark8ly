@@ -8,6 +8,31 @@ import { useApiClient } from "@/lib/api-client";
 import { TenantGate } from "@/components/TenantGate";
 import { Dock } from "@/components/navigation/Dock";
 
+// Push payloads carry an in-app path to open. Only navigate when it targets a
+// known admin section — an unvalidated value straight from a notification must
+// never drive arbitrary navigation. The storefront deep-link validator
+// (packages/mobile-shared/deep-links) only knows storefront routes
+// (account/*, browse/*), so admin uses this minimal prefix allowlist instead.
+const ALLOWED_DEEP_LINK_SEGMENTS = [
+  "orders",
+  "products",
+  "customers",
+  "more",
+  "notifications",
+] as const;
+
+function safeDeepLinkPath(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed === "" || trimmed.includes("..")) return null;
+  const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  const firstSegment = path.split("/")[1];
+  if (!firstSegment) return null;
+  return ALLOWED_DEEP_LINK_SEGMENTS.some((segment) => segment === firstSegment)
+    ? path
+    : null;
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     // shouldShowAlert is deprecated in expo-notifications 56; the banner/list
@@ -38,10 +63,12 @@ function usePushSetup() {
 
     responseListener.current =
       Notifications.addNotificationResponseReceivedListener((response) => {
-        const deepLink = response.notification.request.content.data?.deep_link;
-        if (typeof deepLink === "string") {
-          router.push(deepLink as never);
-        }
+        const target = safeDeepLinkPath(
+          response.notification.request.content.data?.deep_link,
+        );
+        // Fail safe: an unrecognised or malformed target is ignored rather
+        // than pushed, so a bad payload can never crash or misroute the app.
+        if (target) router.push(target as never);
       });
 
     return () => {

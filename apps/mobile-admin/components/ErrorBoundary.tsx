@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Text } from './ui/Text';
 
 interface Props {
@@ -10,7 +10,8 @@ interface State {
 }
 
 // Top-level boundary so a render error surfaces a readable screen instead of
-// a white crash. Logged to console for now; wired to telemetry in Phase 4.
+// a white crash. It logs today and offers in-session recovery via "Try again";
+// crash reporting is wired through the single `reportError` seam below.
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
@@ -19,8 +20,22 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error) {
+    this.reportError(error);
+  }
+
+  // Single telemetry seam. Today it only logs to the console; when a crash
+  // reporter is adopted (e.g. Sentry / Crashlytics) wire the capture call HERE
+  // and nowhere else. No such SDK is installed yet, so we deliberately do not
+  // import one.
+  private reportError(error: Error) {
     console.error('[mobile-admin] render error', error);
   }
+
+  // Clear the caught error so the subtree re-mounts. Lets the user retry in
+  // session instead of being forced to restart the whole app.
+  private handleRetry = () => {
+    this.setState({ error: null });
+  };
 
   render() {
     if (this.state.error) {
@@ -30,8 +45,18 @@ export class ErrorBoundary extends Component<Props, State> {
             Something went wrong
           </Text>
           <Text preset="body" className="mt-2 text-center text-ink-muted">
-            Restart the app to continue.
+            An unexpected error interrupted this screen.
           </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Try again"
+            onPress={this.handleRetry}
+            className="mt-6 min-h-touch items-center justify-center rounded bg-ink px-6 active:opacity-90"
+          >
+            <Text preset="bodyEmphasis" className="text-paper">
+              Try again
+            </Text>
+          </Pressable>
         </View>
       );
     }

@@ -650,7 +650,7 @@ export function DeleteAccountSection({ isOwner }: { isOwner: boolean }) {
             <p className="text-sm text-foreground-secondary">
               {isOwner
                 ? "This permanently deletes the entire store and all its data — products, orders, customers, everything. This cannot be undone."
-                : "This removes your access to this store. The store itself is unaffected — its data and other members' access are untouched."}
+                : "This permanently removes your access to this store and signs you out. This cannot be undone."}
             </p>
           </div>
         </div>
@@ -664,7 +664,7 @@ export function DeleteAccountSection({ isOwner }: { isOwner: boolean }) {
           </button>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm text-foreground">
+            <p id="delete-account-confirm-label" className="text-sm text-foreground">
               Type <strong>DELETE</strong> to confirm:
             </p>
             <input
@@ -672,6 +672,8 @@ export function DeleteAccountSection({ isOwner }: { isOwner: boolean }) {
               value={confirmation}
               onChange={(e) => setConfirmation(e.target.value)}
               disabled={isPending}
+              aria-label="Type DELETE to confirm account deletion"
+              aria-describedby="delete-account-confirm-label"
               className="h-10 w-full max-w-xs rounded-md border border-[color:var(--danger)]/30 bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--danger)] focus:outline-none focus:ring-1 focus:ring-[color:var(--danger)] disabled:opacity-50"
               placeholder="DELETE"
             />

@@ -12,6 +12,7 @@
  *   4. Owner vs non-owner copy differs
  *   5. Success (ok: true) → window.location.href set to "/logout"
  *   6. Failure (ok: false) → toast.error called, no navigation
+ *   7. Confirm button disabled while action is pending → prevents double-submit
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -136,17 +137,20 @@ describe("DeleteAccountSection", () => {
     ).toBeInTheDocument();
   });
 
-  it("non-owner copy warns about losing access only, store unaffected", () => {
+  it("non-owner copy warns about losing access, without promising the store is unaffected", () => {
     render(<DeleteAccountSection isOwner={false} />);
 
     expect(
-      screen.getByText(/removes your access to this store/i),
+      screen.getByText(/permanently removes your access to this store and signs you out/i),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /^remove my access$/i }),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/permanently deletes the entire store/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/store itself is unaffected/i),
     ).not.toBeInTheDocument();
   });
 
@@ -190,5 +194,45 @@ describe("DeleteAccountSection", () => {
       );
     });
     expect(window.location.href).toBe("");
+  });
+
+  it("confirm button is disabled while the action is pending — prevents double-submit", async () => {
+    const user = userEvent.setup();
+
+    let resolveDelete: (value: { ok: true }) => void;
+    const pendingDelete = new Promise<{ ok: true }>((resolve) => {
+      resolveDelete = resolve;
+    });
+    mockDeleteTenantAccountAction.mockReturnValue(pendingDelete);
+
+    render(<DeleteAccountSection isOwner={true} />);
+
+    await user.click(screen.getByRole("button", { name: /delete store/i }));
+    await user.type(screen.getByPlaceholderText("DELETE"), "DELETE");
+
+    const confirmButton = screen.getByRole("button", {
+      name: /delete store and sign out/i,
+    });
+    await user.click(confirmButton);
+
+    await waitFor(() => {
+      expect(mockDeleteTenantAccountAction).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /deleting/i }),
+      ).toBeDisabled();
+    });
+
+    // A second click while pending must not fire the action again.
+    await user.click(screen.getByRole("button", { name: /deleting/i }));
+    expect(mockDeleteTenantAccountAction).toHaveBeenCalledTimes(1);
+
+    resolveDelete!({ ok: true });
+
+    await waitFor(() => {
+      expect(window.location.href).toBe("/logout");
+    });
   });
 });

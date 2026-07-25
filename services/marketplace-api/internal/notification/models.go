@@ -54,6 +54,15 @@ type NotificationPreferences struct {
 	ID          uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
 	TenantID    uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null"`
 	StoreID     uuid.UUID       `gorm:"column:store_id;type:uuid;not null;uniqueIndex"`
+	// NOTE: this DB column default diverges from uiPreferenceDefaults in
+	// internal/notification/service.go — payment_received and review_submitted
+	// default to true here but false there. uiPreferenceDefaults is
+	// authoritative for stores with no preferences row (see defaultPreferences
+	// and GetPreferences's 404-fallback path in service.go); this DB column
+	// default only matters if a row is ever inserted by a path that bypasses
+	// Go-level defaulting (e.g. a raw SQL insert or a future migration), which
+	// should be avoided. Fixing this DB-level default would require a
+	// migration + a go-shared/schema version bump — out of scope here.
 	Preferences json.RawMessage `gorm:"column:preferences;type:jsonb;not null;default:'{\"new_order\": true, \"low_stock\": true, \"return_requested\": true, \"payment_received\": true, \"review_submitted\": true}'"`
 	CreatedAt   time.Time       `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt   time.Time       `gorm:"column:updated_at;not null;default:now()"`

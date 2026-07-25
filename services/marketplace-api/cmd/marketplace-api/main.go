@@ -1065,7 +1065,6 @@ func main() {
 
 	// Mobile admin deps — Bearer auth for external mobile clients.
 	var mobileDeps admin.MobileDeps
-	var pushWebhookHandler gin.HandlerFunc
 	var pubsubPushHandler gin.HandlerFunc
 	if m == mode.Admin || m == mode.Both {
 		var tokenVerifier auth.TokenVerifier
@@ -1087,7 +1086,6 @@ func main() {
 		pushRepo := push.NewRepository(conn)
 		pushTokenHandler := admin.NewPushTokenHandler(pushRepo, log)
 		pushSender := push.NewSender(&http.Client{Timeout: 10 * time.Second})
-		pushWebhookHandler = push.NewWebhookHandler(pushSender, pushRepo, log)
 		// Public, OIDC-authenticated Pub/Sub push delivery. Mounted at
 		// /pubsub/merchant-push (see route registration). Safe to expose:
 		// it verifies the caller is our push subscription before any work.
@@ -1871,9 +1869,6 @@ func main() {
 		if brandingSeeder != nil {
 			brandingSeeder.Register(r.Group("/api/v1/test"))
 		}
-		if pushWebhookHandler != nil {
-			r.POST("/internal/push-webhook", pushWebhookHandler)
-		}
 		if pubsubPushHandler != nil {
 			// Public path (OIDC-verified in-handler) — Pub/Sub push delivery.
 			r.POST("/pubsub/merchant-push", pubsubPushHandler)
@@ -1949,9 +1944,6 @@ func main() {
 			})
 			if countryPublicHandler != nil {
 				engine.GET("/api/v1/public/supported-countries", countryPublicHandler.ListSupported)
-			}
-			if pushWebhookHandler != nil {
-				engine.POST("/internal/push-webhook", pushWebhookHandler)
 			}
 			if pubsubPushHandler != nil {
 				// Public path (OIDC-verified in-handler) — Pub/Sub push delivery.

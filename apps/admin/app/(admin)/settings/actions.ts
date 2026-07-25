@@ -35,6 +35,7 @@ import type {
   AuditLogsQuery,
 } from "@/lib/api/settings-tier2-api";
 import { canEditSettings, resolveStoreId } from "@/lib/auth/serverSession";
+import { deleteTenantAccount, PlatformApiError } from "@/lib/api/platform-api";
 import type { TenantRole } from "@/lib/api/platform-api";
 
 export type ActionResult =
@@ -164,6 +165,33 @@ export async function deleteAccountAction(
     return { ok: false, code: result.error.code, message: result.error.message };
   }
   return { ok: true };
+}
+
+// Deletes the entire tenant account (mirrors the mobile app's account
+// deletion flow). Unlike deleteAccountAction above, this is NOT gated on
+// canEditSettings — any signed-in member may request it, and
+// platform-api's server-side authz guard decides owner-vs-staff. The
+// user is signed out immediately after, so no revalidatePath is needed.
+export async function deleteTenantAccountAction(
+  confirmation: string,
+): Promise<ActionResult> {
+  const { userId, tenantId } = await getSession();
+  if (!userId || !tenantId) return noSession();
+
+  if (confirmation !== "DELETE") {
+    return { ok: false, code: "validation", message: "Confirmation text does not match." };
+  }
+
+  try {
+    await deleteTenantAccount(tenantId, userId);
+    return { ok: true };
+  } catch (err: unknown) {
+    if (err instanceof PlatformApiError) {
+      return { ok: false, code: err.code, message: err.message };
+    }
+    const message = err instanceof Error ? err.message : "Failed to delete account.";
+    return { ok: false, code: "unknown", message };
+  }
 }
 
 // ─── S2: Custom Domains ──────────────────────────────────────────────

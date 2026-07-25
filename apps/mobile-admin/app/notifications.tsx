@@ -123,7 +123,7 @@ export default function NotificationsScreen() {
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity
-              onPress={() => router.push("/(tabs)/more/settings/notifications")}
+              onPress={() => router.push("/(tabs)/more/settings/notification-settings")}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Notification settings"

@@ -226,7 +226,13 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		tenantScoped("tenant_sso_configs", tenantID),       // 000070: tenant_id (PK)
 		tenantScoped("storefront_push_tokens", tenantID),   // 000022: tenant_id
 		tenantScoped("admin_push_tokens", tenantID),        // 000021: tenant_id, store_id
-		tenantScoped("break_glass_lockouts", tenantID),     // 000073: tenant_id (nullable)
+		// break_glass_lockouts is intentionally NOT purged: in prod it is owned by
+		// `postgres` (a manual-migration anomaly), so the marketplace_api role has
+		// no DELETE privilege and including it aborts the whole single-tx purge
+		// (SQLSTATE 42501). Its rows are ephemeral, HMAC'd-IP rate-limit lockouts
+		// (self-expiring via locked_until) — safe to retain. See protectedTables
+		// in purge_test.go. break_glass_accounts (below) IS owned by marketplace_api
+		// and is still purged.
 		tenantScoped("break_glass_accounts", tenantID),     // 000072: tenant_id (PK)
 		tenantScoped("enterprise_api_keys", tenantID),      // 000068: tenant_id, store_id
 		tenantScoped("audit_logs", tenantID),               // 000035ish: tenant_id, store_id

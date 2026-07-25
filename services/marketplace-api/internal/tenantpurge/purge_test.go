@@ -33,6 +33,16 @@ var protectedTables = []string{
 	"user_profiles",
 	"promo_codes",
 	"signup_anomaly_log",
+	// break_glass_lockouts is owned by `postgres` in prod (a manual-migration
+	// anomaly — migration 000073 intends marketplace_api ownership, but the row
+	// was created out-of-band), so marketplace_api has NO privileges on it and a
+	// DELETE aborts the whole single-tx purge (SQLSTATE 42501). Excluded here so
+	// the purge succeeds; its rows are ephemeral rate-limit lockouts (HMAC'd IP,
+	// nullable tenant_id, self-expiring via locked_until) — safe to retain.
+	// NOTE: break_glass_ACCOUNTS (the sensitive emergency-admin row) is owned by
+	// marketplace_api and IS still purged. If the ownership anomaly is ever fixed,
+	// break_glass_lockouts can be re-added to the plan.
+	"break_glass_lockouts",
 }
 
 func stepIndex(steps []deleteStep, table string) int {

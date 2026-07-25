@@ -630,6 +630,21 @@ func (h *OrderDetailHandler) Cancel(c *gin.Context) {
 		}
 	}
 
+	// Fire the in-app notification so the admin bell picks up a customer
+	// self-cancel exactly like an admin-initiated one. Nil-safe — we skip
+	// silently if the notifier wasn't wired.
+	cancelMsg := "Order " + o.OrderNumber + " was cancelled."
+	resourceType := "order"
+	notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
+		TenantID:     o.TenantID,
+		StoreID:      o.StoreID,
+		Type:         notification.TypeOrderCancelled,
+		Title:        "Order cancelled",
+		Message:      &cancelMsg,
+		ResourceType: &resourceType,
+		ResourceID:   &o.ID,
+	})
+
 	// Fire the cancellation email on a detached context — same fire-and-
 	// forget contract as the admin path. byCustomer=true switches the
 	// email copy to the self-service tone.

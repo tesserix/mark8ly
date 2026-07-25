@@ -11,6 +11,20 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
+// NinjaVan is our only shipping carrier across these Southeast-Asian markets,
+// and that integration is not yet tested end-to-end. Until it is verified we
+// don't let merchants onboard into countries we can't fulfil — so we filter
+// them out of the country picker. Remove entries here once NinjaVan is live.
+const UNSUPPORTED_SHIPPING_COUNTRY_CODES = new Set([
+  "SG", // Singapore
+  "MY", // Malaysia
+  "ID", // Indonesia
+  "TH", // Thailand
+  "PH", // Philippines
+  "VN", // Vietnam
+  "MM", // Myanmar
+]);
+
 /**
  * /onboarding — the single-page signup form.
  *
@@ -20,11 +34,16 @@ export const metadata = {
  * of the onboarding flow, so the whole funnel feels consistent.
  */
 export default async function OnboardingPage() {
-  const [countries, currencies, timezones] = await Promise.all([
+  const [allCountries, currencies, timezones] = await Promise.all([
     locations.listCountries(),
     locations.listCurrencies(),
     locations.listTimezones(),
   ]);
+
+  // Drop markets we can't fulfil yet (untested NinjaVan shipping).
+  const countries = allCountries.filter(
+    (c) => !UNSUPPORTED_SHIPPING_COUNTRY_CODES.has(c.code.toUpperCase()),
+  );
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">

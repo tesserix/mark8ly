@@ -56,7 +56,18 @@ export default function AccountScreen() {
   );
 
   const handleDeleteAccount = useCallback(() => {
-    deleteMutation.mutate();
+    Alert.alert(
+      "Delete account?",
+      "This permanently deletes your account. If you own this store, your store and all its data — products, orders, and customers — will be removed. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: () => deleteMutation.mutate(),
+        },
+      ],
+    );
   }, [deleteMutation]);
 
   return (

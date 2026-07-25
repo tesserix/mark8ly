@@ -452,6 +452,28 @@ export async function revokeInvitation(
 }
 
 /**
+ * Deletes a tenant's account. Mirrors the mobile app's account-deletion
+ * flow. Requires the requesting user's uid for the server-side authz
+ * guard (owner only).
+ */
+export async function deleteTenantAccount(
+  tenantId: string,
+  uid: string,
+): Promise<void> {
+  const res = await fetch(
+    `${PLATFORM_API_URL}/internal/tenants/${tenantId}/account`,
+    internalInit({
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid }),
+    }),
+  );
+  if (!res.ok) {
+    throw await platformError(res);
+  }
+}
+
+/**
  * Verifies a raw invitation token and returns the public summary
  * for the accept page. Does NOT require an authenticated caller.
  */

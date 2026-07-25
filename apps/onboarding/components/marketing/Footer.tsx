@@ -76,6 +76,7 @@ export function Footer() {
               links={[
                 { href: "/privacy", label: "Privacy" },
                 { href: "/terms", label: "Terms" },
+                { href: "/delete-account", label: "Delete account" },
                 { href: "/cookies", label: "Cookies" },
                 { href: "/acceptable-use", label: "Acceptable use" },
                 { href: "/refunds", label: "Refunds" },

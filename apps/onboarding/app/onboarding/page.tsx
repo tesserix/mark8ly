@@ -11,18 +11,30 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-// NinjaVan is our only shipping carrier across these Southeast-Asian markets,
-// and that integration is not yet tested end-to-end. Until it is verified we
-// don't let merchants onboard into countries we can't fulfil — so we filter
-// them out of the country picker. Remove entries here once NinjaVan is live.
-const UNSUPPORTED_SHIPPING_COUNTRY_CODES = new Set([
-  "SG", // Singapore
-  "MY", // Malaysia
-  "ID", // Indonesia
-  "TH", // Thailand
-  "PH", // Philippines
-  "VN", // Vietnam
-  "MM", // Myanmar
+// We only let merchants onboard in countries a tested shipping carrier can
+// fulfil. This allowlist mirrors the carriers' own SupportedCountries() in
+// services/marketplace-api/internal/shipping:
+//   - ShipEngine: AU, CA, DE, ES, FR, GB, IE, IT, NL, NZ, US
+//   - Delhivery:  IN
+// NinjaVan (ID, MY, PH, SG, TH, VN) is intentionally EXCLUDED until its
+// integration is tested end-to-end — add those codes here once it is verified.
+// Countries with no carrier at all (e.g. BR, JP, SA, AE) are excluded by
+// virtue of not being listed.
+const SUPPORTED_SHIPPING_COUNTRY_CODES = new Set([
+  // ShipEngine
+  "AU",
+  "CA",
+  "DE",
+  "ES",
+  "FR",
+  "GB",
+  "IE",
+  "IT",
+  "NL",
+  "NZ",
+  "US",
+  // Delhivery
+  "IN",
 ]);
 
 /**
@@ -40,9 +52,9 @@ export default async function OnboardingPage() {
     locations.listTimezones(),
   ]);
 
-  // Drop markets we can't fulfil yet (untested NinjaVan shipping).
-  const countries = allCountries.filter(
-    (c) => !UNSUPPORTED_SHIPPING_COUNTRY_CODES.has(c.code.toUpperCase()),
+  // Only show markets a tested shipping carrier can fulfil.
+  const countries = allCountries.filter((c) =>
+    SUPPORTED_SHIPPING_COUNTRY_CODES.has(c.code.toUpperCase()),
   );
 
   return (

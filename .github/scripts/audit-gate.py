@@ -17,6 +17,13 @@ import sys
 # GHSA ids intentionally tolerated. Keep this list SHORT and time-boxed.
 ALLOWLIST = {
     "GHSA-f88m-g3jw-g9cj",  # sharp<0.35 libvips CVEs (via next); fix: bump next
+    # brace-expansion DoS — reaches us ONLY via the eslint dev-toolchain
+    # (eslint-config-next -> eslint -> minimatch), a devDependency NOT present
+    # in the runtime Docker images, so no production exposure. Installed tree is
+    # already on the patched 1.1.16/2.1.2/5.0.7 lines; this 2026 advisory flags
+    # them anyway. Proper bump blocked by the monorepo multi-version lockfile
+    # (can't regen locally). Time-boxed: drop when eslint deps are refreshed.
+    "GHSA-mh99-v99m-4gvg",
 }
 
 

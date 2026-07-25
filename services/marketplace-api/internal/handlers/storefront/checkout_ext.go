@@ -645,6 +645,14 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 			ResourceType: &newOrderResource,
 			ResourceID:   &result.Order.ID,
 		})
+
+		// Best-effort low-stock re-check: a sale decrements stock via a DB
+		// trigger (see internal/product/models.go), so unlike the admin
+		// manual variant-edit PATCH this can't snapshot a pre-write
+		// quantity — it re-reads post-sale stock per purchased variant and
+		// fires low_stock when this sale is the one that crossed the
+		// threshold. Never affects the checkout response either way.
+		h.checkLowStockCrossings(ctx, tenantID, storeID, req.Items)
 	}
 
 	// Persist the per-jurisdiction tax breakdown (CGST/SGST/IGST for

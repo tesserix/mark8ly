@@ -1222,7 +1222,8 @@ func main() {
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
 		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, apiKeyEncryptor, log).
 			WithAudit(auditEmitter).
-			WithSecretStore(carrierSecretStore)
+			WithSecretStore(carrierSecretStore).
+			WithNotifier(notificationSvc)
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, apiKeyEncryptor, log).
 			WithSecretStore(carrierSecretStore)

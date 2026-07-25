@@ -19,6 +19,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/coupon"
@@ -27,9 +28,9 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/discount"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
+	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
-	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/tax"
@@ -42,10 +43,11 @@ type CheckoutExtHandler struct {
 	db          *gorm.DB
 	orderSvc    *order.Service
 	couponSvc   *coupon.Service
-	giftCardSvc *giftcard.Service  // nil-safe: no-ops when nil
-	loyaltySvc  *loyalty.Service   // nil-safe: no-ops when nil
-	audit       *audit.Emitter     // optional — nil-safe
-	encryptor   crypto.Encryptor   // decrypts API keys for payment/tax/shipping
+	giftCardSvc *giftcard.Service     // nil-safe: no-ops when nil
+	loyaltySvc  *loyalty.Service      // nil-safe: no-ops when nil
+	audit       *audit.Emitter        // optional — nil-safe
+	notify      *notification.Service // optional — nil-safe
+	encryptor   crypto.Encryptor      // decrypts API keys for payment/tax/shipping
 	// secretStore, when non-nil, resolves gsm:// references as well as
 	// legacy inline ciphertext. Tracks the same pattern as shipments /
 	// shipping_rates: the store is preferred, the encryptor remains the
@@ -71,6 +73,13 @@ func (h *CheckoutExtHandler) WithAudit(e *audit.Emitter) *CheckoutExtHandler {
 // to gsm://. Chainable.
 func (h *CheckoutExtHandler) WithSecretStore(s carriersecrets.Store) *CheckoutExtHandler {
 	h.secretStore = s
+	return h
+}
+
+// WithNotifier attaches the notification service so extended storefront
+// checkouts fire in-app notifications to the merchant. Nil-safe.
+func (h *CheckoutExtHandler) WithNotifier(n *notification.Service) *CheckoutExtHandler {
+	h.notify = n
 	return h
 }
 
@@ -203,20 +212,20 @@ func (h *CheckoutExtHandler) SetLoyaltyService(svc *loyalty.Service) {
 
 // CheckoutExtRequest is the wire body for the extended checkout endpoint.
 type CheckoutExtRequest struct {
-	IdempotencyKey  string                 `json:"idempotency_key"  binding:"required"`
-	CartSessionID   *string                `json:"cart_session_id"`
-	CustomerEmail   string                 `json:"customer_email"   binding:"required,email"`
-	CustomerName    *string                `json:"customer_name"`
-	Items           []CheckoutItemRequest  `json:"items"            binding:"required,min=1"`
-	ShippingAddress CheckoutAddressRequest `json:"shipping_address" binding:"required"`
+	IdempotencyKey  string                  `json:"idempotency_key"  binding:"required"`
+	CartSessionID   *string                 `json:"cart_session_id"`
+	CustomerEmail   string                  `json:"customer_email"   binding:"required,email"`
+	CustomerName    *string                 `json:"customer_name"`
+	Items           []CheckoutItemRequest   `json:"items"            binding:"required,min=1"`
+	ShippingAddress CheckoutAddressRequest  `json:"shipping_address" binding:"required"`
 	BillingAddress  *CheckoutAddressRequest `json:"billing_address"`
-	ShippingService string                 `json:"shipping_service" binding:"required"`
-	PaymentProvider string                 `json:"payment_provider" binding:"required"`
-	Subtotal        decimal.Decimal        `json:"subtotal"         binding:"required"`
-	DiscountTotal   decimal.Decimal        `json:"discount_total"`
-	CouponCode      *string                `json:"coupon_code"`
-	GiftCardCode    *string                `json:"gift_card_code"`
-	RedeemPoints    *int                   `json:"redeem_points"`
+	ShippingService string                  `json:"shipping_service" binding:"required"`
+	PaymentProvider string                  `json:"payment_provider" binding:"required"`
+	Subtotal        decimal.Decimal         `json:"subtotal"         binding:"required"`
+	DiscountTotal   decimal.Decimal         `json:"discount_total"`
+	CouponCode      *string                 `json:"coupon_code"`
+	GiftCardCode    *string                 `json:"gift_card_code"`
+	RedeemPoints    *int                    `json:"redeem_points"`
 }
 
 // CheckoutExtResponse is the extended checkout response including payment
@@ -624,6 +633,17 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 				"source":         "storefront",
 				"customer_email": req.CustomerEmail,
 			},
+		})
+		newOrderMsg := "New order " + result.Order.OrderNumber + " placed."
+		newOrderResource := "order"
+		notification.Emit(c.Request.Context(), h.notify, h.logger, notification.Notification{
+			TenantID:     tenantID,
+			StoreID:      storeID,
+			Type:         notification.TypeNewOrder,
+			Title:        "New order received",
+			Message:      &newOrderMsg,
+			ResourceType: &newOrderResource,
+			ResourceID:   &result.Order.ID,
 		})
 	}
 

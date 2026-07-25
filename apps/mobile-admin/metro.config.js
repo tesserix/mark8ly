@@ -32,6 +32,24 @@ config.resolver.unstable_enablePackageExports = false;
 // monorepo-root node_modules and hangs on this large workspace.
 config.resolver.disableHierarchicalLookup = true;
 
+// expo-router@56's Android/iOS native Stack toolbar imports
+// `@expo/ui/{jetpack-compose,swift-ui}`. npm nests `@expo/ui` under
+// `expo-router/node_modules`, which the app+root-only `nodeModulesPaths` above
+// (with disableHierarchicalLookup) cannot reach, so Metro fails to resolve it
+// (Android bundling hit it first; iOS slipped past). Map `@expo/ui` to wherever
+// it actually installed, resolved relative to expo-router so it's robust to the
+// hoist layout. `@expo/ui` ships physical `jetpack-compose/` + `swift-ui/` dirs,
+// so this resolves without needing package-exports (kept off above).
+const expoRouterDir = path.dirname(
+  require.resolve('expo-router/package.json', { paths: [projectRoot] }),
+);
+config.resolver.extraNodeModules = {
+  ...(config.resolver.extraNodeModules || {}),
+  '@expo/ui': path.dirname(
+    require.resolve('@expo/ui/package.json', { paths: [expoRouterDir] }),
+  ),
+};
+
 config.cacheStores = [
   new FileStore({ root: path.join(projectRoot, '.metro-cache') }),
 ];

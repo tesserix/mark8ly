@@ -29,6 +29,7 @@ export default async function AccountSettingsPage() {
           tenantId={tenantId}
           sessionEmail={email}
           editable={editable}
+          isOwner={role === "owner"}
         />
       </AdminPage>
   );
@@ -39,11 +40,13 @@ async function AccountSettingsContent({
   tenantId,
   sessionEmail,
   editable,
+  isOwner,
 }: {
   userId: string;
   tenantId: string;
   sessionEmail: string;
   editable: boolean;
+  isOwner: boolean;
 }) {
   const session = { userId, tenantId };
   const [profile, sessions] = await Promise.all([
@@ -57,6 +60,7 @@ async function AccountSettingsContent({
       sessionEmail={sessionEmail}
       sessions={sessions}
       editable={editable}
+      isOwner={isOwner}
     />
   );
 }

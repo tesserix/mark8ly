@@ -14,6 +14,7 @@ import {
   disableMFAAction,
   revokeSessionAction,
   deleteAccountAction,
+  deleteTenantAccountAction,
 } from "@/app/(admin)/settings/actions";
 import { useToast } from "@/components/feedback/Toaster";
 
@@ -22,6 +23,7 @@ interface AccountSettingsClientProps {
   sessionEmail: string;
   sessions: AccountSession[];
   editable: boolean;
+  isOwner: boolean;
 }
 
 export function AccountSettingsClient({
@@ -29,6 +31,7 @@ export function AccountSettingsClient({
   sessionEmail,
   sessions,
   editable,
+  isOwner,
 }: AccountSettingsClientProps) {
   return (
     <div className="space-y-10">
@@ -43,6 +46,8 @@ export function AccountSettingsClient({
       <SessionsSection sessions={sessions} />
       <hr className="border-border" />
       <DangerZone editable={editable} />
+      <hr className="border-border" />
+      <DeleteAccountSection isOwner={isOwner} />
     </div>
   );
 }
@@ -598,6 +603,95 @@ function DangerZone({ editable }: { editable: boolean }) {
                   setConfirmation("");
                 }}
                 className="h-10 rounded-md border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)]"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ─── Delete Account (tenant-account deletion) ────────────────────────
+
+export function DeleteAccountSection({ isOwner }: { isOwner: boolean }) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
+
+  function handleDelete() {
+    startTransition(async () => {
+      const result = await deleteTenantAccountAction(confirmation);
+      if (!result.ok) {
+        toast.error("Couldn't delete account", result.message);
+      } else {
+        window.location.href = "/logout";
+      }
+    });
+  }
+
+  const actionLabel = isOwner ? "Delete store" : "Remove my access";
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-serif text-2xl font-medium tracking-tight text-[color:var(--danger)]">
+        Delete account
+      </h2>
+      <div className="rounded-md border border-[color:var(--danger)]/30 p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <Trash2 className="mt-0.5 h-5 w-5 text-[color:var(--danger)]" aria-hidden="true" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-foreground">
+              {isOwner ? "Delete this store" : "Leave this store"}
+            </p>
+            <p className="text-sm text-foreground-secondary">
+              {isOwner
+                ? "This permanently deletes the entire store and all its data — products, orders, customers, everything. This cannot be undone."
+                : "This removes your access to this store. The store itself is unaffected — its data and other members' access are untouched."}
+            </p>
+          </div>
+        </div>
+        {!showConfirm ? (
+          <button
+            type="button"
+            onClick={() => setShowConfirm(true)}
+            className="h-10 rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90"
+          >
+            {actionLabel}
+          </button>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-foreground">
+              Type <strong>DELETE</strong> to confirm:
+            </p>
+            <input
+              type="text"
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              disabled={isPending}
+              className="h-10 w-full max-w-xs rounded-md border border-[color:var(--danger)]/30 bg-[color:var(--background-elevated)] px-3 text-sm text-foreground placeholder:text-foreground-tertiary focus:border-[color:var(--danger)] focus:outline-none focus:ring-1 focus:ring-[color:var(--danger)] disabled:opacity-50"
+              placeholder="DELETE"
+            />
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isPending || confirmation !== "DELETE"}
+                className="h-10 rounded-md bg-[color:var(--danger)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--danger)]/90 disabled:opacity-50"
+              >
+                {isPending ? "Deleting..." : `${actionLabel} and sign out`}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirm(false);
+                  setConfirmation("");
+                }}
+                disabled={isPending}
+                className="h-10 rounded-md border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"
               >
                 Cancel
               </button>

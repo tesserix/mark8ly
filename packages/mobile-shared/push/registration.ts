@@ -6,7 +6,10 @@ import { tokenStorage } from "../auth/token-storage";
 export async function registerForPushNotifications(
   registerFn: (token: string, platform: string, deviceId: string) => Promise<void>,
 ): Promise<string | null> {
-  if (!Device.isDevice) return null;
+  // iOS simulators genuinely cannot obtain a push token, so skip them. Android
+  // emulators WITH Google Play Services can receive FCM, so let them register
+  // (real Android/iOS hardware reports isDevice=true and is unaffected).
+  if (Platform.OS === "ios" && !Device.isDevice) return null;
 
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;

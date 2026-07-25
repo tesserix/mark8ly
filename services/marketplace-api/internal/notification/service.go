@@ -3,10 +3,13 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
 // PushPublisher publishes a device-push event for a merchant notification, so
@@ -159,6 +162,19 @@ var uiPreferenceDefaults = map[NotificationType]bool{
 	TypeReviewSubmitted: false,
 }
 
+// defaultPreferences returns the UI fallback prefs for a store with no explicit
+// row — matching isTypeEnabled's per-type fallback and the web DEFAULT_PREFS — so
+// GetPreferences returns 200 defaults instead of a 404 the mobile client misreads
+// as an invalid store (which bounces the user to the dashboard).
+func defaultPreferences(storeID uuid.UUID) *NotificationPreferences {
+	m := make(map[string]bool, len(uiPreferenceDefaults))
+	for t, v := range uiPreferenceDefaults {
+		m[string(t)] = v
+	}
+	raw, _ := json.Marshal(m)
+	return &NotificationPreferences{StoreID: storeID, Preferences: raw}
+}
+
 // Emit is a fire-and-forget helper for feature code: checks preferences
 // via CreateIfEnabled, logs on failure, never panics. Nil-safe on svc so
 // handlers that boot without a notification service (tests, pure
@@ -217,9 +233,18 @@ func (s *Service) isTypeEnabled(ctx context.Context, storeID uuid.UUID, t Notifi
 	return fallback, nil
 }
 
-// GetPreferences returns the notification preferences for a store.
+// GetPreferences returns the notification preferences for a store. A store
+// with no explicit preferences row yields the UI defaults (200) rather than
+// a 404 — see defaultPreferences.
 func (s *Service) GetPreferences(ctx context.Context, storeID uuid.UUID) (*NotificationPreferences, error) {
-	return s.repo.GetPreferences(ctx, s.db, storeID)
+	prefs, err := s.repo.GetPreferences(ctx, s.db, storeID)
+	if err != nil {
+		if errors.Is(err, apperrors.ErrNotFound) {
+			return defaultPreferences(storeID), nil
+		}
+		return nil, err
+	}
+	return prefs, nil
 }
 
 // UpsertPreferences creates or updates notification preferences for a store.

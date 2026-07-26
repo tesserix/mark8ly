@@ -106,10 +106,13 @@ export default function TermsOfServicePage() {
           <a href="/sub-processors">/sub-processors</a>.
         </p>
         <p>
-          <strong>Who collects your payment:</strong> Subscriptions billed in
-          India are collected and settled by{" "}
+          <strong>Who collects your payment:</strong> Subscription payments are
+          collected and settled by{" "}
           <strong>Zivana Innovations LLP</strong>, part of Tesserix Pty Ltd.
-          That is the name that may appear on your bank or card statement.
+          That is the name that may appear on your bank or card statement,
+          whether you are billed through Stripe or Razorpay. If we begin billing
+          you through a different group entity, we will tell you before it
+          takes effect.
         </p>
 
         <h2>4. Acceptable use</h2>

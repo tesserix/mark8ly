@@ -35,6 +35,14 @@ export default async function LoginPage({ searchParams }: PageProps) {
       <main id="main" className="px-6 py-16 sm:py-24">
         <div className="mx-auto w-full max-w-md">
           <SignInForm returnUrl={safeReturnUrl} />
+          {/* Operator disclosure on the sign-in screen: this is where a
+              merchant decides to trust the platform, and the entity on their
+              settlement statement should not be a surprise later. */}
+          <p className="mt-10 text-center text-xs leading-relaxed text-muted-foreground">
+            Powered by Zivana Innovations LLP, part of Tesserix Pty Ltd
+            <br />
+            ACN 694 070 865 · ABN 59 694 070 865
+          </p>
         </div>
       </main>
     </>

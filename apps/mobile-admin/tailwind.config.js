@@ -23,9 +23,9 @@ module.exports = {
         ink: {
           DEFAULT: '#0E0E0C',
           soft: '#45433E',
-          // Replaced a previous insufficient-contrast value with #5C5953
-          // to clear 4.5:1 WCAG AA on paper. Aligned to lib/theme.ts
-          // textTertiary so both token sources agree.
+          // Was #7A766E (~4.18:1 on paper — fails WCAG AA). Aligned to
+          // lib/theme.ts textTertiary (#5C5953, ~6.45:1) so both token
+          // sources agree.
           muted: '#5C5953',
           faint: '#A09C92',
         },

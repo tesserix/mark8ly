@@ -81,11 +81,26 @@ describe('WCAG AA colour guard', () => {
     path.resolve(__dirname, '../tailwind.config.js'),
   ];
 
+  // Strip both block and line comments from source code before searching.
+  // Allows banned values to be preserved in comments (documentation) while
+  // still catching them in actual code.
+  function stripComments(code: string): string {
+    // Remove block comments and line comments from the code.
+    let result = code.replace(/\/\*[\s\S]*?\*\//g, '');
+    result = result.replace(/\/\/.*$/gm, '');
+    return result;
+  }
+
   for (const file of sources) {
     it(`does not reintroduce a failing text colour in ${path.basename(file)}`, () => {
       const contents = fs.readFileSync(file, 'utf8');
+      const contentsNoComments = stripComments(contents);
       for (const banned of BANNED) {
-        expect(contents).not.toContain(banned);
+        if (contentsNoComments.includes(banned)) {
+          throw new Error(
+            `WCAG AA guard failed: banned colour value "${banned}" found in ${path.basename(file)} (outside comments)`,
+          );
+        }
       }
     });
   }

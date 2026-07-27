@@ -101,9 +101,9 @@ export default function TeamScreen() {
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Invite teammate"
-            android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+            android_ripple={{ ...theme.press.rippleInk, borderless: true }}
             style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
             }
           >
             <UserPlus size={20} color={theme.colors.text} strokeWidth={1.75} />
@@ -129,28 +129,47 @@ export default function TeamScreen() {
         >
           <Eyebrow label="Members" style={styles.section} />
           <View style={styles.card}>
-            {memberList.map((m, i) => (
-              <View key={m.email}>
-                {i > 0 ? <Hairline /> : null}
-                <PressableRow
-                  style={styles.memberRow}
-                  // PressableRow has no `disabled` prop (fixed public API);
-                  // guard inline instead — same no-op-when-disabled behavior
-                  // the previous pressable's `disabled` prop gave us, just
-                  // without suppressing the row's own press feedback.
-                  onPress={() => {
-                    if (m.kind === "owner" || updateRole.isPending) return;
-                    onChangeRole(m);
-                  }}
-                  accessibilityLabel={`${m.email}, ${m.role}${m.kind === "owner" ? "" : ". Tap to change role"}`}
-                >
+            {memberList.map((m, i) => {
+              // PressableRow has no `disabled` prop (its public API is
+              // fixed) and would otherwise show full sink/ripple feedback
+              // for a tap that does nothing. Render the owner row — and
+              // every row while a role change is in flight — as a plain,
+              // non-interactive View instead, same precedent as
+              // app/notifications.tsx's NotificationItem: no
+              // accessibilityRole="button", no press feedback, and no false
+              // "Tap to change role" affordance announced to VoiceOver.
+              const disabled = m.kind === "owner" || updateRole.isPending;
+              const rowContent = (
+                <>
                   <Text preset="body" color="text" numberOfLines={1} style={styles.email}>
                     {m.email}
                   </Text>
                   <StatusBadge label={titleize(m.role)} tone={ROLE_TONE[m.role] ?? "muted"} />
-                </PressableRow>
-              </View>
-            ))}
+                </>
+              );
+              return (
+                <View key={m.email}>
+                  {i > 0 ? <Hairline /> : null}
+                  {disabled ? (
+                    <View
+                      style={styles.memberRowStatic}
+                      accessible={true}
+                      accessibilityLabel={`${m.email}, ${m.role}`}
+                    >
+                      {rowContent}
+                    </View>
+                  ) : (
+                    <PressableRow
+                      style={styles.memberRow}
+                      onPress={() => onChangeRole(m)}
+                      accessibilityLabel={`${m.email}, ${m.role}. Tap to change role`}
+                    >
+                      {rowContent}
+                    </PressableRow>
+                  )}
+                </View>
+              );
+            })}
           </View>
 
           <Eyebrow label="Pending invitations" style={styles.section} />
@@ -178,9 +197,9 @@ export default function TeamScreen() {
                       hitSlop={10}
                       accessibilityRole="button"
                       accessibilityLabel={`Revoke invite to ${inv.email}`}
-                      android_ripple={{ color: "rgba(139, 46, 32, 0.12)", borderless: true }}
+                      android_ripple={{ ...theme.press.rippleDanger, borderless: true }}
                       style={({ pressed }) =>
-                        pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+                        pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
                       }
                     >
                       <X size={18} color={theme.colors.danger} strokeWidth={2} />
@@ -215,13 +234,33 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
     gap: theme.spacing.md,
   },
-  // PressableRow already owns flexDirection/alignItems/padding/gap; this
-  // just adds the space-between the email/role-badge pair needs. No
+  // PressableRow already owns flexDirection/alignItems/padding/gap. Two
+  // overrides: `justifyContent` for the email/role-badge space-between, and
+  // `paddingHorizontal: 0` — the wrapping `card` above already adds
+  // theme.spacing.lg (16), and PressableRow's own base adds theme.row.paddingH
+  // (20) on top of that, which indented member rows a further 20pt past the
+  // plain-View invitation rows below (also inside `card`, no row padding of
+  // their own) — 36pt vs 16pt, visibly misaligned under the same eyebrows.
+  // Zeroing it here keeps both columns flush at the card's 16pt. No
   // backgroundColor override — this list sits directly on Screen's paper
   // background (no Card/elevated wrapper here), which is exactly
   // PressableRow's own default, so the pre-migration transparency was
   // already correct.
-  memberRow: { justifyContent: "space-between" },
+  memberRow: { justifyContent: "space-between", paddingHorizontal: 0 },
+  // Non-interactive twin of `memberRow` for the owner/pending-mutation
+  // case — PressableRow can't be reused here (no `disabled` prop), so this
+  // manually mirrors its base layout (flexDirection/alignItems/gap/padding/
+  // minHeight/background) rather than PressableRow's own token, so a future
+  // change to PressableRow's density doesn't silently drift these apart.
+  memberRowStatic: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.row.gap,
+    paddingVertical: theme.row.paddingV,
+    minHeight: theme.row.minHeightSingle,
+    backgroundColor: theme.colors.background,
+  },
   email: { flexShrink: 1 },
   inviteInfo: { flex: 1, gap: 2 },
   note: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },

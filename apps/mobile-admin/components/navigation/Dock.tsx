@@ -1,14 +1,25 @@
-// Dock — floating bottom navigation for mark8ly admin (replaces the flush
-// tab bar). A detached rounded bar hovering above the home indicator: solid
-// Paper surface, hairline border, soft single-elevation shadow — no blur/glass
-// (per the editorial system). Inactive tabs are icon-only; the active tab
-// expands into a solid Ink pill with a Paper label (the dock's single accent).
+// Dock — floating bottom navigation for mark8ly admin.
+//
+// A detached rounded bar hovering above the home indicator, filled solid Ink.
+// The app's surfaces are all one value (paper on paper), so the dock is the
+// single place the design is deliberately loud: a dark bar gives the screen a
+// base to sit on and keeps moss free for on-screen actions.
+//
+// Every tab is labelled — icon-only navigation is a guess. The active tab is
+// marked by a FILLED icon at full-opacity paper; inactive tabs are outline
+// icons at 60% paper. There is no width-changing pill, so nothing shifts
+// sideways when you switch tab.
+//
+// No moss dot on the active tab: the filled icon + full-opacity label already
+// carry the state, and a permanent moss mark in the chrome would put a second
+// moss element on screen whenever a view also shows a moss primary action
+// (one-accent-per-view).
 //
 // Rendered via expo-router's <Tabs tabBar={...}>. Root View is absolutely
 // positioned so scenes get full height and content scrolls through the gap
 // beneath — screens pad their scroll bottom with useDockClearance().
 
-import { Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   Easing,
@@ -23,6 +34,7 @@ import {
   MoreHorizontal,
   type LucideIcon,
 } from "lucide-react-native";
+import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import { Text } from "@/components/ui/Text";
 import { theme } from "@/lib/theme";
 import { DOCK_BOTTOM_GAP, DOCK_HEIGHT, useDockClearance } from "./dock-metrics";
@@ -32,6 +44,13 @@ export { DOCK_BOTTOM_GAP, DOCK_HEIGHT, useDockClearance };
 // App-standard ease-out-quart — no bounce, no overshoot.
 const ENTRANCE_EASING = Easing.bezier(0.22, 1, 0.36, 1);
 
+const ICON_SIZE = 24;
+
+// Inactive paper at 0.60 composites to ~#9A9996 on the ink bar (~6.8:1) —
+// clears WCAG AA for the labels. Do NOT lower this: at 0.40 it drops to
+// ~3.6:1 and fails.
+const INACTIVE_TINT = "rgba(247, 246, 242, 0.60)";
+
 const TAB_ICONS: Record<string, LucideIcon> = {
   index: LayoutDashboard,
   orders: ShoppingBag,
@@ -40,8 +59,8 @@ const TAB_ICONS: Record<string, LucideIcon> = {
   more: MoreHorizontal,
 };
 
-// Short labels for the active pill — slots are equal fifths, so a long title
-// would truncate. The full screen title is still used for accessibility.
+// Short labels — slots are equal fifths, so a long title would truncate. The
+// full screen title is still used for accessibility.
 const TAB_LABELS: Record<string, string> = {
   index: "Home",
   orders: "Orders",
@@ -81,7 +100,7 @@ export function Dock({ state, descriptors, navigation }: DockProps) {
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key] ?? { options: {} };
           const label = options?.title ?? route.name;
-          const pillLabel = TAB_LABELS[route.name] ?? label;
+          const tabLabel = TAB_LABELS[route.name] ?? label;
           const isActive = state.index === index;
           const Icon = TAB_ICONS[route.name] ?? LayoutDashboard;
 
@@ -92,6 +111,7 @@ export function Dock({ state, descriptors, navigation }: DockProps) {
               canPreventDefault: true,
             });
             if (!isActive && !event.defaultPrevented) {
+              void adminHaptics.selectionChanged();
               navigation.navigate(route.name);
             }
           };
@@ -103,7 +123,13 @@ export function Dock({ state, descriptors, navigation }: DockProps) {
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
               accessibilityLabel={label}
-              style={styles.slot}
+              android_ripple={{ ...theme.press.rippleOnDark, borderless: true }}
+              style={({ pressed }) => [
+                styles.slot,
+                pressed && Platform.OS === "ios"
+                  ? { opacity: theme.press.opacityStandard }
+                  : null,
+              ]}
             >
               {isActive ? (
                 <Animated.View
@@ -112,24 +138,42 @@ export function Dock({ state, descriptors, navigation }: DockProps) {
                       ? undefined
                       : FadeIn.duration(220).easing(ENTRANCE_EASING)
                   }
-                  style={styles.activePill}
+                  style={styles.tabContent}
                 >
-                  <Icon size={19} color={theme.colors.inverse} strokeWidth={2} />
+                  {/* Weight + full opacity carry the active state. Filling a
+                      lucide glyph muddies it — these are outline-designed and
+                      have internal detail. A properly filled active icon needs
+                      a real duotone set, which is its own task. */}
+                  <Icon
+                    size={ICON_SIZE}
+                    color={theme.colors.inverse}
+                    strokeWidth={2.4}
+                  />
                   <Text
                     preset="caption"
-                    color="inverse"
                     className="font-sans-semibold"
+                    style={styles.labelActive}
                     numberOfLines={1}
                   >
-                    {pillLabel}
+                    {tabLabel}
                   </Text>
                 </Animated.View>
               ) : (
-                <Icon
-                  size={22}
-                  color={theme.colors.textTertiary}
-                  strokeWidth={1.9}
-                />
+                <View style={styles.tabContent}>
+                  <Icon
+                    size={ICON_SIZE}
+                    color={INACTIVE_TINT}
+                    strokeWidth={1.8}
+                  />
+                  <Text
+                    preset="caption"
+                    className="font-sans-semibold"
+                    style={styles.labelInactive}
+                    numberOfLines={1}
+                  >
+                    {tabLabel}
+                  </Text>
+                </View>
               )}
             </Pressable>
           );
@@ -149,16 +193,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     height: DOCK_HEIGHT,
-    borderRadius: 26,
-    backgroundColor: theme.colors.elevated,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
-    paddingHorizontal: 6,
+    borderRadius: 30,
+    backgroundColor: theme.colors.text,
+    paddingHorizontal: 8,
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.45,
+    shadowRadius: 26,
+    elevation: 12,
   },
   slot: {
     flex: 1,
@@ -166,13 +208,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  activePill: {
-    flexDirection: "row",
+  tabContent: {
     alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 18,
-    backgroundColor: theme.colors.text,
+    justifyContent: "center",
+    gap: 3,
+  },
+  // 11pt is below the `caption` preset (13) on purpose — five labels have to
+  // fit equal fifths of a 390pt bar without truncating.
+  labelActive: {
+    fontSize: 11,
+    lineHeight: 14,
+    color: theme.colors.inverse,
+  },
+  labelInactive: {
+    fontSize: 11,
+    lineHeight: 14,
+    color: INACTIVE_TINT,
   },
 });

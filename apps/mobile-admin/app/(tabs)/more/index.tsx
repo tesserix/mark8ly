@@ -35,11 +35,18 @@ interface RowProps {
   trailing?: React.ReactNode;
   onPress: () => void;
   accessibilityLabel: string;
+  /** Privacy Policy / Terms leave the app via `Linking.openURL()` — those announce as "link", not "button". */
+  accessibilityRole?: "button" | "link";
 }
 
-function Row({ icon, label, trailing, onPress, accessibilityLabel }: RowProps) {
+function Row({ icon, label, trailing, onPress, accessibilityLabel, accessibilityRole }: RowProps) {
   return (
-    <PressableRow style={styles.row} onPress={onPress} accessibilityLabel={accessibilityLabel}>
+    <PressableRow
+      style={styles.row}
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+    >
       <View style={styles.rowIcon}>{icon}</View>
       <Text preset="bodyEmphasis" color="text" style={styles.rowLabel}>
         {label}
@@ -149,6 +156,7 @@ export default function MoreScreen() {
               icon={<FileText size={18} color={theme.colors.text} strokeWidth={1.75} />}
               label="Privacy Policy"
               accessibilityLabel="Privacy Policy — opens in your browser"
+              accessibilityRole="link"
               onPress={() => Linking.openURL(PRIVACY_URL)}
             />
             <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
@@ -156,6 +164,7 @@ export default function MoreScreen() {
               icon={<Scale size={18} color={theme.colors.text} strokeWidth={1.75} />}
               label="Terms of Service"
               accessibilityLabel="Terms of Service — opens in your browser"
+              accessibilityRole="link"
               onPress={() => Linking.openURL(TERMS_URL)}
             />
           </Card>
@@ -174,7 +183,10 @@ export default function MoreScreen() {
 
 const styles = StyleSheet.create({
   body: {
-    paddingHorizontal: theme.spacing.lg,
+    // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH so
+    // rows sit flush with PageHeader above. Not theme.spacing.lg — that
+    // token is shared with non-gutter spacing throughout the app.
+    paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.xs,
     gap: theme.spacing.lg,
   },

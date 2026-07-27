@@ -44,6 +44,7 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
           style={styles.storeRow}
           onPress={() => handleSelect(item)}
           accessibilityLabel={`${item.name}${isActive ? ", currently selected" : ""}`}
+          accessibilityState={{ selected: isActive }}
         >
           <View style={styles.storeInfo}>
             <Text preset="bodyEmphasis" color="text">

@@ -353,8 +353,10 @@ const styles = StyleSheet.create({
   scroll: {
     paddingBottom: theme.spacing.huge,
   },
+  // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH so
+  // dashboard content aligns with list rows elsewhere. Not theme.spacing.lg.
   contentPad: {
-    paddingHorizontal: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
     gap: theme.spacing.xl,
   },
   section: { gap: theme.spacing.xs },

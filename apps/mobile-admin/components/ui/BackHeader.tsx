@@ -59,7 +59,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: theme.spacing.sm,
-    height: 48,
+    // minHeight, not height: 48pt fits the eyebrow+title text on iOS, but
+    // Android's includeFontPadding adds ~4-6pt per Text node, which would
+    // clip a fixed 48 with an eyebrow present (35 screens pass one).
+    minHeight: 48,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
     backgroundColor: theme.colors.background,

@@ -156,4 +156,136 @@ describe('PressableRow', () => {
     fireEvent(getByTestId('row'), 'longPress');
     expect(onLongPress).toHaveBeenCalledTimes(1);
   });
+
+  it('defaults accessibilityRole to "button" and allows an override', () => {
+    const { getByTestId } = render(
+      <PressableRow
+        onPress={() => {}}
+        accessibilityLabel="Store A"
+        accessibilityRole="link"
+        testID="row"
+      >
+        <RNText>Store A</RNText>
+      </PressableRow>,
+    );
+    expect(getByTestId('row').props.accessibilityRole).toBe('link');
+  });
+
+  it('passes an accessibilityHint through to Pressable', () => {
+    const { getByTestId } = render(
+      <PressableRow
+        onPress={() => {}}
+        accessibilityLabel="Row"
+        accessibilityHint="Opens details"
+        testID="row"
+      >
+        <RNText>Row</RNText>
+      </PressableRow>,
+    );
+    expect(getByTestId('row').props.accessibilityHint).toBe('Opens details');
+  });
+
+  it('passes a custom ripple colour through to the underlying Pressable', () => {
+    const ripple = { color: 'rgba(139, 46, 32, 0.12)' };
+    const { UNSAFE_getByType } = render(
+      <PressableRow onPress={() => {}} accessibilityLabel="Row" ripple={ripple} testID="row">
+        <RNText>Row</RNText>
+      </PressableRow>,
+    );
+    const innerPressableType = (Pressable as unknown as { type: ComponentType<unknown> }).type;
+    expect(UNSAFE_getByType(innerPressableType).props.android_ripple).toEqual(ripple);
+  });
+
+  // Restored in the increment 2 carry-over fixes: StoreSelector lost this
+  // prop in the migration to PressableRow (no `selected` state was
+  // announced for the active store row) because PressableRow had nowhere to
+  // put it.
+  it('passes a caller accessibilityState through when not disabled', () => {
+    const { getByTestId } = render(
+      <PressableRow
+        onPress={() => {}}
+        accessibilityLabel="Store A, currently selected"
+        accessibilityState={{ selected: true }}
+        testID="row"
+      >
+        <RNText>Store A</RNText>
+      </PressableRow>,
+    );
+    // RN's Pressable normalises accessibilityState to a full object (busy/
+    // checked/expanded default to undefined, disabled defaults to false) —
+    // assert on the keys this component actually controls.
+    expect(getByTestId('row').props.accessibilityState).toEqual(
+      expect.objectContaining({ selected: true, disabled: false }),
+    );
+  });
+
+  describe('disabled', () => {
+    // The `disabled` prop is the other increment 1 carry-over fix:
+    // PressableRow had no way to render a non-interactive row, which forced
+    // app/(tabs)/more/settings/team/index.tsx to hand-mirror this
+    // component's entire base style for the owner/pending-mutation row.
+    it("sets Pressable's own disabled prop", () => {
+      const { UNSAFE_getByType } = render(
+        <PressableRow onPress={() => {}} accessibilityLabel="Row" disabled testID="row">
+          <RNText>Row</RNText>
+        </PressableRow>,
+      );
+      const innerPressableType = (Pressable as unknown as { type: ComponentType<unknown> }).type;
+      expect(UNSAFE_getByType(innerPressableType).props.disabled).toBe(true);
+    });
+
+    it('results in accessibilityState.disabled reaching the rendered node', () => {
+      // RN's Pressable merges its own `disabled` prop into the
+      // accessibilityState it hands to the host node (see Pressable.js), so
+      // this component doesn't (and must not) duplicate that merge itself —
+      // this is the end-to-end behaviour a screen reader actually observes.
+      const { getByTestId } = render(
+        <PressableRow
+          onPress={() => {}}
+          accessibilityLabel="Row"
+          accessibilityState={{ selected: true }}
+          disabled
+          testID="row"
+        >
+          <RNText>Row</RNText>
+        </PressableRow>,
+      );
+      expect(getByTestId('row').props.accessibilityState).toEqual(
+        expect.objectContaining({ selected: true, disabled: true }),
+      );
+    });
+
+    it('does not fire onPress when disabled', () => {
+      const onPress = jest.fn();
+      const { getByTestId } = render(
+        <PressableRow onPress={onPress} accessibilityLabel="Row" disabled testID="row">
+          <RNText>Row</RNText>
+        </PressableRow>,
+      );
+      fireEvent.press(getByTestId('row'));
+      expect(onPress).not.toHaveBeenCalled();
+    });
+
+    it('suppresses press feedback: pressIn never engages the pressed sink style', () => {
+      const { getByTestId } = render(
+        <PressableRow onPress={() => {}} accessibilityLabel="Row" disabled testID="row">
+          <RNText>Row</RNText>
+        </PressableRow>,
+      );
+      fireEvent(getByTestId('row'), 'pressIn');
+      expect(
+        StyleSheet.flatten(getByTestId('row').props.style).backgroundColor,
+      ).not.toBe(theme.colors.sink);
+    });
+
+    it('clears the android ripple while disabled', () => {
+      const { UNSAFE_getByType } = render(
+        <PressableRow onPress={() => {}} accessibilityLabel="Row" disabled testID="row">
+          <RNText>Row</RNText>
+        </PressableRow>,
+      );
+      const innerPressableType = (Pressable as unknown as { type: ComponentType<unknown> }).type;
+      expect(UNSAFE_getByType(innerPressableType).props.android_ripple).toBeUndefined();
+    });
+  });
 });

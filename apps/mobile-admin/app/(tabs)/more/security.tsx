@@ -218,7 +218,9 @@ export default function SecurityScreen(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
-  card: { marginHorizontal: theme.spacing.lg },
+  // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH used
+  // by every other row in the app. Not theme.spacing.lg.
+  card: { marginHorizontal: theme.spacing.xl },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -227,5 +229,5 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   rowInfo: { flex: 1, gap: 2 },
-  errorWrap: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },
+  errorWrap: { paddingHorizontal: theme.spacing.xl, paddingTop: theme.spacing.md },
 });

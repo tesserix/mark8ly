@@ -61,8 +61,12 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignSelf: "flex-start",
   },
+  // fontSize was a literal 11 (the old eyebrow scale) — orphaned by the type
+  // rescale. theme.text.eyebrow.fontSize stays anchored to the current
+  // scale; the two badge-counter pills (10, 9 elsewhere in the app) are
+  // deliberately smaller still and are left alone.
   label: {
-    fontSize: 11,
+    fontSize: theme.text.eyebrow.fontSize,
     fontWeight: "600",
     letterSpacing: 0.4,
     textTransform: "capitalize",

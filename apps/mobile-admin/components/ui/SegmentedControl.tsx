@@ -84,7 +84,9 @@ export function SegmentedControl<T extends string>({
 const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
-    paddingHorizontal: theme.spacing.lg,
+    // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH and
+    // PageHeader/SearchField above it. Not theme.spacing.lg.
+    paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.md,
     paddingBottom: theme.spacing.sm,
     gap: theme.spacing.xs,
@@ -100,12 +102,15 @@ const styles = StyleSheet.create({
   tabActive: {
     borderBottomColor: theme.colors.text,
   },
+  // fontSize was a literal 13 — orphaned by the type rescale. It's anchored
+  // to theme.text.caption.fontSize (the preset this tab label already uses
+  // via `<Text preset="caption">`) rather than hardcoded again.
   tabLabel: {
-    fontSize: 13,
+    fontSize: theme.text.caption.fontSize,
     fontWeight: "500",
   },
   tabLabelActive: {
-    fontSize: 13,
+    fontSize: theme.text.caption.fontSize,
     fontWeight: "700",
   },
 });

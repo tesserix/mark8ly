@@ -32,11 +32,7 @@ export function ProductRow({ product, onPress }: ProductRowProps) {
       testID={`product-row-${product.id}`}
       accessibilityLabel={`${product.title}, ${priceLabel}, stock ${stock}, ${product.status}`}
     >
-      <Thumb
-        uri={thumb}
-        recyclingKey={product.id}
-        accessibilityLabel={`${product.title} thumbnail`}
-      />
+      <Thumb uri={thumb} recyclingKey={product.id} />
 
       <View style={styles.info}>
         <Text preset="bodyEmphasis" color="text" numberOfLines={1}>

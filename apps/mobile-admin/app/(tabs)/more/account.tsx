@@ -188,7 +188,10 @@ export default function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  card: { marginHorizontal: theme.spacing.lg },
+  // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH. Not
+  // theme.spacing.lg — that token is shared with non-gutter spacing
+  // throughout the app and must not move.
+  card: { marginHorizontal: theme.spacing.xl },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -205,7 +208,7 @@ const styles = StyleSheet.create({
   storeRow: { backgroundColor: theme.colors.elevated },
   storeInfo: { flex: 1, gap: 2 },
   actions: {
-    paddingHorizontal: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.xl,
   },
   logoutBtn: {
@@ -218,7 +221,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   dangerZone: {
-    paddingHorizontal: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.xxl,
     gap: theme.spacing.sm,
   },

@@ -45,7 +45,11 @@ export function PageHeader({
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingHorizontal: theme.spacing.lg,
+    // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH so
+    // the header sits flush with the list rows below it. Not
+    // theme.spacing.lg — that token is shared with non-gutter spacing
+    // throughout the app and must not move.
+    paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.lg,
     paddingBottom: theme.spacing.md,
   },

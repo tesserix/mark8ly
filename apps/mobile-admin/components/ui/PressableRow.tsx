@@ -3,6 +3,8 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  type AccessibilityRole,
+  type AccessibilityState,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -26,6 +28,20 @@ export interface PressableRowProps {
   lines?: 1 | 2;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel: string;
+  /** Defaults to "button" — override for e.g. "tab" or "link" semantics. */
+  accessibilityRole?: AccessibilityRole;
+  accessibilityState?: AccessibilityState;
+  accessibilityHint?: string;
+  /**
+   * Disables the row: no `onPress`/`onLongPress`, no press feedback (ripple
+   * or iOS sink), and `accessibilityState.disabled` is forced true so
+   * TalkBack/VoiceOver announce it correctly. Sets both `Pressable`'s native
+   * `disabled` prop AND the accessibility state — the two are independent in
+   * RN and both must be set for a row to read as truly non-interactive.
+   */
+  disabled?: boolean;
+  /** Android ripple colour. Defaults to `theme.press.rippleInk`. */
+  ripple?: { color: string };
   testID?: string;
 }
 
@@ -36,6 +52,11 @@ export function PressableRow({
   lines = 1,
   style,
   accessibilityLabel,
+  accessibilityRole = "button",
+  accessibilityState,
+  accessibilityHint,
+  disabled = false,
+  ripple = theme.press.rippleInk,
   testID,
 }: PressableRowProps) {
   // Press state is tracked explicitly rather than via Pressable's
@@ -47,8 +68,17 @@ export function PressableRow({
   // so the unit tests (which assert on the resolved style array) all passed.
   // Keep this an ARRAY. Do not "simplify" it back to the callback form.
   const [pressed, setPressed] = useState(false);
-  const handlePressIn = useCallback(() => setPressed(true), []);
-  const handlePressOut = useCallback(() => setPressed(false), []);
+  // Guard explicitly rather than relying solely on RN's native `disabled`
+  // handling on Pressable — belt-and-suspenders so a disabled row can never
+  // visually engage its press state even if the responder system changes.
+  const handlePressIn = useCallback(() => {
+    if (disabled) return;
+    setPressed(true);
+  }, [disabled]);
+  const handlePressOut = useCallback(() => {
+    if (disabled) return;
+    setPressed(false);
+  }, [disabled]);
 
   return (
     <Pressable
@@ -56,10 +86,19 @@ export function PressableRow({
       onLongPress={onLongPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      accessibilityRole="button"
+      disabled={disabled}
+      accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
+      // `Pressable` itself merges its own `disabled` prop into the final
+      // accessibilityState it hands to the host node (see RN's
+      // Pressable.js), so passing the caller's `accessibilityState` through
+      // untouched here still results in `disabled: true` reaching
+      // TalkBack/VoiceOver whenever the `disabled` prop above is true —
+      // without this component needing to duplicate that merge itself.
+      accessibilityState={accessibilityState}
+      accessibilityHint={accessibilityHint}
       testID={testID}
-      android_ripple={theme.press.rippleInk}
+      android_ripple={disabled ? undefined : ripple}
       style={[
         styles.base,
         lines === 2 ? styles.twoLine : styles.oneLine,

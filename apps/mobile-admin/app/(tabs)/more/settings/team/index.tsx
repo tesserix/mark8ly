@@ -187,23 +187,18 @@ export default function TeamScreen() {
               return (
                 <View key={m.email}>
                   {i > 0 ? <Hairline /> : null}
-                  {disabled ? (
-                    <View
-                      style={styles.memberRowStatic}
-                      accessible={true}
-                      accessibilityLabel={`${m.email}, ${m.role}`}
-                    >
-                      {rowContent}
-                    </View>
-                  ) : (
-                    <PressableRow
-                      style={styles.memberRow}
-                      onPress={() => onChangeRole(m)}
-                      accessibilityLabel={`${m.email}, ${m.role}. Tap to change role`}
-                    >
-                      {rowContent}
-                    </PressableRow>
-                  )}
+                  <PressableRow
+                    style={styles.memberRow}
+                    onPress={() => onChangeRole(m)}
+                    disabled={disabled}
+                    accessibilityLabel={
+                      disabled
+                        ? `${m.email}, ${m.role}`
+                        : `${m.email}, ${m.role}. Tap to change role`
+                    }
+                  >
+                    {rowContent}
+                  </PressableRow>
                 </View>
               );
             })}
@@ -254,8 +249,12 @@ export default function TeamScreen() {
 
 const styles = StyleSheet.create({
   scroll: { paddingBottom: theme.spacing.huge },
-  section: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xl },
-  card: { paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.sm },
+  // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH so
+  // this screen's rows and section labels sit flush with every other list
+  // screen. Not theme.spacing.lg — that token is shared with non-gutter
+  // spacing throughout the app and must not move.
+  section: { paddingHorizontal: theme.spacing.xl, paddingTop: theme.spacing.xl },
+  card: { paddingHorizontal: theme.spacing.xl, marginTop: theme.spacing.sm },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -265,33 +264,21 @@ const styles = StyleSheet.create({
   },
   // PressableRow already owns flexDirection/alignItems/padding/gap. Two
   // overrides: `justifyContent` for the email/role-badge space-between, and
-  // `paddingHorizontal: 0` — the wrapping `card` above already adds
-  // theme.spacing.lg (16), and PressableRow's own base adds theme.row.paddingH
-  // (20) on top of that, which indented member rows a further 20pt past the
+  // `paddingHorizontal: 0` — the wrapping `card` above already adds the
+  // screen gutter, and PressableRow's own base adds theme.row.paddingH (20)
+  // on top of that, which would indent member rows a further 20pt past the
   // plain-View invitation rows below (also inside `card`, no row padding of
-  // their own) — 36pt vs 16pt, visibly misaligned under the same eyebrows.
-  // Zeroing it here keeps both columns flush at the card's 16pt. No
-  // backgroundColor override — this list sits directly on Screen's paper
-  // background (no Card/elevated wrapper here), which is exactly
-  // PressableRow's own default, so the pre-migration transparency was
-  // already correct.
+  // their own) — visibly misaligned under the same eyebrows. Zeroing it here
+  // keeps both columns flush at the card's gutter. No backgroundColor
+  // override — this list sits directly on Screen's paper background (no
+  // Card/elevated wrapper here), which is exactly PressableRow's own
+  // default, so the pre-migration transparency was already correct.
+  // Owner/pending-mutation rows use the same style via PressableRow's
+  // `disabled` prop instead of a hand-mirrored static twin — see
+  // PressableRow.tsx.
   memberRow: { justifyContent: "space-between", paddingHorizontal: 0 },
-  // Non-interactive twin of `memberRow` for the owner/pending-mutation
-  // case — PressableRow can't be reused here (no `disabled` prop), so this
-  // manually mirrors its base layout (flexDirection/alignItems/gap/padding/
-  // minHeight/background) rather than PressableRow's own token, so a future
-  // change to PressableRow's density doesn't silently drift these apart.
-  memberRowStatic: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.row.gap,
-    paddingVertical: theme.row.paddingV,
-    minHeight: theme.row.minHeightSingle,
-    backgroundColor: theme.colors.background,
-  },
   email: { flexShrink: 1 },
   inviteInfo: { flex: 1, gap: 2 },
-  note: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },
+  note: { paddingHorizontal: theme.spacing.xl, paddingTop: theme.spacing.md },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
 });

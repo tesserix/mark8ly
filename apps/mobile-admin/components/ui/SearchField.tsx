@@ -73,7 +73,11 @@ const styles = StyleSheet.create({
     flex: 1,
     height: "100%",
     fontFamily: theme.fonts.sans,
-    fontSize: 14,
+    // Was a literal 14 (the old body scale) — orphaned by the type rescale
+    // to native metrics, so typed search text rendered a step smaller than
+    // the rows beneath it. theme.text.body.fontSize stays anchored to the
+    // current scale.
+    fontSize: theme.text.body.fontSize,
     color: theme.colors.text,
     paddingVertical: 0,
   },

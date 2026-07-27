@@ -195,11 +195,13 @@ const styles = StyleSheet.create({
   },
   list: { flexGrow: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH used
+  // by every other row in the app. Not theme.spacing.lg.
   row: {
     flexDirection: "row",
     backgroundColor: theme.colors.elevated,
     paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
     gap: theme.spacing.md,
   },
   rowUnread: { backgroundColor: theme.colors.surfaceAlt },

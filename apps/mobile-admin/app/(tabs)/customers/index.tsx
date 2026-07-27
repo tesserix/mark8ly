@@ -175,7 +175,9 @@ export default function CustomersScreen() {
 
 const styles = StyleSheet.create({
   search: {
-    paddingHorizontal: theme.spacing.lg,
+    // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH so
+    // the search field aligns with the rows below it. Not theme.spacing.lg.
+    paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.xs,
   },
   reviewsLink: {

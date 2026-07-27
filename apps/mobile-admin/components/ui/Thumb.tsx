@@ -46,7 +46,11 @@ export function Thumb({
 
   if (!uri || failed) {
     return (
-      <View style={[styles.box, box, styles.placeholder]} testID={testID}>
+      <View
+        style={[styles.box, box, styles.placeholder]}
+        accessible={false}
+        testID={testID}
+      >
         <Package
           size={Math.round(dim / 3)}
           color={theme.colors.textTertiary}
@@ -63,6 +67,7 @@ export function Thumb({
       contentFit="cover"
       transition={200}
       recyclingKey={recyclingKey}
+      accessible={false}
       accessibilityLabel={accessibilityLabel}
       testID={testID}
       onError={() => setFailed(true)}

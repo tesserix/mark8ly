@@ -121,8 +121,10 @@ export default function AuditLogsScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH used
+  // by every other row in the app. Not theme.spacing.lg.
   row: {
-    paddingHorizontal: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
     paddingVertical: theme.spacing.md,
     backgroundColor: theme.colors.elevated,
   },

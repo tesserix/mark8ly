@@ -157,7 +157,10 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     borderRadius: theme.radii.sm,
     paddingHorizontal: theme.spacing.xs,
-    fontSize: 12,
+    // Was a literal 12 (the old caption scale) — orphaned by the type
+    // rescale. theme.text.caption.fontSize stays anchored to the current
+    // scale.
+    fontSize: theme.text.caption.fontSize,
     color: theme.colors.text,
     backgroundColor: theme.colors.elevated,
   },

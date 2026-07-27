@@ -45,6 +45,7 @@ const palette = {
   paper: "#F7F6F2",
   paperWarm: "#FAF8F2",
   bone: "#E2DFD6",
+  sink: "#ECEAE3",
   ink: "#0E0E0C",
   inkSoft: "#45433E",
   moss: "#2D4A2B",
@@ -65,6 +66,7 @@ export const theme = {
     background: palette.paper,
     elevated: palette.white,
     surfaceAlt: palette.paperWarm,
+    sink: palette.sink,
     border: palette.bone,
     hairline: "rgba(14, 14, 12, 0.08)",
     overlay: "rgba(14, 14, 12, 0.45)",
@@ -111,6 +113,25 @@ export const theme = {
     lg: 10,
     xl: 14,
     pill: 999,
+  },
+
+  /**
+   * Native row density. iOS list rows carry their content on a taller,
+   * calmer field than a web table row — 64 for a single line, 88 for the
+   * two-line stack (17pt primary + 13pt secondary). `touchTarget` still
+   * holds at 44; rows exceed it rather than replacing the rule.
+   */
+  row: {
+    minHeightSingle: 64,
+    minHeightDouble: 88,
+    paddingH: 20,
+    paddingV: 14,
+    gap: 16,
+  },
+
+  thumb: {
+    list: 60,
+    compact: 38,
   },
 
   hairline: 0.5,

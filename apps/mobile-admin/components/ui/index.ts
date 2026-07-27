@@ -10,3 +10,5 @@ export { EmptyState } from "./EmptyState";
 export { PageHeader } from "./PageHeader";
 export { BackHeader } from "./BackHeader";
 export { FieldInput, FieldLabel } from "./FieldInput";
+export { PressableRow } from "./PressableRow";
+export type { PressableRowProps } from "./PressableRow";

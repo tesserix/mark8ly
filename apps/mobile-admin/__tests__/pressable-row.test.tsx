@@ -1,0 +1,98 @@
+import type { ComponentType } from 'react';
+import { Pressable, Text as RNText, StyleSheet } from 'react-native';
+import { render, fireEvent } from '@testing-library/react-native';
+import { PressableRow } from '@/components/ui/PressableRow';
+import { theme } from '@/lib/theme';
+
+describe('PressableRow', () => {
+  it('renders its children', () => {
+    const { getByText } = render(
+      <PressableRow onPress={() => {}} accessibilityLabel="Order 1042" testID="row">
+        <RNText>Order 1042</RNText>
+      </PressableRow>,
+    );
+    expect(getByText('Order 1042')).toBeTruthy();
+  });
+
+  it('calls onPress when tapped', () => {
+    const onPress = jest.fn();
+    const { getByTestId } = render(
+      <PressableRow onPress={onPress} accessibilityLabel="Order 1042" testID="row">
+        <RNText>Order 1042</RNText>
+      </PressableRow>,
+    );
+    fireEvent.press(getByTestId('row'));
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the single-line minimum height by default', () => {
+    const { getByTestId } = render(
+      <PressableRow onPress={() => {}} accessibilityLabel="Row" testID="row">
+        <RNText>Row</RNText>
+      </PressableRow>,
+    );
+    const style = StyleSheet.flatten(getByTestId('row').props.style);
+    expect(style.minHeight).toBe(theme.row.minHeightSingle);
+    expect(style.paddingHorizontal).toBe(theme.row.paddingH);
+    expect(style.paddingVertical).toBe(theme.row.paddingV);
+  });
+
+  it('uses the two-line minimum height when lines is 2', () => {
+    const { getByTestId } = render(
+      <PressableRow onPress={() => {}} lines={2} accessibilityLabel="Row" testID="row">
+        <RNText>Row</RNText>
+      </PressableRow>,
+    );
+    const style = StyleSheet.flatten(getByTestId('row').props.style);
+    expect(style.minHeight).toBe(theme.row.minHeightDouble);
+  });
+
+  it('never sets an opacity-based press style', () => {
+    const { getByTestId } = render(
+      <PressableRow onPress={() => {}} accessibilityLabel="Row" testID="row">
+        <RNText>Row</RNText>
+      </PressableRow>,
+    );
+    const style = StyleSheet.flatten(getByTestId('row').props.style);
+    expect(style.opacity).toBeUndefined();
+  });
+
+  // RN's <Pressable> only materializes `android_ripple` onto the underlying
+  // host node when Platform.OS === 'android' (see
+  // useAndroidRippleForView.js) — under jest-expo, Platform.OS defaults to
+  // 'ios', so `getByTestId('row').props.android_ripple` is always
+  // `undefined` here regardless of what PressableRow passes in. Asserting
+  // on the <Pressable> element itself verifies the same intent — that
+  // PressableRow wires up the 12%-ink ripple — without depending on RN's
+  // platform-conditional host-node materialization. `Pressable` is exported
+  // as `memo(Pressable)`, so `UNSAFE_getByType(Pressable)` can't match the
+  // fiber (react-test-renderer matches the memo's inner render function);
+  // unwrap it via `Pressable.type` to reach the same instance.
+  it('exposes an Android ripple at 12% ink', () => {
+    const { UNSAFE_getByType } = render(
+      <PressableRow onPress={() => {}} accessibilityLabel="Row" testID="row">
+        <RNText>Row</RNText>
+      </PressableRow>,
+    );
+    const innerPressableType = (Pressable as unknown as { type: ComponentType<unknown> }).type;
+    expect(UNSAFE_getByType(innerPressableType).props.android_ripple).toEqual({
+      color: 'rgba(14, 14, 12, 0.12)',
+    });
+  });
+
+  it('forwards onLongPress', () => {
+    const onLongPress = jest.fn();
+    const { getByTestId } = render(
+      <PressableRow
+        onPress={() => {}}
+        onLongPress={onLongPress}
+        accessibilityLabel="Row"
+        testID="row"
+      >
+        <RNText>Row</RNText>
+      </PressableRow>,
+    );
+    fireEvent(getByTestId('row'), 'longPress');
+    expect(onLongPress).toHaveBeenCalledTimes(1);
+  });
+});

@@ -311,7 +311,8 @@ Ordering — urgency then recency: **pending orders** (money waiting) → **low 
 
 - [ ] **Step 1:** Failing tests — queue renders, empty state renders, a failing source degrades to a single error row rather than taking the screen down.
 - [ ] **Step 2–5:** Run, implement, gates.
-- [ ] **Step 6: Screenshot Dashboard.** Compare against the approved mockup and note every difference you can see. This is the sign-off screen.
+- [ ] **Step 6: Verify `CollapsingHeader` against REAL content — blocking.** Its `EXPANDED_HEIGHT` (96) and `COLLAPSED_HEIGHT` (56) are hand-picked constants interpolated as a hard `height`, and the container sets `overflow: "hidden"`. A title that wraps to two lines, or a tall `rightSlot` (e.g. the monogram avatar + notification badge), **clips silently** — and because `height` is animated, swapping to `minHeight` is not a drop-in fix. Increment 1 shipped this exact bug in `BackHeader` (fixed `height: 48` holding 40pt). Screenshot with the real store name and the real right slot, not placeholder text. If it clips, fix the primitive rather than shortening the title.
+- [ ] **Step 7: Screenshot Dashboard.** Compare against the approved mockup and note every difference you can see. This is the sign-off screen.
 - [ ] **Step 7:** Commit.
 
 ---

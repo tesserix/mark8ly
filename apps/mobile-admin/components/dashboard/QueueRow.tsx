@@ -73,7 +73,12 @@ export function QueueRow({ item, onPress }: QueueRowProps) {
         accessibilityLabel={item.primary}
         accessibilityRole="link"
       >
-        <Text preset="label" color="accent" style={styles.seeAllLabel} numberOfLines={1}>
+        {/* Ink, NOT accent. On the Dashboard the one moss accent is spent on
+            exactly two things — the revenue chart and the Approve swipe — and
+            a moss "See all" link was a third (caught on device, Task 8). The
+            chevron already carries the affordance; the colour doesn't need
+            to. */}
+        <Text preset="label" color="text" style={styles.seeAllLabel} numberOfLines={1}>
           {item.primary}
         </Text>
         <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />

@@ -1,381 +1,436 @@
-import { useState } from "react";
-import {
-  Platform,
-  RefreshControl,
-  ScrollView,
-  View,
-  Pressable,
-  StyleSheet,
-} from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { RefreshControl, View, StyleSheet } from "react-native";
+import Animated, {
+  useAnimatedScrollHandler,
+  useSharedValue,
+} from "react-native-reanimated";
 import { useRouter } from "expo-router";
-import { ChevronRight } from "lucide-react-native";
+import { Archive, Check, X } from "lucide-react-native";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
+import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import { useDashboard } from "@/lib/hooks/use-dashboard";
-import { DashboardStats } from "@/components/DashboardStats";
-import { NotificationBell } from "@/components/dashboard/NotificationBell";
-import { DashboardOrderRow } from "@/components/dashboard/DashboardOrderRow";
+import { useReviews } from "@/lib/hooks/use-reviews";
+import { useTickets } from "@/lib/hooks/use-tickets";
+import { useConfirmOrder, useCancelOrder } from "@/lib/admin-api/order-actions";
+import { useApproveReview, useRejectReview } from "@/lib/admin-api/review-actions";
+import { useUpdateTicketStatus } from "@/lib/admin-api/ticket-actions";
+import { buildQueue, type QueueItem } from "@/lib/queue";
+import { CollapsingHeader, Hairline, Screen, SwipeRow, Text, type SwipeAction } from "@/components/ui";
+import { QueueRow } from "@/components/dashboard/QueueRow";
+import { MetricsCard } from "@/components/dashboard/MetricsCard";
+import { QueueEmptyState } from "@/components/dashboard/QueueEmptyState";
+import { SourceErrorRow } from "@/components/dashboard/SourceErrorRow";
+import { TenantMonogram } from "@/components/dashboard/TenantMonogram";
 import {
-  Card,
-  EmptyState,
-  Hairline,
-  PageHeader,
-  PressableRow,
-  Screen,
-  Text,
-} from "@/components/ui";
-import { theme } from "@/lib/theme";
-import { formatMoney } from "@/lib/money";
-import type {
-  RecentOrder,
-  LowStockItem,
-  TopProduct,
-  SetupChecklist,
-} from "@repo/mobile-shared/api/types";
+  CancelReasonSheet,
+  type CancelReasonSheetHandle,
+} from "@/components/orders/CancelReasonSheet";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
+import { theme } from "@/lib/theme";
+import type { DashboardStats } from "@repo/mobile-shared/api/types";
 
-function todaysDate() {
-  return new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+const LOCALE = "en-AU";
+
+/**
+ * "Monday, 27 July" — composed from two locale calls rather than one
+ * options bag so the day-then-month order is guaranteed regardless of what
+ * ordering the device locale would otherwise impose.
+ */
+function todayLabel(now: Date = new Date()): string {
+  const weekday = now.toLocaleDateString(LOCALE, { weekday: "long" });
+  const month = now.toLocaleDateString(LOCALE, { month: "long" });
+  return `${weekday}, ${now.getDate()} ${month}`;
 }
 
-const CHECKLIST_ITEMS = 8;
+/** The brief's `limit=4` for the two side queries. */
+const SIDE_QUERY_LIMIT = 4;
 
-function checklistComplete(c: SetupChecklist): number {
-  return [
-    c.has_store,
-    c.has_brand_assets,
-    c.has_product,
-    c.has_storefront_theme,
-    c.has_payment_provider,
-    c.has_shipping_carrier,
-    c.has_return_policy,
-    c.has_custom_domain,
-  ].filter(Boolean).length;
+/**
+ * Stand-in stats used ONLY to keep `buildQueue` callable when the dashboard
+ * query itself is the source that failed. Every authoritative count is 0, so
+ * no "See all N" overflow row is invented for data we couldn't read — the
+ * reviews and tickets that DID load still render.
+ */
+const NO_STATS: DashboardStats = {
+  revenue_today: 0,
+  revenue_week: 0,
+  revenue_month: 0,
+  revenue_change_pct: 0,
+  revenue_trend: [],
+  orders_today: 0,
+  orders_pending: 0,
+  orders_fulfilled: 0,
+  orders_cancelled: 0,
+  customers_total: 0,
+  customers_new_this_week: 0,
+  pending_reviews: 0,
+};
+
+/** Per-call react-query mutation callbacks. */
+interface MutationCallbacks {
+  onSuccess: () => void;
+  onError: () => void;
 }
 
-function ListRow({
-  primary,
-  secondary,
-  trailing,
-  trailingTone = "text",
-  leading,
-  onPress,
-  accessibilityLabel,
-}: {
-  primary: string;
-  secondary?: string;
-  trailing: string;
-  trailingTone?: "text" | "danger" | "accent";
-  leading?: React.ReactNode;
-  onPress: () => void;
-  accessibilityLabel: string;
-}) {
-  return (
-    <PressableRow
-      style={styles.row}
-      onPress={onPress}
-      accessibilityLabel={accessibilityLabel}
-    >
-      {leading ? <View style={styles.leading}>{leading}</View> : null}
-      <View style={styles.rowMain}>
-        <Text preset="bodyEmphasis" color="text" numberOfLines={1}>
-          {primary}
-        </Text>
-        {secondary ? (
-          <Text preset="caption" color="textTertiary" numberOfLines={1}>
-            {secondary}
-          </Text>
-        ) : null}
-      </View>
-      <Text preset="bodyEmphasis" color={trailingTone}>
-        {trailing}
-      </Text>
-      <ChevronRight
-        size={16}
-        color={theme.colors.textTertiary}
-        strokeWidth={1.75}
-        style={styles.chevron}
-      />
-    </PressableRow>
-  );
-}
+const ICON_SIZE = 20;
 
-function Section({
-  title,
-  onSeeAll,
-  seeAllLabel = "See all",
-  children,
-}: {
-  title: string;
-  onSeeAll?: () => void;
-  seeAllLabel?: string;
-  children: React.ReactNode;
-}) {
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [seeAllPressed, setSeeAllPressed] = useState(false);
-
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text preset="eyebrow" color="textTertiary">
-          {title}
-        </Text>
-        {onSeeAll ? (
-          <Pressable
-            onPress={onSeeAll}
-            onPressIn={() => setSeeAllPressed(true)}
-            onPressOut={() => setSeeAllPressed(false)}
-            accessibilityRole="link"
-            accessibilityLabel={seeAllLabel}
-            hitSlop={8}
-            android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={[
-              seeAllPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-            ]}
-          >
-            <Text preset="caption" color="accent">
-              {seeAllLabel}
-            </Text>
-          </Pressable>
-        ) : null}
-      </View>
-      <Card padding={0}>{children}</Card>
-    </View>
-  );
-}
-
-function RowWrapper({
-  children,
-  divider,
-}: {
-  children: React.ReactNode;
-  divider: boolean;
-}) {
-  return (
-    <View>
-      {divider ? <Hairline inset={theme.spacing.lg} /> : null}
-      {children}
-    </View>
-  );
-}
-
+/**
+ * The Dashboard is an ACTION QUEUE, not a report.
+ *
+ * Three layers, top to bottom:
+ *  1. `CollapsingHeader` — the store's name in serif (it's the merchant's
+ *     shop; name it), today's date above it, the tenant monogram + unread
+ *     badge on the right.
+ *  2. `MetricsCard` — the one elevated card on the whole screen.
+ *  3. The "needs you" queue — hairline-separated rows on the Paper ground,
+ *     each swipeable to its own actions.
+ *
+ * Composed from THREE independent queries (dashboard, pending reviews, open
+ * tickets). None of them can take the screen down: whichever ones resolve
+ * render, and the failures collapse into a single `SourceErrorRow`. That is
+ * why `buildQueue` is fed `NO_STATS` rather than being skipped when the
+ * dashboard query is the one that failed.
+ */
 export default function DashboardScreen() {
-  const dockPad = useDockClearance();
-  const { data, isLoading, refetch, isRefetching } = useDashboard();
   const router = useRouter();
+  const dockPad = useDockClearance();
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler((event) => {
+    "worklet";
+    scrollY.value = event.contentOffset.y;
+  });
+
+  const storeName = useTenantStore((s) => s.activeStore?.name);
   const currencyCode = useTenantStore((s) => s.activeStore?.currency_code);
 
-  const pendingOrders = data?.recent_orders.filter((o) => o.status === "pending") ?? [];
-  const otherRecent = data?.recent_orders.filter((o) => o.status !== "pending") ?? [];
-  const morePending = data ? data.stats.orders_pending - pendingOrders.length : 0;
-  const setupDone = data ? checklistComplete(data.setup_checklist) : CHECKLIST_ITEMS;
+  const dashboard = useDashboard();
+  const reviews = useReviews({ status: "pending" });
+  const tickets = useTickets({ status: "open" });
+
+  const confirmOrder = useConfirmOrder();
+  const cancelOrder = useCancelOrder();
+  const approveReview = useApproveReview();
+  const rejectReview = useRejectReview();
+  const updateTicketStatus = useUpdateTicketStatus();
+
+  // Rows hidden optimistically while their mutation is in flight. Rolled
+  // back in `onError` — a new Set every time, never mutated in place.
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const cancelSheetRef = useRef<CancelReasonSheetHandle>(null);
+
+  const reviewItems = useMemo(
+    () => reviews.data?.pages[0]?.data.slice(0, SIDE_QUERY_LIMIT) ?? [],
+    [reviews.data],
+  );
+  const ticketItems = useMemo(
+    () => tickets.data?.pages[0]?.data.slice(0, SIDE_QUERY_LIMIT) ?? [],
+    [tickets.data],
+  );
+
+  const queue = useMemo(
+    () =>
+      buildQueue({
+        stats: dashboard.data?.stats ?? NO_STATS,
+        recentOrders: dashboard.data?.recent_orders ?? [],
+        lowStock: dashboard.data?.low_stock ?? [],
+        reviews: reviewItems,
+        tickets: ticketItems,
+        currencyCode,
+      }),
+    [dashboard.data, reviewItems, ticketItems, currencyCode],
+  );
+
+  const visibleQueue = useMemo(
+    () => queue.filter((item) => !dismissed.has(item.id)),
+    [queue, dismissed],
+  );
+
+  const failedSources = useMemo(() => {
+    const failed: { label: string; refetch: () => void }[] = [];
+    if (dashboard.isError) failed.push({ label: "orders and stock", refetch: dashboard.refetch });
+    if (reviews.isError) failed.push({ label: "reviews", refetch: reviews.refetch });
+    if (tickets.isError) failed.push({ label: "tickets", refetch: tickets.refetch });
+    return failed;
+  }, [dashboard.isError, dashboard.refetch, reviews.isError, reviews.refetch, tickets.isError, tickets.refetch]);
+
+  const retryFailed = useCallback(() => {
+    for (const source of failedSources) source.refetch();
+  }, [failedSources]);
+
+  const refreshAll = useCallback(() => {
+    void dashboard.refetch();
+    void reviews.refetch();
+    void tickets.refetch();
+  }, [dashboard, reviews, tickets]);
+
+  const hide = useCallback((id: string) => {
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  const restore = useCallback((id: string) => {
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Optimistic + rollback, at the screen rather than in the mutation hooks:
+   * the row leaves immediately, and comes back if the server says no. The
+   * hooks themselves already invalidate their query keys on success, so the
+   * authoritative list replaces this local guess on the next fetch.
+   */
+  const callbacksFor = useCallback(
+    (id: string): MutationCallbacks => {
+      hide(id);
+      return {
+        onSuccess: () => {
+          void adminHaptics.actionSucceeded();
+        },
+        onError: () => {
+          restore(id);
+          void adminHaptics.actionFailed();
+        },
+      };
+    },
+    [hide, restore],
+  );
+
+  const openCancelSheet = useCallback((id: string) => {
+    setCancelTargetId(id);
+    cancelSheetRef.current?.present();
+  }, []);
+
+  const submitCancel = useCallback(
+    (reason: string) => {
+      const id = cancelTargetId;
+      if (!id) return;
+      cancelOrder.mutate(
+        { id, reason },
+        {
+          onSuccess: () => {
+            cancelSheetRef.current?.dismiss();
+            setCancelTargetId(null);
+            hide(id);
+            void adminHaptics.actionSucceeded();
+          },
+          onError: () => {
+            void adminHaptics.actionFailed();
+          },
+        },
+      );
+    },
+    [cancelTargetId, cancelOrder, hide],
+  );
+
+  /**
+   * Swipe actions per queue item type. Convention, app-wide: dragging RIGHT
+   * reveals the CONSTRUCTIVE action at the leading edge, dragging LEFT the
+   * destructive one at the trailing edge. Nothing here opts into
+   * `autoFireOnFullSwipe` — this app has no undo.
+   *
+   * Cancel is the one action that does NOT fire a mutation: the API requires
+   * a reason (`CancelOrderRequest.Reason` is `binding:"required"`), so the
+   * revealed Cancel opens `CancelReasonSheet` exactly as the order detail
+   * screen does. A revealed action being tapped to open a sheet is fully
+   * within the `SwipeRow` contract — a revealed action is always tapped,
+   * never auto-fired.
+   */
+  const actionsFor = useCallback(
+    (item: QueueItem): { leading?: SwipeAction[]; trailing?: SwipeAction[] } | null => {
+      if (item.kind === "seeAll") return null;
+
+      switch (item.type) {
+        case "order":
+          return {
+            leading: [
+              {
+                key: "approve",
+                label: "Approve",
+                tone: "accent",
+                icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
+                onPress: () => confirmOrder.mutate({ id: item.id }, callbacksFor(item.id)),
+              },
+            ],
+            trailing: [
+              {
+                key: "cancel",
+                label: "Cancel",
+                tone: "danger",
+                icon: <X size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
+                onPress: () => openCancelSheet(item.id),
+              },
+            ],
+          };
+        case "review":
+          return {
+            leading: [
+              {
+                key: "approve",
+                label: "Approve",
+                tone: "accent",
+                icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
+                onPress: () => approveReview.mutate(item.id, callbacksFor(item.id)),
+              },
+            ],
+            trailing: [
+              {
+                key: "reject",
+                label: "Reject",
+                tone: "danger",
+                icon: <X size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
+                onPress: () => rejectReview.mutate(item.id, callbacksFor(item.id)),
+              },
+            ],
+          };
+        case "ticket":
+          return {
+            trailing: [
+              {
+                key: "close",
+                label: "Close",
+                // Neutral, not danger: closing a resolved ticket is a normal
+                // outcome, and the trailing edge is a position, not a tone.
+                tone: "neutral",
+                icon: <Archive size={ICON_SIZE} color={theme.colors.text} strokeWidth={2} />,
+                onPress: () =>
+                  updateTicketStatus.mutate(
+                    { id: item.id, status: "closed" },
+                    callbacksFor(item.id),
+                  ),
+              },
+            ],
+          };
+        // Low stock has no one-tap resolution — restocking happens on the
+        // product. No swipe rather than a swipe that only navigates.
+        default:
+          return null;
+      }
+    },
+    [
+      confirmOrder,
+      approveReview,
+      rejectReview,
+      updateTicketStatus,
+      callbacksFor,
+      openCancelSheet,
+    ],
+  );
+
+  const anyLoading = dashboard.isLoading || reviews.isLoading || tickets.isLoading;
+  const showEmptyState =
+    visibleQueue.length === 0 && failedSources.length === 0 && !anyLoading;
 
   return (
     <Screen>
-      <ScrollView
+      <CollapsingHeader
+        eyebrow={todayLabel()}
+        title={storeName ?? "Your store"}
+        rightSlot={<TenantMonogram storeName={storeName} />}
+        scrollY={scrollY}
+      />
+
+      <Animated.ScrollView
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}
         refreshControl={
           <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={refetch}
+            refreshing={dashboard.isRefetching}
+            onRefresh={refreshAll}
             tintColor={theme.colors.text}
           />
         }
       >
-        <PageHeader
-          eyebrow="DASHBOARD"
-          title={todaysDate()}
-          subtitle={data ? "Snapshot of your store today." : undefined}
-          rightSlot={<NotificationBell />}
-        />
-
-        {!data ? (
-          <View style={styles.contentPad}>
-            {isLoading ? (
-              <EmptyState title="Loading…" message="Fetching your latest numbers." />
-            ) : (
-              <EmptyState
-                title="Couldn't load dashboard"
-                message="Pull to refresh or check your connection."
-              />
-            )}
+        {dashboard.data ? (
+          <View style={styles.gutter}>
+            <MetricsCard stats={dashboard.data.stats} currencyCode={currencyCode} />
           </View>
-        ) : (
-          <View style={styles.contentPad}>
-            <DashboardStats stats={data.stats} currencyCode={currencyCode} />
+        ) : null}
 
-            {pendingOrders.length > 0 ? (
-              <Section
-                title="Awaiting approval"
-                onSeeAll={morePending > 0 ? () => router.push("/(tabs)/orders") : undefined}
-                seeAllLabel={`${data.stats.orders_pending} pending`}
-              >
-                {pendingOrders.map((order, i) => (
-                  <RowWrapper key={order.id} divider={i > 0}>
-                    <DashboardOrderRow
-                      order={order}
-                      currencyCode={currencyCode}
-                      onPress={() => router.push(`/(tabs)/orders/${order.id}`)}
-                    />
-                  </RowWrapper>
-                ))}
-              </Section>
-            ) : null}
+        <View style={styles.queueHeader}>
+          <Text preset="eyebrow" color="textTertiary">
+            Needs you
+          </Text>
+          {visibleQueue.length > 0 ? (
+            <Text preset="caption" color="textTertiary" style={styles.count}>
+              {String(visibleQueue.length)}
+            </Text>
+          ) : null}
+        </View>
 
-            {data.stats.pending_reviews > 0 ? (
-              <Section title="Needs attention">
-                <ListRow
-                  primary="Reviews to moderate"
-                  secondary="Awaiting your approval"
-                  trailing={String(data.stats.pending_reviews)}
-                  trailingTone="accent"
-                  onPress={() => router.push("/(tabs)/customers/reviews")}
-                  accessibilityLabel={`${data.stats.pending_reviews} reviews awaiting moderation`}
-                />
-              </Section>
-            ) : null}
+        {failedSources.length > 0 ? (
+          <SourceErrorRow
+            sources={failedSources.map((s) => s.label)}
+            onRetry={retryFailed}
+          />
+        ) : null}
 
-            {otherRecent.length > 0 ? (
-              <Section
-                title="Recent Orders"
-                onSeeAll={() => router.push("/(tabs)/orders")}
-              >
-                {otherRecent.map((order, i) => (
-                  <RowWrapper key={order.id} divider={i > 0}>
-                    <DashboardOrderRow
-                      order={order}
-                      currencyCode={currencyCode}
-                      onPress={() => router.push(`/(tabs)/orders/${order.id}`)}
-                    />
-                  </RowWrapper>
-                ))}
-              </Section>
-            ) : null}
+        {anyLoading && visibleQueue.length === 0 && failedSources.length === 0 ? (
+          <Text preset="caption" color="textTertiary" style={styles.loading}>
+            Loading…
+          </Text>
+        ) : null}
 
-            {data.low_stock.length > 0 ? (
-              <Section title="Low Stock" onSeeAll={() => router.push("/(tabs)/products")}>
-                {data.low_stock.map((item, i) => (
-                  <RowWrapper key={item.id} divider={i > 0}>
-                    <LowStockRow
-                      item={item}
-                      onPress={() =>
-                        router.push(
-                          item.product_id
-                            ? `/(tabs)/products/${item.product_id}`
-                            : "/(tabs)/products",
-                        )
-                      }
-                    />
-                  </RowWrapper>
-                ))}
-              </Section>
-            ) : null}
+        {showEmptyState ? <QueueEmptyState /> : null}
 
-            {data.top_products.length > 0 ? (
-              <Section title="Top Products">
-                {data.top_products.map((p, i) => (
-                  <RowWrapper key={p.id} divider={i > 0}>
-                    <TopProductRow
-                      product={p}
-                      rank={i + 1}
-                      currencyCode={currencyCode}
-                      onPress={() => router.push(`/(tabs)/products/${p.id}`)}
-                    />
-                  </RowWrapper>
-                ))}
-              </Section>
-            ) : null}
+        {visibleQueue.map((item, index) => {
+          const actions = actionsFor(item);
+          const row = (
+            <QueueRow item={item} onPress={() => router.push(item.onPressRoute)} />
+          );
+          return (
+            <View key={item.id}>
+              {index > 0 ? <Hairline inset={theme.spacing.xl} /> : null}
+              {actions ? (
+                <SwipeRow
+                  testID={`swipe-${item.id}`}
+                  leadingActions={actions.leading}
+                  trailingActions={actions.trailing}
+                >
+                  {row}
+                </SwipeRow>
+              ) : (
+                row
+              )}
+            </View>
+          );
+        })}
+      </Animated.ScrollView>
 
-            {setupDone < CHECKLIST_ITEMS ? (
-              <Section title="Finish setup">
-                <ListRow
-                  primary="Complete your store setup"
-                  secondary={`${setupDone} of ${CHECKLIST_ITEMS} steps done`}
-                  trailing={`${Math.round((setupDone / CHECKLIST_ITEMS) * 100)}%`}
-                  trailingTone="accent"
-                  onPress={() => router.push("/(tabs)/more")}
-                  accessibilityLabel={`Store setup ${setupDone} of ${CHECKLIST_ITEMS} steps complete`}
-                />
-              </Section>
-            ) : null}
-          </View>
-        )}
-      </ScrollView>
+      <CancelReasonSheet
+        ref={cancelSheetRef}
+        onSubmit={submitCancel}
+        isSubmitting={cancelOrder.isPending}
+        error={cancelOrder.error ? "Couldn't cancel this order. Try again." : null}
+      />
     </Screen>
   );
 }
 
-function LowStockRow({ item, onPress }: { item: LowStockItem; onPress: () => void }) {
-  const label = item.variant_title ? `${item.title} · ${item.variant_title}` : item.title;
-  return (
-    <ListRow
-      primary={label}
-      trailing={`${item.quantity} left`}
-      trailingTone="danger"
-      onPress={onPress}
-      accessibilityLabel={`${label}, ${item.quantity} left in stock`}
-    />
-  );
-}
-
-function TopProductRow({
-  product,
-  rank,
-  currencyCode,
-  onPress,
-}: {
-  product: TopProduct;
-  rank: number;
-  currencyCode?: string;
-  onPress: () => void;
-}) {
-  return (
-    <ListRow
-      primary={product.title}
-      secondary={`${product.units_sold} sold`}
-      trailing={formatMoney(product.revenue, currencyCode)}
-      leading={
-        <Text preset="h3" color="textTertiary" style={styles.rank}>
-          {String(rank).padStart(2, "0")}
-        </Text>
-      }
-      onPress={onPress}
-      accessibilityLabel={`Number ${rank}, ${product.title}, ${product.units_sold} sold, ${formatMoney(product.revenue, currencyCode)} revenue`}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
-  scroll: {
-    paddingBottom: theme.spacing.huge,
-  },
-  // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH so
-  // dashboard content aligns with list rows elsewhere. Not theme.spacing.lg.
-  contentPad: {
-    paddingHorizontal: theme.spacing.xl,
-    gap: theme.spacing.xl,
-  },
-  section: { gap: theme.spacing.xs },
-  sectionHeader: {
+  scroll: { paddingTop: theme.spacing.lg },
+  // Screen gutter: theme.spacing.xl (20) — the SAME left edge the header's
+  // eyebrow/title and every PressableRow's paddingH sit on. Do not change
+  // this to fix an alignment problem; fix the offending block instead.
+  gutter: { paddingHorizontal: theme.spacing.xl },
+  queueHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: theme.spacing.xs,
-    paddingBottom: theme.spacing.xs,
+    justifyContent: "space-between",
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.xxl,
+    paddingBottom: theme.spacing.sm,
   },
-  // Pre-migration this row had no backgroundColor of its own (transparent),
-  // letting the parent Section's Card (elevated white) surface show through.
-  // PressableRow's base sets backgroundColor: theme.colors.background
-  // (paper), which would otherwise paint a visible seam against the Card —
-  // match that surface explicitly instead of relying on transparency (same
-  // fix as DashboardOrderRow, which sits in this identical Card context).
-  row: { backgroundColor: theme.colors.elevated },
-  rowMain: { flex: 1, gap: 2 },
-  leading: { width: 28, alignItems: "flex-start" },
-  rank: { fontVariant: ["tabular-nums"] },
-  chevron: { marginLeft: -theme.spacing.xs },
+  count: { fontVariant: ["tabular-nums"] },
+  loading: {
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
+  },
 });

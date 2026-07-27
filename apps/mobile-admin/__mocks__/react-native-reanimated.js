@@ -19,7 +19,7 @@
 // needed to load without throwing; grow it only as more `components/ui`
 // files start depending on reanimated (increment 2 adds several).
 const { useRef } = require("react");
-const { View } = require("react-native");
+const { View, ScrollView } = require("react-native");
 
 function interpolate(value, inputRange, outputRange) {
   const [inMin, inMax] = inputRange;
@@ -62,9 +62,23 @@ function withTiming(toValue) {
   return toValue;
 }
 
+// Added for Task 8 (Dashboard): the screen owns the `scrollY` shared value
+// that drives `CollapsingHeader`, so it renders an `Animated.ScrollView`
+// wired to a `useAnimatedScrollHandler`. Under jest there is no UI thread
+// and no scroll events, so the handler is returned as a plain function
+// (never invoked by RNTL) and `Animated.ScrollView` is the real RN
+// `ScrollView`, which renders its children synchronously — exactly what a
+// screen test needs.
+function useAnimatedScrollHandler(handlerOrHandlers) {
+  return typeof handlerOrHandlers === "function"
+    ? handlerOrHandlers
+    : (handlerOrHandlers && handlerOrHandlers.onScroll) || (() => {});
+}
+
 module.exports = {
   __esModule: true,
-  default: { View },
+  default: { View, ScrollView },
+  useAnimatedScrollHandler,
   Extrapolation: { CLAMP: "clamp", EXTEND: "extend", IDENTITY: "identity" },
   interpolate,
   useAnimatedStyle: (factory) => factory(),

@@ -1,6 +1,18 @@
-import { buildQueue, type QueueSources } from "@/lib/queue";
+import { buildQueue, type QueueItem, type QueueSources } from "@/lib/queue";
 import { formatMoney } from "@/lib/money";
 import type { RecentOrder, LowStockItem, Review, Ticket } from "@repo/mobile-shared/api/types";
+
+/**
+ * Narrows a `QueueItem` to the `"item"` variant for tests that assert on
+ * fields (`amount`, `imageUrl`) that only exist on that branch of the
+ * discriminated union — see lib/queue.ts's `QueueItem` doc.
+ */
+function asItem(item: QueueItem): Extract<QueueItem, { kind: "item" }> {
+  if (item.kind !== "item") {
+    throw new Error(`expected an "item" row, got kind "${item.kind}"`);
+  }
+  return item;
+}
 
 function order(over: Partial<RecentOrder> = {}): RecentOrder {
   return {
@@ -150,7 +162,14 @@ describe("buildQueue — filters to the urgent slice of each source", () => {
 });
 
 describe("buildQueue — per-type cap and 'See all'", () => {
-  it("caps each type at 3 and appends a 'See all' row only when that type overflows", () => {
+  // NOTE: this test is named for what it actually proves — that hitting
+  // TYPE_CAP exactly does NOT overflow. It is NOT a cap-value test: it
+  // feeds exactly 3 orders with `orders_pending: 3`, which passes unchanged
+  // under any TYPE_CAP >= 3 (verified by mutating TYPE_CAP to 2 and to 4 —
+  // both left this test green; see inc2-task-7-report.md "Fix round 1").
+  // The cap value itself is exercised by the overflow tests below, which
+  // DO fail under those same mutations.
+  it("shows no 'See all' row when a type's count does not exceed the cap", () => {
     const orders = [order({ id: "o1" }), order({ id: "o2" }), order({ id: "o3" })];
     const items = buildQueue({
       ...EMPTY,
@@ -181,8 +200,9 @@ describe("buildQueue — per-type cap and 'See all'", () => {
     expect(seeAll.type).toBe("order");
     expect(seeAll.primary).toContain("9");
     // The overflow row carries no per-item status — it's a navigational
-    // affordance, not a queue entry.
-    expect(seeAll.badgeTone).toBeUndefined();
+    // affordance, not a queue entry. `kind` (not `badgeTone`'s presence) is
+    // the discriminator now — see queue-row.test.tsx and the QueueItem doc.
+    expect(seeAll.kind).toBe("seeAll");
   });
 
   it("renders 'See all' with no number for a type with no authoritative stats count (stock)", () => {
@@ -219,6 +239,71 @@ describe("buildQueue — per-type cap and 'See all'", () => {
   });
 });
 
+describe("buildQueue — overflow is driven by the authoritative count, not the local array length", () => {
+  // Reproduces the reviewer's finding: `recent_orders` is the API's last-5-
+  // orders-of-ANY-status feed (services/marketplace-api dashboard handler),
+  // not a pending-orders feed. `buildQueue` filters it to pending, so
+  // `pendingOrders.length` can be far smaller than `stats.orders_pending` —
+  // a busy store can have 20 pending orders and only 2 of them land in the
+  // last-5 feed. Before this fix, overflow (and therefore the "See all"
+  // row) was decided by `pendingOrders.length`, so those 2 rows rendered
+  // with NO way to reach the other 18.
+  it("appends a 'See all' row driven by stats.orders_pending even when only 2 of 20 pending orders are in the local slice", () => {
+    const items = buildQueue({
+      ...EMPTY,
+      // Only 2 of the "last 5 orders of any status" happen to be pending —
+      // the other 3 are fulfilled/cancelled and never reach buildQueue
+      // (the Dashboard screen only passes recentOrders through; buildQueue
+      // itself re-filters to status === "pending").
+      recentOrders: [order({ id: "p1" }), order({ id: "p2" })],
+      stats: { ...EMPTY.stats, orders_pending: 20 },
+    });
+
+    expect(items.map((i) => i.id)).toEqual(["p1", "p2", "see-all-order"]);
+    const seeAll = items[2];
+    expect(seeAll.kind).toBe("seeAll");
+    expect(seeAll.primary).toContain("20");
+  });
+
+  // The degenerate case: ALL 5 most-recent orders are already
+  // fulfilled/cancelled, so the local pending-orders slice is empty even
+  // though 20 orders are genuinely pending. Before this fix, an empty
+  // local array meant an empty "money waiting" section — no rows, no "See
+  // all" row, nothing telling the merchant 20 orders need them.
+  it("appends a 'See all' row even when the local pending-orders slice is empty", () => {
+    const items = buildQueue({
+      ...EMPTY,
+      recentOrders: [
+        order({ id: "f1", status: "fulfilled" }),
+        order({ id: "f2", status: "fulfilled" }),
+        order({ id: "c1", status: "cancelled" }),
+      ],
+      stats: { ...EMPTY.stats, orders_pending: 20 },
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("seeAll");
+    expect(items[0].type).toBe("order");
+    expect(items[0].primary).toContain("20");
+  });
+
+  // Same defect, same fix, on the other type with an authority
+  // (`stats.pending_reviews`) — guards against a fix that only special-cased
+  // orders.
+  it("appends a 'See all' row driven by stats.pending_reviews even when the local reviews slice is empty", () => {
+    const items = buildQueue({
+      ...EMPTY,
+      reviews: [],
+      stats: { ...EMPTY.stats, pending_reviews: 15 },
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("seeAll");
+    expect(items[0].type).toBe("review");
+    expect(items[0].primary).toContain("15");
+  });
+});
+
 describe("buildQueue — total cap", () => {
   it("caps the total list at 12, dropping the lowest-priority rows first", () => {
     const items = buildQueue({
@@ -233,6 +318,75 @@ describe("buildQueue — total cap", () => {
     // already at the cap before reviews are even considered.
     expect(items).toHaveLength(12);
     expect(items.some((i) => i.type === "review")).toBe(false);
+  });
+
+  // Reproduces the reviewer's finding: a plain `.slice(0, TOTAL_CAP)` cuts
+  // whichever row happens to land on the boundary — including a group's own
+  // "See all" row, which is exactly the affordance the merchant needs when
+  // that group is truncated. orders(4 rows: 3 + See all) + stock(4 rows: 3 +
+  // See all) + tickets(2 rows, no overflow) = 10, leaving a budget of 2 for
+  // the reviews group ([r1, r2, r3, "See all 40 pending reviews"], 4 rows).
+  // A plain slice would keep [r1, r2] and drop the "See all" row entirely —
+  // the merchant would see 2 of 40 pending reviews with no way to reach the
+  // other 38.
+  it("keeps a group's own 'See all' row (in place of the last surviving item) instead of dropping it when the total cap cuts that group mid-way", () => {
+    const items = buildQueue({
+      stats: { ...EMPTY.stats, orders_pending: 4, pending_reviews: 40 },
+      recentOrders: [
+        order({ id: "o1" }),
+        order({ id: "o2" }),
+        order({ id: "o3" }),
+        order({ id: "o4" }),
+      ],
+      lowStock: [
+        stockItem({ id: "v1" }),
+        stockItem({ id: "v2" }),
+        stockItem({ id: "v3" }),
+        stockItem({ id: "v4" }),
+      ],
+      tickets: [ticket({ id: "t1" }), ticket({ id: "t2" })],
+      reviews: [review({ id: "r1" }), review({ id: "r2" }), review({ id: "r3" })],
+    });
+
+    expect(items).toHaveLength(12);
+    expect(items.map((i) => i.id).slice(-2)).toEqual(["r1", "see-all-review"]);
+    const last = items[items.length - 1];
+    expect(last.kind).toBe("seeAll");
+    expect(last.primary).toContain("40");
+  });
+
+  // A group with no overflow of its own has no "See all" row to preserve —
+  // a mid-way cut on that group is a plain, harmless truncation (nothing
+  // is silently destroyed; there was never an affordance to reach "the
+  // rest", because there is no "rest" beyond what's already shown for a
+  // non-overflowing group).
+  it("plainly truncates a group with no 'See all' row of its own when the total cap cuts it mid-way", () => {
+    const items = buildQueue({
+      stats: { ...EMPTY.stats, orders_pending: 4, pending_reviews: 0 },
+      recentOrders: [
+        order({ id: "o1" }),
+        order({ id: "o2" }),
+        order({ id: "o3" }),
+        order({ id: "o4" }),
+      ],
+      lowStock: [
+        stockItem({ id: "v1" }),
+        stockItem({ id: "v2" }),
+        stockItem({ id: "v3" }),
+        stockItem({ id: "v4" }),
+      ],
+      tickets: [ticket({ id: "t1" }), ticket({ id: "t2" }), ticket({ id: "t3" })],
+      // No authoritative count (pending_reviews: 0) and only 2 items, so
+      // this group never overflows and never grows a "See all" row of its
+      // own to preserve.
+      reviews: [review({ id: "r1" }), review({ id: "r2" })],
+    });
+
+    // orders(4 rows) + stock(4 rows) + tickets(3 rows) = 11, leaving a
+    // budget of 1 for the 2-item reviews group — a plain truncation to the
+    // first item, since there is no "See all" row to keep instead.
+    expect(items).toHaveLength(12);
+    expect(items[items.length - 1]).toMatchObject({ id: "r1", kind: "item" });
   });
 });
 
@@ -261,7 +415,7 @@ describe("buildQueue — order field mapping", () => {
       recentOrders: [order({ image_url: undefined })],
     });
 
-    expect(items[0].imageUrl).toBeUndefined();
+    expect(asItem(items[0]).imageUrl).toBeUndefined();
   });
 
   it("carries image_url through when present", () => {
@@ -270,7 +424,7 @@ describe("buildQueue — order field mapping", () => {
       recentOrders: [order({ image_url: "https://cdn.example/p.jpg" })],
     });
 
-    expect(items[0].imageUrl).toBe("https://cdn.example/p.jpg");
+    expect(asItem(items[0]).imageUrl).toBe("https://cdn.example/p.jpg");
   });
 
   it("formats the amount in the store's currency", () => {
@@ -280,7 +434,7 @@ describe("buildQueue — order field mapping", () => {
       currencyCode: "AUD",
     });
 
-    expect(items[0].amount).toBe(formatMoney(99.5, "AUD"));
+    expect(asItem(items[0]).amount).toBe(formatMoney(99.5, "AUD"));
   });
 
   it("routes to the order detail screen", () => {
@@ -318,6 +472,47 @@ describe("buildQueue — badge tone never spends the app's moss accent", () => {
       reviews: [review()],
     });
 
-    expect(items.map((i) => i.badgeTone)).not.toContain("success");
+    const badgeTones = items.filter((i) => i.kind === "item").map((i) => i.badgeTone);
+    expect(badgeTones).not.toContain("success");
+  });
+});
+
+describe("QueueItem — 'seeAll' can't accidentally masquerade as a real row (compile-time guard)", () => {
+  // Prior to this fix, `QueueItem` was one flat interface with `badgeTone`
+  // optional even on real rows, and `QueueRow` used `badgeTone === undefined`
+  // as the row-kind discriminator. That let a fully-populated real order —
+  // amount, imageUrl, everything — type-check with `badgeTone` simply
+  // forgotten, and it would silently render as a single-line "See all" link,
+  // dropping the amount/photo/badge with no error anywhere.
+  //
+  // `QueueItem` is now a discriminated union on `kind`, with `badgeTone`
+  // REQUIRED on the `"item"` variant, so that state is no longer
+  // constructible — this is a type error, not a runtime check. `tsc --noEmit`
+  // (Gate 2) is what actually enforces it; this test only pins the
+  // expectation so a regression is visible in this file too.
+  //
+  // Mutation-verified: temporarily reverting `QueueItem` to the pre-fix flat
+  // shape (`badgeTone?: StatusTone` on one non-discriminated interface) made
+  // the object below type-check with no error, which turns the
+  // `@ts-expect-error` below into an "Unused '@ts-expect-error' directive"
+  // error under `tsc --noEmit` — RED. Restoring the discriminated union made
+  // `tsc --noEmit` clean again — GREEN.
+  it("does not allow a 'kind: item' row to omit badgeTone", () => {
+    // @ts-expect-error — `badgeTone` is required whenever `kind: "item"`;
+    // only the `"seeAll"` variant may omit it (and cannot carry `amount`/
+    // `imageUrl` at all). If this stops erroring, the illegal state this
+    // finding was about is representable again.
+    const illegal: QueueItem = {
+      kind: "item",
+      id: "x",
+      type: "order",
+      primary: "Test Customer",
+      secondary: "Order #1",
+      amount: "$1.00",
+      imageUrl: "https://example.com/x.jpg",
+      onPressRoute: "/x",
+    };
+
+    expect(illegal).toBeDefined();
   });
 });

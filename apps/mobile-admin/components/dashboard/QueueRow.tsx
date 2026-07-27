@@ -50,10 +50,10 @@ function Monogram({ label, testID }: { label: string; testID?: string }) {
  *  - A normal queue item: 60pt Thumb (or the Monogram fallback above), 17pt
  *    primary (bodyEmphasis), 13pt secondary (caption), and a right column
  *    with a serif amount + typed StatusBadge.
- *  - A "See all N" overflow row (recognised by the ABSENCE of `badgeTone` —
- *    see lib/queue.ts's QueueItem doc for why that field is optional):
- *    single-line, no thumb/monogram/badge/amount — it's a navigational
- *    affordance, not a queue entry.
+ *  - A "See all N" overflow row (`item.kind === "seeAll"` — see lib/queue.ts's
+ *    QueueItem doc for why this is an explicit discriminant rather than
+ *    `badgeTone === undefined`): single-line, no thumb/monogram/badge/amount
+ *    — it's a navigational affordance, not a queue entry.
  *
  * Deliberately NOT wrapped in SwipeRow — the brief is explicit that the
  * CALLER wraps it (Task 8's Dashboard screen), since swipe actions differ
@@ -62,7 +62,7 @@ function Monogram({ label, testID }: { label: string; testID?: string }) {
  * lists in increment 3.
  */
 export function QueueRow({ item, onPress }: QueueRowProps) {
-  const isSeeAll = item.badgeTone === undefined;
+  const isSeeAll = item.kind === "seeAll";
 
   if (isSeeAll) {
     return (
@@ -139,11 +139,23 @@ const styles = StyleSheet.create({
   // same token Thumb's own built-in placeholder uses, so both "no photo"
   // fallbacks (product placeholder, customer monogram) read with equal
   // visibility in the same row context.
+  //
+  // `borderColor: textTertiary` is deliberate, not decorative: PressableRow's
+  // iOS pressed state (components/ui/PressableRow.tsx) repaints the row
+  // background to this SAME `sink` token, so a fill-only disc has zero
+  // contrast against its own row while held — the disc's edge vanishes and
+  // the initial appears to float. textTertiary (#5C5953) holds ~5.8:1
+  // against `sink` (and ~6.5:1 against Paper at rest), so the ring stays
+  // visible in both states. Fixed here, not in PressableRow or Thumb — a
+  // shared primitive's default press token is not the place for a one-row
+  // fix (see inc2-task-7-report.md, "Fix round 1").
   monogram: {
     width: theme.thumb.list,
     height: theme.thumb.list,
     borderRadius: theme.thumb.list / 2,
     backgroundColor: theme.colors.sink,
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.textTertiary,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,

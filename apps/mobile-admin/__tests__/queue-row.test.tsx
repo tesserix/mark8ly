@@ -16,8 +16,9 @@ import { QueueRow } from "@/components/dashboard/QueueRow";
 import { theme } from "@/lib/theme";
 import type { QueueItem } from "@/lib/queue";
 
-function baseItem(over: Partial<QueueItem> = {}): QueueItem {
+function baseItem(over: Partial<Extract<QueueItem, { kind: "item" }>> = {}): QueueItem {
   return {
+    kind: "item",
     id: "o-1",
     type: "order",
     primary: "Priya Shah",
@@ -115,10 +116,34 @@ describe("QueueRow — thumbnail vs monogram", () => {
     expect(style.width).toBe(theme.thumb.list);
     expect(style.height).toBe(theme.thumb.list);
   });
+
+  // Guards the fix for the monogram vanishing under PressableRow's iOS
+  // pressed state: PressableRow repaints the row to `theme.colors.sink`,
+  // which is also the monogram's own fill, so a fill-only disc has zero
+  // edge contrast while held (confirmed on-device, see
+  // inc2-task-7-report.md "Fix round 1"). This can't catch the visual bug
+  // itself (RNTL doesn't render pressed state or actual pixels — only a
+  // device screenshot does), but it does lock in the two properties that
+  // make the on-device fix possible: a border exists, and it is NOT the
+  // same token as the fill it would otherwise vanish against.
+  it("rings the monogram disc with a border distinct from its own fill (stays visible when the row's pressed background matches the fill)", () => {
+    const { getByTestId } = render(
+      <QueueRow item={baseItem({ imageUrl: undefined })} onPress={jest.fn()} />,
+    );
+    const style = StyleSheet.flatten(getByTestId("queue-row-o-1-monogram").props.style);
+    expect(style.borderWidth).toBeGreaterThan(0);
+    expect(style.borderColor).toBeDefined();
+    expect(style.borderColor).not.toBe(style.backgroundColor);
+    // The fill itself must still be `sink` — PressableRow's pressed
+    // background token — per the module's own documented rationale; this
+    // fix adds a ring, it does not change the fill.
+    expect(style.backgroundColor).toBe(theme.colors.sink);
+  });
 });
 
 describe("QueueRow — 'See all' row", () => {
   const seeAllItem: QueueItem = {
+    kind: "seeAll",
     id: "see-all-order",
     type: "order",
     primary: "See all 9 pending orders",
@@ -144,6 +169,30 @@ describe("QueueRow — 'See all' row", () => {
   });
 });
 
+describe("QueueRow — row kind discriminant", () => {
+  // Prior to this fix, `QueueRow` used `item.badgeTone === undefined` as
+  // the row-kind discriminator, and `badgeTone` was optional even on real
+  // rows — so a fully-populated order item that merely forgot to set
+  // `badgeTone` type-checked and silently rendered as a single-line "See
+  // all" link, dropping its amount/photo/badge with no error. `QueueItem`
+  // is now a discriminated union keyed on `kind`, with `badgeTone` REQUIRED
+  // on the `"item"` variant — so that state can no longer be constructed at
+  // all (see the `@ts-expect-error` compile-time guard in queue.test.ts).
+  // This test locks in the runtime half: `kind`, not `badgeTone`, drives
+  // the layout choice.
+  it("renders the full item layout for kind:'item' even though badgeTone alone used to be the discriminator", () => {
+    const item = baseItem({ amount: "$142.00", imageUrl: "https://cdn.example/p.jpg" });
+    const { getByText, getByTestId, queryByText } = render(
+      <QueueRow item={item} onPress={jest.fn()} />,
+    );
+    expect(getByText("Priya Shah")).toBeTruthy();
+    expect(getByText("$142.00")).toBeTruthy();
+    expect(getByText("Pending")).toBeTruthy();
+    expect(getByTestId("queue-row-o-1-thumb")).toBeTruthy();
+    expect(queryByText("See all")).toBeNull();
+  });
+});
+
 describe("QueueRow — native row density", () => {
   it("renders a two-line item row at the 88pt double-line height", () => {
     const { getByTestId } = render(<QueueRow item={baseItem()} onPress={jest.fn()} />);
@@ -154,6 +203,7 @@ describe("QueueRow — native row density", () => {
 
   it("renders a 'See all' row at the 64pt single-line height", () => {
     const item: QueueItem = {
+      kind: "seeAll",
       id: "see-all-stock",
       type: "stock",
       primary: "See all low stock items",

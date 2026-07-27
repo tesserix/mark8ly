@@ -11,32 +11,47 @@ import type {
 export type QueueItemType = "order" | "review" | "stock" | "ticket";
 
 /**
- * `QueueItem` per inc2-task-7-brief.md, with two deliberate deviations from
- * the brief's literal interface (recorded in inc2-task-7-report.md):
+ * `QueueItem` per inc2-task-7-brief.md, with deliberate deviations from the
+ * brief's literal interface (recorded in inc2-task-7-report.md):
  *
  * 1. `badgeTone` is typed as `StatusTone` (components/ui/StatusBadge.tsx),
  *    not the brief's parallel `"amber" | "moss" | "mute" | "blood"` union —
  *    those four names are pure aliases of StatusTone's existing
  *    `warning`/`success`/`muted`/`danger` and inventing a second vocabulary
  *    plus a mapping layer would only let the two drift.
- * 2. `badgeTone` and `badgeLabel` are both OPTIONAL. The brief's own prose
- *    calls for "a typed badge" — StatusBadge is `{label, tone}` — but the
- *    brief's interface has no label field. A "See all N" row also has no
- *    per-item status to badge at all: it's a navigational affordance, not a
- *    queue entry, so both fields are simply absent for it. `badgeLabel` is
- *    additive (not in the brief's list) to make the badge renderable.
+ * 2. `QueueItem` is a discriminated union on `kind: "item" | "seeAll"`
+ *    (added in review round 1 — see inc2-task-7-report.md "Fix round 1").
+ *    A "See all N" row has no per-item status to badge — it's a
+ *    navigational affordance, not a queue entry — so the `"seeAll"` variant
+ *    simply has no `badgeTone`/`badgeLabel`/`amount`/`imageUrl` fields at
+ *    all, rather than an all-optional flat shape where `badgeTone`'s
+ *    absence was overloaded as the row-kind discriminator. That overload
+ *    made an illegal state representable: a real order item that forgot to
+ *    set `badgeTone` type-checked and silently rendered as a "See all"
+ *    link, dropping its amount/photo/badge with no error. `badgeLabel`
+ *    stays optional on the `"item"` variant (additive vs. the brief, which
+ *    has no label field at all) — every current producer sets it, but nothing
+ *    depends on that being permanent.
  */
-export interface QueueItem {
+interface QueueItemFields {
   id: string;
   type: QueueItemType;
   primary: string;
   secondary: string;
-  amount?: string;
-  imageUrl?: string;
-  badgeTone?: StatusTone;
-  badgeLabel?: string;
   onPressRoute: string;
 }
+
+export type QueueItem =
+  | (QueueItemFields & {
+      kind: "item";
+      amount?: string;
+      imageUrl?: string;
+      badgeTone: StatusTone;
+      badgeLabel?: string;
+    })
+  | (QueueItemFields & {
+      kind: "seeAll";
+    });
 
 /**
  * Already-fetched payloads `buildQueue` composes from. `recentOrders` and
@@ -84,6 +99,7 @@ function seeAllRow(type: QueueItemType, count: number | undefined): QueueItem {
   const noun = SEE_ALL_NOUN[type];
   const primary = count !== undefined ? `See all ${count} ${noun}` : `See all ${noun}`;
   return {
+    kind: "seeAll",
     id: `see-all-${type}`,
     type,
     primary,
@@ -92,7 +108,23 @@ function seeAllRow(type: QueueItemType, count: number | undefined): QueueItem {
   };
 }
 
-/** Caps `items` at TYPE_CAP and appends a "See all" row only on overflow. */
+/**
+ * Caps `items` at TYPE_CAP and appends a "See all" row only on overflow.
+ *
+ * Overflow is decided by `authoritativeCount` when one exists (orders,
+ * reviews), NOT by `items.length`. `items` here is only ever the LOCAL,
+ * already-capped slice of a source payload — for orders specifically,
+ * `recentOrders` is the API's last-5-orders-of-any-status feed (see
+ * dashboard.ts handler), which `buildQueue` then filters to pending, so
+ * `items.length` can be as low as 0 even when hundreds of orders are
+ * pending. Falling back to `items.length` only when there's no authority
+ * (stock, tickets — `DashboardStats` has no count for either) preserves the
+ * old behaviour for those two types while fixing the mismatch for the two
+ * that DO have an authoritative count. This can surface a "See all" row
+ * even when the local slice is short or empty — that's the fix, not a bug:
+ * it's the only way a merchant with 20 pending orders and 2 of them in the
+ * "last 5 orders" feed ever sees a way to reach the other 18.
+ */
 function buildTypeGroup<T>(
   items: T[],
   type: QueueItemType,
@@ -100,7 +132,8 @@ function buildTypeGroup<T>(
   authoritativeCount: number | undefined,
 ): QueueItem[] {
   const rows = items.slice(0, TYPE_CAP).map(toItem);
-  if (items.length > TYPE_CAP) {
+  const total = authoritativeCount ?? items.length;
+  if (total > TYPE_CAP) {
     rows.push(seeAllRow(type, authoritativeCount));
   }
   return rows;
@@ -108,6 +141,7 @@ function buildTypeGroup<T>(
 
 function orderToQueueItem(order: RecentOrder, currencyCode: string | undefined): QueueItem {
   return {
+    kind: "item",
     id: order.id,
     type: "order",
     // *string + omitempty -> absent, not null (see dashboard.ts schema
@@ -127,6 +161,7 @@ function stockToQueueItem(item: LowStockItem): QueueItem {
     ? `${item.variant_title} · ${item.quantity} left`
     : `${item.quantity} left`;
   return {
+    kind: "item",
     id: item.id,
     type: "stock",
     primary: item.title,
@@ -144,6 +179,7 @@ function stockToQueueItem(item: LowStockItem): QueueItem {
 
 function ticketToQueueItem(ticket: Ticket): QueueItem {
   return {
+    kind: "item",
     id: ticket.id,
     type: "ticket",
     primary: ticket.submitted_by_name,
@@ -157,6 +193,7 @@ function ticketToQueueItem(ticket: Ticket): QueueItem {
 
 function reviewToQueueItem(review: Review): QueueItem {
   return {
+    kind: "item",
     id: review.id,
     type: "review",
     primary: review.customer_name,
@@ -168,6 +205,59 @@ function reviewToQueueItem(review: Review): QueueItem {
 }
 
 /**
+ * A type-group's own trailing "See all" row, if it has one — the row an
+ * overflowing group appended in `buildTypeGroup`. Detected by id prefix
+ * rather than `kind` because a group with no overflow can validly end on a
+ * plain `"item"` row too; the prefix is what's actually unique to the row
+ * `seeAllRow` produces.
+ */
+function trailingSeeAllRow(group: QueueItem[]): QueueItem | undefined {
+  const last = group[group.length - 1];
+  return last?.id.startsWith("see-all-") ? last : undefined;
+}
+
+/**
+ * Applies TOTAL_CAP across the priority-ordered type groups. Groups that
+ * fit whole are kept whole; once a group would be cut mid-way, if that
+ * group carries its own "See all" row (i.e. it already overflowed
+ * TYPE_CAP), that row is kept as the LAST row taken from the group —
+ * replacing one item, not appended past the cap — instead of a plain
+ * `.slice()` silently discarding it. A plain `.slice()` at TOTAL_CAP would
+ * otherwise cut a 4-row group (3 items + "See all") down to fewer rows and,
+ * exactly when the cut lands mid-group, delete the "See all" row instead of
+ * one of the 3 items — destroying the one affordance that would let the
+ * merchant reach the rest of that overflowing group. A group with no
+ * overflow (no "See all" row) has nothing to preserve, so it's still
+ * plainly sliced. Once the budget hits 0, later (lower-priority) groups are
+ * dropped whole, same as before.
+ */
+function applyTotalCap(groups: QueueItem[][]): QueueItem[] {
+  const result: QueueItem[] = [];
+  let remaining = TOTAL_CAP;
+
+  for (const group of groups) {
+    if (remaining <= 0) break;
+
+    if (group.length <= remaining) {
+      result.push(...group);
+      remaining -= group.length;
+      continue;
+    }
+
+    const seeAll = trailingSeeAllRow(group);
+    if (seeAll) {
+      const leadingCount = Math.max(remaining - 1, 0);
+      result.push(...group.slice(0, leadingCount), seeAll);
+    } else {
+      result.push(...group.slice(0, remaining));
+    }
+    remaining = 0;
+  }
+
+  return result;
+}
+
+/**
  * Pure composition: already-fetched payloads in, the sorted/capped/typed
  * "needs you" queue out. No fetching, no navigation, no rendering — see
  * inc2-task-7-brief.md for why this is kept separate from the screen.
@@ -176,10 +266,11 @@ function reviewToQueueItem(review: Review): QueueItem {
  * pending orders (money waiting) -> low stock (sales at risk) -> unanswered
  * tickets -> pending reviews. Within a type, the most recently created item
  * comes first. Each type is capped at 3 (see TYPE_CAP) with an overflow
- * "See all" row; the whole list is then capped at 12 (TOTAL_CAP) by simply
- * slicing — because the groups are already ordered by priority, a total-cap
- * trim drops the LEAST urgent rows first (reviews before tickets before
- * stock before orders), never the reverse.
+ * "See all" row; the whole list is then capped at 12 (TOTAL_CAP) via
+ * `applyTotalCap` — because the groups are already ordered by priority, a
+ * total-cap trim drops the LEAST urgent rows first (reviews before tickets
+ * before stock before orders), never the reverse, and never silently
+ * deletes a group's own "See all" row when the cut lands mid-group.
  */
 export function buildQueue(sources: QueueSources): QueueItem[] {
   const pendingOrders = sortByRecency(
@@ -203,5 +294,5 @@ export function buildQueue(sources: QueueSources): QueueItem[] {
     sources.stats.pending_reviews,
   );
 
-  return [...orderItems, ...stockItems, ...ticketItems, ...reviewItems].slice(0, TOTAL_CAP);
+  return applyTotalCap([orderItems, stockItems, ticketItems, reviewItems]);
 }

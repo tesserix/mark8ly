@@ -16,3 +16,5 @@ export { IconButton } from "./IconButton";
 export type { IconButtonProps } from "./IconButton";
 export { Thumb } from "./Thumb";
 export type { ThumbProps } from "./Thumb";
+export { CollapsingHeader, COLLAPSE_DISTANCE } from "./CollapsingHeader";
+export type { CollapsingHeaderProps } from "./CollapsingHeader";

@@ -17,6 +17,25 @@ interface ProductMediaPickerProps {
 // carry the rest of the way toward a 44pt target.
 const REMOVE_BTN_HIT_SLOP = { top: 12, left: 21, bottom: 10, right: 1 };
 
+/**
+ * The geometry the no-overlap proof depends on, exported so a test can assert
+ * the invariant instead of trusting the comment above.
+ *
+ * The failure mode here is destructive — if the badge's hit region reaches the
+ * next thumbnail, tapping near image N+1 deletes image N. That regression
+ * would otherwise be silent: no type error, no failing test. See
+ * `__tests__/media-picker-hit-region.test.ts`.
+ */
+export const REMOVE_BTN_GEOMETRY = {
+  thumbSize: 80,
+  badgeSize: 22,
+  /** Badge is offset outward from the thumb's top-right corner by this much. */
+  badgeOffset: 6,
+  hitSlop: REMOVE_BTN_HIT_SLOP,
+  /** Horizontal gap between adjacent thumbnails — `gallery`'s gap. */
+  siblingGap: theme.spacing.sm,
+} as const;
+
 function RemoveImageButton({ index, onRemove }: { index: number; onRemove: (index: number) => void }) {
   return (
     <IconButton
@@ -141,7 +160,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   gallery: { gap: theme.spacing.sm, paddingVertical: theme.spacing.xs },
-  thumbWrap: { position: "relative" },
+  // Width/height are explicit rather than auto-sized from the image child.
+  // The remove badge's no-overlap clearance is derived from this being
+  // exactly 80pt; if a future in-flow child (a caption, a progress label)
+  // changed the auto-size, the clearance proof would break silently.
+  thumbWrap: {
+    position: "relative",
+    width: REMOVE_BTN_GEOMETRY.thumbSize,
+    height: REMOVE_BTN_GEOMETRY.thumbSize,
+  },
   thumb: {
     width: 80,
     height: 80,

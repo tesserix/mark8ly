@@ -263,11 +263,11 @@ export default function NewProductScreen() {
           disabled={isBusy}
           accessibilityRole="button"
           accessibilityLabel="Save as draft"
-          android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+          android_ripple={theme.press.rippleInk}
           style={({ pressed }) => [
             styles.draftBtn,
             isBusy && styles.disabled,
-            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <Text preset="bodyEmphasis" color="text">
@@ -279,11 +279,11 @@ export default function NewProductScreen() {
           disabled={isBusy}
           accessibilityRole="button"
           accessibilityLabel="Create product"
-          android_ripple={{ color: "rgba(247, 246, 242, 0.24)" }}
+          android_ripple={theme.press.rippleOnDark}
           style={({ pressed }) => [
             styles.primaryBtn,
             isBusy && styles.disabled,
-            pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
           ]}
         >
           {isBusy ? (

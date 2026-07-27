@@ -38,9 +38,9 @@ export function SearchField({
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Clear search"
-          android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+          android_ripple={{ ...theme.press.rippleInk, borderless: true }}
           style={({ pressed }) =>
-            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
           }
         >
           <X size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />

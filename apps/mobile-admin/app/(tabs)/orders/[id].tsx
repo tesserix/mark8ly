@@ -510,20 +510,21 @@ function ActionButton({
   const color = variant === "primary" ? "inverse" : variant === "danger" ? "danger" : "text";
   // Primary is a solid moss fill (light text on it); secondary/danger are
   // outline-only on Paper. Tune the press feedback so it reads on each.
-  const rippleColor =
+  const ripple =
     variant === "primary"
-      ? "rgba(247, 246, 242, 0.24)"
+      ? theme.press.rippleOnDark
       : variant === "danger"
-        ? "rgba(139, 46, 32, 0.12)"
-        : "rgba(14, 14, 12, 0.12)";
-  const pressedOpacity = variant === "primary" ? 0.85 : 0.55;
+        ? theme.press.rippleDanger
+        : theme.press.rippleInk;
+  const pressedOpacity =
+    variant === "primary" ? theme.press.opacitySolidFill : theme.press.opacityStandard;
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
-      android_ripple={{ color: rippleColor }}
+      android_ripple={ripple}
       style={({ pressed }) => [
         btnStyle,
         disabled && styles.btnDisabled,

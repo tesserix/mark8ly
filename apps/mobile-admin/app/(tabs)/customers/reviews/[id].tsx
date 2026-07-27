@@ -167,10 +167,10 @@ export default function ReviewDetailScreen() {
               disabled={isMutating}
               accessibilityRole="button"
               accessibilityLabel="Approve review"
-              android_ripple={{ color: "rgba(247, 246, 242, 0.24)" }}
+              android_ripple={theme.press.rippleOnDark}
               style={({ pressed }) => [
                 styles.approveBtn,
-                pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+                pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
               ]}
             >
               <Text preset="bodyEmphasis" color="inverse">
@@ -184,10 +184,10 @@ export default function ReviewDetailScreen() {
             disabled={isMutating}
             accessibilityRole="button"
             accessibilityLabel="Reply to review"
-            android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+            android_ripple={theme.press.rippleInk}
             style={({ pressed }) => [
               styles.replyBtn,
-              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
             ]}
           >
             <Text preset="bodyEmphasis" color="text">
@@ -202,10 +202,10 @@ export default function ReviewDetailScreen() {
                 disabled={isMutating}
                 accessibilityRole="button"
                 accessibilityLabel="Reject review"
-                android_ripple={{ color: "rgba(139, 46, 32, 0.12)" }}
+                android_ripple={theme.press.rippleDanger}
                 style={({ pressed }) => [
                   styles.rejectBtn,
-                  pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+                  pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
                 ]}
               >
                 <Text preset="bodyEmphasis" color="danger">
@@ -218,10 +218,10 @@ export default function ReviewDetailScreen() {
               disabled={isMutating}
               accessibilityRole="button"
               accessibilityLabel={review.featured ? "Unfeature review" : "Feature review"}
-              android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+              android_ripple={theme.press.rippleInk}
               style={({ pressed }) => [
                 styles.featureBtn,
-                pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+                pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
               ]}
             >
               <Text preset="bodyEmphasis" color="text">

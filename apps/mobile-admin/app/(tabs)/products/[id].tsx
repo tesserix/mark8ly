@@ -226,9 +226,9 @@ export default function ProductDetailScreen() {
             accessibilityRole="button"
             accessibilityLabel={saveLabel}
             hitSlop={8}
-            android_ripple={{ color: "rgba(45, 74, 43, 0.12)", borderless: true }}
+            android_ripple={{ color: theme.press.rippleAccent.color, borderless: true }}
             style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
             }
           >
             <Text preset="bodyEmphasis" color="accent" numberOfLines={1}>

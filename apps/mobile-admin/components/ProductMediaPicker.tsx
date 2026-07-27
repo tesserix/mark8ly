@@ -45,10 +45,10 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
           onPress={takePhoto}
           accessibilityRole="button"
           accessibilityLabel="Take photo"
-          android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+          android_ripple={theme.press.rippleInk}
           style={({ pressed }) => [
             styles.button,
-            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <Camera size={16} color={theme.colors.text} strokeWidth={1.75} />
@@ -60,10 +60,10 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
           onPress={pickFromLibrary}
           accessibilityRole="button"
           accessibilityLabel="Choose from library"
-          android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+          android_ripple={theme.press.rippleInk}
           style={({ pressed }) => [
             styles.button,
-            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <ImageIcon size={16} color={theme.colors.text} strokeWidth={1.75} />
@@ -90,10 +90,12 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
                 accessibilityRole="button"
                 accessibilityLabel={`Remove image ${i + 1}`}
                 hitSlop={8}
-                android_ripple={{ color: "rgba(247, 246, 242, 0.24)", borderless: true }}
+                android_ripple={{ ...theme.press.rippleOnDark, borderless: true }}
                 style={({ pressed }) => [
                   styles.removeBtn,
-                  pressed && Platform.OS === "ios" ? { opacity: 0.7 } : null,
+                  pressed && Platform.OS === "ios"
+                    ? { opacity: theme.press.opacitySolidFill }
+                    : null,
                 ]}
               >
                 <X size={12} color={theme.colors.inverse} strokeWidth={2.5} />

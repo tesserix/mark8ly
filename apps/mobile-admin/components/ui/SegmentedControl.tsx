@@ -35,11 +35,11 @@ export function SegmentedControl<T extends string>({
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             accessibilityLabel={`Filter: ${seg.label}`}
-            android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+            android_ripple={theme.press.rippleInk}
             style={({ pressed }) => [
               styles.tab,
               active && styles.tabActive,
-              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
             ]}
           >
             <Text

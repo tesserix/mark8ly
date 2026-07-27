@@ -104,9 +104,9 @@ export default function TicketsScreen() {
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="New ticket"
-            android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+            android_ripple={{ ...theme.press.rippleInk, borderless: true }}
             style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
             }
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />

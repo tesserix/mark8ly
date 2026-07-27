@@ -144,9 +144,9 @@ export default function SecurityScreen(): React.JSX.Element {
                     accessibilityRole="button"
                     accessibilityLabel={`Remove ${m.label}`}
                     hitSlop={8}
-                    android_ripple={{ color: "rgba(139, 46, 32, 0.12)", borderless: true }}
+                    android_ripple={{ ...theme.press.rippleDanger, borderless: true }}
                     style={({ pressed }) =>
-                      pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+                      pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
                     }
                   >
                     <Text preset="bodyEmphasis" color="danger">
@@ -160,9 +160,9 @@ export default function SecurityScreen(): React.JSX.Element {
                     accessibilityRole="button"
                     accessibilityLabel={`Link ${m.label}`}
                     hitSlop={8}
-                    android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+                    android_ripple={{ ...theme.press.rippleInk, borderless: true }}
                     style={({ pressed }) =>
-                      pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+                      pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
                     }
                   >
                     <Text preset="bodyEmphasis" color="text">

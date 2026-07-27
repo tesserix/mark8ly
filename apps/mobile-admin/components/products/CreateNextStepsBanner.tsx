@@ -53,9 +53,9 @@ export function CreateNextStepsBanner({ title, onJump, onDismiss }: CreateNextSt
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Dismiss"
-            android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+            android_ripple={{ ...theme.press.rippleInk, borderless: true }}
             style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
             }
           >
             <X size={18} color={theme.colors.textTertiary} strokeWidth={1.75} />
@@ -68,7 +68,7 @@ export function CreateNextStepsBanner({ title, onJump, onDismiss }: CreateNextSt
               onPress={() => onJump(chip.key)}
               accessibilityRole="button"
               accessibilityLabel={chip.label}
-              android_ripple={{ color: "rgba(45, 74, 43, 0.12)" }}
+              android_ripple={theme.press.rippleAccent}
               style={({ pressed }) => [
                 styles.chip,
                 // Android draws its own moss-tinted ripple; only iOS needs

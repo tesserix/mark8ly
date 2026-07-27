@@ -210,18 +210,18 @@ function ActionButton({
 }) {
   const btnStyle = variant === "danger" ? styles.btnDanger : styles.btnSecondary;
   const color = variant === "danger" ? "danger" : "text";
-  const rippleColor = variant === "danger" ? "rgba(139, 46, 32, 0.12)" : "rgba(14, 14, 12, 0.12)";
+  const ripple = variant === "danger" ? theme.press.rippleDanger : theme.press.rippleInk;
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
-      android_ripple={{ color: rippleColor }}
+      android_ripple={ripple}
       style={({ pressed }) => [
         btnStyle,
         disabled && styles.btnDisabled,
-        pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+        pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
       ]}
     >
       <Text preset="bodyEmphasis" color={color}>

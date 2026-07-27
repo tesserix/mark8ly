@@ -25,11 +25,11 @@ export function ImageViewer({ image, onClose }: ImageViewerProps) {
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Close image viewer"
-          android_ripple={{ color: "rgba(247, 246, 242, 0.24)", borderless: true }}
+          android_ripple={{ ...theme.press.rippleOnDark, borderless: true }}
           style={({ pressed }) => [
             styles.viewerClose,
             { top: insets.top + theme.spacing.md },
-            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <Text preset="bodyEmphasis" color="inverse">

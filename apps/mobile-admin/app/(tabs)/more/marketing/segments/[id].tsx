@@ -99,11 +99,11 @@ export default function SegmentDetailScreen() {
           disabled={del.isPending}
           accessibilityRole="button"
           accessibilityLabel="Delete segment"
-          android_ripple={{ color: "rgba(139, 46, 32, 0.12)" }}
+          android_ripple={theme.press.rippleDanger}
           style={({ pressed }) => [
             styles.deleteBtn,
             del.isPending && styles.disabled,
-            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <Text preset="bodyEmphasis" color="danger">

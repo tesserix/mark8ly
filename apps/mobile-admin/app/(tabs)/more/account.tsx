@@ -108,10 +108,10 @@ export default function AccountScreen() {
           onPress={handleLogout}
           accessibilityRole="button"
           accessibilityLabel="Sign out"
-          android_ripple={{ color: "rgba(139, 46, 32, 0.12)" }}
+          android_ripple={theme.press.rippleDanger}
           style={({ pressed }) => [
             styles.logoutBtn,
-            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <Text preset="bodyEmphasis" color="danger">
@@ -143,11 +143,11 @@ export default function AccountScreen() {
           disabled={!canDeleteAccount}
           accessibilityRole="button"
           accessibilityLabel="Delete account"
-          android_ripple={{ color: "rgba(139, 46, 32, 0.12)" }}
+          android_ripple={theme.press.rippleDanger}
           style={({ pressed }) => [
             styles.deleteBtn,
             !canDeleteAccount ? styles.deleteBtnDisabled : null,
-            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           {deleteMutation.isPending ? (

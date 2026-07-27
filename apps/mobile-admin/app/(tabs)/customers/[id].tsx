@@ -239,13 +239,15 @@ export default function CustomerDetailScreen() {
                 ? unblockMutation.isPending ? "Unblocking customer" : "Unblock customer"
                 : blockMutation.isPending ? "Blocking customer" : "Block customer"
             }
-            android_ripple={{
-              color: isBlocked ? "rgba(247, 246, 242, 0.24)" : "rgba(139, 46, 32, 0.12)",
-            }}
+            android_ripple={isBlocked ? theme.press.rippleOnDark : theme.press.rippleDanger}
             style={({ pressed }) => [
               isBlocked ? styles.unblockBtn : styles.blockBtn,
               pressed && Platform.OS === "ios"
-                ? { opacity: isBlocked ? 0.85 : 0.55 }
+                ? {
+                    opacity: isBlocked
+                      ? theme.press.opacitySolidFill
+                      : theme.press.opacityStandard,
+                  }
                 : null,
             ]}
           >

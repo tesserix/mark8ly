@@ -73,9 +73,9 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Close"
-              android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+              android_ripple={{ ...theme.press.rippleInk, borderless: true }}
               style={({ pressed }) =>
-                pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+                pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
               }
             >
               <X size={20} color={theme.colors.text} strokeWidth={1.75} />

@@ -138,11 +138,11 @@ export default function ProductsScreen() {
         onPress={() => router.push("/(tabs)/products/new")}
         accessibilityRole="button"
         accessibilityLabel="Add new product"
-        android_ripple={{ color: "rgba(247, 246, 242, 0.24)", borderless: true }}
+        android_ripple={{ ...theme.press.rippleOnDark, borderless: true }}
         style={({ pressed }) => [
           styles.fab,
           { bottom: dockPad },
-          pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+          pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
         ]}
       >
         <Plus size={22} color={theme.colors.inverse} strokeWidth={2} />

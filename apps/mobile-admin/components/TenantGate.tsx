@@ -76,10 +76,10 @@ export function TenantGate({ children }: { children: ReactNode }) {
               onPress={() => refetch()}
               accessibilityRole="button"
               accessibilityLabel="Retry"
-              android_ripple={{ color: "rgba(247, 246, 242, 0.24)" }}
+              android_ripple={theme.press.rippleOnDark}
               style={({ pressed }) => [
                 styles.primaryBtn,
-                pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+                pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
               ]}
             >
               <Text preset="bodyEmphasis" color="inverse">
@@ -108,10 +108,10 @@ export function TenantGate({ children }: { children: ReactNode }) {
             onPress={() => Linking.openURL(env.signupUrl)}
             accessibilityRole="link"
             accessibilityLabel="Open mark8ly.com to create a new store"
-            android_ripple={{ color: "rgba(247, 246, 242, 0.24)" }}
+            android_ripple={theme.press.rippleOnDark}
             style={({ pressed }) => [
               styles.primaryBtn,
-              pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
             ]}
           >
             <Text preset="bodyEmphasis" color="inverse">

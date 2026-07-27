@@ -24,10 +24,10 @@ export function BackHeader({ title, eyebrow, rightSlot }: BackHeaderProps) {
         hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel="Go back"
-        android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+        android_ripple={{ ...theme.press.rippleInk, borderless: true }}
         style={({ pressed }) => [
           styles.back,
-          pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+          pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
         ]}
       >
         <ChevronLeft size={22} color={theme.colors.text} strokeWidth={1.75} />

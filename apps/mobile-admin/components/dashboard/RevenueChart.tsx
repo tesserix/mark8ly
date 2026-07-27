@@ -130,7 +130,6 @@ export function RevenueChart({ data, height = DEFAULT_HEIGHT, accessibilityLabel
           {GRIDLINE_FRACTIONS.map((fraction, index) => (
             <Line
               key={fraction}
-              testID={`revenue-chart-gridline-${index}`}
               x1={0}
               x2={width}
               y1={height * fraction}
@@ -139,12 +138,21 @@ export function RevenueChart({ data, height = DEFAULT_HEIGHT, accessibilityLabel
               strokeWidth={1}
             />
           ))}
-          {geometry?.areaPath ? (
-            <Path testID="revenue-chart-area" d={geometry.areaPath} fill={theme.colors.accentTint} />
+          {geometry?.areaPath ? <Path d={geometry.areaPath} fill={theme.colors.accentTint} /> : null}
+          {geometry ? (
+            // Halo painted BEHIND the stroke and dot (not after) so it reads
+            // as a soft glow around the endpoint rather than an opaque patch
+            // that erases the tail of the moss line — see RevenueChart.tsx
+            // review round 1, finding 2: with the halo on top, the 2.25pt
+            // stroke visibly terminated ~9pt short of the dot, and on
+            // descending/flat series the halo bulged outside the area-fill
+            // silhouette onto bare paper like an eraser blot. Drawing it
+            // first lets the stroke run continuously through it into the
+            // dot on every series shape.
+            <Circle cx={geometry.endpoint.x} cy={geometry.endpoint.y} r={HALO_RADIUS} fill={theme.colors.accentTint} />
           ) : null}
           {geometry?.linePoints ? (
             <Polyline
-              testID="revenue-chart-line"
               points={geometry.linePoints}
               fill="none"
               stroke={theme.colors.accent}
@@ -154,22 +162,7 @@ export function RevenueChart({ data, height = DEFAULT_HEIGHT, accessibilityLabel
             />
           ) : null}
           {geometry ? (
-            <>
-              <Circle
-                testID="revenue-chart-halo"
-                cx={geometry.endpoint.x}
-                cy={geometry.endpoint.y}
-                r={HALO_RADIUS}
-                fill={theme.colors.accentTint}
-              />
-              <Circle
-                testID="revenue-chart-dot"
-                cx={geometry.endpoint.x}
-                cy={geometry.endpoint.y}
-                r={DOT_RADIUS}
-                fill={theme.colors.accent}
-              />
-            </>
+            <Circle cx={geometry.endpoint.x} cy={geometry.endpoint.y} r={DOT_RADIUS} fill={theme.colors.accent} />
           ) : null}
         </Svg>
       ) : null}

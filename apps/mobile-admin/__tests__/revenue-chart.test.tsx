@@ -178,6 +178,36 @@ describe("RevenueChart", () => {
     });
   });
 
+  describe("endpoint halo containment (vertical)", () => {
+    // Mirrors HALO_RADIUS in RevenueChart.tsx — kept as a local literal the
+    // same way the "places the endpoint dot" test above hardcodes PAD_X
+    // (11), since neither constant is exported from the component.
+    const HALO_RADIUS = 9;
+    const HEIGHT = 104;
+
+    it("keeps the halo inside the viewport when the last point is the series max", () => {
+      // Ascending series: last point is the max, which normalizes to the
+      // TOP of the chart (smallest y) — the halo's top edge (cy - r) is the
+      // one at risk of clipping above y=0.
+      const utils = renderChart({ data: [10, 20, 30, 90], height: HEIGHT }, 300);
+      const [halo] = utils.UNSAFE_queryAllByType(Circle);
+      const cy = (halo as ReactTestInstance).props.cy as number;
+      expect(cy).toBeGreaterThanOrEqual(HALO_RADIUS);
+      expect(cy).toBeLessThanOrEqual(HEIGHT - HALO_RADIUS);
+    });
+
+    it("keeps the halo inside the viewport when the last point is the series min", () => {
+      // Descending-to-a-low series: last point is the min, which normalizes
+      // to the BOTTOM of the chart (largest y) — the halo's bottom edge
+      // (cy + r) is the one at risk of clipping below y=height.
+      const utils = renderChart({ data: [90, 20, 10, 5], height: HEIGHT }, 300);
+      const [halo] = utils.UNSAFE_queryAllByType(Circle);
+      const cy = (halo as ReactTestInstance).props.cy as number;
+      expect(cy).toBeGreaterThanOrEqual(HALO_RADIUS);
+      expect(cy).toBeLessThanOrEqual(HEIGHT - HALO_RADIUS);
+    });
+  });
+
   describe("height prop", () => {
     it("defaults to 104pt", () => {
       const { container } = renderChart({ data: [1, 2] });

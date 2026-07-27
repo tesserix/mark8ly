@@ -24,6 +24,8 @@ Complete and on `main`. Available to you: the native type scale (`body` 17pt, `h
 - **One accent per view.** Moss `#2D4A2B` is never decorative. On the new Dashboard it is spent on the chart fill/stroke/endpoint and the Approve swipe — nowhere else.
 - **Badges:** success is moss *tint* (`#E8EEE2`/`#2D4A2B`), never solid moss fill. Warning is `#7A4A0F` on `#F4E6CB`.
 - **Swipe convention, app-wide:** dragging a row **right** reveals the **constructive** action (Approve, moss) at the leading edge; dragging **left** reveals the **destructive** action (Cancel, danger) at the trailing edge.
+- **`SwipeRow` never fires on swipe alone.** Past-threshold release **settles the row open**; the user then taps the action. Auto-fire is opt-in per action (`autoFireOnFullSwipe`) and only past ~85% travel, and `tone: "danger"` is **hard-blocked from auto-fire entirely** — this app has no undo, and an accidental full swipe must not cancel a real order.
+- **🔴 Blocking for Tasks 8/9: verify tap-vs-drag arbitration on a real device.** `SwipeRow`'s action buttons and close overlay are `Pressable`s nested inside the enclosing `Gesture.Pan()`. Whether a tap wins against the pan — especially on Android — is unverified: unit tests exercise the JS contract and screenshots only prove layout, neither proves touch routing. The first task to wire real handlers must confirm a revealed action actually fires on tap on device, not just in RNTL.
 - **No glassmorphism.** The collapsing header is solid Paper with a hairline — never a blur.
 - **No centered heroes.** Left-aligned, asymmetric.
 - **Reduced motion:** every animation gates on `useReducedMotion()`.

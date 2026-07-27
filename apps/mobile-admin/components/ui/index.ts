@@ -20,3 +20,5 @@ export { CollapsingHeader, COLLAPSE_DISTANCE } from "./CollapsingHeader";
 export type { CollapsingHeaderProps } from "./CollapsingHeader";
 export { SwipeRow } from "./SwipeRow";
 export type { SwipeAction, SwipeRowProps } from "./SwipeRow";
+export { ActionSheet } from "./ActionSheet";
+export type { ActionSheetItem, ActionSheetProps } from "./ActionSheet";

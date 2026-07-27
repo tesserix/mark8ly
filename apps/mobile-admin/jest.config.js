@@ -33,6 +33,24 @@
 // calls a resolveAssetSource API this app's pinned react-native doesn't
 // expose the same way, throwing "setCustomSourceTransformer is not a
 // function" at require time. Pin `expo-haptics` the same way as above.
+// Fifth instance of the same barrel landmine, different failure mode: Task 5
+// added `ActionSheet` (which imports `@gorhom/bottom-sheet`) to the
+// `@/components/ui` barrel — the first bottom-sheet consumer to live in
+// components/ui/ rather than being imported directly by one screen/sheet
+// file. Every OTHER test that merely touches the barrel for an unrelated
+// component (Text, PressableRow, …) now transitively requires
+// `@gorhom/bottom-sheet`'s real module too. Unlike react-native-reanimated
+// (which jest-expo ships a working default mock for), gorhom's real
+// `constants.ts` throws synchronously at require time under Jest
+// ("Cannot read properties of undefined (reading 'out')") — it has no
+// native module to read platform constants from. This broke 14 previously
+// unrelated suites the moment ActionSheet joined the barrel. Every existing
+// bottom-sheet consumer's test already had to `jest.mock("@gorhom/bottom-sheet", …)`
+// per-file (see new-product.test.tsx, option-builder-sheet.test.tsx); mapping
+// it globally here to the shared `lib/test-support/gorhom-bottom-sheet-mock`
+// makes that the default for every test instead of an opt-in every barrel
+// consumer must now remember. A test file's own local `jest.mock(...)` for
+// this module still wins over this mapping, so nothing above changes.
 module.exports = {
   preset: 'jest-expo',
   moduleNameMapper: {
@@ -46,5 +64,6 @@ module.exports = {
     '^react/(.*)$': '<rootDir>/node_modules/react/$1',
     '^expo-haptics$': '<rootDir>/node_modules/expo-haptics',
     '^expo-haptics/(.*)$': '<rootDir>/node_modules/expo-haptics/$1',
+    '^@gorhom/bottom-sheet$': '<rootDir>/lib/test-support/gorhom-bottom-sheet-mock',
   },
 };

@@ -1,20 +1,17 @@
 // The create screen renders CategoryField, which mounts a real
 // @gorhom/bottom-sheet BottomSheetModal — that pulls in react-native-reanimated,
 // which throws under jest without a full worklets/logger setup this project
-// doesn't have. Stub the pieces the sheet's tree touches (same fix as
-// __tests__/category-field.test.tsx), but — unlike that file, which never
-// drives a real row selection — this file exercises the actual
-// pick-a-category flow, so BottomSheetFlatList needs to map `data` through
-// `renderItem` like a real FlatList. That mock is kept in its own module
-// (lib/test-support/gorhom-bottom-sheet-mock.tsx — NOT under __tests__/, or
+// doesn't have. `@gorhom/bottom-sheet` is globally mapped in jest.config.js
+// to lib/test-support/gorhom-bottom-sheet-mock.tsx (NOT under __tests__/, or
 // jest-expo's default testMatch would try to run it as a test file with zero
-// tests and fail) rather than inlined here: nativewind's babel transform
-// instruments JSX with a `_ReactNativeCSSInterop` reference, and jest.mock()
-// factories are hoisted above that reference's declaration, so JSX written
-// directly inside a factory throws "module factory is not allowed to
-// reference any out-of-scope variables". require()-ing a plain module from
-// the factory has no such hoisting constraint.
-jest.mock("@gorhom/bottom-sheet", () => require("../lib/test-support/gorhom-bottom-sheet-mock"));
+// tests and fail) — unlike category-field.test.tsx, which never drives a
+// real row selection, this file exercises the actual pick-a-category flow,
+// which is exactly why that shared mock's BottomSheetFlatList maps `data`
+// through `renderItem` like a real FlatList rather than stubbing it out.
+// No local jest.mock() needed here (or anywhere else) any more — a local
+// factory that itself `require()`s the same globally-mapped module recurses
+// infinitely, since Jest resolves the mock factory's own module id through
+// the same moduleNameMapper entry it's trying to mock.
 
 // `@/components/ui`'s barrel re-exports SearchField/BackHeader, which import
 // icons from lucide-react-native's ESM build — not covered by jest-expo's

@@ -74,11 +74,11 @@ jest.mock("react-native-reanimated", () => {
 
 // OptionsEditor -> OptionBuilderSheet and CategoryField -> CategoryPickerSheet
 // both render a real @gorhom/bottom-sheet BottomSheetModal, which needs the
-// native Worklets module. Reuse the shared virtual mock new-product.test.tsx
-// uses (kept in its own module, not inlined, because nativewind's babel
-// transform instruments JSX with a `_ReactNativeCSSInterop` reference that
-// jest.mock() factories are hoisted above).
-jest.mock("@gorhom/bottom-sheet", () => require("../lib/test-support/gorhom-bottom-sheet-mock"));
+// native Worklets module. `@gorhom/bottom-sheet` is globally mapped in
+// jest.config.js to the shared virtual mock new-product.test.tsx also relies
+// on (lib/test-support/gorhom-bottom-sheet-mock.tsx) — no local jest.mock()
+// needed (or safe: a local factory that itself `require()`s the
+// already-mapped module recurses infinitely).
 
 jest.mock("expo-haptics", () => ({
   selectionAsync: jest.fn(),

@@ -12,3 +12,5 @@ export { BackHeader } from "./BackHeader";
 export { FieldInput, FieldLabel } from "./FieldInput";
 export { PressableRow } from "./PressableRow";
 export type { PressableRowProps } from "./PressableRow";
+export { Thumb } from "./Thumb";
+export type { ThumbProps } from "./Thumb";

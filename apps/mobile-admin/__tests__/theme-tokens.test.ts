@@ -1,4 +1,11 @@
+// tsconfig scopes `types` to ["jest"], so avoid importing Node's `fs` and
+// `path` modules and declare the Node global this file's __dirname needs.
+declare const __dirname: string;
+
 import { theme } from '@/lib/theme';
+
+const fs = require('fs');
+const path = require('path');
 
 describe('type scale — native metrics', () => {
   const expected = {
@@ -56,5 +63,39 @@ describe('density tokens', () => {
 
   it('exposes the sink surface for iOS press feedback', () => {
     expect(theme.colors.sink).toBe('#ECEAE3');
+  });
+});
+
+describe('WCAG AA colour guard', () => {
+  // Both of these fail 4.5:1 against Paper #F7F6F2 and were removed in the
+  // 2026-07-17 design pass. See docs/superpowers/design-scan/.
+  const BANNED = [
+    'rgba(14, 14, 12, 0.5)',
+    'rgba(14,14,12,0.5)',
+    '#7A766E',
+    '#7a766e',
+  ];
+
+  const sources = [
+    path.resolve(__dirname, '../lib/theme.ts'),
+    path.resolve(__dirname, '../tailwind.config.js'),
+  ];
+
+  for (const file of sources) {
+    it(`does not reintroduce a failing text colour in ${path.basename(file)}`, () => {
+      const contents = fs.readFileSync(file, 'utf8');
+      for (const banned of BANNED) {
+        expect(contents).not.toContain(banned);
+      }
+    });
+  }
+
+  it('keeps tertiary text at the AA-passing value in both sources', () => {
+    expect(theme.colors.textTertiary).toBe('#5C5953');
+    const tw = fs.readFileSync(
+      path.resolve(__dirname, '../tailwind.config.js'),
+      'utf8',
+    );
+    expect(tw).toContain('#5C5953');
   });
 });

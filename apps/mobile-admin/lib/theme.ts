@@ -73,8 +73,8 @@ export const theme = {
 
     text: palette.ink,
     textSecondary: palette.inkSoft,
-    // Canonical --ink-500. Was rgba(14, 14, 12, 0.5) (~3.56:1 on paper —
-    // fails WCAG AA). #5C5953 clears 4.5:1 (see fix-batch-1-report.md).
+    // Canonical --ink-500. Replaced a previous insufficient-contrast value
+    // with #5C5953 to clear 4.5:1 WCAG AA on paper (see fix-batch-1-report.md).
     textTertiary: "#5C5953",
     // Decorative/placeholder only — not used as real body/label text
     // anywhere in the app today (grepped 2026-07-17). If a future usage

@@ -30,9 +30,14 @@ export const recentOrderSchema = z.object({
   id: z.string(),
   order_number: z.string(),
   customer_email: z.string(),
+  // *string + omitempty -> ABSENT, not null. Falls back to customer_email.
+  customer_name: z.string().optional(),
   grand_total: money,
   status: z.string(),
   created_at: z.string(),
+  // First line item's product image. Absent when the order has no imaged
+  // items — e.g. the product was deleted after the order was placed.
+  image_url: z.string().optional(),
 });
 
 export const topProductSchema = z.object({
@@ -44,11 +49,15 @@ export const topProductSchema = z.object({
 });
 
 export const lowStockItemSchema = z.object({
+  // `id` is the VARIANT id — navigate with product_id, not this.
   id: z.string(),
+  // Optional so a client build can ship before the API deploy.
+  product_id: z.string().optional(),
   title: z.string(),
   variant_title: z.string(),
   quantity: z.number(),
   low_stock_threshold: z.number(),
+  image_url: z.string().optional(),
 });
 
 export const setupChecklistSchema = z.object({

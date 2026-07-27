@@ -255,7 +255,13 @@ export default function DashboardScreen() {
                   <RowWrapper key={item.id} divider={i > 0}>
                     <LowStockRow
                       item={item}
-                      onPress={() => router.push(`/(tabs)/products/${item.id}`)}
+                      onPress={() =>
+                        router.push(
+                          item.product_id
+                            ? `/(tabs)/products/${item.product_id}`
+                            : "/(tabs)/products",
+                        )
+                      }
                     />
                   </RowWrapper>
                 ))}

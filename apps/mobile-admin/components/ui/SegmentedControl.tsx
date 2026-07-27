@@ -1,4 +1,5 @@
-import { View, TouchableOpacity, StyleSheet, type ViewStyle } from "react-native";
+import { Platform, View, Pressable, StyleSheet, type ViewStyle } from "react-native";
+import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import { Text } from "./Text";
 import { theme } from "@/lib/theme";
 
@@ -25,14 +26,21 @@ export function SegmentedControl<T extends string>({
       {segments.map((seg) => {
         const active = seg.key === value;
         return (
-          <TouchableOpacity
+          <Pressable
             key={seg.key}
-            onPress={() => onChange(seg.key)}
-            activeOpacity={0.7}
+            onPress={() => {
+              void adminHaptics.selectionChanged();
+              onChange(seg.key);
+            }}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             accessibilityLabel={`Filter: ${seg.label}`}
-            style={[styles.tab, active && styles.tabActive]}
+            android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+            style={({ pressed }) => [
+              styles.tab,
+              active && styles.tabActive,
+              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+            ]}
           >
             <Text
               preset="caption"
@@ -41,7 +49,7 @@ export function SegmentedControl<T extends string>({
             >
               {seg.label}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         );
       })}
     </View>

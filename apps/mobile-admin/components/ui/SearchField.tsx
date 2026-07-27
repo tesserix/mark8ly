@@ -1,4 +1,4 @@
-import { View, TextInput, StyleSheet, TouchableOpacity, type ViewStyle } from "react-native";
+import { Platform, View, TextInput, Pressable, StyleSheet, type ViewStyle } from "react-native";
 import { Search, X } from "lucide-react-native";
 import { theme } from "@/lib/theme";
 
@@ -33,14 +33,18 @@ export function SearchField({
         clearButtonMode="never"
       />
       {value.length > 0 ? (
-        <TouchableOpacity
+        <Pressable
           onPress={() => onChangeText("")}
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Clear search"
+          android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+          style={({ pressed }) =>
+            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+          }
         >
           <X size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-        </TouchableOpacity>
+        </Pressable>
       ) : null}
     </View>
   );

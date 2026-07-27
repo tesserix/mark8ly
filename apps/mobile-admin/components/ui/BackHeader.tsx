@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { View, TouchableOpacity, StyleSheet } from "react-native";
+import { Platform, View, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import { Text } from "./Text";
@@ -19,15 +19,19 @@ export function BackHeader({ title, eyebrow, rightSlot }: BackHeaderProps) {
 
   return (
     <View style={styles.wrap}>
-      <TouchableOpacity
+      <Pressable
         onPress={() => router.back()}
-        style={styles.back}
         hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel="Go back"
+        android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+        style={({ pressed }) => [
+          styles.back,
+          pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+        ]}
       >
         <ChevronLeft size={22} color={theme.colors.text} strokeWidth={1.75} />
-      </TouchableOpacity>
+      </Pressable>
       <View style={styles.center}>
         {eyebrow ? (
           <Text preset="eyebrow" color="textTertiary" align="center">

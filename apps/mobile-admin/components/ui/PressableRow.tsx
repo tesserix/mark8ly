@@ -11,8 +11,8 @@ import { theme } from "@/lib/theme";
 /**
  * The one row press surface in the app.
  *
- * Replaces `TouchableOpacity` + `activeOpacity`: a whole-row 60% fade is a
- * web-styled-RN signature, not native press feedback. iOS shifts the row
+ * Replaces the legacy touchable-with-opacity-fade pattern: a whole-row 60%
+ * fade is a web-styled-RN signature, not native press feedback. iOS shifts the row
  * background to the sink surface while held; Android draws a ripple.
  *
  * Owns press feedback and density ONLY. Callers supply all content and all

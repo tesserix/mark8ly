@@ -23,6 +23,16 @@
 // two live Reacts in the same render tree and breaking hooks
 // ("Cannot read properties of null (reading 'useCallback')") in any
 // zustand-backed component. Pin `react` the same way as above.
+// Same class of bug a fourth time, but for `expo-haptics`: Task 7 wired
+// `@repo/mobile-shared/haptics/feedback` (adminHaptics) into SegmentedControl,
+// which the `@/components/ui` barrel re-exports, so any test that touches the
+// barrel now transitively requires expo-haptics from
+// packages/mobile-shared/haptics/feedback.ts — which, having no local
+// node_modules, resolves expo-haptics to the hoisted ROOT copy instead of
+// this app's local install. That root copy's `expo` -> `expo-asset` chain
+// calls a resolveAssetSource API this app's pinned react-native doesn't
+// expose the same way, throwing "setCustomSourceTransformer is not a
+// function" at require time. Pin `expo-haptics` the same way as above.
 module.exports = {
   preset: 'jest-expo',
   moduleNameMapper: {
@@ -34,5 +44,7 @@ module.exports = {
     '^@react-native-firebase/app/(.*)$': '<rootDir>/node_modules/@react-native-firebase/app/$1',
     '^react$': '<rootDir>/node_modules/react',
     '^react/(.*)$': '<rootDir>/node_modules/react/$1',
+    '^expo-haptics$': '<rootDir>/node_modules/expo-haptics',
+    '^expo-haptics/(.*)$': '<rootDir>/node_modules/expo-haptics/$1',
   },
 };

@@ -21,6 +21,20 @@
   24 pt glyph has no background to shift, so a brief `opacity: 0.55` while pressed is the
   correct native behaviour, not a leftover. This resolves the apparent conflict between spec
   §1.3 and Task 7.
+- **Press-feedback rule, amendment 2 (resolved 2026-07-27, during Task 7).** The opacity
+  exception also covers **solid brand-fill surfaces** — the ink/moss CTA buttons and FAB. iOS
+  filled buttons dim natively on press, and shifting their fill instead would require a darker
+  ink and a darker moss token, i.e. inventing two colours the Paper·Ink·Moss system does not
+  have. So: opacity is allowed where there is no background to shift, OR where the surface is a
+  solid brand fill. Everything with a *neutral* background (rows, cards, list surfaces) still
+  shifts to `theme.colors.sink`.
+- **`PressableRow` style order (corrected 2026-07-27, during Task 7).** The array is
+  `[base, lines, style, pressed]` — the pressed state is applied LAST and always wins. The
+  original plan said the caller's `style` went last, which silently killed iOS press feedback on
+  every row that passed a `backgroundColor` (7 rows in Task 7, plus `CampaignRow` and
+  `DashboardOrderRow` from Task 6). `styles.pressed` contains only `backgroundColor`, so
+  `OrderRow`'s `flexDirection: "column"` override — the reason `style` was placed late — still
+  works. A caller background must never beat the pressed state.
 - **Badges:** success is moss *tint* (`#E8EEE2` bg / `#2D4A2B` fg), never a solid moss fill. Warning is `#7A4A0F` on `#F4E6CB`, never white-on-amber.
 - **No glassmorphism, no centered heroes, no dark mode.**
 - **Minimum touch target 44 pt** (`theme.touchTarget`) — unchanged.

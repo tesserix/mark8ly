@@ -1,10 +1,9 @@
-// tsconfig scopes `types` to ["jest"], so avoid importing Node's `fs` and
-// `path` modules and declare the Node global this file's __dirname needs.
+// tsconfig scopes `types` to ["jest"], so require Node's `path` rather than
+// importing it, and declare the Node global this file's __dirname needs.
 declare const __dirname: string;
 
 import { theme } from '@/lib/theme';
 
-const fs = require('fs');
 const path = require('path');
 
 describe('type scale — native metrics', () => {

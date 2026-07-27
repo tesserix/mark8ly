@@ -17,6 +17,7 @@ import { useDockClearance } from "@/components/navigation/dock-metrics";
 function MemberRow({ member, onPress }: { member: LoyaltyMember; onPress: (m: LoyaltyMember) => void }) {
   return (
     <PressableRow
+      lines={2}
       style={styles.row}
       onPress={() => onPress(member)}
       accessibilityLabel={`${member.customer_name || member.customer_email}, ${member.points_balance} points`}

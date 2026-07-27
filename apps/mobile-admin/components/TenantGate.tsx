@@ -4,8 +4,9 @@ import {
   AppState,
   type AppStateStatus,
   Linking,
+  Platform,
+  Pressable,
   StyleSheet,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
@@ -71,17 +72,20 @@ export function TenantGate({ children }: { children: ReactNode }) {
             }
           />
           {denied ? null : (
-            <TouchableOpacity
+            <Pressable
               onPress={() => refetch()}
-              style={styles.primaryBtn}
-              activeOpacity={0.85}
               accessibilityRole="button"
               accessibilityLabel="Retry"
+              android_ripple={{ color: "rgba(247, 246, 242, 0.24)" }}
+              style={({ pressed }) => [
+                styles.primaryBtn,
+                pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+              ]}
             >
               <Text preset="bodyEmphasis" color="inverse">
                 Retry
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           )}
         </View>
       </Screen>
@@ -100,17 +104,20 @@ export function TenantGate({ children }: { children: ReactNode }) {
             title="No store yet"
             message="Create your first store on mark8ly.com to start selling."
           />
-          <TouchableOpacity
+          <Pressable
             onPress={() => Linking.openURL(env.signupUrl)}
-            style={styles.primaryBtn}
-            activeOpacity={0.85}
             accessibilityRole="link"
             accessibilityLabel="Open mark8ly.com to create a new store"
+            android_ripple={{ color: "rgba(247, 246, 242, 0.24)" }}
+            style={({ pressed }) => [
+              styles.primaryBtn,
+              pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+            ]}
           >
             <Text preset="bodyEmphasis" color="inverse">
               Create a new store
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </Screen>
     );

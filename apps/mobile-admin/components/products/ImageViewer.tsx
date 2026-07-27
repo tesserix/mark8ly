@@ -1,4 +1,4 @@
-import { View, TouchableOpacity, Image, Modal, StyleSheet } from "react-native";
+import { Platform, View, Pressable, Image, Modal, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
@@ -20,17 +20,22 @@ export function ImageViewer({ image, onClose }: ImageViewerProps) {
   return (
     <Modal visible={image !== null} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.viewerBackdrop}>
-        <TouchableOpacity
-          style={[styles.viewerClose, { top: insets.top + theme.spacing.md }]}
+        <Pressable
           onPress={onClose}
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Close image viewer"
+          android_ripple={{ color: "rgba(247, 246, 242, 0.24)", borderless: true }}
+          style={({ pressed }) => [
+            styles.viewerClose,
+            { top: insets.top + theme.spacing.md },
+            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+          ]}
         >
           <Text preset="bodyEmphasis" color="inverse">
             Close
           </Text>
-        </TouchableOpacity>
+        </Pressable>
         {image ? (
           <Image
             source={{ uri: image.uri }}

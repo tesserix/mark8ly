@@ -1,4 +1,4 @@
-import { View, Image, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
+import { Platform, View, Image, Pressable, ScrollView, StyleSheet } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, Image as ImageIcon, X } from "lucide-react-native";
 import { Text } from "@/components/ui";
@@ -41,30 +41,36 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
   return (
     <View style={styles.container}>
       <View style={styles.buttons}>
-        <TouchableOpacity
-          style={styles.button}
+        <Pressable
           onPress={takePhoto}
-          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Take photo"
+          android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+          style={({ pressed }) => [
+            styles.button,
+            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+          ]}
         >
           <Camera size={16} color={theme.colors.text} strokeWidth={1.75} />
           <Text preset="bodyEmphasis" color="text">
             Camera
           </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.button}
+        </Pressable>
+        <Pressable
           onPress={pickFromLibrary}
-          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Choose from library"
+          android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+          style={({ pressed }) => [
+            styles.button,
+            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+          ]}
         >
           <ImageIcon size={16} color={theme.colors.text} strokeWidth={1.75} />
           <Text preset="bodyEmphasis" color="text">
             Library
           </Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
       {images.length > 0 ? (
         <ScrollView
@@ -79,15 +85,19 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
                 style={styles.thumb}
                 accessibilityLabel={`Selected image ${i + 1}`}
               />
-              <TouchableOpacity
-                style={styles.removeBtn}
+              <Pressable
                 onPress={() => removeImage(i)}
                 accessibilityRole="button"
                 accessibilityLabel={`Remove image ${i + 1}`}
                 hitSlop={8}
+                android_ripple={{ color: "rgba(247, 246, 242, 0.24)", borderless: true }}
+                style={({ pressed }) => [
+                  styles.removeBtn,
+                  pressed && Platform.OS === "ios" ? { opacity: 0.7 } : null,
+                ]}
               >
                 <X size={12} color={theme.colors.inverse} strokeWidth={2.5} />
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ))}
         </ScrollView>

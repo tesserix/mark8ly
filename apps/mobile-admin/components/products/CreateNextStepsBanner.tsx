@@ -1,4 +1,4 @@
-import { View, TouchableOpacity, StyleSheet } from "react-native";
+import { Platform, View, Pressable, StyleSheet } from "react-native";
 import Animated, { FadeIn, FadeOut, useReducedMotion } from "react-native-reanimated";
 import { X } from "lucide-react-native";
 import { Card, Text } from "@/components/ui";
@@ -48,29 +48,38 @@ export function CreateNextStepsBanner({ title, onJump, onDismiss }: CreateNextSt
               Add photos, options, and extra variants whenever you&apos;re ready.
             </Text>
           </View>
-          <TouchableOpacity
+          <Pressable
             onPress={onDismiss}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Dismiss"
+            android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+            style={({ pressed }) =>
+              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+            }
           >
             <X size={18} color={theme.colors.textTertiary} strokeWidth={1.75} />
-          </TouchableOpacity>
+          </Pressable>
         </View>
         <View style={styles.chips}>
           {CHIPS.map((chip) => (
-            <TouchableOpacity
+            <Pressable
               key={chip.key}
-              style={styles.chip}
               onPress={() => onJump(chip.key)}
-              activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel={chip.label}
+              android_ripple={{ color: "rgba(45, 74, 43, 0.12)" }}
+              style={({ pressed }) => [
+                styles.chip,
+                // Android draws its own moss-tinted ripple; only iOS needs
+                // the background shift.
+                pressed && Platform.OS === "ios" ? styles.chipPressed : null,
+              ]}
             >
               <Text preset="caption" color="text">
                 {chip.label}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           ))}
         </View>
       </Card>
@@ -105,5 +114,11 @@ const styles = StyleSheet.create({
     borderRadius: theme.radii.pill,
     borderWidth: theme.hairline,
     borderColor: theme.colors.border,
+  },
+  // "moss chips on press" (see the component doc comment) — the one accent
+  // this banner uses, reserved for the interactive moment.
+  chipPressed: {
+    backgroundColor: theme.colors.accentTint,
+    borderColor: theme.colors.accent,
   },
 });

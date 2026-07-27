@@ -1,9 +1,9 @@
 import { useCallback } from "react";
-import { FlatList, StyleSheet, TouchableOpacity, View } from "react-native";
+import { FlatList, StyleSheet, View } from "react-native";
 import { ChevronRight, Store as StoreIcon } from "lucide-react-native";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import type { Store } from "@repo/mobile-shared/api/types";
-import { Hairline, PageHeader, Screen, Text } from "@/components/ui";
+import { Hairline, PageHeader, PressableRow, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 interface StorePickerProps {
@@ -32,11 +32,9 @@ export function StorePicker({ stores }: StorePickerProps) {
 
   const renderItem = useCallback(
     ({ item }: { item: Store }) => (
-      <TouchableOpacity
+      <PressableRow
         onPress={() => handleSelect(item)}
         style={styles.row}
-        activeOpacity={0.6}
-        accessibilityRole="button"
         accessibilityLabel={`Open ${item.name}`}
       >
         <View style={styles.iconWrap}>
@@ -51,7 +49,7 @@ export function StorePicker({ stores }: StorePickerProps) {
           </Text>
         </View>
         <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-      </TouchableOpacity>
+      </PressableRow>
     ),
     [handleSelect],
   );
@@ -86,14 +84,13 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   listContent: { paddingVertical: theme.spacing.xs },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    minHeight: 64,
-    gap: theme.spacing.md,
-  },
+  // Pre-migration this row had no backgroundColor of its own (transparent),
+  // letting the parent listWrap's elevated (white) surface show through.
+  // PressableRow's base sets backgroundColor: theme.colors.background
+  // (paper), which would otherwise paint a visible seam against listWrap —
+  // match that surface explicitly instead of relying on transparency (same
+  // fix as DashboardOrderRow).
+  row: { backgroundColor: theme.colors.elevated },
   iconWrap: {
     width: 32,
     height: 32,

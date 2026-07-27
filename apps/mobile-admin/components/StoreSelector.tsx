@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import {
+  Platform,
   View,
   Modal,
-  TouchableOpacity,
+  Pressable,
   FlatList,
   ActivityIndicator,
   StyleSheet,
@@ -10,7 +11,7 @@ import {
 import { Check, X } from "lucide-react-native";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useStores, useSwitchStore } from "../lib/hooks/use-store";
-import { Hairline, Text } from "@/components/ui";
+import { Hairline, PressableRow, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Store } from "@repo/mobile-shared/api/types";
 
@@ -36,12 +37,9 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
     ({ item }: { item: Store }) => {
       const isActive = activeStore?.id === item.id;
       return (
-        <TouchableOpacity
+        <PressableRow
           style={styles.storeRow}
           onPress={() => handleSelect(item)}
-          activeOpacity={0.6}
-          accessibilityRole="button"
-          accessibilityState={{ selected: isActive }}
           accessibilityLabel={`${item.name}${isActive ? ", currently selected" : ""}`}
         >
           <View style={styles.storeInfo}>
@@ -55,7 +53,7 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
           {isActive ? (
             <Check size={18} color={theme.colors.accent} strokeWidth={2} />
           ) : null}
-        </TouchableOpacity>
+        </PressableRow>
       );
     },
     [activeStore?.id, handleSelect],
@@ -70,14 +68,18 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
             <Text preset="h3" color="text">
               Select Store
             </Text>
-            <TouchableOpacity
+            <Pressable
               onPress={onClose}
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Close"
+              android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+              style={({ pressed }) =>
+                pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+              }
             >
               <X size={20} color={theme.colors.text} strokeWidth={1.75} />
-            </TouchableOpacity>
+            </Pressable>
           </View>
           <Hairline />
           {isLoading ? (
@@ -137,13 +139,13 @@ const styles = StyleSheet.create({
   },
   loading: { padding: theme.spacing.huge, alignItems: "center" },
   list: { paddingVertical: theme.spacing.xs },
-  storeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    minHeight: 56,
-  },
+  // Pre-migration this row had no backgroundColor of its own (transparent),
+  // letting the parent sheet's elevated (white) surface show through.
+  // PressableRow's base sets backgroundColor: theme.colors.background
+  // (paper), which would otherwise paint a visible seam against the sheet —
+  // match that surface explicitly instead of relying on transparency (same
+  // fix as DashboardOrderRow).
+  storeRow: { backgroundColor: theme.colors.elevated },
   storeInfo: { flex: 1, gap: 2 },
   empty: { padding: theme.spacing.huge },
 });

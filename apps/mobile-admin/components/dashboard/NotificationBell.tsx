@@ -1,4 +1,4 @@
-import { TouchableOpacity, View, StyleSheet } from "react-native";
+import { Platform, Pressable, View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { Bell } from "lucide-react-native";
 import { useNotifications } from "@/lib/hooks/use-notifications";
@@ -17,15 +17,18 @@ export function NotificationBell() {
   const unread = data?.notifications.filter((n) => !n.is_read).length ?? 0;
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={() => router.push("/notifications")}
       hitSlop={10}
-      activeOpacity={0.6}
       accessibilityRole="button"
       accessibilityLabel={
         unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
       }
-      style={styles.btn}
+      android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+      style={({ pressed }) => [
+        styles.btn,
+        pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+      ]}
     >
       <Bell size={22} color={theme.colors.text} strokeWidth={1.75} />
       {unread > 0 ? (
@@ -35,7 +38,7 @@ export function NotificationBell() {
           </Text>
         </View>
       ) : null}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 

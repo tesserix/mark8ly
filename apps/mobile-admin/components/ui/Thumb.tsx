@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { View, StyleSheet } from "react-native";
 import { Image } from "expo-image";
 import { Package } from "lucide-react-native";
@@ -31,7 +32,19 @@ export function Thumb({
   const dim = size === "list" ? theme.thumb.list : theme.thumb.compact;
   const box = { width: dim, height: dim };
 
-  if (!uri) {
+  // Track load failure so a 404'd image falls back to the placeholder
+  // instead of a broken-image box. Reset during render (not in an effect)
+  // when `uri` changes from the one we last saw a failure for — a
+  // FlatList-recycled row that failed once must not show the placeholder
+  // forever for every subsequent item that reuses this component instance.
+  const [failed, setFailed] = useState(false);
+  const [lastUri, setLastUri] = useState(uri);
+  if (uri !== lastUri) {
+    setLastUri(uri);
+    setFailed(false);
+  }
+
+  if (!uri || failed) {
     return (
       <View style={[styles.box, box, styles.placeholder]} testID={testID}>
         <Package
@@ -52,6 +65,7 @@ export function Thumb({
       recyclingKey={recyclingKey}
       accessibilityLabel={accessibilityLabel}
       testID={testID}
+      onError={() => setFailed(true)}
     />
   );
 }

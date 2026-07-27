@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 jest.mock('expo-image', () => {
   const { View } = require('react-native');
@@ -52,5 +52,38 @@ describe('Thumb', () => {
     expect(getByTestId('thumb').props.transition).toBe(200);
     expect(getByTestId('thumb').props.recyclingKey).toBe('prod-1');
     expect(getByTestId('thumb').props.contentFit).toBe('cover');
+  });
+
+  it('falls back to the placeholder when the image fails to load, at the same dimensions', () => {
+    const { getByTestId } = render(
+      <Thumb uri="https://cdn.example/a.jpg" testID="thumb" />,
+    );
+    const beforeStyle = StyleSheet.flatten(getByTestId('thumb').props.style);
+    expect(getByTestId('thumb').props.contentFit).toBe('cover'); // image branch
+
+    fireEvent(getByTestId('thumb'), 'error');
+
+    // Placeholder branch: no contentFit prop (that's expo-image-only), same box.
+    expect(getByTestId('thumb').props.contentFit).toBeUndefined();
+    const afterStyle = StyleSheet.flatten(getByTestId('thumb').props.style);
+    expect(afterStyle.width).toBe(beforeStyle.width);
+    expect(afterStyle.height).toBe(beforeStyle.height);
+    expect(afterStyle.width).toBe(theme.thumb.list);
+    expect(afterStyle.height).toBe(theme.thumb.list);
+  });
+
+  it('clears a failure and retries when uri changes (FlatList recycling)', () => {
+    const { getByTestId, rerender } = render(
+      <Thumb uri="https://cdn.example/a.jpg" testID="thumb" />,
+    );
+    fireEvent(getByTestId('thumb'), 'error');
+    expect(getByTestId('thumb').props.contentFit).toBeUndefined(); // now placeholder
+
+    rerender(<Thumb uri="https://cdn.example/b.jpg" testID="thumb" />);
+
+    expect(getByTestId('thumb').props.contentFit).toBe('cover');
+    expect(getByTestId('thumb').props.source).toEqual({
+      uri: 'https://cdn.example/b.jpg',
+    });
   });
 });

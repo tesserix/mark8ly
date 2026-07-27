@@ -245,4 +245,54 @@ describe('IconButton', () => {
       expect(UNSAFE_getByType(innerPressableType).props.android_ripple).toBeUndefined();
     });
   });
+
+  // The narrow overlay-badge escape hatch (see ProductMediaPicker's
+  // removeBtn for the real call site): providing `hitSlop` opts OUT of the
+  // real 44pt minWidth/minHeight box in favour of RN's native hitSlop, so a
+  // caller can render a small visible badge without inheriting the full
+  // touch-target box that would otherwise bleed onto a sibling.
+  describe('hitSlop escape hatch', () => {
+    const slop = { top: 12, left: 21, bottom: 10, right: 1 };
+
+    it('forwards hitSlop to the underlying Pressable', () => {
+      const { getByTestId } = render(
+        <IconButton onPress={() => {}} accessibilityLabel="Remove image 1" testID="icon-btn" hitSlop={slop}>
+          <RNText>×</RNText>
+        </IconButton>,
+      );
+      expect(getByTestId('icon-btn').props.hitSlop).toEqual(slop);
+    });
+
+    it('drops the 44pt minWidth/minHeight box when hitSlop is provided', () => {
+      const { getByTestId } = render(
+        <IconButton
+          onPress={() => {}}
+          accessibilityLabel="Remove image 1"
+          testID="icon-btn"
+          hitSlop={slop}
+          style={{ width: 22, height: 22 }}
+        >
+          <RNText>×</RNText>
+        </IconButton>,
+      );
+      const style = StyleSheet.flatten(getByTestId('icon-btn').props.style);
+      expect(style.minWidth).toBeUndefined();
+      expect(style.minHeight).toBeUndefined();
+      expect(style.width).toBe(22);
+      expect(style.height).toBe(22);
+    });
+
+    it('keeps the real 44pt box and no hitSlop when the prop is omitted', () => {
+      const { getByTestId } = render(
+        <IconButton onPress={() => {}} accessibilityLabel="Go back" testID="icon-btn">
+          <RNText>×</RNText>
+        </IconButton>,
+      );
+      const node = getByTestId('icon-btn');
+      expect(node.props.hitSlop).toBeUndefined();
+      const style = StyleSheet.flatten(node.props.style);
+      expect(style.minWidth).toBe(theme.touchTarget);
+      expect(style.minHeight).toBe(theme.touchTarget);
+    });
+  });
 });

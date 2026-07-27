@@ -4,6 +4,7 @@ import {
   Pressable,
   StyleSheet,
   type AccessibilityRole,
+  type Insets,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -48,6 +49,23 @@ export interface IconButtonProps {
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  /**
+   * Escape hatch for an OVERLAY badge — a small control layered on top of
+   * another element (e.g. the media-picker's remove-image corner badge)
+   * rather than sitting beside it. Providing `hitSlop` OPTS OUT of this
+   * component's real 44pt `minWidth`/`minHeight` box; the caller's own
+   * `style` must then set the intended visible width/height, and RN's
+   * native `hitSlop` (which does not affect layout or paint, only hit
+   * testing) supplies the expanded tap region instead.
+   *
+   * Keep this narrow — it is not a general "make the button smaller"
+   * escape hatch. Any non-zero value must be justified by computing the
+   * expanded hit region against the real gap to the nearest sibling and
+   * proving it doesn't overlap (see ProductMediaPicker's `removeBtn` for a
+   * worked example). If you're reaching for this to avoid sizing an
+   * ordinary icon button, use the default 44pt box instead.
+   */
+  hitSlop?: Insets;
 }
 
 const TONE_RIPPLE = {
@@ -57,6 +75,11 @@ const TONE_RIPPLE = {
   accent: theme.press.rippleAccent,
 } as const;
 
+// Paired 1:1 with TONE_RIPPLE today (every tone's iOS press-dim follows
+// directly from whether it sits on a transparent or solid-fill surface). If
+// a future tone ever needs an opacity value that doesn't match its ripple
+// pairing, split `tone` into two independent props (e.g. `rippleTone` +
+// `opacityTone`) rather than special-casing this table.
 const TONE_OPACITY = {
   ink: theme.press.opacityStandard,
   onDark: theme.press.opacitySolidFill,
@@ -73,6 +96,7 @@ export function IconButton({
   disabled = false,
   style,
   testID,
+  hitSlop,
 }: IconButtonProps) {
   // Press state is tracked explicitly rather than via Pressable's
   // `style={({pressed}) => …}` callback form. Under NativeWind's JSX interop
@@ -111,8 +135,13 @@ export function IconButton({
       accessibilityState={disabled ? { disabled: true } : undefined}
       testID={testID}
       android_ripple={disabled ? undefined : { ...TONE_RIPPLE[tone], borderless: true }}
+      // `hitSlop` presence is the opt-out signal: skip the real 44pt
+      // minWidth/minHeight box (styles.base) and let the caller's own
+      // `style` define the visible size, with hitSlop expanding only the
+      // hit-tested region rather than the painted box.
+      hitSlop={hitSlop}
       style={[
-        styles.base,
+        hitSlop ? null : styles.base,
         style,
         pressed && Platform.OS === "ios" ? { opacity: TONE_OPACITY[tone] } : null,
       ]}

@@ -10,6 +10,13 @@ interface ProductMediaPickerProps {
   onImagesChange: (uris: string[]) => void;
 }
 
+// Expanded hit region for the remove badge, computed against the real
+// geometry (see the `removeBtn` style comment below for the full
+// derivation). Right/bottom stay tight because the next thumbnail sits
+// only `gallery`'s 8pt gap away; top/left have no neighbour to clip so they
+// carry the rest of the way toward a 44pt target.
+const REMOVE_BTN_HIT_SLOP = { top: 12, left: 21, bottom: 10, right: 1 };
+
 function RemoveImageButton({ index, onRemove }: { index: number; onRemove: (index: number) => void }) {
   return (
     <IconButton
@@ -17,6 +24,7 @@ function RemoveImageButton({ index, onRemove }: { index: number; onRemove: (inde
       accessibilityLabel={`Remove image ${index + 1}`}
       tone="onDark"
       style={styles.removeBtn}
+      hitSlop={REMOVE_BTN_HIT_SLOP}
     >
       <X size={12} color={theme.colors.inverse} strokeWidth={2.5} />
     </IconButton>
@@ -141,15 +149,27 @@ const styles = StyleSheet.create({
     borderWidth: theme.hairline,
     borderColor: theme.colors.hairline,
   },
-  // IconButton's real 44pt minimum hit area (not hitSlop) doubles this
-  // badge's footprint from the pre-migration 22px circle — repositioned
-  // further outside the thumbnail corner (was top/right: -6) so it reads as
-  // a floating corner badge rather than sinking into the image. Visible size
-  // change; flagged in the migration report for human visual QA.
+  // Overlay badge, not a standalone icon button — it sits ON the thumbnail,
+  // and the next thumbnail starts only `gallery`'s 8pt gap away. A real 44pt
+  // IconButton box here would both (a) cover over half the 80pt thumbnail
+  // and (b) hang ~6pt of invisible hit area onto the neighbouring photo, so
+  // a tap meant for image N+1 could fire "remove image N". Restored to the
+  // pre-migration 22px visible circle at top/right: -6 and paired with
+  // IconButton's `hitSlop` escape hatch (REMOVE_BTN_HIT_SLOP above) instead
+  // of a real box. Geometry (thumbWrap-local coords, x right / y down):
+  //   badge box:      x [64, 86], y [-6, 16]        (22×22 at top/right:-6)
+  //   next thumbWrap: x [88, 168]                   (80pt width + 8pt gap)
+  //   hit region:     x [43, 87], y [-18, 26]        (badge box + hitSlop)
+  // Right edge of the hit region (87) stays 1pt inside the next thumbnail's
+  // left edge (88) — see REMOVE_BTN_HIT_SLOP's comment and the task report
+  // for the full arithmetic. Do not widen `right`/`bottom` past this without
+  // re-deriving the clearance.
   removeBtn: {
     position: "absolute",
-    top: -14,
-    right: -14,
+    top: -6,
+    right: -6,
+    width: 22,
+    height: 22,
     borderRadius: theme.radii.pill,
     backgroundColor: theme.colors.text,
   },

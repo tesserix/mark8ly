@@ -29,7 +29,7 @@ export function ReviewRow({ review, onPress }: ReviewRowProps) {
       testID={`review-row-${review.id}`}
       accessibilityLabel={`Review by ${review.customer_name}, ${review.rating} stars, ${review.status}`}
     >
-      <View style={styles.stack}>
+      <View style={styles.info}>
         <View style={styles.topRow}>
           <ReviewStars rating={review.rating} />
           <ReviewStatusBadge status={review.status} />
@@ -42,37 +42,21 @@ export function ReviewRow({ review, onPress }: ReviewRowProps) {
             {preview}
           </Text>
         ) : null}
-        <View style={styles.bottomRow}>
-          <Text preset="caption" color="textTertiary" numberOfLines={1} style={styles.meta}>
-            {review.customer_name} · {formatDate(review.created_at)}
-          </Text>
-          <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-        </View>
+        <Text preset="caption" color="textTertiary" numberOfLines={1}>
+          {review.customer_name} · {formatDate(review.created_at)}
+        </Text>
       </View>
+      <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
     </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    // Overrides PressableRow's base flexDirection: "row" — applied last, so
-    // it wins. Stars, then quote, then meta stack vertically instead of
-    // sitting beside a vertically-centered trailing chevron; the chevron
-    // moves to the end of the meta line instead (see OrderRow for the same
-    // column-stack pattern).
-    flexDirection: "column",
-    alignItems: "stretch",
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
   },
-  stack: { gap: theme.spacing.xs },
+  info: { flex: 1, gap: 4 },
   topRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
-  bottomRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing.sm,
-  },
-  meta: { flex: 1, minWidth: 0 },
 });

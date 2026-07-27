@@ -35,6 +35,7 @@ export function DashboardOrderRow({
     <PressableRow
       lines={1}
       onPress={onPress}
+      style={styles.row}
       testID={`dashboard-order-row-${order.id}`}
       accessibilityLabel={`Order ${order.order_number}, ${order.customer_email}, ${total}, ${order.status}, placed ${placed}`}
     >
@@ -65,6 +66,13 @@ export function DashboardOrderRow({
 }
 
 const styles = StyleSheet.create({
+  // Pre-migration this row had no backgroundColor of its own, so it was
+  // transparent and let the parent Card's elevated (white) surface show
+  // through (see app/(tabs)/index.tsx RowWrapper -> Card). PressableRow's
+  // base sets backgroundColor: theme.colors.background (paper), which would
+  // otherwise paint a visible off-white seam against the Card. Match the
+  // Card surface explicitly instead of relying on transparency.
+  row: { backgroundColor: theme.colors.elevated },
   main: { flex: 1, gap: 3 },
   topRow: {
     flexDirection: "row",

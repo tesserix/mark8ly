@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { Pressable, Text as RNText, StyleSheet } from 'react-native';
+import { Pressable, Text as RNText, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
 import { PressableRow } from '@/components/ui/PressableRow';
 import { theme } from '@/lib/theme';
@@ -78,6 +78,46 @@ describe('PressableRow', () => {
     expect(UNSAFE_getByType(innerPressableType).props.android_ripple).toEqual({
       color: 'rgba(14, 14, 12, 0.12)',
     });
+  });
+
+  // Regression for a real bug: PressableRow used to order its style array
+  // [base, lines, pressed, style] — RN flattens later-wins, so any caller
+  // that passes an explicit `backgroundColor` in `style` (StorePicker,
+  // DashboardOrderRow, CampaignRow, and every other row sitting on a
+  // Card/sheet surface, all of which correctly override the paper default)
+  // silently killed the iOS press feedback entirely. Android still rippled,
+  // which is why it looked fine on emulator. Drive the style FUNCTION
+  // directly rather than real press-state, per jest-expo's Platform.OS
+  // pin to 'ios' (see the ripple test above) and because simulating a real
+  // pressIn/pressOut cycle through Pressable's internal state is fragile
+  // under react-test-renderer.
+  it('caller-supplied backgroundColor never wins over the pressed sink state', () => {
+    const { UNSAFE_getByType } = render(
+      <PressableRow
+        onPress={() => {}}
+        accessibilityLabel="Row"
+        testID="row"
+        style={{ backgroundColor: theme.colors.elevated }}
+      >
+        <RNText>Row</RNText>
+      </PressableRow>,
+    );
+    const innerPressableType = (Pressable as unknown as { type: ComponentType<unknown> }).type;
+    const styleFn = UNSAFE_getByType(innerPressableType).props.style as (state: {
+      pressed: boolean;
+    }) => StyleProp<ViewStyle>;
+
+    // Unpressed: the caller's elevated background wins, matching its parent
+    // Card/sheet surface instead of PressableRow's paper default.
+    expect(StyleSheet.flatten(styleFn({ pressed: false })).backgroundColor).toBe(
+      theme.colors.elevated,
+    );
+    // Pressed: the row's sink press state MUST win over the caller's
+    // backgroundColor override — this is the exact regression the ordering
+    // bug produced.
+    expect(StyleSheet.flatten(styleFn({ pressed: true })).backgroundColor).toBe(
+      theme.colors.sink,
+    );
   });
 
   it('forwards onLongPress', () => {

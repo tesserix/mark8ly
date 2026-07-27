@@ -71,8 +71,10 @@ export function OrderRow({ order, onPress, currencyCode }: OrderRowProps) {
 
 const styles = StyleSheet.create({
   row: {
-    // Overrides PressableRow's base flexDirection: "row" — applied last, so
-    // it wins. The three lines stack instead of sitting side by side.
+    // Overrides PressableRow's base flexDirection: "row" — style is applied
+    // after base/lines (before the pressed-state background, which only
+    // ever sets backgroundColor and never touches this key), so it wins.
+    // The three lines stack instead of sitting side by side.
     flexDirection: "column",
     alignItems: "stretch",
     backgroundColor: theme.colors.elevated,

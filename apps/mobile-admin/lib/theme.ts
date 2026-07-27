@@ -134,6 +134,32 @@ export const theme = {
     compact: 38,
   },
 
+  /**
+   * Native press feedback vocabulary — the one place every ripple colour
+   * and iOS press-opacity value is defined. `Pressable`/`PressableRow`
+   * call sites spread `ripple*` into `android_ripple` and reference
+   * `opacity*` in their pressed-state style function. Centralised so
+   * changing the press language is a one-file edit, not a 20-file sweep.
+   */
+  press: {
+    /** Dark ripple for light/transparent/outline surfaces — the default. */
+    rippleInk: { color: "rgba(14, 14, 12, 0.12)" },
+    /** Light ripple for a solid ink/moss fill, where a dark ripple would vanish. */
+    rippleOnDark: { color: "rgba(247, 246, 242, 0.24)" },
+    /** Danger-tinted ripple for destructive controls (outline or icon). */
+    rippleDanger: { color: "rgba(139, 46, 32, 0.12)" },
+    /** Moss-tinted ripple for the rare single-accent press moment (e.g. a chip or accent text link). */
+    rippleAccent: { color: "rgba(45, 74, 43, 0.12)" },
+    /** iOS press dim for icon buttons, outline/transparent surfaces, and text links. */
+    opacityStandard: 0.55,
+    /**
+     * iOS press dim for a solid ink/moss fill CTA — gentler than
+     * `opacityStandard` so the fill still reads as itself while held
+     * (a 45% fade on a filled button looks broken, not pressed).
+     */
+    opacitySolidFill: 0.85,
+  },
+
   hairline: 0.5,
   touchTarget: 44,
 

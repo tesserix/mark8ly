@@ -29,8 +29,6 @@ export interface PressableRowProps {
   testID?: string;
 }
 
-const RIPPLE = { color: "rgba(14, 14, 12, 0.12)" } as const;
-
 export function PressableRow({
   children,
   onPress,
@@ -47,13 +45,22 @@ export function PressableRow({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       testID={testID}
-      android_ripple={RIPPLE}
+      android_ripple={theme.press.rippleInk}
       style={({ pressed }) => [
         styles.base,
         lines === 2 ? styles.twoLine : styles.oneLine,
-        // Android draws its own ripple; only iOS needs the background shift.
-        pressed && Platform.OS === "ios" ? styles.pressed : null,
         style,
+        // `pressed` MUST be last: RN flattens the array later-wins, and every
+        // row caller that needs an explicit `backgroundColor` (to match a
+        // parent Card/sheet surface instead of inheriting `base`'s paper) was
+        // passing it via `style` — which, before this fix, was placed after
+        // `pressed` and silently killed the iOS press feedback on every one
+        // of those rows (Android still rippled, masking it on emulator).
+        // `styles.pressed` contains ONLY `backgroundColor`, so it can safely
+        // win last without clobbering a caller's other overrides (e.g.
+        // OrderRow's `flexDirection: "column"`) — those keys aren't in this
+        // object, so array-merge leaves them untouched.
+        pressed && Platform.OS === "ios" ? styles.pressed : null,
       ]}
     >
       {children}

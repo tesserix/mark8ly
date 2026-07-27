@@ -81,14 +81,17 @@ describe('WCAG AA colour guard', () => {
     path.resolve(__dirname, '../tailwind.config.js'),
   ];
 
-  // Strip both block and line comments from source code before searching.
-  // Allows banned values to be preserved in comments (documentation) while
-  // still catching them in actual code.
+  // Strip comments using line-oriented filtering. Cannot over-consume across
+  // line boundaries, so unbalanced delimiters in strings or globs cannot corrupt
+  // the non-comment code.
   function stripComments(code: string): string {
-    // Remove block comments and line comments from the code.
-    let result = code.replace(/\/\*[\s\S]*?\*\//g, '');
-    result = result.replace(/\/\/.*$/gm, '');
-    return result;
+    const lines = code.split('\n');
+    const nonCommentLines = lines.filter((line) => {
+      const trimmed = line.trim();
+      // Drop lines that are pure comments
+      return !(trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('*/'));
+    });
+    return nonCommentLines.join('\n');
   }
 
   for (const file of sources) {
@@ -112,5 +115,27 @@ describe('WCAG AA colour guard', () => {
       'utf8',
     );
     expect(tw).toContain('#5C5953');
+  });
+
+  it('verifies stripping does not destroy sentinel tokens', () => {
+    const themeContents = fs.readFileSync(
+      path.resolve(__dirname, '../lib/theme.ts'),
+      'utf8',
+    );
+    const themeStripped = stripComments(themeContents);
+    // If stripping corrupts the code, textTertiary would disappear
+    if (!themeStripped.includes('textTertiary')) {
+      throw new Error('stripComments corrupted lib/theme.ts: sentinel "textTertiary" not found');
+    }
+
+    const twContents = fs.readFileSync(
+      path.resolve(__dirname, '../tailwind.config.js'),
+      'utf8',
+    );
+    const twStripped = stripComments(twContents);
+    // If stripping corrupts the code, module.exports would disappear
+    if (!twStripped.includes('module.exports')) {
+      throw new Error('stripComments corrupted tailwind.config.js: sentinel "module.exports" not found');
+    }
   });
 });

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Platform, View, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
@@ -16,16 +16,21 @@ interface BackHeaderProps {
 // own inset — adding one here double-pads the top.
 export function BackHeader({ title, eyebrow, rightSlot }: BackHeaderProps) {
   const router = useRouter();
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [pressed, setPressed] = useState(false);
 
   return (
     <View style={styles.wrap}>
       <Pressable
         onPress={() => router.back()}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
         hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel="Go back"
         android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-        style={({ pressed }) => [
+        style={[
           styles.back,
           pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
         ]}

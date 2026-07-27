@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { Text } from "./Text";
 import { theme } from "@/lib/theme";
@@ -21,6 +21,10 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ title, message, icon, action }: EmptyStateProps) {
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [pressed, setPressed] = useState(false);
+
   return (
     <View style={styles.container}>
       {icon ? <View style={styles.icon}>{icon}</View> : null}
@@ -37,7 +41,9 @@ export function EmptyState({ title, message, icon, action }: EmptyStateProps) {
           accessibilityRole="button"
           accessibilityLabel={action.label}
           onPress={action.onPress}
-          style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+          onPressIn={() => setPressed(true)}
+          onPressOut={() => setPressed(false)}
+          style={[styles.action, pressed && styles.actionPressed]}
         >
           <Text preset="bodyEmphasis" color="text">
             {action.label}

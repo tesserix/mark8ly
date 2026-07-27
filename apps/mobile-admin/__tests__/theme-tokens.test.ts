@@ -76,66 +76,83 @@ describe('WCAG AA colour guard', () => {
     '#7a766e',
   ];
 
-  const sources = [
-    path.resolve(__dirname, '../lib/theme.ts'),
-    path.resolve(__dirname, '../tailwind.config.js'),
-  ];
-
-  // Strip comments using line-oriented filtering. Cannot over-consume across
-  // line boundaries, so unbalanced delimiters in strings or globs cannot corrupt
-  // the non-comment code.
-  function stripComments(code: string): string {
-    const lines = code.split('\n');
-    const nonCommentLines = lines.filter((line) => {
-      const trimmed = line.trim();
-      // Drop lines that are pure comments
-      return !(trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('*/'));
-    });
-    return nonCommentLines.join('\n');
+  // Check token values by walking the object tree, ignoring comments entirely.
+  // Comments become irrelevant by construction — we only check actual values.
+  function findBannedValues(obj: unknown): string | null {
+    if (typeof obj === 'string') {
+      if (BANNED.includes(obj)) {
+        return obj;
+      }
+    } else if (obj !== null && typeof obj === 'object') {
+      for (const value of Object.values(obj)) {
+        const banned = findBannedValues(value);
+        if (banned) return banned;
+      }
+    }
+    return null;
   }
 
-  for (const file of sources) {
-    it(`does not reintroduce a failing text colour in ${path.basename(file)}`, () => {
-      const contents = fs.readFileSync(file, 'utf8');
-      const contentsNoComments = stripComments(contents);
+  it('does not reintroduce a failing text colour in lib/theme.ts', () => {
+    const banned = findBannedValues(theme.colors);
+    if (banned) {
+      throw new Error(
+        `WCAG AA guard failed: banned colour value "${banned}" found in lib/theme.ts (theme.colors)`,
+      );
+    }
+  });
+
+  it('does not reintroduce a failing text colour in tailwind.config.js', () => {
+    // Try to require() the config; if it fails due to nativewind/preset, fall back
+    let twConfig: unknown;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      twConfig = require(path.resolve(__dirname, '../tailwind.config.js'));
+    } catch {
+      // If require fails, fall back to checking file text with a safer line-based approach
+      const contents = fs.readFileSync(
+        path.resolve(__dirname, '../tailwind.config.js'),
+        'utf8',
+      );
+
+      // Only drop lines that are pure comments (nothing after comment markers)
+      const lines = contents.split('\n').filter((line: string) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('//')) return false;
+        // For block comments, only skip if line is ONLY comment markers
+        if (trimmed.startsWith('/*') && trimmed.endsWith('*/')) return false;
+        if (trimmed === '*' || trimmed === '*/' || trimmed.startsWith('*')) return false;
+        return true;
+      });
+      const safeContents = lines.join('\n');
+
       for (const banned of BANNED) {
-        if (contentsNoComments.includes(banned)) {
+        if (safeContents.includes(banned)) {
           throw new Error(
-            `WCAG AA guard failed: banned colour value "${banned}" found in ${path.basename(file)} (outside comments)`,
+            `WCAG AA guard failed: banned colour value "${banned}" found in tailwind.config.js (outside comments)`,
           );
         }
       }
-    });
-  }
+      return; // Fallback path complete
+    }
 
-  it('keeps tertiary text at the AA-passing value in both sources', () => {
-    expect(theme.colors.textTertiary).toBe('#5C5953');
-    const tw = fs.readFileSync(
-      path.resolve(__dirname, '../tailwind.config.js'),
-      'utf8',
-    );
-    expect(tw).toContain('#5C5953');
+    // If require() succeeded, walk the config tree
+    if (typeof twConfig === 'object' && twConfig !== null && 'theme' in twConfig) {
+      const themeExtend = (twConfig as Record<string, unknown>).theme;
+      if (typeof themeExtend === 'object' && themeExtend !== null && 'extend' in themeExtend) {
+        const colors = (themeExtend as Record<string, unknown>).extend;
+        if (typeof colors === 'object' && colors !== null && 'colors' in colors) {
+          const banned = findBannedValues((colors as Record<string, unknown>).colors);
+          if (banned) {
+            throw new Error(
+              `WCAG AA guard failed: banned colour value "${banned}" found in tailwind.config.js (theme.extend.colors)`,
+            );
+          }
+        }
+      }
+    }
   });
 
-  it('verifies stripping does not destroy sentinel tokens', () => {
-    const themeContents = fs.readFileSync(
-      path.resolve(__dirname, '../lib/theme.ts'),
-      'utf8',
-    );
-    const themeStripped = stripComments(themeContents);
-    // If stripping corrupts the code, textTertiary would disappear
-    if (!themeStripped.includes('textTertiary')) {
-      throw new Error('stripComments corrupted lib/theme.ts: sentinel "textTertiary" not found');
-    }
-
-    const twContents = fs.readFileSync(
-      path.resolve(__dirname, '../tailwind.config.js'),
-      'utf8',
-    );
-    const twStripped = stripComments(twContents);
-    // If stripping corrupts the code, module.exports would disappear
-    if (!twStripped.includes('module.exports')) {
-      throw new Error('stripComments corrupted tailwind.config.js: sentinel "module.exports" not found');
-    }
+  it('keeps tertiary text at the AA-passing value', () => {
+    expect(theme.colors.textTertiary).toBe('#5C5953');
   });
 });

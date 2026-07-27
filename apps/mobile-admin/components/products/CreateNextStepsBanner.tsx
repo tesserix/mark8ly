@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Platform, View, Pressable, StyleSheet } from "react-native";
 import Animated, { FadeIn, FadeOut, useReducedMotion } from "react-native-reanimated";
 import { X } from "lucide-react-native";
-import { Card, Text } from "@/components/ui";
+import { Card, IconButton, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { DISCLOSURE_DURATION, DISCLOSURE_EASING, DISCLOSURE_EXIT_DURATION } from "./disclosure-motion";
 import type { CreatedBannerSection } from "@/lib/hooks/use-created-banner";
@@ -59,9 +59,6 @@ function NextStepChip({
  */
 export function CreateNextStepsBanner({ title, onJump, onDismiss }: CreateNextStepsBannerProps) {
   const reduceMotion = useReducedMotion();
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [dismissPressed, setDismissPressed] = useState(false);
 
   return (
     <Animated.View
@@ -85,20 +82,9 @@ export function CreateNextStepsBanner({ title, onJump, onDismiss }: CreateNextSt
               Add photos, options, and extra variants whenever you&apos;re ready.
             </Text>
           </View>
-          <Pressable
-            onPress={onDismiss}
-            onPressIn={() => setDismissPressed(true)}
-            onPressOut={() => setDismissPressed(false)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss"
-            android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={[
-              dismissPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-            ]}
-          >
+          <IconButton onPress={onDismiss} accessibilityLabel="Dismiss">
             <X size={18} color={theme.colors.textTertiary} strokeWidth={1.75} />
-          </Pressable>
+          </IconButton>
         </View>
         <View style={styles.chips}>
           {CHIPS.map((chip) => (

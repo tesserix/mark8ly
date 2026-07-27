@@ -1,12 +1,12 @@
-import { useCallback, useState } from "react";
-import { Platform, View, ScrollView, Pressable, RefreshControl, ActivityIndicator, StyleSheet } from "react-native";
+import { useCallback } from "react";
+import { View, ScrollView, RefreshControl, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { UserPlus, X } from "lucide-react-native";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { ASSIGNABLE_ROLES } from "@repo/mobile-shared/api/schemas/team";
 import { useTeamMembers, useTeamInvitations } from "@/lib/hooks/use-team";
 import { useUpdateMemberRole, useRevokeInvitation } from "@/lib/admin-api/team-actions";
-import { BackHeader, Eyebrow, EmptyState, Hairline, PressableRow, Screen, StatusBadge, Text, type StatusTone } from "@/components/ui";
+import { BackHeader, Eyebrow, EmptyState, Hairline, IconButton, PressableRow, Screen, StatusBadge, Text, type StatusTone } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { Alert } from "react-native";
@@ -23,9 +23,6 @@ function titleize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-// Extracted so press state can live in `useState`: this button renders once
-// per row inside `inviteList.map()`, and hooks can't be called from inside a
-// `.map()` callback — each row needs its own component instance instead.
 function RevokeInviteButton({
   disabled,
   accessibilityLabel,
@@ -35,23 +32,10 @@ function RevokeInviteButton({
   accessibilityLabel: string;
   onPress: () => void;
 }) {
-  const [pressed, setPressed] = useState(false);
   return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      disabled={disabled}
-      hitSlop={10}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      android_ripple={{ ...theme.press.rippleDanger, borderless: true }}
-      style={[
-        pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-      ]}
-    >
+    <IconButton onPress={onPress} disabled={disabled} accessibilityLabel={accessibilityLabel} tone="danger">
       <X size={18} color={theme.colors.danger} strokeWidth={2} />
-    </Pressable>
+    </IconButton>
   );
 }
 
@@ -121,9 +105,6 @@ export default function TeamScreen() {
   const memberList = members.data?.data ?? [];
   const inviteList = invitations.data?.data ?? [];
   const loading = members.isLoading || invitations.isLoading;
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [invitePressed, setInvitePressed] = useState(false);
 
   return (
     <Screen>
@@ -131,20 +112,12 @@ export default function TeamScreen() {
         eyebrow="SETTINGS"
         title="Team"
         rightSlot={
-          <Pressable
+          <IconButton
             onPress={() => router.push("/(tabs)/more/settings/team/invite")}
-            onPressIn={() => setInvitePressed(true)}
-            onPressOut={() => setInvitePressed(false)}
-            hitSlop={12}
-            accessibilityRole="button"
             accessibilityLabel="Invite teammate"
-            android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={[
-              invitePressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-            ]}
           >
             <UserPlus size={20} color={theme.colors.text} strokeWidth={1.75} />
-          </Pressable>
+          </IconButton>
         }
       />
       {loading && !refreshing ? (

@@ -1,9 +1,7 @@
 import { useCallback, useState } from "react";
 import {
-  Platform,
   View,
   FlatList,
-  Pressable,
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
@@ -12,7 +10,7 @@ import { useRouter } from "expo-router";
 import { Plus } from "lucide-react-native";
 import { useGiftCards } from "@/lib/hooks/use-gift-cards";
 import { GiftCardRow } from "@/components/marketing/GiftCardRow";
-import { BackHeader, EmptyState, Screen, SegmentedControl } from "@/components/ui";
+import { BackHeader, EmptyState, IconButton, Screen, SegmentedControl } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { GiftCard } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
@@ -31,9 +29,6 @@ export default function GiftCardsScreen() {
   const dockPad = useDockClearance();
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [issuePressed, setIssuePressed] = useState(false);
 
   const {
     data,
@@ -68,20 +63,12 @@ export default function GiftCardsScreen() {
         eyebrow="MARKETING"
         title="Gift cards"
         rightSlot={
-          <Pressable
+          <IconButton
             onPress={() => router.push("/(tabs)/more/marketing/gift-cards/new")}
-            onPressIn={() => setIssuePressed(true)}
-            onPressOut={() => setIssuePressed(false)}
-            hitSlop={12}
-            accessibilityRole="button"
             accessibilityLabel="Issue gift card"
-            android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={[
-              issuePressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-            ]}
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />
-          </Pressable>
+          </IconButton>
         }
       />
       <View style={styles.filter}>

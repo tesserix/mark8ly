@@ -1,9 +1,7 @@
 import { useCallback, useState } from "react";
 import {
-  Platform,
   View,
   FlatList,
-  Pressable,
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
@@ -13,7 +11,7 @@ import { Plus } from "lucide-react-native";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useCoupons } from "@/lib/hooks/use-coupons";
 import { CouponRow } from "@/components/marketing/CouponRow";
-import { BackHeader, EmptyState, Screen, SegmentedControl } from "@/components/ui";
+import { BackHeader, EmptyState, IconButton, Screen, SegmentedControl } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Coupon } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
@@ -33,9 +31,6 @@ export default function CouponsScreen() {
   const router = useRouter();
   const currency = useTenantStore((s) => s.activeStore?.currency_code) || "AUD";
   const [filter, setFilter] = useState<FilterKey>("all");
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [newCouponPressed, setNewCouponPressed] = useState(false);
 
   const {
     data,
@@ -72,20 +67,12 @@ export default function CouponsScreen() {
         eyebrow="MARKETING"
         title="Coupons"
         rightSlot={
-          <Pressable
+          <IconButton
             onPress={() => router.push("/(tabs)/more/marketing/coupons/new")}
-            onPressIn={() => setNewCouponPressed(true)}
-            onPressOut={() => setNewCouponPressed(false)}
-            hitSlop={12}
-            accessibilityRole="button"
             accessibilityLabel="New coupon"
-            android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={[
-              newCouponPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-            ]}
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />
-          </Pressable>
+          </IconButton>
         }
       />
       <View style={styles.filter}>

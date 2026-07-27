@@ -1,9 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import {
-  Platform,
   View,
   Modal,
-  Pressable,
   FlatList,
   ActivityIndicator,
   StyleSheet,
@@ -11,7 +9,7 @@ import {
 import { Check, X } from "lucide-react-native";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useStores, useSwitchStore } from "../lib/hooks/use-store";
-import { Hairline, PressableRow, Text } from "@/components/ui";
+import { Hairline, IconButton, PressableRow, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Store } from "@repo/mobile-shared/api/types";
 
@@ -24,9 +22,6 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
   const activeStore = useTenantStore((s) => s.activeStore);
   const { data: stores, isLoading } = useStores();
   const switchStore = useSwitchStore();
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [closePressed, setClosePressed] = useState(false);
 
   const handleSelect = useCallback(
     (store: Store) => {
@@ -72,20 +67,9 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
             <Text preset="h3" color="text">
               Select Store
             </Text>
-            <Pressable
-              onPress={onClose}
-              onPressIn={() => setClosePressed(true)}
-              onPressOut={() => setClosePressed(false)}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-              style={[
-                closePressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-              ]}
-            >
+            <IconButton onPress={onClose} accessibilityLabel="Close">
               <X size={20} color={theme.colors.text} strokeWidth={1.75} />
-            </Pressable>
+            </IconButton>
           </View>
           <Hairline />
           {isLoading ? (

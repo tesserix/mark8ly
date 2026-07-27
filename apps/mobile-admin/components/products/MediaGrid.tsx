@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { View, Image, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
-import { Text } from "@/components/ui";
+import { IconButton, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { ProductMedia } from "@repo/mobile-shared/api/schemas/products";
 
@@ -102,14 +102,12 @@ export function MediaGrid({ media, onReorder, onAltChange, onPress, onLongPress 
 
           <View style={styles.controls}>
             {i > 0 ? (
-              <Pressable
+              <IconButton
                 onPress={() => onReorder(m.id, i - 1)}
-                accessibilityRole="button"
                 accessibilityLabel={`Move photo ${i + 1} earlier`}
-                hitSlop={8}
               >
                 <ChevronLeft size={16} color={theme.colors.text} strokeWidth={2} />
-              </Pressable>
+              </IconButton>
             ) : null}
             {i === 0 ? (
               <Text preset="caption" color="textTertiary">
@@ -117,14 +115,12 @@ export function MediaGrid({ media, onReorder, onAltChange, onPress, onLongPress 
               </Text>
             ) : null}
             {i < ordered.length - 1 ? (
-              <Pressable
+              <IconButton
                 onPress={() => onReorder(m.id, i + 1)}
-                accessibilityRole="button"
                 accessibilityLabel={`Move photo ${i + 1} later`}
-                hitSlop={8}
               >
                 <ChevronRight size={16} color={theme.colors.text} strokeWidth={2} />
-              </Pressable>
+              </IconButton>
             ) : null}
           </View>
 
@@ -145,11 +141,15 @@ const styles = StyleSheet.create({
     borderWidth: theme.hairline,
     borderColor: theme.colors.hairline,
   },
+  // Was a fixed `height: 24` sized to the bare 16px chevron glyph. The
+  // reorder buttons are now IconButton, whose real 44pt touch target (not
+  // hitSlop) would overflow a fixed 24pt row and sit on top of `alt` below
+  // it — `minHeight` lets the row grow to fit instead.
   controls: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    height: 24,
+    minHeight: theme.touchTarget,
   },
   alt: {
     height: 36,

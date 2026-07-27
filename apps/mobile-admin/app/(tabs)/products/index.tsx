@@ -1,10 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import {
-  Platform,
   View,
   FlatList,
   RefreshControl,
-  Pressable,
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
@@ -15,6 +13,7 @@ import { useProducts } from "../../../lib/hooks/use-products";
 import { ProductRow } from "../../../components/ProductRow";
 import {
   EmptyState,
+  IconButton,
   PageHeader,
   Screen,
   SearchField,
@@ -51,9 +50,6 @@ export default function ProductsScreen() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchText, setSearchText] = useState("");
   const debouncedSearch = useDebounce(searchText, 300);
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [fabPressed, setFabPressed] = useState(false);
 
   const queryParams = {
     ...(activeFilter !== "all" ? { status: activeFilter } : {}),
@@ -137,21 +133,14 @@ export default function ProductsScreen() {
         </Animated.View>
       )}
 
-      <Pressable
+      <IconButton
         onPress={() => router.push("/(tabs)/products/new")}
-        onPressIn={() => setFabPressed(true)}
-        onPressOut={() => setFabPressed(false)}
-        accessibilityRole="button"
         accessibilityLabel="Add new product"
-        android_ripple={{ ...theme.press.rippleOnDark, borderless: true }}
-        style={[
-          styles.fab,
-          { bottom: dockPad },
-          fabPressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
-        ]}
+        tone="onDark"
+        style={[styles.fab, { bottom: dockPad }]}
       >
         <Plus size={22} color={theme.colors.inverse} strokeWidth={2} />
-      </Pressable>
+      </IconButton>
     </Screen>
   );
 }

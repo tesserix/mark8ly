@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { View, Pressable, StyleSheet } from "react-native";
 import { Plus, X } from "lucide-react-native";
-import { FieldInput, Text } from "@/components/ui";
+import { FieldInput, IconButton, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { ProductOption } from "@repo/mobile-shared/api/schemas/products";
 import type { UpdateProductOptionBody } from "@repo/mobile-shared/api/products";
@@ -87,14 +87,12 @@ export function OptionsEditor({ options, onChange, onAddOption }: OptionsEditorP
                   <Text preset="caption" color="text">
                     {value}
                   </Text>
-                  <Pressable
+                  <IconButton
                     onPress={() => removeValue(option.name, value)}
-                    accessibilityRole="button"
                     accessibilityLabel={`Remove ${value} from ${option.name}`}
-                    hitSlop={8}
                   >
                     <X size={12} color={theme.colors.textTertiary} strokeWidth={2.5} />
-                  </Pressable>
+                  </IconButton>
                 </View>
               ))}
             </View>
@@ -145,7 +143,11 @@ const styles = StyleSheet.create({
     borderRadius: theme.radii.md,
   },
   option: { gap: theme.spacing.sm },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs },
+  // gap was spacing.xs (4): the chip's remove IconButton now carries a real
+  // 44pt touch target taller than the 32pt chip, overflowing a few points
+  // above/below it (invisible — the button itself has no fill). A wider gap
+  // keeps that invisible overflow from reaching an adjacent wrapped row.
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
   chip: {
     flexDirection: "row",
     alignItems: "center",

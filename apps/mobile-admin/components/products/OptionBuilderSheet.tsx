@@ -15,7 +15,7 @@ import Animated, {
   useReducedMotion,
 } from "react-native-reanimated";
 import { AlertTriangle, X } from "lucide-react-native";
-import { Text, FieldInput } from "@/components/ui";
+import { Text, FieldInput, IconButton } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { DISCLOSURE_EASING, DISCLOSURE_EXIT_DURATION } from "./disclosure-motion";
 import type { UpdateProductOptionBody } from "@repo/mobile-shared/api/products";
@@ -149,14 +149,12 @@ export const OptionBuilderSheet = forwardRef<OptionBuilderSheetHandle, OptionBui
                     <Text preset="caption" color="text">
                       {value}
                     </Text>
-                    <Pressable
+                    <IconButton
                       onPress={() => removeChip(value)}
-                      accessibilityRole="button"
                       accessibilityLabel={`Remove ${value}`}
-                      hitSlop={8}
                     >
                       <X size={12} color={theme.colors.textTertiary} strokeWidth={2.5} />
-                    </Pressable>
+                    </IconButton>
                   </Animated.View>
                 ))}
               </View>
@@ -212,7 +210,11 @@ export const OptionBuilderSheet = forwardRef<OptionBuilderSheetHandle, OptionBui
 const styles = StyleSheet.create({
   root: { flexGrow: 1, padding: theme.spacing.lg, gap: theme.spacing.lg },
   valuesBlock: { gap: theme.spacing.xs },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs },
+  // gap was spacing.xs (4): the chip's remove IconButton now carries a real
+  // 44pt touch target taller than the 32pt chip, overflowing a few points
+  // above/below it (invisible — the button itself has no fill). A wider gap
+  // keeps that invisible overflow from reaching an adjacent wrapped row.
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
   chip: {
     flexDirection: "row",
     alignItems: "center",

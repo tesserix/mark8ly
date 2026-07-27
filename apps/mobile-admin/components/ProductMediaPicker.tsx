@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Platform, View, Image, Pressable, ScrollView, StyleSheet } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, Image as ImageIcon, X } from "lucide-react-native";
-import { Text } from "@/components/ui";
+import { IconButton, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 interface ProductMediaPickerProps {
@@ -10,27 +10,16 @@ interface ProductMediaPickerProps {
   onImagesChange: (uris: string[]) => void;
 }
 
-// Extracted so press state can live in `useState`: this button renders once
-// per row inside `images.map()`, and hooks can't be called from inside a
-// `.map()` callback — each row needs its own component instance instead.
 function RemoveImageButton({ index, onRemove }: { index: number; onRemove: (index: number) => void }) {
-  const [pressed, setPressed] = useState(false);
   return (
-    <Pressable
+    <IconButton
       onPress={() => onRemove(index)}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      accessibilityRole="button"
       accessibilityLabel={`Remove image ${index + 1}`}
-      hitSlop={8}
-      android_ripple={{ ...theme.press.rippleOnDark, borderless: true }}
-      style={[
-        styles.removeBtn,
-        pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
-      ]}
+      tone="onDark"
+      style={styles.removeBtn}
     >
       <X size={12} color={theme.colors.inverse} strokeWidth={2.5} />
-    </Pressable>
+    </IconButton>
   );
 }
 
@@ -152,15 +141,16 @@ const styles = StyleSheet.create({
     borderWidth: theme.hairline,
     borderColor: theme.colors.hairline,
   },
+  // IconButton's real 44pt minimum hit area (not hitSlop) doubles this
+  // badge's footprint from the pre-migration 22px circle — repositioned
+  // further outside the thumbnail corner (was top/right: -6) so it reads as
+  // a floating corner badge rather than sinking into the image. Visible size
+  // change; flagged in the migration report for human visual QA.
   removeBtn: {
     position: "absolute",
-    top: -6,
-    right: -6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    top: -14,
+    right: -14,
+    borderRadius: theme.radii.pill,
     backgroundColor: theme.colors.text,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

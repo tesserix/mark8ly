@@ -1,9 +1,7 @@
 import { useCallback, useState } from "react";
 import {
-  Platform,
   View,
   FlatList,
-  Pressable,
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
@@ -11,7 +9,7 @@ import {
 import { useRouter } from "expo-router";
 import { Plus, ChevronRight } from "lucide-react-native";
 import { useTickets } from "@/lib/hooks/use-tickets";
-import { BackHeader, EmptyState, PressableRow, Screen, SegmentedControl, StatusBadge, Text, type StatusTone } from "@/components/ui";
+import { BackHeader, EmptyState, IconButton, PressableRow, Screen, SegmentedControl, StatusBadge, Text, type StatusTone } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Ticket } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
@@ -65,9 +63,6 @@ export default function TicketsScreen() {
   const dockPad = useDockClearance();
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [newTicketPressed, setNewTicketPressed] = useState(false);
 
   const {
     data,
@@ -102,20 +97,12 @@ export default function TicketsScreen() {
         eyebrow="SETTINGS"
         title="Support tickets"
         rightSlot={
-          <Pressable
+          <IconButton
             onPress={() => router.push("/(tabs)/more/settings/tickets/new")}
-            onPressIn={() => setNewTicketPressed(true)}
-            onPressOut={() => setNewTicketPressed(false)}
-            hitSlop={12}
-            accessibilityRole="button"
             accessibilityLabel="New ticket"
-            android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={[
-              newTicketPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-            ]}
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />
-          </Pressable>
+          </IconButton>
         }
       />
       <View style={styles.filter}>

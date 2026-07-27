@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Platform, View, TextInput, Pressable, StyleSheet, type ViewStyle } from "react-native";
+import { View, TextInput, StyleSheet, type ViewStyle } from "react-native";
 import { Search, X } from "lucide-react-native";
+import { IconButton } from "./IconButton";
 import { theme } from "@/lib/theme";
 
 interface SearchFieldProps {
@@ -18,10 +18,6 @@ export function SearchField({
   style,
   accessibilityLabel,
 }: SearchFieldProps) {
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [clearPressed, setClearPressed] = useState(false);
-
   return (
     <View style={[styles.wrapper, style]}>
       <Search size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
@@ -38,20 +34,9 @@ export function SearchField({
         clearButtonMode="never"
       />
       {value.length > 0 ? (
-        <Pressable
-          onPress={() => onChangeText("")}
-          onPressIn={() => setClearPressed(true)}
-          onPressOut={() => setClearPressed(false)}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Clear search"
-          android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-          style={[
-            clearPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-          ]}
-        >
+        <IconButton onPress={() => onChangeText("")} accessibilityLabel="Clear search">
           <X size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-        </Pressable>
+        </IconButton>
       ) : null}
     </View>
   );

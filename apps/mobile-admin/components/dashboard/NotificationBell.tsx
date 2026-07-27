@@ -1,9 +1,8 @@
-import { useState } from "react";
-import { Platform, Pressable, View, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { Bell } from "lucide-react-native";
 import { useNotifications } from "@/lib/hooks/use-notifications";
-import { Text } from "@/components/ui";
+import { IconButton, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 /**
@@ -16,25 +15,13 @@ export function NotificationBell() {
   const router = useRouter();
   const { data } = useNotifications();
   const unread = data?.notifications.filter((n) => !n.is_read).length ?? 0;
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [pressed, setPressed] = useState(false);
 
   return (
-    <Pressable
+    <IconButton
       onPress={() => router.push("/notifications")}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      hitSlop={10}
-      accessibilityRole="button"
       accessibilityLabel={
         unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
       }
-      android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-      style={[
-        styles.btn,
-        pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-      ]}
     >
       <Bell size={22} color={theme.colors.text} strokeWidth={1.75} />
       {unread > 0 ? (
@@ -44,17 +31,11 @@ export function NotificationBell() {
           </Text>
         </View>
       ) : null}
-    </Pressable>
+    </IconButton>
   );
 }
 
 const styles = StyleSheet.create({
-  btn: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   badge: {
     position: "absolute",
     top: 2,

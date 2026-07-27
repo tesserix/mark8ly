@@ -16,6 +16,7 @@ import {
   BackHeader,
   EmptyState,
   Hairline,
+  IconButton,
   Screen,
   Text,
 } from "@/components/ui";
@@ -105,7 +106,6 @@ export default function NotificationsScreen() {
   // NativeWind's JSX interop doesn't resolve a function `style` prop the way
   // it resolves a plain array — press state is tracked explicitly instead.
   const [markAllPressed, setMarkAllPressed] = useState(false);
-  const [settingsPressed, setSettingsPressed] = useState(false);
 
   return (
     <Screen>
@@ -135,24 +135,16 @@ export default function NotificationsScreen() {
                 </Text>
               </Pressable>
             ) : null}
-            <Pressable
+            <IconButton
               onPress={() => router.push("/(tabs)/more/settings/notification-settings")}
-              onPressIn={() => setSettingsPressed(true)}
-              onPressOut={() => setSettingsPressed(false)}
-              hitSlop={8}
-              accessibilityRole="button"
               accessibilityLabel="Notification settings"
-              android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-              style={[
-                settingsPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-              ]}
             >
               <SlidersHorizontal
                 size={20}
                 color={theme.colors.text}
                 strokeWidth={1.75}
               />
-            </Pressable>
+            </IconButton>
           </View>
         }
       />

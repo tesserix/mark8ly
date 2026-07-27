@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
-import { Platform, View, Pressable, StyleSheet } from "react-native";
+import type { ReactNode } from "react";
+import { View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
+import { IconButton } from "./IconButton";
 import { Text } from "./Text";
 import { theme } from "@/lib/theme";
 
@@ -16,27 +17,12 @@ interface BackHeaderProps {
 // own inset — adding one here double-pads the top.
 export function BackHeader({ title, eyebrow, rightSlot }: BackHeaderProps) {
   const router = useRouter();
-  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
-  // it resolves a plain array — press state is tracked explicitly instead.
-  const [pressed, setPressed] = useState(false);
 
   return (
     <View style={styles.wrap}>
-      <Pressable
-        onPress={() => router.back()}
-        onPressIn={() => setPressed(true)}
-        onPressOut={() => setPressed(false)}
-        hitSlop={12}
-        accessibilityRole="button"
-        accessibilityLabel="Go back"
-        android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-        style={[
-          styles.back,
-          pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
-        ]}
-      >
+      <IconButton onPress={() => router.back()} accessibilityLabel="Go back">
         <ChevronLeft size={22} color={theme.colors.text} strokeWidth={1.75} />
-      </Pressable>
+      </IconButton>
       <View style={styles.center}>
         {eyebrow ? (
           <Text preset="eyebrow" color="textTertiary" align="center">
@@ -66,12 +52,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
     backgroundColor: theme.colors.background,
-  },
-  back: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
   },
   center: { flex: 1, alignItems: "center", paddingHorizontal: theme.spacing.sm },
   // minWidth, NOT width: a fixed 44 is wide enough for the back chevron but not

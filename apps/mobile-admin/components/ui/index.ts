@@ -12,5 +12,7 @@ export { BackHeader } from "./BackHeader";
 export { FieldInput, FieldLabel } from "./FieldInput";
 export { PressableRow } from "./PressableRow";
 export type { PressableRowProps } from "./PressableRow";
+export { IconButton } from "./IconButton";
+export type { IconButtonProps } from "./IconButton";
 export { Thumb } from "./Thumb";
 export type { ThumbProps } from "./Thumb";

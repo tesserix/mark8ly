@@ -24,6 +24,17 @@ export interface SwipeAction {
   icon: ReactNode;
   tone: "accent" | "danger" | "neutral";
   onPress: () => void;
+  /**
+   * Fire on a full swipe past `FULL_SWIPE_FRACTION` without requiring a tap.
+   * Leave false for anything destructive — this app has no undo.
+   *
+   * Hard-blocked when `tone` is "danger", regardless of this flag: the
+   * app-wide convention puts destructive actions (cancel order, block
+   * customer, reject review) on the trailing/danger edge, and a full swipe
+   * can be released by accident. Opting a non-destructive action in is a
+   * deliberate caller decision; opting a destructive one in is not honoured.
+   */
+  autoFireOnFullSwipe?: boolean;
 }
 
 export interface SwipeRowProps {
@@ -39,11 +50,21 @@ export interface SwipeRowProps {
 
 /**
  * Fraction of the row's own measured width a drag must cross before release
- * auto-fires the primary (first) action on that side — the same "full swipe"
- * convenience gesture as iOS Mail, on top of the individually-tappable
- * action buttons the drag reveals.
+ * settles the row OPEN (resting at `ACTION_WIDTH * action count` on that
+ * side) instead of springing shut. Crossing this alone never fires
+ * anything — the revealed action buttons still require their own tap. See
+ * `FULL_SWIPE_FRACTION` for the opt-in auto-fire gesture.
  */
 const THRESHOLD_FRACTION = 0.4;
+/**
+ * Fraction of the row's own measured width a drag must cross before release
+ * auto-fires the primary (first) action on that side, iOS-Mail-style —
+ * deliberately much larger than `THRESHOLD_FRACTION` so the same drag that
+ * merely opens the row can never also trigger it. Only honoured when that
+ * action sets `autoFireOnFullSwipe` (and isn't `tone: "danger"` — see
+ * `SwipeAction`).
+ */
+const FULL_SWIPE_FRACTION = 0.85;
 const ACTION_WIDTH = 84;
 
 const TONE_BACKGROUND: Record<SwipeAction["tone"], string> = {
@@ -75,17 +96,31 @@ export function SwipeRow({
   const reduceMotion = useReducedMotion();
   const translateX = useSharedValue(0);
   const rowWidth = useSharedValue(0);
-  // Tracks whether the CURRENT drag has already crossed the threshold, so
-  // the haptic fires once per crossing rather than once per `onUpdate`
-  // frame. Reset on release and whenever the drag recedes back under the
-  // threshold, so dragging past it, back, and past it again counts as two
-  // separate crossings — matching how the haptic reads to a user's thumb.
+  // Snapshot of `translateX` at the start of the CURRENT drag. Needed now
+  // that a release can settle the row open (non-zero rest position): the
+  // next drag must continue from wherever the row actually is, not jump to
+  // 0, since `event.translationX` is always relative to that drag's own
+  // touch-down point.
+  const dragStartX = useSharedValue(0);
+  // Tracks whether the CURRENT drag has already crossed the reveal
+  // threshold, so the haptic fires once per crossing rather than once per
+  // `onUpdate` frame. Reset on release and whenever the drag recedes back
+  // under the threshold, so dragging past it, back, and past it again
+  // counts as two separate crossings — matching how the haptic reads to a
+  // user's thumb.
   const hasCrossed = useSharedValue(false);
+  // Drives the tap-to-close overlay (see below). Only needs to exist on the
+  // JS thread — it's set from `runOnJS` when a drag settles open/closed and
+  // directly from `closeRow` when a revealed action or the overlay is
+  // tapped.
+  const [isOpen, setIsOpen] = useState(false);
 
   const hasLeading = leadingActions.length > 0;
   const hasTrailing = trailingActions.length > 0;
   const primaryLeading = leadingActions[0];
   const primaryTrailing = trailingActions[0];
+  const openLeadingWidth = ACTION_WIDTH * leadingActions.length;
+  const openTrailingWidth = ACTION_WIDTH * trailingActions.length;
 
   // `adminHaptics.swipeThreshold` is async and does its own error
   // swallowing (see feedback.ts) — this wrapper just gives `runOnJS` a
@@ -101,8 +136,21 @@ export function SwipeRow({
     [rowWidth],
   );
 
+  // Springs (or snaps, under reduced motion) back to rest without firing
+  // anything. Shared by: tapping the row content while open, tapping the
+  // tap-to-close overlay, and firing a revealed action button (which closes
+  // immediately after).
+  const closeRow = useCallback(() => {
+    translateX.value = reduceMotion ? 0 : withSpring(0);
+    setIsOpen(false);
+  }, [reduceMotion, translateX]);
+
   const pan = Gesture.Pan()
     .enabled(enabled)
+    .onStart(() => {
+      "worklet";
+      dragStartX.value = translateX.value;
+    })
     .onUpdate((event) => {
       "worklet";
       // Belt-and-suspenders with `.enabled(enabled)` above: guard explicitly
@@ -110,7 +158,7 @@ export function SwipeRow({
       // same pattern PressableRow/IconButton use for their `disabled` prop.
       if (!enabled) return;
 
-      let next = event.translationX;
+      let next = dragStartX.value + event.translationX;
       if (next > 0 && !hasLeading) next = 0;
       if (next < 0 && !hasTrailing) next = 0;
       translateX.value = next;
@@ -127,18 +175,50 @@ export function SwipeRow({
     .onEnd(() => {
       "worklet";
       if (!enabled) return;
+      hasCrossed.value = false;
 
+      const current = translateX.value;
       const threshold = rowWidth.value * THRESHOLD_FRACTION;
-      const passedThreshold = threshold > 0 && Math.abs(translateX.value) >= threshold;
-      if (passedThreshold) {
-        if (translateX.value > 0 && primaryLeading) {
+      const fullSwipeThreshold = rowWidth.value * FULL_SWIPE_FRACTION;
+      const passedThreshold = threshold > 0 && Math.abs(current) >= threshold;
+      const passedFullSwipe = fullSwipeThreshold > 0 && Math.abs(current) >= fullSwipeThreshold;
+
+      if (current > 0 && hasLeading) {
+        const canAutoFire =
+          passedFullSwipe &&
+          !!primaryLeading?.autoFireOnFullSwipe &&
+          primaryLeading.tone !== "danger";
+        if (canAutoFire) {
+          translateX.value = reduceMotion ? 0 : withSpring(0);
+          runOnJS(setIsOpen)(false);
           runOnJS(primaryLeading.onPress)();
-        } else if (translateX.value < 0 && primaryTrailing) {
+          return;
+        }
+        if (passedThreshold) {
+          translateX.value = reduceMotion ? openLeadingWidth : withSpring(openLeadingWidth);
+          runOnJS(setIsOpen)(true);
+          return;
+        }
+      } else if (current < 0 && hasTrailing) {
+        const canAutoFire =
+          passedFullSwipe &&
+          !!primaryTrailing?.autoFireOnFullSwipe &&
+          primaryTrailing.tone !== "danger";
+        if (canAutoFire) {
+          translateX.value = reduceMotion ? 0 : withSpring(0);
+          runOnJS(setIsOpen)(false);
           runOnJS(primaryTrailing.onPress)();
+          return;
+        }
+        if (passedThreshold) {
+          translateX.value = reduceMotion ? -openTrailingWidth : withSpring(-openTrailingWidth);
+          runOnJS(setIsOpen)(true);
+          return;
         }
       }
-      hasCrossed.value = false;
+
       translateX.value = reduceMotion ? 0 : withSpring(0);
+      runOnJS(setIsOpen)(false);
     });
 
   const contentStyle = useAnimatedStyle(() => ({
@@ -150,20 +230,45 @@ export function SwipeRow({
       {hasLeading ? (
         <View style={[styles.actionsPanel, styles.leadingPanel]} pointerEvents="box-none">
           {leadingActions.map((action) => (
-            <SwipeActionButton key={action.key} action={action} />
+            <SwipeActionButton
+              key={action.key}
+              action={action}
+              onActivate={() => {
+                action.onPress();
+                closeRow();
+              }}
+              testID={`${testID}-action-${action.key}`}
+            />
           ))}
         </View>
       ) : null}
       {hasTrailing ? (
         <View style={[styles.actionsPanel, styles.trailingPanel]} pointerEvents="box-none">
           {trailingActions.map((action) => (
-            <SwipeActionButton key={action.key} action={action} />
+            <SwipeActionButton
+              key={action.key}
+              action={action}
+              onActivate={() => {
+                action.onPress();
+                closeRow();
+              }}
+              testID={`${testID}-action-${action.key}`}
+            />
           ))}
         </View>
       ) : null}
       <GestureDetector gesture={pan}>
         <Animated.View style={[styles.content, contentStyle]} testID={`${testID}-content`}>
           {children}
+          {isOpen ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close swipe actions"
+              onPress={closeRow}
+              style={styles.closeOverlay}
+              testID={`${testID}-close-overlay`}
+            />
+          ) : null}
         </Animated.View>
       </GestureDetector>
     </View>
@@ -172,9 +277,14 @@ export function SwipeRow({
 
 interface SwipeActionButtonProps {
   action: SwipeAction;
+  /** Fires `action.onPress` and then closes the row — see `closeRow` in the
+   * parent. Kept distinct from `action.onPress` so this component never
+   * needs to know about the row's open/close state. */
+  onActivate: () => void;
+  testID: string;
 }
 
-function SwipeActionButton({ action }: SwipeActionButtonProps) {
+function SwipeActionButton({ action, onActivate, testID }: SwipeActionButtonProps) {
   // Same explicit press-state tracking as PressableRow/IconButton — a
   // function `style` prop on `Pressable` is silently dropped under
   // NativeWind's JSX interop, so pressed state is plain useState driven by
@@ -185,12 +295,13 @@ function SwipeActionButton({ action }: SwipeActionButtonProps) {
 
   return (
     <Pressable
-      onPress={action.onPress}
+      onPress={onActivate}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       accessibilityRole="button"
       accessibilityLabel={action.label}
       android_ripple={{ ...theme.press.rippleOnDark, borderless: false }}
+      testID={testID}
       style={[
         styles.actionButton,
         { backgroundColor: TONE_BACKGROUND[action.tone] },
@@ -228,6 +339,10 @@ const styles = StyleSheet.create({
   trailingPanel: {
     right: 0,
   },
+  // Transparent tap target painted over `children` only while the row is
+  // resting open — swallows the tap (closing the row) instead of letting it
+  // fall through to the row content's own `onPress`.
+  closeOverlay: StyleSheet.absoluteFill,
   actionButton: {
     width: ACTION_WIDTH,
     minHeight: theme.touchTarget,

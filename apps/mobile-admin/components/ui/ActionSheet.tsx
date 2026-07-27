@@ -6,10 +6,17 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
-import { StyleSheet, useWindowDimensions, View } from "react-native";
+import {
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
+  BottomSheetScrollView,
   type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -77,6 +84,15 @@ const Backdrop = BottomSheetBackdrop as unknown as ComponentType<
   }
 >;
 
+// Same TS2786 dodge as `Backdrop` above, for the scrolling-content
+// equivalent of the `BottomSheetView` cast this component used to need —
+// see `OptionBuilderSheet`'s own `ScrollBody` cast, which this follows
+// exactly (same prop surface: content + a style for the inner container).
+const ScrollBody = BottomSheetScrollView as unknown as ComponentType<{
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  children?: ReactNode;
+}>;
+
 /**
  * Long-press action menu — the zero-dependency stand-in for a native context
  * menu (Orders' Fulfil / Email label / Refund / Cancel). Wraps
@@ -120,27 +136,35 @@ const Backdrop = BottomSheetBackdrop as unknown as ComponentType<
  * StoreSelector uses) — never a blur; this design system bans
  * glassmorphism.
  *
- * Content sits in a plain `View`, not `BottomSheetView` — @gorhom/bottom-sheet
- * ships its own copy of @types/react whose `ReactNode` includes `bigint`,
- * which this project's doesn't, so `BottomSheetView` trips TS2786 ("cannot
- * be used as a JSX component"). Same dodge as CancelReasonSheet/RefundSheet/
- * EmailLabelSheet (non-scrolling content); see OptionBuilderSheet's
- * `ScrollBody` cast for the scrolling-content equivalent.
+ * Content sits in `BottomSheetScrollView` (via the `ScrollBody` cast — same
+ * TS2786 dodge as `Backdrop` below, and the same cast `OptionBuilderSheet`
+ * uses), not a plain `View`. A fixed-height snap point paired with
+ * non-scrolling content is a silent-clipping trap: on a short device (iPhone
+ * SE) or a long item list, rows past the clamped height would be clipped by
+ * the sheet's own bounds and permanently unreachable — no scroll gesture
+ * could ever reveal them, and nothing about that failure is visible in a
+ * screenshot taken above the fold. `BottomSheetScrollView` keeps the sheet
+ * itself bounded by `snapPoints` while making every row reachable by
+ * scrolling inside it, however many items the caller passes.
  *
- * That dodge is also why this sheet does NOT use `enableDynamicSizing`
- * (unlike its doc-comment's first draft, which enabled it): dynamic sizing
- * measures content height through `BottomSheetView`'s own internal
- * onLayout→context wiring, which a plain `View` doesn't participate in — the
- * sheet's `present()` call succeeds (confirmed on-device: the modal opens)
- * but renders at zero measured height, i.e. invisible. No sheet anywhere
- * else in this codebase uses dynamic sizing either, for the same reason —
- * they all pair a plain `View` with a fixed `snapPoints`
- * (CancelReasonSheet/RefundSheet/EmailLabelSheet/OptionBuilderSheet). This
- * component follows suit with a snap point computed from the known,
- * fixed-height pieces (`PressableRow`'s 64pt rows, the optional `Eyebrow`
- * title, hairlines, chrome) rather than a hand-picked percentage — item
- * count is caller-controlled and a fixed "50%" would clip a 6-item menu or
- * leave a 2-item one floating with empty space below it.
+ * This sheet does NOT use `enableDynamicSizing` (unlike its doc-comment's
+ * first draft, which enabled it): dynamic sizing measures content height
+ * through `BottomSheetView`'s own internal onLayout→context wiring, which
+ * neither the plain-`View` dodge nor the `ScrollBody` dodge participates in
+ * — the sheet's `present()` call succeeds (confirmed on-device: the modal
+ * opens) but renders at zero measured height, i.e. invisible. No sheet
+ * anywhere else in this codebase uses dynamic sizing either, for the same
+ * reason — they all pair fixed `snapPoints` with either a plain `View`
+ * (CancelReasonSheet/RefundSheet/EmailLabelSheet) or `ScrollBody`
+ * (OptionBuilderSheet). This component follows suit with a snap point
+ * computed from the known, fixed-height pieces (`PressableRow`'s 64pt rows,
+ * the optional `Eyebrow` title, hairlines, chrome) rather than a hand-picked
+ * percentage — item count is caller-controlled and a fixed "50%" would clip
+ * a 6-item menu or leave a 2-item one floating with empty space below it.
+ * Unlike OptionBuilderSheet's `["60%"]`, this component's height is
+ * content-derived and clamped/floored (see the `snapPoints` `useMemo`
+ * below), so `ScrollBody` here is a reachability guarantee for the clamp
+ * case, not the primary sizing mechanism.
  */
 export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetProps) {
   const modalRef = useRef<BottomSheetModal>(null);
@@ -159,13 +183,19 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
     const titleHeight = title ? TITLE_BLOCK_HEIGHT : 0;
     const chromeHeight = HANDLE_HEIGHT + bottomPadding;
     const computedHeight = rowsHeight + titleHeight + chromeHeight;
-    // Clamp so a long item list can't pin the sheet to y=0 under the notch
-    // or push its own rows off-screen and unreachable — this content is a
-    // plain, non-scrolling `View` (see doc comment), so anything past the
-    // clamp is clipped rather than scrolled to, but at least the sheet
-    // itself stays fully on-screen and closeable.
+    // Clamp so a long item list can't pin the sheet to y=0 under the notch —
+    // content now sits in `ScrollBody` (see doc comment), so anything past
+    // the clamp is still reachable by scrolling, not silently truncated.
     const maxHeight = windowHeight - insets.top - TOP_CLEARANCE;
-    return [Math.min(computedHeight, maxHeight)];
+    // Floor at the sheet's own chrome height. Without this, a degenerate
+    // `windowHeight` (e.g. 0 before layout settles) drives `maxHeight`
+    // negative, and `normalizeSnapPoint` would then position the sheet
+    // BELOW the container — `present()` still reports success, but the
+    // sheet is invisible off-screen. That's the exact zero-height failure
+    // mode the dynamic-sizing dodge above already fixed once; this floor
+    // closes the same failure mode for the clamp path.
+    const minHeight = HANDLE_HEIGHT + bottomPadding;
+    return [Math.max(Math.min(computedHeight, maxHeight), minHeight)];
   }, [items.length, title, bottomPadding, windowHeight, insets.top]);
 
   useEffect(() => {
@@ -173,7 +203,7 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
       void adminHaptics.menuOpen();
       modalRef.current?.present();
       wasVisible.current = true;
-    } else if (!visible && wasVisible.current) {
+    } else if ((!visible || !hasItems) && wasVisible.current) {
       modalRef.current?.dismiss();
       wasVisible.current = false;
     }
@@ -183,6 +213,20 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
     item.onPress();
     modalRef.current?.dismiss();
   };
+
+  // `BottomSheetModal`'s own `onDismiss` already reflects the sheet as
+  // closed by the time it fires (gorhom has finished its own close
+  // animation/state transition) — clearing `wasVisible` here, rather than
+  // leaving it to the present/dismiss effect above, means that effect's
+  // `!visible` branch finds `wasVisible.current` already `false` once the
+  // parent's resulting `visible={false}` round-trips back through it, so it
+  // never issues a second, redundant `modalRef.current?.dismiss()` call on
+  // a sheet gorhom has already closed. See the "calls dismiss() exactly
+  // once" test.
+  const handleSheetDismissed = useCallback(() => {
+    wasVisible.current = false;
+    onDismiss();
+  }, [onDismiss]);
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -204,12 +248,12 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
       snapPoints={snapPoints}
       enableDynamicSizing={false}
       enablePanDownToClose
-      onDismiss={onDismiss}
+      onDismiss={handleSheetDismissed}
       backdropComponent={renderBackdrop}
       backgroundStyle={styles.background}
       handleIndicatorStyle={styles.handleIndicator}
     >
-      <View style={[styles.root, { paddingBottom: bottomPadding }]}>
+      <ScrollBody contentContainerStyle={{ paddingBottom: bottomPadding }}>
         {title ? <Eyebrow label={title} /> : null}
         {items.map((item, index) => (
           <View key={item.key}>
@@ -231,7 +275,7 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
             </PressableRow>
           </View>
         ))}
-      </View>
+      </ScrollBody>
     </BottomSheetModal>
   );
 }
@@ -247,8 +291,5 @@ const styles = StyleSheet.create({
     // Flat, low-opacity ink scrim — never a blur/glassmorphism. Same token
     // StoreSelector uses for its own full-screen overlay.
     backgroundColor: theme.colors.overlay,
-  },
-  root: {
-    // paddingBottom is set inline per-render from useSafeAreaInsets().
   },
 });

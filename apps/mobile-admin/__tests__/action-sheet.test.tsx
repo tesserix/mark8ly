@@ -12,53 +12,99 @@
 // This mock tracks real presented/dismissed state, renders `children` ONLY
 // while presented, and calls the `onDismiss` prop from `dismiss()` — same
 // as the real library, which fires `onDismiss` once per close regardless of
-// what triggered it. `dismiss()` is idempotent (a second call while already
-// dismissed is a no-op, same as the real library), which matters for
-// exercising ActionSheet's own effect + handlePress interaction honestly.
+// what triggered it. `dismiss()`'s early-exit guard only skips the
+// state-clear + `onDismiss()` call when already dismissed — it does NOT
+// skip counting the call in `dismissSpy`. Real gorhom has no such guard at
+// all (see the round-2 finding this models): a redundant `dismiss()` call
+// still reaches the library and parks its internal state machine at
+// `MODAL_STATUS.DISMISSING`. `dismissSpy`/`presentSpy` exist so this suite
+// can assert on the RAW number of imperative calls ActionSheet makes, not
+// just their visible side effects — that's what round 2's "dismiss() called
+// twice" bug needed and the round-1 mock (which only tracked state, not
+// call count) couldn't have caught.
 //
-// Written without JSX and without importing React's named exports at
-// module scope — nativewind's babel transform instruments JSX/createElement
-// calls with a `_ReactNativeCSSInterop` reference, and jest.mock() factories
-// are hoisted above that reference's declaration, so JSX/createElement
-// written directly inside a factory throws "module factory is not allowed
-// to reference any out-of-scope variables" (same landmine documented in
+// `backdropComponent` is now actually invoked (round 1's mock left it
+// unexercised — `BottomSheetBackdrop` was a no-op stub — which is exactly
+// why the backdrop was deletable without a red test). `snapPointsSpy`
+// captures the `snapPoints` prop on every render so the clamp/floor tests
+// can assert on the exact computed height without needing to know the real
+// device's `useWindowDimensions()` value.
+//
+// Written without JSX and without a bare `React.createElement`/`createElement`
+// call anywhere in the factory — nativewind's babel transform (see
+// react-native-css-interop's babel-plugin.ts) statically rewrites BOTH
+// `<Foo />` JSX (this project's babel config uses the classic JSX runtime,
+// so it lowers to `React.createElement` too) and any literal
+// `React.createElement`/`createElement(...)` call into a reference to a
+// `ReactNativeCSSInterop` helper it imports at the top of the FILE (module
+// scope) — regardless of which component type is passed. Since
+// jest.mock() factories are hoisted above that import, referencing it
+// throws "module factory is not allowed to reference any out-of-scope
+// variables" (same landmine documented in
 // lib/test-support/gorhom-bottom-sheet-mock.tsx and worked around the same
-// way in option-builder-sheet.test.tsx's local mock).
+// way in option-builder-sheet.test.tsx's local mock — those dodge it by
+// never creating an element in the factory at all). This mock DOES need to
+// create a real, queryable backdrop element (round 2 finding 2), so it
+// dodges the transform differently: the plugin's detection matches only the
+// literal identifier `createElement` (as `X.createElement` or a bare
+// `createElement(...)` call bound to `require("react")`) — destructuring
+// `createElement` under a different local name defeats that literal-name
+// check while still producing a normal React element at runtime.
 jest.mock("@gorhom/bottom-sheet", () => {
   const React = require("react");
+  const { createElement: h } = require("react");
+  const { View } = require("react-native");
+
+  const presentSpy = jest.fn();
+  const dismissSpy = jest.fn();
+  const snapPointsSpy = jest.fn();
+
+  const BottomSheetBackdrop = (props: Record<string, unknown>) =>
+    h(View, { testID: "action-sheet-backdrop", ...props });
+
+  const BottomSheetScrollView = (props: { children?: React.ReactNode; contentContainerStyle?: unknown }) =>
+    h(React.Fragment, null, props.children ?? null);
 
   const BottomSheetModal = React.forwardRef(
     (
-      props: { children?: React.ReactNode; onDismiss?: () => void },
+      props: {
+        children?: React.ReactNode;
+        onDismiss?: () => void;
+        backdropComponent?: (props: Record<string, unknown>) => React.ReactNode;
+        snapPoints?: number[];
+      },
       ref: React.Ref<unknown>,
     ) => {
-      const { children, onDismiss } = props;
+      const { children, onDismiss, backdropComponent, snapPoints } = props;
+      snapPointsSpy(snapPoints);
       const [presented, setPresented] = React.useState(false);
       const presentedRef = React.useRef(false);
       React.useImperativeHandle(ref, () => ({
         present: () => {
+          presentSpy();
           presentedRef.current = true;
           setPresented(true);
         },
         dismiss: () => {
+          dismissSpy();
           if (!presentedRef.current) return;
           presentedRef.current = false;
           setPresented(false);
           onDismiss?.();
         },
       }));
-      return presented ? (children ?? null) : null;
+      if (!presented) return null;
+      const backdrop = backdropComponent ? backdropComponent({}) : null;
+      return h(React.Fragment, null, backdrop, children ?? null);
     },
   );
 
   return {
     __esModule: true,
     BottomSheetModal,
-    // ActionSheet imports this for its `backdropComponent` render prop; the
-    // mock above never invokes that prop, so this only needs to exist as an
-    // importable symbol for module resolution + JSX inside ActionSheet.tsx
-    // itself (which is NOT inside a jest.mock factory, so no landmine there).
-    BottomSheetBackdrop: () => null,
+    BottomSheetBackdrop,
+    BottomSheetScrollView,
+    __mockSpies: { presentSpy, dismissSpy, snapPointsSpy },
   };
 });
 
@@ -79,14 +125,33 @@ jest.mock("react-native-safe-area-context", () => {
   return { __esModule: true, ...mock.default };
 });
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { StyleSheet } from "react-native";
 import { Text as RNText } from "react-native";
 import { render, fireEvent, within } from "@testing-library/react-native";
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActionSheet, type ActionSheetItem, type ActionSheetProps } from "@/components/ui/ActionSheet";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import { theme } from "@/lib/theme";
+
+// `@gorhom/bottom-sheet`'s real types don't declare `__mockSpies` (it only
+// exists on this suite's local mock above), so it's read via `require`
+// rather than a named `import` (which `tsc` would reject with TS2614 — the
+// real package has no such export). Same TS2786 duplicate-`@types/react`
+// dodge as `ActionSheet.tsx`'s own `Backdrop`/`ScrollBody` casts for
+// `BottomSheetScrollView`'s real type, which is otherwise incompatible with
+// `UNSAFE_queryByType`'s signature under this project's React types.
+const mockSpies = (require("@gorhom/bottom-sheet") as unknown as {
+  __mockSpies: {
+    presentSpy: jest.Mock;
+    dismissSpy: jest.Mock;
+    snapPointsSpy: jest.Mock;
+  };
+}).__mockSpies;
+const ScrollBody = BottomSheetScrollView as unknown as ComponentType<{ children?: ReactNode }>;
+const mockUseSafeAreaInsets = useSafeAreaInsets as unknown as jest.Mock;
 
 function items(overrides: Partial<ActionSheetItem>[] = []): ActionSheetItem[] {
   const base: ActionSheetItem[] = [
@@ -96,6 +161,35 @@ function items(overrides: Partial<ActionSheetItem>[] = []): ActionSheetItem[] {
     { key: "cancel", label: "Cancel order", tone: "danger", onPress: jest.fn() },
   ];
   return base.map((item, i) => ({ ...item, ...overrides[i] }));
+}
+
+function manyItems(count: number): ActionSheetItem[] {
+  return Array.from({ length: count }, (_, i) => ({
+    key: `item-${i}`,
+    label: `Item ${i}`,
+    onPress: jest.fn(),
+  }));
+}
+
+/** Same contract as `ControlledActionSheet`, but exposes a numeric
+ *  `reopenAt` prop so a test can simulate a real parent re-opening the sheet
+ *  AFTER a full gesture-driven close round-trip has already completed —
+ *  flipping `visible` straight back to `true` via `rerender` bypasses that
+ *  round-trip (and the `wasVisible`/mock-spy state it exercises), which is
+ *  exactly what round 2's "reopen after a gesture-close" finding needs. */
+function ReopenableActionSheet({
+  reopenAt,
+  ...props
+}: Omit<ActionSheetProps, "visible" | "onDismiss"> & { reopenAt: number }) {
+  const [visible, setVisible] = useState(true);
+  const lastReopenAt = useRef(reopenAt);
+  useEffect(() => {
+    if (reopenAt !== lastReopenAt.current) {
+      lastReopenAt.current = reopenAt;
+      setVisible(true);
+    }
+  }, [reopenAt]);
+  return <ActionSheet {...props} visible={visible} onDismiss={() => setVisible(false)} />;
 }
 
 /** Mirrors the real parent contract: flip `visible` to false in response to
@@ -312,5 +406,117 @@ describe("ActionSheet", () => {
     );
     expect(adminHaptics.menuOpen).not.toHaveBeenCalled();
     expect(queryByTestId(/action-sheet-item-/)).toBeNull();
+  });
+
+  // ROUND 2, FINDING 1: `dismiss()` was called a second time on an
+  // already-dismissed sheet on every close. `handlePress` calls
+  // `modalRef.current?.dismiss()`; gorhom fires `onDismiss`; the parent
+  // (`ReopenableActionSheet`, modelling the documented contract) flips
+  // `visible` to false; the present/dismiss effect's `!visible` branch then
+  // fired a SECOND `dismiss()` because `wasVisible` hadn't been cleared yet.
+  // `handleSheetDismissed` now clears `wasVisible.current` itself before
+  // calling the `onDismiss` prop, so by the time the effect re-runs on the
+  // resulting re-render, its guard already sees `wasVisible.current === false`
+  // and skips the redundant call.
+  it("calls the modal's dismiss() exactly once per close cycle, and a reopen after a gesture-close still presents", () => {
+    const list = items();
+    const { getByText, queryByText, rerender } = render(
+      <ReopenableActionSheet items={list} reopenAt={0} />,
+    );
+    expect(mockSpies.presentSpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(getByText("Fulfil order"));
+    expect(mockSpies.dismissSpy).toHaveBeenCalledTimes(1);
+    expect(queryByText("Fulfil order")).toBeNull();
+
+    // Reopen: the same round-trip a subsequent long-press would drive.
+    rerender(<ReopenableActionSheet items={items()} reopenAt={1} />);
+    expect(mockSpies.presentSpy).toHaveBeenCalledTimes(2);
+    expect(getByText("Fulfil order")).toBeTruthy();
+  });
+
+  // ROUND 2, FINDING 2: the backdrop is the menu's ONLY cancel affordance
+  // and is deletable without a red test under round 1's mock, which never
+  // invoked the `backdropComponent` render prop. This suite's mock (above)
+  // now actually calls it, so these assert on the real rendered element.
+  describe("backdrop", () => {
+    it("renders while the sheet is presented", () => {
+      const { getByTestId } = render(
+        <ActionSheet items={items()} visible onDismiss={jest.fn()} />,
+      );
+      expect(getByTestId("action-sheet-backdrop")).toBeTruthy();
+    });
+
+    it("is a flat opaque-ink scrim, not translucent white or a blur", () => {
+      const { getByTestId } = render(
+        <ActionSheet items={items()} visible onDismiss={jest.fn()} />,
+      );
+      const style = StyleSheet.flatten(getByTestId("action-sheet-backdrop").props.style);
+      expect(style.backgroundColor).toBe(theme.colors.overlay);
+      expect(style.backgroundColor).not.toBe("#FFFFFF");
+      expect(style.backgroundColor).not.toMatch(/rgba\(\s*255,\s*255,\s*255/);
+    });
+
+    it('carries pressBehavior="close" so a tap outside the sheet dismisses it', () => {
+      const { getByTestId } = render(
+        <ActionSheet items={items()} visible onDismiss={jest.fn()} />,
+      );
+      expect(getByTestId("action-sheet-backdrop").props.pressBehavior).toBe("close");
+    });
+  });
+
+  // ROUND 2, FINDING 3: the height clamp bounded the SHEET but not the
+  // CONTENT — content sat in a plain, non-scrolling `View`, so rows past
+  // the clamp were clipped and permanently unreachable. Content now sits in
+  // `BottomSheetScrollView`, and the computed height carries a floor so a
+  // degenerate `windowHeight` can no longer drive it to (or below) zero.
+  describe("computed sheet height", () => {
+    it("renders content inside BottomSheetScrollView, not a plain View, so clamped rows stay reachable", () => {
+      const { UNSAFE_queryByType } = render(
+        <ActionSheet items={manyItems(20)} visible onDismiss={jest.fn()} />,
+      );
+      expect(UNSAFE_queryByType(ScrollBody)).toBeTruthy();
+    });
+
+    it("clamps the snap-point height below the naive per-row sum for a long item list", () => {
+      const count = 30;
+      render(<ActionSheet items={manyItems(count)} visible onDismiss={jest.fn()} />);
+      const naiveHeight = count * theme.row.minHeightSingle;
+      const [computed] = mockSpies.snapPointsSpy.mock.calls[
+        mockSpies.snapPointsSpy.mock.calls.length - 1
+      ][0] as number[];
+      expect(computed).toBeLessThan(naiveHeight);
+    });
+
+    // Floor at handle height (24) + bottom padding (theme.spacing.xl = 20,
+    // since insets.bottom is 0 here) = 44. Forcing insets.top to an extreme
+    // value drives `maxHeight` deeply negative regardless of the real
+    // `useWindowDimensions()` value under jest, so this doesn't depend on
+    // knowing the test environment's simulated device height.
+    it("floors the snap-point height at handle height + bottom padding when maxHeight goes negative", () => {
+      mockUseSafeAreaInsets.mockReturnValueOnce({ top: 100000, bottom: 0, left: 0, right: 0 });
+      render(<ActionSheet items={items()} visible onDismiss={jest.fn()} />);
+      const [computed] = mockSpies.snapPointsSpy.mock.calls[
+        mockSpies.snapPointsSpy.mock.calls.length - 1
+      ][0] as number[];
+      expect(computed).toBe(44);
+      expect(computed).toBeGreaterThan(0);
+    });
+  });
+
+  // ROUND 2, FINDING 4: the present/dismiss effect's empty-items guard sat
+  // only on the present branch. If `items` emptied out while the sheet was
+  // already open, neither branch fired, `wasVisible` stayed true, and the
+  // sheet stayed presented (just shrunk to an empty body behind its
+  // backdrop). The guard is now symmetric: `(!visible || !hasItems) &&
+  // wasVisible.current`.
+  it("dismisses the sheet if items empties out while it stays visible", () => {
+    const { rerender, queryByTestId } = render(
+      <ActionSheet items={items()} visible onDismiss={jest.fn()} />,
+    );
+    expect(queryByTestId("action-sheet-backdrop")).toBeTruthy();
+
+    rerender(<ActionSheet items={[]} visible onDismiss={jest.fn()} />);
+    expect(queryByTestId("action-sheet-backdrop")).toBeNull();
   });
 });

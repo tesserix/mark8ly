@@ -92,7 +92,22 @@ describe('WCAG AA colour guard', () => {
     return null;
   }
 
+  // Navigate nested objects safely. Reduces nesting depth and improves readability.
+  function getPath(obj: unknown, ...keys: string[]): unknown {
+    let current = obj;
+    for (const key of keys) {
+      if (typeof current !== 'object' || current === null || !(key in current)) {
+        return undefined;
+      }
+      current = (current as Record<string, unknown>)[key];
+    }
+    return current;
+  }
+
   it('does not reintroduce a failing text colour in lib/theme.ts', () => {
+    // Assert theme.colors is non-empty before walking (catch vacuous pass)
+    expect(Object.keys(theme.colors).length).toBeGreaterThan(0);
+
     const banned = findBannedValues(theme.colors);
     if (banned) {
       throw new Error(
@@ -102,57 +117,31 @@ describe('WCAG AA colour guard', () => {
   });
 
   it('does not reintroduce a failing text colour in tailwind.config.js', () => {
-    // Try to require() the config; if it fails due to nativewind/preset, fall back
-    let twConfig: unknown;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      twConfig = require(path.resolve(__dirname, '../tailwind.config.js'));
-    } catch {
-      // If require fails, fall back to checking file text with a safer line-based approach
-      const contents = fs.readFileSync(
-        path.resolve(__dirname, '../tailwind.config.js'),
-        'utf8',
-      );
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const twConfig = require(path.resolve(__dirname, '../tailwind.config.js'));
 
-      // Only drop lines that are pure comments (nothing after comment markers)
-      const lines = contents.split('\n').filter((line: string) => {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('//')) return false;
-        // For block comments, only skip if line is ONLY comment markers
-        if (trimmed.startsWith('/*') && trimmed.endsWith('*/')) return false;
-        if (trimmed === '*' || trimmed === '*/' || trimmed.startsWith('*')) return false;
-        return true;
-      });
-      const safeContents = lines.join('\n');
-
-      for (const banned of BANNED) {
-        if (safeContents.includes(banned)) {
-          throw new Error(
-            `WCAG AA guard failed: banned colour value "${banned}" found in tailwind.config.js (outside comments)`,
-          );
-        }
-      }
-      return; // Fallback path complete
+    const colors = getPath(twConfig, 'theme', 'extend', 'colors');
+    // Assert colors is non-empty before walking (catch vacuous pass)
+    if (typeof colors === 'object' && colors !== null) {
+      expect(Object.keys(colors).length).toBeGreaterThan(0);
     }
 
-    // If require() succeeded, walk the config tree
-    if (typeof twConfig === 'object' && twConfig !== null && 'theme' in twConfig) {
-      const themeExtend = (twConfig as Record<string, unknown>).theme;
-      if (typeof themeExtend === 'object' && themeExtend !== null && 'extend' in themeExtend) {
-        const colors = (themeExtend as Record<string, unknown>).extend;
-        if (typeof colors === 'object' && colors !== null && 'colors' in colors) {
-          const banned = findBannedValues((colors as Record<string, unknown>).colors);
-          if (banned) {
-            throw new Error(
-              `WCAG AA guard failed: banned colour value "${banned}" found in tailwind.config.js (theme.extend.colors)`,
-            );
-          }
-        }
-      }
+    const banned = findBannedValues(colors);
+    if (banned) {
+      throw new Error(
+        `WCAG AA guard failed: banned colour value "${banned}" found in tailwind.config.js (theme.extend.colors)`,
+      );
     }
   });
 
-  it('keeps tertiary text at the AA-passing value', () => {
+  it('keeps tertiary text at the AA-passing value in both sources', () => {
+    // theme.ts assertion
     expect(theme.colors.textTertiary).toBe('#5C5953');
+
+    // tailwind.config.js assertion
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const twConfig = require(path.resolve(__dirname, '../tailwind.config.js'));
+    const inkMuted = getPath(twConfig, 'theme', 'extend', 'colors', 'ink', 'muted');
+    expect(inkMuted).toBe('#5C5953');
   });
 });

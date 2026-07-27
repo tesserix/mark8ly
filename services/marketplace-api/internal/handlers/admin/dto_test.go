@@ -215,3 +215,24 @@ func TestLowStockItem_ProductIDAlwaysPresent(t *testing.T) {
 		t.Fatalf("image_url should be omitted when nil: %s", s)
 	}
 }
+
+// TestLowStockItem_ProductIDPresentEvenWhenEmpty is the discriminating case
+// for the no-omitempty guarantee above: a non-empty ProductID would
+// serialize whether or not `omitempty` were present, so it can't prove the
+// tag is absent. The empty-string zero value is what actually distinguishes
+// "no omitempty" (key always present, even as "") from "omitempty" (key
+// vanishes on the zero value).
+func TestLowStockItem_ProductIDPresentEvenWhenEmpty(t *testing.T) {
+	li := admin.LowStockItem{
+		ID: "v1", ProductID: "", Title: "T", VariantTitle: "Small",
+		Quantity: 1, LowStockThreshold: 5,
+	}
+	b, err := json.Marshal(li)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if !strings.Contains(s, `"product_id":""`) {
+		t.Fatalf("product_id key should be present even when empty: %s", s)
+	}
+}

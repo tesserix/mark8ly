@@ -257,7 +257,7 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 			o.grand_total, o.status, o.created_at,
 			(SELECT oi.image_url FROM order_items oi
 			   WHERE oi.order_id = o.id AND oi.image_url IS NOT NULL
-			   ORDER BY oi.created_at
+			   ORDER BY oi.created_at, oi.id
 			   LIMIT 1) AS image_url
 		FROM orders o
 		WHERE o.store_id = ? AND o.tenant_id = ?
@@ -326,7 +326,7 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 			COALESCE(pv.low_stock_threshold, 10) AS low_stock_threshold,
 			(SELECT pm.url FROM product_media pm
 			   WHERE pm.product_id = p.id
-			   ORDER BY pm.position
+			   ORDER BY pm.position, pm.id
 			   LIMIT 1) AS image_url
 		FROM product_variants pv
 		JOIN products p ON p.id = pv.product_id

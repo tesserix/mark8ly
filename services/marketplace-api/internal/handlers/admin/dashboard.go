@@ -103,6 +103,64 @@ type cacheEntry struct {
 	expiresAt time.Time
 }
 
+// ---------- Raw queries ----------
+//
+// Pulled out as named consts (rather than inline literals in Get) so
+// dashboard_query_test.go can assert on their exact SQL text without a
+// live database — see the regression tests guarding the pv.title bug
+// (schema drift silently returning zero rows) and the image tie-break.
+
+// topProductsQuery ranks products by revenue over all non-cancelled
+// orders for the store and picks each product's first media asset by
+// position as its thumbnail. product_media_product_idx is a plain,
+// non-unique (product_id, position) index, so pm.id breaks ties
+// deterministically — matches the tie-break already applied to the
+// recent-orders and low-stock image subselects.
+const topProductsQuery = `SELECT p.id, p.title,
+			COALESCE(SUM(oi.line_total), 0) AS revenue,
+			COALESCE(SUM(oi.quantity), 0) AS units_sold,
+			(SELECT pm.url FROM product_media pm WHERE pm.product_id = p.id ORDER BY pm.position, pm.id LIMIT 1) AS image_url
+		FROM order_items oi
+		JOIN products p ON p.id = oi.product_id
+		JOIN orders o ON o.id = oi.order_id
+		WHERE o.store_id = ? AND o.tenant_id = ? AND o.status != 'cancelled'
+		GROUP BY p.id, p.title
+		ORDER BY revenue DESC
+		LIMIT 5`
+
+// lowStockQuery lists variants at or below their reorder threshold.
+//
+// variant_title is reconstructed from the variant's option values
+// (e.g. "M / Blue") via variant_option_values -> product_option_values,
+// ordered by the parent option's position so multi-axis labels read in
+// a stable, sensible order ("Size / Color", not "Color / Size" one row
+// and the reverse the next). product_variants has no title column of
+// its own — see dashboard_query_test.go — so variants with no option
+// values (single-variant products) fall back to the SKU.
+const lowStockQuery = `SELECT pv.id, pv.product_id, p.title,
+			COALESCE(
+				(SELECT string_agg(pov.value, ' / ' ORDER BY po.position)
+				   FROM variant_option_values vov
+				   JOIN product_option_values pov ON pov.id = vov.option_value_id
+				   JOIN product_options po ON po.id = pov.option_id
+				   WHERE vov.variant_id = pv.id),
+				pv.sku
+			) AS variant_title,
+			pv.inventory_quantity AS quantity,
+			COALESCE(pv.low_stock_threshold, 10) AS low_stock_threshold,
+			(SELECT pm.url FROM product_media pm
+			   WHERE pm.product_id = p.id
+			   ORDER BY pm.position, pm.id
+			   LIMIT 1) AS image_url
+		FROM product_variants pv
+		JOIN products p ON p.id = pv.product_id
+		WHERE p.store_id = ? AND p.tenant_id = ?
+		AND pv.deleted_at IS NULL AND p.deleted_at IS NULL
+		AND pv.inventory_quantity <= COALESCE(pv.low_stock_threshold, 10)
+		AND pv.inventory_quantity > 0
+		ORDER BY pv.inventory_quantity ASC
+		LIMIT 10`
+
 // ---------- Handler ----------
 
 // DashboardHandler serves the admin dashboard aggregation endpoint and the
@@ -287,18 +345,7 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 		UnitsSold int64
 		ImageURL  *string
 	}
-	db.Raw(`SELECT p.id, p.title,
-			COALESCE(SUM(oi.line_total), 0) AS revenue,
-			COALESCE(SUM(oi.quantity), 0) AS units_sold,
-			(SELECT pm.url FROM product_media pm WHERE pm.product_id = p.id ORDER BY pm.position LIMIT 1) AS image_url
-		FROM order_items oi
-		JOIN products p ON p.id = oi.product_id
-		JOIN orders o ON o.id = oi.order_id
-		WHERE o.store_id = ? AND o.tenant_id = ? AND o.status != 'cancelled'
-		GROUP BY p.id, p.title
-		ORDER BY revenue DESC
-		LIMIT 5`,
-		storeID, tenantID).Scan(&topRows)
+	db.Raw(topProductsQuery, storeID, tenantID).Scan(&topRows)
 
 	topProducts := make([]TopProduct, 0, len(topRows))
 	for _, r := range topRows {
@@ -321,21 +368,9 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 		LowStockThreshold int
 		ImageURL          *string
 	}
-	db.Raw(`SELECT pv.id, pv.product_id, p.title, pv.title AS variant_title,
-			pv.inventory_quantity AS quantity,
-			COALESCE(pv.low_stock_threshold, 10) AS low_stock_threshold,
-			(SELECT pm.url FROM product_media pm
-			   WHERE pm.product_id = p.id
-			   ORDER BY pm.position, pm.id
-			   LIMIT 1) AS image_url
-		FROM product_variants pv
-		JOIN products p ON p.id = pv.product_id
-		WHERE p.store_id = ? AND p.tenant_id = ?
-		AND pv.inventory_quantity <= COALESCE(pv.low_stock_threshold, 10)
-		AND pv.inventory_quantity > 0
-		ORDER BY pv.inventory_quantity ASC
-		LIMIT 10`,
-		storeID, tenantID).Scan(&lowRows)
+	if err := db.Raw(lowStockQuery, storeID, tenantID).Scan(&lowRows).Error; err != nil {
+		h.logger.Error("dashboard: low stock query failed", "err", err, "store_id", storeID, "tenant_id", tenantID)
+	}
 
 	lowStock := make([]LowStockItem, 0, len(lowRows))
 	for _, r := range lowRows {

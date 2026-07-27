@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   Platform,
   View,
@@ -24,6 +24,9 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
   const activeStore = useTenantStore((s) => s.activeStore);
   const { data: stores, isLoading } = useStores();
   const switchStore = useSwitchStore();
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [closePressed, setClosePressed] = useState(false);
 
   const handleSelect = useCallback(
     (store: Store) => {
@@ -70,13 +73,15 @@ export function StoreSelector({ visible, onClose }: StoreSelectorProps) {
             </Text>
             <Pressable
               onPress={onClose}
+              onPressIn={() => setClosePressed(true)}
+              onPressOut={() => setClosePressed(false)}
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Close"
               android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-              style={({ pressed }) =>
-                pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-              }
+              style={[
+                closePressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+              ]}
             >
               <X size={20} color={theme.colors.text} strokeWidth={1.75} />
             </Pressable>

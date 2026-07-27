@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Platform, View, Pressable, StyleSheet } from "react-native";
 import Animated, { FadeIn, FadeOut, useReducedMotion } from "react-native-reanimated";
 import { X } from "lucide-react-native";
@@ -18,6 +19,39 @@ const CHIPS: { key: CreatedBannerSection; label: string }[] = [
   { key: "variants", label: "Review variants" },
 ];
 
+// Extracted so press state can live in `useState`: this chip renders once
+// per section inside `CHIPS.map()`, and hooks can't be called from inside a
+// `.map()` callback — each chip needs its own component instance instead.
+function NextStepChip({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress: () => void;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      android_ripple={theme.press.rippleAccent}
+      style={[
+        styles.chip,
+        // Android draws its own moss-tinted ripple; only iOS needs
+        // the background shift.
+        pressed && Platform.OS === "ios" ? styles.chipPressed : null,
+      ]}
+    >
+      <Text preset="caption" color="text">
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 /**
  * Post-create nudge shown once on hand-off from the streamlined create
  * screen (`?created=1`). Ghost card on surfaceAlt, one accent (moss chips on
@@ -25,6 +59,9 @@ const CHIPS: { key: CreatedBannerSection; label: string }[] = [
  */
 export function CreateNextStepsBanner({ title, onJump, onDismiss }: CreateNextStepsBannerProps) {
   const reduceMotion = useReducedMotion();
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [dismissPressed, setDismissPressed] = useState(false);
 
   return (
     <Animated.View
@@ -50,36 +87,22 @@ export function CreateNextStepsBanner({ title, onJump, onDismiss }: CreateNextSt
           </View>
           <Pressable
             onPress={onDismiss}
+            onPressIn={() => setDismissPressed(true)}
+            onPressOut={() => setDismissPressed(false)}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Dismiss"
             android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-            }
+            style={[
+              dismissPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            ]}
           >
             <X size={18} color={theme.colors.textTertiary} strokeWidth={1.75} />
           </Pressable>
         </View>
         <View style={styles.chips}>
           {CHIPS.map((chip) => (
-            <Pressable
-              key={chip.key}
-              onPress={() => onJump(chip.key)}
-              accessibilityRole="button"
-              accessibilityLabel={chip.label}
-              android_ripple={theme.press.rippleAccent}
-              style={({ pressed }) => [
-                styles.chip,
-                // Android draws its own moss-tinted ripple; only iOS needs
-                // the background shift.
-                pressed && Platform.OS === "ios" ? styles.chipPressed : null,
-              ]}
-            >
-              <Text preset="caption" color="text">
-                {chip.label}
-              </Text>
-            </Pressable>
+            <NextStepChip key={chip.key} label={chip.label} onPress={() => onJump(chip.key)} />
           ))}
         </View>
       </Card>

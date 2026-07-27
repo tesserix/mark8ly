@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -38,6 +38,10 @@ export function TenantGate({ children }: { children: ReactNode }) {
     refetch,
   } = useTenantResolver();
   const lastState = useRef<AppStateStatus>(AppState.currentState);
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [retryPressed, setRetryPressed] = useState(false);
+  const [createStorePressed, setCreateStorePressed] = useState(false);
 
   useEffect(() => {
     // Re-validate the session whenever the app comes back to foreground.
@@ -74,12 +78,14 @@ export function TenantGate({ children }: { children: ReactNode }) {
           {denied ? null : (
             <Pressable
               onPress={() => refetch()}
+              onPressIn={() => setRetryPressed(true)}
+              onPressOut={() => setRetryPressed(false)}
               accessibilityRole="button"
               accessibilityLabel="Retry"
               android_ripple={theme.press.rippleOnDark}
-              style={({ pressed }) => [
+              style={[
                 styles.primaryBtn,
-                pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
+                retryPressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
               ]}
             >
               <Text preset="bodyEmphasis" color="inverse">
@@ -106,12 +112,14 @@ export function TenantGate({ children }: { children: ReactNode }) {
           />
           <Pressable
             onPress={() => Linking.openURL(env.signupUrl)}
+            onPressIn={() => setCreateStorePressed(true)}
+            onPressOut={() => setCreateStorePressed(false)}
             accessibilityRole="link"
             accessibilityLabel="Open mark8ly.com to create a new store"
             android_ripple={theme.press.rippleOnDark}
-            style={({ pressed }) => [
+            style={[
               styles.primaryBtn,
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
+              createStorePressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
             ]}
           >
             <Text preset="bodyEmphasis" color="inverse">

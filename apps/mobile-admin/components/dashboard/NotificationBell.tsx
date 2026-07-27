@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Platform, Pressable, View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { Bell } from "lucide-react-native";
@@ -15,17 +16,22 @@ export function NotificationBell() {
   const router = useRouter();
   const { data } = useNotifications();
   const unread = data?.notifications.filter((n) => !n.is_read).length ?? 0;
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [pressed, setPressed] = useState(false);
 
   return (
     <Pressable
       onPress={() => router.push("/notifications")}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={
         unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
       }
       android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-      style={({ pressed }) => [
+      style={[
         styles.btn,
         pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
       ]}

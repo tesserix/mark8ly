@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Platform, View, Image, Pressable, ScrollView, StyleSheet } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, Image as ImageIcon, X } from "lucide-react-native";
@@ -9,7 +10,36 @@ interface ProductMediaPickerProps {
   onImagesChange: (uris: string[]) => void;
 }
 
+// Extracted so press state can live in `useState`: this button renders once
+// per row inside `images.map()`, and hooks can't be called from inside a
+// `.map()` callback — each row needs its own component instance instead.
+function RemoveImageButton({ index, onRemove }: { index: number; onRemove: (index: number) => void }) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Pressable
+      onPress={() => onRemove(index)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      accessibilityRole="button"
+      accessibilityLabel={`Remove image ${index + 1}`}
+      hitSlop={8}
+      android_ripple={{ ...theme.press.rippleOnDark, borderless: true }}
+      style={[
+        styles.removeBtn,
+        pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
+      ]}
+    >
+      <X size={12} color={theme.colors.inverse} strokeWidth={2.5} />
+    </Pressable>
+  );
+}
+
 export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPickerProps) {
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [cameraPressed, setCameraPressed] = useState(false);
+  const [libraryPressed, setLibraryPressed] = useState(false);
+
   const takePhoto = async () => {
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ["images"],
@@ -43,12 +73,14 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
       <View style={styles.buttons}>
         <Pressable
           onPress={takePhoto}
+          onPressIn={() => setCameraPressed(true)}
+          onPressOut={() => setCameraPressed(false)}
           accessibilityRole="button"
           accessibilityLabel="Take photo"
           android_ripple={theme.press.rippleInk}
-          style={({ pressed }) => [
+          style={[
             styles.button,
-            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            cameraPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <Camera size={16} color={theme.colors.text} strokeWidth={1.75} />
@@ -58,12 +90,14 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
         </Pressable>
         <Pressable
           onPress={pickFromLibrary}
+          onPressIn={() => setLibraryPressed(true)}
+          onPressOut={() => setLibraryPressed(false)}
           accessibilityRole="button"
           accessibilityLabel="Choose from library"
           android_ripple={theme.press.rippleInk}
-          style={({ pressed }) => [
+          style={[
             styles.button,
-            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            libraryPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <ImageIcon size={16} color={theme.colors.text} strokeWidth={1.75} />
@@ -85,21 +119,7 @@ export function ProductMediaPicker({ images, onImagesChange }: ProductMediaPicke
                 style={styles.thumb}
                 accessibilityLabel={`Selected image ${i + 1}`}
               />
-              <Pressable
-                onPress={() => removeImage(i)}
-                accessibilityRole="button"
-                accessibilityLabel={`Remove image ${i + 1}`}
-                hitSlop={8}
-                android_ripple={{ ...theme.press.rippleOnDark, borderless: true }}
-                style={({ pressed }) => [
-                  styles.removeBtn,
-                  pressed && Platform.OS === "ios"
-                    ? { opacity: theme.press.opacitySolidFill }
-                    : null,
-                ]}
-              >
-                <X size={12} color={theme.colors.inverse} strokeWidth={2.5} />
-              </Pressable>
+              <RemoveImageButton index={i} onRemove={removeImage} />
             </View>
           ))}
         </ScrollView>

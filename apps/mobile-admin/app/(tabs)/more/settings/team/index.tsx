@@ -167,14 +167,12 @@ export default function TeamScreen() {
           <Eyebrow label="Members" style={styles.section} />
           <View style={styles.card}>
             {memberList.map((m, i) => {
-              // PressableRow has no `disabled` prop (its public API is
-              // fixed) and would otherwise show full sink/ripple feedback
-              // for a tap that does nothing. Render the owner row — and
-              // every row while a role change is in flight — as a plain,
-              // non-interactive View instead, same precedent as
-              // app/notifications.tsx's NotificationItem: no
-              // accessibilityRole="button", no press feedback, and no false
-              // "Tap to change role" affordance announced to VoiceOver.
+              // The owner row — and every row while a role change is in
+              // flight — is non-interactive: no tap does anything. Rendered
+              // via PressableRow's `disabled` prop rather than a separate
+              // plain View, so it still gets the row's layout/background for
+              // free and suppresses press feedback and the "Tap to change
+              // role" affordance announced to VoiceOver automatically.
               const disabled = m.kind === "owner" || updateRole.isPending;
               const rowContent = (
                 <>

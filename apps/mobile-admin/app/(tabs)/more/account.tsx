@@ -79,14 +79,14 @@ export default function AccountScreen() {
     <Screen>
       <BackHeader eyebrow="ACCOUNT" title="Account" />
 
-      <Eyebrow label="Profile" />
+      <Eyebrow label="Profile" style={styles.eyebrow} />
       <Card padding="md" style={styles.card}>
         <InfoRow label="Name" value={user?.displayName ?? "Not set"} />
         <Hairline style={styles.divider} />
         <InfoRow label="Email" value={user?.email} />
       </Card>
 
-      <Eyebrow label="Store" />
+      <Eyebrow label="Store" style={styles.eyebrow} />
       <Card padding={0} style={styles.card}>
         <PressableRow
           style={styles.storeRow}
@@ -192,6 +192,11 @@ const styles = StyleSheet.create({
   // theme.spacing.lg — that token is shared with non-gutter spacing
   // throughout the app and must not move.
   card: { marginHorizontal: theme.spacing.xl },
+  // Eyebrow's own default gutter is theme.spacing.lg (16) — it's a shared
+  // primitive used across screens with different gutters, so it can't carry
+  // this screen's decision itself. Override explicitly to match `card`
+  // above, so the "Profile"/"Store" labels sit flush with their cards.
+  eyebrow: { paddingHorizontal: theme.spacing.xl },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",

@@ -161,7 +161,7 @@ export default function SecurityScreen(): React.JSX.Element {
   return (
     <Screen>
       <BackHeader eyebrow="SECURITY" title="Sign-in methods" />
-      <Eyebrow label="Ways to sign in" />
+      <Eyebrow label="Ways to sign in" style={styles.eyebrow} />
       <Card padding={0} style={styles.card}>
         {METHODS.map((m, i) => {
           const isLinked = linked?.includes(m.id) ?? false;
@@ -221,6 +221,9 @@ const styles = StyleSheet.create({
   // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH used
   // by every other row in the app. Not theme.spacing.lg.
   card: { marginHorizontal: theme.spacing.xl },
+  // Eyebrow's own default gutter is theme.spacing.lg (16) — override
+  // explicitly to match `card` above so "Ways to sign in" sits flush with it.
+  eyebrow: { paddingHorizontal: theme.spacing.xl },
   row: {
     flexDirection: "row",
     alignItems: "center",

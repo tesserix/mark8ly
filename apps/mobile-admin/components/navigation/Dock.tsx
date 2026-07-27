@@ -19,7 +19,7 @@
 // positioned so scenes get full height and content scrolls through the gap
 // beneath — screens pad their scroll bottom with useDockClearance().
 
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   Easing,
@@ -124,12 +124,13 @@ export function Dock({ state, descriptors, navigation }: DockProps) {
               accessibilityState={{ selected: isActive }}
               accessibilityLabel={label}
               android_ripple={{ ...theme.press.rippleOnDark, borderless: true }}
-              style={({ pressed }) => [
-                styles.slot,
-                pressed && Platform.OS === "ios"
-                  ? { opacity: theme.press.opacityStandard }
-                  : null,
-              ]}
+              // STATIC style, not the `({pressed}) => …` callback form: under
+              // NativeWind's JSX interop a function style prop isn't resolved
+              // like a plain object, and `flex: 1` was being dropped — the five
+              // slots sized to their content and packed left instead of taking
+              // equal fifths. Tab switching is instant and haptic, so the iOS
+              // press dim isn't worth reintroducing the risk for.
+              style={styles.slot}
             >
               {isActive ? (
                 <Animated.View

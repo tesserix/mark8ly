@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import {
   Platform,
   Pressable,
@@ -38,15 +38,29 @@ export function PressableRow({
   accessibilityLabel,
   testID,
 }: PressableRowProps) {
+  // Press state is tracked explicitly rather than via Pressable's
+  // `style={({pressed}) => …}` callback form. Under NativeWind's JSX interop a
+  // FUNCTION style prop is not resolved the way a plain array is, and the base
+  // styles were silently dropped at runtime — rows rendered with no padding
+  // and `flexDirection` falling back to `column`, so every list row stacked
+  // vertically. Nothing caught it: RNTL renders without the NativeWind runtime,
+  // so the unit tests (which assert on the resolved style array) all passed.
+  // Keep this an ARRAY. Do not "simplify" it back to the callback form.
+  const [pressed, setPressed] = useState(false);
+  const handlePressIn = useCallback(() => setPressed(true), []);
+  const handlePressOut = useCallback(() => setPressed(false), []);
+
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       testID={testID}
       android_ripple={theme.press.rippleInk}
-      style={({ pressed }) => [
+      style={[
         styles.base,
         lines === 2 ? styles.twoLine : styles.oneLine,
         style,
@@ -63,6 +77,7 @@ export function PressableRow({
         pressed && Platform.OS === "ios" ? styles.pressed : null,
       ]}
     >
+
       {children}
     </Pressable>
   );

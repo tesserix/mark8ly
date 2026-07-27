@@ -14,6 +14,13 @@
 - **Two token sources must stay in agreement:** `apps/mobile-admin/lib/theme.ts` and `apps/mobile-admin/tailwind.config.js`. Every type or colour change lands in both.
 - **Banned text colours — never reintroduce:** `rgba(14, 14, 12, 0.5)` and `#7A766E`. Both fail WCAG AA 4.5:1 on Paper `#F7F6F2`. Tertiary text is `#5C5953` in both sources.
 - **One accent per view.** Moss `#2D4A2B` is never decorative.
+- **Press feedback rule (resolved 2026-07-27).** `TouchableOpacity` and `activeOpacity` appear
+  nowhere in the codebase when this plan is done. The ban on opacity press feedback applies to
+  **rows and other surfaces that have a background to shift** — those use the sink colour on
+  iOS and a ripple on Android. **Icon buttons are the documented exception:** a transparent
+  24 pt glyph has no background to shift, so a brief `opacity: 0.55` while pressed is the
+  correct native behaviour, not a leftover. This resolves the apparent conflict between spec
+  §1.3 and Task 7.
 - **Badges:** success is moss *tint* (`#E8EEE2` bg / `#2D4A2B` fg), never a solid moss fill. Warning is `#7A4A0F` on `#F4E6CB`, never white-on-amber.
 - **No glassmorphism, no centered heroes, no dark mode.**
 - **Minimum touch target 44 pt** (`theme.touchTarget`) — unchanged.

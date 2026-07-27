@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
 import {
+  Platform,
   View,
   FlatList,
   RefreshControl,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
@@ -133,15 +134,19 @@ export default function ProductsScreen() {
         </Animated.View>
       )}
 
-      <TouchableOpacity
-        style={[styles.fab, { bottom: dockPad }]}
+      <Pressable
         onPress={() => router.push("/(tabs)/products/new")}
-        activeOpacity={0.85}
         accessibilityRole="button"
         accessibilityLabel="Add new product"
+        android_ripple={{ color: "rgba(247, 246, 242, 0.24)", borderless: true }}
+        style={({ pressed }) => [
+          styles.fab,
+          { bottom: dockPad },
+          pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+        ]}
       >
         <Plus size={22} color={theme.colors.inverse} strokeWidth={2} />
-      </TouchableOpacity>
+      </Pressable>
     </Screen>
   );
 }

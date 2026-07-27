@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
 import {
+  Platform,
   View,
   FlatList,
-  TouchableOpacity,
+  Pressable,
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
@@ -68,14 +69,18 @@ export default function CouponsScreen() {
         eyebrow="MARKETING"
         title="Coupons"
         rightSlot={
-          <TouchableOpacity
+          <Pressable
             onPress={() => router.push("/(tabs)/more/marketing/coupons/new")}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="New coupon"
+            android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+            style={({ pressed }) =>
+              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+            }
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />
-          </TouchableOpacity>
+          </Pressable>
         }
       />
       <View style={styles.filter}>

@@ -1,7 +1,8 @@
 import {
+  Platform,
   View,
   FlatList,
-  TouchableOpacity,
+  Pressable,
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
@@ -68,8 +69,8 @@ function NotificationItem({
     >
       {/* Not interactive: the wire has no deep_link (it sends resource_type/ */}
       {/* resource_id), so there is nowhere to navigate. Rendered as a plain View — */}
-      {/* a TouchableOpacity with a no-op onPress would dim on press and announce */}
-      {/* itself as a "button" to screen readers while doing nothing. */}
+      {/* a pressable with a no-op onPress would still show press feedback and */}
+      {/* announce itself as a "button" to screen readers while doing nothing. */}
       {isUnread ? <View style={[styles.unreadBar, { backgroundColor: dotColor }]} /> : null}
       <View style={[styles.dot, { backgroundColor: dotColor }]} />
       <View style={styles.content}>
@@ -108,7 +109,7 @@ export default function NotificationsScreen() {
         rightSlot={
           <View style={styles.headerActions}>
             {hasUnread ? (
-              <TouchableOpacity
+              <Pressable
                 onPress={() => markAllRead.mutate()}
                 disabled={markAllRead.isPending}
                 hitSlop={8}
@@ -116,24 +117,32 @@ export default function NotificationsScreen() {
                 accessibilityLabel={
                   markAllRead.isPending ? "Marking all as read" : "Mark all as read"
                 }
+                android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+                style={({ pressed }) =>
+                  pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+                }
               >
                 <Text preset="caption" color="accent">
                   {markAllRead.isPending ? "Marking…" : "Mark all"}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             ) : null}
-            <TouchableOpacity
+            <Pressable
               onPress={() => router.push("/(tabs)/more/settings/notification-settings")}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Notification settings"
+              android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+              style={({ pressed }) =>
+                pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+              }
             >
               <SlidersHorizontal
                 size={20}
                 color={theme.colors.text}
                 strokeWidth={1.75}
               />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         }
       />

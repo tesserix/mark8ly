@@ -1,9 +1,10 @@
 import {
+  Platform,
   RefreshControl,
   ScrollView,
   View,
+  Pressable,
   StyleSheet,
-  TouchableOpacity,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronRight } from "lucide-react-native";
@@ -17,6 +18,7 @@ import {
   EmptyState,
   Hairline,
   PageHeader,
+  PressableRow,
   Screen,
   Text,
 } from "@/components/ui";
@@ -71,11 +73,9 @@ function ListRow({
   accessibilityLabel: string;
 }) {
   return (
-    <TouchableOpacity
+    <PressableRow
       style={styles.row}
       onPress={onPress}
-      activeOpacity={0.6}
-      accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
     >
       {leading ? <View style={styles.leading}>{leading}</View> : null}
@@ -98,7 +98,7 @@ function ListRow({
         strokeWidth={1.75}
         style={styles.chevron}
       />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
@@ -120,16 +120,20 @@ function Section({
           {title}
         </Text>
         {onSeeAll ? (
-          <TouchableOpacity
+          <Pressable
             onPress={onSeeAll}
             accessibilityRole="link"
             accessibilityLabel={seeAllLabel}
             hitSlop={8}
+            android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+            style={({ pressed }) =>
+              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+            }
           >
             <Text preset="caption" color="accent">
               {seeAllLabel}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         ) : null}
       </View>
       <Card padding={0}>{children}</Card>
@@ -348,14 +352,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.xs,
     paddingBottom: theme.spacing.xs,
   },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    gap: theme.spacing.md,
-    minHeight: 56,
-  },
+  // Pre-migration this row had no backgroundColor of its own (transparent),
+  // letting the parent Section's Card (elevated white) surface show through.
+  // PressableRow's base sets backgroundColor: theme.colors.background
+  // (paper), which would otherwise paint a visible seam against the Card —
+  // match that surface explicitly instead of relying on transparency (same
+  // fix as DashboardOrderRow, which sits in this identical Card context).
+  row: { backgroundColor: theme.colors.elevated },
   rowMain: { flex: 1, gap: 2 },
   leading: { width: 28, alignItems: "flex-start" },
   rank: { fontVariant: ["tabular-nums"] },

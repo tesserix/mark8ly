@@ -1,10 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
+  Platform,
   View,
   Image,
   ScrollView,
   Switch,
-  TouchableOpacity,
   Pressable,
   Alert,
   ActivityIndicator,
@@ -220,17 +220,21 @@ export default function ProductDetailScreen() {
         eyebrow="PRODUCT"
         title={product.title}
         rightSlot={
-          <TouchableOpacity
+          <Pressable
             onPress={handleSave}
             disabled={updateMutation.isPending}
             accessibilityRole="button"
             accessibilityLabel={saveLabel}
             hitSlop={8}
+            android_ripple={{ color: "rgba(45, 74, 43, 0.12)", borderless: true }}
+            style={({ pressed }) =>
+              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+            }
           >
             <Text preset="bodyEmphasis" color="accent" numberOfLines={1}>
               {saveLabel}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         }
       />
 

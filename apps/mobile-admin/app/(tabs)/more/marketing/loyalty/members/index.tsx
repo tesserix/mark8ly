@@ -2,7 +2,6 @@ import { useCallback } from "react";
 import {
   View,
   FlatList,
-  TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
@@ -10,18 +9,16 @@ import {
 import { useRouter } from "expo-router";
 import { ChevronRight } from "lucide-react-native";
 import { useLoyaltyMembers } from "@/lib/hooks/use-loyalty";
-import { BackHeader, EmptyState, Screen, Text } from "@/components/ui";
+import { BackHeader, EmptyState, PressableRow, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { LoyaltyMember } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 function MemberRow({ member, onPress }: { member: LoyaltyMember; onPress: (m: LoyaltyMember) => void }) {
   return (
-    <TouchableOpacity
+    <PressableRow
       style={styles.row}
       onPress={() => onPress(member)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
       accessibilityLabel={`${member.customer_name || member.customer_email}, ${member.points_balance} points`}
     >
       <View style={styles.info}>
@@ -33,7 +30,7 @@ function MemberRow({ member, onPress }: { member: LoyaltyMember; onPress: (m: Lo
         </Text>
       </View>
       <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
@@ -103,14 +100,9 @@ export default function LoyaltyMembersScreen() {
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.md,
   },
   info: { flex: 1, gap: 4 },
   list: { flexGrow: 1, paddingBottom: theme.spacing.huge },

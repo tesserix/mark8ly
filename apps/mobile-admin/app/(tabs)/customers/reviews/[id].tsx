@@ -1,10 +1,10 @@
 import { useCallback, useRef, useState } from "react";
 import {
+  Platform,
   View,
   ScrollView,
   Image,
   Pressable,
-  TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
@@ -162,56 +162,72 @@ export default function ReviewDetailScreen() {
 
         <View style={styles.actions}>
           {review.status !== "approved" ? (
-            <TouchableOpacity
-              style={styles.approveBtn}
+            <Pressable
               onPress={() => approve.mutate(review.id)}
               disabled={isMutating}
               accessibilityRole="button"
               accessibilityLabel="Approve review"
+              android_ripple={{ color: "rgba(247, 246, 242, 0.24)" }}
+              style={({ pressed }) => [
+                styles.approveBtn,
+                pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+              ]}
             >
               <Text preset="bodyEmphasis" color="inverse">
                 {approve.isPending ? "Approving…" : "Approve"}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           ) : null}
 
-          <TouchableOpacity
-            style={styles.replyBtn}
+          <Pressable
             onPress={() => replySheetRef.current?.present()}
             disabled={isMutating}
             accessibilityRole="button"
             accessibilityLabel="Reply to review"
+            android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+            style={({ pressed }) => [
+              styles.replyBtn,
+              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+            ]}
           >
             <Text preset="bodyEmphasis" color="text">
               Reply
             </Text>
-          </TouchableOpacity>
+          </Pressable>
 
           <View style={styles.actionRow}>
             {review.status !== "rejected" ? (
-              <TouchableOpacity
-                style={styles.rejectBtn}
+              <Pressable
                 onPress={() => reject.mutate(review.id)}
                 disabled={isMutating}
                 accessibilityRole="button"
                 accessibilityLabel="Reject review"
+                android_ripple={{ color: "rgba(139, 46, 32, 0.12)" }}
+                style={({ pressed }) => [
+                  styles.rejectBtn,
+                  pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+                ]}
               >
                 <Text preset="bodyEmphasis" color="danger">
                   {reject.isPending ? "Rejecting…" : "Reject"}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             ) : null}
-            <TouchableOpacity
-              style={styles.featureBtn}
+            <Pressable
               onPress={() => toggleFeatured.mutate({ id: review.id, featured: !review.featured })}
               disabled={isMutating}
               accessibilityRole="button"
               accessibilityLabel={review.featured ? "Unfeature review" : "Feature review"}
+              android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+              style={({ pressed }) => [
+                styles.featureBtn,
+                pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+              ]}
             >
               <Text preset="bodyEmphasis" color="text">
                 {review.featured ? "Unfeature" : "Feature"}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </ScrollView>

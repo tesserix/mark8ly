@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
 import {
+  Platform,
   View,
   FlatList,
-  TouchableOpacity,
+  Pressable,
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
@@ -10,7 +11,7 @@ import {
 import { useRouter } from "expo-router";
 import { Plus, ChevronRight } from "lucide-react-native";
 import { useTickets } from "@/lib/hooks/use-tickets";
-import { BackHeader, EmptyState, Screen, SegmentedControl, StatusBadge, Text, type StatusTone } from "@/components/ui";
+import { BackHeader, EmptyState, PressableRow, Screen, SegmentedControl, StatusBadge, Text, type StatusTone } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Ticket } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
@@ -38,11 +39,10 @@ export function titleizeStatus(value: string): string {
 
 function TicketRow({ ticket, onPress }: { ticket: Ticket; onPress: (t: Ticket) => void }) {
   return (
-    <TouchableOpacity
+    <PressableRow
+      lines={2}
       style={styles.row}
       onPress={() => onPress(ticket)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
       accessibilityLabel={`Ticket ${ticket.ticket_number}, ${ticket.status}`}
     >
       <View style={styles.info}>
@@ -57,7 +57,7 @@ function TicketRow({ ticket, onPress }: { ticket: Ticket; onPress: (t: Ticket) =
         </Text>
       </View>
       <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
@@ -99,14 +99,18 @@ export default function TicketsScreen() {
         eyebrow="SETTINGS"
         title="Support tickets"
         rightSlot={
-          <TouchableOpacity
+          <Pressable
             onPress={() => router.push("/(tabs)/more/settings/tickets/new")}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="New ticket"
+            android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+            style={({ pressed }) =>
+              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+            }
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />
-          </TouchableOpacity>
+          </Pressable>
         }
       />
       <View style={styles.filter}>
@@ -158,14 +162,9 @@ export default function TicketsScreen() {
 const styles = StyleSheet.create({
   filter: { paddingTop: theme.spacing.sm },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.md,
   },
   info: { flex: 1, gap: 4 },
   topRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },

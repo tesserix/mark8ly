@@ -1,8 +1,9 @@
 import { useCallback, useRef } from "react";
 import {
+  Platform,
   View,
   ScrollView,
-  TouchableOpacity,
+  Pressable,
   Alert,
   ActivityIndicator,
   StyleSheet,
@@ -229,8 +230,7 @@ export default function CustomerDetailScreen() {
         ) : null}
 
         <View style={styles.actions}>
-          <TouchableOpacity
-            style={isBlocked ? styles.unblockBtn : styles.blockBtn}
+          <Pressable
             onPress={handleBlockToggle}
             disabled={isMutating}
             accessibilityRole="button"
@@ -239,6 +239,15 @@ export default function CustomerDetailScreen() {
                 ? unblockMutation.isPending ? "Unblocking customer" : "Unblock customer"
                 : blockMutation.isPending ? "Blocking customer" : "Block customer"
             }
+            android_ripple={{
+              color: isBlocked ? "rgba(247, 246, 242, 0.24)" : "rgba(139, 46, 32, 0.12)",
+            }}
+            style={({ pressed }) => [
+              isBlocked ? styles.unblockBtn : styles.blockBtn,
+              pressed && Platform.OS === "ios"
+                ? { opacity: isBlocked ? 0.85 : 0.55 }
+                : null,
+            ]}
           >
             <Text
               preset="bodyEmphasis"
@@ -248,7 +257,7 @@ export default function CustomerDetailScreen() {
                 ? isBlocked ? "Unblocking…" : "Blocking…"
                 : isBlocked ? "Unblock Customer" : "Block Customer"}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </ScrollView>
 

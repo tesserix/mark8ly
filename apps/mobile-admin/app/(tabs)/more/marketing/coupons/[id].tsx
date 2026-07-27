@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import {
+  Platform,
   View,
   ScrollView,
-  TouchableOpacity,
+  Pressable,
   Alert,
   ActivityIndicator,
   StyleSheet,
@@ -209,19 +210,24 @@ function ActionButton({
 }) {
   const btnStyle = variant === "danger" ? styles.btnDanger : styles.btnSecondary;
   const color = variant === "danger" ? "danger" : "text";
+  const rippleColor = variant === "danger" ? "rgba(139, 46, 32, 0.12)" : "rgba(14, 14, 12, 0.12)";
   return (
-    <TouchableOpacity
-      style={[btnStyle, disabled && styles.btnDisabled]}
+    <Pressable
       onPress={onPress}
       disabled={disabled}
-      activeOpacity={0.85}
       accessibilityRole="button"
       accessibilityLabel={label}
+      android_ripple={{ color: rippleColor }}
+      style={({ pressed }) => [
+        btnStyle,
+        disabled && styles.btnDisabled,
+        pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+      ]}
     >
       <Text preset="bodyEmphasis" color={color}>
         {label}
       </Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 

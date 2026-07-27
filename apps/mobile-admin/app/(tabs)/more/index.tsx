@@ -1,4 +1,4 @@
-import { View, ScrollView, TouchableOpacity, StyleSheet, Linking } from "react-native";
+import { View, ScrollView, StyleSheet, Linking } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import {
   Bell,
@@ -18,7 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { useNotifications } from "../../../lib/hooks/use-notifications";
-import { Card, Hairline, PageHeader, Screen, Text } from "@/components/ui";
+import { Card, Hairline, PageHeader, PressableRow, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
@@ -39,20 +39,14 @@ interface RowProps {
 
 function Row({ icon, label, trailing, onPress, accessibilityLabel }: RowProps) {
   return (
-    <TouchableOpacity
-      style={styles.row}
-      onPress={onPress}
-      activeOpacity={0.6}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-    >
+    <PressableRow style={styles.row} onPress={onPress} accessibilityLabel={accessibilityLabel}>
       <View style={styles.rowIcon}>{icon}</View>
       <Text preset="bodyEmphasis" color="text" style={styles.rowLabel}>
         {label}
       </Text>
       {trailing ? <View style={styles.rowTrailing}>{trailing}</View> : null}
       <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
@@ -186,14 +180,13 @@ const styles = StyleSheet.create({
   },
   section: { gap: theme.spacing.sm },
   sectionLabel: { paddingHorizontal: theme.spacing.xs },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    minHeight: 56,
-    gap: theme.spacing.md,
-  },
+  // Pre-migration this row had no backgroundColor of its own (transparent),
+  // letting the parent Card's elevated (white) surface show through.
+  // PressableRow's base sets backgroundColor: theme.colors.background
+  // (paper), which would otherwise paint a visible seam against the Card —
+  // match that surface explicitly instead of relying on transparency (same
+  // fix as DashboardOrderRow).
+  row: { backgroundColor: theme.colors.elevated },
   rowIcon: { width: 22, alignItems: "center" },
   rowLabel: { flex: 1 },
   rowTrailing: { marginRight: theme.spacing.xs },

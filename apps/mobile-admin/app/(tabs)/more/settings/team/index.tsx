@@ -1,12 +1,12 @@
 import { useCallback } from "react";
-import { View, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StyleSheet } from "react-native";
+import { Platform, View, ScrollView, Pressable, RefreshControl, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { UserPlus, X } from "lucide-react-native";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { ASSIGNABLE_ROLES } from "@repo/mobile-shared/api/schemas/team";
 import { useTeamMembers, useTeamInvitations } from "@/lib/hooks/use-team";
 import { useUpdateMemberRole, useRevokeInvitation } from "@/lib/admin-api/team-actions";
-import { BackHeader, Eyebrow, EmptyState, Hairline, Screen, StatusBadge, Text, type StatusTone } from "@/components/ui";
+import { BackHeader, Eyebrow, EmptyState, Hairline, PressableRow, Screen, StatusBadge, Text, type StatusTone } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { Alert } from "react-native";
@@ -96,14 +96,18 @@ export default function TeamScreen() {
         eyebrow="SETTINGS"
         title="Team"
         rightSlot={
-          <TouchableOpacity
+          <Pressable
             onPress={() => router.push("/(tabs)/more/settings/team/invite")}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Invite teammate"
+            android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+            style={({ pressed }) =>
+              pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+            }
           >
             <UserPlus size={20} color={theme.colors.text} strokeWidth={1.75} />
-          </TouchableOpacity>
+          </Pressable>
         }
       />
       {loading && !refreshing ? (
@@ -128,19 +132,23 @@ export default function TeamScreen() {
             {memberList.map((m, i) => (
               <View key={m.email}>
                 {i > 0 ? <Hairline /> : null}
-                <TouchableOpacity
-                  style={styles.row}
-                  onPress={() => onChangeRole(m)}
-                  disabled={m.kind === "owner" || updateRole.isPending}
-                  activeOpacity={0.6}
-                  accessibilityRole="button"
+                <PressableRow
+                  style={styles.memberRow}
+                  // PressableRow has no `disabled` prop (fixed public API);
+                  // guard inline instead — same no-op-when-disabled behavior
+                  // the previous pressable's `disabled` prop gave us, just
+                  // without suppressing the row's own press feedback.
+                  onPress={() => {
+                    if (m.kind === "owner" || updateRole.isPending) return;
+                    onChangeRole(m);
+                  }}
                   accessibilityLabel={`${m.email}, ${m.role}${m.kind === "owner" ? "" : ". Tap to change role"}`}
                 >
                   <Text preset="body" color="text" numberOfLines={1} style={styles.email}>
                     {m.email}
                   </Text>
                   <StatusBadge label={titleize(m.role)} tone={ROLE_TONE[m.role] ?? "muted"} />
-                </TouchableOpacity>
+                </PressableRow>
               </View>
             ))}
           </View>
@@ -164,15 +172,19 @@ export default function TeamScreen() {
                         {titleize(inv.role)} · {titleize(inv.status)}
                       </Text>
                     </View>
-                    <TouchableOpacity
+                    <Pressable
                       onPress={() => onRevoke(inv)}
                       disabled={revoke.isPending}
                       hitSlop={10}
                       accessibilityRole="button"
                       accessibilityLabel={`Revoke invite to ${inv.email}`}
+                      android_ripple={{ color: "rgba(139, 46, 32, 0.12)", borderless: true }}
+                      style={({ pressed }) =>
+                        pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+                      }
                     >
                       <X size={18} color={theme.colors.danger} strokeWidth={2} />
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 </View>
               ))
@@ -203,6 +215,13 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
     gap: theme.spacing.md,
   },
+  // PressableRow already owns flexDirection/alignItems/padding/gap; this
+  // just adds the space-between the email/role-badge pair needs. No
+  // backgroundColor override — this list sits directly on Screen's paper
+  // background (no Card/elevated wrapper here), which is exactly
+  // PressableRow's own default, so the pre-migration transparency was
+  // already correct.
+  memberRow: { justifyContent: "space-between" },
   email: { flexShrink: 1 },
   inviteInfo: { flex: 1, gap: 2 },
   note: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },

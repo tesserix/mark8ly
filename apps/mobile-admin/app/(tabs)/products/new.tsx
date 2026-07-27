@@ -3,7 +3,7 @@ import {
   View,
   Alert,
   ActivityIndicator,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   StyleSheet,
   KeyboardAvoidingView,
@@ -258,25 +258,33 @@ export default function NewProductScreen() {
       </ScrollView>
 
       <View style={[styles.footer, { bottom: insets.bottom }]}>
-        <TouchableOpacity
-          style={[styles.draftBtn, isBusy && styles.disabled]}
+        <Pressable
           onPress={() => handleSubmit(true)}
           disabled={isBusy}
-          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Save as draft"
+          android_ripple={{ color: "rgba(14, 14, 12, 0.12)" }}
+          style={({ pressed }) => [
+            styles.draftBtn,
+            isBusy && styles.disabled,
+            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+          ]}
         >
           <Text preset="bodyEmphasis" color="text">
             Save as draft
           </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.primaryBtn, isBusy && styles.disabled]}
+        </Pressable>
+        <Pressable
           onPress={() => handleSubmit(false)}
           disabled={isBusy}
-          activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel="Create product"
+          android_ripple={{ color: "rgba(247, 246, 242, 0.24)" }}
+          style={({ pressed }) => [
+            styles.primaryBtn,
+            isBusy && styles.disabled,
+            pressed && Platform.OS === "ios" ? { opacity: 0.85 } : null,
+          ]}
         >
           {isBusy ? (
             <ActivityIndicator size="small" color={theme.colors.inverse} />
@@ -285,7 +293,7 @@ export default function NewProductScreen() {
               Create product
             </Text>
           )}
-        </TouchableOpacity>
+        </Pressable>
       </View>
         </KeyboardAvoidingView>
       </Screen>

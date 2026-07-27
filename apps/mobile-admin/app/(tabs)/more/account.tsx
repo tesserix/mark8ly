@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from "react-native";
+import { Platform, View, Pressable, Alert, ActivityIndicator, StyleSheet } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
@@ -11,6 +11,7 @@ import {
   Eyebrow,
   FieldInput,
   Hairline,
+  PressableRow,
   Screen,
   Text,
 } from "@/components/ui";
@@ -83,11 +84,9 @@ export default function AccountScreen() {
 
       <Eyebrow label="Store" />
       <Card padding={0} style={styles.card}>
-        <TouchableOpacity
+        <PressableRow
           style={styles.storeRow}
           onPress={() => setStoreSelectorVisible(true)}
-          activeOpacity={0.6}
-          accessibilityRole="button"
           accessibilityLabel={`Current store: ${activeStore?.name ?? "None"}. Tap to switch.`}
         >
           <View style={styles.storeInfo}>
@@ -101,21 +100,24 @@ export default function AccountScreen() {
             ) : null}
           </View>
           <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-        </TouchableOpacity>
+        </PressableRow>
       </Card>
 
       <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.logoutBtn}
+        <Pressable
           onPress={handleLogout}
-          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Sign out"
+          android_ripple={{ color: "rgba(139, 46, 32, 0.12)" }}
+          style={({ pressed }) => [
+            styles.logoutBtn,
+            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+          ]}
         >
           <Text preset="bodyEmphasis" color="danger">
             Sign Out
           </Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <View style={styles.dangerZone}>
@@ -136,13 +138,17 @@ export default function AccountScreen() {
           accessibilityLabel="Type DELETE to confirm account deletion"
           style={styles.dangerInput}
         />
-        <TouchableOpacity
-          style={[styles.deleteBtn, !canDeleteAccount ? styles.deleteBtnDisabled : null]}
+        <Pressable
           onPress={handleDeleteAccount}
           disabled={!canDeleteAccount}
-          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Delete account"
+          android_ripple={{ color: "rgba(139, 46, 32, 0.12)" }}
+          style={({ pressed }) => [
+            styles.deleteBtn,
+            !canDeleteAccount ? styles.deleteBtnDisabled : null,
+            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+          ]}
         >
           {deleteMutation.isPending ? (
             <ActivityIndicator size="small" color={theme.colors.danger} />
@@ -151,7 +157,7 @@ export default function AccountScreen() {
               Delete account
             </Text>
           )}
-        </TouchableOpacity>
+        </Pressable>
         {deleteMutation.error ? (
           <Text
             preset="caption"
@@ -182,13 +188,13 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   divider: { marginVertical: 2 },
-  storeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
-    minHeight: 56,
-  },
+  // Pre-migration this row had no backgroundColor of its own (transparent),
+  // letting the parent Card's elevated (white) surface show through.
+  // PressableRow's base sets backgroundColor: theme.colors.background
+  // (paper), which would otherwise paint a visible seam against the Card —
+  // match that surface explicitly instead of relying on transparency (same
+  // fix as DashboardOrderRow).
+  storeRow: { backgroundColor: theme.colors.elevated },
   storeInfo: { flex: 1, gap: 2 },
   actions: {
     paddingHorizontal: theme.spacing.lg,

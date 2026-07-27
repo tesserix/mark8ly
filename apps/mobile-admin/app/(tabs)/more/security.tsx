@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Alert, Platform, Pressable, StyleSheet, View } from "react-native";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { authErrorMessage } from "@repo/mobile-shared/auth/errors";
 import {
@@ -138,27 +138,37 @@ export default function SecurityScreen(): React.JSX.Element {
                   </Text>
                 </View>
                 {linked === null ? null : isLinked ? (
-                  <TouchableOpacity
+                  <Pressable
                     disabled={busy}
                     onPress={() => handleRemove(m.id, m.label)}
                     accessibilityRole="button"
                     accessibilityLabel={`Remove ${m.label}`}
+                    hitSlop={8}
+                    android_ripple={{ color: "rgba(139, 46, 32, 0.12)", borderless: true }}
+                    style={({ pressed }) =>
+                      pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+                    }
                   >
                     <Text preset="bodyEmphasis" color="danger">
                       Remove
                     </Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 ) : m.linkable && linkableId ? (
-                  <TouchableOpacity
+                  <Pressable
                     disabled={busy}
                     onPress={() => handleLink(linkableId)}
                     accessibilityRole="button"
                     accessibilityLabel={`Link ${m.label}`}
+                    hitSlop={8}
+                    android_ripple={{ color: "rgba(14, 14, 12, 0.12)", borderless: true }}
+                    style={({ pressed }) =>
+                      pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null
+                    }
                   >
                     <Text preset="bodyEmphasis" color="text">
                       Link
                     </Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 ) : null}
               </View>
             </View>

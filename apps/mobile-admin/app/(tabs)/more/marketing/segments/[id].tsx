@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { View, ScrollView, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from "react-native";
+import { Platform, View, ScrollView, Pressable, Alert, ActivityIndicator, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { useSegment } from "@/lib/hooks/use-segments";
@@ -94,17 +94,22 @@ export default function SegmentDetailScreen() {
           onSubmit={onSave}
         />
         <Hairline />
-        <TouchableOpacity
-          style={[styles.deleteBtn, del.isPending && styles.disabled]}
+        <Pressable
           onPress={onDelete}
           disabled={del.isPending}
           accessibilityRole="button"
           accessibilityLabel="Delete segment"
+          android_ripple={{ color: "rgba(139, 46, 32, 0.12)" }}
+          style={({ pressed }) => [
+            styles.deleteBtn,
+            del.isPending && styles.disabled,
+            pressed && Platform.OS === "ios" ? { opacity: 0.55 } : null,
+          ]}
         >
           <Text preset="bodyEmphasis" color="danger">
             {del.isPending ? "Deleting…" : "Delete segment"}
           </Text>
-        </TouchableOpacity>
+        </Pressable>
       </ScrollView>
     </Screen>
   );

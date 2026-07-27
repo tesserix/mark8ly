@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import {
+  Platform,
   View,
   ScrollView,
-  TouchableOpacity,
+  Pressable,
   Alert,
   ActivityIndicator,
   StyleSheet,
@@ -219,19 +220,32 @@ function ActionButton({
   const btnStyle =
     variant === "primary" ? styles.btnPrimary : variant === "danger" ? styles.btnDanger : styles.btnSecondary;
   const color = variant === "primary" ? "inverse" : variant === "danger" ? "danger" : "text";
+  // Primary is a solid moss fill (light text on it); secondary/danger are
+  // outline-only on Paper. Tune the press feedback so it reads on each.
+  const rippleColor =
+    variant === "primary"
+      ? "rgba(247, 246, 242, 0.24)"
+      : variant === "danger"
+        ? "rgba(139, 46, 32, 0.12)"
+        : "rgba(14, 14, 12, 0.12)";
+  const pressedOpacity = variant === "primary" ? 0.85 : 0.55;
   return (
-    <TouchableOpacity
-      style={[btnStyle, disabled && styles.btnDisabled]}
+    <Pressable
       onPress={onPress}
       disabled={disabled}
-      activeOpacity={0.85}
       accessibilityRole="button"
       accessibilityLabel={label}
+      android_ripple={{ color: rippleColor }}
+      style={({ pressed }) => [
+        btnStyle,
+        disabled && styles.btnDisabled,
+        pressed && Platform.OS === "ios" ? { opacity: pressedOpacity } : null,
+      ]}
     >
       <Text preset="bodyEmphasis" color={color}>
         {label}
       </Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 

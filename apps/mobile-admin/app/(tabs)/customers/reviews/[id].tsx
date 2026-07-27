@@ -43,6 +43,12 @@ export default function ReviewDetailScreen() {
   const reply = useReplyToReview();
   const replySheetRef = useRef<ReviewReplySheetHandle>(null);
   const [viewerImage, setViewerImage] = useState<ViewerImage | null>(null);
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [approvePressed, setApprovePressed] = useState(false);
+  const [replyPressed, setReplyPressed] = useState(false);
+  const [rejectPressed, setRejectPressed] = useState(false);
+  const [featurePressed, setFeaturePressed] = useState(false);
 
   const isMutating =
     approve.isPending || reject.isPending || toggleFeatured.isPending || reply.isPending;
@@ -164,13 +170,15 @@ export default function ReviewDetailScreen() {
           {review.status !== "approved" ? (
             <Pressable
               onPress={() => approve.mutate(review.id)}
+              onPressIn={() => setApprovePressed(true)}
+              onPressOut={() => setApprovePressed(false)}
               disabled={isMutating}
               accessibilityRole="button"
               accessibilityLabel="Approve review"
               android_ripple={theme.press.rippleOnDark}
-              style={({ pressed }) => [
+              style={[
                 styles.approveBtn,
-                pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
+                approvePressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
               ]}
             >
               <Text preset="bodyEmphasis" color="inverse">
@@ -181,13 +189,15 @@ export default function ReviewDetailScreen() {
 
           <Pressable
             onPress={() => replySheetRef.current?.present()}
+            onPressIn={() => setReplyPressed(true)}
+            onPressOut={() => setReplyPressed(false)}
             disabled={isMutating}
             accessibilityRole="button"
             accessibilityLabel="Reply to review"
             android_ripple={theme.press.rippleInk}
-            style={({ pressed }) => [
+            style={[
               styles.replyBtn,
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+              replyPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
             ]}
           >
             <Text preset="bodyEmphasis" color="text">
@@ -199,13 +209,15 @@ export default function ReviewDetailScreen() {
             {review.status !== "rejected" ? (
               <Pressable
                 onPress={() => reject.mutate(review.id)}
+                onPressIn={() => setRejectPressed(true)}
+                onPressOut={() => setRejectPressed(false)}
                 disabled={isMutating}
                 accessibilityRole="button"
                 accessibilityLabel="Reject review"
                 android_ripple={theme.press.rippleDanger}
-                style={({ pressed }) => [
+                style={[
                   styles.rejectBtn,
-                  pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+                  rejectPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
                 ]}
               >
                 <Text preset="bodyEmphasis" color="danger">
@@ -215,13 +227,15 @@ export default function ReviewDetailScreen() {
             ) : null}
             <Pressable
               onPress={() => toggleFeatured.mutate({ id: review.id, featured: !review.featured })}
+              onPressIn={() => setFeaturePressed(true)}
+              onPressOut={() => setFeaturePressed(false)}
               disabled={isMutating}
               accessibilityRole="button"
               accessibilityLabel={review.featured ? "Unfeature review" : "Feature review"}
               android_ripple={theme.press.rippleInk}
-              style={({ pressed }) => [
+              style={[
                 styles.featureBtn,
-                pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+                featurePressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
               ]}
             >
               <Text preset="bodyEmphasis" color="text">

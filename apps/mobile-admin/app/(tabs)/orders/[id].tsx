@@ -518,14 +518,19 @@ function ActionButton({
         : theme.press.rippleInk;
   const pressedOpacity =
     variant === "primary" ? theme.press.opacitySolidFill : theme.press.opacityStandard;
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [pressed, setPressed] = useState(false);
   return (
     <Pressable
       onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       android_ripple={ripple}
-      style={({ pressed }) => [
+      style={[
         btnStyle,
         disabled && styles.btnDisabled,
         style,

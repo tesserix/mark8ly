@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Platform, View, ScrollView, Pressable, RefreshControl, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { UserPlus, X } from "lucide-react-native";
@@ -21,6 +21,38 @@ const ROLE_TONE: Record<string, StatusTone> = {
 
 function titleize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+// Extracted so press state can live in `useState`: this button renders once
+// per row inside `inviteList.map()`, and hooks can't be called from inside a
+// `.map()` callback — each row needs its own component instance instead.
+function RevokeInviteButton({
+  disabled,
+  accessibilityLabel,
+  onPress,
+}: {
+  disabled: boolean;
+  accessibilityLabel: string;
+  onPress: () => void;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      disabled={disabled}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      android_ripple={{ ...theme.press.rippleDanger, borderless: true }}
+      style={[
+        pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+      ]}
+    >
+      <X size={18} color={theme.colors.danger} strokeWidth={2} />
+    </Pressable>
+  );
 }
 
 export default function TeamScreen() {
@@ -89,6 +121,9 @@ export default function TeamScreen() {
   const memberList = members.data?.data ?? [];
   const inviteList = invitations.data?.data ?? [];
   const loading = members.isLoading || invitations.isLoading;
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [invitePressed, setInvitePressed] = useState(false);
 
   return (
     <Screen>
@@ -98,13 +133,15 @@ export default function TeamScreen() {
         rightSlot={
           <Pressable
             onPress={() => router.push("/(tabs)/more/settings/team/invite")}
+            onPressIn={() => setInvitePressed(true)}
+            onPressOut={() => setInvitePressed(false)}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Invite teammate"
             android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-            }
+            style={[
+              invitePressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            ]}
           >
             <UserPlus size={20} color={theme.colors.text} strokeWidth={1.75} />
           </Pressable>
@@ -191,19 +228,11 @@ export default function TeamScreen() {
                         {titleize(inv.role)} · {titleize(inv.status)}
                       </Text>
                     </View>
-                    <Pressable
+                    <RevokeInviteButton
                       onPress={() => onRevoke(inv)}
                       disabled={revoke.isPending}
-                      hitSlop={10}
-                      accessibilityRole="button"
                       accessibilityLabel={`Revoke invite to ${inv.email}`}
-                      android_ripple={{ ...theme.press.rippleDanger, borderless: true }}
-                      style={({ pressed }) =>
-                        pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-                      }
-                    >
-                      <X size={18} color={theme.colors.danger} strokeWidth={2} />
-                    </Pressable>
+                    />
                   </View>
                 </View>
               ))

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   Platform,
   View,
@@ -211,14 +211,19 @@ function ActionButton({
   const btnStyle = variant === "danger" ? styles.btnDanger : styles.btnSecondary;
   const color = variant === "danger" ? "danger" : "text";
   const ripple = variant === "danger" ? theme.press.rippleDanger : theme.press.rippleInk;
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [pressed, setPressed] = useState(false);
   return (
     <Pressable
       onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       android_ripple={ripple}
-      style={({ pressed }) => [
+      style={[
         btnStyle,
         disabled && styles.btnDisabled,
         pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,

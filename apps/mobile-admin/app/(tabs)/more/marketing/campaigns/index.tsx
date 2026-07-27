@@ -31,6 +31,9 @@ export default function CampaignsScreen() {
   const dockPad = useDockClearance();
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [newCampaignPressed, setNewCampaignPressed] = useState(false);
 
   const {
     data,
@@ -67,13 +70,15 @@ export default function CampaignsScreen() {
         rightSlot={
           <Pressable
             onPress={() => router.push("/(tabs)/more/marketing/campaigns/new")}
+            onPressIn={() => setNewCampaignPressed(true)}
+            onPressOut={() => setNewCampaignPressed(false)}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="New campaign"
             android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-            }
+            style={[
+              newCampaignPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            ]}
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />
           </Pressable>

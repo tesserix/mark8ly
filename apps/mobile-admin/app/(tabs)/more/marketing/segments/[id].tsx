@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Platform, View, ScrollView, Pressable, Alert, ActivityIndicator, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ApiError } from "@repo/mobile-shared/api/client";
@@ -54,6 +54,10 @@ export default function SegmentDetailScreen() {
     ]);
   }, [id, del, router]);
 
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [deletePressed, setDeletePressed] = useState(false);
+
   if (error) {
     return (
       <Screen>
@@ -96,14 +100,16 @@ export default function SegmentDetailScreen() {
         <Hairline />
         <Pressable
           onPress={onDelete}
+          onPressIn={() => setDeletePressed(true)}
+          onPressOut={() => setDeletePressed(false)}
           disabled={del.isPending}
           accessibilityRole="button"
           accessibilityLabel="Delete segment"
           android_ripple={theme.press.rippleDanger}
-          style={({ pressed }) => [
+          style={[
             styles.deleteBtn,
             del.isPending && styles.disabled,
-            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            deletePressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <Text preset="bodyEmphasis" color="danger">

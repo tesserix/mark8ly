@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Platform,
   View,
@@ -101,6 +102,11 @@ export default function NotificationsScreen() {
 
   const hasUnread = data?.notifications.some((n) => !n.is_read) ?? false;
 
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [markAllPressed, setMarkAllPressed] = useState(false);
+  const [settingsPressed, setSettingsPressed] = useState(false);
+
   return (
     <Screen>
       <BackHeader
@@ -111,6 +117,8 @@ export default function NotificationsScreen() {
             {hasUnread ? (
               <Pressable
                 onPress={() => markAllRead.mutate()}
+                onPressIn={() => setMarkAllPressed(true)}
+                onPressOut={() => setMarkAllPressed(false)}
                 disabled={markAllRead.isPending}
                 hitSlop={8}
                 accessibilityRole="button"
@@ -118,9 +126,9 @@ export default function NotificationsScreen() {
                   markAllRead.isPending ? "Marking all as read" : "Mark all as read"
                 }
                 android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-                style={({ pressed }) =>
-                  pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-                }
+                style={[
+                  markAllPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+                ]}
               >
                 <Text preset="caption" color="accent">
                   {markAllRead.isPending ? "Marking…" : "Mark all"}
@@ -129,13 +137,15 @@ export default function NotificationsScreen() {
             ) : null}
             <Pressable
               onPress={() => router.push("/(tabs)/more/settings/notification-settings")}
+              onPressIn={() => setSettingsPressed(true)}
+              onPressOut={() => setSettingsPressed(false)}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Notification settings"
               android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-              style={({ pressed }) =>
-                pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-              }
+              style={[
+                settingsPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+              ]}
             >
               <SlidersHorizontal
                 size={20}

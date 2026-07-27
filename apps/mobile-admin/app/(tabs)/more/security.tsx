@@ -25,6 +25,47 @@ const METHODS: { id: ProviderId; label: string; linkable: boolean }[] = [
   { id: "apple.com", label: "Apple", linkable: true },
 ];
 
+// Extracted so press state can live in `useState`: this button renders once
+// per row inside `METHODS.map()`, and hooks can't be called from inside a
+// `.map()` callback — each row needs its own component instance instead.
+function MethodActionButton({
+  tone,
+  label,
+  accessibilityLabel,
+  disabled,
+  onPress,
+}: {
+  tone: "danger" | "neutral";
+  label: string;
+  accessibilityLabel: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      hitSlop={8}
+      android_ripple={{
+        ...(tone === "danger" ? theme.press.rippleDanger : theme.press.rippleInk),
+        borderless: true,
+      }}
+      style={[
+        pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+      ]}
+    >
+      <Text preset="bodyEmphasis" color={tone === "danger" ? "danger" : "text"}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export default function SecurityScreen(): React.JSX.Element {
   const {
     linkedProviderIds,
@@ -138,37 +179,21 @@ export default function SecurityScreen(): React.JSX.Element {
                   </Text>
                 </View>
                 {linked === null ? null : isLinked ? (
-                  <Pressable
+                  <MethodActionButton
+                    tone="danger"
+                    label="Remove"
+                    accessibilityLabel={`Remove ${m.label}`}
                     disabled={busy}
                     onPress={() => handleRemove(m.id, m.label)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove ${m.label}`}
-                    hitSlop={8}
-                    android_ripple={{ ...theme.press.rippleDanger, borderless: true }}
-                    style={({ pressed }) =>
-                      pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-                    }
-                  >
-                    <Text preset="bodyEmphasis" color="danger">
-                      Remove
-                    </Text>
-                  </Pressable>
+                  />
                 ) : m.linkable && linkableId ? (
-                  <Pressable
+                  <MethodActionButton
+                    tone="neutral"
+                    label="Link"
+                    accessibilityLabel={`Link ${m.label}`}
                     disabled={busy}
                     onPress={() => handleLink(linkableId)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Link ${m.label}`}
-                    hitSlop={8}
-                    android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-                    style={({ pressed }) =>
-                      pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-                    }
-                  >
-                    <Text preset="bodyEmphasis" color="text">
-                      Link
-                    </Text>
-                  </Pressable>
+                  />
                 ) : null}
               </View>
             </View>

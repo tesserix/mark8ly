@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   Platform,
   View,
@@ -22,6 +22,9 @@ export default function SegmentsScreen() {
   const router = useRouter();
   const { data, isLoading, isRefetching, isError, refetch } = useSegments();
   const segments = data?.data ?? [];
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [newSegmentPressed, setNewSegmentPressed] = useState(false);
 
   const handlePress = useCallback(
     (segment: Segment) => router.push(`/(tabs)/more/marketing/segments/${segment.id}`),
@@ -41,13 +44,15 @@ export default function SegmentsScreen() {
         rightSlot={
           <Pressable
             onPress={() => router.push("/(tabs)/more/marketing/segments/new")}
+            onPressIn={() => setNewSegmentPressed(true)}
+            onPressOut={() => setNewSegmentPressed(false)}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="New segment"
             android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-            }
+            style={[
+              newSegmentPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            ]}
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />
           </Pressable>

@@ -74,6 +74,9 @@ export default function ProductDetailScreen() {
   const [initialized, setInitialized] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [viewerImage, setViewerImage] = useState<{ uri: string; alt?: string } | null>(null);
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [savePressed, setSavePressed] = useState(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const { show: showCreatedBanner, dismiss: dismissCreatedBanner, registerSectionOffset, jumpTo } =
@@ -222,14 +225,16 @@ export default function ProductDetailScreen() {
         rightSlot={
           <Pressable
             onPress={handleSave}
+            onPressIn={() => setSavePressed(true)}
+            onPressOut={() => setSavePressed(false)}
             disabled={updateMutation.isPending}
             accessibilityRole="button"
             accessibilityLabel={saveLabel}
             hitSlop={8}
             android_ripple={{ color: theme.press.rippleAccent.color, borderless: true }}
-            style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-            }
+            style={[
+              savePressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            ]}
           >
             <Text preset="bodyEmphasis" color="accent" numberOfLines={1}>
               {saveLabel}

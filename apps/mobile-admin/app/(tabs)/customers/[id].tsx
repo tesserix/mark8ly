@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   Platform,
   View,
@@ -103,6 +103,10 @@ export default function CustomerDetailScreen() {
 
   const isBlocked = customer?.status === "blocked";
   const isMutating = blockMutation.isPending || unblockMutation.isPending;
+
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [blockBtnPressed, setBlockBtnPressed] = useState(false);
 
   const handleBlockToggle = useCallback(() => {
     if (!customer) return;
@@ -232,6 +236,8 @@ export default function CustomerDetailScreen() {
         <View style={styles.actions}>
           <Pressable
             onPress={handleBlockToggle}
+            onPressIn={() => setBlockBtnPressed(true)}
+            onPressOut={() => setBlockBtnPressed(false)}
             disabled={isMutating}
             accessibilityRole="button"
             accessibilityLabel={
@@ -240,9 +246,9 @@ export default function CustomerDetailScreen() {
                 : blockMutation.isPending ? "Blocking customer" : "Block customer"
             }
             android_ripple={isBlocked ? theme.press.rippleOnDark : theme.press.rippleDanger}
-            style={({ pressed }) => [
+            style={[
               isBlocked ? styles.unblockBtn : styles.blockBtn,
-              pressed && Platform.OS === "ios"
+              blockBtnPressed && Platform.OS === "ios"
                 ? {
                     opacity: isBlocked
                       ? theme.press.opacitySolidFill

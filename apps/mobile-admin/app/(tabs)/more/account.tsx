@@ -43,6 +43,10 @@ export default function AccountScreen() {
   const [storeSelectorVisible, setStoreSelectorVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const deleteMutation = useDeleteAccount();
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [logoutPressed, setLogoutPressed] = useState(false);
+  const [deletePressed, setDeletePressed] = useState(false);
 
   const handleLogout = useCallback(() => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -106,12 +110,14 @@ export default function AccountScreen() {
       <View style={styles.actions}>
         <Pressable
           onPress={handleLogout}
+          onPressIn={() => setLogoutPressed(true)}
+          onPressOut={() => setLogoutPressed(false)}
           accessibilityRole="button"
           accessibilityLabel="Sign out"
           android_ripple={theme.press.rippleDanger}
-          style={({ pressed }) => [
+          style={[
             styles.logoutBtn,
-            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            logoutPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <Text preset="bodyEmphasis" color="danger">
@@ -140,14 +146,16 @@ export default function AccountScreen() {
         />
         <Pressable
           onPress={handleDeleteAccount}
+          onPressIn={() => setDeletePressed(true)}
+          onPressOut={() => setDeletePressed(false)}
           disabled={!canDeleteAccount}
           accessibilityRole="button"
           accessibilityLabel="Delete account"
           android_ripple={theme.press.rippleDanger}
-          style={({ pressed }) => [
+          style={[
             styles.deleteBtn,
             !canDeleteAccount ? styles.deleteBtnDisabled : null,
-            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            deletePressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           {deleteMutation.isPending ? (

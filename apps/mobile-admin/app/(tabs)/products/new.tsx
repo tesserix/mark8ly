@@ -59,6 +59,10 @@ export default function NewProductScreen() {
   // Inline validation errors — surfaced under the field, never as an Alert.
   const [titleError, setTitleError] = useState<string | null>(null);
   const [priceError, setPriceError] = useState<string | null>(null);
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [draftPressed, setDraftPressed] = useState(false);
+  const [createPressed, setCreatePressed] = useState(false);
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
 
@@ -260,14 +264,16 @@ export default function NewProductScreen() {
       <View style={[styles.footer, { bottom: insets.bottom }]}>
         <Pressable
           onPress={() => handleSubmit(true)}
+          onPressIn={() => setDraftPressed(true)}
+          onPressOut={() => setDraftPressed(false)}
           disabled={isBusy}
           accessibilityRole="button"
           accessibilityLabel="Save as draft"
           android_ripple={theme.press.rippleInk}
-          style={({ pressed }) => [
+          style={[
             styles.draftBtn,
             isBusy && styles.disabled,
-            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            draftPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
           ]}
         >
           <Text preset="bodyEmphasis" color="text">
@@ -276,14 +282,16 @@ export default function NewProductScreen() {
         </Pressable>
         <Pressable
           onPress={() => handleSubmit(false)}
+          onPressIn={() => setCreatePressed(true)}
+          onPressOut={() => setCreatePressed(false)}
           disabled={isBusy}
           accessibilityRole="button"
           accessibilityLabel="Create product"
           android_ripple={theme.press.rippleOnDark}
-          style={({ pressed }) => [
+          style={[
             styles.primaryBtn,
             isBusy && styles.disabled,
-            pressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
+            createPressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
           ]}
         >
           {isBusy ? (

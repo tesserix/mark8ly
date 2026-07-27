@@ -65,6 +65,9 @@ export default function TicketsScreen() {
   const dockPad = useDockClearance();
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [newTicketPressed, setNewTicketPressed] = useState(false);
 
   const {
     data,
@@ -101,13 +104,15 @@ export default function TicketsScreen() {
         rightSlot={
           <Pressable
             onPress={() => router.push("/(tabs)/more/settings/tickets/new")}
+            onPressIn={() => setNewTicketPressed(true)}
+            onPressOut={() => setNewTicketPressed(false)}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="New ticket"
             android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-            }
+            style={[
+              newTicketPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            ]}
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />
           </Pressable>

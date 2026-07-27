@@ -33,6 +33,9 @@ export default function CouponsScreen() {
   const router = useRouter();
   const currency = useTenantStore((s) => s.activeStore?.currency_code) || "AUD";
   const [filter, setFilter] = useState<FilterKey>("all");
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [newCouponPressed, setNewCouponPressed] = useState(false);
 
   const {
     data,
@@ -71,13 +74,15 @@ export default function CouponsScreen() {
         rightSlot={
           <Pressable
             onPress={() => router.push("/(tabs)/more/marketing/coupons/new")}
+            onPressIn={() => setNewCouponPressed(true)}
+            onPressOut={() => setNewCouponPressed(false)}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="New coupon"
             android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-            }
+            style={[
+              newCouponPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            ]}
           >
             <Plus size={22} color={theme.colors.text} strokeWidth={1.75} />
           </Pressable>

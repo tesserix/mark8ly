@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Platform,
   RefreshControl,
@@ -113,6 +114,10 @@ function Section({
   seeAllLabel?: string;
   children: React.ReactNode;
 }) {
+  // NativeWind's JSX interop doesn't resolve a function `style` prop the way
+  // it resolves a plain array — press state is tracked explicitly instead.
+  const [seeAllPressed, setSeeAllPressed] = useState(false);
+
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -122,13 +127,15 @@ function Section({
         {onSeeAll ? (
           <Pressable
             onPress={onSeeAll}
+            onPressIn={() => setSeeAllPressed(true)}
+            onPressOut={() => setSeeAllPressed(false)}
             accessibilityRole="link"
             accessibilityLabel={seeAllLabel}
             hitSlop={8}
             android_ripple={{ ...theme.press.rippleInk, borderless: true }}
-            style={({ pressed }) =>
-              pressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null
-            }
+            style={[
+              seeAllPressed && Platform.OS === "ios" ? { opacity: theme.press.opacityStandard } : null,
+            ]}
           >
             <Text preset="caption" color="accent">
               {seeAllLabel}

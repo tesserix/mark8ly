@@ -18,6 +18,7 @@
 // file always wins over this one. Keep this file's surface to the minimum
 // needed to load without throwing; grow it only as more `components/ui`
 // files start depending on reanimated (increment 2 adds several).
+const { useRef } = require("react");
 const { View } = require("react-native");
 
 function interpolate(value, inputRange, outputRange) {
@@ -25,6 +26,40 @@ function interpolate(value, inputRange, outputRange) {
   const [outMin, outMax] = outputRange;
   const t = Math.max(0, Math.min(1, (value - inMin) / (inMax - inMin)));
   return outMin + t * (outMax - outMin);
+}
+
+// Added for Task 4 (SwipeRow): a real reanimated `useSharedValue` returns a
+// stable mutable ref-like object across re-renders (mutating `.value` never
+// itself triggers a React re-render). Backing this with `useRef` reproduces
+// that persistence under jest — a naive `{ value: initial }` literal would
+// be recreated (and reset) on every render, which would silently drop
+// in-progress gesture state (translateX, "has this drag crossed the
+// threshold yet") the moment anything else re-rendered the component.
+function useSharedValue(initial) {
+  const ref = useRef(undefined);
+  if (ref.current === undefined) {
+    ref.current = { value: initial };
+  }
+  return ref.current;
+}
+
+// Real `runOnJS` hops a worklet's call back to the JS thread; under jest
+// there is no separate thread, so it's a same-tick passthrough.
+function runOnJS(fn) {
+  return (...args) => fn(...args);
+}
+
+// Real `withSpring`/`withTiming` return animation descriptors that reanimated
+// resolves over several frames on the UI thread. Under jest there is no
+// frame loop, so both resolve straight to the target value — sufficient to
+// assert the FINAL rest state (e.g. "springs back to translateX 0") without
+// simulating the animation curve itself.
+function withSpring(toValue) {
+  return toValue;
+}
+
+function withTiming(toValue) {
+  return toValue;
 }
 
 module.exports = {
@@ -35,4 +70,8 @@ module.exports = {
   useAnimatedStyle: (factory) => factory(),
   useDerivedValue: (factory) => ({ value: factory() }),
   useReducedMotion: jest.fn(() => false),
+  useSharedValue,
+  runOnJS,
+  withSpring,
+  withTiming,
 };

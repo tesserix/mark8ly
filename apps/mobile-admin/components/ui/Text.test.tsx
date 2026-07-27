@@ -27,4 +27,12 @@ describe('Text', () => {
     expect(node.props.className).toContain('text-caption');
     expect(node.props.className).toContain('text-ink-muted');
   });
+
+  it('maps the heroNumeral preset to the serif hero classes', () => {
+    const { getByText } = render(<Text preset="heroNumeral">$4,280</Text>);
+    const node = getByText('$4,280');
+    expect(node.props.className).toContain('font-serif-bold');
+    expect(node.props.className).toContain('text-hero');
+    expect(node.props.className).toContain('text-ink');
+  });
 });

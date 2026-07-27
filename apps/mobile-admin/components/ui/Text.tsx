@@ -1,6 +1,7 @@
 import { Text as RNText, type TextProps as RNTextProps } from 'react-native';
 
 export type TextPreset =
+  | 'heroNumeral'
   | 'display'
   | 'h1'
   | 'h2'
@@ -9,11 +10,13 @@ export type TextPreset =
   | 'bodyLg'
   | 'body'
   | 'bodyEmphasis'
+  | 'label'
   | 'caption';
 
 // Each preset is a fixed set of nativewind classes: family + size + default
 // color. Callers pass `className` to override color/spacing per use.
 const PRESET_CLASSES: Record<TextPreset, string> = {
+  heroNumeral: 'font-serif-bold text-hero text-ink',
   display: 'font-serif-bold text-display text-ink',
   h1: 'font-serif text-h1 text-ink',
   h2: 'font-serif text-h2 text-ink',
@@ -22,6 +25,7 @@ const PRESET_CLASSES: Record<TextPreset, string> = {
   bodyLg: 'font-sans text-body-lg text-ink',
   body: 'font-sans text-body text-ink',
   bodyEmphasis: 'font-sans-semibold text-body text-ink',
+  label: 'font-sans-medium text-label text-ink',
   caption: 'font-sans-medium text-caption text-ink-soft',
 };
 

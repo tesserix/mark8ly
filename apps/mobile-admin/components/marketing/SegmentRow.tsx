@@ -1,6 +1,6 @@
-import { View, TouchableOpacity, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { ChevronRight } from "lucide-react-native";
-import { Text } from "@/components/ui";
+import { PressableRow, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Segment } from "@repo/mobile-shared/api/types";
 
@@ -12,11 +12,11 @@ interface SegmentRowProps {
 export function SegmentRow({ segment, onPress }: SegmentRowProps) {
   const count = segment.member_count;
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <PressableRow
+      lines={2}
       onPress={() => onPress(segment)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
+      style={styles.row}
+      testID={`segment-row-${segment.id}`}
       accessibilityLabel={`Segment ${segment.name}, ${count} members`}
     >
       <View style={styles.info}>
@@ -29,20 +29,15 @@ export function SegmentRow({ segment, onPress }: SegmentRowProps) {
         </Text>
       </View>
       <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+  row: {
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.md,
   },
   info: { flex: 1, gap: 4 },
 });

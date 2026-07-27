@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { TouchableOpacity, View, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { ChevronRight } from "lucide-react-native";
-import { Text } from "@/components/ui";
+import { PressableRow, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 interface MarketingRowProps {
@@ -11,14 +11,18 @@ interface MarketingRowProps {
   onPress: () => void;
 }
 
+function slugify(label: string): string {
+  return label.toLowerCase().replace(/\s+/g, "-");
+}
+
 /** A single entry in the Marketing hub: icon, label, one-line description. */
 export function MarketingRow({ icon, label, description, onPress }: MarketingRowProps) {
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <PressableRow
+      lines={1}
       onPress={onPress}
-      activeOpacity={0.6}
-      accessibilityRole="button"
+      style={styles.row}
+      testID={`marketing-row-${slugify(label)}`}
       accessibilityLabel={`${label}. ${description}`}
     >
       <View style={styles.icon}>{icon}</View>
@@ -31,20 +35,15 @@ export function MarketingRow({ icon, label, description, onPress }: MarketingRow
         </Text>
       </View>
       <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+  row: {
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.md,
   },
   icon: { width: 24, alignItems: "center" },
   info: { flex: 1, gap: 2 },

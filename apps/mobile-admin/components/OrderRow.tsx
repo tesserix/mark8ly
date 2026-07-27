@@ -1,5 +1,5 @@
-import { View, TouchableOpacity, StyleSheet } from "react-native";
-import { Text } from "@/components/ui";
+import { View, StyleSheet } from "react-native";
+import { PressableRow, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/money";
 import { OrderStatusBadges } from "@/components/orders/OrderStatusBadges";
@@ -31,43 +31,55 @@ export function OrderRow({ order, onPress, currencyCode }: OrderRowProps) {
   const total = formatMoney(order.grand_total, currency);
 
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <PressableRow
+      lines={2}
       onPress={() => onPress(order)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
+      style={styles.row}
+      testID={`order-row-${order.id}`}
       accessibilityLabel={`Order ${order.order_number}, ${displayName}, ${total}, ${order.status}`}
     >
-      <View style={styles.topRow}>
-        <Text preset="bodyEmphasis" color="text">
-          #{order.order_number}
+      <View style={styles.stack}>
+        <View style={styles.topRow}>
+          <Text preset="bodyEmphasis" color="text">
+            #{order.order_number}
+          </Text>
+          <OrderStatusBadges
+            status={order.status}
+            paymentStatus={order.payment_status}
+          />
+        </View>
+        <Text
+          preset="caption"
+          color="textSecondary"
+          numberOfLines={1}
+          style={styles.customer}
+        >
+          {displayName}
         </Text>
-        <OrderStatusBadges status={order.status} paymentStatus={order.payment_status} />
+        <View style={styles.bottomRow}>
+          <Text preset="bodyEmphasis" color="text">
+            {total}
+          </Text>
+          <Text preset="caption" color="textTertiary">
+            {formatRelativeTime(order.placed_at)}
+          </Text>
+        </View>
       </View>
-      <Text preset="caption" color="textSecondary" numberOfLines={1} style={styles.customer}>
-        {displayName}
-      </Text>
-      <View style={styles.bottomRow}>
-        <Text preset="bodyEmphasis" color="text">
-          {total}
-        </Text>
-        <Text preset="caption" color="textTertiary">
-          {formatRelativeTime(order.placed_at)}
-        </Text>
-      </View>
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+  row: {
+    // Overrides PressableRow's base flexDirection: "row" — applied last, so
+    // it wins. The three lines stack instead of sitting side by side.
+    flexDirection: "column",
+    alignItems: "stretch",
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.xs,
   },
+  stack: { gap: theme.spacing.xs },
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",

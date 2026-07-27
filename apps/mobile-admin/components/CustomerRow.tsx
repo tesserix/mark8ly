@@ -1,5 +1,5 @@
-import { View, TouchableOpacity, StyleSheet } from "react-native";
-import { Text } from "@/components/ui";
+import { View, StyleSheet } from "react-native";
+import { PressableRow, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/money";
 import type { Customer } from "@repo/mobile-shared/api/types";
@@ -27,11 +27,11 @@ export function CustomerRow({ customer, onPress, currencyCode }: CustomerRowProp
   const displayName = getDisplayName(customer);
   const spent = formatMoney(customer.total_spent, currencyCode);
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <PressableRow
+      lines={2}
       onPress={() => onPress(customer)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
+      style={styles.row}
+      testID={`customer-row-${customer.id}`}
       accessibilityLabel={`${displayName}, ${customer.email}, ${customer.order_count} orders, ${spent} spent`}
     >
       <View style={styles.avatar}>
@@ -55,21 +55,18 @@ export function CustomerRow({ customer, onPress, currencyCode }: CustomerRowProp
           {customer.order_count} {customer.order_count === 1 ? "order" : "orders"}
         </Text>
       </View>
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+  row: {
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.md,
   },
+  // Avatar stays a neutral surface tint — never moss. Moss is reserved for
+  // the app's single accent (links, focus, key CTAs), not decoration.
   avatar: {
     width: 40,
     height: 40,

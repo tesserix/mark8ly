@@ -1,6 +1,6 @@
-import { View, TouchableOpacity, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { ChevronRight } from "lucide-react-native";
-import { Text, StatusBadge } from "@/components/ui";
+import { PressableRow, Text, StatusBadge } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { campaignStatusTone, titleizeStatus } from "@/lib/campaign-display";
 import type { Campaign } from "@repo/mobile-shared/api/types";
@@ -16,11 +16,11 @@ export function CampaignRow({ campaign, onPress }: CampaignRowProps) {
       ? `${campaign.delivered} delivered · ${campaign.opened} opened`
       : campaign.subject || "No subject yet";
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <PressableRow
+      lines={2}
       onPress={() => onPress(campaign)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
+      style={styles.row}
+      testID={`campaign-row-${campaign.id}`}
       accessibilityLabel={`Campaign ${campaign.name}, ${campaign.status}`}
     >
       <View style={styles.info}>
@@ -35,20 +35,15 @@ export function CampaignRow({ campaign, onPress }: CampaignRowProps) {
         </Text>
       </View>
       <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+  row: {
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.md,
   },
   info: { flex: 1, gap: 4 },
   topRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },

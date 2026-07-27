@@ -1,6 +1,6 @@
-import { View, TouchableOpacity, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { ChevronRight, Bookmark } from "lucide-react-native";
-import { Text } from "@/components/ui";
+import { PressableRow, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { ReviewStars } from "./ReviewStars";
 import { ReviewStatusBadge } from "./ReviewStatusBadge";
@@ -22,14 +22,14 @@ function formatDate(iso: string): string {
 export function ReviewRow({ review, onPress }: ReviewRowProps) {
   const preview = review.title || review.content;
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <PressableRow
+      lines={2}
       onPress={() => onPress(review)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
+      style={styles.row}
+      testID={`review-row-${review.id}`}
       accessibilityLabel={`Review by ${review.customer_name}, ${review.rating} stars, ${review.status}`}
     >
-      <View style={styles.info}>
+      <View style={styles.stack}>
         <View style={styles.topRow}>
           <ReviewStars rating={review.rating} />
           <ReviewStatusBadge status={review.status} />
@@ -42,26 +42,37 @@ export function ReviewRow({ review, onPress }: ReviewRowProps) {
             {preview}
           </Text>
         ) : null}
-        <Text preset="caption" color="textTertiary" numberOfLines={1}>
-          {review.customer_name} · {formatDate(review.created_at)}
-        </Text>
+        <View style={styles.bottomRow}>
+          <Text preset="caption" color="textTertiary" numberOfLines={1} style={styles.meta}>
+            {review.customer_name} · {formatDate(review.created_at)}
+          </Text>
+          <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
+        </View>
       </View>
-      <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+  row: {
+    // Overrides PressableRow's base flexDirection: "row" — applied last, so
+    // it wins. Stars, then quote, then meta stack vertically instead of
+    // sitting beside a vertically-centered trailing chevron; the chevron
+    // moves to the end of the meta line instead (see OrderRow for the same
+    // column-stack pattern).
+    flexDirection: "column",
+    alignItems: "stretch",
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.md,
   },
-  info: { flex: 1, gap: 4 },
+  stack: { gap: theme.spacing.xs },
   topRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.sm,
+  },
+  meta: { flex: 1, minWidth: 0 },
 });

@@ -1,6 +1,6 @@
-import { View, TouchableOpacity, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { ChevronRight } from "lucide-react-native";
-import { Text, StatusBadge } from "@/components/ui";
+import { PressableRow, Text, StatusBadge } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatCouponValue, couponStatusTone } from "@/lib/coupon-display";
 import type { Coupon } from "@repo/mobile-shared/api/types";
@@ -17,11 +17,11 @@ function titleize(value: string): string {
 
 export function CouponRow({ coupon, currency, onPress }: CouponRowProps) {
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <PressableRow
+      lines={2}
       onPress={() => onPress(coupon)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
+      style={styles.row}
+      testID={`coupon-row-${coupon.id}`}
       accessibilityLabel={`Coupon ${coupon.code}, ${coupon.status}`}
     >
       <View style={styles.info}>
@@ -36,20 +36,15 @@ export function CouponRow({ coupon, currency, onPress }: CouponRowProps) {
         </Text>
       </View>
       <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+  row: {
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.md,
   },
   info: { flex: 1, gap: 4 },
   topRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },

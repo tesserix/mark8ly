@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { Pressable, Text as RNText, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, Text as RNText, StyleSheet } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
 import { PressableRow } from '@/components/ui/PressableRow';
 import { theme } from '@/lib/theme';
@@ -86,13 +86,18 @@ describe('PressableRow', () => {
   // DashboardOrderRow, CampaignRow, and every other row sitting on a
   // Card/sheet surface, all of which correctly override the paper default)
   // silently killed the iOS press feedback entirely. Android still rippled,
-  // which is why it looked fine on emulator. Drive the style FUNCTION
-  // directly rather than real press-state, per jest-expo's Platform.OS
-  // pin to 'ios' (see the ripple test above) and because simulating a real
-  // pressIn/pressOut cycle through Pressable's internal state is fragile
-  // under react-test-renderer.
+  // which is why it looked fine on emulator.
+  //
+  // This drives a REAL pressIn/pressOut cycle rather than poking a style
+  // function, because PressableRow no longer has one: under NativeWind's JSX
+  // interop a function `style` prop isn't resolved like a plain array and the
+  // base styles were dropped at runtime (rows rendered with no padding and
+  // stacked vertically). Press state is now explicit, so the array is
+  // inspectable directly — which is also a truer test than calling the
+  // function ourselves. jest-expo pins Platform.OS to 'ios', so the pressed
+  // branch is live here (see the ripple test above).
   it('caller-supplied backgroundColor never wins over the pressed sink state', () => {
-    const { UNSAFE_getByType } = render(
+    const { getByTestId } = render(
       <PressableRow
         onPress={() => {}}
         accessibilityLabel="Row"
@@ -102,22 +107,38 @@ describe('PressableRow', () => {
         <RNText>Row</RNText>
       </PressableRow>,
     );
-    const innerPressableType = (Pressable as unknown as { type: ComponentType<unknown> }).type;
-    const styleFn = UNSAFE_getByType(innerPressableType).props.style as (state: {
-      pressed: boolean;
-    }) => StyleProp<ViewStyle>;
 
     // Unpressed: the caller's elevated background wins, matching its parent
     // Card/sheet surface instead of PressableRow's paper default.
-    expect(StyleSheet.flatten(styleFn({ pressed: false })).backgroundColor).toBe(
-      theme.colors.elevated,
-    );
+    expect(
+      StyleSheet.flatten(getByTestId('row').props.style).backgroundColor,
+    ).toBe(theme.colors.elevated);
+
     // Pressed: the row's sink press state MUST win over the caller's
     // backgroundColor override — this is the exact regression the ordering
     // bug produced.
-    expect(StyleSheet.flatten(styleFn({ pressed: true })).backgroundColor).toBe(
-      theme.colors.sink,
+    fireEvent(getByTestId('row'), 'pressIn');
+    expect(
+      StyleSheet.flatten(getByTestId('row').props.style).backgroundColor,
+    ).toBe(theme.colors.sink);
+
+    // …and released, it returns to the caller's surface.
+    fireEvent(getByTestId('row'), 'pressOut');
+    expect(
+      StyleSheet.flatten(getByTestId('row').props.style).backgroundColor,
+    ).toBe(theme.colors.elevated);
+  });
+
+  // Guards the NativeWind interop bug directly: a function style prop is not
+  // resolved at runtime, so the base styles vanish. If someone "simplifies"
+  // PressableRow back to `style={({pressed}) => …}`, this fails.
+  it('passes a plain array style, never a function', () => {
+    const { getByTestId } = render(
+      <PressableRow onPress={() => {}} accessibilityLabel="Row" testID="row">
+        <RNText>Row</RNText>
+      </PressableRow>,
     );
+    expect(typeof getByTestId('row').props.style).not.toBe('function');
   });
 
   it('forwards onLongPress', () => {

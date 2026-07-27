@@ -1,6 +1,5 @@
-import { View, Image, TouchableOpacity, StyleSheet } from "react-native";
-import { Package } from "lucide-react-native";
-import { StatusBadge, Text } from "@/components/ui";
+import { View, StyleSheet } from "react-native";
+import { PressableRow, StatusBadge, Text, Thumb } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Product } from "@repo/mobile-shared/api/types";
 import {
@@ -21,28 +20,23 @@ export function ProductRow({ product, onPress }: ProductRowProps) {
   const price = productPrice(product);
   const stock = productStock(product);
   const thumb = productThumb(product);
-  const priceLabel = price === undefined ? "—" : formatMoney(price, productCurrency(product));
+  const priceLabel =
+    price === undefined ? "—" : formatMoney(price, productCurrency(product));
   const lowStock = stock <= 5;
 
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <PressableRow
+      lines={2}
       onPress={() => onPress(product)}
-      activeOpacity={0.6}
-      accessibilityRole="button"
+      style={styles.row}
+      testID={`product-row-${product.id}`}
       accessibilityLabel={`${product.title}, ${priceLabel}, stock ${stock}, ${product.status}`}
     >
-      {thumb ? (
-        <Image
-          source={{ uri: thumb }}
-          style={styles.thumb}
-          accessibilityLabel={`${product.title} thumbnail`}
-        />
-      ) : (
-        <View style={[styles.thumb, styles.thumbPlaceholder]}>
-          <Package size={20} color={theme.colors.textTertiary} strokeWidth={1.5} />
-        </View>
-      )}
+      <Thumb
+        uri={thumb}
+        recyclingKey={product.id}
+        accessibilityLabel={`${product.title} thumbnail`}
+      />
 
       <View style={styles.info}>
         <Text preset="bodyEmphasis" color="text" numberOfLines={1}>
@@ -62,32 +56,17 @@ export function ProductRow({ product, onPress }: ProductRowProps) {
         label={isActive ? "Active" : product.status}
         tone={isActive ? "success" : "muted"}
       />
-    </TouchableOpacity>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+  row: {
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
-    gap: theme.spacing.md,
   },
-  thumb: {
-    width: 52,
-    height: 52,
-    borderRadius: theme.radii.sm,
-    backgroundColor: theme.colors.surfaceAlt,
-  },
-  thumbPlaceholder: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  info: { flex: 1, gap: 4 },
+  info: { flex: 1, gap: 4, minWidth: 0 },
   metaRow: {
     flexDirection: "row",
     alignItems: "center",

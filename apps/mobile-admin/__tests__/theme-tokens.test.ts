@@ -76,6 +76,10 @@ describe('WCAG AA colour guard', () => {
     '#7a766e',
   ];
 
+  // Hoist require to describe level to avoid duplication
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const twConfig = require(path.resolve(__dirname, '../tailwind.config.js'));
+
   // Check token values by walking the object tree, ignoring comments entirely.
   // Comments become irrelevant by construction — we only check actual values.
   function findBannedValues(obj: unknown): string | null {
@@ -117,14 +121,10 @@ describe('WCAG AA colour guard', () => {
   });
 
   it('does not reintroduce a failing text colour in tailwind.config.js', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const twConfig = require(path.resolve(__dirname, '../tailwind.config.js'));
-
     const colors = getPath(twConfig, 'theme', 'extend', 'colors');
-    // Assert colors is non-empty before walking (catch vacuous pass)
-    if (typeof colors === 'object' && colors !== null) {
-      expect(Object.keys(colors).length).toBeGreaterThan(0);
-    }
+    // Assert colors is present and non-empty UNCONDITIONALLY (catch vacuous pass)
+    expect(colors).toBeTruthy();
+    expect(Object.keys(colors as object).length).toBeGreaterThan(0);
 
     const banned = findBannedValues(colors);
     if (banned) {
@@ -139,8 +139,6 @@ describe('WCAG AA colour guard', () => {
     expect(theme.colors.textTertiary).toBe('#5C5953');
 
     // tailwind.config.js assertion
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const twConfig = require(path.resolve(__dirname, '../tailwind.config.js'));
     const inkMuted = getPath(twConfig, 'theme', 'extend', 'colors', 'ink', 'muted');
     expect(inkMuted).toBe('#5C5953');
   });

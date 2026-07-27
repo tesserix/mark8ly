@@ -147,3 +147,71 @@ func TestAdminVariantResponse_IncludesCostPriceAndInventoryQuantity(t *testing.T
 		}
 	}
 }
+
+// TestRecentOrder_OmitNilFields locks in the omitempty contract the mobile
+// TypeScript client depends on: nil pointers must make the key ABSENT from
+// the JSON, not present with a null value, because the client models these
+// fields with .optional() rather than .nullable().
+func TestRecentOrder_OmitNilFields(t *testing.T) {
+	ro := admin.RecentOrder{
+		ID:            "o1",
+		OrderNumber:   "1001",
+		CustomerEmail: "a@example.com",
+		GrandTotal:    10,
+		Status:        "pending",
+		CreatedAt:     "2026-01-01T00:00:00Z",
+	}
+	b, err := json.Marshal(ro)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if strings.Contains(s, `"customer_name"`) {
+		t.Fatalf("customer_name should be omitted when nil: %s", s)
+	}
+	if strings.Contains(s, `"image_url"`) {
+		t.Fatalf("image_url should be omitted when nil: %s", s)
+	}
+}
+
+func TestRecentOrder_IncludesFieldsWhenSet(t *testing.T) {
+	name := "Jane Doe"
+	img := "https://example.com/p.jpg"
+	ro := admin.RecentOrder{
+		ID: "o1", OrderNumber: "1001", CustomerEmail: "a@example.com",
+		CustomerName: &name, GrandTotal: 10, Status: "pending",
+		CreatedAt: "2026-01-01T00:00:00Z", ImageURL: &img,
+	}
+	b, err := json.Marshal(ro)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if !strings.Contains(s, `"customer_name":"Jane Doe"`) {
+		t.Fatalf("customer_name not serialized: %s", s)
+	}
+	if !strings.Contains(s, `"image_url":"https://example.com/p.jpg"`) {
+		t.Fatalf("image_url not serialized: %s", s)
+	}
+}
+
+// TestLowStockItem_ProductIDAlwaysPresent guards the bug fix: product_id
+// must always be present (never omitted), since it is the id the mobile
+// queue row navigates with — unlike image_url, which is genuinely optional.
+func TestLowStockItem_ProductIDAlwaysPresent(t *testing.T) {
+	li := admin.LowStockItem{
+		ID: "v1", ProductID: "p1", Title: "T", VariantTitle: "Small",
+		Quantity: 1, LowStockThreshold: 5,
+	}
+	b, err := json.Marshal(li)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if !strings.Contains(s, `"product_id":"p1"`) {
+		t.Fatalf("product_id should always be present: %s", s)
+	}
+	if strings.Contains(s, `"image_url"`) {
+		t.Fatalf("image_url should be omitted when nil: %s", s)
+	}
+}

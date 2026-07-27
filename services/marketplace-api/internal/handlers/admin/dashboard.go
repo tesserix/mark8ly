@@ -36,12 +36,19 @@ type DashboardStats struct {
 
 // RecentOrder is a summary row for a recent order.
 type RecentOrder struct {
-	ID            string  `json:"id"`
-	OrderNumber   string  `json:"order_number"`
-	CustomerEmail string  `json:"customer_email"`
-	GrandTotal    float64 `json:"grand_total"`
-	Status        string  `json:"status"`
-	CreatedAt     string  `json:"created_at"`
+	ID            string `json:"id"`
+	OrderNumber   string `json:"order_number"`
+	CustomerEmail string `json:"customer_email"`
+	// Nullable in the DB — merchants can place orders without a name.
+	// Mobile falls back to CustomerEmail when absent.
+	CustomerName *string `json:"customer_name,omitempty"`
+	GrandTotal   float64 `json:"grand_total"`
+	Status       string  `json:"status"`
+	CreatedAt    string  `json:"created_at"`
+	// First line item's product image, for the mobile queue thumbnail.
+	// Absent when the order has no items with an image (e.g. the product
+	// was deleted after the order was placed).
+	ImageURL *string `json:"image_url,omitempty"`
 }
 
 // TopProduct shows a product ranked by revenue.
@@ -55,11 +62,14 @@ type TopProduct struct {
 
 // LowStockItem shows a variant below its reorder threshold.
 type LowStockItem struct {
-	ID                string `json:"id"`
-	Title             string `json:"title"`
-	VariantTitle      string `json:"variant_title"`
-	Quantity          int    `json:"quantity"`
-	LowStockThreshold int   `json:"low_stock_threshold"`
+	// ID is the VARIANT id. Use ProductID to navigate to the product.
+	ID                string  `json:"id"`
+	ProductID         string  `json:"product_id"`
+	Title             string  `json:"title"`
+	VariantTitle      string  `json:"variant_title"`
+	Quantity          int     `json:"quantity"`
+	LowStockThreshold int     `json:"low_stock_threshold"`
+	ImageURL          *string `json:"image_url,omitempty"`
 }
 
 // SetupChecklist tracks onboarding completion across 8 items split into
@@ -237,14 +247,21 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 		ID            uuid.UUID
 		OrderNumber   string
 		CustomerEmail string
+		CustomerName  *string
 		GrandTotal    float64
 		Status        string
 		CreatedAt     time.Time
+		ImageURL      *string
 	}
-	db.Raw(`SELECT id, order_number, customer_email, grand_total, status, created_at
-		FROM orders
-		WHERE store_id = ? AND tenant_id = ?
-		ORDER BY created_at DESC
+	db.Raw(`SELECT o.id, o.order_number, o.customer_email, o.customer_name,
+			o.grand_total, o.status, o.created_at,
+			(SELECT oi.image_url FROM order_items oi
+			   WHERE oi.order_id = o.id AND oi.image_url IS NOT NULL
+			   ORDER BY oi.created_at
+			   LIMIT 1) AS image_url
+		FROM orders o
+		WHERE o.store_id = ? AND o.tenant_id = ?
+		ORDER BY o.created_at DESC
 		LIMIT 5`,
 		storeID, tenantID).Scan(&recentRows)
 
@@ -254,9 +271,11 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 			ID:            r.ID.String(),
 			OrderNumber:   r.OrderNumber,
 			CustomerEmail: r.CustomerEmail,
+			CustomerName:  r.CustomerName,
 			GrandTotal:    r.GrandTotal,
 			Status:        r.Status,
 			CreatedAt:     r.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			ImageURL:      r.ImageURL,
 		})
 	}
 
@@ -295,14 +314,20 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 	// Low stock items.
 	var lowRows []struct {
 		ID                uuid.UUID
+		ProductID         uuid.UUID
 		Title             string
 		VariantTitle      string
 		Quantity          int
 		LowStockThreshold int
+		ImageURL          *string
 	}
-	db.Raw(`SELECT pv.id, p.title, pv.title AS variant_title,
+	db.Raw(`SELECT pv.id, pv.product_id, p.title, pv.title AS variant_title,
 			pv.inventory_quantity AS quantity,
-			COALESCE(pv.low_stock_threshold, 10) AS low_stock_threshold
+			COALESCE(pv.low_stock_threshold, 10) AS low_stock_threshold,
+			(SELECT pm.url FROM product_media pm
+			   WHERE pm.product_id = p.id
+			   ORDER BY pm.position
+			   LIMIT 1) AS image_url
 		FROM product_variants pv
 		JOIN products p ON p.id = pv.product_id
 		WHERE p.store_id = ? AND p.tenant_id = ?
@@ -316,10 +341,12 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 	for _, r := range lowRows {
 		lowStock = append(lowStock, LowStockItem{
 			ID:                r.ID.String(),
+			ProductID:         r.ProductID.String(),
 			Title:             r.Title,
 			VariantTitle:      r.VariantTitle,
 			Quantity:          r.Quantity,
 			LowStockThreshold: r.LowStockThreshold,
+			ImageURL:          r.ImageURL,
 		})
 	}
 

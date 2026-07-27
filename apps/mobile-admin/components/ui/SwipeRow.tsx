@@ -66,6 +66,16 @@ const THRESHOLD_FRACTION = 0.4;
  */
 const FULL_SWIPE_FRACTION = 0.85;
 const ACTION_WIDTH = 84;
+/**
+ * Horizontal travel (px) before the pan is allowed to activate, and vertical
+ * travel before it fails to the enclosing scroll view. The vertical figure is
+ * the smaller of the two on purpose: an ambiguous diagonal drag should read as
+ * a SCROLL (recoverable, happens constantly) rather than as a row swipe
+ * (reveals a destructive action). Same shape as the values
+ * `react-native-gesture-handler`'s own Swipeable uses.
+ */
+const ACTIVATE_OFFSET_X = 12;
+const FAIL_OFFSET_Y = 8;
 
 const TONE_BACKGROUND: Record<SwipeAction["tone"], string> = {
   accent: theme.colors.accent,
@@ -147,6 +157,18 @@ export function SwipeRow({
 
   const pan = Gesture.Pan()
     .enabled(enabled)
+    // Axis arbitration against an enclosing scroll view. Without these two,
+    // `Gesture.Pan()` activates on ANY direction and wins the arena against
+    // the parent ScrollView — a vertical drag starting on a row scrolled
+    // NOTHING (found on device, inc2 Task 8: the Dashboard, which is mostly
+    // swipeable rows, could not be scrolled by dragging on its own list).
+    // `activeOffsetX` holds the pan back until the drag is genuinely
+    // horizontal; `failOffsetY` makes it give up outright once the drag is
+    // vertical, handing the gesture to the scroll view. Both are needed:
+    // activeOffsetX alone leaves the pan undecided (and still blocking)
+    // during a slow vertical drag.
+    .activeOffsetX([-ACTIVATE_OFFSET_X, ACTIVATE_OFFSET_X])
+    .failOffsetY([-FAIL_OFFSET_Y, FAIL_OFFSET_Y])
     .onStart(() => {
       "worklet";
       dragStartX.value = translateX.value;

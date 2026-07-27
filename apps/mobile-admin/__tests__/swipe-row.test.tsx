@@ -18,6 +18,10 @@ const __getLastGesture = (
     __getLastGesture: () => {
       handlers: {
         enabled?: boolean;
+        // Recorded by the mock's chainable builder — see the axis-arbitration
+        // suite at the bottom of this file for why SwipeRow sets these.
+        activeOffsetX?: [number, number];
+        failOffsetY?: [number, number];
         onUpdate: (event: { translationX: number }) => void;
         onEnd: (event: { translationX: number }) => void;
       };
@@ -338,5 +342,29 @@ describe("SwipeRow", () => {
     expect(leading.onPress).not.toHaveBeenCalled();
     expect(adminHaptics.swipeThreshold).not.toHaveBeenCalled();
     expect(gesture.handlers.enabled).toBe(false);
+  });
+});
+
+/**
+ * Found on device (inc2 Task 8): dragging VERTICALLY anywhere on a queue row
+ * scrolled nothing at all — the Dashboard, which is mostly swipeable rows,
+ * could not be scrolled by dragging on its own list. An unconstrained
+ * `Gesture.Pan()` activates on any direction, so it claimed every vertical
+ * drag and starved the enclosing ScrollView.
+ *
+ * The pan must therefore declare its axis: activate only after a horizontal
+ * movement, and FAIL outright on a vertical one so the scroll view wins.
+ * Asserted on the gesture configuration because that IS the fix — RNTL has
+ * no native gesture arena to observe the arbitration in.
+ */
+describe("SwipeRow — axis arbitration against a parent scroll view", () => {
+  it("only activates the pan after horizontal movement", () => {
+    const { gesture } = renderRow({ leadingActions: [action()] });
+    expect(gesture.handlers.activeOffsetX).toBeDefined();
+  });
+
+  it("fails the pan on vertical movement so the scroll view keeps the gesture", () => {
+    const { gesture } = renderRow({ leadingActions: [action()] });
+    expect(gesture.handlers.failOffsetY).toBeDefined();
   });
 });

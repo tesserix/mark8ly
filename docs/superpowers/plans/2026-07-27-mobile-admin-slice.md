@@ -27,7 +27,13 @@ Complete and on `main`. Available to you: the native type scale (`body` 17pt, `h
 - **No glassmorphism.** The collapsing header is solid Paper with a hairline — never a blur.
 - **No centered heroes.** Left-aligned, asymmetric.
 - **Reduced motion:** every animation gates on `useReducedMotion()`.
-- **Minimum touch target 44pt.**
+- **Minimum touch target 44pt**, as a real `minWidth`/`minHeight` box rather than `hitSlop` — an
+  invisible overlay can overlap siblings. **Exception (amended 2026-07-27):** a small badge or control
+  **overlaying another element** (e.g. the remove badge on a media thumbnail) keeps its small visible
+  size and uses `hitSlop` instead. A 44pt visible box there eats the element beneath it and has to
+  bleed onto neighbours to sit in a corner at all. When using `hitSlop`, compute the expanded region
+  against the actual sibling gap and prove it does not overlap — a too-large tap area on a media
+  thumbnail deletes the *next* photo.
 - **Modal sheet trap:** a `presentation:"modal"` screen is presented above the root `BottomSheetModalProvider`, so any sheet it mounts portals *behind* it. `app/(tabs)/products/new.tsx` is the only modal screen; a sheet added there needs its own local provider and must use `useSafeAreaInsets().bottom`, not `useDockClearance()`.
 - **Gates:** `npm test` + `npm run check-types` in `apps/mobile-admin` (baseline 67 suites / 462 tests, tsc clean) and in `packages/mobile-shared` (95 vitest).
 - **Commit style:** conventional commits, single-line messages, no signature, no co-author trailer.

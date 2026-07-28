@@ -17,25 +17,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/media"
+	"github.com/mark8ly/marketplace-api/internal/userprofile"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
-
-// userProfile is the GORM model for user_profiles. Keep in sync with
-// migrations/000036_user_profiles.up.sql.
-type userProfile struct {
-	UserID      string    `gorm:"column:user_id;primaryKey"`
-	Email       string    `gorm:"column:email"`
-	DisplayName string    `gorm:"column:display_name"`
-	Phone       string    `gorm:"column:phone"`
-	AvatarURL   string    `gorm:"column:avatar_url"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
-}
-
-func (userProfile) TableName() string { return "user_profiles" }
 
 // profileDTO is the wire shape the admin UI consumes. Field names mirror
 // AccountProfile in apps/admin/lib/api/settings-tier2-api.ts.
@@ -49,7 +35,7 @@ type profileDTO struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-func toProfileDTO(p userProfile, mfaEnabled bool) profileDTO {
+func toProfileDTO(p userprofile.Profile, mfaEnabled bool) profileDTO {
 	return profileDTO{
 		UserID:     p.UserID,
 		Email:      p.Email,
@@ -64,7 +50,7 @@ func toProfileDTO(p userProfile, mfaEnabled bool) profileDTO {
 // AccountHandler handles /admin/account endpoints.
 // Profile persists to user_profiles. MFA and sessions proxy to auth-bff.
 type AccountHandler struct {
-	db             *gorm.DB
+	profiles       userprofile.Store
 	uploader       media.Uploader
 	authBFFURL     string
 	internalSecret string
@@ -72,14 +58,14 @@ type AccountHandler struct {
 	logger         *slog.Logger
 }
 
-// NewAccountHandler constructs an AccountHandler. db is required.
+// NewAccountHandler constructs an AccountHandler. profiles is required.
 // uploader is optional (nil disables avatar uploads). internalSecret
 // is the shared MARKETPLACE_INTERNAL_AUTH_SECRET used to sign
 // outbound calls to auth-bff's /internal endpoints; empty value
 // disables the "reset my profile" cascade beyond the local DB wipe.
-func NewAccountHandler(db *gorm.DB, authBFFURL, internalSecret string, logger *slog.Logger) *AccountHandler {
+func NewAccountHandler(profiles userprofile.Store, authBFFURL, internalSecret string, logger *slog.Logger) *AccountHandler {
 	return &AccountHandler{
-		db:             db,
+		profiles:       profiles,
 		authBFFURL:     strings.TrimRight(authBFFURL, "/"),
 		internalSecret: internalSecret,
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
@@ -153,21 +139,18 @@ func (h *AccountHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	if len(updates) > 1 {
-		if err := h.db.WithContext(c.Request.Context()).
-			Model(&userProfile{}).
-			Where("user_id = ?", userID).
-			Updates(updates).Error; err != nil {
+		if err := h.profiles.Update(c.Request.Context(), userID, updates); err != nil {
 			h.logger.Error("update user profile", "user_id", userID, "err", err)
 			RespondErr(c, fmt.Errorf("update profile: %w", err), h.logger)
 			return
 		}
 		// re-load so response reflects the freshly persisted row
-		if err := h.db.WithContext(c.Request.Context()).
-			Where("user_id = ?", userID).
-			First(&profile).Error; err != nil {
+		reloaded, err := h.profiles.Get(c.Request.Context(), userID)
+		if err != nil {
 			RespondErr(c, fmt.Errorf("reload profile: %w", err), h.logger)
 			return
 		}
+		profile = reloaded
 	}
 
 	mfa := h.fetchMFAEnabled(c.Request.Context(), userID, email)
@@ -176,37 +159,38 @@ func (h *AccountHandler) UpdateProfile(c *gin.Context) {
 
 // loadOrSeed returns the user_profile row, inserting a skeleton row on
 // first read so the rest of the admin UI can count on a stable shape.
-func (h *AccountHandler) loadOrSeed(c *gin.Context, userID, email string) (userProfile, error) {
-	var p userProfile
-	err := h.db.WithContext(c.Request.Context()).
-		Where("user_id = ?", userID).
-		First(&p).Error
+func (h *AccountHandler) loadOrSeed(c *gin.Context, userID, email string) (userprofile.Profile, error) {
+	ctx := c.Request.Context()
+
+	p, err := h.profiles.Get(ctx, userID)
 	if err == nil {
 		// Keep email mirrored if it drifted (e.g. GIP change).
 		if email != "" && p.Email != email {
-			_ = h.db.WithContext(c.Request.Context()).
-				Model(&userProfile{}).
-				Where("user_id = ?", userID).
-				Updates(map[string]any{"email": email, "updated_at": time.Now()}).Error
+			_ = h.profiles.Update(ctx, userID, map[string]any{
+				"email":      email,
+				"updated_at": time.Now(),
+			})
 			p.Email = email
 		}
 		return p, nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return userProfile{}, fmt.Errorf("load profile: %w", err)
+	if !errors.Is(err, userprofile.ErrNotFound) {
+		return userprofile.Profile{}, fmt.Errorf("load profile: %w", err)
 	}
+
 	now := time.Now()
-	p = userProfile{
+	p = userprofile.Profile{
 		UserID:    userID,
 		Email:     email,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if err := h.db.WithContext(c.Request.Context()).Create(&p).Error; err != nil {
-		return userProfile{}, fmt.Errorf("seed profile: %w", err)
+	if err := h.profiles.Create(ctx, p); err != nil {
+		return userprofile.Profile{}, fmt.Errorf("seed profile: %w", err)
 	}
 	return p, nil
 }
+
 
 // ─── Avatar upload ───────────────────────────────────────────────────
 
@@ -384,9 +368,7 @@ func (h *AccountHandler) DeleteAccount(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.WithContext(c.Request.Context()).
-		Where("user_id = ?", userID).
-		Delete(&userProfile{}).Error; err != nil {
+	if err := h.profiles.Delete(c.Request.Context(), userID); err != nil {
 		RespondErr(c, fmt.Errorf("delete profile: %w", err), h.logger)
 		return
 	}

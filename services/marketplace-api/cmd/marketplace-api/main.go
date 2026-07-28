@@ -113,6 +113,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/teamproxy"
 	"github.com/mark8ly/marketplace-api/internal/tenantpurge"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
+	"github.com/mark8ly/marketplace-api/internal/userprofile"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 	wlapple "github.com/mark8ly/marketplace-api/internal/whitelabel/apple"
@@ -777,7 +778,8 @@ func main() {
 		reviewsHandler := admin.NewReviewsHandler(reviewRepoAdmin, log)
 
 		// Settings S1 — Account & Security.
-		accountHandler := admin.NewAccountHandler(conn, cfg.AuthBFFURL, cfg.InternalAuthSecret, log)
+		userProfileRepo := userprofile.NewRepository(conn)
+		accountHandler := admin.NewAccountHandler(userProfileRepo, cfg.AuthBFFURL, cfg.InternalAuthSecret, log)
 		accountHandler.SetUploader(uploader)
 
 		// Settings S2 — Custom Domains: domainSvc + domainsHandler hoisted

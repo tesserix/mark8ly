@@ -1,10 +1,25 @@
 /**
+ * What a non-finite amount renders as. An em dash, saying "we don't know" —
+ * the same answer `MetricsCard.changeBadge` gives a non-finite percentage,
+ * and for the same reason.
+ *
+ * `Intl.NumberFormat.format(NaN)` returns the literal string `"NaN"`, and
+ * `Math.trunc(NaN)` is `NaN`, so nothing downstream catches it: an absent or
+ * malformed wire field would render as a merchant's monthly revenue reading
+ * "NaN" on the Dashboard hero — and, via `RevenueChart`'s label, be SPOKEN as
+ * that by VoiceOver. `Infinity` formats as "∞", which is no better on a
+ * money column.
+ */
+const UNKNOWN_AMOUNT = "—";
+
+/**
  * Formats money in the currency the store actually uses. Every amount in this
  * app used to render as USD via a hardcoded Intl option, while the store is
  * AUD and the wire reports the real `currency_code`. Pass the store's code so
  * a non-USD merchant sees the right symbol, not "$".
  */
 export function formatMoney(amount: number, currencyCode?: string): string {
+  if (!Number.isFinite(amount)) return UNKNOWN_AMOUNT;
   if (!currencyCode) {
     return new Intl.NumberFormat("en-AU", { minimumFractionDigits: 2 }).format(amount);
   }
@@ -32,8 +47,14 @@ export function formatMoney(amount: number, currencyCode?: string): string {
  * `formatMoney` above keeps 2dp and stays the default: use it anywhere the
  * exact amount matters (order totals, refunds, line items, anything a
  * merchant might read back to a customer).
+ *
+ * NON-FINITE INPUT IS GUARDED — see `UNKNOWN_AMOUNT`. This function feeds the
+ * Dashboard hero numeral, the today/this-week line, the queue's amount column
+ * AND `RevenueChart`'s `accessibilityLabel`, so an unguarded `NaN` is four
+ * surfaces on the screen a merchant signs their day off from.
  */
 export function formatWholeMoney(amount: number, currencyCode?: string): string {
+  if (!Number.isFinite(amount)) return UNKNOWN_AMOUNT;
   const whole = Math.trunc(amount);
   if (!currencyCode) {
     return new Intl.NumberFormat("en-AU", { maximumFractionDigits: 0 }).format(whole);

@@ -40,3 +40,49 @@ describe("formatWholeMoney — the display formatter", () => {
     expect(formatWholeMoney(8400.5)).toBe("8,400");
   });
 });
+
+// `Intl.NumberFormat.format(NaN)` returns the literal string "NaN" and
+// `Math.trunc(NaN)` is NaN, so neither formatter caught it on its own. The
+// SAME class was fixed one commit earlier in `MetricsCard.changeBadge` (which
+// returns an em dash for a non-finite percentage) and both of these siblings
+// were missed — which is how a merchant's monthly revenue could have rendered
+// as "NaN" on the Dashboard hero, and been spoken as that by VoiceOver
+// through `RevenueChart`'s accessibilityLabel.
+describe("money — non-finite input never reaches the screen", () => {
+  const NON_FINITE = [NaN, Infinity, -Infinity];
+
+  it("renders an em dash rather than NaN or ∞ from formatWholeMoney", () => {
+    for (const value of NON_FINITE) {
+      expect(formatWholeMoney(value, "AUD")).toBe("—");
+      expect(formatWholeMoney(value)).toBe("—");
+    }
+  });
+
+  it("renders an em dash rather than NaN or ∞ from formatMoney", () => {
+    for (const value of NON_FINITE) {
+      expect(formatMoney(value, "AUD")).toBe("—");
+      expect(formatMoney(value)).toBe("—");
+    }
+  });
+
+  // Stated as the property, not as three examples: nothing either formatter
+  // produces may contain the substrings a raw Intl passthrough would.
+  it("never emits the literal NaN or ∞ from either formatter", () => {
+    for (const value of NON_FINITE) {
+      for (const rendered of [
+        formatMoney(value, "AUD"),
+        formatMoney(value),
+        formatWholeMoney(value, "AUD"),
+        formatWholeMoney(value),
+      ]) {
+        expect(rendered).not.toMatch(/NaN|∞/);
+      }
+    }
+  });
+
+  it("leaves every finite amount, including zero and negatives, untouched", () => {
+    expect(formatWholeMoney(0, "AUD")).toBe("$0");
+    expect(formatWholeMoney(-12.5, "AUD")).toBe("-$12");
+    expect(formatMoney(0, "AUD")).toBe("$0.00");
+  });
+});

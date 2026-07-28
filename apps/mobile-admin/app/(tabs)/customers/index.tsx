@@ -124,8 +124,9 @@ export default function CustomersScreen() {
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : isError && customers.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={styles.errorSlot}>
           <EmptyState
+            align="left"
             title="Couldn't load customers"
             message="Something went wrong. Check your connection and try again."
             action={{ label: "Try again", onPress: () => { refetch(); } }}
@@ -160,6 +161,7 @@ export default function CustomersScreen() {
             }
             ListEmptyComponent={
               <EmptyState
+                align="left"
                 title="No customers yet"
                 message={
                   debouncedSearch || activeFilter !== "all"
@@ -204,4 +206,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // NOT `styles.centered` for the error state: that wrapper's
+  // `alignItems: "center"` shrink-wraps and re-centres its child, silently
+  // undoing `EmptyState align="left"`. Claims the remaining height only.
+  errorSlot: { flex: 1 },
 });

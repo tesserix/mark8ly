@@ -221,6 +221,13 @@ export const CategoryPickerSheet = forwardRef<CategoryPickerSheetHandle, Categor
               <ActivityIndicator size="small" color={theme.colors.text} />
             </View>
           ) : categories.length === 0 ? (
+            /* CENTRED, deliberately — the one empty state in the app that is
+               not a full-canvas list slot. This is a MODAL sheet whose own
+               gutter is `spacing.lg` (16, see styles.root), while
+               `EmptyState` hardcodes `spacing.xl` (20). Left-aligning it
+               would land the copy 4pt inside the sheet's own left edge and
+               manufacture exactly the second left edge the layout invariant
+               forbids. Revisit if `EmptyState` ever takes a gutter. */
             <EmptyState
               title="No categories yet"
               message={

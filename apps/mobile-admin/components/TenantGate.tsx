@@ -67,6 +67,15 @@ export function TenantGate({ children }: { children: ReactNode }) {
     return (
       <Screen>
         <View style={styles.center}>
+          {/* CENTRED, deliberately. Every list screen's empty state is now
+              left-aligned, but this is not a list screen — it is a gate that
+              renders BEFORE any tenant, header, eyebrow or row exists, so
+              there is no established left edge for it to share. Its sibling
+              is a centred pill CTA that `styles.center` positions; aligning
+              only the copy left would put a left-aligned message above a
+              centred button, i.e. two axes where there is currently one.
+              Making this left would mean redesigning the gate, which is a
+              different change from "make the list screens agree". */}
           <EmptyState
             title={denied ? "No access" : "Couldn't load your store"}
             message={
@@ -106,6 +115,8 @@ export function TenantGate({ children }: { children: ReactNode }) {
     return (
       <Screen>
         <View style={styles.center}>
+          {/* CENTRED for the same reason as the error gate above — a gate
+              screen with a centred CTA beneath it, not a list. */}
           <EmptyState
             title="No store yet"
             message="Create your first store on mark8ly.com to start selling."

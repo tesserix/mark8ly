@@ -171,7 +171,7 @@ export default function NotificationsScreen() {
             />
           }
           ListEmptyComponent={
-            <EmptyState title="No notifications" message="You're all caught up." />
+            <EmptyState align="left" title="No notifications" message="You're all caught up." />
           }
         />
       )}

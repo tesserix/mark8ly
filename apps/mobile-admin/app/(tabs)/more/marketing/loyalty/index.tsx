@@ -108,6 +108,7 @@ export default function LoyaltyScreen() {
         {!program ? (
           <>
             <EmptyState
+              align="left"
               title="Loyalty isn't set up"
               message="Configure your points program on the web dashboard, then manage members here."
             />

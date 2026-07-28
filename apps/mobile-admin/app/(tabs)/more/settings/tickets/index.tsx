@@ -115,8 +115,9 @@ export default function TicketsScreen() {
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : isError && tickets.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={styles.errorSlot}>
           <EmptyState
+            align="left"
             title="Couldn't load tickets"
             message="Something went wrong. Check your connection and try again."
             action={{ label: "Try again", onPress: () => { refetch(); } }}
@@ -142,6 +143,7 @@ export default function TicketsScreen() {
           }
           ListEmptyComponent={
             <EmptyState
+              align="left"
               title="No tickets"
               message={filter !== "all" ? "No tickets with this status." : "Customer support requests appear here."}
             />
@@ -164,4 +166,8 @@ const styles = StyleSheet.create({
   list: { flexGrow: 1, paddingBottom: theme.spacing.huge },
   footer: { paddingVertical: theme.spacing.lg, alignItems: "center" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  // NOT `styles.centered` for the error state: that wrapper's
+  // `alignItems: "center"` shrink-wraps and re-centres its child, silently
+  // undoing `EmptyState align="left"`. Claims the remaining height only.
+  errorSlot: { flex: 1 },
 });

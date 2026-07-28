@@ -81,8 +81,9 @@ export default function CampaignsScreen() {
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : isError && campaigns.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={styles.errorSlot}>
           <EmptyState
+            align="left"
             title="Couldn't load campaigns"
             message="Something went wrong. Check your connection and try again."
             action={{ label: "Try again", onPress: () => { refetch(); } }}
@@ -108,6 +109,7 @@ export default function CampaignsScreen() {
           }
           ListEmptyComponent={
             <EmptyState
+              align="left"
               title="No campaigns yet"
               message={
                 filter !== "all"
@@ -126,4 +128,8 @@ const styles = StyleSheet.create({
   list: { flexGrow: 1, paddingBottom: theme.spacing.huge },
   footer: { paddingVertical: theme.spacing.lg, alignItems: "center" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  // NOT `styles.centered` for the error state: that wrapper's
+  // `alignItems: "center"` shrink-wraps and re-centres its child, silently
+  // undoing `EmptyState align="left"`. Claims the remaining height only.
+  errorSlot: { flex: 1 },
 });

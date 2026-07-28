@@ -59,8 +59,9 @@ export default function ReferralsScreen() {
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : isError && referrals.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={styles.errorSlot}>
           <EmptyState
+            align="left"
             title="Couldn't load referrals"
             message="Something went wrong. Check your connection and try again."
             action={{ label: "Try again", onPress: () => { refetch(); } }}
@@ -85,7 +86,7 @@ export default function ReferralsScreen() {
             ) : null
           }
           ListEmptyComponent={
-            <EmptyState title="No referrals yet" message="Referrals show up here as customers invite friends." />
+            <EmptyState align="left" title="No referrals yet" message="Referrals show up here as customers invite friends." />
           }
         />
       )}
@@ -109,4 +110,8 @@ const styles = StyleSheet.create({
   list: { flexGrow: 1, paddingBottom: theme.spacing.huge },
   footer: { paddingVertical: theme.spacing.lg, alignItems: "center" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  // NOT `styles.centered` for the error state: that wrapper's
+  // `alignItems: "center"` shrink-wraps and re-centres its child, silently
+  // undoing `EmptyState align="left"`. Claims the remaining height only.
+  errorSlot: { flex: 1 },
 });

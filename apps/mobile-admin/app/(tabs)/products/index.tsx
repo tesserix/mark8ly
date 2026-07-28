@@ -97,8 +97,9 @@ export default function ProductsScreen() {
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : isError && products.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={styles.errorSlot}>
           <EmptyState
+            align="left"
             title="Couldn't load products"
             message="Something went wrong. Check your connection and try again."
             action={{ label: "Try again", onPress: () => { refetch(); } }}
@@ -124,6 +125,7 @@ export default function ProductsScreen() {
             }
             ListEmptyComponent={
               <EmptyState
+                align="left"
                 title="No products yet"
                 message={
                   debouncedSearch
@@ -167,6 +169,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // NOT `styles.centered` for the error state: that wrapper's
+  // `alignItems: "center"` shrink-wraps and re-centres its child, silently
+  // undoing `EmptyState align="left"`. Claims the remaining height only.
+  errorSlot: { flex: 1 },
   // `bottom` is applied at the call site from useDockClearance() — the dock
   // is absolutely positioned and renders above this, so a static bottom
   // (it was theme.spacing.lg) parked the FAB underneath it and Add-product

@@ -125,8 +125,9 @@ export default function TeamScreen() {
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : (members.isError || invitations.isError) && memberList.length === 0 && inviteList.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={styles.errorSlot}>
           <EmptyState
+            align="left"
             title="Couldn't load team"
             message="Something went wrong. Check your connection and try again."
             action={{ label: "Try again", onPress: () => { onRefresh(); } }}
@@ -206,7 +207,7 @@ export default function TeamScreen() {
           </View>
 
           {memberList.length === 0 && inviteList.length === 0 ? (
-            <EmptyState title="No team yet" message="Invite teammates to help run your store." />
+            <EmptyState align="left" title="No team yet" message="Invite teammates to help run your store." />
           ) : null}
 
           <Text preset="caption" color="textTertiary" style={styles.note}>
@@ -252,4 +253,8 @@ const styles = StyleSheet.create({
   inviteInfo: { flex: 1, gap: 2 },
   note: { paddingHorizontal: theme.spacing.xl, paddingTop: theme.spacing.md },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  // NOT `styles.centered` for the error state: that wrapper's
+  // `alignItems: "center"` shrink-wraps and re-centres its child, silently
+  // undoing `EmptyState align="left"`. Claims the remaining height only.
+  errorSlot: { flex: 1 },
 });

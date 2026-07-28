@@ -24,8 +24,18 @@ interface MetricsCardProps {
  * Note the ordering: the check is on the raw value, so -0.04 rounding to
  * "0.0%" still reads as a (muted-adjacent) decline rather than silently
  * becoming "no change" — only a true 0 is flat.
+ *
+ * A non-finite `pct` (a malformed payload, or a server dividing by a zero
+ * previous month) is neither growth nor decline and must not be guessed at:
+ * `NaN === 0` and `NaN > 0` are both false, so it used to fall through to the
+ * DECLINE branch and render "↘ NaN%" in the danger tint — inventing a bad
+ * month out of a parse failure. An em dash in the muted tone says "we don't
+ * know", which is the truth.
  */
 function changeBadge(pct: number): { label: string; tone: StatusTone; spoken: string } {
+  if (!Number.isFinite(pct)) {
+    return { label: "—", tone: "muted", spoken: "change unavailable" };
+  }
   const magnitude = `${Math.abs(pct).toFixed(1)}%`;
   if (pct === 0) return { label: magnitude, tone: "muted", spoken: "unchanged" };
   if (pct > 0) return { label: `↗ ${magnitude}`, tone: "success", spoken: `up ${magnitude}` };

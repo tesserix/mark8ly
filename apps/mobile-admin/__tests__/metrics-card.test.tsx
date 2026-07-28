@@ -66,6 +66,32 @@ describe("MetricsCard — the trend badge", () => {
     expect(badgeColor("↘ 0.0%", tree)).toBe(theme.colors.danger);
   });
 
+  // `NaN === 0` is false and `NaN > 0` is false, so a malformed
+  // `revenue_change_pct` fell through to the DECLINE branch and rendered
+  // "↘ NaN%" in the danger tint — inventing a bad month out of a parse
+  // failure, on the sign-off screen.
+  it.each([NaN, Infinity, -Infinity])(
+    "says nothing rather than inventing a decline when the change is %p",
+    (pct) => {
+      const tree = render(<MetricsCard stats={stats({ revenue_change_pct: pct })} currencyCode="AUD" />);
+      expect(tree.queryByText(/NaN/)).toBeNull();
+      expect(tree.queryByText(/Infinity/)).toBeNull();
+      expect(tree.queryByText(/↘/)).toBeNull();
+      expect(tree.queryByText(/↗/)).toBeNull();
+      expect(tree.getByText("—")).toBeTruthy();
+      expect(badgeColor("—", tree)).toBe(theme.colors.textTertiary);
+    },
+  );
+
+  it("tells a screen reader the change is unavailable rather than a decline", () => {
+    const { getByTestId } = render(
+      <MetricsCard stats={stats({ revenue_change_pct: NaN })} currencyCode="AUD" />,
+    );
+    const label = getByTestId("revenue-chart").props.accessibilityLabel as string;
+    expect(label).toContain("change unavailable");
+    expect(label).not.toContain("down");
+  });
+
   it("tells a screen reader the month is unchanged rather than up", () => {
     const { getByTestId } = render(
       <MetricsCard stats={stats({ revenue_change_pct: 0 })} currencyCode="AUD" />,
@@ -77,6 +103,10 @@ describe("MetricsCard — the trend badge", () => {
 });
 
 describe("MetricsCard — money", () => {
+  // Whole dollars by TRUNCATION, not rounding — $4,280.75 is $4,280 here, not
+  // $4,281. See `formatWholeMoney`: a display column must never read higher
+  // than the money actually taken. (This assertion previously expected
+  // "$4,281" and so pinned the overstatement.)
   it("renders whole dollars, no cents, in the hero and the subline", () => {
     const { getByText } = render(
       <MetricsCard
@@ -84,7 +114,8 @@ describe("MetricsCard — money", () => {
         currencyCode="AUD"
       />,
     );
-    expect(getByText("$4,281")).toBeTruthy();
+    expect(getByText("$4,280")).toBeTruthy();
     expect(getByText(/\$312 today/)).toBeTruthy();
+    expect(getByText(/\$1,104 this week/)).toBeTruthy();
   });
 });

@@ -1,0 +1,42 @@
+import { formatMoney, formatWholeMoney } from "@/lib/money";
+
+describe("formatMoney — the exact-amount default", () => {
+  it("keeps two decimal places in the store's currency", () => {
+    expect(formatMoney(8400.5, "AUD")).toBe("$8,400.50");
+  });
+
+  it("falls back to a plain 2dp number with no currency code", () => {
+    expect(formatMoney(8400.5)).toBe("8,400.50");
+  });
+});
+
+describe("formatWholeMoney — the display formatter", () => {
+  // The defect: `maximumFractionDigits: 0` rounds HALF-UP, so an $8,400.50
+  // order rendered "$8,401" — a display column overstating money on the
+  // screen a merchant signs off their day from. The doc promises dropped
+  // cents, so it drops them.
+  it("truncates the cents instead of rounding them up", () => {
+    expect(formatWholeMoney(8400.5, "AUD")).toBe("$8,400");
+    expect(formatWholeMoney(8400.99, "AUD")).toBe("$8,400");
+  });
+
+  it("never renders more than the amount actually is", () => {
+    for (const cents of [0.01, 0.49, 0.5, 0.51, 0.99]) {
+      expect(formatWholeMoney(189 + cents, "AUD")).toBe("$189");
+    }
+  });
+
+  it("rounds toward zero on a negative amount, not away from it", () => {
+    // A -$8,400.50 credit is not a -$8,401 credit.
+    expect(formatWholeMoney(-8400.5, "AUD")).toBe("-$8,400");
+  });
+
+  it("leaves a whole amount alone", () => {
+    expect(formatWholeMoney(189, "AUD")).toBe("$189");
+    expect(formatWholeMoney(0, "AUD")).toBe("$0");
+  });
+
+  it("truncates the no-currency fallback too", () => {
+    expect(formatWholeMoney(8400.5)).toBe("8,400");
+  });
+});

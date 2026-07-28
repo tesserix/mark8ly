@@ -1,7 +1,8 @@
 import { View, StyleSheet } from "react-native";
-import { PressableRow, Text } from "@/components/ui";
+import { Monogram, PressableRow, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/money";
+import { customerIdentity } from "@/lib/customer-identity";
 import type { Customer } from "@repo/mobile-shared/api/types";
 
 interface CustomerRowProps {
@@ -11,41 +12,47 @@ interface CustomerRowProps {
   currencyCode?: string;
 }
 
-function getInitial(customer: Customer): string {
-  const name = customer.first_name || customer.last_name || customer.email;
-  return name.charAt(0).toUpperCase();
-}
-
-function getDisplayName(customer: Customer): string {
-  if (customer.first_name || customer.last_name) {
-    return [customer.first_name, customer.last_name].filter(Boolean).join(" ");
-  }
-  return customer.email;
-}
+/** 40pt, not `Thumb`'s 60 — this row's density predates the shared tile and isn't what's being fixed here. */
+const AVATAR = 40;
 
 export function CustomerRow({ customer, onPress, currencyCode }: CustomerRowProps) {
-  const displayName = getDisplayName(customer);
+  // ONE source for "who is this" — see lib/customer-identity.ts. `subtitle` is
+  // absent for a customer with no name, because their email is already the
+  // title; this row used to render the email unconditionally underneath and
+  // printed it twice, stacked, for exactly that (normal) customer.
+  const identity = customerIdentity(customer);
   const spent = formatMoney(customer.total_spent, currencyCode);
+  // The email still belongs in the spoken label even when it isn't drawn
+  // twice — but only once. VoiceOver reading it back-to-back was the same
+  // defect in the audio channel.
+  const a11yParts = [
+    identity.title,
+    ...(identity.subtitle ? [identity.subtitle] : []),
+    `${customer.order_count} orders`,
+    `${spent} spent`,
+  ];
   return (
     <PressableRow
       lines={2}
       onPress={() => onPress(customer)}
       style={styles.row}
       testID={`customer-row-${customer.id}`}
-      accessibilityLabel={`${displayName}, ${customer.email}, ${customer.order_count} orders, ${spent} spent`}
+      accessibilityLabel={a11yParts.join(", ")}
     >
-      <View style={styles.avatar}>
-        <Text preset="bodyEmphasis" color="text">
-          {getInitial(customer)}
-        </Text>
-      </View>
+      <Monogram
+        label={identity.title}
+        size={AVATAR}
+        testID={`customer-row-${customer.id}-monogram`}
+      />
       <View style={styles.info}>
         <Text preset="bodyEmphasis" color="text" numberOfLines={1}>
-          {displayName}
+          {identity.title}
         </Text>
-        <Text preset="caption" color="textTertiary" numberOfLines={1}>
-          {customer.email}
-        </Text>
+        {identity.subtitle ? (
+          <Text preset="caption" color="textTertiary" numberOfLines={1}>
+            {identity.subtitle}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.stats}>
         <Text preset="bodyEmphasis" color="text">
@@ -65,16 +72,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: theme.hairline,
     borderBottomColor: theme.colors.hairline,
   },
-  // Avatar stays a neutral surface tint — never moss. Moss is reserved for
-  // the app's single accent (links, focus, key CTAs), not decoration.
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: theme.colors.surfaceAlt,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  info: { flex: 1, gap: 2 },
+  info: { flex: 1, gap: 2, minWidth: 0 },
   stats: { alignItems: "flex-end", gap: 2 },
 });

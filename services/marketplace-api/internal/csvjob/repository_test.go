@@ -13,6 +13,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
@@ -160,4 +161,51 @@ func TestRepository_ListByStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Len(t, jobs, 2)
+}
+
+func TestRepository_ListByStore_RejectsEmptyStoreID(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := csvjob.NewRepository(tx)
+
+	_, _, err := repo.ListByStore(context.Background(), "", 1, 1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, apperrors.ErrValidationFailed)
+}
+
+func TestRepository_FindQueuedJobs(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := csvjob.NewRepository(tx)
+	ctx := context.Background()
+
+	storeA := seedStoreForCSV(t, tx)
+	storeB := seedStoreForCSV(t, tx)
+
+	for _, tc := range []struct {
+		storeID string
+		status  string
+	}{
+		{storeA, csvjob.StatusQueued},
+		{storeB, csvjob.StatusQueued},
+		{storeA, csvjob.StatusCompleted},
+	} {
+		require.NoError(t, repo.Create(ctx, &csvjob.CsvImportJob{
+			ID:          uuid.NewString(),
+			StoreID:     tc.storeID,
+			UserID:      "user-1",
+			GCSPath:     "csv-imports/queued.csv",
+			ContentHash: uuid.NewString(),
+			Status:      tc.status,
+		}))
+	}
+
+	jobs, err := repo.FindQueuedJobs(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, jobs, 2)
+	for _, j := range jobs {
+		require.Equal(t, csvjob.StatusQueued, j.Status)
+	}
+
+	limited, err := repo.FindQueuedJobs(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, limited, 1)
 }

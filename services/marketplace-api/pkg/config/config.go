@@ -69,6 +69,17 @@ type Config struct {
 	// mobile Bearer tokens. When empty, GIPBearerAuth rejects all requests —
 	// fine for dev environments that don't use mobile auth.
 	GIPProjectID string `envconfig:"GIP_PROJECT_ID" default:""`
+	// GIPMerchantTenantID is the Google Identity Platform *tenant* the
+	// merchant-staff pool lives in (e.g. "MP-Internal-e986p"). Note this
+	// is a GIP tenant id and has nothing to do with a mark8ly tenant id.
+	//
+	// Used to look an account record up when seeding a new
+	// user_profiles row, so a merchant who signed up with Google gets
+	// the name GIP already holds instead of a blank field. A
+	// project-level lookup cannot see tenant users, so when this is
+	// empty the seed simply leaves the name blank — the pre-existing
+	// behaviour.
+	GIPMerchantTenantID string `envconfig:"GIP_MERCHANT_TENANT_ID" default:""`
 	// GIPWebAPIKeyResource is the full Google API Keys v2 resource name
 	// of the browser API key used by storefront sign-in (e.g.
 	// "projects/849928263410/locations/global/keys/2457e3a0-..."). When

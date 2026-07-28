@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mark8ly/marketplace-api/internal/gipuser"
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/userprofile"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -51,6 +52,7 @@ func toProfileDTO(p userprofile.Profile, mfaEnabled bool) profileDTO {
 // Profile persists to user_profiles. MFA and sessions proxy to auth-bff.
 type AccountHandler struct {
 	profiles       userprofile.Store
+	gipNames       gipuser.DisplayNameLookup
 	uploader       media.Uploader
 	authBFFURL     string
 	internalSecret string
@@ -75,6 +77,11 @@ func NewAccountHandler(profiles userprofile.Store, authBFFURL, internalSecret st
 
 // SetUploader wires the media uploader for the avatar upload-url endpoint.
 func (h *AccountHandler) SetUploader(u media.Uploader) { h.uploader = u }
+
+// SetGIPNames wires the Google Identity Platform account lookup used to
+// seed display_name when a profile row is first created. Optional: nil
+// (the default) means new rows seed with a blank name, exactly as before.
+func (h *AccountHandler) SetGIPNames(l gipuser.DisplayNameLookup) { h.gipNames = l }
 
 // GetProfile handles GET /admin/account.
 // Upsert-on-read: if the row doesn't exist yet, create one from the
@@ -180,10 +187,16 @@ func (h *AccountHandler) loadOrSeed(c *gin.Context, userID, email string) (userp
 
 	now := time.Now()
 	p = userprofile.Profile{
-		UserID:    userID,
-		Email:     email,
-		CreatedAt: now,
-		UpdatedAt: now,
+		UserID: userID,
+		Email:  email,
+		// Nothing downstream of signup ever writes a person's name into
+		// our own database, but GIP holds one for every federated
+		// sign-up. Seed from there so the merchant's name is populated
+		// without them having to go find the settings form. First-seed
+		// only — this is not a per-request cost.
+		DisplayName: h.seedDisplayName(ctx, userID),
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := h.profiles.Create(ctx, p); err != nil {
 		return userprofile.Profile{}, fmt.Errorf("seed profile: %w", err)
@@ -191,6 +204,38 @@ func (h *AccountHandler) loadOrSeed(c *gin.Context, userID, email string) (userp
 	return p, nil
 }
 
+// gipNameLookupTimeout caps the first-seed GIP round-trip. Profile
+// creation is on the critical path of the first admin page load, so the
+// name is worth a short wait and nothing more.
+const gipNameLookupTimeout = 3 * time.Second
+
+// seedDisplayName resolves the name GIP holds for userID, or "" when no
+// lookup is wired, the account has no name (every email/password
+// sign-up), or the lookup fails for any reason.
+//
+// Never returns an error: a profile must be creatable when GIP is
+// unreachable, misconfigured, or has never heard of this uid. A blank
+// name is exactly the pre-existing behaviour, and the merchant can
+// still set one from Settings → Account.
+func (h *AccountHandler) seedDisplayName(parent context.Context, userID string) string {
+	if h.gipNames == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(parent, gipNameLookupTimeout)
+	defer cancel()
+
+	name, err := h.gipNames.DisplayName(ctx, userID)
+	if err != nil {
+		// Deliberately logs the uid and the error only. The display name
+		// is personal data and must not reach the log stream.
+		if h.logger != nil {
+			h.logger.Info("seed profile: GIP display name unavailable",
+				"user_id", userID, "err", err)
+		}
+		return ""
+	}
+	return strings.TrimSpace(name)
+}
 
 // ─── Avatar upload ───────────────────────────────────────────────────
 

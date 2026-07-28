@@ -70,6 +70,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/gipkey"
+	"github.com/mark8ly/marketplace-api/internal/gipuser"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
 	"github.com/mark8ly/marketplace-api/internal/handlers/public"
@@ -1082,6 +1083,16 @@ func main() {
 					log.Error("failed to init Firebase Auth client", "error", err)
 				} else {
 					tokenVerifier = auth.NewGIPVerifier(authClient)
+					// Same Admin SDK client also backs the first-seed
+					// display-name lookup on /admin/account, so a
+					// merchant's real name lands in user_profiles
+					// without them typing it. Nil-safe: unset
+					// GIP_MERCHANT_TENANT_ID just means blank names.
+					if adminDeps.AccountHandler != nil {
+						adminDeps.AccountHandler.SetGIPNames(
+							gipuser.NewAdminSDKLookup(authClient, cfg.GIPMerchantTenantID),
+						)
+					}
 				}
 			}
 		}

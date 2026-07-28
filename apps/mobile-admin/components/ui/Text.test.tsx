@@ -1,3 +1,10 @@
+// `CollapsingHeader` (imported below only for its MAX_FONT_SCALE alias)
+// gained a back chevron in increment 3 Task 1, so it now pulls an icon from
+// lucide-react-native's ESM build, which jest-expo's default
+// `transformIgnorePatterns` does not transform. Same one-line Proxy mock the
+// ~20 icon-touching suites in `__tests__/` already use.
+jest.mock('lucide-react-native', () => new Proxy({}, { get: () => () => null }));
+
 import { render } from '@testing-library/react-native';
 import { Text, MAX_FONT_SCALE } from './Text';
 import { MAX_FONT_SCALE as HEADER_MAX_FONT_SCALE } from './CollapsingHeader';

@@ -1,3 +1,11 @@
+// `CollapsingHeader` gained a back chevron (Task 1's `onBack`), so it now
+// imports an icon from lucide-react-native's ESM build (`dist/esm/*.mjs`),
+// which jest-expo's default `transformIgnorePatterns` does not transform.
+// Same one-line Proxy mock ~20 other suites in this directory already use —
+// the icon is a decorative glyph inside a labelled button, so rendering
+// nothing for it costs no assertion.
+jest.mock("lucide-react-native", () => new Proxy({}, { get: () => () => null }));
+
 // react-native-reanimated 4.x's real module (and even its shipped mock.js)
 // requires the native Worklets module at import time, which throws under
 // jest ("Native part of Worklets doesn't seem to be initialized"). Hand-roll
@@ -32,7 +40,7 @@ jest.mock("react-native-reanimated", () => {
 });
 
 import { Dimensions, StyleSheet, Text as RNText } from "react-native";
-import { act, render, within } from "@testing-library/react-native";
+import { act, fireEvent, render, within } from "@testing-library/react-native";
 import type { ReactTestInstance } from "react-test-renderer";
 import type { SharedValue } from "react-native-reanimated";
 import {
@@ -537,6 +545,114 @@ describe("CollapsingHeader", () => {
       ) as { flexShrink?: number; minWidth?: number };
       expect(right.flexShrink).toBe(1);
       expect(right.minWidth).toBe(theme.touchTarget);
+    });
+  });
+});
+
+/**
+ * The back affordance — ADDITIVE, and that is the whole point of the prop.
+ *
+ * Six of the eight list screens increment 3 rolls this primitive across are
+ * NESTED routes that used `BackHeader`, which has a back chevron;
+ * `CollapsingHeader` had none, so "every screen gets a collapsing header" was
+ * impossible without it. The two tab-root callers that already use this
+ * primitive (Dashboard, Orders) pass no `onBack`, and their rendering must
+ * stay bit-identical — hence the default case below is asserted first.
+ */
+describe("CollapsingHeader — back affordance", () => {
+  it("renders no back control by default (bit-identical for existing callers)", () => {
+    const { queryByLabelText } = render(
+      <CollapsingHeader title="Inbox" scrollY={sharedValue(0)} />,
+    );
+    expect(queryByLabelText("Go back")).toBeNull();
+  });
+
+  it("renders a back control in BOTH states when onBack is supplied", () => {
+    const onBack = jest.fn();
+    const expanded = render(
+      <CollapsingHeader title="Coupons" onBack={onBack} scrollY={sharedValue(0)} />,
+    );
+    expect(expanded.getByLabelText("Go back")).toBeTruthy();
+    expanded.unmount();
+    const collapsed = render(
+      <CollapsingHeader title="Coupons" onBack={onBack} scrollY={sharedValue(200)} />,
+    );
+    expect(collapsed.getByLabelText("Go back")).toBeTruthy();
+  });
+
+  it("fires onBack", () => {
+    const onBack = jest.fn();
+    const { getByLabelText } = render(
+      <CollapsingHeader title="Coupons" onBack={onBack} scrollY={sharedValue(0)} />,
+    );
+    fireEvent.press(getByLabelText("Go back"));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  // The height contract is computed from MAX_FONT_SCALE; a leading control
+  // that grows the header without headerHeightsFor knowing about it is the
+  // sixth silent-clipping bug waiting to happen. It is a FIXED-SIZE 44pt
+  // control containing no text, so it takes its space horizontally (out of
+  // the title column) and never vertically.
+  it("does not change the header's height in either state", () => {
+    const plainExpanded = render(<CollapsingHeader title="Coupons" scrollY={sharedValue(0)} />);
+    const plainExpandedHeight = heightOf(plainExpanded.getByTestId("collapsing-header"));
+    plainExpanded.unmount();
+
+    const backExpanded = render(
+      <CollapsingHeader title="Coupons" onBack={jest.fn()} scrollY={sharedValue(0)} />,
+    );
+    expect(heightOf(backExpanded.getByTestId("collapsing-header"))).toBe(plainExpandedHeight);
+    // Still the value `headerHeightsFor` computes for THIS device's font
+    // scale — i.e. the back control did not sneak an extra term into it.
+    expect(plainExpandedHeight).toBe(
+      headerHeightsFor(Dimensions.get("window").fontScale, false, 1).expanded,
+    );
+    backExpanded.unmount();
+
+    const plainCollapsed = render(
+      <CollapsingHeader title="Coupons" scrollY={sharedValue(200)} />,
+    );
+    const plainCollapsedHeight = heightOf(plainCollapsed.getByTestId("collapsing-header"));
+    plainCollapsed.unmount();
+
+    const backCollapsed = render(
+      <CollapsingHeader title="Coupons" onBack={jest.fn()} scrollY={sharedValue(200)} />,
+    );
+    expect(heightOf(backCollapsed.getByTestId("collapsing-header"))).toBe(plainCollapsedHeight);
+    // …and the title still renders at the collapsed state with a back control
+    // present, rather than being squeezed out of the row entirely.
+    // Both layers are always mounted, so the title node exists twice.
+    expect(backCollapsed.getAllByText("Coupons")).toHaveLength(2);
+  });
+
+  describe("leadingSlot", () => {
+    it("renders an arbitrary leading control when no onBack is given", () => {
+      const { getByText, queryByLabelText } = render(
+        <CollapsingHeader
+          title="Coupons"
+          leadingSlot={<RNText>Close</RNText>}
+          scrollY={sharedValue(0)}
+        />,
+      );
+      expect(getByText("Close")).toBeTruthy();
+      expect(queryByLabelText("Go back")).toBeNull();
+    });
+
+    // Documented precedence, asserted: `onBack` is the common case and the
+    // one the rollout uses, so a screen that accidentally passes both gets
+    // the back chevron rather than two stacked leading controls.
+    it("is ignored when onBack is set", () => {
+      const { getByLabelText, queryByText } = render(
+        <CollapsingHeader
+          title="Coupons"
+          onBack={jest.fn()}
+          leadingSlot={<RNText>Close</RNText>}
+          scrollY={sharedValue(0)}
+        />,
+      );
+      expect(getByLabelText("Go back")).toBeTruthy();
+      expect(queryByText("Close")).toBeNull();
     });
   });
 });

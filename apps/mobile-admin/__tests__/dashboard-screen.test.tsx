@@ -137,6 +137,14 @@ import { act, fireEvent, render, within } from "@testing-library/react-native";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import DashboardScreen from "../app/(tabs)/index";
 import { theme } from "@/lib/theme";
+import {
+  CONSTRUCTIVE_TONE,
+  DESTRUCTIVE_TONE,
+  assertNoAutoFire,
+  assertSwipeConvention,
+  swipeRow,
+  type RowActions,
+} from "../test-utils/swipe-convention";
 import type { DashboardResponse } from "@repo/mobile-shared/api/types";
 
 const STATS: DashboardResponse["stats"] = {
@@ -367,26 +375,6 @@ describe("Dashboard — queue", () => {
 // merchant's thumb learns "right is safe, left is not" across every list, and
 // one screen that inverts it is worse than one with no gesture at all.
 describe("Dashboard — the swipe convention", () => {
-  const CONSTRUCTIVE_TONE = "accent";
-  const DESTRUCTIVE_TONE = "danger";
-
-  type Root = ReturnType<typeof render>["UNSAFE_root"];
-  interface RowActions {
-    leadingActions?: { key: string; tone: string }[];
-    trailingActions?: { key: string; tone: string }[];
-  }
-
-  /** Every mounted `SwipeRow` element, so its props can be read directly. */
-  function swipeRows(root: Root) {
-    return root.findAll(
-      (n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "SwipeRow",
-    );
-  }
-
-  function swipeRow(root: Root, testID: string) {
-    return swipeRows(root).find((r) => r.props.testID === testID);
-  }
-
   it("puts an order's Approve on the LEADING edge in the accent tone", () => {
     const { UNSAFE_root } = render(<DashboardScreen />);
     const row = swipeRow(UNSAFE_root, "swipe-o1")?.props as RowActions;
@@ -430,16 +418,11 @@ describe("Dashboard — the swipe convention", () => {
     expect(row.trailingActions?.[0]).toMatchObject({ key: "close", tone: "neutral" });
   });
 
-  // The invariant stated as an invariant, over every row rather than one.
+  // The invariant stated as an invariant, over every row rather than one —
+  // and shared with every other list screen (see test-utils/swipe-convention).
   it("never puts a destructive action on the leading edge, on any row type", () => {
     const { UNSAFE_root } = render(<DashboardScreen />);
-    const rows = swipeRows(UNSAFE_root);
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      const { leadingActions = [], trailingActions = [] } = row.props as RowActions;
-      for (const action of leadingActions) expect(action.tone).not.toBe(DESTRUCTIVE_TONE);
-      for (const action of trailingActions) expect(action.tone).not.toBe(CONSTRUCTIVE_TONE);
-    }
+    assertSwipeConvention(UNSAFE_root);
   });
 
   // Tone → paint, so a tone swap is caught at the pixel and not only at the
@@ -457,15 +440,7 @@ describe("Dashboard — the swipe convention", () => {
   // This app has no undo, so nothing may fire from the drag itself.
   it("never opts any action into full-swipe auto-fire", () => {
     const { UNSAFE_root } = render(<DashboardScreen />);
-    const rows = swipeRows(UNSAFE_root);
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      const actions = [
-        ...((row.props.leadingActions ?? []) as { autoFireOnFullSwipe?: boolean }[]),
-        ...((row.props.trailingActions ?? []) as { autoFireOnFullSwipe?: boolean }[]),
-      ];
-      for (const a of actions) expect(a.autoFireOnFullSwipe).toBeFalsy();
-    }
+    assertNoAutoFire(UNSAFE_root);
   });
 });
 
@@ -614,19 +589,7 @@ describe("Dashboard — swipe actions", () => {
 
   it("never opts any action into full-swipe auto-fire (this app has no undo)", () => {
     const { UNSAFE_root } = render(<DashboardScreen />);
-    const swipeRows = UNSAFE_root.findAll(
-      (n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "SwipeRow",
-    );
-    expect(swipeRows.length).toBeGreaterThan(0);
-    for (const row of swipeRows) {
-      const actions = [
-        ...((row.props.leadingActions ?? []) as { autoFireOnFullSwipe?: boolean }[]),
-        ...((row.props.trailingActions ?? []) as { autoFireOnFullSwipe?: boolean }[]),
-      ];
-      for (const a of actions) {
-        expect(a.autoFireOnFullSwipe).toBeFalsy();
-      }
-    }
+    assertNoAutoFire(UNSAFE_root);
   });
 });
 

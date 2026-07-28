@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, View, StyleSheet } from "react-native";
-import Animated, {
-  useAnimatedScrollHandler,
-  useSharedValue,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { Archive, Check, X } from "lucide-react-native";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
@@ -15,6 +12,7 @@ import { useConfirmOrder, useCancelOrder } from "@/lib/admin-api/order-actions";
 import { useApproveReview, useRejectReview } from "@/lib/admin-api/review-actions";
 import { useUpdateTicketStatus } from "@/lib/admin-api/ticket-actions";
 import { buildQueue, type QueueItem, type QueueItemType } from "@/lib/queue";
+import { useCollapsingScroll } from "@/lib/use-collapsing-scroll";
 import { CollapsingHeader, Hairline, Screen, SwipeRow, Text, type SwipeAction } from "@/components/ui";
 import { QueueRow } from "@/components/dashboard/QueueRow";
 import { MetricsCard } from "@/components/dashboard/MetricsCard";
@@ -189,11 +187,7 @@ function useExpireHidesOnFreshAnswer(
 export default function DashboardScreen() {
   const router = useRouter();
   const dockPad = useDockClearance();
-  const scrollY = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler((event) => {
-    "worklet";
-    scrollY.value = event.contentOffset.y;
-  });
+  const { scrollY, onScroll: scrollHandler } = useCollapsingScroll();
 
   const storeName = useTenantStore((s) => s.activeStore?.name);
   const currencyCode = useTenantStore((s) => s.activeStore?.currency_code);

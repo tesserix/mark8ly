@@ -147,6 +147,14 @@ import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import OrdersScreen from "../app/(tabs)/orders/index";
 import { MAX_FONT_SCALE } from "@/components/ui";
 import { theme } from "@/lib/theme";
+import {
+  CONSTRUCTIVE_TONE,
+  DESTRUCTIVE_TONE,
+  assertNoAutoFire,
+  assertSwipeConvention,
+  swipeRow,
+  type RowActions,
+} from "../test-utils/swipe-convention";
 import type { Order } from "@repo/mobile-shared/api/types";
 
 // jest-expo mocks `react-native-reanimated` with a stub whose default
@@ -206,24 +214,6 @@ beforeEach(() => {
 /** Opens the long-press menu on a given row. */
 function longPress(getByTestId: (id: string) => unknown, id: string) {
   fireEvent(getByTestId(`order-row-${id}`) as never, "longPress");
-}
-
-type Root = ReturnType<typeof render>["UNSAFE_root"];
-
-/** Every mounted `SwipeRow` element, so its props can be read directly. */
-function swipeRows(root: Root) {
-  return root.findAll(
-    (n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "SwipeRow",
-  );
-}
-
-function swipeRow(root: Root, testID: string) {
-  return swipeRows(root).find((r) => r.props.testID === testID);
-}
-
-interface RowActions {
-  leadingActions?: { key: string; tone: string }[];
-  trailingActions?: { key: string; tone: string }[];
 }
 
 describe("Orders — header", () => {
@@ -417,35 +407,17 @@ describe("Orders — swipe actions", () => {
 
   it("never opts any action into full-swipe auto-fire (this app has no undo)", () => {
     const { UNSAFE_root } = render(<OrdersScreen />);
-    const rows = swipeRows(UNSAFE_root);
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      const actions = [
-        ...((row.props.leadingActions ?? []) as { autoFireOnFullSwipe?: boolean }[]),
-        ...((row.props.trailingActions ?? []) as { autoFireOnFullSwipe?: boolean }[]),
-      ];
-      for (const a of actions) expect(a.autoFireOnFullSwipe).toBeFalsy();
-    }
+    assertNoAutoFire(UNSAFE_root);
   });
 });
 
-// WHICH SIDE and WHICH COLOUR, not just "the action exists".
-//
-// `SwipeRow` gives leading and trailing buttons the SAME testID pattern
-// (`${testID}-action-${key}`), so every test that reaches an action by its
-// id passes identically whether Cancel sits on the leading edge or the
-// trailing one: swapping the two props left the whole suite green while
-// putting the destructive action under the constructive gesture. Tone had
-// no assertion anywhere either, so painting Cancel moss was equally free.
-//
-// In an app with no undo, on the screen with the destructive actions, the
-// side/colour pairing IS the safety property — a merchant's thumb learns
-// "right is safe, left is not" across every list, and one screen that
-// inverts it is worse than one that has no gesture at all.
+// WHICH SIDE and WHICH COLOUR, not just "the action exists" — the full
+// rationale now lives with the shared assertion in
+// `test-utils/swipe-convention.tsx`, which this screen and the Dashboard
+// both call. What stays HERE is the part the helper deliberately does not
+// cover: the positive, screen-specific facts about Orders' own two actions,
+// including the paint assertion that catches a tone→colour drift.
 describe("Orders — the swipe convention", () => {
-  const CONSTRUCTIVE_TONE = "accent";
-  const DESTRUCTIVE_TONE = "danger";
-
   it("puts Approve on the LEADING edge (drag right) in the accent tone", () => {
     const { UNSAFE_root } = render(<OrdersScreen />);
     const row = swipeRow(UNSAFE_root, "swipe-o1")?.props as RowActions;
@@ -468,15 +440,10 @@ describe("Orders — the swipe convention", () => {
 
   // The invariant stated as an invariant, over every row rather than one:
   // nothing destructive may ever be reachable by the constructive gesture.
+  // Shared with every other list screen — see test-utils/swipe-convention.
   it("never puts a destructive action on the leading edge, on any row", () => {
     const { UNSAFE_root } = render(<OrdersScreen />);
-    const rows = swipeRows(UNSAFE_root);
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      const { leadingActions = [], trailingActions = [] } = row.props as RowActions;
-      for (const action of leadingActions) expect(action.tone).not.toBe(DESTRUCTIVE_TONE);
-      for (const action of trailingActions) expect(action.tone).not.toBe(CONSTRUCTIVE_TONE);
-    }
+    assertSwipeConvention(UNSAFE_root);
   });
 
   // Tone → paint, so a tone swap is caught at the pixel and not only at the

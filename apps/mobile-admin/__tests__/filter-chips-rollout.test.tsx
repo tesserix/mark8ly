@@ -24,8 +24,16 @@ jest.mock("react-native-safe-area-context", () => {
   return { __esModule: true, ...mock.default };
 });
 
+// Local mock (it wins over `__mocks__/react-native-reanimated.js`) because
+// these screens need the entrance-animation surface the global mock has no
+// reason to carry. Grown in Task 1 for the scroll-driven `CollapsingHeader`:
+// Gift cards is the first screen in this file to render one, so the mock now
+// also needs `Animated.FlatList` plus the shared-value/scroll-handler/
+// interpolation pieces the header reads. The ASSERTIONS below are untouched —
+// this is a test-environment gap, not a semantics change.
 jest.mock("react-native-reanimated", () => {
-  const { View } = require("react-native");
+  const { View, FlatList } = require("react-native");
+  const { useRef } = require("react");
   class ChainableAnimation {
     duration() {
       return this;
@@ -34,11 +42,34 @@ jest.mock("react-native-reanimated", () => {
       return this;
     }
   }
+  function interpolate(
+    value: number,
+    inputRange: [number, number],
+    outputRange: [number, number],
+  ) {
+    const [inMin, inMax] = inputRange;
+    const [outMin, outMax] = outputRange;
+    const t = Math.max(0, Math.min(1, (value - inMin) / (inMax - inMin)));
+    return outMin + t * (outMax - outMin);
+  }
   return {
     __esModule: true,
-    default: { View },
+    default: { View, FlatList },
     FadeIn: new ChainableAnimation(),
     Easing: { bezier: () => (t: number) => t },
+    Extrapolation: { CLAMP: "clamp" },
+    interpolate,
+    useAnimatedStyle: (factory: () => unknown) => factory(),
+    useDerivedValue: (factory: () => number) => ({ value: factory() }),
+    useAnimatedScrollHandler: (handler: unknown) => handler,
+    // Ref-backed, like the global mock: a real shared value is stable across
+    // re-renders, and a fresh literal each render would reset the header.
+    useSharedValue: (initial: number) => {
+      // No type argument: `useRef` here comes from an untyped `require`.
+      const ref = useRef(undefined) as { current: { value: number } | undefined };
+      if (ref.current === undefined) ref.current = { value: initial };
+      return ref.current;
+    },
     useReducedMotion: jest.fn(() => false),
   };
 });

@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, RefreshControl, StyleSheet, ActivityIndicator } from "react-native";
-import Animated, {
-  useAnimatedScrollHandler,
-  useSharedValue,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { Check, X } from "lucide-react-native";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
@@ -42,6 +39,8 @@ import {
   type EmailLabelSheetHandle,
 } from "@/components/orders/EmailLabelSheet";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
+import { useBusyIds } from "@/lib/use-busy-ids";
+import { useCollapsingScroll } from "@/lib/use-collapsing-scroll";
 import { theme } from "@/lib/theme";
 import type { Order } from "@repo/mobile-shared/api/types";
 
@@ -116,7 +115,7 @@ function useDebounce(value: string, delay: number): string {
  *
  * What the absent hide does leave open is a second swipe on a row whose
  * mutation is still in flight. That is closed by disabling THAT row's
- * gesture while its request is open (`busyOrderIds`) — a guard on the
+ * gesture while its request is open (`useBusyIds`) — a guard on the
  * control, keyed purely on the mutation lifecycle. Note the distinction
  * that cost the Dashboard two shipped bugs: "the request stopped" is a fine
  * reason to re-enable a button, and NOT evidence that fresh data arrived.
@@ -136,11 +135,7 @@ export default function OrdersScreen() {
   // header's "expanded" rest state and the list's resting position already
   // agree. (The rebase existed only to cancel out the `contentOffset` that
   // hid the search field — both went together.)
-  const scrollY = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler((event) => {
-    "worklet";
-    scrollY.value = Math.max(0, event.contentOffset.y);
-  });
+  const { scrollY, onScroll: scrollHandler } = useCollapsingScroll();
 
   const selectedFilter = FILTERS.find((f) => f.key === activeFilter);
   const listQuery = useOrders({
@@ -166,15 +161,10 @@ export default function OrdersScreen() {
   // the menu mounted — `ActionSheet` is a controlled component.
   const [menuOrder, setMenuOrder] = useState<Order | null>(null);
   // The rows whose gestures are suppressed because their own request is
-  // open. A SET, not one slot: triage is a queue, and a merchant working
-  // down it fires the next row long before the previous one's request comes
-  // back. With a single slot, approving A then B overwrote the guard — and
-  // A's `onSuccess` then cleared it outright, re-arming B while B's own
-  // request was still open. A per-row guard has to be per row.
-  //
-  // Replaced immutably (never `.add`/`.delete` on the live value), so React
-  // sees a new identity and `renderItem`'s memo actually re-runs.
-  const [busyOrderIds, setBusyOrderIds] = useState<ReadonlySet<string>>(() => new Set());
+  // open — a SET, not one slot, and shared with every other list screen in
+  // the increment (see `lib/use-busy-ids.ts` for why the set is the whole
+  // point). Nothing here infers list contents from mutation state.
+  const busy = useBusyIds();
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
   const [refundTarget, setRefundTarget] = useState<Order | null>(null);
   const [emailTarget, setEmailTarget] = useState<
@@ -241,39 +231,6 @@ export default function OrdersScreen() {
       setIsRefreshing(false);
     }
   }, [listQuery]);
-
-  const markBusy = useCallback((id: string) => {
-    setBusyOrderIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
-  }, []);
-
-  const clearBusy = useCallback((id: string) => {
-    setBusyOrderIds((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  }, []);
-
-  /**
-   * Callbacks for the two direct mutations (confirm, fulfil). Releases THAT
-   * order's gesture guard — by id, so settling one row leaves every other
-   * in-flight row guarded — and reports the outcome in the hand. There is
-   * nothing to roll back; no local state ever claimed the row had changed.
-   */
-  const settleCallbacks = useCallback(
-    (id: string) => ({
-      onSuccess: () => {
-        clearBusy(id);
-        void adminHaptics.actionSucceeded();
-      },
-      onError: () => {
-        clearBusy(id);
-        void adminHaptics.actionFailed();
-      },
-    }),
-    [clearBusy],
-  );
 
   const openCancelSheet = useCallback((order: Order) => {
     setCancelTarget(order);
@@ -373,8 +330,8 @@ export default function OrdersScreen() {
                 tone: "accent",
                 icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
                 onPress: () => {
-                  markBusy(order.id);
-                  confirmOrder.mutate({ id: order.id }, settleCallbacks(order.id));
+                  busy.markBusy(order.id);
+                  confirmOrder.mutate({ id: order.id }, busy.settleCallbacks(order.id));
                 },
               },
             ]
@@ -393,7 +350,7 @@ export default function OrdersScreen() {
         ],
       };
     },
-    [confirmOrder, markBusy, settleCallbacks, openCancelSheet],
+    [confirmOrder, busy, openCancelSheet],
   );
 
   /**
@@ -416,8 +373,8 @@ export default function OrdersScreen() {
         label: "Fulfil",
         disabled: target.status !== "confirmed",
         onPress: () => {
-          markBusy(target.id);
-          fulfillOrder.mutate(target.id, settleCallbacks(target.id));
+          busy.markBusy(target.id);
+          fulfillOrder.mutate(target.id, busy.settleCallbacks(target.id));
         },
       },
       {
@@ -452,8 +409,7 @@ export default function OrdersScreen() {
     menuOrder,
     shipment,
     fulfillOrder,
-    markBusy,
-    settleCallbacks,
+    busy,
     openRefundSheet,
     openCancelSheet,
   ]);
@@ -465,7 +421,7 @@ export default function OrdersScreen() {
         <OrderRow
           order={item}
           onPress={handleOrderPress}
-          // Gated on the SAME `busyOrderIds` set as the swipe below. The
+          // Gated on the SAME busy set as the swipe below. The
           // swipe guard alone left the long-press menu as an unguarded second
           // route to Fulfil on a row whose request is still open. The blast
           // radius today is small — the backend's `CanTransitionTo` rejects
@@ -473,7 +429,7 @@ export default function OrdersScreen() {
           // template increment 3's menus copy, and Archive, Delete and
           // Disable are NOT idempotent the same way. Guard the control, not
           // the outcome.
-          onLongPress={busyOrderIds.has(item.id) ? undefined : setMenuOrder}
+          onLongPress={busy.isBusy(item.id) ? undefined : setMenuOrder}
           currencyCode={currencyCode}
         />
       );
@@ -488,7 +444,7 @@ export default function OrdersScreen() {
               // Suppressed while THIS row's own request is open, so a
               // still-visible row can't be fired at twice. Not a claim about
               // the data — see the screen's doc comment.
-              enabled={!busyOrderIds.has(item.id)}
+              enabled={!busy.isBusy(item.id)}
             >
               {row}
             </SwipeRow>
@@ -498,7 +454,7 @@ export default function OrdersScreen() {
         </View>
       );
     },
-    [actionsFor, handleOrderPress, currencyCode, busyOrderIds],
+    [actionsFor, handleOrderPress, currencyCode, busy.isBusy],
   );
 
   const showError = listQuery.isError && orders.length === 0;

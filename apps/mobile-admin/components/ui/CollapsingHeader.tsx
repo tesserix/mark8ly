@@ -8,8 +8,10 @@ import Animated, {
   useReducedMotion,
   type SharedValue,
 } from "react-native-reanimated";
+import { ChevronLeft } from "lucide-react-native";
 import { Text, MAX_FONT_SCALE as TEXT_MAX_FONT_SCALE } from "./Text";
 import { Hairline } from "./Hairline";
+import { IconButton } from "./IconButton";
 import { theme } from "@/lib/theme";
 
 /**
@@ -47,6 +49,33 @@ export interface CollapsingHeaderProps {
    * against a box that was never sized for it.
    */
   rightSlot?: ReactNode;
+  /**
+   * Renders a back chevron at the leading edge in BOTH states, vertically
+   * centred like `rightSlot`.
+   *
+   * ADDITIVE, and that is the point: six of the eight list screens increment
+   * 3 rolls this primitive across are NESTED routes that used `BackHeader`,
+   * and this component had no back affordance at all — so "every screen gets
+   * a collapsing header" was impossible without it. Omitted on the two
+   * tab-root screens that already use this primitive (Dashboard, Orders), so
+   * their rendering stays bit-identical.
+   *
+   * It is a FIXED-SIZE 44pt control containing no text, so it does NOT
+   * participate in `headerHeightsFor`: the collapsed bar is 56pt at 1× and
+   * 112pt at the cap, both of which contain 44 comfortably. What it does cost
+   * is HORIZONTAL — the title block loses `44 + theme.spacing.sm` — and both
+   * title layers already wrap to two lines and then shrink to a 13pt floor
+   * (see `TITLE_MIN_FONT_SIZE`), so a long title gets smaller rather than
+   * clipped.
+   */
+  onBack?: () => void;
+  /**
+   * Escape hatch for a NON-back leading control (a Close on a modal-ish
+   * route, say). Ignored when `onBack` is set — `onBack` is the common case
+   * and the one the rollout uses, so a screen that passes both gets the back
+   * chevron rather than two stacked leading controls.
+   */
+  leadingSlot?: ReactNode;
   /**
    * Owned by the caller and wired to their scroll view's
    * `useAnimatedScrollHandler`. This component only reads it — it never
@@ -312,6 +341,8 @@ export function CollapsingHeader({
   title,
   subtitle,
   rightSlot,
+  onBack,
+  leadingSlot,
   scrollY,
 }: CollapsingHeaderProps) {
   const reduceMotion = useReducedMotion();
@@ -370,9 +401,28 @@ export function CollapsingHeader({
   const expandedStyle = useAnimatedStyle(() => ({ opacity: 1 - progress.value }));
   const collapsedStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
+  // `onBack` wins over `leadingSlot` — see the prop docs. Resolved once here
+  // rather than branched in the JSX so there is exactly one leading node and
+  // the precedence can't be re-derived differently in a later edit.
+  const leading = onBack ? (
+    <IconButton onPress={onBack} accessibilityLabel="Go back" tone="ink">
+      <ChevronLeft size={22} color={theme.colors.text} strokeWidth={1.75} />
+    </IconButton>
+  ) : (
+    leadingSlot
+  );
+
   return (
     <Animated.View style={[styles.container, containerStyle]} testID="collapsing-header">
       <View style={styles.row}>
+        {/* Outside the cross-faded blocks, so it is present and tappable in
+            BOTH states rather than fading with either one. The blocks are
+            `pointerEvents="none"`, so nothing here can be occluded by them. */}
+        {leading ? (
+          <View style={styles.leading} testID="collapsing-header-leading">
+            {leading}
+          </View>
+        ) : null}
         <View style={styles.left}>
           <Animated.View
             style={[styles.block, expandedStyle]}
@@ -515,9 +565,24 @@ const styles = StyleSheet.create({
     // PageHeader so the eyebrow/title share one left edge with the rows
     // beneath, per the Task 1 layout invariant.
     paddingHorizontal: theme.spacing.xl,
-    gap: theme.spacing.md,
+    // Spacing lives on the SLOTS, not as a row `gap`, because the two sides
+    // want different numbers: the trailing slot keeps the `md` it has always
+    // had (so the two existing tab-root callers lay out identically), while
+    // the leading control takes the tighter `sm` — every point it borrows
+    // comes straight out of the merchant's shop name.
   },
   left: { flex: 1, position: "relative" },
+  leading: {
+    minWidth: theme.touchTarget,
+    minHeight: theme.touchTarget,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: theme.spacing.sm,
+    // NOT `flexShrink: 1` (which `right` needs): this slot is a fixed-size
+    // glyph button with no text in it, so there is nothing for a raised text
+    // size to grow — and shrinking it below 44 would break the touch target.
+    flexShrink: 0,
+  },
   block: {
     position: "absolute",
     top: 0,
@@ -544,6 +609,10 @@ const styles = StyleSheet.create({
     // the 44pt touch-target floor above; a text slot then truncates on its own
     // `numberOfLines`, which is the caller's choice to make.
     flexShrink: 1,
+    // The `md` that used to be the row's `gap` — see `styles.row`. Identical
+    // geometry for every existing caller (the row has only these two children
+    // when no leading control is present).
+    marginLeft: theme.spacing.md,
   },
   hairline: {
     position: "absolute",

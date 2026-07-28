@@ -1,5 +1,8 @@
-import { configure, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { configure, fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { Path } from 'react-native-svg';
 import LoginScreen from '../app/login';
+import { theme } from '@/lib/theme';
 
 // LoginScreen's in-flight → idle re-render takes ~700ms even in isolation on a
 // fast machine (jest-expo render + the auth/query stack), leaving almost no
@@ -143,6 +146,132 @@ describe('LoginScreen', () => {
     fireEvent.press(getByLabelText('Continue with Google'));
     await waitFor(() => expect(signInWithGoogle).toHaveBeenCalled());
     expect(queryByTestId('link-prompt')).toBeNull();
+  });
+});
+
+// The two providers collapsed from stacked full-width buttons into a centred
+// icon row so the ink "Sign in" bar is the only full-width solid on the
+// screen and reads as the unambiguous primary. Both stores treat this as a
+// review-sensitive surface, so these assertions pin the brand-compliance
+// requirements rather than the visual arrangement alone.
+describe('provider icon row', () => {
+  // react-native-svg's `extractProps` rewrites colour strings into a
+  // processed `{payload,type}` object on the underlying host node and drops
+  // `d` there entirely, so query by component TYPE (the composite fiber
+  // still holds the original values) — same reasoning as
+  // revenue-chart.test.tsx.
+  function pathsIn(utils: ReturnType<typeof render>, markTestID: string) {
+    return within(utils.getByTestId(markTestID)).UNSAFE_getAllByType(Path);
+  }
+
+  it('keeps the full accessible label on both providers even though the visible text is gone', () => {
+    const { getByLabelText, queryByText } = render(<LoginScreen />);
+    expect(getByLabelText('Continue with Google')).toBeTruthy();
+    expect(getByLabelText('Sign in with Apple')).toBeTruthy();
+    // Icon-only: the words must NOT be painted anywhere.
+    expect(queryByText('Continue with Google')).toBeNull();
+    expect(queryByText('Sign in with Apple')).toBeNull();
+    // …while the primary keeps its visible text label.
+    expect(queryByText('Sign in')).toBeTruthy();
+  });
+
+  it('gives each provider a real 44pt minimum box rather than a hitSlop overlay', () => {
+    const { getByTestId } = render(<LoginScreen />);
+    for (const testID of ['provider-google', 'provider-apple']) {
+      const node = getByTestId(testID);
+      const style = StyleSheet.flatten(node.props.style);
+      expect(style.minWidth).toBeGreaterThanOrEqual(theme.touchTarget);
+      expect(style.minHeight).toBeGreaterThanOrEqual(theme.touchTarget);
+      expect(style.width).toBeGreaterThanOrEqual(theme.touchTarget);
+      expect(style.height).toBeGreaterThanOrEqual(theme.touchTarget);
+      expect(node.props.hitSlop).toBeUndefined();
+    }
+  });
+
+  // Apple requires a logo-only Sign in with Apple button to be no LESS
+  // prominent than the other providers on offer. Equal target geometry is
+  // how this row satisfies that, so a future tweak that shrinks Apple must
+  // fail here.
+  it('renders the two provider targets at identical size', () => {
+    const { getByTestId } = render(<LoginScreen />);
+    const google = StyleSheet.flatten(getByTestId('provider-google').props.style);
+    const apple = StyleSheet.flatten(getByTestId('provider-apple').props.style);
+    expect(apple.width).toBe(google.width);
+    expect(apple.height).toBe(google.height);
+  });
+
+  // The first device render had the two boxes FLUSH: the row's separation
+  // was written as `className="… gap-4"`, a utility used nowhere else in
+  // this app, so Tailwind's JIT never emitted it — and RNTL renders without
+  // the NativeWind runtime, so every test stayed green. The row's layout is
+  // now a StyleSheet value, which cannot be dropped.
+  it('separates the two providers with a real resolved gap, not a class', () => {
+    const { getByTestId } = render(<LoginScreen />);
+    const row = StyleSheet.flatten(getByTestId('provider-row').props.style);
+    expect(row.gap).toBe(theme.spacing.lg);
+    expect(row.flexDirection).toBe('row');
+    expect(row.justifyContent).toBe('center');
+  });
+
+  // Guards the NativeWind 4.2.5 JSX-interop landmine: a FUNCTION style prop
+  // is not resolved like a plain array and the styles are silently dropped
+  // at runtime with every test still green.
+  it('passes a plain array style to each provider, never a function', () => {
+    const { getByTestId } = render(<LoginScreen />);
+    expect(typeof getByTestId('provider-google').props.style).not.toBe('function');
+    expect(typeof getByTestId('provider-apple').props.style).not.toBe('function');
+  });
+
+  // An inlined SVG path that fails to render produces NOTHING on device and
+  // no visual test catches it. These assert the marks are actually present
+  // and carry their official geometry and colours.
+  it("draws Google's official four-colour G, not a recoloured or generic glyph", () => {
+    const utils = render(<LoginScreen />);
+    const paths = pathsIn(utils, 'google-mark');
+    expect(paths).toHaveLength(4);
+    for (const path of paths) {
+      expect(typeof path.props.d).toBe('string');
+      expect((path.props.d as string).length).toBeGreaterThan(0);
+    }
+    // Google's four brand colours, verbatim — the mark must not be
+    // recoloured into the Paper/Ink/Moss palette.
+    expect(paths.map((p) => p.props.fill).sort()).toEqual(
+      ['#4285F4', '#34A853', '#FBBC05', '#EA4335'].sort(),
+    );
+  });
+
+  it("draws Apple's monochrome mark on sufficient contrast", () => {
+    const utils = render(<LoginScreen />);
+    const paths = pathsIn(utils, 'apple-mark');
+    expect(paths).toHaveLength(1);
+    const path = paths[0];
+    expect(typeof path?.props.d).toBe('string');
+    expect((path?.props.d as string).length).toBeGreaterThan(0);
+    // Monochrome: the paper-coloured mark sits on the solid ink fill of the
+    // official black Sign in with Apple appearance.
+    expect(path?.props.fill).toBe(theme.colors.inverse);
+    const box = StyleSheet.flatten(utils.getByTestId('provider-apple').props.style);
+    expect(box.backgroundColor).toBe(theme.colors.text);
+  });
+
+  it('disables both providers while a sign-in is in flight', async () => {
+    let resolveSignIn: () => void = () => {};
+    mockSignIn.mockReturnValue(new Promise<void>((resolve) => {
+      resolveSignIn = resolve;
+    }));
+    const { getByLabelText, getByTestId } = render(<LoginScreen />);
+    fireEvent.press(getByLabelText('Sign in'));
+    await waitFor(() =>
+      expect(getByTestId('provider-google').props.accessibilityState?.disabled).toBe(true),
+    );
+    expect(getByTestId('provider-apple').props.accessibilityState?.disabled).toBe(true);
+
+    resolveSignIn();
+    // Settle the in-flight → idle re-render inside the test, otherwise the
+    // final setSubmitting(false) lands after teardown as an un-acted update.
+    await waitFor(() =>
+      expect(getByTestId('provider-google').props.accessibilityState?.disabled).toBe(false),
+    );
   });
 });
 

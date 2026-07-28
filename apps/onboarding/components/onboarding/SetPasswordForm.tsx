@@ -5,10 +5,19 @@
 // Shown after the merchant clicks the magic link and the session has
 // been marked email-verified. Two paths to a credential:
 //
-//   1. Pick a password — client-side signUp(email, password) hits
-//      Identity Toolkit accounts:signUp.
+//   1. Pick a name + password — client-side signUpWithName(email, password,
+//      name) hits Identity Toolkit accounts:signUp, then accounts:update to
+//      put the name on the GIP account.
 //   2. Continue with Google — gsi/client popup → signInWithGoogle hits
 //      accounts:signInWithIdp. The user's email must match the session's.
+//      Google usually supplies the name itself, so we only write the typed
+//      one as a fallback.
+//
+// The name lives on this step rather than the first-page signup form
+// because this is where the GIP account is actually created — collecting it
+// earlier would mean carrying it through the server action, the onboarding
+// session record and the magic-link round trip for no benefit. Its only
+// destination is Google; it is never sent to our own services.
 //
 // On success, completeOnboarding creates the tenant, mints the session
 // cookie, and we redirect to /welcome.
@@ -24,7 +33,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Input, Label } from "@tesserix/web";
 
-import { signUp, signInWithGoogle, GIPSignupError } from "@/lib/gip/signup";
+import {
+  signUpWithName,
+  signInWithGoogle,
+  updateDisplayName,
+  GIPSignupError,
+} from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
 import { completeOnboarding } from "@/app/onboarding/actions";
 import { useOnboardingStore } from "@/lib/store/onboarding-store";
@@ -36,6 +50,15 @@ interface Props {
 }
 
 const schema = z.object({
+  // Required. The merchant is already past email verification here, so the
+  // abandonment cost of one more short field is low — whereas leaving it
+  // optional would recreate exactly the gap we are closing: every
+  // password-signup merchant to date has no name anywhere in the product.
+  name: z
+    .string()
+    .trim()
+    .min(1, "Your name is required")
+    .max(80, "Name is too long"),
   password: z
     .string()
     .min(1, "Password is required")
@@ -56,12 +79,13 @@ export function SetPasswordForm({ sessionId, email }: Props) {
     register,
     handleSubmit,
     setError,
+    getValues,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: "onTouched",
     reValidateMode: "onChange",
-    defaultValues: { password: "" },
+    defaultValues: { name: "", password: "" },
   });
 
   function onValid(values: FormValues) {
@@ -71,7 +95,9 @@ export function SetPasswordForm({ sessionId, email }: Props) {
       let uid = "";
       let idToken = "";
       try {
-        const gip = await signUp(email, values.password);
+        // signUpWithName never rejects because of the name write — only a
+        // genuine accounts:signUp failure lands in the catch below.
+        const gip = await signUpWithName(email, values.password, values.name);
         uid = gip.uid;
         idToken = gip.idToken;
       } catch (err) {
@@ -134,6 +160,19 @@ export function SetPasswordForm({ sessionId, email }: Props) {
         return;
       }
 
+      // Google normally supplies the name itself, in which case the account
+      // record already has one and there is nothing to write. Only fall back
+      // to the typed name when it doesn't. Its own try/catch: a failed name
+      // write must never take the surrounding signup down with it.
+      const typedName = getValues("name").trim();
+      if (!gip.displayName && typedName) {
+        try {
+          await updateDisplayName(gip.idToken, typedName);
+        } catch {
+          // Non-fatal by design — see signUpWithName.
+        }
+      }
+
       const r = await completeOnboarding({
         sessionId,
         gipUid: gip.uid,
@@ -174,6 +213,34 @@ export function SetPasswordForm({ sessionId, email }: Props) {
           <Input id="email" type="email" value={email} readOnly disabled />
           <div className="min-h-[1.125rem]">
             <p className="text-xs text-moss-700">Verified</p>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="name" className="text-foreground">
+            Your name
+          </Label>
+          <Input
+            id="name"
+            type="text"
+            placeholder="Ada Lovelace"
+            autoComplete="name"
+            disabled={disabled}
+            aria-invalid={errors.name ? true : undefined}
+            aria-describedby={errors.name ? "name-error" : undefined}
+            {...register("name")}
+          />
+          <div className="min-h-[1.125rem]">
+            {errors.name ? (
+              <p
+                id="name-error"
+                role="alert"
+                aria-live="polite"
+                className="text-xs text-danger"
+              >
+                {errors.name.message}
+              </p>
+            ) : null}
           </div>
         </div>
 

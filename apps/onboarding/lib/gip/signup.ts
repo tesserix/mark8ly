@@ -17,6 +17,14 @@ export interface SignupResult {
   idToken: string;
   refreshToken: string;
   expiresIn: number;
+  /**
+   * Display name now attached to the GIP account, when we know one — either
+   * because the IdP supplied it or because we just wrote it.
+   *
+   * PII. It is only ever sent to Google's Identity Toolkit; it must not be
+   * forwarded to our own services or written to any log.
+   */
+  displayName?: string;
 }
 
 export class GIPSignupError extends Error {
@@ -90,6 +98,84 @@ export async function signUp(
     refreshToken: body.refreshToken,
     expiresIn: parseInt(body.expiresIn, 10),
   };
+}
+
+/**
+ * Attach a display name to the GIP account behind `idToken`.
+ *
+ * Identity Toolkit `accounts:update`. This is the only place onboarding
+ * sends a person's name anywhere: it goes straight to Google, never to our
+ * own services and never to a log. `marketplace-api` picks it up from the
+ * GIP account record the first time it seeds `user_profiles.display_name`,
+ * which is what makes the name show up in web admin and mobile admin.
+ */
+export async function updateDisplayName(
+  idToken: string,
+  displayName: string,
+): Promise<void> {
+  if (!publicConfig.gipApiKey) {
+    throw new GIPSignupError("config_missing", "GIP Web API key is not configured");
+  }
+  const url = `https://identitytoolkit.googleapis.com/v1/accounts:update?key=${publicConfig.gipApiKey}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      idToken,
+      displayName,
+      returnSecureToken: false,
+    }),
+  });
+
+  if (!res.ok) {
+    let body: { error?: { message?: string } } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new GIPSignupError(
+      "gip_profile_update_failed",
+      body.error?.message ?? `HTTP ${res.status}`,
+    );
+  }
+}
+
+/**
+ * Sign up with email + password, then best-effort attach the merchant's name.
+ *
+ * The name write is deliberately non-fatal. Once `accounts:signUp` returns
+ * the merchant HAS an account; aborting onboarding because a cosmetic
+ * profile write failed would strand them with a credential they can't
+ * finish signing up with. A blank name is recoverable, a half-created
+ * tenant is not — so the second call can fail without the first being
+ * undone.
+ *
+ * `onNameWriteError` is the observability seam for that swallow. It receives
+ * the failure *code* only: neither the name nor the raw Identity Toolkit
+ * message is passed on, because both can carry PII.
+ */
+export async function signUpWithName(
+  email: string,
+  password: string,
+  displayName: string,
+  onNameWriteError?: (code: string) => void,
+): Promise<SignupResult> {
+  const result = await signUp(email, password);
+
+  const name = displayName.trim();
+  if (!name) return result;
+
+  try {
+    await updateDisplayName(result.idToken, name);
+    return { ...result, displayName: name };
+  } catch (err) {
+    onNameWriteError?.(
+      err instanceof GIPSignupError ? err.code : "gip_profile_update_failed",
+    );
+    return result;
+  }
 }
 
 /**
@@ -194,11 +280,15 @@ export async function signInWithGoogle(
     );
   }
 
+  // signInWithIdp hands back the name Google already holds for this account,
+  // and GIP copies it onto the account record. Keep it rather than dropping
+  // it on the floor — there is nothing to ask the merchant to retype.
   const body = (await res.json()) as {
     localId: string;
     idToken: string;
     refreshToken: string;
     expiresIn: string;
+    displayName?: string;
   };
 
   return {
@@ -206,5 +296,6 @@ export async function signInWithGoogle(
     idToken: body.idToken,
     refreshToken: body.refreshToken,
     expiresIn: parseInt(body.expiresIn, 10),
+    displayName: body.displayName?.trim() || undefined,
   };
 }

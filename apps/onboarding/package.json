@@ -8,7 +8,7 @@
     "start": "next start --port 4201",
     "lint": "echo 'lint stub — migrate to ESLint flat config (next lint removed in Next 16)'",
     "check-types": "tsc --noEmit",
-    "test": "echo 'no unit tests yet' && exit 0",
+    "test": "playwright test --config=playwright.unit.config.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

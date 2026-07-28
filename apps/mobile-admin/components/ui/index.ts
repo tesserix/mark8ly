@@ -18,7 +18,14 @@ export { IconButton } from "./IconButton";
 export type { IconButtonProps } from "./IconButton";
 export { Thumb } from "./Thumb";
 export type { ThumbProps } from "./Thumb";
-export { CollapsingHeader, COLLAPSE_DISTANCE } from "./CollapsingHeader";
+export { Monogram, monogramInitial } from "./Monogram";
+export type { MonogramProps } from "./Monogram";
+export {
+  CollapsingHeader,
+  COLLAPSE_DISTANCE,
+  TITLE_MIN_FONT_SIZE,
+  titleMinimumFontScale,
+} from "./CollapsingHeader";
 export type { CollapsingHeaderProps } from "./CollapsingHeader";
 export { SwipeRow } from "./SwipeRow";
 export type { SwipeAction, SwipeRowProps } from "./SwipeRow";

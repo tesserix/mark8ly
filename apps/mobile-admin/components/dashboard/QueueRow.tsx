@@ -1,50 +1,12 @@
 import { View, StyleSheet } from "react-native";
 import { ChevronRight } from "lucide-react-native";
-import { PressableRow, StatusBadge, Text, Thumb } from "@/components/ui";
+import { Monogram, PressableRow, StatusBadge, Text, Thumb } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { QueueItem } from "@/lib/queue";
 
 interface QueueRowProps {
   item: QueueItem;
   onPress: () => void;
-}
-
-function monogramInitial(label: string): string {
-  const trimmed = label.trim();
-  return trimmed ? trimmed.charAt(0).toUpperCase() : "?";
-}
-
-/**
- * The customer monogram tile — the fallback for order/review/ticket rows
- * when no product image applies (`imageUrl` absent; see lib/queue.ts, which
- * documents WHY that's a permanent fallback, not a temporary shim).
- *
- * There is no monogram component anywhere else in this app (checked before
- * writing this). Kept local to QueueRow rather than promoted to
- * components/ui/Thumb.tsx or components/ui/ — QueueRow is currently the
- * only caller, and CustomerRow.tsx already has its own inline 40pt avatar
- * that isn't this component's concern to unify. Promote this to
- * components/ui if a second caller needs the same 60pt tile.
- *
- * Sized AND radiused identically to Thumb's "list" box (`theme.thumb.list`
- * 60pt, `theme.radii.md`) so the two fallback paths (product photo vs.
- * customer monogram) occupy the exact same slot and read as one column. It
- * was a full circle (`thumb.list / 2`), which put circles and rounded squares
- * side by side in a single list — and made an order that happened to carry an
- * `image_url` render a square between circles. Fixed HERE, on the monogram:
- * Thumb is the shape the rest of the app's lists already use. Never moss —
- * this app's one accent is already spent on the
- * Dashboard's revenue chart and the Approve swipe action; the monogram uses
- * the same neutral surface tint CustomerRow's avatar uses.
- */
-function Monogram({ label, testID }: { label: string; testID?: string }) {
-  return (
-    <View style={styles.monogram} accessible={false} testID={testID}>
-      <Text preset="bodyEmphasis" color="text">
-        {monogramInitial(label)}
-      </Text>
-    </View>
-  );
 }
 
 /**
@@ -140,38 +102,10 @@ export function QueueRow({ item, onPress }: QueueRowProps) {
 }
 
 const styles = StyleSheet.create({
-  // Neutral surface — never moss (see the Monogram doc comment above).
-  // Deliberately `sink`, not CustomerRow's `surfaceAlt`: this row (unlike
-  // CustomerRow, which always sits inside a white elevated Card) can sit
-  // directly on the Paper background, and surfaceAlt (#FAF8F2) is nearly
-  // invisible against Paper (#F7F6F2) — confirmed on-device. `sink` is the
-  // same token Thumb's own built-in placeholder uses, so both "no photo"
-  // fallbacks (product placeholder, customer monogram) read with equal
-  // visibility in the same row context.
-  //
-  // `borderColor: textTertiary` is deliberate, not decorative: PressableRow's
-  // iOS pressed state (components/ui/PressableRow.tsx) repaints the row
-  // background to this SAME `sink` token, so a fill-only disc has zero
-  // contrast against its own row while held — the disc's edge vanishes and
-  // the initial appears to float. textTertiary (#5C5953) holds ~5.8:1
-  // against `sink` (and ~6.5:1 against Paper at rest), so the ring stays
-  // visible in both states. Still NOT fixed in PressableRow — a shared
-  // primitive's default press token is not the place for this (see
-  // inc2-task-7-report.md, "Fix round 1"). `Thumb`'s placeholder now carries
-  // the same ring for the same reason, which is what makes the equal-
-  // visibility claim above true rather than aspirational.
-  monogram: {
-    width: theme.thumb.list,
-    height: theme.thumb.list,
-    // Thumb's radius, not a circle — one leading-art shape per list.
-    borderRadius: theme.radii.md,
-    backgroundColor: theme.colors.sink,
-    borderWidth: theme.hairline,
-    borderColor: theme.colors.textTertiary,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
+  // The monogram tile itself now lives in components/ui/Monogram.tsx — the
+  // size/radius/fill/ring reasoning moved with it. It is drawn at the default
+  // size, which is `theme.thumb.list`, so the photo and no-photo paths still
+  // occupy the identical slot.
   info: { flex: 1, gap: 3, minWidth: 0 },
   trailing: { alignItems: "flex-end", gap: 4 },
   amount: { fontVariant: ["tabular-nums"] },

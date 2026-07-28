@@ -506,6 +506,27 @@ func (s *Service) ListByStore(ctx context.Context, storeID, tenantID uuid.UUID, 
 	return s.repo.ListByStore(ctx, s.db, storeID, tenantID, status, page, pageSize)
 }
 
+// SetStatus flips a gift card between active and disabled — the only two
+// legal admin-driven states. Wraps the atomic repository UPDATE in a
+// transaction (matches every other mutating method in this file); the
+// transition-legality rules themselves live in the repository's WHERE
+// clause, not here (see SetStatus's doc comment in repository.go).
+func (s *Service) SetStatus(ctx context.Context, storeID, tenantID, id uuid.UUID, to GiftCardStatus) (*GiftCard, error) {
+	if to != StatusActive && to != StatusDisabled {
+		return nil, apperrors.ValidationFailed("status", "must be \"active\" or \"disabled\"")
+	}
+	var gc *GiftCard
+	err := s.Unit(ctx, func(tx *gorm.DB) error {
+		var err error
+		gc, err = s.repo.SetStatus(tx, id, tenantID, storeID, to)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return gc, nil
+}
+
 // Debit atomically deducts amount from the gift card inside the given tx.
 // This is called from checkout — the tx is owned by the checkout handler.
 // Amendment CRITICAL FIX 1: uses the caller's tx, does NOT open its own.

@@ -6,6 +6,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Rebuild on demand. Images are published as main-<short-sha>, and GHCR's
+  # retention deletes anything not rebuilt recently — so an image a chart still
+  # pins can disappear while the code has not changed at all. Without a manual
+  # trigger the only way to republish is a no-op commit to main.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

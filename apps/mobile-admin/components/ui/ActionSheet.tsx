@@ -32,6 +32,23 @@ export interface ActionSheetItem {
   label: string;
   icon?: ReactNode;
   tone?: "default" | "danger";
+  /**
+   * Renders the row as present-but-unavailable: no `onPress`, no press
+   * feedback, tertiary ink instead of its normal colour, and
+   * `accessibilityState.disabled` for VoiceOver/TalkBack.
+   *
+   * Exists so a caller whose action set is CONDITIONAL can keep
+   * `items.length` constant. Orders' long-press menu shows the same four
+   * actions on every order, but only some are legal for a given one
+   * (fulfilling a cancelled order is a guaranteed 409; "Email label" needs a
+   * shipment that is fetched lazily and may not exist). Dropping the illegal
+   * ones from `items` instead would change `items.length`, which recomputes
+   * `snapPoints` — resizing the sheet under the merchant's thumb, and for
+   * the lazily-fetched shipment resizing it AFTER it has already opened.
+   *
+   * Additive and defaulted off: every existing call site is unaffected.
+   */
+  disabled?: boolean;
   onPress: () => void;
 }
 
@@ -210,6 +227,10 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
   }, [visible, hasItems]);
 
   const handlePress = (item: ActionSheetItem) => {
+    // Belt-and-braces with `PressableRow`'s own `disabled` prop below — the
+    // same explicit guard PressableRow/IconButton/SwipeRow keep alongside
+    // their native disabled handling.
+    if (item.disabled) return;
     item.onPress();
     modalRef.current?.dismiss();
   };
@@ -260,6 +281,7 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
             {index > 0 ? <Hairline inset={theme.row.paddingH} /> : null}
             <PressableRow
               onPress={() => handlePress(item)}
+              disabled={item.disabled}
               accessibilityLabel={item.label}
               testID={`action-sheet-item-${item.key}`}
               ripple={item.tone === "danger" ? theme.press.rippleDanger : theme.press.rippleInk}
@@ -268,7 +290,17 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
               <Text
                 preset="body"
                 numberOfLines={1}
-                color={item.tone === "danger" ? theme.colors.danger : undefined}
+                // Disabled wins over tone: a disabled DANGER row painted
+                // oxblood still reads as an armed destructive action.
+                // Tertiary (#5C5953) is the AA-passing muted ink — never the
+                // banned rgba(14,14,12,0.5).
+                color={
+                  item.disabled
+                    ? theme.colors.textTertiary
+                    : item.tone === "danger"
+                      ? theme.colors.danger
+                      : undefined
+                }
               >
                 {item.label}
               </Text>

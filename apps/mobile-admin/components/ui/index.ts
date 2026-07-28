@@ -5,6 +5,8 @@ export { Eyebrow } from "./Eyebrow";
 export { Hairline } from "./Hairline";
 export { StatusBadge, type StatusTone } from "./StatusBadge";
 export { SegmentedControl } from "./SegmentedControl";
+export { FilterChips, chipHeightsFor } from "./FilterChips";
+export type { FilterChip, FilterChipsProps } from "./FilterChips";
 export { SearchField } from "./SearchField";
 export { EmptyState } from "./EmptyState";
 export { PageHeader } from "./PageHeader";

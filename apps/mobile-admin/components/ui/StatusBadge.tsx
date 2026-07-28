@@ -14,6 +14,8 @@ interface StatusBadgeProps {
   label: string;
   tone?: StatusTone;
   style?: ViewStyle;
+  /** Additive: lets a caller assert on the badge without matching its copy. */
+  testID?: string;
 }
 
 /**
@@ -49,7 +51,7 @@ const TONE: Record<StatusTone, { bg: string; fg: string; border?: string }> = {
   muted: { bg: theme.colors.sink, fg: theme.colors.textTertiary },
 };
 
-export function StatusBadge({ label, tone = "neutral", style }: StatusBadgeProps) {
+export function StatusBadge({ label, tone = "neutral", style, testID }: StatusBadgeProps) {
   const t = TONE[tone];
   return (
     <View
@@ -64,6 +66,7 @@ export function StatusBadge({ label, tone = "neutral", style }: StatusBadgeProps
       ]}
       accessible
       accessibilityLabel={`Status: ${label}`}
+      testID={testID}
     >
       <Text preset="caption" color={t.fg} style={styles.label} numberOfLines={1}>
         {label}

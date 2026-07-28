@@ -520,3 +520,76 @@ describe("ActionSheet", () => {
     expect(queryByTestId("action-sheet-backdrop")).toBeNull();
   });
 });
+
+/**
+ * `disabled` items — added for Orders' long-press menu (inc2 Task 9).
+ *
+ * The menu shows the SAME four actions on every order (Fulfil, Email label,
+ * Refund, Cancel), but only some are legal for a given order: fulfilling a
+ * cancelled order is a guaranteed 409, refunding an unpaid one likewise, and
+ * "Email label" needs a shipment that may not exist. The alternative —
+ * varying `items` per order — changes `items.length`, which recomputes
+ * `snapPoints` and resizes the sheet under the merchant's thumb (and, for
+ * the lazily-fetched shipment, resizes it AFTER it has already opened).
+ *
+ * So the item count stays fixed and unavailable actions are disabled
+ * instead. `PressableRow` already implements the whole contract (no
+ * `onPress`, no press feedback, `accessibilityState.disabled` for
+ * VoiceOver); this is a pass-through, not a reimplementation.
+ */
+describe("ActionSheet — disabled items", () => {
+  it("does not fire onPress for a disabled item", () => {
+    const onPress = jest.fn();
+    const { getByTestId } = render(
+      <ActionSheet
+        items={[{ key: "fulfil", label: "Fulfil order", disabled: true, onPress }]}
+        visible
+        onDismiss={jest.fn()}
+      />,
+    );
+    fireEvent.press(getByTestId("action-sheet-item-fulfil"));
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it("still fires onPress for an enabled sibling", () => {
+    const onPress = jest.fn();
+    const { getByTestId } = render(
+      <ActionSheet
+        items={[
+          { key: "fulfil", label: "Fulfil order", disabled: true, onPress: jest.fn() },
+          { key: "cancel", label: "Cancel order", onPress },
+        ]}
+        visible
+        onDismiss={jest.fn()}
+      />,
+    );
+    fireEvent.press(getByTestId("action-sheet-item-cancel"));
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces a disabled item as disabled", () => {
+    const { getByTestId } = render(
+      <ActionSheet
+        items={[{ key: "fulfil", label: "Fulfil order", disabled: true, onPress: jest.fn() }]}
+        visible
+        onDismiss={jest.fn()}
+      />,
+    );
+    expect(getByTestId("action-sheet-item-fulfil").props.accessibilityState.disabled).toBe(true);
+  });
+
+  it("keeps a disabled item in the list, so the sheet height never changes", () => {
+    const { getByTestId } = render(
+      <ActionSheet
+        items={[
+          { key: "fulfil", label: "Fulfil order", disabled: true, onPress: jest.fn() },
+          { key: "cancel", label: "Cancel order", onPress: jest.fn() },
+        ]}
+        visible
+        onDismiss={jest.fn()}
+      />,
+    );
+    expect(getByTestId("action-sheet-item-fulfil")).toBeTruthy();
+    expect(getByTestId("action-sheet-item-cancel")).toBeTruthy();
+  });
+});

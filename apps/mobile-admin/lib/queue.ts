@@ -220,14 +220,19 @@ function reviewToQueueItem(review: Review): QueueItem {
 
 /**
  * A type-group's own trailing "See all" row, if it has one — the row an
- * overflowing group appended in `buildTypeGroup`. Detected by id prefix
- * rather than `kind` because a group with no overflow can validly end on a
- * plain `"item"` row too; the prefix is what's actually unique to the row
- * `seeAllRow` produces.
+ * overflowing group appended in `buildTypeGroup`.
+ *
+ * Detected by the `kind` DISCRIMINANT, which is the whole reason the union
+ * carries one. The earlier `id.startsWith("see-all-")` test read the same
+ * answer off a string that only happens to be formatted that way by
+ * `seeAllRow`: it silently couples this function to that id template, and a
+ * future `"item"` row whose id came from an upstream record starting with
+ * `see-all-` would be misread as the navigational row and survive the
+ * TOTAL_CAP cut in place of a real one. `kind` cannot be spoofed by data.
  */
 function trailingSeeAllRow(group: QueueItem[]): QueueItem | undefined {
   const last = group[group.length - 1];
-  return last?.id.startsWith("see-all-") ? last : undefined;
+  return last?.kind === "seeAll" ? last : undefined;
 }
 
 /**

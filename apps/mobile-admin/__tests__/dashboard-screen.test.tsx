@@ -699,12 +699,84 @@ describe("Dashboard — a refetch only expires its OWN source's dismissals", () 
 
     expect(queryByTestId("queue-row-o1")).toBeNull();
 
-    // Once it settles, the deferred clear runs and the still-pending row
-    // returns — the behaviour the clear exists for is not lost, only delayed.
+    // Settling is NOT itself an answer. That mid-flight response at 200 was
+    // computed before the confirm committed, so it stays non-authoritative
+    // after the mutation ends too — the row must not come back on it.
     mockPending.confirmOrder = false;
     rerender(<DashboardScreen />);
 
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+
+    // Only an answer that postdates the mutation is authoritative. Here it
+    // still lists o1 as pending, so the row legitimately returns.
+    mockQueryState.dashboard = { data: dashboardPayload(), isError: false, dataUpdatedAt: 300 };
+    rerender(<DashboardScreen />);
+
     expect(getByTestId("queue-row-o1")).toBeTruthy();
+  });
+});
+
+describe("Dashboard — a mutation SETTLING is not fresh data", () => {
+  // Regression, round 3. The clear was `if (isMutating) return; clear(source)`
+  // with `isMutating` in the dependency array, so the true→false transition
+  // was ITSELF a clear trigger: nothing checked that fresh data had actually
+  // arrived, only that the request had stopped.
+  //
+  // Worst for orders, and PERMANENT there: the order mutations invalidated
+  // ["orders"], the dashboard's key is ["dashboard"], so a confirm never
+  // refetched the dashboard at all. The just-approved order came back still
+  // labelled Pending, still swipeable, with a second confirm one swipe away —
+  // in an app with no undo.
+  it("keeps an approved ORDER hidden when its confirm settles with no refetch", () => {
+    const { getByTestId, queryByTestId, rerender } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+
+    mockPending.confirmOrder = true;
+    rerender(<DashboardScreen />);
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+
+    // The request stops. `dataUpdatedAt` has NOT moved — no new answer.
+    mockPending.confirmOrder = false;
+    rerender(<DashboardScreen />);
+
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+  });
+
+  it("keeps a closed TICKET hidden when its update settles with no refetch", () => {
+    const { getByTestId, queryByTestId, rerender } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-t1-action-close"));
+    expect(queryByTestId("queue-row-t1")).toBeNull();
+
+    mockPending.updateTicketStatus = true;
+    rerender(<DashboardScreen />);
+    expect(queryByTestId("queue-row-t1")).toBeNull();
+
+    mockPending.updateTicketStatus = false;
+    rerender(<DashboardScreen />);
+
+    expect(queryByTestId("queue-row-t1")).toBeNull();
+  });
+
+  // The clear must still happen — it is what lets an id that legitimately
+  // RETURNS to the queue reappear. It just needs a real answer to hang on.
+  it("still un-hides once the source answers again after the mutation settles", () => {
+    mockQueryState.tickets = { data: TICKET_PAGES, isError: false, dataUpdatedAt: 100 };
+    const { getByTestId, queryByTestId, rerender } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-t1-action-close"));
+    mockPending.updateTicketStatus = true;
+    rerender(<DashboardScreen />);
+    mockPending.updateTicketStatus = false;
+    rerender(<DashboardScreen />);
+    expect(queryByTestId("queue-row-t1")).toBeNull();
+
+    mockQueryState.tickets = { data: TICKET_PAGES, isError: false, dataUpdatedAt: 200 };
+    rerender(<DashboardScreen />);
+
+    expect(getByTestId("queue-row-t1")).toBeTruthy();
   });
 });
 

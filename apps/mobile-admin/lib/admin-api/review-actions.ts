@@ -2,7 +2,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createReviewsApi } from "@repo/mobile-shared/api/reviews";
 import { useApiClient } from "@/lib/api-client";
 
-/** Invalidate the list + the single review so both reflect the mutation. */
+/**
+ * Invalidate the list + the single review so both reflect the mutation, and
+ * ["dashboard"] with them: the dashboard payload carries its own
+ * `stats.pending_reviews`, which is what drives the queue's "See all N
+ * pending reviews" row. Approving a review left that count one too high until
+ * something else happened to refetch the dashboard.
+ */
 function useReviewMutation<TVars>(
   run: (api: ReturnType<typeof createReviewsApi>, vars: TVars) => Promise<unknown>,
   idOf: (vars: TVars) => string,
@@ -16,6 +22,7 @@ function useReviewMutation<TVars>(
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["reviews"] });
       queryClient.invalidateQueries({ queryKey: ["review", idOf(vars)] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }

@@ -55,7 +55,18 @@ export function TenantMonogram({ storeName }: TenantMonogramProps) {
       testID="tenant-monogram"
     >
       <View style={styles.disc} accessible={false}>
-        <Text preset="h3" color="inverse" style={styles.initial}>
+        <Text
+          preset="h3"
+          color="inverse"
+          style={styles.initial}
+          // The disc is a FIXED 40pt and `overflow` is irrelevant to a
+          // centred glyph: at `accessibility-medium` the scaled h3 outgrew
+          // its pinned 40pt line box and the "T" was sliced through the stem.
+          // A monogram is an identity mark, not content — WCAG 2.1 SC 1.4.4
+          // has nothing to resize here, and the store's name is already on
+          // screen beside it at full Dynamic Type.
+          maxFontSizeMultiplier={1}
+        >
           {initial(storeName)}
         </Text>
         {unread > 0 ? (

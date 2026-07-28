@@ -74,9 +74,9 @@ export const EXPANDED_TITLE_LINES = 2;
  */
 const EXPANDED_HEIGHT = 96;
 /**
- * The subtitle's own box on top of that: `+ 4` margin `+ 24` (body) `= 122`,
- * plus the same 2pt slack. The expanded base MUST grow for it — 120 of
- * content inside a 96pt `overflow: "hidden"` container is the clip this
+ * The subtitle's own box on top of that: `94 + 4` margin `+ 24` (body)
+ * `= 122`, plus the same 2pt slack. The expanded base MUST grow for it — 122
+ * of content inside a 96pt `overflow: "hidden"` container is the clip this
  * primitive exists to have already solved. No caller passes `subtitle` today;
  * the height is here so the first one that does isn't the one who finds out.
  */

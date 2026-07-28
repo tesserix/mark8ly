@@ -103,39 +103,70 @@ const NO_DISMISSALS: Dismissed = {
 };
 
 /**
- * Drops a source's optimistic hides once that source has answered again.
+ * Per source, the `dataUpdatedAt` of the newest answer known NOT to be
+ * authoritative about the hides currently in place. Lives in a ref: it gates
+ * a clear, it is never rendered.
+ */
+type Watermark = Record<QueueSource, number>;
+
+const NO_WATERMARK: Watermark = { dashboard: 0, reviews: 0, tickets: 0 };
+
+/**
+ * Drops a source's optimistic hides once that source has produced an answer
+ * that POSTDATES the action those hides represent.
  *
- * TWO conditions, both load-bearing:
- *
- * 1. **Per source.** The clear used to key on
- *    `Math.max(dashboard, reviews, tickets .dataUpdatedAt)`, so a refetch of
- *    ONE query un-hid rows belonging to the OTHER two. Reproducible on any
- *    staggered initial load (dashboard resolves first, tickets last) and on
- *    every `refetchOnWindowFocus`: the merchant approved an order, the row
- *    vanished, then a tickets response brought it back — mid-flight, swipeable
- *    again, and a second `useConfirmOrder` on the same order was one tap away.
- * 2. **Not while that source is mutating.** A row whose own mutation is still
- *    in flight has no authoritative answer yet; its source's data is by
- *    definition stale with respect to it. Deferring rather than skipping is
- *    what keeps condition 1's purpose intact — `isMutating` is a dependency,
- *    so the clear runs as soon as the mutation settles.
+ * ONE rule, applied per source: clear when `dataUpdatedAt` advances past the
+ * watermark; every answer that is not newer than the watermark advances the
+ * watermark instead.
  *
  * Why clear at all: `dismissed` is a purely local overlay on the server's
  * answer, valid only until a fresh answer arrives. Without this, an id that
  * legitimately RETURNS to the queue (an approval the server rejected out of
  * band, a ticket reopened on another device) would stay invisible for the
  * life of the screen.
+ *
+ * Three failures this shape closes, each of which shipped once:
+ *
+ * 1. **Not the MAX of all three sources.** Keying the clear on
+ *    `Math.max(dashboard, reviews, tickets .dataUpdatedAt)` meant a refetch of
+ *    ONE query un-hid rows belonging to the OTHER two. Reachable on any
+ *    staggered initial load (dashboard resolves first, tickets last) and on
+ *    every `refetchOnWindowFocus`.
+ * 2. **Settling is not an answer.** The clear was `if (isMutating) return;
+ *    clear(source)` with `isMutating` in the dependency array, so the
+ *    true→false transition was itself a clear trigger — nothing checked that
+ *    data had arrived, only that the request had stopped. For orders that was
+ *    permanent: the order mutations invalidated `["orders"]`, this screen
+ *    reads `["dashboard"]`, so the dashboard never refetched and the
+ *    just-approved order came back still labelled Pending and swipeable
+ *    again. (`lib/admin-api/order-actions.ts` now invalidates `["dashboard"]`
+ *    too; this hook must be correct without depending on that.)
+ * 3. **An answer that lands MID-mutation predates it.** A window-focus
+ *    refetch that resolves while the confirm is still in flight was computed
+ *    before the confirm committed, so it still lists the row as pending. It
+ *    is not evidence of anything: it advances the watermark rather than
+ *    clearing, and stays non-authoritative after the mutation ends too.
+ *
+ * Deliberately NOT solved by returning the invalidation promise from the
+ * mutations' `onSuccess` so `isPending` spans the refetch: that would make
+ * the post-mutation refetch land while `isMutating` is still true, rule 3
+ * would swallow it as non-authoritative, and the hides would never expire at
+ * all. The watermark makes the promise unnecessary — it reads WHEN the data
+ * arrived, not whether a request happened to be open at the time.
  */
-function useClearWhenFresh(
+function useExpireHidesOnFreshAnswer(
   source: QueueSource,
   dataUpdatedAt: number,
   isMutating: boolean,
+  watermarks: { current: Watermark },
   clear: (source: QueueSource) => void,
 ): void {
   useEffect(() => {
-    if (isMutating) return;
+    const seen = watermarks.current[source];
+    watermarks.current = { ...watermarks.current, [source]: dataUpdatedAt };
+    if (isMutating || dataUpdatedAt <= seen) return;
     clear(source);
-  }, [source, dataUpdatedAt, isMutating, clear]);
+  }, [source, dataUpdatedAt, isMutating, watermarks, clear]);
 }
 
 /**
@@ -298,9 +329,29 @@ export default function DashboardScreen() {
   const reviewsMutating = approveReview.isPending || rejectReview.isPending;
   const ticketsMutating = updateTicketStatus.isPending;
 
-  useClearWhenFresh("dashboard", dashboard.dataUpdatedAt ?? 0, dashboardMutating, clearSource);
-  useClearWhenFresh("reviews", reviews.dataUpdatedAt ?? 0, reviewsMutating, clearSource);
-  useClearWhenFresh("tickets", tickets.dataUpdatedAt ?? 0, ticketsMutating, clearSource);
+  const watermarks = useRef<Watermark>(NO_WATERMARK);
+
+  useExpireHidesOnFreshAnswer(
+    "dashboard",
+    dashboard.dataUpdatedAt ?? 0,
+    dashboardMutating,
+    watermarks,
+    clearSource,
+  );
+  useExpireHidesOnFreshAnswer(
+    "reviews",
+    reviews.dataUpdatedAt ?? 0,
+    reviewsMutating,
+    watermarks,
+    clearSource,
+  );
+  useExpireHidesOnFreshAnswer(
+    "tickets",
+    tickets.dataUpdatedAt ?? 0,
+    ticketsMutating,
+    watermarks,
+    clearSource,
+  );
 
   /**
    * Optimistic + rollback, at the screen rather than in the mutation hooks:

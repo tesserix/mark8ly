@@ -31,7 +31,7 @@ import {
   ShoppingBag,
   Package,
   Users,
-  MoreHorizontal,
+  CircleEllipsis,
   type LucideIcon,
 } from "lucide-react-native";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
@@ -56,7 +56,12 @@ const TAB_ICONS: Record<string, LucideIcon> = {
   orders: ShoppingBag,
   products: Package,
   customers: Users,
-  more: MoreHorizontal,
+  // CircleEllipsis, not MoreHorizontal: the bare three-dot glyph has only
+  // ~9px of vertical ink in a 24pt box (vs. ~65px for the Orders/Products
+  // glyphs), so its icon-to-label gap read as detached/misaligned even
+  // though the label itself was correctly positioned. The circle ring
+  // gives it comparable vertical mass to its siblings.
+  more: CircleEllipsis,
 };
 
 // Short labels — slots are equal fifths, so a long title would truncate. The

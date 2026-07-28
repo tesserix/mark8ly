@@ -20,6 +20,7 @@ type Repository interface {
 	UpdateProgress(ctx context.Context, id string, lastRow, successCount, errorCount int) error
 	UpdateHeartbeat(ctx context.Context, id string) error
 	FindOrphanedJobs(ctx context.Context, staleDuration time.Duration) ([]CsvImportJob, error)
+	FindQueuedJobs(ctx context.Context, limit int) ([]CsvImportJob, error)
 	FindByContentHash(ctx context.Context, storeID, contentHash string) (*CsvImportJob, error)
 	SetStatusFields(ctx context.Context, id string, fields map[string]any) error
 }
@@ -56,6 +57,12 @@ func (r *gormRepository) ListByStore(ctx context.Context, storeID string, page, 
 	}
 	if pageSize <= 0 {
 		pageSize = 20
+	}
+
+	// store_id is a uuid column — an empty string makes Postgres reject the
+	// whole statement with SQLSTATE 22P02, so reject it before it hits SQL.
+	if storeID == "" {
+		return nil, 0, apperrors.ValidationFailed("store_id", "store id is required")
 	}
 
 	base := r.db.WithContext(ctx).Model(&CsvImportJob{}).Where("store_id = ?", storeID)
@@ -127,6 +134,26 @@ func (r *gormRepository) FindOrphanedJobs(ctx context.Context, staleDuration tim
 		Scan(&jobs).Error
 	if err != nil {
 		return nil, fmt.Errorf("csvjob: find orphaned: %w", err)
+	}
+	return jobs, nil
+}
+
+// FindQueuedJobs returns up to limit jobs sitting in the queued state,
+// across all stores, oldest first. This is the store-agnostic query the
+// polling loop needs: jobs left behind by a crash (re-queued by
+// RecoverOrphanedJobs or resumed by a merchant) belong to arbitrary stores.
+func (r *gormRepository) FindQueuedJobs(ctx context.Context, limit int) ([]CsvImportJob, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	var jobs []CsvImportJob
+	err := r.db.WithContext(ctx).
+		Where("status = ?", StatusQueued).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&jobs).Error
+	if err != nil {
+		return nil, fmt.Errorf("csvjob: find queued: %w", err)
 	}
 	return jobs, nil
 }

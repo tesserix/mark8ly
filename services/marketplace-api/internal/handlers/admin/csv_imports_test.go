@@ -75,6 +75,10 @@ func (r *memRepo) FindOrphanedJobs(_ context.Context, _ time.Duration) ([]csvjob
 	return nil, nil
 }
 
+func (r *memRepo) FindQueuedJobs(_ context.Context, _ int) ([]csvjob.CsvImportJob, error) {
+	return nil, nil
+}
+
 func (r *memRepo) FindByContentHash(_ context.Context, storeID, hash string) (*csvjob.CsvImportJob, error) {
 	for _, j := range r.jobs {
 		if j.StoreID == storeID && j.ContentHash == hash &&

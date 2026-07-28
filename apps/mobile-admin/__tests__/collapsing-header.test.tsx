@@ -32,10 +32,11 @@ jest.mock("react-native-reanimated", () => {
 });
 
 import { Dimensions, StyleSheet, Text as RNText } from "react-native";
-import { render, within } from "@testing-library/react-native";
+import { act, render, within } from "@testing-library/react-native";
 import type { ReactTestInstance } from "react-test-renderer";
 import type { SharedValue } from "react-native-reanimated";
 import {
+  COLLAPSED_TITLE_LINES,
   CollapsingHeader,
   EXPANDED_TITLE_LINES,
   MAX_FONT_SCALE,
@@ -233,7 +234,19 @@ describe("CollapsingHeader", () => {
       expect(expanded.getByText("12 orders today").props.numberOfLines).toBe(1);
     });
 
-    it("holds the COLLAPSED title to one line so the compact bar stays compact", () => {
+    /**
+     * The COLLAPSED counterpart, and the same ruling: "a `numberOfLines` that
+     * ellipsises a merchant's shop name is a different bug, not a fix."
+     *
+     * Measured on device before this changed (iPhone 17 Pro, cleared bundle,
+     * relaunched after each content_size change):
+     *   - `The Bondi Store` → `The Bondi Sto…` at `accessibility-large`
+     *   - `Northside Coffee Roasters & Bakehouse` → `…Roasters & B…` at the
+     *     DEFAULT size, `Northside Co…` at `accessibility-large`
+     * The bar's HEIGHT was never the problem (it grew to ~112pt at the capped
+     * 2×, ascenders intact) — the title had one line and a scaled serif.
+     */
+    it("lets the COLLAPSED title wrap rather than truncating a real shop name", () => {
       const TITLE = "Northside Coffee Roasters";
       const { getByTestId } = render(
         <CollapsingHeader
@@ -245,8 +258,93 @@ describe("CollapsingHeader", () => {
       );
 
       const collapsed = within(getByTestId("collapsing-header-collapsed"));
-      expect(collapsed.getByText(TITLE).props.numberOfLines).toBe(1);
+      expect(collapsed.getByText(TITLE).props.numberOfLines).toBe(COLLAPSED_TITLE_LINES);
+      expect(COLLAPSED_TITLE_LINES).toBeGreaterThan(1);
+      // The supporting line stays single — it is what the height math budgets
+      // exactly one box for.
       expect(collapsed.getByText("12 orders today").props.numberOfLines).toBe(1);
+    });
+
+    /**
+     * The other half of that one contract. `styles.block` is
+     * `position: absolute; top: 0; bottom: 0` inside a container with
+     * `overflow: "hidden"`, so a title allowed to draw two lines into a box
+     * still sized for one clips SILENTLY — with a fully green suite. This
+     * asserts the box grew with what it now holds.
+     */
+    const COLLAPSED_CONTENT_WRAPPED =
+      theme.text.h3.lineHeight * COLLAPSED_TITLE_LINES + 2 + theme.text.caption.lineHeight;
+
+    it.each([1, 1.35, 1.6, 1.9, 3.1])(
+      "grows the collapsed box to fit a wrapped title at fontScale %s",
+      (fontScale) => {
+        const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+        const wrapped = headerHeightsFor(fontScale, false, COLLAPSED_TITLE_LINES).collapsed;
+        expect(wrapped).toBeGreaterThan(COLLAPSED_CONTENT_WRAPPED * scale);
+        expect(wrapped).toBeGreaterThan(headerHeightsFor(fontScale, false, 1).collapsed);
+      },
+    );
+
+    it("leaves the one-line collapsed height untouched, so a short title keeps its compact bar", () => {
+      // The additive third parameter must DEFAULT to the pre-existing answer:
+      // every caller that has not measured two lines pays nothing for this.
+      expect(headerHeightsFor(1.6, false).collapsed).toBe(
+        headerHeightsFor(1.6, false, 1).collapsed,
+      );
+      expect(headerHeightsFor(1.6, true).collapsed).toBe(
+        headerHeightsFor(1.6, false).collapsed,
+      );
+    });
+
+    it("clamps a measured line count that the title could never actually draw", () => {
+      // Fed from a native layout callback, so it is not trusted.
+      expect(headerHeightsFor(1, false, 0).collapsed).toBe(
+        headerHeightsFor(1, false, 1).collapsed,
+      );
+      expect(headerHeightsFor(1, false, 9).collapsed).toBe(
+        headerHeightsFor(1, false, COLLAPSED_TITLE_LINES).collapsed,
+      );
+    });
+
+    /**
+     * End to end through the component: the rendered container must resize off
+     * the MEASURED line count, not off a constant. Deleting the `onTextLayout`
+     * wiring leaves the height frozen and fails this.
+     *
+     * The seed is the MAXIMUM allowance so a wrapping title never flashes
+     * clipped, so the observable transition here is the shrink to one line.
+     */
+    it("resizes the rendered collapsed bar from the title's measured line count", () => {
+      const TITLE = "Northside Coffee Roasters & Bakehouse";
+      const { getByTestId } = render(
+        <CollapsingHeader title={TITLE} scrollY={sharedValue(64)} />,
+      );
+      const { fontScale } = Dimensions.get("window");
+      const collapsedTitle = within(getByTestId("collapsing-header-collapsed")).getByText(
+        TITLE,
+      );
+
+      // Seeded at the two-line height before any measurement lands.
+      expect(heightOf(getByTestId("collapsing-header"))).toBe(
+        headerHeightsFor(fontScale, false, COLLAPSED_TITLE_LINES).collapsed,
+      );
+
+      act(() => {
+        collapsedTitle.props.onTextLayout({ nativeEvent: { lines: [{}] } });
+      });
+      expect(heightOf(getByTestId("collapsing-header"))).toBe(
+        headerHeightsFor(fontScale, false, 1).collapsed,
+      );
+
+      act(() => {
+        collapsedTitle.props.onTextLayout({ nativeEvent: { lines: [{}, {}] } });
+      });
+      expect(heightOf(getByTestId("collapsing-header"))).toBe(
+        headerHeightsFor(fontScale, false, COLLAPSED_TITLE_LINES).collapsed,
+      );
+      expect(heightOf(getByTestId("collapsing-header"))).toBeGreaterThan(
+        headerHeightsFor(fontScale, false, 1).collapsed,
+      );
     });
   });
 

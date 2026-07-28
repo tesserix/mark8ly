@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import Animated, {
   Extrapolation,
@@ -71,10 +71,42 @@ export const COLLAPSE_DISTANCE = 64;
  * baseline. Two lines fit the box (see EXPANDED_HEIGHT); a third would not,
  * so the ellipsis is pushed out to names no phone could show anyway.
  *
- * The COLLAPSED layer stays at one line deliberately: it is a 56pt bar the
- * merchant scrolls past, not the place they read their own shop name.
+ * The COLLAPSED layer gets the same allowance, for the same reason — see
+ * COLLAPSED_TITLE_LINES.
  */
 export const EXPANDED_TITLE_LINES = 2;
+
+/**
+ * Line allowance for the COLLAPSED title. Also two, and this one is measured.
+ *
+ * This layer used to be pinned at one line, on the argument that the compact
+ * bar is "a 56pt bar the merchant scrolls past, not the place they read their
+ * own shop name". On device that argument bought a truncated shop name in
+ * exactly the place the app states the merchant's identity:
+ *
+ *   - `The Bondi Store` → `The Bondi Sto…` at `accessibility-large`
+ *   - `Northside Coffee Roasters & Bakehouse` → `Northside Coffee Roasters & B…`
+ *     at the DEFAULT text size, and `Northside Co…` at `accessibility-large`
+ *
+ * Note the second row: the collapsed bar truncates a long enough name at
+ * EVERY text size, so this is not a Dynamic Type bug with a Dynamic Type fix.
+ * The cause is horizontal, not vertical — `headerHeightsFor` was already
+ * growing the bar correctly (a measured ~112pt at the capped 2×, glyphs with
+ * full ascender room), and the trailing slot was not squeezing anything: the
+ * Dashboard's is a fixed 40pt monogram. The title simply had one line and a
+ * scaled font, and 200%-resized serif does not fit 15 characters in the ~306pt
+ * the row leaves it.
+ *
+ * "A `numberOfLines` that ellipsises a merchant's shop name is a different
+ * bug, not a fix" was the ruling when the EXPANDED title was given two lines.
+ * It applies here unchanged; WCAG 2.1 SC 1.4.4 (no loss of content at 200%)
+ * does not exempt a header because it is the short one.
+ *
+ * Shrink-to-fit was the accepted answer for the Dashboard's hero numeral, and
+ * it does NOT transfer here: money has to read as a single token, so it can
+ * only get smaller, while a shop name is prose and can legitimately wrap.
+ */
+export const COLLAPSED_TITLE_LINES = 2;
 
 /**
  * `18` (caption, the taller of the two eyebrow presets) `+ 4` margin
@@ -91,6 +123,16 @@ const EXPANDED_HEIGHT = 96;
 const EXPANDED_HEIGHT_WITH_SUBTITLE = 124;
 /** `26` (h3) `+ 2` margin `+ 18` (caption) `= 46`, comfortably inside 56. */
 const COLLAPSED_HEIGHT = 56;
+/**
+ * One h3 line box — what a SECOND collapsed title line costs the bar.
+ *
+ * Read off the theme rather than written as a literal `26`: this number and
+ * the line the collapsed title actually draws must be the same number, and a
+ * hand-copied constant is how they drift. With it, the two-line collapsed
+ * content is `26 × 2 + 2 + 18 = 72` inside `56 + 26 = 82` — the same ~10pt of
+ * slack the one-line case has, preserved rather than coincidental.
+ */
+const COLLAPSED_TITLE_LINE = theme.text.h3.lineHeight;
 
 /**
  * Cap on the iOS Dynamic Type / Android font-scale multiplier applied to
@@ -126,21 +168,39 @@ export const MAX_FONT_SCALE = TEXT_MAX_FONT_SCALE;
  * into a single fixed height would either clip the callers that pass one or
  * leave 28pt of dead air above every caller that doesn't.
  *
+ * `collapsedTitleLines` is a parameter for the same reason, and it is why the
+ * collapsed title can now wrap at all: `COLLAPSED_TITLE_LINES` alone would
+ * have let a two-line title draw 72pt of content into a 56pt `overflow:
+ * "hidden"` box and clip silently — the exact failure this function exists to
+ * make structural. It defaults to `1`, so every existing call keeps its
+ * current answer and only a caller that has MEASURED two lines pays for the
+ * second. Scaling it by `fontScale` rather than thresholding on it is
+ * deliberate: the truncation reproduces at the DEFAULT text size for a long
+ * enough name, so a scale-keyed rule would not have covered it.
+ *
  * Exported so the arithmetic is testable without mocking the RN Dimensions
  * module.
  */
 export function headerHeightsFor(
   fontScale: number,
   hasSubtitle = false,
+  collapsedTitleLines = 1,
 ): {
   expanded: number;
   collapsed: number;
 } {
   const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
   const expandedBase = hasSubtitle ? EXPANDED_HEIGHT_WITH_SUBTITLE : EXPANDED_HEIGHT;
+  // Clamped, not trusted: this is fed from a native layout callback, and a 0
+  // (or a 3 from some future allowance bump) must not silently resize the box
+  // to something the title's own `numberOfLines` will never draw into.
+  const titleLines = Math.min(
+    Math.max(Math.round(collapsedTitleLines), 1),
+    COLLAPSED_TITLE_LINES,
+  );
   return {
     expanded: expandedBase * scale,
-    collapsed: COLLAPSED_HEIGHT * scale,
+    collapsed: (COLLAPSED_HEIGHT + COLLAPSED_TITLE_LINE * (titleLines - 1)) * scale,
   };
 }
 
@@ -174,9 +234,30 @@ export function CollapsingHeader({
   // re-renders when the user changes their text size while the app is
   // foregrounded — the static read would leave the header at the old height.
   const { fontScale } = useWindowDimensions();
+  /**
+   * How many lines the COLLAPSED title actually occupies, MEASURED via
+   * `onTextLayout` rather than predicted.
+   *
+   * Whether a shop name wraps depends on the name, the font scale, the device
+   * width and what the trailing slot leaves behind — there is no expression of
+   * `fontScale` that answers it, which is why the truncation reproduced at the
+   * default text size as well as the accessibility ones. Asking the layout is
+   * the only answer that is right for every name at every size.
+   *
+   * Seeded at the MAXIMUM allowance, not at 1, so the box is never briefly
+   * smaller than its content: the first frame is sized for two lines and the
+   * measurement only ever shrinks it, so a wrapping title cannot flash clipped
+   * against `overflow: "hidden"`. Nothing is visible either way — the header
+   * mounts expanded, and this height only applies once the user scrolls.
+   *
+   * This cannot oscillate: the collapsed height feeds the container's HEIGHT,
+   * and the title's available WIDTH is independent of it, so a re-measure
+   * after the height changes returns the same line count.
+   */
+  const [collapsedTitleLines, setCollapsedTitleLines] = useState(COLLAPSED_TITLE_LINES);
   // `Boolean(subtitle)`, not `subtitle !== undefined` — the render below
   // treats an empty string as absent too, so the height must agree with it.
-  const heights = headerHeightsFor(fontScale, Boolean(subtitle));
+  const heights = headerHeightsFor(fontScale, Boolean(subtitle), collapsedTitleLines);
 
   // Single source of truth for collapse progress (0 expanded → 1 collapsed).
   // Reduced motion bypasses the interpolation entirely: any non-zero offset
@@ -254,15 +335,28 @@ export function CollapsingHeader({
             pointerEvents="none"
             testID="collapsing-header-collapsed"
           >
-            {/* One line here, unlike the expanded layer: this is the compact
-                bar the merchant scrolls past, and a second line would double
-                the height of a state whose whole job is to get out of the
-                way. See EXPANDED_TITLE_LINES. */}
+            {/* Two lines here, as in the expanded layer, and the bar grows to
+                hold the second ONLY when the title actually takes it — see
+                COLLAPSED_TITLE_LINES. The compact bar is still compact for
+                every name that fits; it stops being compact exactly when the
+                alternative is truncating the merchant's shop name, and
+                correctness wins that trade. Do NOT put this back to 1 without
+                also shrinking the box in `headerHeightsFor`, and do not shrink
+                the box without putting this back — they are one contract. */}
             <Text
               preset="h3"
               color="text"
-              numberOfLines={1}
+              numberOfLines={COLLAPSED_TITLE_LINES}
               maxFontSizeMultiplier={MAX_FONT_SCALE}
+              onTextLayout={(event) =>
+                setCollapsedTitleLines((previous) => {
+                  const lines = event.nativeEvent.lines.length;
+                  // Same-value guard: `onTextLayout` fires on every layout
+                  // pass, and returning the identical number lets React bail
+                  // out instead of re-rendering the header on each one.
+                  return previous === lines ? previous : lines;
+                })
+              }
             >
               {title}
             </Text>

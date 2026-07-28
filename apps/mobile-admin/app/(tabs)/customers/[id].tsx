@@ -13,10 +13,20 @@ import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import type { CustomerAddress } from "@repo/mobile-shared/api/schemas/customers";
 import { useCustomer } from "../../../lib/hooks/use-customers";
 import { useBlockCustomer, useUnblockCustomer } from "../../../lib/admin-api/customer-actions";
-import { BackHeader, Eyebrow, Hairline, Screen, StatusBadge, Text } from "@/components/ui";
+import {
+  BackHeader,
+  Eyebrow,
+  Hairline,
+  Monogram,
+  Screen,
+  StatusBadge,
+  Text,
+  titleMinimumFontScale,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/money";
 import { addressLines } from "@/lib/customer-address";
+import { customerIdentity } from "@/lib/customer-identity";
 import { BlockReasonSheet, type BlockReasonSheetHandle } from "@/components/customers/BlockReasonSheet";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
@@ -28,15 +38,32 @@ function formatDate(dateString: string): string {
   });
 }
 
-function getInitial(firstName: string | undefined, lastName: string | undefined, email: string): string {
-  const name = firstName || lastName || email;
-  return name.charAt(0).toUpperCase();
-}
+/** Monogram tile for the detail head — bigger than the list row's, same shape. */
+const AVATAR = 72;
 
-function getDisplayName(firstName: string | undefined, lastName: string | undefined, email: string): string {
-  if (firstName || lastName) return [firstName, lastName].filter(Boolean).join(" ");
-  return email;
-}
+/**
+ * Floor for the identity title's shrink-to-fit, as a fraction of h2 — the same
+ * `theme.text.caption.fontSize` (13pt) floor `CollapsingHeader` uses, via the
+ * same helper rather than a second hand-written ratio.
+ *
+ * Reused because the reasoning transfers exactly: a bare `0.5` would authorise
+ * a 12pt identity line at the default text size, below iOS's 11pt legibility
+ * guidance, whereas pinning the floor to a real design-system size means the
+ * customer's own name can never render smaller than the caption beside it, at
+ * any text size (`minimumFontScale` is a fraction of the ALREADY-scaled size,
+ * so `13 / 24` holds at `13 x fontScale` for every scale).
+ *
+ * WHY it is needed here at all, and why the LINE ALLOWANCE cannot substitute:
+ * `CollapsingHeader` chose "wrap first, shrink second" because a shop name is
+ * prose with spaces to break at. An email has none. Left to wrap,
+ * `mahesh.sangawar@gmail.com` broke as `mahesh.sangawar@gmai` / `l.com` — an
+ * address split mid-token reads as if it ended at the line break, which is the
+ * "money has to read as a single token" case `CollapsingHeader`'s own comment
+ * carves out, not the shop-name case. So an email title gets ONE line and
+ * shrinks; a real name still gets two and wraps. That single difference is the
+ * whole rule.
+ */
+const IDENTITY_TITLE_MIN_SCALE = titleMinimumFontScale(theme.text.h2.fontSize);
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -153,8 +180,10 @@ export default function CustomerDetailScreen() {
     );
   }
 
-  const displayName = getDisplayName(customer.first_name, customer.last_name, customer.email);
-  const initial = getInitial(customer.first_name, customer.last_name, customer.email);
+  // ONE source for "who is this", shared with the list row — see
+  // lib/customer-identity.ts. `subtitle` is absent when the email IS the
+  // title, which is what stops this screen printing the same address twice.
+  const identity = customerIdentity(customer);
 
   // The backend has no average_order_value — deriving it here is exactly what
   // a server-side field would compute, without a deploy. Guard the divide:
@@ -173,33 +202,73 @@ export default function CustomerDetailScreen() {
 
   return (
     <Screen>
-      <BackHeader eyebrow="CUSTOMER" title={displayName} />
+      {/* No `title`. The back bar is STATIC — it does not collapse — so a title
+          here is drawn at the same time as the identity block 20pt below it,
+          which is precisely the repetition being fixed: a no-name customer had
+          their email in the bar, again as the h2, and again as the subtitle.
+          The eyebrow is the label this bar should carry; it says WHAT kind of
+          record you are on, which the body never repeats.
+
+          The alternative — reveal the identity in the bar only once the body
+          has scrolled past it — was considered and rejected here, not on
+          merit but on consistency: it needs a scroll-linked header, none of
+          this app's ten detail screens has one, and adding the behaviour to
+          exactly one of them would create a fresh cross-screen inconsistency
+          in the middle of a fix whose whole point is consistency. If it is
+          ever wanted it belongs to all ten at once, as an additive
+          `BackHeader` prop. Between the two lines, the h2 is the one that
+          survives: the bar's 1-line centred `bodyEmphasis` truncated the email
+          outright, so it was the worse rendering of the two. */}
+      <BackHeader eyebrow="CUSTOMER" />
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
         <View style={styles.profile}>
-          <View style={styles.identityRow}>
-            <View style={styles.avatar}>
-              <Text preset="h2" color="text">
-                {initial}
+          {/* Monogram ABOVE the identity, not beside it. Beside it, the title
+              column was `402 - 32 gutters - 72 tile - 12 gap = 286pt` on an
+              iPhone 17 Pro — under what a 25-character email needs at h2 even
+              at the DEFAULT text size, which is why it wrapped mid-address
+              there and nowhere else. Stacking returns the full 370pt column,
+              so the email fits on one line unshrunk at 1x and still clears the
+              13pt floor at the 2x cap without ellipsising. Applied to BOTH
+              cases, named and not: one head layout per screen beats a head
+              that rearranges itself depending on whether this particular
+              customer filled in a name. */}
+          <Monogram
+            label={identity.title}
+            size={AVATAR}
+            textPreset="h2"
+            testID="customer-detail-monogram"
+          />
+          <View style={styles.identity}>
+            {/* One line + shrink for an email, two lines + wrap for a name —
+                see IDENTITY_TITLE_MIN_SCALE for why the two differ. */}
+            <Text
+              preset="h2"
+              color="text"
+              numberOfLines={identity.titleIsEmail ? 1 : 2}
+              adjustsFontSizeToFit
+              minimumFontScale={IDENTITY_TITLE_MIN_SCALE}
+              testID="customer-detail-title"
+            >
+              {identity.title}
+            </Text>
+            {/* Present only when it says something the title doesn't. For a
+                customer with no name the email IS the title, and repeating it
+                here was two of the three copies of the same address. */}
+            {identity.subtitle ? (
+              <Text preset="body" color="textSecondary" testID="customer-detail-subtitle">
+                {identity.subtitle}
               </Text>
-            </View>
-            <View style={styles.identity}>
-              <Text preset="h2" color="text">
-                {displayName}
-              </Text>
-              <Text preset="body" color="textSecondary">
-                {customer.email}
-              </Text>
-              {isBlocked ? (
-                <View style={styles.blockedRow}>
-                  <StatusBadge label="Blocked" tone="danger" />
-                  {customer.block_reason ? (
-                    <Text preset="caption" color="textTertiary" style={styles.blockReason}>
-                      {customer.block_reason}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
+            ) : null}
+            {isBlocked ? (
+              <View style={styles.blockedRow}>
+                <StatusBadge label="Blocked" tone="danger" />
+                {customer.block_reason ? (
+                  <Text preset="caption" color="textTertiary" style={styles.blockReason}>
+                    {customer.block_reason}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.infoList}>
@@ -290,21 +359,11 @@ const styles = StyleSheet.create({
     paddingTop: theme.spacing.xl,
     paddingBottom: theme.spacing.xl,
   },
-  identityRow: {
-    flexDirection: "row",
-    gap: theme.spacing.md,
-  },
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: theme.colors.surfaceAlt,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  // No `flex: 1` and no `justifyContent` — the identity is now a block under
+  // the monogram rather than a column beside it, so it simply takes the
+  // profile's full width.
   identity: {
-    flex: 1,
-    justifyContent: "center",
+    marginTop: theme.spacing.md,
     gap: 2,
   },
   blockedRow: { marginTop: theme.spacing.xs, gap: 4 },

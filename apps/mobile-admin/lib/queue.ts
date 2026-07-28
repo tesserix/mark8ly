@@ -32,6 +32,16 @@ export type QueueItemType = "order" | "review" | "stock" | "ticket";
  *    stays optional on the `"item"` variant (additive vs. the brief, which
  *    has no label field at all) — every current producer sets it, but nothing
  *    depends on that being permanent.
+ *
+ * NO PRODUCER HERE EMITS `success`, and that is a Dashboard-specific rule
+ * rather than an app-wide one. The spec's Guardrails permit moss-tint success
+ * badges generally (`ReviewStatusBadge`'s approved and `OrderStatusBadges`'s
+ * fulfilled both use one); the separate "one accent per view" line names the
+ * Dashboard explicitly — its moss is spent on the revenue chart's
+ * fill/stroke/endpoint and on the Approve swipe, nowhere else. A queue row
+ * badged moss would be a third. Every queue tone is therefore
+ * `warning`/`danger`/`muted`; the queue only ever shows what still NEEDS the
+ * merchant, so there is no completed state left to badge green anyway.
  */
 interface QueueItemFields {
   id: string;

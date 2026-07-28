@@ -8,6 +8,14 @@ import { theme } from "@/lib/theme";
  * `success` for the "done/paid" states, amber-tint `warning` for pending,
  * `danger` for failed/cancelled, `muted`/`info` for the neutral states — so
  * no single view spends more than the restrained set of status colours.
+ *
+ * `fulfilled → success` is deliberate and correct. The spec's Guardrails
+ * permit moss-TINT success badges generally ("never a solid moss fill"); the
+ * "one accent per view" constraint is scoped to the Dashboard, where the moss
+ * goes to the revenue chart and the Approve swipe. On Orders' Completed tab
+ * there is no competing moss action at all — terminal orders get no swipe
+ * (see `TERMINAL_STATUSES` in app/(tabs)/orders/index.tsx) — so the tint is
+ * the only moss in the view and reads as the status it is.
  */
 const ORDER_TONE: Record<string, StatusTone> = {
   pending: "warning",

@@ -20,15 +20,21 @@ export const LOW_STOCK = 5;
 /**
  * Stock count -> badge tone + label. Pure, so the boundary is cheap to pin exactly.
  *
- * Controller decision: the healthy (>LOW_STOCK) case does NOT use tone
- * "success" — that tone's text IS moss (on a moss tint field). The design
- * system's one-moss-accent-per-view rule is non-negotiable and outranks the
- * spec's tone enumeration — a healthy-stock product would otherwise show a
- * moss badge on every variant row alongside the header's moss "Save",
- * spending the accent many times per screen. Healthy and out-of-stock both
- * read as "muted" (quiet, no accent); only the actionable low-stock middle
- * state draws the functional amber "warning" tone. Label text — not badge
- * color — distinguishes the two muted states.
+ * The healthy (>LOW_STOCK) case does NOT use tone "success", and the reason
+ * is NOT that a moss-tint success badge is forbidden. The spec's Guardrails
+ * permit them generally — "Success stays a moss tint (#E8EEE2/#2D4A2B), never
+ * a solid moss fill" — which is why `ReviewStatusBadge` maps approved →
+ * success and `OrderStatusBadges` maps fulfilled → success, both correctly.
+ * The one-accent-per-view constraint the spec states alongside it is scoped
+ * to the DASHBOARD, where the moss is spent on the chart and the Approve
+ * swipe (see `lib/queue.ts`, which therefore emits no `success` tone at all).
+ *
+ * The reason here is informational, not chromatic: "healthy" is the default
+ * state of every variant on a healthy product, and a badge on every row that
+ * says nothing actionable is noise the eye has to filter. Only the actionable
+ * middle state earns a tone — the functional amber "warning". Healthy and
+ * out-of-stock both read "muted" (quiet, no accent), and the LABEL text, not
+ * the badge colour, distinguishes them.
  */
 export function stockTone(quantity: number): { tone: StatusTone; label: string } {
   if (quantity === 0) return { tone: "muted", label: "Out of stock" };

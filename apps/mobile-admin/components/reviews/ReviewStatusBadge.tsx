@@ -2,9 +2,10 @@ import { StatusBadge, type StatusTone } from "@/components/ui";
 import type { ReviewStatus } from "@repo/mobile-shared/api/types";
 
 /**
- * pending → warning (ink-on-amber), approved → success (moss-tint),
- * rejected → danger. Mirrors web ReviewStatusBadge. `success` is the tint,
- * not a solid moss fill, so it doesn't spend the one accent.
+ * pending → warning (bronze on amber tint), approved → success (moss on moss
+ * tint), rejected → danger (oxblood on blood tint). Mirrors web
+ * ReviewStatusBadge. All three are TINTS, not solid fills — `success` in
+ * particular doesn't spend the one moss accent.
  */
 const TONE: Record<ReviewStatus, StatusTone> = {
   pending: "warning",

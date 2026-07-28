@@ -21,10 +21,10 @@ export const LOW_STOCK = 5;
  * Stock count -> badge tone + label. Pure, so the boundary is cheap to pin exactly.
  *
  * Controller decision: the healthy (>LOW_STOCK) case does NOT use tone
- * "success" (StatusBadge renders it as a solid moss fill). The design
+ * "success" — that tone's text IS moss (on a moss tint field). The design
  * system's one-moss-accent-per-view rule is non-negotiable and outranks the
  * spec's tone enumeration — a healthy-stock product would otherwise show a
- * solid-moss badge on every variant row alongside the header's moss "Save",
+ * moss badge on every variant row alongside the header's moss "Save",
  * spending the accent many times per screen. Healthy and out-of-stock both
  * read as "muted" (quiet, no accent); only the actionable low-stock middle
  * state draws the functional amber "warning" tone. Label text — not badge

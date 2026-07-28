@@ -30,8 +30,8 @@ describe("product detail screen composition", () => {
 
   it("never spends moss on the header status badge — success IS moss", () => {
     // 🔴 The one-accent rule this task exists to enforce: the header badge
-    // must never resolve to the `success` tone (StatusBadge.TONE.success is
-    // a solid moss fill). It maps active -> "neutral" (solid ink) instead.
+    // must never resolve to the `success` tone (StatusBadge.TONE.success
+    // paints its label in moss). It maps active -> "neutral" (solid ink).
     expect(source).not.toMatch(/tone=\{?["']?success/);
   });
 

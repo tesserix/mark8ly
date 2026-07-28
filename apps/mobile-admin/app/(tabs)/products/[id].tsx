@@ -212,8 +212,8 @@ export default function ProductDetailScreen() {
   // draft state below (that's the live Switch toggle, only committed on Save).
   const productIsActive = product.status === "active";
   // 🔴 One accent, spent once: moss is reserved for the header Save action.
-  // "active" reads as a solid ink pill, never the moss `success` tone — that
-  // tone IS moss, and spending it here would be the exact violation this
+  // "active" reads as a solid ink pill, never the `success` tone — that
+  // tone's label IS moss, and spending it here would be the exact violation this
   // rhythm pass exists to fix (see StatusBadge's TONE map).
   const statusTone: StatusTone = productIsActive ? "neutral" : "muted";
 

@@ -38,11 +38,16 @@ module.exports = {
         signal: '#D94B1A',
         danger: {
           DEFAULT: '#8B2E20',
+          // Badge field for the `danger` StatusBadge tone. Oxblood #8B2E20 on
+          // it is 6.82:1 (AA). Mirrors lib/theme.ts `colors.dangerTint`.
           tint: '#F6E4E1',
         },
         warning: {
           DEFAULT: '#B5751F',
-          tint: '#F3E7CE',
+          // Was #F3E7CE while lib/theme.ts held #F4E6CB for the same token —
+          // the two token sources must agree, so this is now the theme.ts
+          // value (warningInk #7A4A0F on it is 6.05:1).
+          tint: '#F4E6CB',
         },
         border: {
           DEFAULT: '#E2DFD6',

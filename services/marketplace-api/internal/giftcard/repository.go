@@ -3,6 +3,7 @@ package giftcard
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -79,6 +80,17 @@ type Repository interface {
 	// MarkPaymentFailed marks the card's payment as failed without
 	// disabling the card itself (merchant can retry).
 	MarkPaymentFailed(tx *gorm.DB, id uuid.UUID) error
+
+	// SetStatus atomically flips a gift card between StatusActive and
+	// StatusDisabled — the only two legal targets. Tenant- and
+	// store-scoped, atomic UPDATE WHERE pattern (mirrors
+	// DebitInTx/ActivateAfterPayment): the status check and the write are
+	// one statement, so there is no window between reading a card's
+	// eligibility and changing it. Idempotent when the card is already at
+	// the target status (returns it unchanged, no error). Any other
+	// source status, or an expired card in either direction, is refused
+	// via classifyStatusTransition.
+	SetStatus(tx *gorm.DB, id, tenantID, storeID uuid.UUID, to GiftCardStatus) (*GiftCard, error)
 }
 
 type gormRepository struct{}
@@ -328,4 +340,69 @@ func (gormRepository) MarkPaymentFailed(tx *gorm.DB, id uuid.UUID) error {
 	return tx.Model(&GiftCard{}).
 		Where("id = ?", id).
 		Update("payment_status", PaymentStatusFailed).Error
+}
+
+// SetStatus atomically flips a gift card between StatusActive and
+// StatusDisabled — the only two legal targets. Tenant- and store-scoped,
+// atomic UPDATE WHERE pattern (mirrors DebitInTx/ActivateAfterPayment): the
+// status check and the write are one statement, so there is no window
+// between reading a card's eligibility and changing it. Idempotent when the
+// card is already at the target status (returns it unchanged, no error) —
+// disable/enable are treated as set-state operations, not strict
+// transitions, matching the long-press-menu idempotent-200 convention used
+// elsewhere in this codebase. Any other source status, or an expired card
+// in either direction, is refused via classifyStatusTransition.
+func (gormRepository) SetStatus(tx *gorm.DB, id, tenantID, storeID uuid.UUID, to GiftCardStatus) (*GiftCard, error) {
+	var from GiftCardStatus
+	switch to {
+	case StatusActive:
+		from = StatusDisabled
+	case StatusDisabled:
+		from = StatusActive
+	default:
+		return nil, apperrors.ValidationFailed("status", "must be \"active\" or \"disabled\"")
+	}
+
+	var gc GiftCard
+	result := tx.Raw(`
+		UPDATE gift_cards
+		SET status = ?, updated_at = now()
+		WHERE id = ? AND tenant_id = ? AND store_id = ? AND status = ?
+		  AND (expires_at IS NULL OR expires_at > now())
+		RETURNING id, tenant_id, store_id, code, initial_balance,
+		          current_balance, currency_code, status, expires_at,
+		          created_at, updated_at`,
+		to, id, tenantID, storeID, from).Scan(&gc)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected > 0 {
+		return &gc, nil
+	}
+	return classifyStatusTransition(tx, id, tenantID, storeID, to)
+}
+
+// classifyStatusTransition explains why SetStatus's UPDATE matched no row.
+// Read-only re-read, same shape as classifyDebitFailure: three independent
+// arms (not found / already at target / illegal source status / expired),
+// so a single generic error would be wrong for most of them.
+func classifyStatusTransition(tx *gorm.DB, id, tenantID, storeID uuid.UUID, to GiftCardStatus) (*GiftCard, error) {
+	var gc GiftCard
+	err := tx.Where("id = ? AND tenant_id = ? AND store_id = ?", id, tenantID, storeID).First(&gc).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, apperrors.NotFound("gift card")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if gc.Status == to {
+		// Idempotent no-op: caller asked for the state the card is already
+		// in. Succeed even if the card has since expired — nothing is
+		// changing, so there is nothing to refuse.
+		return &gc, nil
+	}
+	if gc.ExpiresAt != nil && gc.ExpiresAt.Before(time.Now()) {
+		return nil, apperrors.New(apperrors.CodeGiftCardExpired, "gift card has expired")
+	}
+	return nil, apperrors.InvalidTransition("status", string(gc.Status), string(to))
 }

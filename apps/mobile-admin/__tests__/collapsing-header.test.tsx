@@ -37,9 +37,12 @@ import type { ReactTestInstance } from "react-test-renderer";
 import type { SharedValue } from "react-native-reanimated";
 import {
   COLLAPSED_TITLE_LINES,
+  COLLAPSED_TITLE_MIN_SCALE,
   CollapsingHeader,
   EXPANDED_TITLE_LINES,
+  EXPANDED_TITLE_MIN_SCALE,
   MAX_FONT_SCALE,
+  TITLE_MIN_FONT_SIZE,
   headerHeightsFor,
 } from "@/components/ui/CollapsingHeader";
 import { theme } from "@/lib/theme";
@@ -345,6 +348,104 @@ describe("CollapsingHeader", () => {
       expect(heightOf(getByTestId("collapsing-header"))).toBeGreaterThan(
         headerHeightsFor(fontScale, false, 1).collapsed,
       );
+    });
+  });
+
+  /**
+   * Two lines were not enough. Measured on device (iPhone 17 Pro, 402pt wide,
+   * cleared bundle, relaunched after every content_size change) against
+   * `Northside Coffee Roasters & Bakehouse`, 37 characters:
+   *
+   *   expanded, DEFAULT size    → `Northside Coffee Roasters & Bakehou…`
+   *   expanded, accessibility-L → `Northside Coffee R…`
+   *   collapsed, accessibility-L → `Northside Coffee Roaste…`
+   *
+   * i.e. the truncation is a WIDTH problem present at the default text size
+   * as well as the accessibility ones, and the EXPANDED layer — the one the
+   * merchant reads at rest — loses more of the name than the collapsed bar
+   * does. Line allowance cannot buy the rest (a third collapsed line puts the
+   * bar past the expanded one), so the remaining room is horizontal.
+   */
+  describe("shrink-to-fit floor", () => {
+    it("lets BOTH title layers shrink rather than ellipsise, down to a shared floor", () => {
+      const TITLE = "Northside Coffee Roasters & Bakehouse";
+      const expanded = within(
+        render(<CollapsingHeader title={TITLE} scrollY={sharedValue(0)} />).getByTestId(
+          "collapsing-header-expanded",
+        ),
+      ).getByText(TITLE);
+      const collapsed = within(
+        render(<CollapsingHeader title={TITLE} scrollY={sharedValue(64)} />).getByTestId(
+          "collapsing-header-collapsed",
+        ),
+      ).getByText(TITLE);
+
+      // Both layers, not just the compact bar: fixing only the collapsed one
+      // would leave the collapsed state showing MORE of the shop name than
+      // the expanded state, which is worse than the bug.
+      expect(expanded.props.adjustsFontSizeToFit).toBe(true);
+      expect(collapsed.props.adjustsFontSizeToFit).toBe(true);
+      expect(expanded.props.minimumFontScale).toBe(EXPANDED_TITLE_MIN_SCALE);
+      expect(collapsed.props.minimumFontScale).toBe(COLLAPSED_TITLE_MIN_SCALE);
+    });
+
+    /**
+     * The floor is a SIZE, not a fraction, and this is the assertion that
+     * says so. `minimumFontScale` is a fraction of the already-Dynamic-Type-
+     * scaled size, so `TITLE_MIN_FONT_SIZE / fontSize` pins the floor to
+     * `TITLE_MIN_FONT_SIZE × fontScale` at every scale.
+     *
+     * `MetricsCard` can spell its floor as a bare 0.5 because the hero
+     * numeral is only ever squeezed at raised text sizes, where half of the
+     * 2×-scaled 88pt is exactly its default 44pt. This title is squeezed at
+     * the DEFAULT size too, where the same 0.5 would authorise a 10pt
+     * collapsed shop name — below iOS's 11pt legibility guidance. Anyone
+     * lowering this floor to an inaccessible size fails here.
+     */
+    it("floors the shrink at a real design-system size, not an arbitrary fraction", () => {
+      expect(theme.text.h1.fontSize * EXPANDED_TITLE_MIN_SCALE).toBe(TITLE_MIN_FONT_SIZE);
+      expect(theme.text.h3.fontSize * COLLAPSED_TITLE_MIN_SCALE).toBe(TITLE_MIN_FONT_SIZE);
+      // `caption` — the smallest type this app ships as running copy, and
+      // what this header's own subtitle draws in.
+      expect(TITLE_MIN_FONT_SIZE).toBe(theme.text.caption.fontSize);
+      expect(TITLE_MIN_FONT_SIZE).toBeGreaterThanOrEqual(11);
+    });
+
+    /**
+     * Regression: a RED SCREEN on the Dashboard, found on device and invisible
+     * to every test in this file, because the tests hand-build the event.
+     *
+     * With `adjustsFontSizeToFit` on, iOS fires `onTextLayout` for its own
+     * font-fitting passes with a payload carrying no `lines` array —
+     * `event.nativeEvent.lines.length` threw "Cannot read property 'lines' of
+     * null" the instant the header collapsed. The measurement must ignore a
+     * payload it cannot read, and must not resize the box off one.
+     */
+    it("ignores an onTextLayout payload with no line measurement", () => {
+      const TITLE = "Northside Coffee Roasters & Bakehouse";
+      const { getByTestId } = render(
+        <CollapsingHeader title={TITLE} scrollY={sharedValue(64)} />,
+      );
+      const { fontScale } = Dimensions.get("window");
+      const collapsedTitle = within(getByTestId("collapsing-header-collapsed")).getByText(
+        TITLE,
+      );
+
+      act(() => {
+        collapsedTitle.props.onTextLayout({ nativeEvent: { lines: [{}] } });
+      });
+      const settled = headerHeightsFor(fontScale, false, 1).collapsed;
+      expect(heightOf(getByTestId("collapsing-header"))).toBe(settled);
+
+      for (const nativeEvent of [null, undefined, {}, { lines: null }, { lines: [] }]) {
+        expect(() => {
+          act(() => {
+            collapsedTitle.props.onTextLayout({ nativeEvent });
+          });
+        }).not.toThrow();
+        // …and the unreadable pass must not move the box either.
+        expect(heightOf(getByTestId("collapsing-header"))).toBe(settled);
+      }
     });
   });
 

@@ -102,11 +102,86 @@ export const EXPANDED_TITLE_LINES = 2;
  * It applies here unchanged; WCAG 2.1 SC 1.4.4 (no loss of content at 200%)
  * does not exempt a header because it is the short one.
  *
- * Shrink-to-fit was the accepted answer for the Dashboard's hero numeral, and
- * it does NOT transfer here: money has to read as a single token, so it can
- * only get smaller, while a shop name is prose and can legitimately wrap.
+ * Two lines is where the LINE allowance stops — a third costs
+ * `26 × 2 = 52pt` on top of the 56pt base, which at any scale puts the
+ * collapsed bar past the 96pt expanded one and inverts the point of
+ * collapsing. Everything past two lines is bought horizontally instead; see
+ * `TITLE_MIN_FONT_SIZE`.
  */
 export const COLLAPSED_TITLE_LINES = 2;
+
+/**
+ * Floor for the title's shrink-to-fit, in unscaled points.
+ *
+ * Two lines was not enough. Measured on an iPhone 17 Pro (402pt wide, so the
+ * title column is `402 − 20 − 20 − 16 gap − 44 slot = 302pt`) against the
+ * name this file's own comments use, `Northside Coffee Roasters & Bakehouse`
+ * (37 characters):
+ *
+ *   | layer          | text size           | rendered                               |
+ *   |----------------|---------------------|----------------------------------------|
+ *   | expanded (h1)  | large (1.0×)        | `Northside Coffee Roasters & Bakehou…`  |
+ *   | expanded (h1)  | accessibility-large | `Northside Coffee R…`                   |
+ *   | collapsed (h3) | large (1.0×)        | full name, two lines                    |
+ *   | collapsed (h3) | accessibility-large | `Northside Coffee Roaste…`              |
+ *
+ * Three things that reading kills:
+ *
+ *  1. It is a WIDTH problem, not a Dynamic Type one — the EXPANDED title
+ *     truncates at the DEFAULT text size, by about 14pt of line. Any fix
+ *     keyed on `fontScale` would have missed that row entirely.
+ *  2. It is not the collapsed layer's problem — the expanded layer, the one
+ *     the merchant reads at rest, loses MORE of the name (18 of 37 vs 22 of
+ *     37) at `accessibility-large`. Fixing only the compact bar would have
+ *     left the collapsed state showing more of the shop name than the
+ *     expanded state, which is worse than the bug.
+ *  3. Line allowance cannot buy the rest: the collapsed bar is capped at two
+ *     lines by `COLLAPSED_HEIGHT` vs `EXPANDED_HEIGHT` (above).
+ *
+ * So the remaining room is horizontal, and shrink-to-fit is the lever —
+ * `MetricsCard`'s hero numeral pattern, which this file previously ruled out
+ * on the grounds that "money has to read as a single token, so it can only
+ * get smaller, while a shop name is prose and can legitimately wrap". That
+ * argument was about choosing WRAPPING OVER SHRINKING; it says nothing about
+ * what to do once wrapping is spent, which is where both layers now are.
+ * `adjustsFontSizeToFit` picks the LARGEST size that fits, so a name that
+ * already fits — every name at `The Bondi Store`'s length, at every text
+ * size — is not shrunk by a single point.
+ *
+ * The floor is `caption`, the smallest type the design system ships as
+ * running copy (13pt; it is what this header's own subtitle draws in). Not a
+ * bare fraction: `MetricsCard` can express its floor as a constant 0.5
+ * because the hero is only ever squeezed at raised text sizes, and half of
+ * the 2×-scaled 88pt is exactly its default 44pt. This title is squeezed at
+ * the DEFAULT size too, where the same 0.5 would authorise a 10pt collapsed
+ * shop name — below iOS's 11pt legibility guidance and squarely inside the
+ * "never shrink below an accessible size" line. Pinning the floor to a real
+ * design-system size instead means the shop name can never render smaller
+ * than the caption sitting next to it, at any text size: `minimumFontScale`
+ * is a fraction of the ALREADY-Dynamic-Type-scaled size, so `13 / fontSize`
+ * holds the floor at `13 × fontScale` for every scale without plumbing
+ * `fontScale` into it.
+ *
+ * Cross-platform despite the typings: `adjustsFontSizeToFit` is declared in
+ * RN's `TextPropsIOS` for historical reasons, but Android implements it too
+ * (`ReactTextViewManager.kt` `setAdjustFontSizeToFit`, and
+ * `TextLayoutManager.kt`'s `adjustFontSizeToFit` measurement path).
+ */
+export const TITLE_MIN_FONT_SIZE = theme.text.caption.fontSize;
+
+/**
+ * `minimumFontScale` for a title drawn at `styledFontSize`, i.e. the fraction
+ * of its own size at which it stops shrinking. Capped at 1 so a preset that
+ * is ALREADY at or below the floor is never told it may grow.
+ */
+export function titleMinimumFontScale(styledFontSize: number): number {
+  return Math.min(1, TITLE_MIN_FONT_SIZE / styledFontSize);
+}
+
+/** h1 → 13/30. */
+export const EXPANDED_TITLE_MIN_SCALE = titleMinimumFontScale(theme.text.h1.fontSize);
+/** h3 → 13/20. */
+export const COLLAPSED_TITLE_MIN_SCALE = titleMinimumFontScale(theme.text.h3.fontSize);
 
 /**
  * `18` (caption, the taller of the two eyebrow presets) `+ 4` margin
@@ -177,6 +252,16 @@ export const MAX_FONT_SCALE = TEXT_MAX_FONT_SCALE;
  * second. Scaling it by `fontScale` rather than thresholding on it is
  * deliberate: the truncation reproduces at the DEFAULT text size for a long
  * enough name, so a scale-keyed rule would not have covered it.
+ *
+ * The titles' shrink-to-fit (see `TITLE_MIN_FONT_SIZE`) does NOT enter this
+ * arithmetic, and that is a property worth stating rather than an oversight.
+ * `adjustsFontSizeToFit` only ever picks a font size at or BELOW the styled
+ * one, and a line box never grows when its font shrinks — so the content
+ * height computed here stays an upper bound on the content actually drawn,
+ * whatever the shrink lands on. The inequalities above are the ones that must
+ * hold, and shrinking can only widen them. (Nor can it feed back into the
+ * measured `collapsedTitleLines`: the shrink is bound by the title's WIDTH,
+ * which this height does not touch.)
  *
  * Exported so the arithmetic is testable without mocking the RN Dimensions
  * module.
@@ -310,11 +395,17 @@ export function CollapsingHeader({
                 {eyebrow}
               </Text>
             ) : null}
+            {/* Wrap first, shrink second, ellipsise never — see
+                TITLE_MIN_FONT_SIZE. This layer truncated a 37-character shop
+                name at the DEFAULT text size, so the pair is not an
+                accessibility-only concern and must not be reduced to one. */}
             <Text
               preset="h1"
               color="text"
               numberOfLines={EXPANDED_TITLE_LINES}
               maxFontSizeMultiplier={MAX_FONT_SCALE}
+              adjustsFontSizeToFit
+              minimumFontScale={EXPANDED_TITLE_MIN_SCALE}
             >
               {title}
             </Text>
@@ -348,15 +439,30 @@ export function CollapsingHeader({
               color="text"
               numberOfLines={COLLAPSED_TITLE_LINES}
               maxFontSizeMultiplier={MAX_FONT_SCALE}
-              onTextLayout={(event) =>
-                setCollapsedTitleLines((previous) => {
-                  const lines = event.nativeEvent.lines.length;
+              // The second half of the same contract as the expanded title:
+              // two lines, then shrink to the caption floor, and only then
+              // give up. `headerHeightsFor` is unaffected — shrinking can
+              // only make the content shorter than the box already allows.
+              adjustsFontSizeToFit
+              minimumFontScale={COLLAPSED_TITLE_MIN_SCALE}
+              onTextLayout={(event) => {
+                // `lines` is OPTIONAL, not guaranteed. With
+                // `adjustsFontSizeToFit` on, iOS fires `onTextLayout` for its
+                // font-fitting passes with a payload that carries no `lines`
+                // array at all — reading `.length` off it threw
+                // "Cannot read property 'lines' of null" and took the whole
+                // Dashboard down to a red screen the moment the header
+                // collapsed. Found on device; every test was green, because
+                // the tests hand-build the event.
+                const measured = event.nativeEvent?.lines?.length;
+                if (!measured) return;
+                setCollapsedTitleLines((previous) =>
                   // Same-value guard: `onTextLayout` fires on every layout
                   // pass, and returning the identical number lets React bail
                   // out instead of re-rendering the header on each one.
-                  return previous === lines ? previous : lines;
-                })
-              }
+                  previous === measured ? previous : measured,
+                );
+              }}
             >
               {title}
             </Text>

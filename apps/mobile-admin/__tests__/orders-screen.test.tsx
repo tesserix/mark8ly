@@ -145,6 +145,7 @@ import { FlatList, StyleSheet } from "react-native";
 import Animated from "react-native-reanimated";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import OrdersScreen from "../app/(tabs)/orders/index";
+import { MAX_FONT_SCALE } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Order } from "@repo/mobile-shared/api/types";
 
@@ -242,6 +243,20 @@ describe("Orders — header", () => {
   it("sources the count from its own status-pinned query, not the visible list", () => {
     render(<OrdersScreen />);
     expect(mockListCalls).toContainEqual({ status: "pending" });
+  });
+
+  // `CollapsingHeader` computes its container height from MAX_FONT_SCALE and
+  // gives every line it draws itself a known allowance. A `rightSlot` is
+  // outside that loop, so an uncapped, unbounded-line-count text slot is
+  // measured against a box that was never sized for it — the primitive's
+  // Dynamic Type contract broken from the caller's side. Asserted here
+  // because the Gate-A run that would have caught it only ever exercised the
+  // Dashboard's fixed 40pt monogram slot.
+  it("honours the header's Dynamic Type contract in the slot it fills", () => {
+    const { getByTestId } = render(<OrdersScreen />);
+    const count = getByTestId("orders-pending-count");
+    expect(count.props.maxFontSizeMultiplier).toBe(MAX_FONT_SCALE);
+    expect(count.props.numberOfLines).toBe(1);
   });
 });
 

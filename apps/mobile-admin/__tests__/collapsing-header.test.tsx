@@ -31,7 +31,7 @@ jest.mock("react-native-reanimated", () => {
   };
 });
 
-import { Dimensions, StyleSheet } from "react-native";
+import { Dimensions, StyleSheet, Text as RNText } from "react-native";
 import { render, within } from "@testing-library/react-native";
 import type { ReactTestInstance } from "react-test-renderer";
 import type { SharedValue } from "react-native-reanimated";
@@ -310,6 +310,34 @@ describe("CollapsingHeader", () => {
       );
       expect(opacityOf(getByTestId("collapsing-header-expanded"))).toBe(1);
       expect(opacityOf(getByTestId("collapsing-header-collapsed"))).toBe(0);
+    });
+  });
+
+  /**
+   * `left` is `flex: 1`, i.e. `flexBasis: 0` — it has no basis to shrink FROM.
+   * With RN's default `flexShrink: 0` on `right`, a slot that grows past the
+   * row (scalable text at an accessibility size) doesn't shrink; the overflow
+   * comes straight out of `left`'s resolved width instead, and Orders' "Inbox"
+   * title was crushed to nothing while its "3 pending" caption kept every
+   * pixel it asked for. The Gate-A Dynamic Type run only ever exercised the
+   * Dashboard's rightSlot, which is a FIXED 40pt monogram and cannot show
+   * this.
+   */
+  describe("rightSlot", () => {
+    it("shrinks the trailing slot rather than the title, and floors it at the touch target", () => {
+      const { getByTestId } = render(
+        <CollapsingHeader
+          title="Inbox"
+          eyebrow="Orders"
+          rightSlot={<RNText>3 pending</RNText>}
+          scrollY={sharedValue(0)}
+        />,
+      );
+      const right = StyleSheet.flatten(
+        getByTestId("collapsing-header-right").props.style,
+      ) as { flexShrink?: number; minWidth?: number };
+      expect(right.flexShrink).toBe(1);
+      expect(right.minWidth).toBe(theme.touchTarget);
     });
   });
 });

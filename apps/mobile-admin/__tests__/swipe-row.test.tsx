@@ -8,6 +8,7 @@ import { act, fireEvent, render } from "@testing-library/react-native";
 import { Text as RNText } from "react-native";
 import * as GestureHandler from "react-native-gesture-handler";
 import { SwipeRow, type SwipeAction } from "@/components/ui/SwipeRow";
+import { MAX_FONT_SCALE } from "@/components/ui/Text";
 
 // `__getLastGesture` is a test-only escape hatch the global mock
 // (`__mocks__/react-native-gesture-handler.js`) adds — it isn't part of the
@@ -458,5 +459,35 @@ describe("SwipeRow — axis arbitration against a parent scroll view", () => {
     const [, activateX] = gesture.handlers.activeOffsetX ?? [0, 0];
     const [, failY] = gesture.handlers.failOffsetY ?? [0, 0];
     expect(failY).toBeLessThan(activateX);
+  });
+});
+
+// The action panel is a FIXED 84pt wide and exactly as tall as the row it
+// belongs to — neither dimension grows with the merchant's text size. An
+// uncapped, unbounded-line-count label therefore has nowhere to go: "Approve"
+// (the longest label this app ships) broke onto a second line past ~1.87×
+// and pushed the icon out of the panel. A shared primitive with a fixed-size
+// box has to state its own cap; inheriting Text's app-wide 200% is not
+// enough here.
+describe("SwipeRow — the action label inside a fixed-width panel", () => {
+  it("keeps every action label on one line, under a tighter cap than the app default", () => {
+    const { getByText } = renderRow({
+      // `icon: null` so the only Text nodes in each panel are the labels
+      // themselves — the shared `action()` helper's placeholder icon is also
+      // a Text.
+      leadingActions: [
+        action({ key: "approve", label: "Approve", tone: "accent", icon: null }),
+      ],
+      trailingActions: [
+        action({ key: "cancel", label: "Cancel", tone: "danger", icon: null }),
+      ],
+    });
+
+    for (const text of ["Approve", "Cancel"]) {
+      const label = getByText(text);
+      expect(label.props.numberOfLines).toBe(1);
+      expect(label.props.maxFontSizeMultiplier).toBeLessThan(MAX_FONT_SCALE);
+      expect(label.props.maxFontSizeMultiplier).toBeGreaterThan(1);
+    }
   });
 });

@@ -24,6 +24,7 @@ import {
   EmptyState,
   FilterChips,
   Hairline,
+  MAX_FONT_SCALE,
   Screen,
   SearchField,
   SwipeRow,
@@ -506,6 +507,11 @@ export default function OrdersScreen() {
               color="textTertiary"
               style={styles.pendingCount}
               numberOfLines={1}
+              // Explicit, not inherited: `CollapsingHeader` computes its own
+              // height from this exact multiplier, so a slot it doesn't own
+              // has to state that it honours the same contract rather than
+              // silently depending on `Text`'s app-wide default staying 2.
+              maxFontSizeMultiplier={MAX_FONT_SCALE}
               testID="orders-pending-count"
             >
               {pendingCount} pending

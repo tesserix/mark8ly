@@ -67,6 +67,14 @@ const THRESHOLD_FRACTION = 0.4;
 const FULL_SWIPE_FRACTION = 0.85;
 const ACTION_WIDTH = 84;
 /**
+ * Dynamic Type cap for the action LABEL only — tighter than `Text`'s app-wide
+ * 200% because the panel it sits in is a fixed `ACTION_WIDTH` × the row's own
+ * height, and neither grows. 1.5× keeps "Approve" (the longest label this app
+ * ships) on one line inside 84pt while still scaling with the merchant's
+ * setting. The icon above it is fixed-size and unaffected.
+ */
+const ACTION_LABEL_MAX_FONT_SCALE = 1.5;
+/**
  * Horizontal travel (px) before the pan is allowed to activate, and vertical
  * travel before it fails to the enclosing scroll view.
  *
@@ -348,6 +356,15 @@ function SwipeActionButton({ action, onActivate, testID }: SwipeActionButtonProp
       <Text
         preset="caption"
         color={action.tone === "neutral" ? "text" : "inverse"}
+        // The panel is a FIXED `ACTION_WIDTH` (84) whose HEIGHT is the row's,
+        // so a label that wraps has nowhere to go: "Approve" broke onto a
+        // second line past ~1.87× and pushed the icon out of the panel. One
+        // line, and a tighter Dynamic Type cap than the app-wide default —
+        // this is a 5-to-8-character verb on a control the merchant has just
+        // revealed with their thumb and can also read from the row itself,
+        // not body copy that WCAG 1.4.4 requires to reach 200%.
+        numberOfLines={1}
+        maxFontSizeMultiplier={ACTION_LABEL_MAX_FONT_SCALE}
         style={styles.actionLabel}
       >
         {action.label}

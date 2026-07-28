@@ -38,6 +38,14 @@ export interface CollapsingHeaderProps {
   title: string;
   /** Optional one-line caption — body under the title expanded, caption collapsed. */
   subtitle?: string;
+  /**
+   * Trailing content, vertically centred against both header states.
+   *
+   * If it contains TEXT, cap it at `MAX_FONT_SCALE` like every line this
+   * primitive draws itself — the container's height is computed from that
+   * multiplier (see `headerHeightsFor`), so an uncapped slot is measured
+   * against a box that was never sized for it.
+   */
   rightSlot?: ReactNode;
   /**
    * Owned by the caller and wired to their scroll view's
@@ -271,7 +279,11 @@ export function CollapsingHeader({
             ) : null}
           </Animated.View>
         </View>
-        {rightSlot ? <View style={styles.right}>{rightSlot}</View> : null}
+        {rightSlot ? (
+          <View style={styles.right} testID="collapsing-header-right">
+            {rightSlot}
+          </View>
+        ) : null}
       </View>
       <Animated.View style={[styles.hairline, collapsedStyle]} pointerEvents="none">
         <Hairline />
@@ -322,6 +334,16 @@ const styles = StyleSheet.create({
     minHeight: theme.touchTarget,
     alignItems: "center",
     justifyContent: "center",
+    // RN's flex default is `flexShrink: 0`, which is right for the Dashboard's
+    // fixed 40pt monogram and WRONG for a `rightSlot` made of scalable text.
+    // `left` is `flex: 1` — i.e. `flexBasis: 0` — so it has no basis to shrink
+    // FROM: an unshrinkable right slot that grows past the row simply drives
+    // left's resolved width to zero, and Orders' "Inbox" title vanished while
+    // its "3 pending" caption kept every pixel it asked for. With a shrink
+    // factor here the overflow is absorbed by the slot that caused it, down to
+    // the 44pt touch-target floor above; a text slot then truncates on its own
+    // `numberOfLines`, which is the caller's choice to make.
+    flexShrink: 1,
   },
   hairline: {
     position: "absolute",

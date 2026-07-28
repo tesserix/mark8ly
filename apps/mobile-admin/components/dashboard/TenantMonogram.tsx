@@ -71,7 +71,18 @@ export function TenantMonogram({ storeName }: TenantMonogramProps) {
         </Text>
         {unread > 0 ? (
           <View style={styles.badge} accessible={false} testID="tenant-monogram-badge">
-            <Text preset="caption" color="inverse" style={styles.badgeText}>
+            <Text
+              preset="caption"
+              color="inverse"
+              style={styles.badgeText}
+              // Same argument as the initial above, and the residue of that
+              // fix: the badge is a fixed 16pt disc holding a 12pt line box,
+              // so it clipped from 1.33× — well before the app-wide 200% cap
+              // could help. A 1-or-2-glyph unread count on a 16pt chip is an
+              // ornament on the notifications button, not resizable content;
+              // the button's own accessibilityLabel speaks the real number.
+              maxFontSizeMultiplier={1}
+            >
               {unread > 9 ? "9+" : String(unread)}
             </Text>
           </View>

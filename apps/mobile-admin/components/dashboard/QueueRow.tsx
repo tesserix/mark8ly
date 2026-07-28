@@ -155,9 +155,11 @@ const styles = StyleSheet.create({
   // contrast against its own row while held — the disc's edge vanishes and
   // the initial appears to float. textTertiary (#5C5953) holds ~5.8:1
   // against `sink` (and ~6.5:1 against Paper at rest), so the ring stays
-  // visible in both states. Fixed here, not in PressableRow or Thumb — a
-  // shared primitive's default press token is not the place for a one-row
-  // fix (see inc2-task-7-report.md, "Fix round 1").
+  // visible in both states. Still NOT fixed in PressableRow — a shared
+  // primitive's default press token is not the place for this (see
+  // inc2-task-7-report.md, "Fix round 1"). `Thumb`'s placeholder now carries
+  // the same ring for the same reason, which is what makes the equal-
+  // visibility claim above true rather than aspirational.
   monogram: {
     width: theme.thumb.list,
     height: theme.thumb.list,

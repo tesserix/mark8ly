@@ -11,6 +11,16 @@ import { theme } from "@/lib/theme";
  *
  * A missing, null, or failed `uri` renders the placeholder at the SAME
  * dimensions, so a row never changes height because an image 404'd.
+ *
+ * The placeholder — and ONLY the placeholder — carries a hairline
+ * `textTertiary` ring. Its fill is `sink`, and `PressableRow`'s iOS pressed
+ * state repaints the whole row background to that same `sink` token, so a
+ * fill-only placeholder has zero contrast against its own row while held:
+ * the box's edge vanishes and the Package glyph appears to float on bare
+ * row. This is the identical collision `QueueRow`'s monogram was given a
+ * ring for, and this is what makes the two "no photo" fallbacks actually
+ * reach the visual parity QueueRow's comment claims they have. A real image
+ * needs no ring — its own content supplies the edge.
  */
 export interface ThumbProps {
   uri?: string | null;
@@ -84,5 +94,7 @@ const styles = StyleSheet.create({
   placeholder: {
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: theme.hairline,
+    borderColor: theme.colors.textTertiary,
   },
 });

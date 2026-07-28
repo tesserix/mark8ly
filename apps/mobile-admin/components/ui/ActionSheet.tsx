@@ -226,11 +226,16 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
     }
   }, [visible, hasItems]);
 
+  // No `if (item.disabled) return` guard here. `PressableRow` below receives
+  // `disabled={item.disabled}` and holds the only guard that is reachable:
+  // it never calls its `onPress` when disabled, so this function is never
+  // entered for a disabled item and a guard here could not be exercised by
+  // any test. Deleting `disabled={item.disabled}` reddens three tests;
+  // deleting the guard that used to sit here reddened none — belt-and-braces
+  // that no test can load-bear is just unverifiable code. The disabled path
+  // is covered against `PressableRow` (see action-sheet.test.tsx, "disabled
+  // items", and orders-screen.test.tsx's illegal-action cases).
   const handlePress = (item: ActionSheetItem) => {
-    // Belt-and-braces with `PressableRow`'s own `disabled` prop below — the
-    // same explicit guard PressableRow/IconButton/SwipeRow keep alongside
-    // their native disabled handling.
-    if (item.disabled) return;
     item.onPress();
     modalRef.current?.dismiss();
   };

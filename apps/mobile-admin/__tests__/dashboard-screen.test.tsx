@@ -99,20 +99,37 @@ const mockUpdateTicketStatus = jest.fn();
 // the cancel sheet back to `cancelOrder.error`, the "stale cancel error"
 // suite below goes red on the very first open.
 const mockStickyCancelError = new Error("a cancel that failed some time ago");
+
+/**
+ * In-flight state per mutation. Everything defaults to settled; a test that
+ * needs "the request is still running" sets its flag and rerenders — that is
+ * the window in which the optimistic hide must survive a refetch.
+ */
+const mockPending = {
+  confirmOrder: false,
+  cancelOrder: false,
+  approveReview: false,
+  rejectReview: false,
+  updateTicketStatus: false,
+};
+
 jest.mock("@/lib/admin-api/order-actions", () => ({
-  useConfirmOrder: () => ({ mutate: mockConfirmOrder, isPending: false }),
+  useConfirmOrder: () => ({ mutate: mockConfirmOrder, isPending: mockPending.confirmOrder }),
   useCancelOrder: () => ({
     mutate: mockCancelOrder,
-    isPending: false,
+    isPending: mockPending.cancelOrder,
     error: mockStickyCancelError,
   }),
 }));
 jest.mock("@/lib/admin-api/review-actions", () => ({
-  useApproveReview: () => ({ mutate: mockApproveReview, isPending: false }),
-  useRejectReview: () => ({ mutate: mockRejectReview, isPending: false }),
+  useApproveReview: () => ({ mutate: mockApproveReview, isPending: mockPending.approveReview }),
+  useRejectReview: () => ({ mutate: mockRejectReview, isPending: mockPending.rejectReview }),
 }));
 jest.mock("@/lib/admin-api/ticket-actions", () => ({
-  useUpdateTicketStatus: () => ({ mutate: mockUpdateTicketStatus, isPending: false }),
+  useUpdateTicketStatus: () => ({
+    mutate: mockUpdateTicketStatus,
+    isPending: mockPending.updateTicketStatus,
+  }),
 }));
 
 import { RefreshControl } from "react-native";
@@ -249,13 +266,41 @@ function loadAll() {
 beforeEach(() => {
   jest.clearAllMocks();
   loadAll();
+  mockPending.confirmOrder = false;
+  mockPending.cancelOrder = false;
+  mockPending.approveReview = false;
+  mockPending.rejectReview = false;
+  mockPending.updateTicketStatus = false;
 });
 
 describe("Dashboard — header", () => {
+  /** `todayLabel()`'s shape: "Monday, 27 July". */
+  const DATELINE = /^\w+day, \d{1,2} \w+$/;
+
   it("titles the screen with the store name and the date as the eyebrow", () => {
-    const { getAllByText } = render(<DashboardScreen />);
+    const { getAllByText, getByText } = render(<DashboardScreen />);
     // The CollapsingHeader mounts both the expanded and collapsed layers.
     expect(getAllByText("Bondi Supply").length).toBeGreaterThan(0);
+    // The eyebrow lives only in the expanded layer, so this is unambiguous.
+    expect(getByText(DATELINE)).toBeTruthy();
+  });
+
+  // `CollapsingHeader`'s eyebrow DEFAULT is the uppercase small-caps label,
+  // and this screen deliberately opts out: the dateline is running prose, the
+  // first thing the eye lands on, and the mockup does not shout it. The
+  // primitive's SUPPORT for `eyebrowPreset` is tested both ways in
+  // collapsing-header.test.tsx; this pins its USE here, which deleting the
+  // prop otherwise left every dashboard and header test green.
+  //
+  // Asserted on the resolved utility classes, not a flattened style:
+  // NativeWind compiles classNames natively and does not resolve them to RN
+  // style objects under jest, so `textTransform` is undefined for BOTH
+  // presets here and would pass vacuously.
+  it("renders the dateline in sentence case, not the uppercase eyebrow default", () => {
+    const { getByText } = render(<DashboardScreen />);
+    const className = getByText(DATELINE).props.className as string;
+    expect(className).toContain("text-caption");
+    expect(className).not.toContain("uppercase");
   });
 });
 
@@ -583,6 +628,83 @@ describe("Dashboard — optimistic dismissals expire when fresh data lands", () 
     rerender(<DashboardScreen />);
 
     expect(queryByTestId("queue-row-o1")).toBeNull();
+  });
+
+  it("un-hides a review row when the REVIEWS query answers again", () => {
+    mockQueryState.reviews = { data: REVIEW_PAGES, isError: false, dataUpdatedAt: 1 };
+    const { getByTestId, queryByTestId, rerender } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-r1-action-approve"));
+    expect(queryByTestId("queue-row-r1")).toBeNull();
+
+    mockQueryState.reviews = { data: REVIEW_PAGES, isError: false, dataUpdatedAt: 2 };
+    rerender(<DashboardScreen />);
+
+    expect(getByTestId("queue-row-r1")).toBeTruthy();
+  });
+});
+
+describe("Dashboard — a refetch only expires its OWN source's dismissals", () => {
+  // The clear used to key on the MAX of the three `dataUpdatedAt` values, so
+  // a refetch of one query un-hid rows belonging to the other two. Reachable
+  // on any staggered initial load (dashboard resolves first, tickets last)
+  // and on every `refetchOnWindowFocus`: the row the merchant just approved
+  // popped back mid-flight, swipeable again — a second `useConfirmOrder` on
+  // the same order one tap away — then vanished when the mutation resolved.
+  it("keeps an approved ORDER hidden when only the TICKETS query refetches", () => {
+    mockQueryState.dashboard = { data: dashboardPayload(), isError: false, dataUpdatedAt: 100 };
+    mockQueryState.tickets = { data: TICKET_PAGES, isError: false, dataUpdatedAt: 100 };
+    const { getByTestId, queryByTestId, rerender } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+
+    // Neither onSuccess nor onError has fired — the request is still running.
+    expect(mockConfirmOrder).toHaveBeenCalledTimes(1);
+
+    // Only tickets answers again. The dashboard has said nothing new about o1.
+    mockQueryState.tickets = { data: TICKET_PAGES, isError: false, dataUpdatedAt: 200 };
+    rerender(<DashboardScreen />);
+
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+  });
+
+  it("keeps a closed TICKET hidden when only the DASHBOARD query refetches", () => {
+    mockQueryState.dashboard = { data: dashboardPayload(), isError: false, dataUpdatedAt: 100 };
+    mockQueryState.tickets = { data: TICKET_PAGES, isError: false, dataUpdatedAt: 100 };
+    const { getByTestId, queryByTestId, rerender } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-t1-action-close"));
+    expect(queryByTestId("queue-row-t1")).toBeNull();
+
+    mockQueryState.dashboard = { data: dashboardPayload(), isError: false, dataUpdatedAt: 200 };
+    rerender(<DashboardScreen />);
+
+    expect(queryByTestId("queue-row-t1")).toBeNull();
+  });
+
+  it("keeps the row hidden while its OWN mutation is still in flight", () => {
+    mockQueryState.dashboard = { data: dashboardPayload(), isError: false, dataUpdatedAt: 100 };
+    const { getByTestId, queryByTestId, rerender } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+
+    // The confirm is still running AND the dashboard answers again (a window
+    // focus refetch mid-request). Its answer predates the mutation, so it is
+    // not authoritative about o1 yet.
+    mockPending.confirmOrder = true;
+    mockQueryState.dashboard = { data: dashboardPayload(), isError: false, dataUpdatedAt: 200 };
+    rerender(<DashboardScreen />);
+
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+
+    // Once it settles, the deferred clear runs and the still-pending row
+    // returns — the behaviour the clear exists for is not lost, only delayed.
+    mockPending.confirmOrder = false;
+    rerender(<DashboardScreen />);
+
+    expect(getByTestId("queue-row-o1")).toBeTruthy();
   });
 });
 

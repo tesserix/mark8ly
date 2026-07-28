@@ -14,7 +14,7 @@ import { useTickets } from "@/lib/hooks/use-tickets";
 import { useConfirmOrder, useCancelOrder } from "@/lib/admin-api/order-actions";
 import { useApproveReview, useRejectReview } from "@/lib/admin-api/review-actions";
 import { useUpdateTicketStatus } from "@/lib/admin-api/ticket-actions";
-import { buildQueue, type QueueItem } from "@/lib/queue";
+import { buildQueue, type QueueItem, type QueueItemType } from "@/lib/queue";
 import { CollapsingHeader, Hairline, Screen, SwipeRow, Text, type SwipeAction } from "@/components/ui";
 import { QueueRow } from "@/components/dashboard/QueueRow";
 import { MetricsCard } from "@/components/dashboard/MetricsCard";
@@ -77,7 +77,66 @@ const ICON_SIZE = 20;
 /** Shown inline in `CancelReasonSheet` when a cancel round-trip fails. */
 const CANCEL_ERROR = "Couldn't cancel this order. Try again.";
 
-const NO_DISMISSALS: ReadonlySet<string> = new Set();
+/**
+ * The three independent queries the queue is composed from. Four queue TYPES
+ * map onto three sources — the dashboard payload carries both orders and low
+ * stock.
+ */
+type QueueSource = "dashboard" | "reviews" | "tickets";
+
+const SOURCE_FOR_TYPE: Record<QueueItemType, QueueSource> = {
+  order: "dashboard",
+  stock: "dashboard",
+  review: "reviews",
+  ticket: "tickets",
+};
+
+const NO_IDS: ReadonlySet<string> = new Set();
+
+/** Optimistic hides, kept PER SOURCE — see `useClearWhenFresh`. */
+type Dismissed = Readonly<Record<QueueSource, ReadonlySet<string>>>;
+
+const NO_DISMISSALS: Dismissed = {
+  dashboard: NO_IDS,
+  reviews: NO_IDS,
+  tickets: NO_IDS,
+};
+
+/**
+ * Drops a source's optimistic hides once that source has answered again.
+ *
+ * TWO conditions, both load-bearing:
+ *
+ * 1. **Per source.** The clear used to key on
+ *    `Math.max(dashboard, reviews, tickets .dataUpdatedAt)`, so a refetch of
+ *    ONE query un-hid rows belonging to the OTHER two. Reproducible on any
+ *    staggered initial load (dashboard resolves first, tickets last) and on
+ *    every `refetchOnWindowFocus`: the merchant approved an order, the row
+ *    vanished, then a tickets response brought it back — mid-flight, swipeable
+ *    again, and a second `useConfirmOrder` on the same order was one tap away.
+ * 2. **Not while that source is mutating.** A row whose own mutation is still
+ *    in flight has no authoritative answer yet; its source's data is by
+ *    definition stale with respect to it. Deferring rather than skipping is
+ *    what keeps condition 1's purpose intact — `isMutating` is a dependency,
+ *    so the clear runs as soon as the mutation settles.
+ *
+ * Why clear at all: `dismissed` is a purely local overlay on the server's
+ * answer, valid only until a fresh answer arrives. Without this, an id that
+ * legitimately RETURNS to the queue (an approval the server rejected out of
+ * band, a ticket reopened on another device) would stay invisible for the
+ * life of the screen.
+ */
+function useClearWhenFresh(
+  source: QueueSource,
+  dataUpdatedAt: number,
+  isMutating: boolean,
+  clear: (source: QueueSource) => void,
+): void {
+  useEffect(() => {
+    if (isMutating) return;
+    clear(source);
+  }, [source, dataUpdatedAt, isMutating, clear]);
+}
 
 /**
  * The Dashboard is an ACTION QUEUE, not a report.
@@ -118,9 +177,10 @@ export default function DashboardScreen() {
   const rejectReview = useRejectReview();
   const updateTicketStatus = useUpdateTicketStatus();
 
-  // Rows hidden optimistically while their mutation is in flight. Rolled
-  // back in `onError` — a new Set every time, never mutated in place.
-  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(NO_DISMISSALS);
+  // Rows hidden optimistically while their mutation is in flight, bucketed by
+  // the query that owns them. Rolled back in `onError` — a new Set (and a new
+  // record) every time, never mutated in place.
+  const [dismissed, setDismissed] = useState<Dismissed>(NO_DISMISSALS);
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
   // Local, NOT `cancelOrder.error`. The mutation's error is never reset, so
   // binding the sheet straight to it meant one failed cancel poisoned the
@@ -158,7 +218,7 @@ export default function DashboardScreen() {
   );
 
   const visibleQueue = useMemo(
-    () => queue.filter((item) => !dismissed.has(item.id)),
+    () => queue.filter((item) => !dismissed[SOURCE_FOR_TYPE[item.type]].has(item.id)),
     [queue, dismissed],
   );
 
@@ -208,40 +268,39 @@ export default function DashboardScreen() {
     }
   }, [dashboard, reviews, tickets, refetchAll]);
 
-  const hide = useCallback((id: string) => {
+  const hide = useCallback((source: QueueSource, id: string) => {
     setDismissed((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev[source]);
       next.add(id);
-      return next;
+      return { ...prev, [source]: next };
     });
   }, []);
 
-  const restore = useCallback((id: string) => {
+  const restore = useCallback((source: QueueSource, id: string) => {
     setDismissed((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev[source]);
       next.delete(id);
-      return next;
+      return { ...prev, [source]: next };
     });
   }, []);
 
-  /**
-   * `dismissed` is a purely local overlay on the server's answer, valid only
-   * until a fresh answer arrives. Clearing it on every successful fetch is
-   * what stops an id that legitimately RETURNS to the queue (an approval the
-   * server rejected out-of-band, a ticket reopened on another device) from
-   * staying invisible for the life of the screen. Safe against the ordinary
-   * path too: the mutation hooks invalidate their keys on success, so by the
-   * time this fires the refetched list no longer contains the row and
-   * un-hiding it is a no-op.
-   */
-  const freshestData = Math.max(
-    dashboard.dataUpdatedAt ?? 0,
-    reviews.dataUpdatedAt ?? 0,
-    tickets.dataUpdatedAt ?? 0,
-  );
-  useEffect(() => {
-    setDismissed(NO_DISMISSALS);
-  }, [freshestData]);
+  // Returns `prev` untouched when there is nothing to clear, so the effects
+  // below don't schedule a render on every mount and every refetch.
+  const clearSource = useCallback((source: QueueSource) => {
+    setDismissed((prev) =>
+      prev[source].size === 0 ? prev : { ...prev, [source]: NO_IDS },
+    );
+  }, []);
+
+  // A mutation is "pending" for the source whose list it will change. Cancel
+  // belongs to the dashboard (it changes an order), not to a fourth bucket.
+  const dashboardMutating = confirmOrder.isPending || cancelOrder.isPending;
+  const reviewsMutating = approveReview.isPending || rejectReview.isPending;
+  const ticketsMutating = updateTicketStatus.isPending;
+
+  useClearWhenFresh("dashboard", dashboard.dataUpdatedAt ?? 0, dashboardMutating, clearSource);
+  useClearWhenFresh("reviews", reviews.dataUpdatedAt ?? 0, reviewsMutating, clearSource);
+  useClearWhenFresh("tickets", tickets.dataUpdatedAt ?? 0, ticketsMutating, clearSource);
 
   /**
    * Optimistic + rollback, at the screen rather than in the mutation hooks:
@@ -256,12 +315,12 @@ export default function DashboardScreen() {
    * future memoisation of it would have silently stopped hiding rows.
    */
   const callbacksFor = useCallback(
-    (id: string): MutationCallbacks => ({
+    (source: QueueSource, id: string): MutationCallbacks => ({
       onSuccess: () => {
         void adminHaptics.actionSucceeded();
       },
       onError: () => {
-        restore(id);
+        restore(source, id);
         void adminHaptics.actionFailed();
       },
     }),
@@ -284,7 +343,7 @@ export default function DashboardScreen() {
           onSuccess: () => {
             cancelSheetRef.current?.dismiss();
             setCancelTargetId(null);
-            hide(id);
+            hide("dashboard", id);
             void adminHaptics.actionSucceeded();
           },
           onError: () => {
@@ -326,8 +385,8 @@ export default function DashboardScreen() {
                 onPress: () => {
                   // Hiding is an explicit statement, not a side effect of
                   // building the callbacks object — see `callbacksFor`.
-                  hide(item.id);
-                  confirmOrder.mutate({ id: item.id }, callbacksFor(item.id));
+                  hide("dashboard", item.id);
+                  confirmOrder.mutate({ id: item.id }, callbacksFor("dashboard", item.id));
                 },
               },
             ],
@@ -350,8 +409,8 @@ export default function DashboardScreen() {
                 tone: "accent",
                 icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
                 onPress: () => {
-                  hide(item.id);
-                  approveReview.mutate(item.id, callbacksFor(item.id));
+                  hide("reviews", item.id);
+                  approveReview.mutate(item.id, callbacksFor("reviews", item.id));
                 },
               },
             ],
@@ -362,8 +421,8 @@ export default function DashboardScreen() {
                 tone: "danger",
                 icon: <X size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
                 onPress: () => {
-                  hide(item.id);
-                  rejectReview.mutate(item.id, callbacksFor(item.id));
+                  hide("reviews", item.id);
+                  rejectReview.mutate(item.id, callbacksFor("reviews", item.id));
                 },
               },
             ],
@@ -379,10 +438,10 @@ export default function DashboardScreen() {
                 tone: "neutral",
                 icon: <Archive size={ICON_SIZE} color={theme.colors.text} strokeWidth={2} />,
                 onPress: () => {
-                  hide(item.id);
+                  hide("tickets", item.id);
                   updateTicketStatus.mutate(
                     { id: item.id, status: "closed" },
-                    callbacksFor(item.id),
+                    callbacksFor("tickets", item.id),
                   );
                 },
               },

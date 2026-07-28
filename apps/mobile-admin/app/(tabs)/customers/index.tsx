@@ -15,10 +15,10 @@ import { useCustomers } from "../../../lib/hooks/use-customers";
 import { CustomerRow } from "../../../components/CustomerRow";
 import {
   EmptyState,
+  FilterChips,
   PageHeader,
   Screen,
   SearchField,
-  SegmentedControl,
   Text,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
@@ -111,8 +111,10 @@ export default function CustomersScreen() {
           accessibilityLabel="Search customers"
         />
       </View>
-      <SegmentedControl<FilterKey>
-        segments={FILTERS}
+      {/* Pills, matching Orders and Products. `all` sends no `status` at all;
+          every other key IS the `status` value the backend takes. */}
+      <FilterChips<FilterKey>
+        chips={FILTERS}
         value={activeFilter}
         onChange={setActiveFilter}
       />

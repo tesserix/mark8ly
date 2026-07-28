@@ -10,7 +10,7 @@ import { useRouter } from "expo-router";
 import { Plus } from "lucide-react-native";
 import { useCampaigns } from "@/lib/hooks/use-campaigns";
 import { CampaignRow } from "@/components/marketing/CampaignRow";
-import { BackHeader, EmptyState, IconButton, Screen, SegmentedControl } from "@/components/ui";
+import { BackHeader, EmptyState, FilterChips, IconButton, Screen } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Campaign } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
@@ -71,9 +71,10 @@ export default function CampaignsScreen() {
           </IconButton>
         }
       />
-      <View style={styles.filter}>
-        <SegmentedControl<FilterKey> segments={FILTERS} value={filter} onChange={setFilter} />
-      </View>
+      {/* Pills, matching Orders. No wrapper: `FilterChips` owns the padding
+          above and below the strip. Semantics untouched — `all` sends no
+          `status`, every other key IS the `status` value. */}
+      <FilterChips<FilterKey> chips={FILTERS} value={filter} onChange={setFilter} />
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
@@ -122,7 +123,6 @@ export default function CampaignsScreen() {
 }
 
 const styles = StyleSheet.create({
-  filter: { paddingTop: theme.spacing.sm },
   list: { flexGrow: 1, paddingBottom: theme.spacing.huge },
   footer: { paddingVertical: theme.spacing.lg, alignItems: "center" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },

@@ -13,11 +13,11 @@ import { useProducts } from "../../../lib/hooks/use-products";
 import { ProductRow } from "../../../components/ProductRow";
 import {
   EmptyState,
+  FilterChips,
   IconButton,
   PageHeader,
   Screen,
   SearchField,
-  SegmentedControl,
 } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { DISCLOSURE_EASING } from "@/components/products/disclosure-motion";
@@ -83,8 +83,11 @@ export default function ProductsScreen() {
           accessibilityLabel="Search products"
         />
       </View>
-      <SegmentedControl<FilterKey>
-        segments={FILTERS}
+      {/* Pills, not the old underlined tabs — the same strip Orders uses, in
+          the same place relative to the pinned search field. Semantics are
+          untouched: the key IS the `status` query value (see FILTERS). */}
+      <FilterChips<FilterKey>
+        chips={FILTERS}
         value={activeFilter}
         onChange={setActiveFilter}
       />

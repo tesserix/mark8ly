@@ -10,7 +10,7 @@ import { useRouter } from "expo-router";
 import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import { useReviews } from "../../../../lib/hooks/use-reviews";
 import { ReviewRow } from "../../../../components/reviews/ReviewRow";
-import { BackHeader, EmptyState, Screen, SegmentedControl } from "@/components/ui";
+import { BackHeader, EmptyState, FilterChips, Screen } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { DISCLOSURE_EASING } from "@/components/products/disclosure-motion";
 import type { Review } from "@repo/mobile-shared/api/types";
@@ -61,13 +61,14 @@ export default function ReviewsScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="CUSTOMERS" title="Reviews" />
-      <View style={styles.filter}>
-        <SegmentedControl<FilterKey>
-          segments={FILTERS}
-          value={activeFilter}
-          onChange={setActiveFilter}
-        />
-      </View>
+      {/* Pills, matching Orders. No wrapper: `FilterChips` owns the padding
+          above and below the strip. Semantics untouched — `all` sends no
+          `status`, every other key IS the `status` value. */}
+      <FilterChips<FilterKey>
+        chips={FILTERS}
+        value={activeFilter}
+        onChange={setActiveFilter}
+      />
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
@@ -126,9 +127,6 @@ export default function ReviewsScreen() {
 }
 
 const styles = StyleSheet.create({
-  filter: {
-    paddingTop: theme.spacing.sm,
-  },
   listWrap: { flex: 1 },
   list: {
     flexGrow: 1,

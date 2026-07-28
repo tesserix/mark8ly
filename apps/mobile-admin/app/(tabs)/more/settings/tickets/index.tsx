@@ -9,7 +9,7 @@ import {
 import { useRouter } from "expo-router";
 import { Plus, ChevronRight } from "lucide-react-native";
 import { useTickets } from "@/lib/hooks/use-tickets";
-import { BackHeader, EmptyState, IconButton, PressableRow, Screen, SegmentedControl, StatusBadge, Text, type StatusTone } from "@/components/ui";
+import { BackHeader, EmptyState, FilterChips, IconButton, PressableRow, Screen, StatusBadge, Text, type StatusTone } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import type { Ticket } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
@@ -105,9 +105,10 @@ export default function TicketsScreen() {
           </IconButton>
         }
       />
-      <View style={styles.filter}>
-        <SegmentedControl<FilterKey> segments={FILTERS} value={filter} onChange={setFilter} />
-      </View>
+      {/* Pills, matching Orders. No wrapper: `FilterChips` owns the padding
+          above and below the strip. Semantics untouched — `all` sends no
+          `status`, every other key IS the `status` value. */}
+      <FilterChips<FilterKey> chips={FILTERS} value={filter} onChange={setFilter} />
 
       {isLoading && !isRefetching ? (
         <View style={styles.centered}>
@@ -152,7 +153,6 @@ export default function TicketsScreen() {
 }
 
 const styles = StyleSheet.create({
-  filter: { paddingTop: theme.spacing.sm },
   row: {
     backgroundColor: theme.colors.elevated,
     borderBottomWidth: theme.hairline,

@@ -54,6 +54,11 @@ const (
 	CodeInsufficientGiftCardBalance Code = "insufficient_gift_card_balance"
 	CodeGiftCardExpired             Code = "gift_card_expired"
 	CodeGiftCardNotFound            Code = "gift_card_not_found"
+	// CodeGiftCardNotRedeemable — the card exists and has balance on
+	// paper, but its status forbids redemption (pending payment,
+	// disabled, refunded). Distinct from insufficient balance so support
+	// and the shopper are told the truth.
+	CodeGiftCardNotRedeemable Code = "gift_card_not_redeemable"
 
 	// Loyalty M3.
 	CodeInsufficientLoyaltyPoints Code = "insufficient_loyalty_points"
@@ -130,6 +135,7 @@ var (
 	ErrInsufficientGiftCardBalance = &Error{Code: CodeInsufficientGiftCardBalance}
 	ErrGiftCardExpired             = &Error{Code: CodeGiftCardExpired}
 	ErrGiftCardNotFound            = &Error{Code: CodeGiftCardNotFound}
+	ErrGiftCardNotRedeemable       = &Error{Code: CodeGiftCardNotRedeemable}
 
 	// Loyalty M3 sentinels.
 	ErrInsufficientLoyaltyPoints = &Error{Code: CodeInsufficientLoyaltyPoints}
@@ -172,6 +178,7 @@ func IsKnownCode(s string) bool {
 		CodeCouponNotFound, CodeCouponExpired, CodeCouponUsageLimitReached,
 		CodeCouponInvalid, CodeCouponMinPurchaseNotMet,
 		CodeInsufficientGiftCardBalance, CodeGiftCardExpired, CodeGiftCardNotFound,
+		CodeGiftCardNotRedeemable,
 		CodeInsufficientLoyaltyPoints, CodeLoyaltyNotEnrolled,
 		CodeCampaignNotFound, CodeCampaignNotDraft, CodeCampaignNotSending,
 		CodeCampaignNotPaused, CodeSegmentNotFound, CodeSegmentInvalidRules,

@@ -124,21 +124,43 @@ func (h *GiftCardStorefrontHandler) MyGiftCards(c *gin.Context) {
 	}
 	out := make([]gin.H, 0, len(cards))
 	for _, gc := range cards {
-		out = append(out, gin.H{
-			"id":                       gc.ID.String(),
-			"code_display":             giftcard.FormatCodeDisplay(gc.Code),
-			"initial_balance":          gc.InitialBalance.String(),
-			"current_balance":          gc.CurrentBalance.String(),
-			"currency_code":            gc.CurrencyCode,
-			"status":                   string(gc.Status),
-			"recipient_email":          gc.RecipientEmail,
-			"purchased_by_email":       gc.PurchasedByEmail,
-			"purchased_via_storefront": gc.PurchasedViaStorefront,
-			"expires_at":               gc.ExpiresAt,
-			"created_at":               gc.CreatedAt,
-		})
+		out = append(out, myGiftCardDTO(gc))
 	}
 	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
+// maskedCodeDisplay is what we render instead of a real code. Same shape
+// as FormatCodeDisplay so the monospace layout doesn't jump.
+const maskedCodeDisplay = "••••-••••-••••-••••-••••-••••-••"
+
+// myGiftCardDTO builds one row of the My Account → Gift cards response.
+//
+// The code is only ever disclosed for an `active` card. A `pending` card
+// has not been paid for yet, and this endpoint is reachable by anyone who
+// can put their own address in `purchaser_email` / `recipient_email` on
+// the public purchase endpoint — so emitting its code would hand out a
+// redeemable secret for a card nobody has paid for. The buyer still sees
+// the row (and its status), just not the secret.
+//
+// This is defence in depth: DebitInTx refuses non-active cards regardless.
+func myGiftCardDTO(gc giftcard.GiftCard) gin.H {
+	code := maskedCodeDisplay
+	if gc.Status == giftcard.StatusActive {
+		code = giftcard.FormatCodeDisplay(gc.Code)
+	}
+	return gin.H{
+		"id":                       gc.ID.String(),
+		"code_display":             code,
+		"initial_balance":          gc.InitialBalance.String(),
+		"current_balance":          gc.CurrentBalance.String(),
+		"currency_code":            gc.CurrencyCode,
+		"status":                   string(gc.Status),
+		"recipient_email":          gc.RecipientEmail,
+		"purchased_by_email":       gc.PurchasedByEmail,
+		"purchased_via_storefront": gc.PurchasedViaStorefront,
+		"expires_at":               gc.ExpiresAt,
+		"created_at":               gc.CreatedAt,
+	}
 }
 
 // PurchaseGiftCardRequest is the wire body for POST /gift-cards/purchase.

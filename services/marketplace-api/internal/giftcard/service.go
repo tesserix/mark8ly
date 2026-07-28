@@ -187,41 +187,12 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*PurchaseResu
 		return nil, fmt.Errorf("giftcard purchase: generate code: %w", err)
 	}
 
-	pendingStatus := PaymentStatusPending
-	now := time.Now()
-	gc := GiftCard{
-		TenantID:               in.TenantID,
-		StoreID:                in.StoreID,
-		Code:                   code,
-		InitialBalance:         in.InitialBalance,
-		CurrentBalance:         in.InitialBalance,
-		CurrencyCode:           strings.ToUpper(in.CurrencyCode),
-		Status:                 StatusPending,
-		SenderName:             in.SenderName,
-		SenderEmail:            in.SenderEmail,
-		RecipientName:          in.RecipientName,
-		RecipientEmail:         in.RecipientEmail,
-		Message:                in.Message,
-		PurchasedAt:            &now,
-		ExpiresAt:              in.ExpiresAt,
-		PaymentStatus:          &pendingStatus,
-		PaymentProvider:        &provider,
-		PurchasedViaStorefront: true,
-		PurchasedByEmail:       &in.PurchaserEmail,
-	}
-	if in.PurchaserName != "" {
-		gc.PurchasedByName = &in.PurchaserName
-	}
-	// Initial txn row reflects the intended purchase; balance is reserved
-	// but the card is non-redeemable because status=pending.
-	initialTxn := Transaction{
-		TenantID:     in.TenantID,
-		Type:         TxnPurchase,
-		Amount:       in.InitialBalance,
-		BalanceAfter: in.InitialBalance,
-	}
+	gc := newPendingCard(in, code, provider, time.Now())
+	// No ledger row at purchase time: nothing has been paid, so nothing
+	// may be recorded as value. ActivateAfterPayment writes the
+	// `purchase` row when the payment settles.
 	err = s.Unit(ctx, func(tx *gorm.DB) error {
-		return s.repo.CreateInTx(tx, &gc, &initialTxn)
+		return s.repo.CreateInTx(tx, &gc, nil)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("giftcard purchase: persist: %w", err)
@@ -265,6 +236,43 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*PurchaseResu
 	}, nil
 }
 
+// newPendingCard builds the row a storefront purchase persists before the
+// buyer has paid anything.
+//
+// SECURITY: CurrentBalance is deliberately zero. The card carries no value until
+// ActivateAfterPayment funds it from InitialBalance, in the same UPDATE
+// that flips pending → active. Setting it to InitialBalance here would
+// make an unpaid card spendable — the buyer can read their own pending
+// card's code from GET /account/gift-cards, and the debit would clear.
+// Do not "restore" this to InitialBalance.
+func newPendingCard(in PurchaseInput, code, provider string, now time.Time) GiftCard {
+	pendingStatus := PaymentStatusPending
+	gc := GiftCard{
+		TenantID:               in.TenantID,
+		StoreID:                in.StoreID,
+		Code:                   code,
+		InitialBalance:         in.InitialBalance,
+		CurrentBalance:         decimal.Zero,
+		CurrencyCode:           strings.ToUpper(in.CurrencyCode),
+		Status:                 StatusPending,
+		SenderName:             in.SenderName,
+		SenderEmail:            in.SenderEmail,
+		RecipientName:          in.RecipientName,
+		RecipientEmail:         in.RecipientEmail,
+		Message:                in.Message,
+		PurchasedAt:            &now,
+		ExpiresAt:              in.ExpiresAt,
+		PaymentStatus:          &pendingStatus,
+		PaymentProvider:        &provider,
+		PurchasedViaStorefront: true,
+		PurchasedByEmail:       &in.PurchaserEmail,
+	}
+	if in.PurchaserName != "" {
+		gc.PurchasedByName = &in.PurchaserName
+	}
+	return gc
+}
+
 // ActivateByCheckoutSession transitions a pending gift card to active
 // when the provider reports a successful payment. Called from the
 // payment webhook with the hosted-checkout session id. Idempotent:
@@ -291,6 +299,11 @@ func (s *Service) ActivateByPaymentIntent(ctx context.Context, paymentIntentID s
 
 // MarkPurchaseFailed flags the card's payment as failed. Status stays
 // pending so admin can see the attempt in the "pending payment" filter.
+//
+// A declined card is not redeemable: it was never funded
+// (current_balance = 0), DebitInTx only touches `active` rows, and
+// CheckBalance reports `pending` as not-found. Leaving the status alone
+// therefore costs nothing but merchant-visible bookkeeping.
 func (s *Service) MarkPurchaseFailed(ctx context.Context, sessionOrIntentID string) error {
 	gc, err := s.repo.GetByCheckoutSessionID(ctx, s.db, sessionOrIntentID)
 	if err != nil {
@@ -306,7 +319,11 @@ func (s *Service) activatePending(ctx context.Context, gc *GiftCard, paymentInte
 	if gc.Status != StatusPending {
 		return gc, false, nil // already activated (or in a non-activatable state)
 	}
-	if err := s.repo.ActivateAfterPayment(s.db.WithContext(ctx), gc.ID, paymentIntentID); err != nil {
+	// One transaction: funding the balance, flipping the status and
+	// writing the purchase ledger row either all land or none do.
+	if err := s.Unit(ctx, func(tx *gorm.DB) error {
+		return s.repo.ActivateAfterPayment(tx, gc.ID, paymentIntentID)
+	}); err != nil {
 		return nil, false, fmt.Errorf("giftcard: activate: %w", err)
 	}
 	// Reload so downstream sees the flipped status.
@@ -438,14 +455,22 @@ func (s *Service) GetByCode(ctx context.Context, storeID uuid.UUID, code string)
 }
 
 // CheckBalance looks up a gift card by code and returns the balance.
-// Returns domain errors for not-found, expired, or disabled cards.
+// Returns domain errors for not-found, expired, or non-redeemable cards.
+//
+// This is a truthfulness guard, not the security boundary — the boundary
+// is the `status = 'active'` predicate inside DebitInTx. Its job is to
+// stop the storefront showing a shopper a balance they cannot spend.
 func (s *Service) CheckBalance(ctx context.Context, storeID uuid.UUID, code string) (*BalanceResult, error) {
 	gc, err := s.repo.GetByCode(ctx, s.db, storeID, normalizeCode(code))
 	if err != nil {
 		return nil, err
 	}
 
-	if gc.Status == StatusDisabled {
+	// `pending` (payment not captured), `disabled` and `refunded` are all
+	// non-redeemable. Report them identically to a miss so the endpoint
+	// can't be used to probe which codes exist in which state.
+	switch gc.Status {
+	case StatusDisabled, StatusPending, StatusRefunded:
 		return nil, apperrors.New(apperrors.CodeGiftCardNotFound, "gift card not found")
 	}
 	if gc.ExpiresAt != nil && gc.ExpiresAt.Before(time.Now()) {

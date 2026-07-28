@@ -1244,7 +1244,8 @@ func (h *CheckoutExtHandler) respondErr(c *gin.Context, err error) {
 				"message": ae.Message,
 			})
 			return
-		case apperrors.CodeInsufficientGiftCardBalance:
+		case apperrors.CodeInsufficientGiftCardBalance,
+			apperrors.CodeGiftCardNotRedeemable:
 			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, map[string]any{
 				"error":   string(ae.Code),
 				"message": ae.Message,

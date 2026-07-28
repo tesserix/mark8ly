@@ -18,21 +18,41 @@ interface EmptyStateProps {
    * a genuinely empty result.
    */
   action?: EmptyStateAction;
+  /**
+   * "center" (default) or "left". ADDITIVE — the default is unchanged, so
+   * the ~30 pre-existing call sites keep the centred treatment they were
+   * designed against and this prop changes nothing they render.
+   *
+   * "left" is the design system's position (no centred heroes; one left
+   * gutter shared by eyebrow, title and rows) and is what the new
+   * editorial screens use — `QueueEmptyState` on the Dashboard is
+   * left-aligned by construction, and Orders now passes `align="left"` so
+   * the two screens built in this increment treat the same moment the same
+   * way. Migrate the older screens as they're touched; do NOT flip the
+   * default, which would silently restyle every one of them at once.
+   */
+  align?: "center" | "left";
 }
 
-export function EmptyState({ title, message, icon, action }: EmptyStateProps) {
+export function EmptyState({ title, message, icon, action, align = "center" }: EmptyStateProps) {
+  const left = align === "left";
   // NativeWind's JSX interop doesn't resolve a function `style` prop the way
   // it resolves a plain array — press state is tracked explicitly instead.
   const [pressed, setPressed] = useState(false);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, left && styles.containerLeft]} testID="empty-state">
       {icon ? <View style={styles.icon}>{icon}</View> : null}
-      <Text preset="h3" color="text" align="center">
+      <Text preset="h3" color="text" align={left ? "left" : "center"}>
         {title}
       </Text>
       {message ? (
-        <Text preset="body" color="textTertiary" align="center" style={styles.message}>
+        <Text
+          preset="body"
+          color="textTertiary"
+          align={left ? "left" : "center"}
+          style={styles.message}
+        >
           {message}
         </Text>
       ) : null}
@@ -61,6 +81,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.xl,
     paddingVertical: theme.spacing.huge,
     gap: theme.spacing.sm,
+  },
+  // Only the cross-axis alignment changes. The gutter stays `spacing.xl` —
+  // the same token `QueueEmptyState` and every row on these screens use — so
+  // a left-aligned empty state lands on the screen's ONE left edge rather
+  // than inventing a second one.
+  containerLeft: {
+    alignItems: "flex-start",
   },
   icon: {
     marginBottom: theme.spacing.md,

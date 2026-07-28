@@ -553,8 +553,16 @@ export default function OrdersScreen() {
           <ActivityIndicator size="small" color={theme.colors.text} />
         </View>
       ) : showError ? (
-        <View style={styles.centered}>
+        // NOT `styles.centered`: that wrapper's `alignItems: "center"` shrink-
+        // wraps and re-centres its child, which would silently undo the
+        // `align="left"` below. `errorSlot` only claims the remaining height.
+        <View style={styles.errorSlot}>
           <EmptyState
+            // Left, like the Dashboard's `QueueEmptyState` and like every
+            // other block on this screen — Orders and the Dashboard were the
+            // two screens this increment rebuilt and had ended up with
+            // opposite treatments of the same moment.
+            align="left"
             title="Couldn't load orders"
             message="Something went wrong. Check your connection and try again."
             action={{
@@ -600,6 +608,7 @@ export default function OrdersScreen() {
           }
           ListEmptyComponent={
             <EmptyState
+              align="left"
               title="No orders found"
               message={
                 debouncedSearch
@@ -671,5 +680,6 @@ const styles = StyleSheet.create({
   list: { flexGrow: 1 },
   footer: { paddingVertical: theme.spacing.lg, alignItems: "center" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  errorSlot: { flex: 1 },
   pendingCount: { fontVariant: ["tabular-nums"] },
 });

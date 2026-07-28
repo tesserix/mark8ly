@@ -261,8 +261,29 @@ func (s *Service) UpdateSegment(ctx context.Context, seg *CustomerSegment) error
 	return s.repo.UpdateSegment(s.db, seg)
 }
 
-// DeleteSegment removes a segment by ID.
+// DeleteSegment removes a segment by ID, refusing when campaigns still
+// reference it.
+//
+// campaigns.segment_id is a plain FK with no ON DELETE clause, so Postgres
+// already refuses the delete — but as a raw 23503 the merchant only ever saw
+// a 500. This pre-check exists for the *message*: it names how many campaigns
+// are in the way so the admin UI can say why. The repository still translates
+// the driver-level FK violation into the same typed error, which covers the
+// TOCTOU window where a campaign is created between this count and the DELETE.
 func (s *Service) DeleteSegment(ctx context.Context, segmentID uuid.UUID) error {
+	seg, err := s.repo.GetSegmentByID(ctx, s.db, segmentID)
+	if err != nil {
+		return err
+	}
+
+	n, err := s.repo.CountCampaignsBySegment(ctx, s.db, segmentID, seg.TenantID)
+	if err != nil {
+		return fmt.Errorf("campaign: count campaigns for segment: %w", err)
+	}
+	if n > 0 {
+		return apperrors.SegmentInUse(n)
+	}
+
 	return s.repo.DeleteSegment(s.db, segmentID)
 }
 

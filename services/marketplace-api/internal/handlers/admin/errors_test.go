@@ -96,6 +96,7 @@ func TestCodeStatus_CoversAllCodes(t *testing.T) {
 		apperrors.CodeForbidden, apperrors.CodeNotFound,
 		apperrors.CodePayloadTooLarge, apperrors.CodeUnsupportedMediaType,
 		apperrors.CodeRateLimited, apperrors.CodeCurrencyChangeForbidden,
+		apperrors.CodeSegmentInUse,
 	}
 	for _, code := range codes {
 		if !apperrors.IsKnownCode(string(code)) {

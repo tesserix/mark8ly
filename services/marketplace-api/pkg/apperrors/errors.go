@@ -73,6 +73,11 @@ const (
 	CodeSegmentInvalidRules  Code = "segment_invalid_rules"
 	CodeCampaignNoRecipients Code = "campaign_no_recipients"
 	CodeCampaignSchedulePast Code = "campaign_schedule_past"
+	// CodeSegmentInUse — the segment is still referenced by at least one
+	// campaign. campaigns.segment_id is a plain FK with no ON DELETE
+	// clause, so the delete is refused by Postgres; this code turns that
+	// refusal into an actionable 409 instead of a driver-level 500.
+	CodeSegmentInUse Code = "segment_in_use"
 )
 
 // Error is the marketplace-api envelope. Satisfies the error interface.
@@ -150,6 +155,7 @@ var (
 	ErrSegmentInvalidRules  = &Error{Code: CodeSegmentInvalidRules}
 	ErrCampaignNoRecipients = &Error{Code: CodeCampaignNoRecipients}
 	ErrCampaignSchedulePast = &Error{Code: CodeCampaignSchedulePast}
+	ErrSegmentInUse         = &Error{Code: CodeSegmentInUse}
 )
 
 // Is makes errors.Is(err, sentinel) match when the codes are equal,
@@ -182,7 +188,7 @@ func IsKnownCode(s string) bool {
 		CodeInsufficientLoyaltyPoints, CodeLoyaltyNotEnrolled,
 		CodeCampaignNotFound, CodeCampaignNotDraft, CodeCampaignNotSending,
 		CodeCampaignNotPaused, CodeSegmentNotFound, CodeSegmentInvalidRules,
-		CodeCampaignNoRecipients, CodeCampaignSchedulePast:
+		CodeCampaignNoRecipients, CodeCampaignSchedulePast, CodeSegmentInUse:
 		return true
 	}
 	return false
@@ -406,4 +412,25 @@ func LoyaltyNotEnrolled(email string) *Error {
 	return &Error{Code: CodeLoyaltyNotEnrolled,
 		Message: "customer is not enrolled in the loyalty program",
 		Details: map[string]any{"email": email}}
+}
+
+// ---------- Campaign M4 constructors ----------
+
+// SegmentInUse is returned when a segment delete is refused because
+// campaigns still reference it. campaignCount is the number of
+// referencing campaigns; pass 0 when the count is not known (the
+// error came from the Postgres FK violation rather than the
+// pre-check), in which case the detail is omitted rather than lying.
+func SegmentInUse(campaignCount int64) *Error {
+	if campaignCount <= 0 {
+		return &Error{Code: CodeSegmentInUse,
+			Message: "segment is still used by at least one campaign and cannot be deleted"}
+	}
+	noun := "campaigns"
+	if campaignCount == 1 {
+		noun = "campaign"
+	}
+	return &Error{Code: CodeSegmentInUse,
+		Message: fmt.Sprintf("segment is still used by %d %s and cannot be deleted", campaignCount, noun),
+		Details: map[string]any{"campaign_count": campaignCount}}
 }

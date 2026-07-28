@@ -2,10 +2,13 @@ package campaign
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -22,6 +25,11 @@ type Repository interface {
 	UpdateSegment(tx *gorm.DB, s *CustomerSegment) error
 	DeleteSegment(tx *gorm.DB, id uuid.UUID) error
 	UpdateSegmentMemberCount(tx *gorm.DB, id uuid.UUID, count int) error
+
+	// CountCampaignsBySegment returns how many campaigns in the given
+	// tenant still reference the segment. Used to refuse a delete with an
+	// actionable 409 before Postgres refuses it with a raw FK violation.
+	CountCampaignsBySegment(ctx context.Context, db *gorm.DB, segmentID, tenantID uuid.UUID) (int64, error)
 
 	// --- Campaigns ---
 	CreateCampaign(tx *gorm.DB, c *Campaign) error
@@ -117,6 +125,15 @@ func (r *gormRepository) UpdateSegment(tx *gorm.DB, s *CustomerSegment) error {
 func (r *gormRepository) DeleteSegment(tx *gorm.DB, id uuid.UUID) error {
 	res := tx.Where("id = ?", id).Delete(&CustomerSegment{})
 	if res.Error != nil {
+		// campaigns.segment_id is a plain FK (no ON DELETE clause), so
+		// Postgres — not the application — is the authority on whether a
+		// segment is still referenced. Translate that refusal into the
+		// same typed 409 the pre-check returns, otherwise a campaign
+		// created between the pre-check and this DELETE surfaces as a 500.
+		if isSegmentFKViolation(res.Error) {
+			return apperrors.Wrap(apperrors.CodeSegmentInUse,
+				"segment is still used by at least one campaign and cannot be deleted", res.Error)
+		}
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
@@ -125,8 +142,33 @@ func (r *gormRepository) DeleteSegment(tx *gorm.DB, id uuid.UUID) error {
 	return nil
 }
 
+// segmentFKConstraint is the constraint Postgres names for
+// campaigns.segment_id -> customer_segments.id (migration 000012).
+const segmentFKConstraint = "campaigns_segment_id_fkey"
+
+// isSegmentFKViolation reports whether err is a Postgres foreign-key
+// violation (SQLSTATE 23503) raised by the campaigns.segment_id FK.
+func isSegmentFKViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23503" && pgErr.ConstraintName == segmentFKConstraint {
+		return true
+	}
+	// Fall back to the rendered text: some driver and pool configurations
+	// surface the violation without a typed *pgconn.PgError to unwrap.
+	msg := err.Error()
+	return strings.Contains(msg, "SQLSTATE 23503") && strings.Contains(msg, segmentFKConstraint)
+}
+
 func (r *gormRepository) UpdateSegmentMemberCount(tx *gorm.DB, id uuid.UUID, count int) error {
 	return tx.Model(&CustomerSegment{}).Where("id = ?", id).Update("member_count", count).Error
+}
+
+func (r *gormRepository) CountCampaignsBySegment(ctx context.Context, db *gorm.DB, segmentID, tenantID uuid.UUID) (int64, error) {
+	var n int64
+	err := db.WithContext(ctx).Model(&Campaign{}).
+		Where("segment_id = ? AND tenant_id = ?", segmentID, tenantID).
+		Count(&n).Error
+	return n, err
 }
 
 // --- Campaigns ---

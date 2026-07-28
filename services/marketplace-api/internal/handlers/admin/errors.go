@@ -67,6 +67,7 @@ var codeStatus = map[apperrors.Code]int{
 	apperrors.CodeSegmentInvalidRules:  http.StatusBadRequest,
 	apperrors.CodeCampaignNoRecipients: http.StatusUnprocessableEntity,
 	apperrors.CodeCampaignSchedulePast: http.StatusUnprocessableEntity,
+	apperrors.CodeSegmentInUse:         http.StatusConflict,
 }
 
 // RespondErr writes the standard error envelope for the given error.

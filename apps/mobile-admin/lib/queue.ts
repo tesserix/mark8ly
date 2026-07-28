@@ -1,5 +1,5 @@
 import type { StatusTone } from "@/components/ui";
-import { formatMoney } from "@/lib/money";
+import { formatWholeMoney } from "@/lib/money";
 import type {
   DashboardStats,
   RecentOrder,
@@ -148,7 +148,11 @@ function orderToQueueItem(order: RecentOrder, currencyCode: string | undefined):
     // comment) — falls back to the email every order always has.
     primary: order.customer_name || order.customer_email,
     secondary: `Order #${order.order_number}`,
-    amount: formatMoney(order.grand_total, currencyCode),
+    // Whole dollars, not `formatMoney`'s 2dp. The queue's amount column is a
+    // 20pt serif figure the eye tracks straight down; cents are four glyphs
+    // of noise in a display numeral, exactly as they are in the hero above
+    // it. The order detail screen still shows the exact total.
+    amount: formatWholeMoney(order.grand_total, currencyCode),
     imageUrl: order.image_url,
     badgeTone: "warning",
     badgeLabel: "Pending",

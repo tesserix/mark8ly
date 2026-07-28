@@ -108,13 +108,49 @@ describe("QueueRow — thumbnail vs monogram", () => {
     expect(queryByTestId("queue-row-v-1-monogram")).toBeNull();
   });
 
-  it("sizes the monogram disc identically to the 60pt Thumb list size", () => {
+  it("sizes the monogram tile identically to the 60pt Thumb list size", () => {
     const { getByTestId } = render(
       <QueueRow item={baseItem({ imageUrl: undefined })} onPress={jest.fn()} />,
     );
     const style = StyleSheet.flatten(getByTestId("queue-row-o-1-monogram").props.style);
     expect(style.width).toBe(theme.thumb.list);
     expect(style.height).toBe(theme.thumb.list);
+  });
+
+  // One leading-art SHAPE per list. The monogram was a full circle
+  // (`thumb.list / 2`) while Thumb is a rounded square, so every screenshot
+  // showed circles beside a square — and an order that happened to carry an
+  // `image_url` rendered a square between circles. Fixed on the Monogram;
+  // Thumb is the shape the rest of the app's lists already use, so it is NOT
+  // the thing that moves.
+  it("gives the monogram Thumb's rounded-rect radius, not a circle", () => {
+    const { getByTestId } = render(
+      <QueueRow item={baseItem({ imageUrl: undefined })} onPress={jest.fn()} />,
+    );
+    const monogram = StyleSheet.flatten(
+      getByTestId("queue-row-o-1-monogram").props.style,
+    );
+    expect(monogram.borderRadius).toBe(theme.radii.md);
+    expect(monogram.borderRadius).not.toBe(theme.thumb.list / 2);
+  });
+
+  it("renders the monogram and the Thumb at the same radius inside one list", () => {
+    const withPhoto = render(
+      <QueueRow
+        item={baseItem({ id: "o-2", imageUrl: "https://cdn.example/p.jpg" })}
+        onPress={jest.fn()}
+      />,
+    );
+    const withoutPhoto = render(
+      <QueueRow item={baseItem({ imageUrl: undefined })} onPress={jest.fn()} />,
+    );
+    const thumbRadius = StyleSheet.flatten(
+      withPhoto.getByTestId("queue-row-o-2-thumb").props.style,
+    ).borderRadius;
+    const monogramRadius = StyleSheet.flatten(
+      withoutPhoto.getByTestId("queue-row-o-1-monogram").props.style,
+    ).borderRadius;
+    expect(monogramRadius).toBe(thumbRadius);
   });
 
   // Guards the fix for the monogram vanishing under PressableRow's iOS
@@ -166,6 +202,22 @@ describe("QueueRow — 'See all' row", () => {
     const { getByTestId } = render(<QueueRow item={seeAllItem} onPress={onPress} />);
     fireEvent.press(getByTestId("queue-row-see-all-order"));
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  // One accent per view, and the Dashboard's is already spent on the revenue
+  // chart and the Approve swipe. A moss "See all" link was a third — found on
+  // device, and reverting the fix to `color="accent"` left all 22 dashboard
+  // tests green, so the rule had zero coverage. The chevron already carries
+  // the affordance; the colour does not need to.
+  //
+  // Asserted on the utility class, not a flattened style: NativeWind compiles
+  // classNames natively and does not resolve them to RN style objects under
+  // jest, so a `style.color` assertion would pass vacuously for both.
+  it("renders the 'See all' label in ink, never in the moss accent", () => {
+    const { getByText } = render(<QueueRow item={seeAllItem} onPress={jest.fn()} />);
+    const className = getByText("See all 9 pending orders").props.className as string;
+    expect(className).toMatch(/\btext-ink\b/);
+    expect(className).not.toMatch(/\btext-moss\b/);
   });
 });
 

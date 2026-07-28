@@ -1,7 +1,9 @@
 import { View, StyleSheet } from "react-native";
 import { Hairline, StatusBadge, Text } from "@/components/ui";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
+import { formatWholeMoney } from "@/lib/money";
 import { theme } from "@/lib/theme";
+import type { StatusTone } from "@/components/ui";
 import type { DashboardStats } from "@repo/mobile-shared/api/types";
 
 interface MetricsCardProps {
@@ -11,22 +13,23 @@ interface MetricsCardProps {
 }
 
 /**
- * Whole-dollar money for the metrics band. The hero numeral and the
- * today/this-week line both read as headline figures, not ledger entries —
- * cents would add four glyphs of noise to a 44pt serif numeral. Distinct
- * from `lib/money.ts#formatMoney`, which keeps 2dp because it formats real
- * per-order amounts.
+ * Month-on-month change → the badge's arrow, tone and screen-reader wording.
+ *
+ * EXACTLY zero is its own case, not a rounding of "positive". A $0 month with
+ * a 0.0% change used to render "↗ 0.0%" in the moss success tint — claiming
+ * growth where there is none, and spending the screen's one accent on a
+ * non-event, on the sign-off screen. Zero gets the muted tone and NO arrow:
+ * there is no direction to point in.
+ *
+ * Note the ordering: the check is on the raw value, so -0.04 rounding to
+ * "0.0%" still reads as a (muted-adjacent) decline rather than silently
+ * becoming "no change" — only a true 0 is flat.
  */
-function wholeMoney(amount: number, currencyCode?: string): string {
-  if (!currencyCode) {
-    return new Intl.NumberFormat("en-AU", { maximumFractionDigits: 0 }).format(amount);
-  }
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: currencyCode,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+function changeBadge(pct: number): { label: string; tone: StatusTone; spoken: string } {
+  const magnitude = `${Math.abs(pct).toFixed(1)}%`;
+  if (pct === 0) return { label: magnitude, tone: "muted", spoken: "unchanged" };
+  if (pct > 0) return { label: `↗ ${magnitude}`, tone: "success", spoken: `up ${magnitude}` };
+  return { label: `↘ ${magnitude}`, tone: "danger", spoken: `down ${magnitude}` };
 }
 
 function StatCell({ label, value }: { label: string; value: number }) {
@@ -53,11 +56,11 @@ function StatCell({ label, value }: { label: string; value: number }) {
  * The moss-tint trend badge is the brief's explicit instruction ("moss-tint
  * ↗ % badge") and is `StatusBadge`'s existing `success` tone unmodified —
  * a TINT (#E8EEE2 field, #2D4A2B text), never a solid moss fill. A negative
- * month takes `danger` rather than a moss tint pointing downwards.
+ * month takes `danger` rather than a moss tint pointing downwards, and a flat
+ * month takes `muted` — see `changeBadge`.
  */
 export function MetricsCard({ stats, currencyCode }: MetricsCardProps) {
-  const positive = stats.revenue_change_pct >= 0;
-  const changeLabel = `${positive ? "↗" : "↘"} ${Math.abs(stats.revenue_change_pct).toFixed(1)}%`;
+  const change = changeBadge(stats.revenue_change_pct);
 
   return (
     <View style={styles.card} testID="dashboard-metrics-card">
@@ -65,26 +68,24 @@ export function MetricsCard({ stats, currencyCode }: MetricsCardProps) {
         <Text preset="eyebrow" color="textTertiary">
           This month
         </Text>
-        <StatusBadge label={changeLabel} tone={positive ? "success" : "danger"} />
+        <StatusBadge label={change.label} tone={change.tone} />
       </View>
 
       <Text preset="heroNumeral" color="text" style={styles.hero}>
-        {wholeMoney(stats.revenue_month, currencyCode)}
+        {formatWholeMoney(stats.revenue_month, currencyCode)}
       </Text>
       <Text preset="caption" color="textTertiary" style={styles.subline}>
-        {wholeMoney(stats.revenue_today, currencyCode)} today ·{" "}
-        {wholeMoney(stats.revenue_week, currencyCode)} this week
+        {formatWholeMoney(stats.revenue_today, currencyCode)} today ·{" "}
+        {formatWholeMoney(stats.revenue_week, currencyCode)} this week
       </Text>
 
       <View style={styles.chart}>
         <RevenueChart
           data={stats.revenue_trend}
-          accessibilityLabel={`Revenue trend this month, ${wholeMoney(
+          accessibilityLabel={`Revenue trend this month, ${formatWholeMoney(
             stats.revenue_month,
             currencyCode,
-          )}, ${positive ? "up" : "down"} ${Math.abs(stats.revenue_change_pct).toFixed(
-            1,
-          )} percent versus last month`}
+          )}, ${change.spoken} versus last month`}
         />
       </View>
 

@@ -14,3 +14,25 @@ export function formatMoney(amount: number, currencyCode?: string): string {
     minimumFractionDigits: 2,
   }).format(amount);
 }
+
+/**
+ * Whole-dollar money for DISPLAY columns the eye scans rather than reconciles
+ * — the Dashboard's hero numeral, its today/this-week line, and the serif
+ * amount column down the right of the queue rows. Cents add four glyphs of
+ * noise to a figure that exists to be glanced at ("$189", not "$189.00").
+ *
+ * `formatMoney` above keeps 2dp and stays the default: use it anywhere the
+ * exact amount matters (order totals, refunds, line items, anything a
+ * merchant might read back to a customer).
+ */
+export function formatWholeMoney(amount: number, currencyCode?: string): string {
+  if (!currencyCode) {
+    return new Intl.NumberFormat("en-AU", { maximumFractionDigits: 0 }).format(amount);
+  }
+  return new Intl.NumberFormat("en-AU", {
+    style: "currency",
+    currency: currencyCode,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}

@@ -1,5 +1,5 @@
 import { buildQueue, type QueueItem, type QueueSources } from "@/lib/queue";
-import { formatMoney } from "@/lib/money";
+import { formatWholeMoney } from "@/lib/money";
 import type { RecentOrder, LowStockItem, Review, Ticket } from "@repo/mobile-shared/api/types";
 
 /**
@@ -427,14 +427,18 @@ describe("buildQueue — order field mapping", () => {
     expect(asItem(items[0]).imageUrl).toBe("https://cdn.example/p.jpg");
   });
 
-  it("formats the amount in the store's currency", () => {
+  it("formats the amount in the store's currency, in WHOLE dollars", () => {
     const items = buildQueue({
       ...EMPTY,
       recentOrders: [order({ grand_total: 99.5 })],
       currencyCode: "AUD",
     });
 
-    expect(asItem(items[0]).amount).toBe(formatMoney(99.5, "AUD"));
+    // The queue's amount column is a display numeral the eye tracks down, not
+    // a ledger entry — cents are four glyphs of noise (the same argument the
+    // hero numeral already makes). The order detail screen still shows 2dp.
+    expect(asItem(items[0]).amount).toBe(formatWholeMoney(99.5, "AUD"));
+    expect(asItem(items[0]).amount).not.toContain(".");
   });
 
   it("routes to the order detail screen", () => {

@@ -45,6 +45,9 @@ jest.mock("@/lib/hooks/use-notifications", () => ({
 interface QueryState {
   data: unknown;
   isError: boolean;
+  /** react-query's fetch timestamp — the screen clears its optimistic
+   *  `dismissed` overlay whenever the newest of the three moves. */
+  dataUpdatedAt?: number;
 }
 const mockQueryState: Record<"dashboard" | "reviews" | "tickets", QueryState> = {
   dashboard: { data: undefined, isError: false },
@@ -59,6 +62,7 @@ jest.mock("@/lib/hooks/use-dashboard", () => ({
   useDashboard: () => ({
     data: mockQueryState.dashboard.data,
     isError: mockQueryState.dashboard.isError,
+    dataUpdatedAt: mockQueryState.dashboard.dataUpdatedAt ?? 0,
     isLoading: false,
     isRefetching: false,
     refetch: mockRefetchDashboard,
@@ -68,6 +72,7 @@ jest.mock("@/lib/hooks/use-reviews", () => ({
   useReviews: () => ({
     data: mockQueryState.reviews.data,
     isError: mockQueryState.reviews.isError,
+    dataUpdatedAt: mockQueryState.reviews.dataUpdatedAt ?? 0,
     isLoading: false,
     refetch: mockRefetchReviews,
   }),
@@ -76,6 +81,7 @@ jest.mock("@/lib/hooks/use-tickets", () => ({
   useTickets: () => ({
     data: mockQueryState.tickets.data,
     isError: mockQueryState.tickets.isError,
+    dataUpdatedAt: mockQueryState.tickets.dataUpdatedAt ?? 0,
     isLoading: false,
     refetch: mockRefetchTickets,
   }),
@@ -88,9 +94,18 @@ const mockApproveReview = jest.fn();
 const mockRejectReview = jest.fn();
 const mockUpdateTicketStatus = jest.fn();
 
+// `error` is deliberately a NON-null sticky value: react-query never resets
+// a mutation error, and the screen must not read it. If the screen ever binds
+// the cancel sheet back to `cancelOrder.error`, the "stale cancel error"
+// suite below goes red on the very first open.
+const mockStickyCancelError = new Error("a cancel that failed some time ago");
 jest.mock("@/lib/admin-api/order-actions", () => ({
   useConfirmOrder: () => ({ mutate: mockConfirmOrder, isPending: false }),
-  useCancelOrder: () => ({ mutate: mockCancelOrder, isPending: false, error: null }),
+  useCancelOrder: () => ({
+    mutate: mockCancelOrder,
+    isPending: false,
+    error: mockStickyCancelError,
+  }),
 }));
 jest.mock("@/lib/admin-api/review-actions", () => ({
   useApproveReview: () => ({ mutate: mockApproveReview, isPending: false }),
@@ -100,6 +115,7 @@ jest.mock("@/lib/admin-api/ticket-actions", () => ({
   useUpdateTicketStatus: () => ({ mutate: mockUpdateTicketStatus, isPending: false }),
 }));
 
+import { RefreshControl } from "react-native";
 import { act, fireEvent, render, within } from "@testing-library/react-native";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import DashboardScreen from "../app/(tabs)/index";
@@ -157,6 +173,34 @@ function dashboardPayload(over: Partial<DashboardResponse> = {}): DashboardRespo
     },
     ...over,
   };
+}
+
+/** Two pending orders — needed to prove an error raised on one order does
+ *  not follow the merchant to a DIFFERENT order's cancel sheet. */
+function twoPendingOrders(): DashboardResponse {
+  return dashboardPayload({
+    stats: { ...STATS, orders_pending: 2 },
+    recent_orders: [
+      {
+        id: "o1",
+        order_number: "1042",
+        customer_email: "ana@example.com",
+        customer_name: "Ana Ruiz",
+        grand_total: 189,
+        status: "pending",
+        created_at: "2026-07-27T09:00:00Z",
+      },
+      {
+        id: "o2",
+        order_number: "1043",
+        customer_email: "bo@example.com",
+        customer_name: "Bo Chen",
+        grand_total: 64.5,
+        status: "pending",
+        created_at: "2026-07-27T08:30:00Z",
+      },
+    ],
+  });
 }
 
 const REVIEW_PAGES = {
@@ -419,5 +463,170 @@ describe("Dashboard — swipe actions", () => {
         expect(a.autoFireOnFullSwipe).toBeFalsy();
       }
     }
+  });
+});
+
+describe("Dashboard — 'Needs you' counts work, not rows", () => {
+  // Reproduced on device: the header read 7 over a list of 5 actionable rows
+  // plus two "See all …" links. `buildQueue` emits those links as
+  // `kind: "seeAll"` — navigational affordances, not things that need the
+  // merchant — and the count must exclude them.
+  it("excludes 'See all' rows from the count", () => {
+    mockQueryState.dashboard = {
+      data: dashboardPayload({
+        // Authoritative counts far above TYPE_CAP, so buildQueue appends a
+        // "See all" row for BOTH orders and reviews.
+        stats: { ...STATS, orders_pending: 5, pending_reviews: 4 },
+      }),
+      isError: false,
+    };
+
+    const { getByTestId, getByText } = render(<DashboardScreen />);
+
+    // Two navigational rows are on screen…
+    expect(getByText(/See all 5 pending orders/)).toBeTruthy();
+    expect(getByText(/See all 4 pending reviews/)).toBeTruthy();
+    // …and neither is counted: 1 order + 1 stock + 1 ticket + 1 review = 4.
+    expect(getByTestId("dashboard-needs-you-count")).toHaveTextContent("4");
+  });
+
+  it("drops the count as rows are actioned away", () => {
+    const { getByTestId } = render(<DashboardScreen />);
+    expect(getByTestId("dashboard-needs-you-count")).toHaveTextContent("4");
+
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    expect(getByTestId("dashboard-needs-you-count")).toHaveTextContent("3");
+  });
+});
+
+describe("Dashboard — the cancel error does not leak between orders", () => {
+  // `error` was bound straight to `cancelOrder.error`, which react-query never
+  // resets and nothing here called `.reset()` on. One failed cancel therefore
+  // greeted the merchant on EVERY subsequent order's cancel sheet, before
+  // they had typed anything. The order detail screen (orders/[id].tsx) had
+  // the right pattern already: local state, cleared on present.
+  const ERROR_COPY = "Couldn't cancel this order. Try again.";
+
+  beforeEach(() => {
+    mockQueryState.dashboard = { data: twoPendingOrders(), isError: false };
+  });
+
+  it("shows no error when the sheet is first opened, despite a sticky mutation error", () => {
+    const { getByTestId, queryByText } = render(<DashboardScreen />);
+    fireEvent.press(getByTestId("swipe-o1-action-cancel"));
+    expect(queryByText(ERROR_COPY)).toBeNull();
+  });
+
+  it("surfaces the error inline when THAT order's cancel fails", () => {
+    const { getByTestId, getByLabelText, getByText } = render(<DashboardScreen />);
+    fireEvent.press(getByTestId("swipe-o1-action-cancel"));
+    fireEvent.changeText(getByLabelText("Cancellation reason"), "Out of stock");
+    fireEvent.press(getByLabelText("Cancel order"));
+
+    const onError = mockCancelOrder.mock.calls[0][1].onError as (e: Error) => void;
+    act(() => onError(new Error("500")));
+
+    expect(getByText(ERROR_COPY)).toBeTruthy();
+  });
+
+  it("clears the error when the sheet is re-opened for a DIFFERENT order", () => {
+    const { getByTestId, getByLabelText, getByText, queryByText } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-cancel"));
+    fireEvent.changeText(getByLabelText("Cancellation reason"), "Out of stock");
+    fireEvent.press(getByLabelText("Cancel order"));
+    act(() => (mockCancelOrder.mock.calls[0][1].onError as (e: Error) => void)(new Error("500")));
+    expect(getByText(ERROR_COPY)).toBeTruthy();
+
+    fireEvent.press(getByTestId("swipe-o2-action-cancel"));
+    expect(queryByText(ERROR_COPY)).toBeNull();
+  });
+
+  it("clears the error when the SAME order's sheet is re-opened", () => {
+    const { getByTestId, getByLabelText, getByText, queryByText } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-cancel"));
+    fireEvent.changeText(getByLabelText("Cancellation reason"), "Out of stock");
+    fireEvent.press(getByLabelText("Cancel order"));
+    act(() => (mockCancelOrder.mock.calls[0][1].onError as (e: Error) => void)(new Error("500")));
+    expect(getByText(ERROR_COPY)).toBeTruthy();
+
+    fireEvent.press(getByTestId("swipe-o1-action-cancel"));
+    expect(queryByText(ERROR_COPY)).toBeNull();
+  });
+});
+
+describe("Dashboard — optimistic dismissals expire when fresh data lands", () => {
+  // `dismissed` is a local overlay on the server's answer. It was never
+  // cleared, so an id that legitimately RETURNED to the queue (a ticket
+  // reopened on another device, an approval the server refused out of band)
+  // stayed invisible for the life of the screen.
+  it("un-hides a row that is still in the queue after a successful refetch", () => {
+    mockQueryState.dashboard = { data: dashboardPayload(), isError: false, dataUpdatedAt: 1 };
+    const { getByTestId, queryByTestId, rerender } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+
+    // A refetch lands and the row is STILL pending server-side.
+    mockQueryState.dashboard = { data: dashboardPayload(), isError: false, dataUpdatedAt: 2 };
+    rerender(<DashboardScreen />);
+
+    expect(getByTestId("queue-row-o1")).toBeTruthy();
+  });
+
+  it("keeps the row hidden while no new data has arrived", () => {
+    mockQueryState.dashboard = { data: dashboardPayload(), isError: false, dataUpdatedAt: 1 };
+    const { getByTestId, queryByTestId, rerender } = render(<DashboardScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    rerender(<DashboardScreen />);
+
+    expect(queryByTestId("queue-row-o1")).toBeNull();
+  });
+});
+
+describe("Dashboard — pull to refresh", () => {
+  it("keeps the spinner up until every source settles, not just the dashboard", async () => {
+    const settle: (() => void)[] = [];
+    const pending = () => new Promise<void>((resolve) => settle.push(resolve));
+    mockRefetchDashboard.mockImplementation(pending);
+    mockRefetchReviews.mockImplementation(pending);
+    mockRefetchTickets.mockImplementation(pending);
+
+    const { UNSAFE_getByType } = render(<DashboardScreen />);
+    const control = UNSAFE_getByType(RefreshControl);
+    expect(control.props.refreshing).toBe(false);
+
+    await act(async () => {
+      void control.props.onRefresh();
+    });
+    expect(UNSAFE_getByType(RefreshControl).props.refreshing).toBe(true);
+
+    // Only the dashboard resolves — the old wiring (refreshing =
+    // dashboard.isRefetching) stopped spinning right here.
+    await act(async () => {
+      settle[0]();
+    });
+    expect(UNSAFE_getByType(RefreshControl).props.refreshing).toBe(true);
+
+    await act(async () => {
+      settle[1]();
+      settle[2]();
+    });
+    expect(UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
+  });
+
+  it("keeps the spinner honest when a source rejects", async () => {
+    mockRefetchDashboard.mockRejectedValue(new Error("offline"));
+    mockRefetchReviews.mockResolvedValue(undefined);
+    mockRefetchTickets.mockResolvedValue(undefined);
+
+    const { UNSAFE_getByType } = render(<DashboardScreen />);
+    await act(async () => {
+      await UNSAFE_getByType(RefreshControl).props.onRefresh();
+    });
+
+    expect(UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, View, StyleSheet } from "react-native";
 import Animated, {
   useAnimatedScrollHandler,
@@ -74,6 +74,11 @@ interface MutationCallbacks {
 
 const ICON_SIZE = 20;
 
+/** Shown inline in `CancelReasonSheet` when a cancel round-trip fails. */
+const CANCEL_ERROR = "Couldn't cancel this order. Try again.";
+
+const NO_DISMISSALS: ReadonlySet<string> = new Set();
+
 /**
  * The Dashboard is an ACTION QUEUE, not a report.
  *
@@ -115,8 +120,19 @@ export default function DashboardScreen() {
 
   // Rows hidden optimistically while their mutation is in flight. Rolled
   // back in `onError` — a new Set every time, never mutated in place.
-  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(NO_DISMISSALS);
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  // Local, NOT `cancelOrder.error`. The mutation's error is never reset, so
+  // binding the sheet straight to it meant one failed cancel poisoned the
+  // sheet for EVERY subsequent order: the merchant opened Cancel on an
+  // untouched order and was greeted by a failure they hadn't caused. Same
+  // pattern as the order detail screen (app/(tabs)/orders/[id].tsx), cleared
+  // on present.
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  // True only for a user-initiated pull-to-refresh, and only until ALL THREE
+  // queries settle — `dashboard.isRefetching` alone stopped the spinner while
+  // reviews and tickets were still in flight.
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const cancelSheetRef = useRef<CancelReasonSheetHandle>(null);
 
   const reviewItems = useMemo(
@@ -146,6 +162,17 @@ export default function DashboardScreen() {
     [queue, dismissed],
   );
 
+  /**
+   * The number beside "Needs you" counts WORK, not rows. `buildQueue` also
+   * emits `kind: "seeAll"` rows ("See all 5 pending orders") — navigational
+   * affordances, not things that need the merchant — and counting them read
+   * "7" over a list of 5 actionable items plus 2 links.
+   */
+  const needsYouCount = useMemo(
+    () => visibleQueue.filter((item) => item.kind === "item").length,
+    [visibleQueue],
+  );
+
   const failedSources = useMemo(() => {
     const failed: { label: string; refetch: () => void }[] = [];
     if (dashboard.isError) failed.push({ label: "orders and stock", refetch: dashboard.refetch });
@@ -154,15 +181,32 @@ export default function DashboardScreen() {
     return failed;
   }, [dashboard.isError, dashboard.refetch, reviews.isError, reviews.refetch, tickets.isError, tickets.refetch]);
 
-  const retryFailed = useCallback(() => {
-    for (const source of failedSources) source.refetch();
-  }, [failedSources]);
+  /**
+   * Awaits every refetch rather than discarding the promises, so the caller
+   * knows when the whole fan-out has settled.
+   *
+   * A rejection here is deliberately absorbed, not swallowed: react-query has
+   * already recorded it on the query, `failedSources` recomputes from
+   * `isError`, and the merchant sees it as the `SourceErrorRow` with its own
+   * Retry. Re-throwing would only surface as an unhandled rejection out of
+   * `RefreshControl.onRefresh`.
+   */
+  const refetchAll = useCallback(async (sources: { refetch: () => unknown }[]) => {
+    await Promise.all(sources.map((source) => Promise.resolve(source.refetch()).catch(() => {})));
+  }, []);
 
-  const refreshAll = useCallback(() => {
-    void dashboard.refetch();
-    void reviews.refetch();
-    void tickets.refetch();
-  }, [dashboard, reviews, tickets]);
+  const retryFailed = useCallback(async () => {
+    await refetchAll(failedSources);
+  }, [failedSources, refetchAll]);
+
+  const refreshAll = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await refetchAll([dashboard, reviews, tickets]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [dashboard, reviews, tickets, refetchAll]);
 
   const hide = useCallback((id: string) => {
     setDismissed((prev) => {
@@ -181,29 +225,52 @@ export default function DashboardScreen() {
   }, []);
 
   /**
+   * `dismissed` is a purely local overlay on the server's answer, valid only
+   * until a fresh answer arrives. Clearing it on every successful fetch is
+   * what stops an id that legitimately RETURNS to the queue (an approval the
+   * server rejected out-of-band, a ticket reopened on another device) from
+   * staying invisible for the life of the screen. Safe against the ordinary
+   * path too: the mutation hooks invalidate their keys on success, so by the
+   * time this fires the refetched list no longer contains the row and
+   * un-hiding it is a no-op.
+   */
+  const freshestData = Math.max(
+    dashboard.dataUpdatedAt ?? 0,
+    reviews.dataUpdatedAt ?? 0,
+    tickets.dataUpdatedAt ?? 0,
+  );
+  useEffect(() => {
+    setDismissed(NO_DISMISSALS);
+  }, [freshestData]);
+
+  /**
    * Optimistic + rollback, at the screen rather than in the mutation hooks:
-   * the row leaves immediately, and comes back if the server says no. The
-   * hooks themselves already invalidate their query keys on success, so the
-   * authoritative list replaces this local guess on the next fetch.
+   * the row comes back if the server says no. The hooks themselves already
+   * invalidate their query keys on success, so the authoritative list
+   * replaces this local guess on the next fetch.
+   *
+   * PURE — it builds callbacks and nothing else. Hiding the row is the
+   * caller's own explicit `hide(id)` statement next to the `mutate` call.
+   * This used to call `hide(id)` as a side effect of CONSTRUCTING the object,
+   * inline inside `mutate(...)`'s arguments: it read as a factory, and any
+   * future memoisation of it would have silently stopped hiding rows.
    */
   const callbacksFor = useCallback(
-    (id: string): MutationCallbacks => {
-      hide(id);
-      return {
-        onSuccess: () => {
-          void adminHaptics.actionSucceeded();
-        },
-        onError: () => {
-          restore(id);
-          void adminHaptics.actionFailed();
-        },
-      };
-    },
-    [hide, restore],
+    (id: string): MutationCallbacks => ({
+      onSuccess: () => {
+        void adminHaptics.actionSucceeded();
+      },
+      onError: () => {
+        restore(id);
+        void adminHaptics.actionFailed();
+      },
+    }),
+    [restore],
   );
 
   const openCancelSheet = useCallback((id: string) => {
     setCancelTargetId(id);
+    setCancelError(null);
     cancelSheetRef.current?.present();
   }, []);
 
@@ -221,6 +288,7 @@ export default function DashboardScreen() {
             void adminHaptics.actionSucceeded();
           },
           onError: () => {
+            setCancelError(CANCEL_ERROR);
             void adminHaptics.actionFailed();
           },
         },
@@ -255,7 +323,12 @@ export default function DashboardScreen() {
                 label: "Approve",
                 tone: "accent",
                 icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
-                onPress: () => confirmOrder.mutate({ id: item.id }, callbacksFor(item.id)),
+                onPress: () => {
+                  // Hiding is an explicit statement, not a side effect of
+                  // building the callbacks object — see `callbacksFor`.
+                  hide(item.id);
+                  confirmOrder.mutate({ id: item.id }, callbacksFor(item.id));
+                },
               },
             ],
             trailing: [
@@ -276,7 +349,10 @@ export default function DashboardScreen() {
                 label: "Approve",
                 tone: "accent",
                 icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
-                onPress: () => approveReview.mutate(item.id, callbacksFor(item.id)),
+                onPress: () => {
+                  hide(item.id);
+                  approveReview.mutate(item.id, callbacksFor(item.id));
+                },
               },
             ],
             trailing: [
@@ -285,7 +361,10 @@ export default function DashboardScreen() {
                 label: "Reject",
                 tone: "danger",
                 icon: <X size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
-                onPress: () => rejectReview.mutate(item.id, callbacksFor(item.id)),
+                onPress: () => {
+                  hide(item.id);
+                  rejectReview.mutate(item.id, callbacksFor(item.id));
+                },
               },
             ],
           };
@@ -299,11 +378,13 @@ export default function DashboardScreen() {
                 // outcome, and the trailing edge is a position, not a tone.
                 tone: "neutral",
                 icon: <Archive size={ICON_SIZE} color={theme.colors.text} strokeWidth={2} />,
-                onPress: () =>
+                onPress: () => {
+                  hide(item.id);
                   updateTicketStatus.mutate(
                     { id: item.id, status: "closed" },
                     callbacksFor(item.id),
-                  ),
+                  );
+                },
               },
             ],
           };
@@ -319,6 +400,7 @@ export default function DashboardScreen() {
       rejectReview,
       updateTicketStatus,
       callbacksFor,
+      hide,
       openCancelSheet,
     ],
   );
@@ -331,6 +413,10 @@ export default function DashboardScreen() {
     <Screen>
       <CollapsingHeader
         eyebrow={todayLabel()}
+        // Sentence case, not the uppercase small-caps default: the dateline
+        // is running prose ("Monday, 27 July"), the first thing the eye lands
+        // on, and the mockup does not shout it.
+        eyebrowPreset="caption"
         title={storeName ?? "Your store"}
         rightSlot={<TenantMonogram storeName={storeName} />}
         scrollY={scrollY}
@@ -342,7 +428,7 @@ export default function DashboardScreen() {
         contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}
         refreshControl={
           <RefreshControl
-            refreshing={dashboard.isRefetching}
+            refreshing={isRefreshing}
             onRefresh={refreshAll}
             tintColor={theme.colors.text}
           />
@@ -358,9 +444,14 @@ export default function DashboardScreen() {
           <Text preset="eyebrow" color="textTertiary">
             Needs you
           </Text>
-          {visibleQueue.length > 0 ? (
-            <Text preset="caption" color="textTertiary" style={styles.count}>
-              {String(visibleQueue.length)}
+          {needsYouCount > 0 ? (
+            <Text
+              preset="caption"
+              color="textTertiary"
+              style={styles.count}
+              testID="dashboard-needs-you-count"
+            >
+              {String(needsYouCount)}
             </Text>
           ) : null}
         </View>
@@ -408,7 +499,7 @@ export default function DashboardScreen() {
         ref={cancelSheetRef}
         onSubmit={submitCancel}
         isSubmitting={cancelOrder.isPending}
-        error={cancelOrder.error ? "Couldn't cancel this order. Try again." : null}
+        error={cancelError}
       />
     </Screen>
   );

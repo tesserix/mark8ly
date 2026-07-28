@@ -15,7 +15,7 @@ function monogramInitial(label: string): string {
 }
 
 /**
- * The customer monogram disc — the fallback for order/review/ticket rows
+ * The customer monogram tile — the fallback for order/review/ticket rows
  * when no product image applies (`imageUrl` absent; see lib/queue.ts, which
  * documents WHY that's a permanent fallback, not a temporary shim).
  *
@@ -24,12 +24,16 @@ function monogramInitial(label: string): string {
  * components/ui/Thumb.tsx or components/ui/ — QueueRow is currently the
  * only caller, and CustomerRow.tsx already has its own inline 40pt avatar
  * that isn't this component's concern to unify. Promote this to
- * components/ui if a second caller needs the same 60pt disc.
+ * components/ui if a second caller needs the same 60pt tile.
  *
- * Sized identically to Thumb's "list" box (`theme.thumb.list`, 60pt) so the
- * two fallback paths (product photo vs. customer monogram) occupy the exact
- * same slot and never shift row layout depending on which one a given item
- * needs. Never moss — this app's one accent is already spent on the
+ * Sized AND radiused identically to Thumb's "list" box (`theme.thumb.list`
+ * 60pt, `theme.radii.md`) so the two fallback paths (product photo vs.
+ * customer monogram) occupy the exact same slot and read as one column. It
+ * was a full circle (`thumb.list / 2`), which put circles and rounded squares
+ * side by side in a single list — and made an order that happened to carry an
+ * `image_url` render a square between circles. Fixed HERE, on the monogram:
+ * Thumb is the shape the rest of the app's lists already use. Never moss —
+ * this app's one accent is already spent on the
  * Dashboard's revenue chart and the Approve swipe action; the monogram uses
  * the same neutral surface tint CustomerRow's avatar uses.
  */
@@ -157,7 +161,8 @@ const styles = StyleSheet.create({
   monogram: {
     width: theme.thumb.list,
     height: theme.thumb.list,
-    borderRadius: theme.thumb.list / 2,
+    // Thumb's radius, not a circle — one leading-art shape per list.
+    borderRadius: theme.radii.md,
     backgroundColor: theme.colors.sink,
     borderWidth: theme.hairline,
     borderColor: theme.colors.textTertiary,

@@ -128,7 +128,7 @@ Read before planning any action. Every destructive action in §3 was checked aga
 | Coupon **enable / disable** | `PATCH .../coupons/:id` `{status:"active"\|"disabled"}` | **Fires directly.** | Idempotent, reversible. Only `active`/`disabled` accepted; `expired` is system-managed and rejected. |
 | Coupon **delete** | `DELETE .../coupons/:id` | **CUT.** | It is not a delete: it sets `status='disabled'`, returns `200 {"message":"coupon disabled"}`, and the row **stays in the list**. Labelling it "Delete" in the UI is a lie, and "Disable" is already offered by the PATCH above. |
 | Campaign **delete** | `DELETE .../campaigns/:id` | **Confirm `Alert.alert`.** | Irreversible (second call 404s) and **only legal for `status === "draft"`** — anything else returns HTTP 409 `campaign_not_draft` (`campaign/service.go:197-205`). Disable the item for non-draft campaigns. |
-| Segment **delete** | `DELETE .../segments/:id` | **Confirm `Alert.alert` naming the segment.** | **Hard delete**, irreversible, second call 404s, and there is **no check for campaigns referencing the segment** (`campaign/repository.go:117-126`). The confirm copy must say campaigns using it are not updated. |
+| Segment **delete** | `DELETE .../segments/:id` | **Confirm `Alert.alert` naming the segment.** | **Hard delete**, irreversible, second call 404s. **Blocked with `409 segment_in_use`** when campaigns still reference it (`campaign/service.go:273-286`, `campaign/repository.go:125-141`); `ApiError.message` already states how many campaigns are blocking it. On that rejection the sheet must surface that reason instead of a generic error. |
 | Order **cancel** | `POST .../orders/:id/cancel` | **MUST open `CancelReasonSheet`** (already wired on Orders list and detail). | `Reason` is `binding:"required"`. Terminal — second call 409s. Cancelling a paid order auto-fires a full refund and cancels the carrier shipment. |
 | Order **refund** | `POST .../orders/:id/refund` | **MUST open `RefundSheet`.** | `refund_request_id` manually enforced (422 otherwise). Idempotent per request id; a DIFFERENT id triggers a second real gateway refund. |
 | Order **fulfil** | `POST .../orders/:id/fulfill` | **Fires directly when legal.** | No body. NOT idempotent — `fulfilled` is terminal, second call 409s. Legal only from `confirmed`. |
@@ -179,7 +179,7 @@ Create fixtures **through the app's own UI or the web admin**, never by seeding 
 | Coupons (Task 6) | Unknown | One **active** and one **disabled** coupon, so both swipe edges are reachable on real rows. |
 | Gift cards (Task 1) | Unknown | At least one issued gift card, so the list is not empty behind the new header. Issue one via the existing Issue flow. |
 | Campaigns (Task 7) | Unknown | 🔴 One **draft** campaign (Delete legal) **and** one **non-draft** (sent/scheduled/paused — Delete must be disabled). The non-draft is the fixture that exposes a missing gate; a draft-only store passes against broken code. |
-| Segments (Task 7) | Unknown | One segment you will delete, and one **referenced by a campaign** — deleting the referenced one is allowed by the backend with no warning, and the confirm copy has to be honest about that. |
+| Segments (Task 7) | Unknown | One segment you will delete, and one **referenced by a campaign** — the backend refuses to delete the referenced one with a `409 segment_in_use`, and the delete fixture must exercise that blocked path, not just the confirm copy. |
 | Order detail (Task 8) | A few demo orders | 🔴 You need one order in **each** of `pending`, `confirmed`, `fulfilled`, `cancelled` to prove the sticky bar's primary-slot gating. **Do not action the existing demo orders to produce them** — place new storefront orders. |
 | More/Account/Settings (Task 9) | Real | Nothing extra. Team screen wants ≥2 members plus a pending invitation to show both row shapes. |
 | Product editor/create (Task 10) | Real | One single-variant and one multi-variant product. |
@@ -1120,19 +1120,30 @@ Grouped because they share one shape — **no swipe, one long-press sheet whose 
 | Item | Action | Tone | `disabled` when | Fires directly? |
 |---|---|---|---|---|
 | Edit | `router.push` to the segment detail | default | never | navigation |
-| Delete | `useDeleteSegment` | `danger` | never — no gating exists | **Confirm `Alert.alert` naming the segment** |
+| Delete | `useDeleteSegment` | `danger` | never client-side — the list has no campaign-linkage field to gate on | **Confirm `Alert.alert` naming the segment**; on rejection, surface the server's reason |
 
-`DELETE /segments/:id` is a **hard delete** with **no check for campaigns referencing the segment** (`campaign/repository.go:117-126`). The confirm copy must say so:
+`DELETE /segments/:id` is a **hard delete**, but `campaigns.segment_id` is a plain FK the service now enforces *before* deleting: a segment still referenced by a campaign is refused with **`409 segment_in_use`** (`campaign/service.go:273-286`, `campaign/repository.go:125-141`), and `ApiError.message` is already the server's prose — e.g. *"segment is still used by 2 campaigns and cannot be deleted"* — so there is nothing to orphan and no count to re-derive client-side. The confirm copy only needs to warn that the delete is permanent; the mutation's `onError` is what tells the merchant *why* it didn't happen:
 
 ```tsx
 Alert.alert(
   "Delete segment?",
-  `"${segment.name}" will be permanently deleted. Campaigns that target it are not updated and will stop reaching this audience. This cannot be undone.`,
+  `"${segment.name}" will be permanently deleted. This cannot be undone.`,
   [
     { text: "Cancel", style: "cancel" },
     { text: "Delete", style: "destructive", onPress: () => { /* markBusy + mutate */ } },
   ],
 );
+
+// useDeleteSegment's onError. ApiError doesn't carry `details`, but for
+// segment_in_use the message text already states the blocking campaign
+// count — surface it verbatim rather than inventing generic copy.
+function onDeleteSegmentError(err: unknown, segment: { name: string }) {
+  const reason =
+    err instanceof ApiError && err.code === "segment_in_use"
+      ? err.message
+      : "Something went wrong deleting the segment.";
+  Alert.alert("Can't delete segment", reason);
+}
 ```
 
 Segments is the **only list screen with no `FilterChips`** and needs none — the resource has no status axis. Do not add one.
@@ -1153,13 +1164,21 @@ it("mounts no SwipeRow on any row", () => {
 it("offers no Duplicate item (no endpoint exists)", () => { /* … */ });
 
 // segments
-it("names the segment in the confirm and warns that campaigns are not updated", () => {
+it("names the segment in the confirm and states the delete is permanent", () => {
   const spy = jest.spyOn(Alert, "alert");
   // press Delete
-  expect(spy.mock.calls[0][1]).toContain("Campaigns that target it are not updated");
+  expect(spy.mock.calls[0][1]).toContain("permanently deleted");
   expect(spy.mock.calls[0][1]).toContain("Summer buyers"); // the fixture's name
 });
-it("invalidates both segments and campaigns", () => { /* the existing hook does; pin it */ });
+it("surfaces the server's reason when delete is blocked with 409 segment_in_use", () => {
+  // mock the mutation rejecting with
+  // new ApiError(409, "segment_in_use", "segment is still used by 1 campaign and cannot be deleted")
+  const spy = jest.spyOn(Alert, "alert");
+  // accept the confirm; the mutation rejects
+  expect(spy.mock.calls[1][0]).toBe("Can't delete segment");
+  expect(spy.mock.calls[1][1]).toContain("still used by 1 campaign");
+});
+it("invalidates both segments and campaigns on a successful delete", () => { /* the existing hook does; pin it */ });
 ```
 
 - [ ] **Step 2-4: Run, implement, run.**
@@ -1174,7 +1193,7 @@ Segments currently uses a plain query with no infinite scroll — leave the pagi
 
 1. Cleared-cache start; screenshot both screens, expanded and collapsed.
 2. 🔴 **Campaigns:** long-press the **non-draft** campaign and verify Delete is greyed and the sheet is the same height as on the draft. Long-press the draft, tap Delete, **Cancel** the confirm, verify the campaign is still there. Accept it, verify it disappears after the refetch.
-3. 🔴 **Segments:** long-press the segment a campaign targets. Verify the confirm names the segment and states that campaigns are not updated. Cancel. Then delete the **other** segment and verify it disappears. **Leave the referenced one alone** — that is destroying real fixture state to prove nothing new.
+3. 🔴 **Segments:** long-press the segment a campaign targets, tap Delete, and accept the confirm — verify the delete is refused with a **"Can't delete segment"** alert naming why (referenced by its campaign) and that the segment is still in the list afterward. The 409 means this is safe to actually attempt; nothing is destroyed. Then delete the **other**, unreferenced segment and verify it disappears.
 4. Verify neither screen mounts a swipe (drag a row and confirm nothing is revealed).
 5. `accessibility-large`, terminate, relaunch, screenshot both.
 

@@ -41,6 +41,21 @@ func seedCardWithExpiry(t *testing.T, tx *gorm.DB, storeID, tenantID uuid.UUID, 
 	return id
 }
 
+// seedSecondStoreForTenant inserts a second store row under the same
+// tenant_id as an existing seedStore call, so tests can prove store-scoping
+// independently of tenant-scoping (Global Constraint 5: "tenant- OR
+// store-scoped").
+func seedSecondStoreForTenant(t *testing.T, tx *gorm.DB, tenantID uuid.UUID) uuid.UUID {
+	t.Helper()
+	storeID := uuid.New()
+	require.NoError(t, tx.Exec(`
+		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code,
+		                    timezone, status, storefront_customer_portal_secret)
+		VALUES (?, ?, ?, 'Test Store B', 'AU', 'AUD', 'Australia/Sydney', 'active', 'secret')`,
+		storeID, tenantID, "gc-b-"+storeID.String()[:8]).Error)
+	return storeID
+}
+
 func statusOf(t *testing.T, tx *gorm.DB, id uuid.UUID) GiftCardStatus {
 	t.Helper()
 	var got GiftCardStatus
@@ -236,6 +251,27 @@ func TestSetStatus_DifferentTenantCardNotFoundAndUnaffected(t *testing.T) {
 	require.ErrorAs(t, err, &ae)
 	assert.Equal(t, apperrors.CodeNotFound, ae.Code)
 	assert.Equal(t, StatusActive, statusOf(t, tx, cardID), "card must be unaffected by a cross-tenant attempt")
+	assert.True(t, decimal.RequireFromString("88.00").Equal(balanceOf(t, tx, cardID)))
+}
+
+// 11b. Same tenant, different store must also be refused as NotFound — the
+// realistic multi-store-merchant case. Every other cross-scope test above
+// varies tenant (and usually store) together; this proves store_id alone is
+// enforced, not just tenant_id.
+func TestSetStatus_DifferentStoreSameTenantNotFoundAndUnaffected(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeA, tenantID := seedStore(t, tx)
+	storeB := seedSecondStoreForTenant(t, tx, tenantID)
+	cardID, _ := seedCard(t, tx, storeA, tenantID, StatusActive, "88.00")
+	repo := NewRepository()
+
+	_, err := repo.SetStatus(tx, cardID, tenantID, storeB, StatusDisabled)
+
+	require.Error(t, err)
+	var ae *apperrors.Error
+	require.ErrorAs(t, err, &ae)
+	assert.Equal(t, apperrors.CodeNotFound, ae.Code)
+	assert.Equal(t, StatusActive, statusOf(t, tx, cardID), "card must be unaffected by a different-store attempt")
 	assert.True(t, decimal.RequireFromString("88.00").Equal(balanceOf(t, tx, cardID)))
 }
 

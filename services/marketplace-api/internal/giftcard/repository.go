@@ -3,7 +3,6 @@ package giftcard
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -369,9 +368,7 @@ func (gormRepository) SetStatus(tx *gorm.DB, id, tenantID, storeID uuid.UUID, to
 		SET status = ?, updated_at = now()
 		WHERE id = ? AND tenant_id = ? AND store_id = ? AND status = ?
 		  AND (expires_at IS NULL OR expires_at > now())
-		RETURNING id, tenant_id, store_id, code, initial_balance,
-		          current_balance, currency_code, status, expires_at,
-		          created_at, updated_at`,
+		RETURNING *`,
 		to, id, tenantID, storeID, from).Scan(&gc)
 	if result.Error != nil {
 		return nil, result.Error
@@ -379,14 +376,22 @@ func (gormRepository) SetStatus(tx *gorm.DB, id, tenantID, storeID uuid.UUID, to
 	if result.RowsAffected > 0 {
 		return &gc, nil
 	}
-	return classifyStatusTransition(tx, id, tenantID, storeID, to)
+	return classifyStatusTransition(tx, id, tenantID, storeID, from, to)
 }
 
 // classifyStatusTransition explains why SetStatus's UPDATE matched no row.
-// Read-only re-read, same shape as classifyDebitFailure: three independent
-// arms (not found / already at target / illegal source status / expired),
+// Read-only re-read, same shape as classifyDebitFailure: four independent
+// arms (not found / already at target / expired / illegal source status),
 // so a single generic error would be wrong for most of them.
-func classifyStatusTransition(tx *gorm.DB, id, tenantID, storeID uuid.UUID, to GiftCardStatus) (*GiftCard, error) {
+//
+// No wall-clock comparison: the UPDATE's WHERE clause only has two
+// conditions beyond identity — status = from and the expiry predicate,
+// evaluated by Postgres's own now(). If this re-read finds the row still at
+// the `from` status the UPDATE required, the status arm of the predicate
+// would have matched, so the expiry predicate is the only thing that could
+// have blocked the write — no need to re-derive that with time.Now() on the
+// app pod, which can disagree with the DB host under clock skew.
+func classifyStatusTransition(tx *gorm.DB, id, tenantID, storeID uuid.UUID, from, to GiftCardStatus) (*GiftCard, error) {
 	var gc GiftCard
 	err := tx.Where("id = ? AND tenant_id = ? AND store_id = ?", id, tenantID, storeID).First(&gc).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -401,7 +406,9 @@ func classifyStatusTransition(tx *gorm.DB, id, tenantID, storeID uuid.UUID, to G
 		// changing, so there is nothing to refuse.
 		return &gc, nil
 	}
-	if gc.ExpiresAt != nil && gc.ExpiresAt.Before(time.Now()) {
+	if gc.Status == from {
+		// Status matched what the UPDATE required — only the expiry
+		// predicate could have blocked it.
 		return nil, apperrors.New(apperrors.CodeGiftCardExpired, "gift card has expired")
 	}
 	return nil, apperrors.InvalidTransition("status", string(gc.Status), string(to))

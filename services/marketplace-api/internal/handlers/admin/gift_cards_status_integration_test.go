@@ -257,6 +257,66 @@ func TestDisable_DifferentTenantCard_Returns404(t *testing.T) {
 	}
 }
 
+// TestDisable_PreservesFullCardFields is the cross-task regression test for
+// the RETURNING column-list bug: SetStatus's atomic UPDATE only listed 11 of
+// the GiftCard model's 24 columns, so a card that genuinely came from the
+// storefront purchase flow — with PurchasedViaStorefront, RecipientEmail,
+// PaymentStatus all set — came back from a real Disable/Enable flip with
+// those fields silently wrong (purchased_via_storefront=false, a lie) or
+// missing (recipient_email absent) even though the SAME row read via
+// GetByID/ListByStore returns them correctly. Must prove red -> green
+// against the pre-fix RETURNING clause.
+func TestDisable_PreservesFullCardFields(t *testing.T) {
+	env := setupGiftCardStatusRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleAdmin, tenantID)
+
+	recipientEmail := "recipient@example.com"
+	paid := giftcard.PaymentStatusPaid
+	gc := &giftcard.GiftCard{
+		ID:                     uuid.New(),
+		TenantID:               uuid.MustParse(tenantID),
+		StoreID:                uuid.MustParse(storeID),
+		Code:                   strings.ToUpper("STOREFRONT" + uuid.NewString()[:8]),
+		InitialBalance:         decimal.NewFromInt(100),
+		CurrentBalance:         decimal.NewFromInt(100),
+		CurrencyCode:           "USD",
+		Status:                 giftcard.StatusActive,
+		RecipientEmail:         &recipientEmail,
+		PurchasedViaStorefront: true,
+		PaymentStatus:          &paid,
+	}
+	if err := env.db.Create(gc).Error; err != nil {
+		t.Fatalf("seed gift card: %v", err)
+	}
+
+	w := request(t, env.router, http.MethodPost,
+		giftCardStatusURL(storeID, gc.ID.String(), "disable"), nil, authHeaders(userID, tenantID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("disable: status %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Data["status"] != "disabled" {
+		t.Fatalf("status = %v, want disabled", resp.Data["status"])
+	}
+	if purchasedViaStorefront, _ := resp.Data["purchased_via_storefront"].(bool); !purchasedViaStorefront {
+		t.Fatalf("purchased_via_storefront = %v, want true (real flip must not truncate the returned row)", resp.Data["purchased_via_storefront"])
+	}
+	if resp.Data["recipient_email"] != recipientEmail {
+		t.Fatalf("recipient_email = %v, want %q", resp.Data["recipient_email"], recipientEmail)
+	}
+	if resp.Data["payment_status"] != string(paid) {
+		t.Fatalf("payment_status = %v, want %q", resp.Data["payment_status"], string(paid))
+	}
+}
+
 // TestDisableThenEnable_RoundTrip_SameBalanceSpendableAgain is the
 // handler-level echo of Task 1's repository round-trip test — it proves
 // the wiring end to end through the actual HTTP routes, not just the

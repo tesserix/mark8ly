@@ -524,6 +524,9 @@ export default function OrdersScreen() {
           onScroll={scrollHandler}
           scrollEventThrottle={16}
           ListHeaderComponent={listHeader}
+          // Explicit flex, not leftover space: the list is the only child of
+          // `Screen` that should absorb the remaining height.
+          style={styles.listFlex}
           // Park the list just past the search block. Pulling down reveals
           // the field; pulling further still reaches the RefreshControl.
           contentOffset={{ x: 0, y: SEARCH_BLOCK_HEIGHT }}
@@ -605,6 +608,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.xl,
   },
   chips: { paddingVertical: theme.spacing.sm },
+  listFlex: { flex: 1 },
   list: { flexGrow: 1 },
   footer: { paddingVertical: theme.spacing.lg, alignItems: "center" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },

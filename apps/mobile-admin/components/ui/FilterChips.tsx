@@ -109,6 +109,14 @@ export function FilterChips<T extends string>({
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      // `flexGrow/flexShrink: 0` + an explicit height: a ScrollView placed in
+      // a flex COLUMN otherwise stretches to fill the space left over by its
+      // siblings, and `styles.row`'s `alignItems: "center"` then centres the
+      // chips inside that tall box — which on device rendered ~110pt of dead
+      // paper between the header and the pills, and as much again beneath
+      // them. Found on device; the unit tests render the row in isolation
+      // where nothing stretches, so they were all green.
+      style={[styles.scroll, { height: heights.target }]}
       contentContainerStyle={[styles.row, style]}
       // The row is a control strip, not content: let a horizontal drag that
       // starts on a chip scroll the strip rather than arm a press.
@@ -185,6 +193,8 @@ function Chip<T extends string>({ chip, active, heights, onPress }: ChipProps<T>
 }
 
 const styles = StyleSheet.create({
+  // Hug the content vertically — see the `style` prop's comment above.
+  scroll: { flexGrow: 0, flexShrink: 0 },
   row: {
     flexDirection: "row",
     alignItems: "center",

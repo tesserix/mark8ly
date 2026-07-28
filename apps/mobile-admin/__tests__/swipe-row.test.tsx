@@ -274,6 +274,82 @@ describe("SwipeRow", () => {
     expect(trailing.onPress).not.toHaveBeenCalled();
   });
 
+  // --- leading-side auto-fire guard --------------------------------------
+  //
+  // The four tests below are the mirror image of the trailing-side ones
+  // above. They exist because the leading branch's guard
+  // (`autoFireOnFullSwipe` set AND tone !== "danger") had NO coverage at all:
+  // replacing it with a bare `passedFullSwipe && !!primaryLeading` left all
+  // 15 swipe-row tests and all 22 dashboard tests green, while permitting a
+  // full right-swipe to fire `useConfirmOrder` with no tap and no undo.
+  // Verified red→green by that exact mutation (see inc2-task-8-report.md).
+
+  it("does not auto-fire the LEADING action past reveal but under the full-swipe threshold, even when opted in", () => {
+    const leading = action({
+      key: "archive",
+      label: "Archive",
+      tone: "neutral",
+      autoFireOnFullSwipe: true,
+    });
+    const { gesture } = renderRow({ leadingActions: [leading] });
+
+    act(() => {
+      gesture.handlers.onUpdate({ translationX: PAST_THRESHOLD });
+      gesture.handlers.onEnd({ translationX: PAST_THRESHOLD });
+    });
+
+    expect(leading.onPress).not.toHaveBeenCalled();
+  });
+
+  it("auto-fires the LEADING action past the full-swipe threshold when it opts in", () => {
+    const leading = action({
+      key: "archive",
+      label: "Archive",
+      tone: "neutral",
+      autoFireOnFullSwipe: true,
+    });
+    const { gesture } = renderRow({ leadingActions: [leading] });
+
+    act(() => {
+      gesture.handlers.onUpdate({ translationX: PAST_FULL_SWIPE });
+      gesture.handlers.onEnd({ translationX: PAST_FULL_SWIPE });
+    });
+
+    expect(leading.onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("never auto-fires a LEADING action that didn't opt in, even past the full-swipe threshold", () => {
+    // This is the live Dashboard shape: Approve is a leading `accent` action
+    // that never sets autoFireOnFullSwipe. A full right-swipe must NOT
+    // confirm an order.
+    const leading = action({ key: "approve", label: "Approve", tone: "accent" });
+    const { gesture } = renderRow({ leadingActions: [leading] });
+
+    act(() => {
+      gesture.handlers.onUpdate({ translationX: PAST_FULL_SWIPE });
+      gesture.handlers.onEnd({ translationX: PAST_FULL_SWIPE });
+    });
+
+    expect(leading.onPress).not.toHaveBeenCalled();
+  });
+
+  it("hard-blocks LEADING auto-fire for tone: danger even when autoFireOnFullSwipe is set", () => {
+    const leading = action({
+      key: "destroy",
+      label: "Destroy",
+      tone: "danger",
+      autoFireOnFullSwipe: true,
+    });
+    const { gesture } = renderRow({ leadingActions: [leading] });
+
+    act(() => {
+      gesture.handlers.onUpdate({ translationX: PAST_FULL_SWIPE });
+      gesture.handlers.onEnd({ translationX: PAST_FULL_SWIPE });
+    });
+
+    expect(leading.onPress).not.toHaveBeenCalled();
+  });
+
   it("does not fire the action on release below the threshold", () => {
     const leading = action();
     const { gesture } = renderRow({ leadingActions: [leading] });
@@ -358,13 +434,29 @@ describe("SwipeRow", () => {
  * no native gesture arena to observe the arbitration in.
  */
 describe("SwipeRow — axis arbitration against a parent scroll view", () => {
-  it("only activates the pan after horizontal movement", () => {
+  // The VALUES, not merely their presence. Asserting `toBeDefined()` let a
+  // mutation to activeOffsetX 400 / failOffsetY 1 — a configuration in which
+  // a horizontal swipe is effectively impossible and every drag becomes a
+  // scroll — pass green. Both numbers are load-bearing UX, so both are
+  // pinned here; changing either is a deliberate act that must update this
+  // test and SwipeRow's own rationale comment together.
+  it("activates the pan only after 12px of horizontal movement, symmetrically", () => {
     const { gesture } = renderRow({ leadingActions: [action()] });
-    expect(gesture.handlers.activeOffsetX).toBeDefined();
+    expect(gesture.handlers.activeOffsetX).toEqual([-12, 12]);
   });
 
-  it("fails the pan on vertical movement so the scroll view keeps the gesture", () => {
+  it("fails the pan after 8px of vertical movement so the scroll view keeps the gesture", () => {
     const { gesture } = renderRow({ leadingActions: [action()] });
-    expect(gesture.handlers.failOffsetY).toBeDefined();
+    expect(gesture.handlers.failOffsetY).toEqual([-8, 8]);
+  });
+
+  it("keeps the vertical fail distance SHORTER than the horizontal activate distance", () => {
+    // The invariant behind the two numbers: an ambiguous diagonal drag must
+    // resolve to a scroll, not to a row swipe that reveals a destructive
+    // action. Invert the two and every diagonal opens a row instead.
+    const { gesture } = renderRow({ leadingActions: [action()] });
+    const [, activateX] = gesture.handlers.activeOffsetX ?? [0, 0];
+    const [, failY] = gesture.handlers.failOffsetY ?? [0, 0];
+    expect(failY).toBeLessThan(activateX);
   });
 });

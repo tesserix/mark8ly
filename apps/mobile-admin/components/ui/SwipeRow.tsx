@@ -68,11 +68,25 @@ const FULL_SWIPE_FRACTION = 0.85;
 const ACTION_WIDTH = 84;
 /**
  * Horizontal travel (px) before the pan is allowed to activate, and vertical
- * travel before it fails to the enclosing scroll view. The vertical figure is
- * the smaller of the two on purpose: an ambiguous diagonal drag should read as
- * a SCROLL (recoverable, happens constantly) rather than as a row swipe
- * (reveals a destructive action). Same shape as the values
- * `react-native-gesture-handler`'s own Swipeable uses.
+ * travel before it fails to the enclosing scroll view.
+ *
+ * These are OUR values, not RNGH's. `react-native-gesture-handler`'s own
+ * Swipeable uses activeOffsetX ±10 and sets NO failOffsetY at all — it relies
+ * on the enclosing scrollable winning the arena, which is exactly what did
+ * NOT happen here (see the `.failOffsetY` call site). So:
+ *
+ *  - 12 (not 10): a queue row is 88pt tall and dragged one-handed with a
+ *    thumb, which arcs. 10 activated on arcs that were meant as scrolls; 12
+ *    is the smallest value that stopped it on device without the intended
+ *    swipe feeling laggy.
+ *  - 8, deliberately SMALLER than 12: an ambiguous diagonal must resolve to a
+ *    SCROLL (recoverable, happens constantly), never to a row swipe (reveals
+ *    a destructive action). Keeping fail-Y below activate-X is what encodes
+ *    that preference — invert them and the row wins every diagonal.
+ *
+ * Both figures are pinned by test (see swipe-row.test.tsx, "axis
+ * arbitration"): asserting only that they are *defined* let a mutation to
+ * 400/1 — horizontal swipe near-impossible — pass green.
  */
 const ACTIVATE_OFFSET_X = 12;
 const FAIL_OFFSET_Y = 8;

@@ -520,3 +520,60 @@ describe("QueueItem — 'seeAll' can't accidentally masquerade as a real row (co
     expect(illegal).toBeDefined();
   });
 });
+
+/**
+ * Guards the `kind` DISCRIMINANT against a regression back to the
+ * `id.startsWith("see-all-")` prefix match it replaced.
+ *
+ * `trailingSeeAllRow` decides which row `applyTotalCap` preserves when the
+ * total cap cuts a group mid-way. Reading that off the id string couples the
+ * function to `seeAllRow`'s id template and — the real defect — lets DATA
+ * decide: an `"item"` row whose id happens to start with `see-all-` gets
+ * misread as the navigational row, kept in place of a real item, and the
+ * item that should have survived is dropped instead. Ids on `"item"` rows
+ * come from upstream records, so this is attacker/importer-reachable rather
+ * than hypothetical.
+ *
+ * The prefix implementation passed all 26 pre-existing queue tests, because
+ * none of them ever gave an `"item"` row an id in that shape.
+ */
+describe("buildQueue — the trailing 'See all' row is found by kind, never by id shape", () => {
+  it("does not mistake an item whose id merely starts with 'see-all-' for the navigational row", () => {
+    // Budget: orders(3, no overflow) + stock(3, no overflow) + tickets(3 +
+    // its own "See all" = 4) = 10 of TOTAL_CAP 12, leaving 2 for reviews.
+    // The reviews group is 3 rows and does NOT overflow (pending_reviews 3),
+    // so it carries no "See all" row of its own and must be plainly sliced.
+    const items = buildQueue({
+      stats: { ...EMPTY.stats, orders_pending: 3, pending_reviews: 3 },
+      recentOrders: [order({ id: "o1" }), order({ id: "o2" }), order({ id: "o3" })],
+      lowStock: [stockItem({ id: "v1" }), stockItem({ id: "v2" }), stockItem({ id: "v3" })],
+      tickets: [
+        ticket({ id: "t1" }),
+        ticket({ id: "t2" }),
+        ticket({ id: "t3" }),
+        ticket({ id: "t4" }),
+      ],
+      reviews: [
+        review({ id: "r-newest", created_at: "2026-07-22T00:00:00Z" }),
+        review({ id: "r-middle", created_at: "2026-07-21T00:00:00Z" }),
+        // An ORDINARY pending review that merely looks like a "See all" id.
+        review({ id: "see-all-review-spoof", created_at: "2026-07-20T00:00:00Z" }),
+      ],
+    });
+
+    expect(items).toHaveLength(12);
+
+    // Correct: the two most recent reviews, in order, plainly sliced.
+    expect(items.map((i) => i.id).slice(-2)).toEqual(["r-newest", "r-middle"]);
+
+    // Under the prefix match the spoofed row would have been treated as the
+    // group's "See all" row and hoisted into the last slot, evicting
+    // "r-middle" — so both halves of this are the regression.
+    expect(items.some((i) => i.id === "see-all-review-spoof")).toBe(false);
+    // The reviews group carries no "See all" row of its own, so every review
+    // row that survived is an item. (The tickets group above legitimately
+    // does carry one, hence the type filter.)
+    const reviewRows = items.filter((i) => i.type === "review");
+    expect(reviewRows.every((i) => i.kind === "item")).toBe(true);
+  });
+});

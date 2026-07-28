@@ -86,4 +86,34 @@ describe('Thumb', () => {
       uri: 'https://cdn.example/b.jpg',
     });
   });
+
+  /**
+   * The placeholder's hairline ring is LOAD-BEARING, not decoration, and it
+   * was removable with all 7 of the tests above green.
+   *
+   * The placeholder's fill is `sink`, and `PressableRow`'s iOS pressed state
+   * repaints the whole row background to that SAME token. Without the ring a
+   * held row has zero contrast between the placeholder and the row beneath
+   * it: the box's edge vanishes and the Package glyph appears to float on
+   * bare row. So the invariant is not "the ring exists" but "the placeholder
+   * carries an edge in a colour its own fill does not" — asserted against
+   * the real tokens, so a future palette change that collapses the two
+   * fails here rather than on a device.
+   */
+  it('gives the placeholder — and only the placeholder — an edge that survives the pressed-row sink collision', () => {
+    const placeholder = StyleSheet.flatten(render(<Thumb testID="thumb" />).getByTestId('thumb').props.style);
+
+    expect(placeholder.borderWidth).toBe(theme.hairline);
+    expect(placeholder.borderWidth).toBeGreaterThan(0);
+    expect(placeholder.borderColor).toBe(theme.colors.textTertiary);
+    // The collision the ring exists for: fill and pressed row are one token.
+    expect(placeholder.backgroundColor).toBe(theme.colors.sink);
+    expect(placeholder.borderColor).not.toBe(placeholder.backgroundColor);
+
+    // A real image supplies its own edge and must NOT be ringed.
+    const image = StyleSheet.flatten(
+      render(<Thumb uri="https://cdn.example/a.jpg" testID="thumb" />).getByTestId('thumb').props.style,
+    );
+    expect(image.borderWidth).toBeUndefined();
+  });
 });

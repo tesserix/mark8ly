@@ -29,6 +29,7 @@ var codeStatus = map[apperrors.Code]int{
 	apperrors.CodeCategoryNotEmpty:        http.StatusConflict,
 	apperrors.CodeCategoryHasChildren:     http.StatusConflict,
 	apperrors.CodeCurrencyChangeForbidden: http.StatusConflict,
+	apperrors.CodeOptionValueInUse:        http.StatusConflict,
 	apperrors.CodePayloadTooLarge:         http.StatusRequestEntityTooLarge,
 	apperrors.CodeUnsupportedMediaType:    http.StatusUnsupportedMediaType,
 	apperrors.CodeRateLimited:             http.StatusTooManyRequests,
@@ -53,6 +54,8 @@ var codeStatus = map[apperrors.Code]int{
 	apperrors.CodeInsufficientGiftCardBalance: http.StatusUnprocessableEntity,
 	apperrors.CodeGiftCardExpired:             http.StatusGone,
 	apperrors.CodeGiftCardNotFound:            http.StatusNotFound,
+	// Matches the storefront's checkout_ext.go treatment of the same code.
+	apperrors.CodeGiftCardNotRedeemable: http.StatusUnprocessableEntity,
 
 	// Loyalty M3.
 	apperrors.CodeInsufficientLoyaltyPoints: http.StatusUnprocessableEntity,

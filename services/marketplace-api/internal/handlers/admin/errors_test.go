@@ -85,20 +85,15 @@ func TestRespondErr_UntypedError_Returns500_GenericBody(t *testing.T) {
 	}
 }
 
+// TestCodeStatus_CoversAllCodes enumerates from apperrors.AllCodes() — the
+// same authoritative list backing apperrors.IsKnownCode — rather than a
+// second hand-copied slice here. A hand-copied list drifts silently: it
+// missed CodeGiftCardNotRedeemable when it was added, so RespondErr fell
+// through to the 500 fallback for that code with nothing catching it.
+// Reading straight from AllCodes() means any newly added code is exercised
+// automatically, with no second place to remember to update.
 func TestCodeStatus_CoversAllCodes(t *testing.T) {
-	codes := []apperrors.Code{
-		apperrors.CodeValidationFailed, apperrors.CodeVariantMatrixMismatch,
-		apperrors.CodeTooManyOptions, apperrors.CodeTooManyVariants,
-		apperrors.CodeCurrencyMismatch, apperrors.CodeHandleTaken,
-		apperrors.CodeSKUTaken, apperrors.CodeSlugTaken,
-		apperrors.CodeCategoryNotEmpty, apperrors.CodeCategoryHasChildren,
-		apperrors.CodeTargetStoreInvalid, apperrors.CodeUploadNotFound,
-		apperrors.CodeForbidden, apperrors.CodeNotFound,
-		apperrors.CodePayloadTooLarge, apperrors.CodeUnsupportedMediaType,
-		apperrors.CodeRateLimited, apperrors.CodeCurrencyChangeForbidden,
-		apperrors.CodeSegmentInUse,
-	}
-	for _, code := range codes {
+	for _, code := range apperrors.AllCodes() {
 		if !apperrors.IsKnownCode(string(code)) {
 			t.Errorf("code %q not in IsKnownCode", code)
 		}

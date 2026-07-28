@@ -169,29 +169,51 @@ func (e *Error) Is(target error) bool {
 	return e.Code == t.Code
 }
 
+// knownCodes is the single authoritative enumeration of every Code this
+// package defines. IsKnownCode and AllCodes both read from it, so there is
+// exactly one hand-maintained list to keep in sync with the const block
+// above — anything added there and forgotten here fails IsKnownCode (and,
+// transitively, any test built on AllCodes) instead of silently reaching a
+// handler with no codeStatus entry.
+var knownCodes = []Code{
+	CodeValidationFailed, CodeVariantMatrixMismatch, CodeTooManyOptions,
+	CodeTooManyVariants, CodeCurrencyMismatch, CodeHandleTaken, CodeSKUTaken,
+	CodeSlugTaken, CodeCategoryNotEmpty, CodeCategoryHasChildren,
+	CodeTargetStoreInvalid, CodeUploadNotFound, CodeForbidden, CodeNotFound,
+	CodePayloadTooLarge, CodeUnsupportedMediaType, CodeRateLimited,
+	CodeCurrencyChangeForbidden, CodeOptionValueInUse,
+	CodeInvalidTransition, CodeRefundExceedsTotal, CodeRefundUnavailable, CodeIdempotencyConflict,
+	CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent, CodeRefundsDisabled,
+	CodeCouponNotFound, CodeCouponExpired, CodeCouponUsageLimitReached,
+	CodeCouponInvalid, CodeCouponMinPurchaseNotMet,
+	CodeInsufficientGiftCardBalance, CodeGiftCardExpired, CodeGiftCardNotFound,
+	CodeGiftCardNotRedeemable,
+	CodeInsufficientLoyaltyPoints, CodeLoyaltyNotEnrolled,
+	CodeCampaignNotFound, CodeCampaignNotDraft, CodeCampaignNotSending,
+	CodeCampaignNotPaused, CodeSegmentNotFound, CodeSegmentInvalidRules,
+	CodeCampaignNoRecipients, CodeCampaignSchedulePast, CodeSegmentInUse,
+}
+
 // IsKnownCode reports whether the given code string is one of the
 // enumerated codes. Used by tests to assert enumeration coverage.
 func IsKnownCode(s string) bool {
-	switch Code(s) {
-	case CodeValidationFailed, CodeVariantMatrixMismatch, CodeTooManyOptions,
-		CodeTooManyVariants, CodeCurrencyMismatch, CodeHandleTaken, CodeSKUTaken,
-		CodeSlugTaken, CodeCategoryNotEmpty, CodeCategoryHasChildren,
-		CodeTargetStoreInvalid, CodeUploadNotFound, CodeForbidden, CodeNotFound,
-		CodePayloadTooLarge, CodeUnsupportedMediaType, CodeRateLimited,
-		CodeCurrencyChangeForbidden, CodeOptionValueInUse,
-		CodeInvalidTransition, CodeRefundExceedsTotal, CodeRefundUnavailable, CodeIdempotencyConflict,
-		CodeReturnItemsExceedOrdered, CodeRecoveryTooRecent, CodeRefundsDisabled,
-		CodeCouponNotFound, CodeCouponExpired, CodeCouponUsageLimitReached,
-		CodeCouponInvalid, CodeCouponMinPurchaseNotMet,
-		CodeInsufficientGiftCardBalance, CodeGiftCardExpired, CodeGiftCardNotFound,
-		CodeGiftCardNotRedeemable,
-		CodeInsufficientLoyaltyPoints, CodeLoyaltyNotEnrolled,
-		CodeCampaignNotFound, CodeCampaignNotDraft, CodeCampaignNotSending,
-		CodeCampaignNotPaused, CodeSegmentNotFound, CodeSegmentInvalidRules,
-		CodeCampaignNoRecipients, CodeCampaignSchedulePast, CodeSegmentInUse:
-		return true
+	for _, c := range knownCodes {
+		if Code(s) == c {
+			return true
+		}
 	}
 	return false
+}
+
+// AllCodes returns every enumerated error code. Handlers' status maps
+// (e.g. admin.codeStatus) should be tested against this list rather than
+// a second hand-copied slice, so a code added here without a matching
+// status entry fails the covering test instead of surfacing as a 500 at
+// runtime.
+func AllCodes() []Code {
+	out := make([]Code, len(knownCodes))
+	copy(out, knownCodes)
+	return out
 }
 
 // ---------- constructors ----------

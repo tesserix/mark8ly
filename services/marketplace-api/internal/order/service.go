@@ -84,6 +84,23 @@ type CreateInput struct {
 	ShippingCarrier *string
 	Notes          *string
 	PlacedAt       time.Time
+
+	// WithinTx, when set, runs inside the SAME transaction that inserts the
+	// order, after the order aggregate and its outbox row are written. It
+	// receives the persisted order so it can reference order.ID.
+	//
+	// This exists for the consumption of value the order was already
+	// discounted by — a gift-card debit, a coupon usage increment, a
+	// loyalty-point redemption. Those ran in separate transactions after
+	// Create returned, so a failure left a COMMITTED order discounted by a
+	// gift card that was never charged, with no compensation. Returning an
+	// error here rolls the order back entirely, which is the only correct
+	// outcome: the buyer can retry, and no money has moved either way.
+	//
+	// Not called on the idempotent-replay path — Create returns the existing
+	// aggregate before opening a transaction, and the discount was consumed
+	// by the original call.
+	WithinTx func(tx *gorm.DB, o *Order) error
 }
 
 // CreateResult holds the persisted order plus a Reused flag for the
@@ -188,6 +205,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 			"currency":     in.CurrencyCode,
 		}); err != nil {
 			return err
+		}
+		// Consume the value this order was discounted by, in this same tx.
+		// A failure here must unwind the order — see CreateInput.WithinTx.
+		if in.WithinTx != nil {
+			if err := in.WithinTx(tx, o); err != nil {
+				return err
+			}
 		}
 		result = &CreateResult{Order: o, Items: in.Items, Addrs: addrs, Reused: false}
 		return nil

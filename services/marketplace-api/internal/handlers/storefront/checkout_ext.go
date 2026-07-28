@@ -588,6 +588,52 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		shippingCarrierPtr = &s
 	}
 
+	// ── Consumption of the discounts this order is about to be priced at ──
+	// The coupon usage increment, the gift-card debit and the loyalty-point
+	// redemption all run INSIDE Service.Create's transaction, so the order
+	// and the value that paid for it commit together or not at all.
+	//
+	// 🔴 They used to run in three separate transactions AFTER the order had
+	// already committed at the discounted total, each failing with
+	// logWarn + respondErr + return and NO compensation — so a gift card that
+	// failed to debit left a real, committed order discounted by money the
+	// merchant never received. Do not move them back out.
+	consumeDiscounts := func(tx *gorm.DB, o *order.Order) error {
+		if appliedCouponCode != nil && h.couponSvc != nil {
+			applier := coupon.NewCouponApplier(h.couponSvc, *appliedCouponCode, req.CustomerEmail)
+			if _, err := applier.Apply(ctx, tx, discount.ApplyInput{
+				TenantID:      tenantID,
+				StoreID:       storeID,
+				OrderID:       o.ID,
+				CustomerEmail: req.CustomerEmail,
+				Subtotal:      req.Subtotal,
+				CurrencyCode:  store.CurrencyCode,
+			}); err != nil {
+				h.logWarn("checkout_ext: coupon apply failed, rolling back order",
+					"code", *appliedCouponCode, "err", err)
+				return err
+			}
+		}
+
+		if giftCardID != nil && giftCardApplied.GreaterThan(decimal.Zero) && h.giftCardSvc != nil {
+			if _, err := h.giftCardSvc.Debit(tx, *giftCardID, giftCardApplied, o.ID, tenantID); err != nil {
+				h.logWarn("checkout_ext: gift card debit failed, rolling back order",
+					"gift_card_id", giftCardID.String(), "err", err)
+				return err
+			}
+		}
+
+		if loyaltyPoints > 0 && h.loyaltySvc != nil {
+			orderID := o.ID
+			if _, err := h.loyaltySvc.RedeemPointsTx(ctx, tx, tenantID, storeID, req.CustomerEmail, loyaltyPoints, &orderID); err != nil {
+				h.logWarn("checkout_ext: loyalty redeem failed, rolling back order",
+					"points", loyaltyPoints, "err", err)
+				return err
+			}
+		}
+		return nil
+	}
+
 	// Sequence allocation happens inside Service.Create's transaction
 	// (C6 fix: atomic with order insert to prevent burned numbers).
 	in := order.CreateInput{
@@ -610,6 +656,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		CurrencyCode:    store.CurrencyCode,
 		ShippingService: shippingServicePtr,
 		ShippingCarrier: shippingCarrierPtr,
+		WithinTx:        consumeDiscounts,
 	}
 
 	result, err := h.orderSvc.Create(ctx, in)
@@ -689,60 +736,10 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		return
 	}
 
-	// ── Step 4.5: Atomic coupon apply ──────────────────────────────────
-	// Amendment CRITICAL FIX 1+2: validate + apply + usage increment
-	// inside a single transaction. If this fails, the order exists but
-	// the coupon was NOT consumed — we return an error.
-	if appliedCouponCode != nil && h.couponSvc != nil {
-		applier := coupon.NewCouponApplier(h.couponSvc, *appliedCouponCode, req.CustomerEmail)
-		if err := h.orderSvc.Unit(ctx, func(tx *gorm.DB) error {
-			_, applyErr := applier.Apply(ctx, tx, discount.ApplyInput{
-				TenantID:      tenantID,
-				StoreID:       storeID,
-				OrderID:       result.Order.ID,
-				CustomerEmail: req.CustomerEmail,
-				Subtotal:      req.Subtotal,
-				CurrencyCode:  store.CurrencyCode,
-			})
-			return applyErr
-		}); err != nil {
-			h.respondErr(c, err)
-			return
-		}
-	}
-
-	// ── Step 4.6: Debit gift card (in tx) ──────────────────────────────
-	// Amendment CRITICAL FIX 1: debit runs inside a transaction so it
-	// rolls back if anything downstream fails.
-	if giftCardID != nil && giftCardApplied.GreaterThan(decimal.Zero) && h.giftCardSvc != nil {
-		if err := h.orderSvc.Unit(ctx, func(tx *gorm.DB) error {
-			_, err := h.giftCardSvc.Debit(tx, *giftCardID, giftCardApplied, result.Order.ID, tenantID)
-			return err
-		}); err != nil {
-			h.logWarn("checkout_ext: gift card debit failed",
-				"order_id", result.Order.ID.String(), "err", err)
-			h.respondErr(c, err)
-			return
-		}
-	}
-
-	// ── Step 4.7: Debit loyalty points (in tx) ─────────────────────────
-	// Mirrors the gift card pattern: the debit + ledger entry run inside
-	// a transaction. If a concurrent redemption drained the balance since
-	// the preview, DebitPoints returns InsufficientLoyaltyPoints and the
-	// whole call is rolled back.
-	if loyaltyPoints > 0 && h.loyaltySvc != nil {
-		if err := h.orderSvc.Unit(ctx, func(tx *gorm.DB) error {
-			orderID := result.Order.ID
-			_, err := h.loyaltySvc.RedeemPointsTx(ctx, tx, tenantID, storeID, req.CustomerEmail, loyaltyPoints, &orderID)
-			return err
-		}); err != nil {
-			h.logWarn("checkout_ext: loyalty redeem failed",
-				"order_id", result.Order.ID.String(), "err", err)
-			h.respondErr(c, err)
-			return
-		}
-	}
+	// Steps 4.5 / 4.6 / 4.7 — coupon apply, gift-card debit and loyalty
+	// redemption — now run inside Service.Create's transaction via
+	// CreateInput.WithinTx (see consumeDiscounts above), so a failure
+	// unwinds the order instead of committing an under-charged one.
 
 	// ── Step 5: Save tax lines ──────────────────────────────────────────
 	if len(taxBreakdown.Lines) > 0 {

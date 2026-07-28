@@ -87,16 +87,24 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-16 flex flex-col gap-4 border-t border-paper-600/20 pt-8 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-paper-500">
-            © {currentYear} mark8ly · A Tesserix product
+        <div className="mt-16 border-t border-paper-600/20 pt-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-paper-500">
+              © {currentYear} mark8ly · A Tesserix product
+            </p>
+            <a
+              href="mailto:hello@mark8ly.com"
+              className="inline-flex h-11 items-center text-sm text-paper-400 hover:text-paper-50"
+            >
+              hello@mark8ly.com
+            </a>
+          </div>
+          {/* Operator disclosure. Named here so a merchant can match the entity
+              on their invoice and settlement to the product they signed up to. */}
+          <p className="mt-6 text-xs leading-relaxed text-paper-500">
+            Powered by Zivana Innovations LLP, part of Tesserix Pty Ltd
+            (ACN 694 070 865 · ABN 59 694 070 865)
           </p>
-          <a
-            href="mailto:hello@mark8ly.com"
-            className="inline-flex h-11 items-center text-sm text-paper-400 hover:text-paper-50"
-          >
-            hello@mark8ly.com
-          </a>
         </div>
       </div>
     </footer>

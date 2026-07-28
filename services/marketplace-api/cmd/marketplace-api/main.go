@@ -1364,19 +1364,36 @@ func main() {
 			defer close(done)
 			ticker := time.NewTicker(5 * time.Second)
 			defer ticker.Stop()
+			// Only log when the pending count or the error state changes —
+			// a 5s tick would otherwise flood the log with identical lines.
+			lastPending := -1
+			var lastErr string
 			for {
 				select {
 				case <-workerCtx.Done():
 					return
 				case <-ticker.C:
-					jobs, _, err := csvRepo.ListByStore(workerCtx, "", 1, 1)
-					_ = jobs
+					jobs, err := csvRepo.FindQueuedJobs(workerCtx, 10)
 					if err != nil {
-						log.Error("csvjob: poll error", "err", err)
+						if workerCtx.Err() != nil {
+							return
+						}
+						if err.Error() != lastErr {
+							lastErr = err.Error()
+							log.Error("csvjob: poll error", "err", err)
+						}
+						continue
 					}
-					// Full worker dispatch is wired when handlers submit
-					// jobs — the polling loop here ensures queued jobs from
-					// crash recovery are eventually picked up.
+					lastErr = ""
+					if len(jobs) != lastPending {
+						lastPending = len(jobs)
+						if lastPending > 0 {
+							log.Info("csvjob: queued jobs awaiting dispatch", "count", lastPending)
+						}
+					}
+					// Dispatch is driven by the submit handler once the CSV
+					// upload writes to GCS; this loop reports the backlog of
+					// jobs recovered from a crash so it is visible in logs.
 				}
 			}
 		}()

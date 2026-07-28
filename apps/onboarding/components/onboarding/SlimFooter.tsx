@@ -30,6 +30,13 @@ export function SlimFooter() {
             Security
           </Link>
         </div>
+
+        {/* Shown through onboarding because this is where a merchant commits
+            to the platform and to its payment terms. */}
+        <p className="w-full text-xs leading-relaxed opacity-80">
+          Powered by Zivana Innovations LLP, part of Tesserix Pty Ltd
+          (ACN 694 070 865 · ABN 59 694 070 865)
+        </p>
       </div>
     </footer>
   );

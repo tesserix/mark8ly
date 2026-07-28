@@ -88,6 +88,22 @@ func (f *fakeRepo) FindOrphanedJobs(_ context.Context, staleDuration time.Durati
 	return out, nil
 }
 
+func (f *fakeRepo) FindQueuedJobs(_ context.Context, limit int) ([]csvjob.CsvImportJob, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	var out []csvjob.CsvImportJob
+	for _, j := range f.jobs {
+		if len(out) == limit {
+			break
+		}
+		if j.Status == csvjob.StatusQueued {
+			out = append(out, *j)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) FindByContentHash(_ context.Context, storeID, contentHash string) (*csvjob.CsvImportJob, error) {
 	for _, j := range f.jobs {
 		if j.StoreID == storeID && j.ContentHash == contentHash &&

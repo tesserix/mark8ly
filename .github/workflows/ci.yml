@@ -209,6 +209,20 @@ jobs:
           target: ${{ matrix.image.target }}
           push: true
           tags: ghcr.io/tesserix/${{ matrix.image.name }}:main-${{ steps.sha.outputs.short }}
+          # Without these, Docker leaves the BASE image's OCI labels in place
+          # and the published image claims to come from whatever repository the
+          # base was built from. Observability's trace-to-code reads these to
+          # map a log line back to the commit that produced it, so an inherited
+          # label makes it resolve errors to a confidently wrong repository —
+          # worse than resolving to nothing at all.
+          #
+          # source.root is the module's directory in this repo, which is what
+          # lets a -trimpath'd Go source path be mapped onto a file on GitHub.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=${{ matrix.image.name }}
+            dev.tesserix.source.root=${{ matrix.image.context }}
           cache-from: type=gha,scope=${{ matrix.image.name }}
           cache-to: type=gha,scope=${{ matrix.image.name }},mode=max
           provenance: false

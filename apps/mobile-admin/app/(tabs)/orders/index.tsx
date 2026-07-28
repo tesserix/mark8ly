@@ -541,11 +541,14 @@ export default function OrdersScreen() {
         />
       </View>
 
+      {/* No spacing prop: `FilterChips` owns its own vertical rhythm. This
+          used to pass `contentContainerStyle={{paddingVertical: 8}}`, which
+          landed on the inner row inside a fixed-height box and so did
+          nothing — the field and the pills came out flush. */}
       <FilterChips<FilterKey>
         chips={FILTERS}
         value={activeFilter}
         onChange={handleFilterChange}
-        contentContainerStyle={styles.chips}
       />
 
       {listQuery.isLoading && orders.length === 0 ? (
@@ -675,7 +678,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.xs,
   },
-  chips: { paddingVertical: theme.spacing.sm },
   listFlex: { flex: 1 },
   list: { flexGrow: 1 },
   footer: { paddingVertical: theme.spacing.lg, alignItems: "center" },

@@ -76,6 +76,59 @@ describe("FilterChips — selection", () => {
   });
 });
 
+// The defect: Orders passed `contentContainerStyle={{paddingVertical: 8}}`
+// to give the pinned search field and the pill row some air. That padding
+// lands on the ScrollView's INNER row, and the inner row sits in a scroll box
+// pinned to exactly `heights.target` — so there was nowhere for it to go and
+// the two came out flush. The prop is gone (a caller knob that silently
+// no-ops is worse than no knob) and the rhythm is a hugging wrapper the
+// fixed-height box sits inside.
+describe("FilterChips — vertical rhythm", () => {
+  it("puts real padding above and below the strip", () => {
+    const { getByTestId } = renderChips();
+    const block = StyleSheet.flatten(getByTestId("filter-chips-block").props.style);
+    expect(block.paddingTop).toBe(theme.spacing.md);
+    expect(block.paddingBottom).toBe(theme.spacing.sm);
+  });
+
+  // The regression guard proper: putting the spacing back on the content
+  // container would look right in a diff and do nothing on device.
+  it("keeps the spacing out of the fixed-height scroll box, where it is inert", () => {
+    const { UNSAFE_getByType } = renderChips();
+    const scroll = UNSAFE_getByType(ScrollView);
+    const box = StyleSheet.flatten(scroll.props.style);
+    const content = StyleSheet.flatten(scroll.props.contentContainerStyle);
+
+    // jest-expo's Dimensions mock reports fontScale 2, hence the 2x target.
+    expect(box.height).toBe(chipHeightsFor(2).target);
+    expect(content.paddingVertical ?? 0).toBe(0);
+    expect(content.paddingTop ?? 0).toBe(0);
+    expect(content.paddingBottom ?? 0).toBe(0);
+  });
+
+  // The ~110pt dead-paper bug: a ScrollView in a flex column stretches, and
+  // `styles.row`'s alignItems:center then centres the pills in the tall box.
+  // The wrapper is now the strip's outermost node, so it has to refuse to
+  // stretch too — otherwise the fix to the padding reopens the older bug.
+  it("refuses to stretch in a flex column, wrapper and box alike", () => {
+    const { getByTestId, UNSAFE_getByType } = renderChips();
+    const block = StyleSheet.flatten(getByTestId("filter-chips-block").props.style);
+    const box = StyleSheet.flatten(UNSAFE_getByType(ScrollView).props.style);
+    expect(block.flexGrow).toBe(0);
+    expect(block.flexShrink).toBe(0);
+    expect(box.flexGrow).toBe(0);
+    expect(box.flexShrink).toBe(0);
+  });
+
+  // The wrapper adds fixed padding, so the only thing that must track the
+  // font scale is the box — and it still does.
+  it("still sizes its box from the live font scale", () => {
+    const { UNSAFE_getByType } = renderChips();
+    const box = StyleSheet.flatten(UNSAFE_getByType(ScrollView).props.style);
+    expect(box.height).toBeGreaterThan(chipHeightsFor(1).target);
+  });
+});
+
 describe("FilterChips — the one-accent rule", () => {
   // Orders spends its single moss accent on the Approve swipe action and
   // nothing else. An active chip in moss would be a second — the brief calls

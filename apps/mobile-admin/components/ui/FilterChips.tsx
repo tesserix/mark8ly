@@ -6,7 +6,6 @@ import {
   StyleSheet,
   useWindowDimensions,
   View,
-  type ViewStyle,
 } from "react-native";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import { Text, MAX_FONT_SCALE as TEXT_MAX_FONT_SCALE } from "./Text";
@@ -22,20 +21,6 @@ export interface FilterChipsProps<T extends string> {
   value: T;
   /** Fired ONLY when the selection actually changes — see `handlePress`. */
   onChange: (key: T) => void;
-  /**
-   * Applied to the INNER row (the `ScrollView`'s `contentContainerStyle`),
-   * not to the scroll box itself — so padding here insets the chips while
-   * the strip still scrolls edge to edge.
-   *
-   * Named for where it lands. It used to be `style`, which read as "the
-   * container's style" and silently wasn't: a caller passing a real
-   * container style (a background, a margin) would have got it painted on
-   * the inner row inside a fixed-height box instead, with nothing failing.
-   * The scroll box's own geometry is not caller-tunable on purpose — it is
-   * `flexGrow/flexShrink: 0` plus a computed height, and letting a caller
-   * override either re-opens the ~110pt dead-space bug (see below).
-   */
-  contentContainerStyle?: ViewStyle;
 }
 
 /** Visible pill height at the default text size. */
@@ -94,12 +79,23 @@ export function chipHeightsFor(fontScale: number): { pill: number; target: numbe
  * Orders the single accent is spent on the Approve swipe action and nothing
  * else, and ink-as-selected is the language the Ink dock already established
  * app-wide.
+ *
+ * VERTICAL RHYTHM IS OWNED HERE, not by the caller. The strip used to take a
+ * `contentContainerStyle` prop and Orders passed `paddingVertical: 8` through
+ * it — which did nothing at all: that padding lands on the inner row, and the
+ * inner row lives inside a scroll box pinned to exactly `heights.target`, so
+ * there was no space for it to occupy. The search field and the pills came
+ * out flush. A caller-facing knob that silently no-ops is worse than no knob,
+ * so the prop is gone and the spacing is a `styles.block` wrapper that the
+ * fixed-height box sits INSIDE — real padding, in a box that can hold it.
+ * Every screen wants the same rhythm anyway (that is the point of rolling
+ * this strip out app-wide), and `md` above / `sm` below is exactly the rhythm
+ * `SegmentedControl` already had, so converted screens do not shift.
  */
 export function FilterChips<T extends string>({
   chips,
   value,
   onChange,
-  contentContainerStyle,
 }: FilterChipsProps<T>) {
   // `useWindowDimensions` (not `PixelRatio.getFontScale()`) so the row
   // re-renders when the merchant changes their text size with the app
@@ -120,32 +116,40 @@ export function FilterChips<T extends string>({
   );
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      // `flexGrow/flexShrink: 0` + an explicit height: a ScrollView placed in
-      // a flex COLUMN otherwise stretches to fill the space left over by its
-      // siblings, and `styles.row`'s `alignItems: "center"` then centres the
-      // chips inside that tall box — which on device rendered ~110pt of dead
-      // paper between the header and the pills, and as much again beneath
-      // them. Found on device; the unit tests render the row in isolation
-      // where nothing stretches, so they were all green.
-      style={[styles.scroll, { height: heights.target }]}
-      contentContainerStyle={[styles.row, contentContainerStyle]}
-      // The row is a control strip, not content: let a horizontal drag that
-      // starts on a chip scroll the strip rather than arm a press.
-      keyboardShouldPersistTaps="handled"
-    >
-      {chips.map((chip) => (
-        <Chip
-          key={chip.key}
-          chip={chip}
-          active={chip.key === value}
-          heights={heights}
-          onPress={() => handlePress(chip.key)}
-        />
-      ))}
-    </ScrollView>
+    // The spacing wrapper. `flexGrow/flexShrink: 0` for the same reason the
+    // scroll box below carries them — this View is the strip's new outermost
+    // node in a flex COLUMN, so it inherits the job of refusing to stretch.
+    <View style={styles.block} testID="filter-chips-block">
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        // `flexGrow/flexShrink: 0` + an explicit height: a ScrollView placed
+        // in a flex COLUMN otherwise stretches to fill the space left over by
+        // its siblings, and `styles.row`'s `alignItems: "center"` then centres
+        // the chips inside that tall box — which on device rendered ~110pt of
+        // dead paper between the header and the pills, and as much again
+        // beneath them. Found on device; the unit tests render the row in
+        // isolation where nothing stretches, so they were all green.
+        //
+        // The height is the TOUCH TARGET, not the pill: the 40pt pill sits
+        // inside a ≥44pt press box and the box is what has to fit.
+        style={[styles.scroll, { height: heights.target }]}
+        contentContainerStyle={styles.row}
+        // The row is a control strip, not content: let a horizontal drag that
+        // starts on a chip scroll the strip rather than arm a press.
+        keyboardShouldPersistTaps="handled"
+      >
+        {chips.map((chip) => (
+          <Chip
+            key={chip.key}
+            chip={chip}
+            active={chip.key === value}
+            heights={heights}
+            onPress={() => handlePress(chip.key)}
+          />
+        ))}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -207,6 +211,19 @@ function Chip<T extends string>({ chip, active, heights, onPress }: ChipProps<T>
 }
 
 const styles = StyleSheet.create({
+  // The strip's vertical rhythm. PADDING on a hugging wrapper, never on the
+  // fixed-height scroll box's content container — see the component comment.
+  // `md` above separates the strip from whatever is pinned over it (a search
+  // field on Orders/Products/Customers, a header elsewhere); `sm` below sets
+  // it off the first list row. Both scale with nothing, which is fine: the
+  // only thing here that must survive raised text sizes is the box height,
+  // and that is computed from the live font scale by `chipHeightsFor`.
+  block: {
+    flexGrow: 0,
+    flexShrink: 0,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+  },
   // Hug the content vertically — see the `style` prop's comment above.
   scroll: { flexGrow: 0, flexShrink: 0 },
   row: {

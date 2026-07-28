@@ -19,13 +19,13 @@ import { theme } from "@/lib/theme";
  * other running prose where SHOUTING IN CAPS is wrong ("Monday, 27 July",
  * not "MONDAY, 27 JULY").
  *
- * Deliberately an ADDITIVE opt-in, not a changed default. Not because of call
- * volume — `CollapsingHeader` has ONE caller today (the Dashboard) and gains a
- * second with Orders — but because the uppercase small-caps eyebrow is the
- * primitive's designed identity, and "the Dashboard's dateline wants sentence
- * case" is a local need. A caller that wants the other typography asks for it.
- * (The ~15-call-site ripple this comment used to cite happened to `Eyebrow`,
- * a different primitive, earlier in this increment.)
+ * Deliberately an ADDITIVE opt-in, not a changed default — and NOT because of
+ * call volume. This primitive has exactly TWO callers (the Dashboard and
+ * Orders); the ~15-call-site ripple that argument was borrowed from belongs
+ * to `Eyebrow`, a different primitive changed earlier in this increment. The
+ * real reason is that the uppercase small-caps eyebrow is this component's
+ * designed identity, and "the Dashboard's dateline wants sentence case" is a
+ * local need. A caller that wants the other typography asks for it.
  */
 export type EyebrowPreset = "eyebrow" | "caption";
 

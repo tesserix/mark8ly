@@ -308,6 +308,46 @@ describe("ActionSheet", () => {
     expect(style.color).not.toBe(theme.colors.danger);
   });
 
+  // NOT covered by the row-height test below, despite inc2-task-5-report.md
+  // having claimed it was. A row's `minHeight` says nothing about how many
+  // line boxes its label may occupy: the 64pt box the snap-point arithmetic
+  // assumes holds for a ONE-line label only, and deleting `numberOfLines`
+  // leaves every other assertion in this file green while a long label at a
+  // raised text size silently doubles the row.
+  it("keeps every item label on ONE line, which is what the 64pt row box assumes", () => {
+    const { getByText } = render(
+      <ActionSheet
+        items={items([{ label: "Email the shipping label to the customer" }])}
+        visible
+        onDismiss={jest.fn()}
+      />,
+    );
+    expect(getByText("Email the shipping label to the customer").props.numberOfLines).toBe(1);
+  });
+
+  // Also NOT previously covered, and also claimed to be. The scroll body's
+  // bottom padding must clear the real home-indicator inset, with a
+  // theme.spacing.xl floor for devices that report none — the "floor at
+  // handle + padding" test below exercises the SNAP POINT, not the padding
+  // that is actually applied to the content.
+  it("floors the content's bottom padding at the gutter and clears a real home-indicator inset", () => {
+    const { UNSAFE_getByType, rerender } = render(
+      <ActionSheet items={items()} visible onDismiss={jest.fn()} />,
+    );
+    const flat = (node: { props: { contentContainerStyle?: unknown } }) =>
+      StyleSheet.flatten(node.props.contentContainerStyle) as { paddingBottom?: number };
+    // Default mock insets are all 0 → the floor applies.
+    expect(flat(UNSAFE_getByType(ScrollBody)).paddingBottom).toBe(theme.spacing.xl);
+
+    mockUseSafeAreaInsets.mockReturnValue({ top: 0, bottom: 34, left: 0, right: 0 });
+    rerender(<ActionSheet items={items()} visible onDismiss={jest.fn()} />);
+    expect(flat(UNSAFE_getByType(ScrollBody)).paddingBottom).toBe(34);
+    // Restored to the official mock's all-zero default rather than
+    // mockReset(), which would strip the implementation and leave every
+    // later test in this file reading `undefined` insets.
+    mockUseSafeAreaInsets.mockReturnValue({ top: 0, bottom: 0, left: 0, right: 0 });
+  });
+
   it("gives every row a real 64pt minHeight box, not hitSlop", () => {
     const { getByTestId } = render(
       <ActionSheet items={items()} visible onDismiss={jest.fn()} />,

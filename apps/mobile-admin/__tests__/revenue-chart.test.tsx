@@ -1,6 +1,7 @@
+import { Children, isValidElement, type ReactElement } from "react";
 import { act, render, type RenderResult } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
-import { Circle, Line, Path, Polyline } from "react-native-svg";
+import Svg, { Circle, Line, Path, Polyline } from "react-native-svg";
 import type { ReactTestInstance } from "react-test-renderer";
 import { RevenueChart, type RevenueChartProps } from "@/components/dashboard/RevenueChart";
 import { theme } from "@/lib/theme";
@@ -64,6 +65,36 @@ function areaPathOf(utils: RenderResult): ReactTestInstance {
     throw new Error("No area Path found");
   }
   return match;
+}
+
+/**
+ * The `<Svg>`'s direct children in SOURCE order, which for SVG IS paint
+ * order — later siblings paint over earlier ones.
+ *
+ * Read off the JSX children rather than via `UNSAFE_queryAllByType`, because
+ * per-type queries can't see interleaving: the halo and the dot are both
+ * `Circle`s and keep their relative order no matter where the `Polyline`
+ * sits between them, so every existing assertion in this file survives the
+ * halo being moved on top of the line. That is the exact regression this
+ * guards.
+ */
+const HALO_R = 9;
+
+type PaintRole = "gridline" | "area" | "line" | "halo" | "dot";
+
+function paintOrder(utils: RenderResult): PaintRole[] {
+  const svg = utils.UNSAFE_getByType(Svg);
+  return Children.toArray(svg.props.children as never)
+    .filter(isValidElement)
+    .map((element): PaintRole | null => {
+      const { type, props } = element as ReactElement<{ r?: number }>;
+      if (type === Line) return "gridline";
+      if (type === Path) return "area";
+      if (type === Polyline) return "line";
+      if (type === Circle) return props.r === HALO_R ? "halo" : "dot";
+      return null;
+    })
+    .filter((role): role is PaintRole => role !== null);
 }
 
 describe("RevenueChart", () => {
@@ -170,6 +201,28 @@ describe("RevenueChart", () => {
       for (const gridline of gridlines) {
         expect(gridline.props.stroke).toBe(theme.colors.hairline);
       }
+    });
+
+    // Same class of gap as the PAD_Y halo-containment tests above: a purely
+    // visual property that no colour, geometry or a11y assertion can see.
+    // The halo MUST paint before the stroke — with it on top, the 2.25pt
+    // moss line visibly terminates ~9pt short of the endpoint dot, and on
+    // descending/flat series the halo bulges outside the area-fill
+    // silhouette onto bare paper like an eraser blot (RevenueChart review
+    // round 1, finding 2). Moving the halo back after the `Polyline` left
+    // all 14 pre-existing tests in this file green, because the halo and the
+    // dot are both `Circle`s and keep their relative order regardless.
+    it("paints area, then halo, then line, then dot — halo BEHIND the stroke, never over it", () => {
+      const utils = renderChart({ data: DATA }, 300);
+      expect(paintOrder(utils)).toEqual([
+        "gridline",
+        "gridline",
+        "gridline",
+        "area",
+        "halo",
+        "line",
+        "dot",
+      ]);
     });
 
     it("stretches the SVG to the measured container width, since the interface has no width prop", () => {

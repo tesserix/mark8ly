@@ -14,8 +14,8 @@
 // invalidate it. Tickets are the one exception: nothing in the dashboard
 // response describes them (see api/schemas/dashboard.ts), so a ticket
 // mutation invalidating ["dashboard"] would be a refetch for nothing.
-import { renderHook, waitFor } from "@testing-library/react-native";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook, waitFor } from "@testing-library/react-native";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import React from "react";
 import { useConfirmOrder, useCancelOrder } from "@/lib/admin-api/order-actions";
 import { useApproveReview } from "@/lib/admin-api/review-actions";
@@ -83,6 +83,66 @@ describe("order mutations", () => {
     expect(invalidatedKeys()).toEqual(
       expect.arrayContaining(['["orders"]', '["dashboard"]']),
     );
+  });
+
+  // GUARD, not a feature test. `onSuccess` must NOT return the
+  // `invalidateQueries` promises. Returning them is the single most natural
+  // react-query reflex there is — it's what you write when you want the
+  // refetch to have landed before the mutation reports done, and both doc
+  // comments in lib/admin-api/order-actions.ts warn against it precisely
+  // because it has now shipped broken three times.
+  //
+  // Returning them makes react-query AWAIT the refetches before flipping the
+  // mutation out of pending, so `isPending` stays true until fresh data
+  // arrives. `useExpireHidesOnFreshAnswer` in app/(tabs)/index.tsx keys its
+  // watermark off exactly that ordering: it requires the refetch to land
+  // AFTER `isPending` goes false, or `isMutating` is still true when the new
+  // `dataUpdatedAt` ticks, the expiry is skipped, and the optimistically
+  // hidden row stays hidden against fresh data that says it is still there.
+  //
+  // Every OTHER assertion in this file passes with the `return` added — they
+  // only inspect which keys were invalidated, never when the mutation
+  // settled relative to the refetch.
+  it("settles the mutation WITHOUT awaiting the refetches its invalidation kicks off", async () => {
+    let releaseRefetch: (() => void) | undefined;
+    let fetches = 0;
+    const queryFn = () => {
+      fetches += 1;
+      // First load resolves; the invalidation-driven refetch is held open so
+      // "did the mutation settle before it landed?" is observable at all.
+      if (fetches === 1) return Promise.resolve("initial");
+      return new Promise<string>((resolve) => {
+        releaseRefetch = () => resolve("refetched");
+      });
+    };
+
+    const { result } = renderHook(
+      () => ({
+        dashboard: useQuery({ queryKey: ["dashboard"], queryFn }),
+        confirm: useConfirmOrder(),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.dashboard.isSuccess).toBe(true));
+
+    act(() => {
+      result.current.confirm.mutate({ id: "o1" });
+    });
+    // Waits on `isSuccess`, NOT on `!isPending` — an un-started mutation is
+    // already `isPending: false`, so that wait would pass at the idle state
+    // before `mutate` had done anything.
+    await waitFor(() => expect(result.current.confirm.isSuccess).toBe(true));
+
+    // The mutation is done, and the refetch it triggered is demonstrably
+    // STILL in flight — which is the whole ordering guarantee. With `return`
+    // added, the mutation stays pending while this promise is unresolved and
+    // the wait above times out instead.
+    expect(fetches).toBe(2);
+    expect(result.current.dashboard.isFetching).toBe(true);
+
+    await act(async () => {
+      releaseRefetch?.();
+    });
   });
 
   it("invalidates the dashboard on cancel", async () => {

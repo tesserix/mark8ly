@@ -488,6 +488,12 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				gc.GET("/:id",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsViewRole),
 					deps.GiftCardHandler.Get)
+				gc.POST("/:id/disable",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsEditRole),
+					deps.GiftCardHandler.Disable)
+				gc.POST("/:id/enable",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsEditRole),
+					deps.GiftCardHandler.Enable)
 			}
 		}
 

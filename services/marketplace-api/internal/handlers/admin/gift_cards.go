@@ -161,3 +161,53 @@ func (h *GiftCardHandler) Get(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"data": resp})
 }
+
+// setStatus is the shared preamble + write path for Disable/Enable — keeps
+// each public method tiny, matching the existing Issue/Get preamble style.
+func (h *GiftCardHandler) setStatus(c *gin.Context, to giftcard.GiftCardStatus, action string) {
+	storeID, err := uuid.Parse(c.Param("storeId"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid uuid"), h.logger)
+		return
+	}
+	tenantID, err := uuid.Parse(c.GetString("tenant_id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("tenant_id", "invalid uuid"), h.logger)
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "invalid uuid"), h.logger)
+		return
+	}
+
+	gc, err := h.svc.SetStatus(c.Request.Context(), storeID, tenantID, id, to)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	h.audit.Emit(c, audit.Event{
+		Action:       "gift_card." + action,
+		ResourceType: "gift_card",
+		ResourceID:   id.String(),
+		Metadata: map[string]any{
+			"to_status": string(to),
+		},
+	})
+	c.JSON(http.StatusOK, gin.H{"data": toAdminGiftCardResponse(gc)})
+}
+
+// Disable handles POST /admin/stores/:storeId/gift-cards/:id/disable.
+// Freezes the card's balance — it is not refunded or destroyed. Enable
+// restores the exact same balance.
+func (h *GiftCardHandler) Disable(c *gin.Context) {
+	h.setStatus(c, giftcard.StatusDisabled, "disabled")
+}
+
+// Enable handles POST /admin/stores/:storeId/gift-cards/:id/enable.
+// Restores full spendability of a previously disabled card's existing
+// balance — no value was ever removed while it was disabled.
+func (h *GiftCardHandler) Enable(c *gin.Context) {
+	h.setStatus(c, giftcard.StatusActive, "enabled")
+}

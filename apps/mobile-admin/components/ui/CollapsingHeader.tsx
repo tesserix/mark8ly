@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, useWindowDimensions } from "react-native";
 import Animated, {
   Extrapolation,
   interpolate,
@@ -12,9 +12,24 @@ import { Text } from "./Text";
 import { Hairline } from "./Hairline";
 import { theme } from "@/lib/theme";
 
+/**
+ * Typography for the eyebrow line. `"eyebrow"` (the DEFAULT, and what every
+ * existing call site gets) is the uppercase, letterspaced small-caps label.
+ * `"caption"` is sentence case at the same tertiary ink — for datelines and
+ * other running prose where SHOUTING IN CAPS is wrong ("Monday, 27 July",
+ * not "MONDAY, 27 JULY").
+ *
+ * Deliberately an ADDITIVE opt-in, not a changed default: this primitive has
+ * ~15 call sites and flipping a shared default rippled through all of them
+ * earlier in this increment.
+ */
+export type EyebrowPreset = "eyebrow" | "caption";
+
 export interface CollapsingHeaderProps {
-  /** Small caps label above the title, shown only in the expanded state. */
+  /** Label above the title, shown only in the expanded state. */
   eyebrow?: string;
+  /** Typography for `eyebrow`. Defaults to the uppercase small-caps preset. */
+  eyebrowPreset?: EyebrowPreset;
   /** Serif title — h1 expanded, h3 collapsed. */
   title: string;
   /** Optional one-line caption — body under the title expanded, caption collapsed. */
@@ -36,9 +51,52 @@ const EXPANDED_HEIGHT = 96;
 const COLLAPSED_HEIGHT = 56;
 
 /**
+ * Cap on the iOS Dynamic Type / Android font-scale multiplier applied to
+ * every line in this header. 2.0 honours WCAG 2.1 SC 1.4.4 (text resizable to
+ * 200% without loss of content) while stopping the accessibility sizes above
+ * it — iOS reaches 3.1× — from turning a header into most of the screen.
+ */
+export const MAX_FONT_SCALE = 2;
+
+/**
+ * Header heights for a given device font scale.
+ *
+ * `styles.block` is `position: absolute; top: 0; bottom: 0` inside a
+ * container with `overflow: "hidden"`, so a FIXED height clips as soon as the
+ * scaled line boxes exceed it. RN scales BOTH `fontSize` and `lineHeight` by
+ * the multiplier, so a one-line h1 (36pt line box) needs 68pt at 1.9× and the
+ * eyebrow+title stack needs ~99pt — past `EXPANDED_HEIGHT` 96. A merchant who
+ * bumped their text size lost the ascenders of their own shop name.
+ *
+ * Scaling the CONTAINER by the same clamped multiplier the text is capped at
+ * makes non-clipping structural rather than empirical: content height is
+ * `C × s` and the box is `H × s` for the same `s`, and `H > C` holds at every
+ * combination of eyebrow/subtitle presence at s = 1 (expanded: 20 + 36 + 28 =
+ * 84 < 96; collapsed: 26 + 20 = 46 < 56). Multiplying both sides by the same
+ * positive `s` preserves the inequality for every scale.
+ *
+ * Exported so the arithmetic is testable without mocking the RN Dimensions
+ * module.
+ */
+export function headerHeightsFor(fontScale: number): {
+  expanded: number;
+  collapsed: number;
+} {
+  const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+  return {
+    expanded: EXPANDED_HEIGHT * scale,
+    collapsed: COLLAPSED_HEIGHT * scale,
+  };
+}
+
+/**
  * Scroll-driven serif header: a tall editorial block (eyebrow + h1 + subtitle)
  * that crossfades into a compact bar (h3 + caption + hairline) as the owning
  * scroll view moves past `COLLAPSE_DISTANCE`.
+ *
+ * Dynamic Type safe: every line is capped at `MAX_FONT_SCALE` and held to one
+ * line, and the container's own height scales by the same clamped multiplier
+ * (see `headerHeightsFor`) so nothing clips against `overflow: "hidden"`.
  *
  * Both layers are always mounted and cross-faded via animated `opacity` —
  * driven entirely by `useDerivedValue`/`useAnimatedStyle` off the caller's
@@ -48,12 +106,18 @@ const COLLAPSED_HEIGHT = 56;
  */
 export function CollapsingHeader({
   eyebrow,
+  eyebrowPreset = "eyebrow",
   title,
   subtitle,
   rightSlot,
   scrollY,
 }: CollapsingHeaderProps) {
   const reduceMotion = useReducedMotion();
+  // `useWindowDimensions` (not `PixelRatio.getFontScale()`) because it
+  // re-renders when the user changes their text size while the app is
+  // foregrounded — the static read would leave the header at the old height.
+  const { fontScale } = useWindowDimensions();
+  const heights = headerHeightsFor(fontScale);
 
   // Single source of truth for collapse progress (0 expanded → 1 collapsed).
   // Reduced motion bypasses the interpolation entirely: any non-zero offset
@@ -66,20 +130,23 @@ export function CollapsingHeader({
     return interpolate(scrollY.value, [0, COLLAPSE_DISTANCE], [0, 1], Extrapolation.CLAMP);
   }, [reduceMotion]);
 
-  const containerStyle = useAnimatedStyle(() => ({
-    height: interpolate(
-      progress.value,
-      [0, 1],
-      [EXPANDED_HEIGHT, COLLAPSED_HEIGHT],
-      Extrapolation.CLAMP,
-    ),
-  }));
+  const containerStyle = useAnimatedStyle(
+    () => ({
+      height: interpolate(
+        progress.value,
+        [0, 1],
+        [heights.expanded, heights.collapsed],
+        Extrapolation.CLAMP,
+      ),
+    }),
+    [heights.expanded, heights.collapsed],
+  );
 
   const expandedStyle = useAnimatedStyle(() => ({ opacity: 1 - progress.value }));
   const collapsedStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   return (
-    <Animated.View style={[styles.container, containerStyle]}>
+    <Animated.View style={[styles.container, containerStyle]} testID="collapsing-header">
       <View style={styles.row}>
         <View style={styles.left}>
           <Animated.View
@@ -87,16 +154,37 @@ export function CollapsingHeader({
             pointerEvents="none"
             testID="collapsing-header-expanded"
           >
+            {/* `maxFontSizeMultiplier` + `numberOfLines` on every line, not
+                just the title: the height math above assumes exactly one line
+                box per element, capped at MAX_FONT_SCALE. Either omission
+                reintroduces the clipping. */}
             {eyebrow ? (
-              <Text preset="eyebrow" color="textTertiary" style={styles.eyebrow}>
+              <Text
+                preset={eyebrowPreset}
+                color="textTertiary"
+                style={styles.eyebrow}
+                numberOfLines={1}
+                maxFontSizeMultiplier={MAX_FONT_SCALE}
+              >
                 {eyebrow}
               </Text>
             ) : null}
-            <Text preset="h1" color="text">
+            <Text
+              preset="h1"
+              color="text"
+              numberOfLines={1}
+              maxFontSizeMultiplier={MAX_FONT_SCALE}
+            >
               {title}
             </Text>
             {subtitle ? (
-              <Text preset="body" color="textSecondary" style={styles.expandedSubtitle}>
+              <Text
+                preset="body"
+                color="textSecondary"
+                style={styles.expandedSubtitle}
+                numberOfLines={1}
+                maxFontSizeMultiplier={MAX_FONT_SCALE}
+              >
                 {subtitle}
               </Text>
             ) : null}
@@ -106,11 +194,22 @@ export function CollapsingHeader({
             pointerEvents="none"
             testID="collapsing-header-collapsed"
           >
-            <Text preset="h3" color="text">
+            <Text
+              preset="h3"
+              color="text"
+              numberOfLines={1}
+              maxFontSizeMultiplier={MAX_FONT_SCALE}
+            >
               {title}
             </Text>
             {subtitle ? (
-              <Text preset="caption" color="textSecondary" style={styles.collapsedSubtitle}>
+              <Text
+                preset="caption"
+                color="textSecondary"
+                style={styles.collapsedSubtitle}
+                numberOfLines={1}
+                maxFontSizeMultiplier={MAX_FONT_SCALE}
+              >
                 {subtitle}
               </Text>
             ) : null}

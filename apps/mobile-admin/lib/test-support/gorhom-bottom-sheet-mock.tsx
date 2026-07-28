@@ -11,9 +11,27 @@
 // constraint.
 import { Fragment } from "react";
 
+/**
+ * `dismiss()` invokes the `onDismiss` prop, as the real modal does.
+ *
+ * Not cosmetic fidelity: several components own state that is released ONLY
+ * by `onDismiss` (Orders' menu order, cancel target and refund target). A
+ * mock whose `dismiss()` was a no-op left that state set for the whole test,
+ * which is precisely the stale-target condition the screen has to defend
+ * against — so the mock quietly guaranteed those bugs could not be
+ * reproduced. `present()` stays a no-op: children render unconditionally
+ * here, so there is nothing for it to do.
+ */
 export const BottomSheetModal = require("react").forwardRef(
-  ({ children }: { children?: React.ReactNode }, ref: React.Ref<unknown>) => {
-    require("react").useImperativeHandle(ref, () => ({ present: () => {}, dismiss: () => {} }));
+  (
+    { children, onDismiss }: { children?: React.ReactNode; onDismiss?: () => void },
+    ref: React.Ref<unknown>,
+  ) => {
+    require("react").useImperativeHandle(
+      ref,
+      () => ({ present: () => {}, dismiss: () => onDismiss?.() }),
+      [onDismiss],
+    );
     return children ?? null;
   },
 );

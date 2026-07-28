@@ -22,7 +22,20 @@ export interface FilterChipsProps<T extends string> {
   value: T;
   /** Fired ONLY when the selection actually changes — see `handlePress`. */
   onChange: (key: T) => void;
-  style?: ViewStyle;
+  /**
+   * Applied to the INNER row (the `ScrollView`'s `contentContainerStyle`),
+   * not to the scroll box itself — so padding here insets the chips while
+   * the strip still scrolls edge to edge.
+   *
+   * Named for where it lands. It used to be `style`, which read as "the
+   * container's style" and silently wasn't: a caller passing a real
+   * container style (a background, a margin) would have got it painted on
+   * the inner row inside a fixed-height box instead, with nothing failing.
+   * The scroll box's own geometry is not caller-tunable on purpose — it is
+   * `flexGrow/flexShrink: 0` plus a computed height, and letting a caller
+   * override either re-opens the ~110pt dead-space bug (see below).
+   */
+  contentContainerStyle?: ViewStyle;
 }
 
 /** Visible pill height at the default text size. */
@@ -85,7 +98,7 @@ export function FilterChips<T extends string>({
   chips,
   value,
   onChange,
-  style,
+  contentContainerStyle,
 }: FilterChipsProps<T>) {
   // `useWindowDimensions` (not `PixelRatio.getFontScale()`) so the row
   // re-renders when the merchant changes their text size with the app
@@ -117,7 +130,7 @@ export function FilterChips<T extends string>({
       // them. Found on device; the unit tests render the row in isolation
       // where nothing stretches, so they were all green.
       style={[styles.scroll, { height: heights.target }]}
-      contentContainerStyle={[styles.row, style]}
+      contentContainerStyle={[styles.row, contentContainerStyle]}
       // The row is a control strip, not content: let a horizontal drag that
       // starts on a chip scroll the strip rather than arm a press.
       keyboardShouldPersistTaps="handled"

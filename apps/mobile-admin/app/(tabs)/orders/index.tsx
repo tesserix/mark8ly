@@ -57,21 +57,6 @@ const FILTERS: { key: FilterKey; label: string; status?: string }[] = [
   { key: "cancelled", label: "Cancelled", status: "cancelled" },
 ];
 
-/**
- * Height of the search block that lives INSIDE the scroll content.
- *
- * Set as an explicit `height` on the block itself (not left to add up from
- * its padding) because two other things are derived from this exact number:
- * the list's initial `contentOffset`, which parks the list just past it, and
- * the offset subtracted in the scroll handler so the header still counts
- * "rest" as zero. If the block's real height and this constant ever
- * disagreed, the list would open showing a sliver of search, or a collapsed
- * header, with nothing failing.
- *
- * `theme.touchTarget` (44) is `SearchField`'s own fixed height.
- */
-const SEARCH_BLOCK_HEIGHT = theme.touchTarget + theme.spacing.sm + theme.spacing.md;
-
 const ICON_SIZE = 20;
 
 const CANCEL_ERROR = "Couldn't cancel this order. Try again.";
@@ -106,8 +91,17 @@ function useDebounce(value: string, delay: number): string {
  *  2. Long press → the full four-action menu.
  *  3. Tap → the order detail, where everything is confirmable.
  *
- * Search lives INSIDE the scroll content and the list opens parked past it,
- * so it costs no permanent screen height; pulling down reveals it.
+ * Search is PINNED, visible at rest, between the header and the filter row —
+ * the same place `products/index.tsx` and `customers/index.tsx` put theirs.
+ * It briefly lived inside the scroll content with the list parked past it,
+ * which bought back 64pt of 874 (7%) and cost the field every trace of an
+ * affordance: no peek, no icon, no hint, rows butting straight against the
+ * chips. On device it was undiscoverable to the person who had just written
+ * it. Orders is also the screen a merchant searches most — an order-number
+ * lookup while a customer is on the phone — the gesture is not the platform
+ * pattern (iOS's own search is visible at rest and collapses on scroll, not
+ * the reverse), and the empty state showed the field unconditionally anyway,
+ * so the screen was inconsistent with itself. Pinned, permanently.
  *
  * NO OPTIMISTIC HIDE — deliberately, and unlike the Dashboard. `useOrders`
  * is keyed `["orders","list",…]` and every order mutation invalidates the
@@ -121,7 +115,7 @@ function useDebounce(value: string, delay: number): string {
  *
  * What the absent hide does leave open is a second swipe on a row whose
  * mutation is still in flight. That is closed by disabling THAT row's
- * gesture while its request is open (`busyOrderId`) — a guard on the
+ * gesture while its request is open (`busyOrderIds`) — a guard on the
  * control, keyed purely on the mutation lifecycle. Note the distinction
  * that cost the Dashboard two shipped bugs: "the request stopped" is a fine
  * reason to re-enable a button, and NOT evidence that fresh data arrived.
@@ -136,15 +130,15 @@ export default function OrdersScreen() {
   const [searchText, setSearchText] = useState("");
   const debouncedSearch = useDebounce(searchText, 300);
 
-  // Scroll offset the CollapsingHeader reads. Rebased past the search block
-  // so the header's "expanded" rest state lines up with the list's resting
-  // position — without this the screen opens with the header already
-  // collapsed, because it starts scrolled to SEARCH_BLOCK_HEIGHT (which is
-  // itself past COLLAPSE_DISTANCE).
+  // Scroll offset the CollapsingHeader reads. Straight through, no rebase:
+  // the list starts at 0 now that nothing is parked above it, so the
+  // header's "expanded" rest state and the list's resting position already
+  // agree. (The rebase existed only to cancel out the `contentOffset` that
+  // hid the search field — both went together.)
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler((event) => {
     "worklet";
-    scrollY.value = Math.max(0, event.contentOffset.y - SEARCH_BLOCK_HEIGHT);
+    scrollY.value = Math.max(0, event.contentOffset.y);
   });
 
   const selectedFilter = FILTERS.find((f) => f.key === activeFilter);
@@ -170,8 +164,16 @@ export default function OrdersScreen() {
   // The order whose long-press menu is open. Also the only thing that keeps
   // the menu mounted — `ActionSheet` is a controlled component.
   const [menuOrder, setMenuOrder] = useState<Order | null>(null);
-  // The row whose gesture is suppressed because its own request is open.
-  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+  // The rows whose gestures are suppressed because their own request is
+  // open. A SET, not one slot: triage is a queue, and a merchant working
+  // down it fires the next row long before the previous one's request comes
+  // back. With a single slot, approving A then B overwrote the guard — and
+  // A's `onSuccess` then cleared it outright, re-arming B while B's own
+  // request was still open. A per-row guard has to be per row.
+  //
+  // Replaced immutably (never `.add`/`.delete` on the live value), so React
+  // sees a new identity and `renderItem`'s memo actually re-runs.
+  const [busyOrderIds, setBusyOrderIds] = useState<ReadonlySet<string>>(() => new Set());
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
   const [refundTarget, setRefundTarget] = useState<Order | null>(null);
   const [emailTarget, setEmailTarget] = useState<
@@ -190,14 +192,28 @@ export default function OrdersScreen() {
   const emailSheetRef = useRef<EmailLabelSheetHandle>(null);
 
   /**
-   * The order we currently need shipment facts about — set by a long press
-   * (the menu's "Email label" needs a shipment id, which the LIST payload
-   * does not carry) and by opening a cancel sheet (whose copy warns that the
-   * carrier shipment is cancelled too). One lazy query for one order at a
-   * time; `enabled` keeps it off entirely until a merchant asks for it, so
-   * scrolling a 50-row list fires nothing.
+   * The order we currently need shipment facts about. Every surface whose
+   * copy depends on whether this order shipped has to appear here, or that
+   * copy is silently suppressed:
+   *
+   *  - the long-press menu — "Email label" needs a shipment id, which the
+   *    LIST payload does not carry;
+   *  - the cancel sheet — its copy names the carrier whose shipment is
+   *    cancelled alongside the order;
+   *  - the refund sheet — its copy warns that a FULL refund also cancels or
+   *    returns the shipment at the carrier. `refundTarget` was missing from
+   *    this chain, and because tapping Refund dismisses the menu (clearing
+   *    `menuOrder`), the probe went disabled at exactly the moment the sheet
+   *    needed it: merchants issuing a full refund on a shipped order were
+   *    never told, and there is no undo.
+   *
+   * One lazy query for one order at a time; `enabled` keeps it off entirely
+   * until a merchant asks for it, so scrolling a 50-row list fires nothing.
+   * The three targets are mutually exclusive in practice — each is cleared
+   * when its own sheet/menu closes (see the `onDismiss` handlers below), so
+   * the order of this chain is a tiebreak that should never be needed.
    */
-  const probeOrderId = menuOrder?.id ?? cancelTarget?.id ?? null;
+  const probeOrderId = menuOrder?.id ?? cancelTarget?.id ?? refundTarget?.id ?? null;
   const { data: shipment } = useShipment(probeOrderId ?? "", Boolean(probeOrderId));
 
   const orders = useMemo(
@@ -225,23 +241,37 @@ export default function OrdersScreen() {
     }
   }, [listQuery]);
 
+  const markBusy = useCallback((id: string) => {
+    setBusyOrderIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+  }, []);
+
+  const clearBusy = useCallback((id: string) => {
+    setBusyOrderIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
   /**
-   * Callbacks for the two direct mutations (confirm, fulfil). Releases the
-   * row's gesture guard and reports the outcome in the hand. There is
-   * nothing to roll back — no local state ever claimed the row had changed.
+   * Callbacks for the two direct mutations (confirm, fulfil). Releases THAT
+   * order's gesture guard — by id, so settling one row leaves every other
+   * in-flight row guarded — and reports the outcome in the hand. There is
+   * nothing to roll back; no local state ever claimed the row had changed.
    */
   const settleCallbacks = useCallback(
-    () => ({
+    (id: string) => ({
       onSuccess: () => {
-        setBusyOrderId(null);
+        clearBusy(id);
         void adminHaptics.actionSucceeded();
       },
       onError: () => {
-        setBusyOrderId(null);
+        clearBusy(id);
         void adminHaptics.actionFailed();
       },
     }),
-    [],
+    [clearBusy],
   );
 
   const openCancelSheet = useCallback((order: Order) => {
@@ -342,8 +372,8 @@ export default function OrdersScreen() {
                 tone: "accent",
                 icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
                 onPress: () => {
-                  setBusyOrderId(order.id);
-                  confirmOrder.mutate({ id: order.id }, settleCallbacks());
+                  markBusy(order.id);
+                  confirmOrder.mutate({ id: order.id }, settleCallbacks(order.id));
                 },
               },
             ]
@@ -362,7 +392,7 @@ export default function OrdersScreen() {
         ],
       };
     },
-    [confirmOrder, settleCallbacks, openCancelSheet],
+    [confirmOrder, markBusy, settleCallbacks, openCancelSheet],
   );
 
   /**
@@ -385,8 +415,8 @@ export default function OrdersScreen() {
         label: "Fulfil",
         disabled: target.status !== "confirmed",
         onPress: () => {
-          setBusyOrderId(target.id);
-          fulfillOrder.mutate(target.id, settleCallbacks());
+          markBusy(target.id);
+          fulfillOrder.mutate(target.id, settleCallbacks(target.id));
         },
       },
       {
@@ -417,7 +447,15 @@ export default function OrdersScreen() {
         onPress: () => openCancelSheet(target),
       },
     ];
-  }, [menuOrder, shipment, fulfillOrder, settleCallbacks, openRefundSheet, openCancelSheet]);
+  }, [
+    menuOrder,
+    shipment,
+    fulfillOrder,
+    markBusy,
+    settleCallbacks,
+    openRefundSheet,
+    openCancelSheet,
+  ]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: Order; index: number }) => {
@@ -441,7 +479,7 @@ export default function OrdersScreen() {
               // Suppressed while THIS row's own request is open, so a
               // still-visible row can't be fired at twice. Not a claim about
               // the data — see the screen's doc comment.
-              enabled={busyOrderId !== item.id}
+              enabled={!busyOrderIds.has(item.id)}
             >
               {row}
             </SwipeRow>
@@ -451,21 +489,7 @@ export default function OrdersScreen() {
         </View>
       );
     },
-    [actionsFor, handleOrderPress, currencyCode, busyOrderId],
-  );
-
-  const listHeader = useMemo(
-    () => (
-      <View style={styles.searchBlock} testID="orders-search-block">
-        <SearchField
-          value={searchText}
-          onChangeText={setSearchText}
-          placeholder="Search orders…"
-          accessibilityLabel="Search orders"
-        />
-      </View>
-    ),
-    [searchText],
+    [actionsFor, handleOrderPress, currencyCode, busyOrderIds],
   );
 
   const showError = listQuery.isError && orders.length === 0;
@@ -491,11 +515,23 @@ export default function OrdersScreen() {
         scrollY={scrollY}
       />
 
+      {/* Pinned, above the filter row: search then scope, the order iOS's own
+          search + scope bar uses and the order products/customers already use
+          here. Sits outside the list, so it never scrolls away. */}
+      <View style={styles.searchBlock} testID="orders-search-block">
+        <SearchField
+          value={searchText}
+          onChangeText={setSearchText}
+          placeholder="Search orders…"
+          accessibilityLabel="Search orders"
+        />
+      </View>
+
       <FilterChips<FilterKey>
         chips={FILTERS}
         value={activeFilter}
         onChange={handleFilterChange}
-        style={styles.chips}
+        contentContainerStyle={styles.chips}
       />
 
       {listQuery.isLoading && orders.length === 0 ? (
@@ -523,13 +559,13 @@ export default function OrdersScreen() {
           keyExtractor={(item) => (item as Order).id}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
-          ListHeaderComponent={listHeader}
+          // No `ListHeaderComponent` and no `contentOffset`: search is
+          // pinned above the list now, so the list starts at the top and
+          // shows rows from its first pixel.
+          //
           // Explicit flex, not leftover space: the list is the only child of
           // `Screen` that should absorb the remaining height.
           style={styles.listFlex}
-          // Park the list just past the search block. Pulling down reveals
-          // the field; pulling further still reaches the RefreshControl.
-          contentOffset={{ x: 0, y: SEARCH_BLOCK_HEIGHT }}
           contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
@@ -575,6 +611,11 @@ export default function OrdersScreen() {
         hasShipment={Boolean(shipment)}
         carrier={shipment?.provider}
         error={cancelError}
+        // Released on EVERY close, not only on a successful cancel. Backing
+        // out of the sheet used to leave this order pinned for the life of
+        // the screen — and because `probeOrderId` reads it, the next order's
+        // refund sheet then warned about THIS order's carrier shipment.
+        onDismiss={() => setCancelTarget(null)}
       />
       <RefundSheet
         ref={refundSheetRef}
@@ -587,6 +628,8 @@ export default function OrdersScreen() {
         )}
         currencyCode={refundTarget?.currency_code || currencyCode}
         error={refundError}
+        // Same contract as the cancel sheet above.
+        onDismiss={() => setRefundTarget(null)}
       />
       <EmailLabelSheet
         ref={emailSheetRef}
@@ -598,14 +641,16 @@ export default function OrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-  // Explicit height: the list's `contentOffset` and the scroll handler's
-  // rebase both depend on this block being exactly SEARCH_BLOCK_HEIGHT tall.
+  // Padding, NOT a fixed height. The block used to be pinned to an exact
+  // SEARCH_BLOCK_HEIGHT because the list's `contentOffset` had to match it
+  // to the pixel; with the field pinned, nothing depends on its height, so
+  // it hugs `SearchField` and grows freely if the field ever does. One less
+  // fixed height is one less silent-clipping trap at raised text sizes.
   searchBlock: {
-    height: SEARCH_BLOCK_HEIGHT,
-    justifyContent: "center",
     // Screen gutter: theme.spacing.xl (20) — the SAME left edge the header's
     // eyebrow/title, the filter chips and every row's paddingH sit on.
     paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.xs,
   },
   chips: { paddingVertical: theme.spacing.sm },
   listFlex: { flex: 1 },

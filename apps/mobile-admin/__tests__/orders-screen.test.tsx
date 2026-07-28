@@ -86,12 +86,18 @@ jest.mock("@/lib/hooks/use-orders", () => ({
 }));
 
 // --- controllable shipment ---------------------------------------------
-let mockShipment: unknown = null;
+// Keyed BY ORDER, and honouring `enabled`, because both are load-bearing:
+// the screen drives one lazy probe whose key is derived from whichever
+// sheet/menu is open, so "which order is being probed" and "is the probe on
+// at all" are exactly the properties under test. A mock that returned the
+// same shipment for every id, enabled or not, could not tell a correct probe
+// from a probe pointed at the wrong order — or at nothing.
+let mockShipments: Record<string, unknown> = {};
 const mockUseShipment = jest.fn();
 jest.mock("@/lib/hooks/use-shipment", () => ({
   useShipment: (orderId: string, enabled?: boolean) => {
     mockUseShipment(orderId, enabled);
-    return { data: mockShipment };
+    return { data: enabled && orderId ? mockShipments[orderId] : undefined };
   },
 }));
 
@@ -135,10 +141,11 @@ jest.mock("@/lib/admin-api/shipment-actions", () => ({
 }));
 
 import { act, fireEvent, render } from "@testing-library/react-native";
-import { FlatList } from "react-native";
+import { FlatList, StyleSheet } from "react-native";
 import Animated from "react-native-reanimated";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import OrdersScreen from "../app/(tabs)/orders/index";
+import { theme } from "@/lib/theme";
 import type { Order } from "@repo/mobile-shared/api/types";
 
 // jest-expo mocks `react-native-reanimated` with a stub whose default
@@ -188,7 +195,7 @@ beforeEach(() => {
   mockPendingTotal = 5;
   mockIsError = false;
   mockIsLoading = false;
-  mockShipment = null;
+  mockShipments = {};
   mockPending.confirmOrder = false;
   mockPending.fulfillOrder = false;
   mockPending.cancelOrder = false;
@@ -198,6 +205,24 @@ beforeEach(() => {
 /** Opens the long-press menu on a given row. */
 function longPress(getByTestId: (id: string) => unknown, id: string) {
   fireEvent(getByTestId(`order-row-${id}`) as never, "longPress");
+}
+
+type Root = ReturnType<typeof render>["UNSAFE_root"];
+
+/** Every mounted `SwipeRow` element, so its props can be read directly. */
+function swipeRows(root: Root) {
+  return root.findAll(
+    (n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "SwipeRow",
+  );
+}
+
+function swipeRow(root: Root, testID: string) {
+  return swipeRows(root).find((r) => r.props.testID === testID);
+}
+
+interface RowActions {
+  leadingActions?: { key: string; tone: string }[];
+  trailingActions?: { key: string; tone: string }[];
 }
 
 describe("Orders — header", () => {
@@ -268,18 +293,49 @@ describe("Orders — filters", () => {
   });
 });
 
-describe("Orders — search moves into the scroll content", () => {
-  it("renders the search field in the list header, not pinned above it", () => {
-    const { getByTestId } = render(<OrdersScreen />);
+// Search is PINNED — visible at rest, outside the list. It briefly lived
+// inside the scroll content with the list parked past it; on device that
+// left it with no affordance of any kind and it was undiscoverable. These
+// pin the revert so nobody re-hides it by reintroducing either half of the
+// mechanism (a list header, or a non-zero contentOffset).
+describe("Orders — the search field is pinned", () => {
+  it("renders the search field", () => {
+    const { getByTestId, getByLabelText } = render(<OrdersScreen />);
     expect(getByTestId("orders-search-block")).toBeTruthy();
+    expect(getByLabelText("Search orders")).toBeTruthy();
   });
 
-  // The list opens scrolled PAST the search block, so it costs no permanent
-  // screen height — pulling down reveals it.
-  it("starts scrolled past the search block", () => {
+  it("does not park the list past a hidden search field", () => {
     const { getByTestId } = render(<OrdersScreen />);
     const list = getByTestId("orders-list");
-    expect(list.props.contentOffset.y).toBeGreaterThan(0);
+    // Either absent, or explicitly at the top — never a positive y, which is
+    // what scrolled the field out of view.
+    expect(list.props.contentOffset?.y ?? 0).toBe(0);
+  });
+
+  it("keeps the field out of the list, so scrolling can never take it away", () => {
+    const { getByTestId } = render(<OrdersScreen />);
+    expect(getByTestId("orders-list").props.ListHeaderComponent).toBeFalsy();
+  });
+
+  // The field is visible on a list WITH rows and on an empty one alike. The
+  // old behaviour differed between the two: `flexGrow: 1` made an empty
+  // list's content exactly viewport height, so the contentOffset could not
+  // be honoured and the field showed at rest only when there was nothing to
+  // search — the screen was inconsistent with itself.
+  it("shows the field on an empty store too", () => {
+    mockOrders = [];
+    const { getByTestId, getByText } = render(<OrdersScreen />);
+    expect(getByTestId("orders-search-block")).toBeTruthy();
+    expect(getByText("No orders found")).toBeTruthy();
+  });
+
+  it("reads the scroll offset straight through, with no rebase to cancel", () => {
+    const { getByTestId } = render(<OrdersScreen />);
+    // A rebase (`contentOffset.y - SEARCH_BLOCK_HEIGHT`) only ever existed
+    // to undo the park. Both go together; neither should come back alone.
+    expect(getByTestId("orders-list").props.onScroll).toBeTruthy();
+    expect(getByTestId("orders-list").props.contentOffset?.y ?? 0).toBe(0);
   });
 });
 
@@ -346,9 +402,7 @@ describe("Orders — swipe actions", () => {
 
   it("never opts any action into full-swipe auto-fire (this app has no undo)", () => {
     const { UNSAFE_root } = render(<OrdersScreen />);
-    const rows = UNSAFE_root.findAll(
-      (n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "SwipeRow",
-    );
+    const rows = swipeRows(UNSAFE_root);
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       const actions = [
@@ -357,6 +411,69 @@ describe("Orders — swipe actions", () => {
       ];
       for (const a of actions) expect(a.autoFireOnFullSwipe).toBeFalsy();
     }
+  });
+});
+
+// WHICH SIDE and WHICH COLOUR, not just "the action exists".
+//
+// `SwipeRow` gives leading and trailing buttons the SAME testID pattern
+// (`${testID}-action-${key}`), so every test that reaches an action by its
+// id passes identically whether Cancel sits on the leading edge or the
+// trailing one: swapping the two props left the whole suite green while
+// putting the destructive action under the constructive gesture. Tone had
+// no assertion anywhere either, so painting Cancel moss was equally free.
+//
+// In an app with no undo, on the screen with the destructive actions, the
+// side/colour pairing IS the safety property — a merchant's thumb learns
+// "right is safe, left is not" across every list, and one screen that
+// inverts it is worse than one that has no gesture at all.
+describe("Orders — the swipe convention", () => {
+  const CONSTRUCTIVE_TONE = "accent";
+  const DESTRUCTIVE_TONE = "danger";
+
+  it("puts Approve on the LEADING edge (drag right) in the accent tone", () => {
+    const { UNSAFE_root } = render(<OrdersScreen />);
+    const row = swipeRow(UNSAFE_root, "swipe-o1")?.props as RowActions;
+    expect(row.leadingActions).toHaveLength(1);
+    expect(row.leadingActions?.[0]).toMatchObject({
+      key: "approve",
+      tone: CONSTRUCTIVE_TONE,
+    });
+  });
+
+  it("puts Cancel on the TRAILING edge (drag left) in the danger tone", () => {
+    const { UNSAFE_root } = render(<OrdersScreen />);
+    const row = swipeRow(UNSAFE_root, "swipe-o1")?.props as RowActions;
+    expect(row.trailingActions).toHaveLength(1);
+    expect(row.trailingActions?.[0]).toMatchObject({
+      key: "cancel",
+      tone: DESTRUCTIVE_TONE,
+    });
+  });
+
+  // The invariant stated as an invariant, over every row rather than one:
+  // nothing destructive may ever be reachable by the constructive gesture.
+  it("never puts a destructive action on the leading edge, on any row", () => {
+    const { UNSAFE_root } = render(<OrdersScreen />);
+    const rows = swipeRows(UNSAFE_root);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const { leadingActions = [], trailingActions = [] } = row.props as RowActions;
+      for (const action of leadingActions) expect(action.tone).not.toBe(DESTRUCTIVE_TONE);
+      for (const action of trailingActions) expect(action.tone).not.toBe(CONSTRUCTIVE_TONE);
+    }
+  });
+
+  // Tone → paint, so a tone swap is caught at the pixel and not only at the
+  // prop. Moss is the screen's ONE accent and it is spent here; the active
+  // filter chip is deliberately ink (see filter-chips.test.tsx).
+  it("paints Approve moss and Cancel danger", () => {
+    const { getByTestId } = render(<OrdersScreen />);
+    const approve = StyleSheet.flatten(getByTestId("swipe-o1-action-approve").props.style);
+    const cancel = StyleSheet.flatten(getByTestId("swipe-o1-action-cancel").props.style);
+    expect(approve.backgroundColor).toBe(theme.colors.accent);
+    expect(cancel.backgroundColor).toBe(theme.colors.danger);
+    expect(approve.backgroundColor).not.toBe(cancel.backgroundColor);
   });
 });
 
@@ -382,14 +499,9 @@ describe("Orders — no optimistic hide", () => {
     mockPending.confirmOrder = true;
     rerender(<OrdersScreen />);
 
-    const rows = UNSAFE_root.findAll(
-      (n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "SwipeRow",
-    );
-    const busy = rows.find((r) => r.props.testID === "swipe-o1");
-    const other = rows.find((r) => r.props.testID === "swipe-o2");
-    expect(busy?.props.enabled).toBe(false);
+    expect(swipeRow(UNSAFE_root, "swipe-o1")?.props.enabled).toBe(false);
     // Only the row being acted on — the rest of the list stays live.
-    expect(other?.props.enabled).not.toBe(false);
+    expect(swipeRow(UNSAFE_root, "swipe-o2")?.props.enabled).not.toBe(false);
   });
 
   it("re-enables the row once the mutation settles", () => {
@@ -398,10 +510,48 @@ describe("Orders — no optimistic hide", () => {
     act(() => (mockConfirmOrder.mock.calls[0][1].onSuccess as () => void)());
     rerender(<OrdersScreen />);
 
-    const rows = UNSAFE_root.findAll(
-      (n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "SwipeRow",
-    );
-    expect(rows.find((r) => r.props.testID === "swipe-o1")?.props.enabled).not.toBe(false);
+    expect(swipeRow(UNSAFE_root, "swipe-o1")?.props.enabled).not.toBe(false);
+  });
+
+  // The guard is per ROW, and triage is a queue: a merchant fires the next
+  // row long before the previous one's request comes back. Held in a single
+  // slot, the second action overwrote the first's guard, and the FIRST
+  // order's `onSuccess` then cleared the slot outright — re-arming the
+  // second row while its own request was still open, which is exactly the
+  // double-fire the guard exists to prevent.
+  it("guards two in-flight rows at once", () => {
+    const { getByTestId, UNSAFE_root } = render(<OrdersScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    longPress(getByTestId, "o2");
+    fireEvent.press(getByTestId("action-sheet-item-fulfil"));
+
+    expect(mockConfirmOrder).toHaveBeenCalledTimes(1);
+    expect(mockFulfillOrder).toHaveBeenCalledTimes(1);
+    expect(swipeRow(UNSAFE_root, "swipe-o1")?.props.enabled).toBe(false);
+    expect(swipeRow(UNSAFE_root, "swipe-o2")?.props.enabled).toBe(false);
+  });
+
+  it("releases only the row that settled, leaving the other still guarded", () => {
+    const { getByTestId, UNSAFE_root } = render(<OrdersScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    longPress(getByTestId, "o2");
+    fireEvent.press(getByTestId("action-sheet-item-fulfil"));
+
+    act(() => (mockConfirmOrder.mock.calls[0][1].onSuccess as () => void)());
+
+    expect(swipeRow(UNSAFE_root, "swipe-o1")?.props.enabled).not.toBe(false);
+    expect(swipeRow(UNSAFE_root, "swipe-o2")?.props.enabled).toBe(false);
+  });
+
+  it("releases a row on failure too, so a failed action is retryable", () => {
+    const { getByTestId, UNSAFE_root } = render(<OrdersScreen />);
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    expect(swipeRow(UNSAFE_root, "swipe-o1")?.props.enabled).toBe(false);
+
+    act(() => (mockConfirmOrder.mock.calls[0][1].onError as (e: Error) => void)(new Error("500")));
+    expect(swipeRow(UNSAFE_root, "swipe-o1")?.props.enabled).not.toBe(false);
   });
 
   it("fires the success and failure haptics", () => {
@@ -513,7 +663,7 @@ describe("Orders — long-press menu", () => {
   });
 
   it("emails the label for the shipment once one exists", () => {
-    mockShipment = { id: "sh1", provider: "delhivery" };
+    mockShipments = { o2: { id: "sh1", provider: "delhivery" } };
     const { getByTestId, getByLabelText } = render(<OrdersScreen />);
     longPress(getByTestId, "o2");
     fireEvent.press(getByTestId("action-sheet-item-email-label"));
@@ -525,6 +675,107 @@ describe("Orders — long-press menu", () => {
       shipmentId: "sh1",
       recipient: "warehouse@example.com",
     });
+  });
+});
+
+// The lazy shipment probe drives IRREVERSIBLE copy, so "which order is it
+// pointed at" is a correctness property, not a performance one.
+//
+// A full refund also cancels or returns the shipment at the carrier. The
+// refund sheet says so — but only if it is told the order has a shipment,
+// and the probe key was built from the menu order and the cancel target
+// only. Tapping Refund dismisses the menu, which cleared the menu order, so
+// by the time the sheet rendered the probe was disabled and the warning
+// silently did not render: a merchant refunding a shipped order in full was
+// never told, on a screen with no undo.
+//
+// The mirror-image failure is a target that is never released: neither sheet
+// could report its own dismissal, so backing out of a cancel left that order
+// pinned for the life of the screen — and it is ALSO what intermittently
+// masked the bug above, since a stale cancel target kept the probe alive and
+// made the warning appear on orders it had no business describing.
+describe("Orders — the shipment probe follows the open sheet", () => {
+  const CARRIER_WARNING =
+    "A full refund will also cancel or return this shipment with the carrier.";
+  const SHIPMENT = { id: "sh1", provider: "delhivery" };
+
+  /** Long-presses an order and taps Refund — the path that clears the menu. */
+  function openRefundFromMenu(getByTestId: (id: string) => unknown, id: string) {
+    longPress(getByTestId, id);
+    fireEvent.press(getByTestId(`action-sheet-item-refund`) as never);
+  }
+
+  it("warns that a full refund cancels the carrier shipment", () => {
+    mockShipments = { o2: SHIPMENT };
+    const { getByTestId, getByText } = render(<OrdersScreen />);
+    openRefundFromMenu(getByTestId, "o2");
+    expect(getByText(CARRIER_WARNING)).toBeTruthy();
+  });
+
+  it("keeps probing the refunded order after the menu that opened it closes", () => {
+    mockShipments = { o2: SHIPMENT };
+    const { getByTestId } = render(<OrdersScreen />);
+    openRefundFromMenu(getByTestId, "o2");
+    // Not "was o2 ever probed" — the menu probed it too. The LAST call is
+    // the one the sheet renders against.
+    expect(mockUseShipment.mock.calls.at(-1)).toEqual(["o2", true]);
+  });
+
+  it("says nothing about a carrier when the order never shipped", () => {
+    mockShipments = {};
+    const { getByTestId, queryByText } = render(<OrdersScreen />);
+    openRefundFromMenu(getByTestId, "o2");
+    expect(queryByText(CARRIER_WARNING)).toBeNull();
+  });
+
+  it("names the carrier on the cancel sheet for a shipped order", () => {
+    mockShipments = { o1: SHIPMENT };
+    const { getByTestId, getByText } = render(<OrdersScreen />);
+    fireEvent.press(getByTestId("swipe-o1-action-cancel"));
+    expect(getByText(/The Delhivery shipment will also be cancelled\./)).toBeTruthy();
+  });
+
+  it("releases the cancel target when the sheet is dismissed without submitting", () => {
+    mockShipments = { o1: SHIPMENT };
+    const { getByTestId, getByLabelText } = render(<OrdersScreen />);
+    fireEvent.press(getByTestId("swipe-o1-action-cancel"));
+    fireEvent.press(getByLabelText("Keep order"));
+    expect(mockCancelOrder).not.toHaveBeenCalled();
+    expect(mockUseShipment.mock.calls.at(-1)).toEqual(["", false]);
+  });
+
+  // The exact sequence the reviewer reproduced: order A shipped, order B
+  // not. Back out of A's cancel sheet, then refund B — B's sheet must not
+  // inherit A's carrier warning.
+  it("does not carry a dismissed cancel target's shipment into another order's refund", () => {
+    mockShipments = { o1: SHIPMENT };
+    const { getByTestId, getByLabelText, queryByText } = render(<OrdersScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-cancel"));
+    fireEvent.press(getByLabelText("Keep order"));
+
+    openRefundFromMenu(getByTestId, "o2");
+    expect(queryByText(CARRIER_WARNING)).toBeNull();
+  });
+
+  it("releases the refund target when the refund sheet is dismissed without submitting", () => {
+    mockShipments = { o2: SHIPMENT };
+    const { getByTestId, queryByText } = render(<OrdersScreen />);
+
+    openRefundFromMenu(getByTestId, "o2");
+    expect(queryByText(CARRIER_WARNING)).toBeTruthy();
+
+    fireEvent.press(getByTestId("refund-sheet-dismiss"));
+    expect(mockRefundOrder).not.toHaveBeenCalled();
+    expect(queryByText(CARRIER_WARNING)).toBeNull();
+    expect(mockUseShipment.mock.calls.at(-1)).toEqual(["", false]);
+  });
+
+  // Still lazy: nothing is probed while a merchant is only scrolling.
+  it("probes nothing until a merchant asks for an action", () => {
+    mockShipments = { o1: SHIPMENT, o2: SHIPMENT };
+    render(<OrdersScreen />);
+    for (const call of mockUseShipment.mock.calls) expect(call).toEqual(["", false]);
   });
 });
 

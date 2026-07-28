@@ -29,6 +29,15 @@ interface RefundSheetProps {
   /** Latest submit error, surfaced inline. The sheet stays open on failure
    *  so the merchant can correct and retry without re-opening it. */
   error?: string | null;
+  /**
+   * Fires once per close, whatever caused it — "Cancel", a backdrop tap, a
+   * swipe-down, or the parent's own `dismiss()` after a successful refund.
+   * Sourced solely from `BottomSheetModal`'s own `onDismiss`.
+   *
+   * See `CancelReasonSheet.onDismiss` for why a sheet that cannot report its
+   * own dismissal leaves the parent's target state stale.
+   */
+  onDismiss?: () => void;
 }
 
 /**
@@ -44,7 +53,15 @@ interface RefundSheetProps {
  */
 export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
   function RefundSheet(
-    { onSubmit, isSubmitting = false, hasShipment = false, refundableAmount, currencyCode, error = null },
+    {
+      onSubmit,
+      isSubmitting = false,
+      hasShipment = false,
+      refundableAmount,
+      currencyCode,
+      error = null,
+      onDismiss,
+    },
     ref,
   ) {
     const modalRef = useRef<BottomSheetModal>(null);
@@ -82,6 +99,7 @@ export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
         enableDynamicSizing={false}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
+        onDismiss={onDismiss}
       >
         <View style={styles.root}>
           <Text preset="h3" color="text">
@@ -127,6 +145,10 @@ export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
               disabled={isSubmitting}
               accessibilityRole="button"
               accessibilityLabel="Cancel"
+              // "Cancel" is also the label of the row-level swipe action, so
+              // the dismiss control carries an id a test can name directly
+              // rather than being picked out of a label collision.
+              testID="refund-sheet-dismiss"
             >
               <Text preset="bodyEmphasis" color="text">
                 Cancel

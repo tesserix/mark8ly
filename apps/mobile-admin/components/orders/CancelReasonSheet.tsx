@@ -24,6 +24,20 @@ interface CancelReasonSheetProps {
   /** Latest submit error, surfaced inline. The sheet stays open on failure
    *  so the merchant can retry without re-opening it. */
   error?: string | null;
+  /**
+   * Fires once per close, whatever caused it — "Keep order", a backdrop tap,
+   * a swipe-down, or the parent's own `dismiss()` after a successful submit.
+   * Sourced solely from `BottomSheetModal`'s own `onDismiss`, so there is one
+   * path, not three.
+   *
+   * Exists because the parent's "which order is this sheet about?" state
+   * otherwise outlives the sheet: backing out without submitting used to
+   * leave that order pinned for the life of the screen, and on Orders that
+   * state also drives the lazy shipment probe — so a dismissed cancel on a
+   * SHIPPED order went on feeding its carrier warning into the next order's
+   * refund sheet.
+   */
+  onDismiss?: () => void;
 }
 
 function titleize(value?: string): string | undefined {
@@ -42,7 +56,7 @@ function titleize(value?: string): string | undefined {
  */
 export const CancelReasonSheet = forwardRef<CancelReasonSheetHandle, CancelReasonSheetProps>(
   function CancelReasonSheet(
-    { onSubmit, isSubmitting = false, hasShipment = false, carrier, error = null },
+    { onSubmit, isSubmitting = false, hasShipment = false, carrier, error = null, onDismiss },
     ref,
   ) {
     const modalRef = useRef<BottomSheetModal>(null);
@@ -75,6 +89,7 @@ export const CancelReasonSheet = forwardRef<CancelReasonSheetHandle, CancelReaso
         enableDynamicSizing={false}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
+        onDismiss={onDismiss}
       >
         <View style={styles.root}>
           <Text preset="h3" color="text">

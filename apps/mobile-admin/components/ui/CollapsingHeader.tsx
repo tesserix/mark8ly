@@ -8,7 +8,7 @@ import Animated, {
   useReducedMotion,
   type SharedValue,
 } from "react-native-reanimated";
-import { Text } from "./Text";
+import { Text, MAX_FONT_SCALE as TEXT_MAX_FONT_SCALE } from "./Text";
 import { Hairline } from "./Hairline";
 import { theme } from "@/lib/theme";
 
@@ -86,11 +86,14 @@ const COLLAPSED_HEIGHT = 56;
 
 /**
  * Cap on the iOS Dynamic Type / Android font-scale multiplier applied to
- * every line in this header. 2.0 honours WCAG 2.1 SC 1.4.4 (text resizable to
- * 200% without loss of content) while stopping the accessibility sizes above
- * it — iOS reaches 3.1× — from turning a header into most of the screen.
+ * every line in this header, and the multiplier `headerHeightsFor` scales the
+ * CONTAINER by. The two must be the same number or the height math below is
+ * measuring a different box than the one the text draws into — so this is now
+ * an alias of the app-wide default in `Text.tsx` rather than a second,
+ * independently-maintained `2`. Re-exported because the height arithmetic is
+ * part of this primitive's public contract and its tests assert against it.
  */
-export const MAX_FONT_SCALE = 2;
+export const MAX_FONT_SCALE = TEXT_MAX_FONT_SCALE;
 
 /**
  * Header heights for a given device font scale.

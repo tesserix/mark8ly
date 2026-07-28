@@ -50,6 +50,31 @@ export type TextColor =
 
 export type TextAlign = 'left' | 'center' | 'right';
 
+/**
+ * App-wide cap on the iOS Dynamic Type / Android font-scale multiplier.
+ *
+ * 2.0 honours WCAG 2.1 SC 1.4.4 (text resizable to 200% without loss of
+ * content or functionality) while stopping the accessibility categories above
+ * it — iOS reaches ~3.1× at AX5 — from growing a line past the box that holds
+ * it. Uncapped, the Dashboard's four-up strip labels collide with the tools
+ * FAB, `THIS MONTH` runs under the trend badge, and the dock's five labels
+ * degrade to `H… O… P… C… M…`.
+ *
+ * This is a DEFAULT at the chokepoint, not a per-call opt-in, and it is the
+ * one deliberate exception to this app's "shared primitives get additive
+ * props, never changed defaults" rule: the defect it fixes is precisely that
+ * a screen has to remember to opt in, and ~20 text nodes did not.
+ * `CollapsingHeader` and `FilterChips` independently arrived at the same 2 —
+ * both now derive their `MAX_FONT_SCALE` from this constant so the header's
+ * `headerHeightsFor` arithmetic and the text it measures cannot drift apart.
+ *
+ * A caller may still pass a TIGHTER cap (`TenantMonogram`'s initial pins 1 —
+ * an identity mark has nothing to resize), and that explicit prop wins. Do
+ * not pass a looser one without a stated reason; `allowFontScaling` is left
+ * alone entirely so text still scales, just not without bound.
+ */
+export const MAX_FONT_SCALE = 2;
+
 const COLOR_CLASSES: Record<TextColor, string> = {
   text: 'text-ink',
   textSecondary: 'text-ink-soft',
@@ -96,6 +121,7 @@ export function Text({
   color,
   align,
   style,
+  maxFontSizeMultiplier = MAX_FONT_SCALE,
   ...rest
 }: TextComponentProps) {
   const token = color && isColorToken(color) ? color : null;
@@ -118,6 +144,9 @@ export function Text({
   return (
     <RNText
       className={merged}
+      // Destructured above (so it is NOT in `rest`) purely so the default
+      // applies; an explicit prop still overrides it, in either direction.
+      maxFontSizeMultiplier={maxFontSizeMultiplier}
       style={rawColor ? [{ color: rawColor }, style] : style}
       {...rest}
     />

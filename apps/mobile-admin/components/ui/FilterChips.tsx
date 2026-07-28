@@ -9,7 +9,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
-import { Text } from "./Text";
+import { Text, MAX_FONT_SCALE as TEXT_MAX_FONT_SCALE } from "./Text";
 import { theme } from "@/lib/theme";
 
 export interface FilterChip<T extends string> {
@@ -45,10 +45,11 @@ const PILL_HEIGHT = 40;
  * Cap on the Dynamic Type multiplier applied to the chip label. 2.0 honours
  * WCAG 2.1 SC 1.4.4 (text resizable to 200% without loss of content) while
  * stopping iOS's accessibility sizes — which reach 3.1× — from turning a
- * filter row into a third of the screen. Same value and same reasoning as
- * `CollapsingHeader.MAX_FONT_SCALE`.
+ * filter row into a third of the screen. Aliased from `Text.tsx`'s app-wide
+ * default (as `CollapsingHeader.MAX_FONT_SCALE` is) so `chipHeightsFor`'s box
+ * arithmetic and the label it has to contain can never drift to two numbers.
  */
-export const MAX_FONT_SCALE = 2;
+export const MAX_FONT_SCALE = TEXT_MAX_FONT_SCALE;
 
 /**
  * Pill and touch-target heights for a given device font scale.

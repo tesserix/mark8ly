@@ -1,6 +1,6 @@
 export { Screen } from "./Screen";
 export { Card } from "./Card";
-export { Text } from "./Text";
+export { Text, MAX_FONT_SCALE } from "./Text";
 export { Eyebrow } from "./Eyebrow";
 export { Hairline } from "./Hairline";
 export { StatusBadge, type StatusTone } from "./StatusBadge";

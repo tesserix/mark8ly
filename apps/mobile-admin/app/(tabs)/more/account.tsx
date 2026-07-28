@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
   // PressableRow's base sets backgroundColor: theme.colors.background
   // (paper), which would otherwise paint a visible seam against the Card —
   // match that surface explicitly instead of relying on transparency (same
-  // fix as DashboardOrderRow).
+  // fix as StorePicker).
   storeRow: { backgroundColor: theme.colors.elevated },
   storeInfo: { flex: 1, gap: 2 },
   actions: {

@@ -83,7 +83,7 @@ describe('PressableRow', () => {
   // Regression for a real bug: PressableRow used to order its style array
   // [base, lines, pressed, style] — RN flattens later-wins, so any caller
   // that passes an explicit `backgroundColor` in `style` (StorePicker,
-  // DashboardOrderRow, CampaignRow, and every other row sitting on a
+  // StoreSelector, CampaignRow, and every other row sitting on a
   // Card/sheet surface, all of which correctly override the paper default)
   // silently killed the iOS press feedback entirely. Android still rippled,
   // which is why it looked fine on emulator.

@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   // PressableRow's base sets backgroundColor: theme.colors.background
   // (paper), which would otherwise paint a visible seam against listWrap —
   // match that surface explicitly instead of relying on transparency (same
-  // fix as DashboardOrderRow).
+  // fix as StoreSelector).
   row: { backgroundColor: theme.colors.elevated },
   iconWrap: {
     width: 32,

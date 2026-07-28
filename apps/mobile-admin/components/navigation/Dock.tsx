@@ -64,6 +64,36 @@ const TAB_ICONS: Record<string, LucideIcon> = {
   more: CircleEllipsis,
 };
 
+/**
+ * The dock label's OWN font-scale cap, tighter than the app-wide 2.
+ *
+ * A local, tighter cap is an explicitly sanctioned override of `Text`'s
+ * default (`TenantMonogram` pins 1 for the same class of reason) — the
+ * app-wide 2 stays exactly as it is and keeps applying everywhere else.
+ *
+ * Why the dock needs one: a slot is a fifth of a ~390pt bar, ~74pt. At the
+ * app-wide 2× the 11pt label becomes 22pt, and "Customers" needs ~99pt —
+ * measured on device, `Products` and `Customers` truncated to `Prod…` and
+ * `Cust…`. A truncated NAVIGATION label is worse than a small one: `Cust…`
+ * and `Custom…` are the same word to a merchant only if they already know
+ * where they are, which is precisely what a nav label exists to answer.
+ *
+ * 1.4 is the bound that keeps the longest label whole: 11 × 1.4 ≈ 15.4pt,
+ * at which "Customers" needs ~69pt inside the ~74pt slot.
+ *
+ * This does NOT strand anyone. `allowFontScaling` is untouched, so the
+ * labels still grow — by 40%, just not by 100%. The label is a redundant
+ * accessory to an icon that already carries `accessibilityLabel` set to the
+ * FULL screen title, so VoiceOver reads "Customers" in full at every text
+ * size regardless of what the 11pt label does. The bar is chrome of fixed
+ * height, not content: WCAG 2.1 SC 1.4.4's 200% applies to the content the
+ * dock navigates to, all of which continues to honour the full app-wide 2.
+ *
+ * The alternative — growing DOCK_HEIGHT — ripples into `useDockClearance`
+ * and therefore into the scroll padding of every screen in the app.
+ */
+const LABEL_MAX_FONT_SCALE = 1.4;
+
 // Short labels — slots are equal fifths, so a long title would truncate. The
 // full screen title is still used for accessibility.
 const TAB_LABELS: Record<string, string> = {
@@ -160,6 +190,7 @@ export function Dock({ state, descriptors, navigation }: DockProps) {
                     className="font-sans-semibold"
                     style={styles.labelActive}
                     numberOfLines={1}
+                    maxFontSizeMultiplier={LABEL_MAX_FONT_SCALE}
                   >
                     {tabLabel}
                   </Text>
@@ -176,6 +207,7 @@ export function Dock({ state, descriptors, navigation }: DockProps) {
                     className="font-sans-semibold"
                     style={styles.labelInactive}
                     numberOfLines={1}
+                    maxFontSizeMultiplier={LABEL_MAX_FONT_SCALE}
                   >
                     {tabLabel}
                   </Text>

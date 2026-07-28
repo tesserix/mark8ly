@@ -3,7 +3,12 @@ jest.mock("lucide-react-native", () => new Proxy({}, { get: () => () => null }))
 import { StyleSheet } from "react-native";
 import { render } from "@testing-library/react-native";
 
-import { MetricsCard } from "@/components/dashboard/MetricsCard";
+import {
+  MetricsCard,
+  stripColumnsFor,
+  STRIP_REFLOW_SCALE,
+} from "@/components/dashboard/MetricsCard";
+import { MAX_FONT_SCALE } from "@/components/ui/Text";
 import { theme } from "@/lib/theme";
 import type { DashboardStats } from "@repo/mobile-shared/api/types";
 
@@ -117,5 +122,67 @@ describe("MetricsCard — money", () => {
     expect(getByText("$4,280")).toBeTruthy();
     expect(getByText(/\$312 today/)).toBeTruthy();
     expect(getByText(/\$1,104 this week/)).toBeTruthy();
+  });
+});
+
+/**
+ * The Dynamic Type fixes, guarded. Every one of these was measured BROKEN on
+ * device at the `accessibility-large` / AX3XL cap of 2 before the fix, and
+ * every one is silently deletable — the failure mode this programme has now
+ * hit five times (BackHeader h48, CollapsingHeader h96/56, ActionSheet's
+ * non-scrolling clamp, RevenueChart's PAD_Y, the paint order).
+ */
+describe("MetricsCard — the four-up strip reflows rather than breaking words", () => {
+  it("is four-up at the default text size", () => {
+    expect(stripColumnsFor(1)).toBe(4);
+  });
+
+  it("reflows to two-up once the labels stop fitting a quarter column", () => {
+    expect(stripColumnsFor(STRIP_REFLOW_SCALE)).toBe(2);
+    expect(stripColumnsFor(2)).toBe(2);
+  });
+
+  // The breakpoint is calibrated, not arbitrary: it must sit ABOVE 1 (so the
+  // default text size is untouched) and at or below the app-wide cap (so the
+  // reflow is actually reachable). A change that violates either makes the
+  // function dead code in one direction or the other.
+  it("keeps the breakpoint between the default size and the app-wide cap", () => {
+    expect(STRIP_REFLOW_SCALE).toBeGreaterThan(1);
+    expect(STRIP_REFLOW_SCALE).toBeLessThanOrEqual(MAX_FONT_SCALE);
+    expect(stripColumnsFor(1.0)).toBe(4);
+  });
+
+  // A device font scale below 1 (Android's "small") must not reflow, and one
+  // far above the cap must not do anything different from the cap itself.
+  it("clamps out-of-range font scales instead of trusting them", () => {
+    expect(stripColumnsFor(0.85)).toBe(4);
+    expect(stripColumnsFor(3.1)).toBe(stripColumnsFor(MAX_FONT_SCALE));
+  });
+});
+
+describe("MetricsCard — figures are single tokens that never break mid-number", () => {
+  // Measured before the fix at the 2x cap: `$612,400` wrapped to `$612,4` /
+  // `00`, which is not a smaller number but a different one at a glance.
+  it("holds the hero numeral on one line and shrinks rather than wrapping it", () => {
+    const tree = render(<MetricsCard stats={stats({ revenue_month: 612400 })} currencyCode="AUD" />);
+    const hero = tree.getByText("$612,400");
+
+    expect(hero.props.numberOfLines).toBe(1);
+    expect(hero.props.adjustsFontSizeToFit).toBe(true);
+    // The accessible floor: RN floors at `fontSize x minimumFontScale`, so at
+    // the 2x cap this is exactly the hero's size at the DEFAULT text size.
+    // Turning text up can never make the hero smaller than it started.
+    expect(hero.props.minimumFontScale).toBe(0.5);
+    expect(hero.props.minimumFontScale * MAX_FONT_SCALE).toBe(1);
+  });
+
+  // Measured before the fix at the 2x cap: `124` wrapped to `12` / `4`.
+  it("holds a strip count on one line too", () => {
+    const tree = render(<MetricsCard stats={stats({ orders_fulfilled: 124 })} currencyCode="AUD" />);
+    const count = tree.getByText("124");
+
+    expect(count.props.numberOfLines).toBe(1);
+    expect(count.props.adjustsFontSizeToFit).toBe(true);
+    expect(count.props.minimumFontScale).toBe(0.5);
   });
 });

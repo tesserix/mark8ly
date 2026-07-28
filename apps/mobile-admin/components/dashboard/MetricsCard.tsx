@@ -1,5 +1,6 @@
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, useWindowDimensions } from "react-native";
 import { Hairline, StatusBadge, Text } from "@/components/ui";
+import { MAX_FONT_SCALE } from "@/components/ui/Text";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
 import { formatWholeMoney } from "@/lib/money";
 import { theme } from "@/lib/theme";
@@ -42,10 +43,72 @@ function changeBadge(pct: number): { label: string; tone: StatusTone; spoken: st
   return { label: `↘ ${magnitude}`, tone: "danger", spoken: `down ${magnitude}` };
 }
 
-function StatCell({ label, value }: { label: string; value: number }) {
+/**
+ * Four-up at the default text size, TWO-up above it.
+ *
+ * The strip is four equal columns of the card's inner width, and that width
+ * is fixed by the screen gutter — it cannot grow to meet the labels. On a
+ * 390pt screen the inner width is 390 − 2×20 (screen gutter) − 2×20 (card
+ * padding) = 310, so a quarter column is ~72pt against the widest label,
+ * "Cancelled", which needs ~58pt at the `caption` 13pt. That is ~1.2× of
+ * headroom and no more: measured on device at the 2× cap, `Pending`,
+ * `Fulfilled` and `Cancelled` all broke MID-WORD (`Pendi`/`ng`,
+ * `Fulfill`/`ed`, `Cance`/`lled`).
+ *
+ * So the strip REFLOWS rather than shrinking: at half width (~151pt) the
+ * same "Cancelled" needs ~116pt at the capped 26pt and fits on one line.
+ * Four columns and two columns are the only options offered — three would
+ * leave a 3+1 orphan row, which reads as a layout bug rather than a grid.
+ *
+ * Reflow, not a tighter local cap, because the labels are the part that has
+ * to give and there is nothing wrong with the SIZE they reach — only with
+ * the box. Capping them harder than the global 2 would make the strip the
+ * one place on the screen that refuses a merchant's chosen text size.
+ *
+ * Exported so the breakpoint is testable without mocking RN's Dimensions —
+ * same pattern as `FilterChips.chipHeightsFor` and
+ * `CollapsingHeader.headerHeightsFor`.
+ */
+export const STRIP_REFLOW_SCALE = 1.2;
+
+export function stripColumnsFor(fontScale: number): 2 | 4 {
+  const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+  return scale >= STRIP_REFLOW_SCALE ? 2 : 4;
+}
+
+/**
+ * `flexBasis` percentages pick the column count purely through flex wrap:
+ * 4×22% clears 100% only at four per row, 2×40% only at two. `flexGrow: 1`
+ * then spreads the slack so the columns stay equal.
+ */
+const CELL_BASIS: Record<2 | 4, `${number}%`> = { 4: "22%", 2: "40%" };
+
+function StatCell({
+  label,
+  value,
+  columns,
+}: {
+  label: string;
+  value: number;
+  columns: 2 | 4;
+}) {
   return (
-    <View style={styles.cell}>
-      <Text preset="h2" color="text" style={styles.cellValue}>
+    <View style={[styles.cell, { flexBasis: CELL_BASIS[columns] }]}>
+      {/*
+        A COUNT IS ONE TOKEN, exactly as the hero numeral is. Measured at the
+        2× cap, `124` wrapped to `12` / `4` — two numbers where the merchant
+        has one, on the strip they read their day's orders off. Shrinking to
+        fit is the right trade for a figure: it stays a single legible number
+        instead of becoming a different, wrong-looking pair.
+      */}
+      <Text
+        preset="h2"
+        color="text"
+        style={styles.cellValue}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}
+      >
         {String(value)}
       </Text>
       <Text preset="caption" color="textTertiary">
@@ -71,6 +134,11 @@ function StatCell({ label, value }: { label: string; value: number }) {
  */
 export function MetricsCard({ stats, currencyCode }: MetricsCardProps) {
   const change = changeBadge(stats.revenue_change_pct);
+  // `useWindowDimensions` (not `PixelRatio.getFontScale()`) so the strip
+  // re-flows when the merchant changes their text size with the app
+  // foregrounded — a static read would leave it four-up and broken.
+  const { fontScale } = useWindowDimensions();
+  const columns = stripColumnsFor(fontScale);
 
   return (
     <View style={styles.card} testID="dashboard-metrics-card">
@@ -81,7 +149,29 @@ export function MetricsCard({ stats, currencyCode }: MetricsCardProps) {
         <StatusBadge label={change.label} tone={change.tone} />
       </View>
 
-      <Text preset="heroNumeral" color="text" style={styles.hero}>
+      {/*
+        MONEY READS AS ONE TOKEN. Uncapped this wrapped mid-figure at the 2×
+        cap — `$612,4` on one line and `00` on the next, which is not a
+        smaller number but a DIFFERENT one at a glance. `numberOfLines={1}`
+        forbids the break and `adjustsFontSizeToFit` buys the room back by
+        shrinking, which is the correct direction to give for a display
+        numeral whose whole job is to be read in one movement.
+
+        `minimumFontScale={0.5}` is the accessible floor, and it is chosen
+        rather than guessed: RN floors at `fontSize × minimumFontScale`, and
+        at the 2× cap the styled size is 88, so the floor is 44 — EXACTLY
+        the size the hero has at the default text size. A merchant who turns
+        text up can therefore never end up with a hero numeral smaller than
+        the one they started with, no matter how many digits their month has.
+      */}
+      <Text
+        preset="heroNumeral"
+        color="text"
+        style={styles.hero}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}
+      >
         {formatWholeMoney(stats.revenue_month, currencyCode)}
       </Text>
       <Text preset="caption" color="textTertiary" style={styles.subline}>
@@ -102,10 +192,10 @@ export function MetricsCard({ stats, currencyCode }: MetricsCardProps) {
       <Hairline />
 
       <View style={styles.strip}>
-        <StatCell label="Today" value={stats.orders_today} />
-        <StatCell label="Pending" value={stats.orders_pending} />
-        <StatCell label="Fulfilled" value={stats.orders_fulfilled} />
-        <StatCell label="Cancelled" value={stats.orders_cancelled} />
+        <StatCell label="Today" value={stats.orders_today} columns={columns} />
+        <StatCell label="Pending" value={stats.orders_pending} columns={columns} />
+        <StatCell label="Fulfilled" value={stats.orders_fulfilled} columns={columns} />
+        <StatCell label="Cancelled" value={stats.orders_cancelled} columns={columns} />
       </View>
     </View>
   );
@@ -138,9 +228,14 @@ const styles = StyleSheet.create({
   chart: { marginTop: theme.spacing.lg, marginBottom: theme.spacing.md },
   strip: {
     flexDirection: "row",
+    // Wrap is what turns `CELL_BASIS` into a column count. `rowGap` is larger
+    // than the column gap so the two rows of a reflowed strip read as rows
+    // rather than as a block of eight loose values.
+    flexWrap: "wrap",
     marginTop: theme.spacing.md,
-    gap: theme.spacing.sm,
+    columnGap: theme.spacing.sm,
+    rowGap: theme.spacing.lg,
   },
-  cell: { flex: 1, gap: 1 },
+  cell: { flexGrow: 1, gap: 1 },
   cellValue: { fontVariant: ["tabular-nums"] },
 });

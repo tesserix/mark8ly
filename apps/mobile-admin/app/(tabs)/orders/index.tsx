@@ -465,7 +465,15 @@ export default function OrdersScreen() {
         <OrderRow
           order={item}
           onPress={handleOrderPress}
-          onLongPress={setMenuOrder}
+          // Gated on the SAME `busyOrderIds` set as the swipe below. The
+          // swipe guard alone left the long-press menu as an unguarded second
+          // route to Fulfil on a row whose request is still open. The blast
+          // radius today is small — the backend's `CanTransitionTo` rejects
+          // the second call and `fulfilled` is terminal — but this row is the
+          // template increment 3's menus copy, and Archive, Delete and
+          // Disable are NOT idempotent the same way. Guard the control, not
+          // the outcome.
+          onLongPress={busyOrderIds.has(item.id) ? undefined : setMenuOrder}
           currencyCode={currencyCode}
         />
       );

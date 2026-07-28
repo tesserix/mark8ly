@@ -560,6 +560,39 @@ describe("Orders — no optimistic hide", () => {
     expect(swipeRow(UNSAFE_root, "swipe-o2")?.props.enabled).toBe(false);
   });
 
+  // The swipe guard alone left a SECOND, ungated route onto an in-flight
+  // row: the long-press menu, whose Fulfil fires a mutation directly. Today's
+  // blast radius is small (the backend's CanTransitionTo rejects the second
+  // call and `fulfilled` is terminal) — but this row is the template
+  // increment 3's long-press menus copy, and Archive / Delete / Disable are
+  // not idempotent the same way. Both routes onto a row must read the same
+  // guard.
+  it("suppresses the long-press menu on a row whose own mutation is in flight", () => {
+    const { getByTestId, queryByTestId } = render(<OrdersScreen />);
+
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    expect(mockConfirmOrder).toHaveBeenCalledTimes(1);
+
+    // The gesture no longer resolves to a handler, so no sheet opens and
+    // there is no second Fulfil to press.
+    longPress(getByTestId, "o1");
+    expect(queryByTestId("action-sheet-item-fulfil")).toBeNull();
+    expect(mockFulfillOrder).not.toHaveBeenCalled();
+
+    // A DIFFERENT row is untouched — the guard is per row, like the swipe's.
+    longPress(getByTestId, "o2");
+    expect(getByTestId("action-sheet-item-fulfil")).toBeTruthy();
+  });
+
+  it("restores the long-press menu once that row's mutation settles", () => {
+    const { getByTestId } = render(<OrdersScreen />);
+    fireEvent.press(getByTestId("swipe-o1-action-approve"));
+    act(() => (mockConfirmOrder.mock.calls[0][1].onSuccess as () => void)());
+
+    longPress(getByTestId, "o1");
+    expect(getByTestId("action-sheet-item-fulfil")).toBeTruthy();
+  });
+
   it("releases a row on failure too, so a failed action is retryable", () => {
     const { getByTestId, UNSAFE_root } = render(<OrdersScreen />);
     fireEvent.press(getByTestId("swipe-o1-action-approve"));

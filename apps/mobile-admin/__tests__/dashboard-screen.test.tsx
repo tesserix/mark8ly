@@ -132,10 +132,11 @@ jest.mock("@/lib/admin-api/ticket-actions", () => ({
   }),
 }));
 
-import { RefreshControl } from "react-native";
+import { RefreshControl, StyleSheet } from "react-native";
 import { act, fireEvent, render, within } from "@testing-library/react-native";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import DashboardScreen from "../app/(tabs)/index";
+import { theme } from "@/lib/theme";
 import type { DashboardResponse } from "@repo/mobile-shared/api/types";
 
 const STATS: DashboardResponse["stats"] = {
@@ -347,6 +348,124 @@ describe("Dashboard — queue", () => {
     const { getByTestId, queryByTestId } = render(<DashboardScreen />);
     expect(getByTestId("swipe-t1-action-close")).toBeTruthy();
     expect(queryByTestId("swipe-t1-action-approve")).toBeNull();
+  });
+});
+
+// WHICH SIDE and WHICH COLOUR, not just "the action exists".
+//
+// Ported from orders-screen.test.tsx, where this net was written after the
+// same gap was found there. It belongs HERE more than there: Orders has one
+// row shape, the Dashboard has FOUR (order, review, ticket, low stock) and
+// three of them wire swipe actions. `SwipeRow` gives leading and trailing
+// buttons the SAME testID pattern (`${testID}-action-${key}`), so the
+// positive assertions above pass identically whether Cancel sits on the
+// leading edge or the trailing one — swapping `leadingActions` and
+// `trailingActions` on every row above left the whole suite green while
+// putting the destructive action under the constructive gesture.
+//
+// In an app with no undo, the side/colour pairing IS the safety property: a
+// merchant's thumb learns "right is safe, left is not" across every list, and
+// one screen that inverts it is worse than one with no gesture at all.
+describe("Dashboard — the swipe convention", () => {
+  const CONSTRUCTIVE_TONE = "accent";
+  const DESTRUCTIVE_TONE = "danger";
+
+  type Root = ReturnType<typeof render>["UNSAFE_root"];
+  interface RowActions {
+    leadingActions?: { key: string; tone: string }[];
+    trailingActions?: { key: string; tone: string }[];
+  }
+
+  /** Every mounted `SwipeRow` element, so its props can be read directly. */
+  function swipeRows(root: Root) {
+    return root.findAll(
+      (n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "SwipeRow",
+    );
+  }
+
+  function swipeRow(root: Root, testID: string) {
+    return swipeRows(root).find((r) => r.props.testID === testID);
+  }
+
+  it("puts an order's Approve on the LEADING edge in the accent tone", () => {
+    const { UNSAFE_root } = render(<DashboardScreen />);
+    const row = swipeRow(UNSAFE_root, "swipe-o1")?.props as RowActions;
+    expect(row.leadingActions).toHaveLength(1);
+    expect(row.leadingActions?.[0]).toMatchObject({
+      key: "approve",
+      tone: CONSTRUCTIVE_TONE,
+    });
+  });
+
+  it("puts an order's Cancel on the TRAILING edge in the danger tone", () => {
+    const { UNSAFE_root } = render(<DashboardScreen />);
+    const row = swipeRow(UNSAFE_root, "swipe-o1")?.props as RowActions;
+    expect(row.trailingActions).toHaveLength(1);
+    expect(row.trailingActions?.[0]).toMatchObject({
+      key: "cancel",
+      tone: DESTRUCTIVE_TONE,
+    });
+  });
+
+  it("puts a review's Approve leading and its Reject trailing, in the same two tones", () => {
+    const { UNSAFE_root } = render(<DashboardScreen />);
+    const row = swipeRow(UNSAFE_root, "swipe-r1")?.props as RowActions;
+    expect(row.leadingActions?.[0]).toMatchObject({
+      key: "approve",
+      tone: CONSTRUCTIVE_TONE,
+    });
+    expect(row.trailingActions?.[0]).toMatchObject({
+      key: "reject",
+      tone: DESTRUCTIVE_TONE,
+    });
+  });
+
+  // Closing a resolved ticket is a normal outcome, not a destruction — the
+  // trailing edge is a POSITION, not a tone, and this is the row that proves
+  // the invariant below isn't just "trailing means danger".
+  it("puts a ticket's Close on the trailing edge in the NEUTRAL tone, with nothing leading", () => {
+    const { UNSAFE_root } = render(<DashboardScreen />);
+    const row = swipeRow(UNSAFE_root, "swipe-t1")?.props as RowActions;
+    expect(row.leadingActions ?? []).toHaveLength(0);
+    expect(row.trailingActions?.[0]).toMatchObject({ key: "close", tone: "neutral" });
+  });
+
+  // The invariant stated as an invariant, over every row rather than one.
+  it("never puts a destructive action on the leading edge, on any row type", () => {
+    const { UNSAFE_root } = render(<DashboardScreen />);
+    const rows = swipeRows(UNSAFE_root);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const { leadingActions = [], trailingActions = [] } = row.props as RowActions;
+      for (const action of leadingActions) expect(action.tone).not.toBe(DESTRUCTIVE_TONE);
+      for (const action of trailingActions) expect(action.tone).not.toBe(CONSTRUCTIVE_TONE);
+    }
+  });
+
+  // Tone → paint, so a tone swap is caught at the pixel and not only at the
+  // prop. Moss is this screen's ONE accent and the spec spends it on the
+  // chart and the Approve swipe — nowhere else.
+  it("paints Approve moss and Cancel danger", () => {
+    const { getByTestId } = render(<DashboardScreen />);
+    const approve = StyleSheet.flatten(getByTestId("swipe-o1-action-approve").props.style);
+    const cancel = StyleSheet.flatten(getByTestId("swipe-o1-action-cancel").props.style);
+    expect(approve.backgroundColor).toBe(theme.colors.accent);
+    expect(cancel.backgroundColor).toBe(theme.colors.danger);
+    expect(approve.backgroundColor).not.toBe(cancel.backgroundColor);
+  });
+
+  // This app has no undo, so nothing may fire from the drag itself.
+  it("never opts any action into full-swipe auto-fire", () => {
+    const { UNSAFE_root } = render(<DashboardScreen />);
+    const rows = swipeRows(UNSAFE_root);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const actions = [
+        ...((row.props.leadingActions ?? []) as { autoFireOnFullSwipe?: boolean }[]),
+        ...((row.props.trailingActions ?? []) as { autoFireOnFullSwipe?: boolean }[]),
+      ];
+      for (const a of actions) expect(a.autoFireOnFullSwipe).toBeFalsy();
+    }
   });
 });
 

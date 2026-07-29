@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { useSegment } from "@/lib/hooks/use-segments";
 import { useUpdateSegment, useDeleteSegment } from "@/lib/admin-api/segment-actions";
+import { useLoyaltyProgram } from "@/lib/hooks/use-loyalty";
 import { SegmentForm, type SegmentFormValues } from "@/components/marketing/SegmentForm";
 import { BackHeader, Hairline, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
@@ -15,6 +16,8 @@ export default function SegmentDetailScreen() {
   const { data: segment, isLoading, error } = useSegment(id);
   const update = useUpdateSegment();
   const del = useDeleteSegment();
+  // Tier names for the loyalty-tier rule's picker — see new.tsx.
+  const { data: program } = useLoyaltyProgram();
   const dockPad = useDockClearance();
 
   const onSave = useCallback(
@@ -93,6 +96,7 @@ export default function SegmentDetailScreen() {
           initialName={segment.name}
           initialDescription={segment.description ?? ""}
           initialRules={segment.rules}
+          tiers={program?.tiers.map((tier) => tier.name) ?? []}
           submitLabel={update.isPending ? "Saving…" : "Save changes"}
           isSubmitting={update.isPending}
           onSubmit={onSave}

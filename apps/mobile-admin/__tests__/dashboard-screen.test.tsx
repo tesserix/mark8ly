@@ -905,3 +905,78 @@ describe("Dashboard — pull to refresh", () => {
     expect(UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
   });
 });
+
+/**
+ * Task 14 retrofit — the rollback alone is not an explanation.
+ *
+ * The Dashboard already restored an optimistically-hidden row when its
+ * mutation failed, but on its own that just makes the queue flicker and
+ * settle back where it started — which reads as "nothing happened", not as
+ * "that failed". Every fixture below drives `onError`.
+ */
+describe("Dashboard — surfacing a failed queue action", () => {
+  function apiError(status: number, code: string, message: string): Error {
+    const err = new Error(message) as Error & { status: number; code: string };
+    err.name = "ApiError";
+    err.status = status;
+    err.code = code;
+    return err;
+  }
+
+  it("says nothing until something fails", () => {
+    const root = render(<DashboardScreen />);
+    fireEvent.press(root.getByTestId("swipe-o1-action-approve"));
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+
+  it("explains a failed approve alongside restoring the row", () => {
+    const root = render(<DashboardScreen />);
+    fireEvent.press(root.getByTestId("swipe-o1-action-approve"));
+    act(() =>
+      (mockConfirmOrder.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(
+        apiError(409, "invalid_transition", "cannot transition from cancelled to confirmed"),
+      ),
+    );
+    // Both: the row is back AND the merchant is told why it came back.
+    expect(root.getByTestId("swipe-o1-action-approve")).toBeTruthy();
+    expect(root.getByTestId("action-failure-title")).toHaveTextContent("Couldn't approve this order");
+    expect(root.getByTestId("action-failure-detail")).toHaveTextContent(
+      /cannot transition from cancelled to confirmed/,
+    );
+  });
+
+  // Four queue types share one strip, so each has to name ITSELF — "couldn't
+  // do that" over a mixed queue tells the merchant nothing about which row.
+  it("names the ticket, not the order, when closing a ticket fails", () => {
+    const root = render(<DashboardScreen />);
+    fireEvent.press(root.getByTestId("swipe-t1-action-close"));
+    act(() => (mockUpdateTicketStatus.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(new Error("x")));
+    expect(root.getByTestId("action-failure-title")).toHaveTextContent("Couldn't close this ticket");
+  });
+
+  it("names the review when rejecting a review fails", () => {
+    const root = render(<DashboardScreen />);
+    fireEvent.press(root.getByTestId("swipe-r1-action-reject"));
+    act(() => (mockRejectReview.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(new Error("x")));
+    expect(root.getByTestId("action-failure-title")).toHaveTextContent("Couldn't reject this review");
+  });
+
+  it("keeps two failures across two sources down to one message", () => {
+    const root = render(<DashboardScreen />);
+    fireEvent.press(root.getByTestId("swipe-o1-action-approve"));
+    act(() => (mockConfirmOrder.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(new Error("x")));
+    fireEvent.press(root.getByTestId("swipe-t1-action-close"));
+    act(() => (mockUpdateTicketStatus.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(new Error("x")));
+
+    expect(root.getAllByTestId("action-failure-notice")).toHaveLength(1);
+    expect(root.getByTestId("action-failure-title")).toHaveTextContent("Couldn't close this ticket");
+  });
+
+  it("clears itself on dismiss", () => {
+    const root = render(<DashboardScreen />);
+    fireEvent.press(root.getByTestId("swipe-o1-action-approve"));
+    act(() => (mockConfirmOrder.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(new Error("x")));
+    fireEvent.press(root.getByTestId("action-failure-dismiss"));
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+});

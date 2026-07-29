@@ -721,3 +721,103 @@ describe("Products — rows", () => {
     expect(mockPush).toHaveBeenCalledWith("/(tabs)/products/new");
   });
 });
+
+/**
+ * Task 14 retrofit — a failed action is EXPLAINED, not only felt.
+ *
+ * Every fixture here drives the mutation's `onError`. A test whose mutation
+ * succeeds proves nothing about this surface: before the retrofit, a failed
+ * activate produced one haptic and a row that looked exactly as it had a
+ * moment earlier, and every existing assertion in this file passed anyway.
+ */
+describe("Products — surfacing a failed status change", () => {
+  /** A server error as `ApiError` puts it on the wire. Structural, on purpose. */
+  function apiError(status: number, code: string, message: string): Error {
+    const err = new Error(message) as Error & { status: number; code: string };
+    err.name = "ApiError";
+    err.status = status;
+    err.code = code;
+    return err;
+  }
+
+  function failActivate(root: ReturnType<typeof render>, error: unknown) {
+    fireEvent.press(root.getByTestId("swipe-p-draft-action-activate"));
+    act(() => (mockSetStatus.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(error));
+  }
+
+  it("says nothing at all until something fails", () => {
+    const root = render(<ProductsScreen />);
+    fireEvent.press(root.getByTestId("swipe-p-draft-action-activate"));
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+
+  it("names the action the merchant actually took", () => {
+    const root = render(<ProductsScreen />);
+    failActivate(root, new TypeError("Network request failed"));
+    expect(root.getByTestId("action-failure-title")).toHaveTextContent(
+      "Couldn't activate this product",
+    );
+  });
+
+  // The swipe and the menu are two routes onto the same row, and Archive —
+  // the one irreversible action — is menu-only. It must name itself too.
+  it("names Archive when the archive path is the one that failed", () => {
+    const alert = jest.spyOn(Alert, "alert");
+    const root = render(<ProductsScreen />);
+    longPress(root.getByTestId, "p-draft");
+    fireEvent.press(root.getByTestId("action-sheet-item-archive"));
+    archiveConfirmButton(alert)?.onPress?.();
+    act(() => (mockSetStatus.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(new Error("x")));
+    expect(root.getByTestId("action-failure-title")).toHaveTextContent(
+      "Couldn't archive this product",
+    );
+  });
+
+  it("prefers the server's own words over anything invented here", () => {
+    const root = render(<ProductsScreen />);
+    failActivate(root, apiError(409, "invalid_transition", "cannot transition from archived to active"));
+    // Verbatim — only a closing full stop is added, never a re-wording.
+    expect(root.getByTestId("action-failure-detail")).toHaveTextContent(
+      /cannot transition from archived to active/,
+    );
+  });
+
+  it("reads a dead network differently from a server refusal", () => {
+    const offline = render(<ProductsScreen />);
+    failActivate(offline, new TypeError("Network request failed"));
+    const offlineText = offline.getByTestId("action-failure-detail").props.children;
+
+    const refused = render(<ProductsScreen />);
+    failActivate(refused, apiError(403, "forbidden", "Forbidden"));
+    expect(refused.getByTestId("action-failure-detail").props.children).not.toBe(offlineText);
+  });
+
+  // Triage is a queue. Two failures in quick succession must stay ONE
+  // readable strip, not a pile the merchant has to dig through.
+  it("keeps two failures in a row down to one message", () => {
+    const root = render(<ProductsScreen />);
+    failActivate(root, new Error("x"));
+    fireEvent.press(root.getByTestId("swipe-p-active-action-draft"));
+    act(() => (mockSetStatus.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(new Error("x")));
+
+    expect(root.getAllByTestId("action-failure-notice")).toHaveLength(1);
+    expect(root.getByTestId("action-failure-title")).toHaveTextContent(
+      "Couldn't set this product to draft",
+    );
+  });
+
+  it("clears itself when the merchant dismisses it", () => {
+    const root = render(<ProductsScreen />);
+    failActivate(root, new Error("x"));
+    fireEvent.press(root.getByTestId("action-failure-dismiss"));
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+
+  it("clears itself when a later action succeeds", () => {
+    const root = render(<ProductsScreen />);
+    failActivate(root, new Error("x"));
+    fireEvent.press(root.getByTestId("swipe-p-active-action-draft"));
+    act(() => (mockSetStatus.mock.calls.at(-1)?.[1].onSuccess as () => void)());
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+});

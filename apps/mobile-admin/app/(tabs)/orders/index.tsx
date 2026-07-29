@@ -16,6 +16,7 @@ import {
 import { useEmailLabel } from "@/lib/admin-api/shipment-actions";
 import { OrderRow } from "@/components/OrderRow";
 import {
+  ActionFailureNotice,
   ActionSheet,
   CollapsingHeader,
   EmptyState,
@@ -331,7 +332,10 @@ export default function OrdersScreen() {
                 icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
                 onPress: () => {
                   busy.markBusy(order.id);
-                  confirmOrder.mutate({ id: order.id }, busy.settleCallbacks(order.id));
+                  confirmOrder.mutate(
+                    { id: order.id },
+                    busy.settleCallbacks(order.id, "approve this order"),
+                  );
                 },
               },
             ]
@@ -379,7 +383,10 @@ export default function OrdersScreen() {
         disabled: target.status !== "confirmed",
         onPress: () => {
           busy.markBusy(target.id);
-          fulfillOrder.mutate(target.id, busy.settleCallbacks(target.id));
+          fulfillOrder.mutate(
+            target.id,
+            busy.settleCallbacks(target.id, "fulfil this order"),
+          );
         },
       },
       {
@@ -592,6 +599,12 @@ export default function OrdersScreen() {
         visible={menuOrder !== null}
         onDismiss={() => setMenuOrder(null)}
       />
+
+      {/* Why the last swipe changed nothing. Only the DIRECT mutations
+          (approve, fulfil) report here — cancel and refund own their own
+          inline sheet errors, which keep the typed input on screen next to
+          the message and must not be duplicated behind the sheet. */}
+      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
 
       <CancelReasonSheet
         ref={cancelSheetRef}

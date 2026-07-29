@@ -17,6 +17,7 @@ import { useCustomers } from "../../../lib/hooks/use-customers";
 import { useBlockCustomer, useUnblockCustomer } from "../../../lib/admin-api/customer-actions";
 import { CustomerRow } from "../../../components/CustomerRow";
 import {
+  ActionFailureNotice,
   ActionSheet,
   CollapsingHeader,
   EmptyState,
@@ -212,7 +213,14 @@ export default function CustomersScreen() {
   const unblock = useCallback(
     (customer: Customer) => {
       busy.markBusy(customer.id);
-      unblockCustomer.mutate(customer.id, busy.settleCallbacks(customer.id));
+      unblockCustomer.mutate(
+        customer.id,
+        // The action label matters more here than anywhere else in the app:
+        // `CustomerRow` carries no status badge, so under the default "All"
+        // filter a failed unblock and a successful one render IDENTICALLY.
+        // Without a message the only difference is a haptic.
+        busy.settleCallbacks(customer.id, "unblock this customer"),
+      );
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
@@ -399,6 +407,11 @@ export default function CustomersScreen() {
         visible={menuCustomer !== null}
         onDismiss={() => setMenuCustomer(null)}
       />
+
+      {/* Why the last action changed nothing — the one signal this screen
+          has, since its rows carry no status badge to flip. Floats above the
+          dock and replaces itself rather than stacking. */}
+      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
 
       <BlockReasonSheet
         ref={blockSheetRef}

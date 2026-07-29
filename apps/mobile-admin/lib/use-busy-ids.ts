@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
+import { useActionFailure, type ActionFailure } from "./use-action-failure";
 
 /**
  * Per-row, per-request gesture guard for a list a merchant works THROUGH.
@@ -22,11 +23,38 @@ export interface BusyIds {
   clearBusy: (id: string) => void;
   /**
    * react-query callbacks for a direct (non-sheet) mutation on one row:
-   * releases that row's guard by id and reports the outcome in the hand.
+   * releases that row's guard by id, reports the outcome in the hand, and —
+   * when given an action label — puts a merchant-readable reason on screen.
    * There is nothing to roll back — no local state ever claimed the row
    * changed.
+   *
+   * @param action A lower-case verb phrase naming what the merchant tried,
+   *   read after "Couldn't " — e.g. `"archive this product"`. OPTIONAL only
+   *   so that this stayed additive when it was introduced: every call site
+   *   passed just an id, and a changed default would have rippled across
+   *   every screen in the increment. Omitting it means the failure is
+   *   reported in the hand ALONE, which is the silence this exists to fix —
+   *   so pass it.
    */
-  settleCallbacks: (id: string) => { onSuccess: () => void; onError: () => void };
+  settleCallbacks: (
+    id: string,
+    action?: string,
+  ) => {
+    onSuccess: () => void;
+    /**
+     * The parameter is the mutation's error. react-query already passes it
+     * (`onError(error, variables, context)`), so widening the signature is
+     * invisible to every existing call site — they simply hand the whole
+     * object to `mutate` as before.
+     */
+    onError: (error?: unknown) => void;
+  };
+  /**
+   * The most recent failed direct mutation on this screen, or null.
+   * Render it with `<ActionFailureNotice />`.
+   */
+  failure: ActionFailure | null;
+  dismissFailure: () => void;
 }
 
 export function useBusyIds(): BusyIds {
@@ -53,22 +81,44 @@ export function useBusyIds(): BusyIds {
 
   const isBusy = useCallback((id: string) => ids.has(id), [ids]);
 
+  // The screen-local notice this hook feeds. Composed rather than inlined so
+  // the Dashboard — which builds its own optimistic-hide callbacks and does
+  // NOT use this hook — can reach the same surface directly.
+  const { failure, reportFailure, clearFailure } = useActionFailure();
+
   const settleCallbacks = useCallback(
-    (id: string) => ({
+    (id: string, action?: string) => ({
       onSuccess: () => {
         clearBusy(id);
+        // A success retires the last failure: a notice about the attempt
+        // before a successful retry is simply untrue, and it would sit there
+        // contradicting the row the merchant just watched change.
+        clearFailure();
         void adminHaptics.actionSucceeded();
       },
-      onError: () => {
+      onError: (error?: unknown) => {
         clearBusy(id);
+        if (action !== undefined) reportFailure(error, action);
         void adminHaptics.actionFailed();
       },
     }),
-    [clearBusy],
+    // All three are stable `useCallback`s, so `settleCallbacks` keeps its
+    // identity across a failure. Products/Orders/Customers memoise their row
+    // actions on THIS function specifically — if it churned, every row's
+    // actions and every memoised `renderItem` would be rebuilt each time a
+    // mutation failed.
+    [clearBusy, reportFailure, clearFailure],
   );
 
   return useMemo(
-    () => ({ isBusy, markBusy, clearBusy, settleCallbacks }),
-    [isBusy, markBusy, clearBusy, settleCallbacks],
+    () => ({
+      isBusy,
+      markBusy,
+      clearBusy,
+      settleCallbacks,
+      failure,
+      dismissFailure: clearFailure,
+    }),
+    [isBusy, markBusy, clearBusy, settleCallbacks, failure, clearFailure],
   );
 }

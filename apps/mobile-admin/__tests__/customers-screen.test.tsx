@@ -557,3 +557,85 @@ describe("Customers — rows", () => {
     );
   });
 });
+
+/**
+ * Task 14 retrofit — the screen this surface exists for.
+ *
+ * `CustomerRow` carries no status badge, so under the default "All" filter a
+ * SUCCESSFUL unblock and a FAILED unblock render identically: same row, same
+ * copy, same position. Before this, the only difference between them was a
+ * haptic — nothing a merchant could see, and nothing a screen-reader user or
+ * anyone who did not feel the buzz got at all.
+ *
+ * Every fixture below drives `onError`. A passing mutation proves nothing
+ * here: it is the state the screen already handled.
+ */
+describe("Customers — surfacing a failed unblock", () => {
+  function apiError(status: number, code: string, message: string): Error {
+    const err = new Error(message) as Error & { status: number; code: string };
+    err.name = "ApiError";
+    err.status = status;
+    err.code = code;
+    return err;
+  }
+
+  function failUnblock(root: ReturnType<typeof render>, error: unknown) {
+    longPress(root.getByTestId, "c-blocked");
+    fireEvent.press(root.getByTestId("action-sheet-item-unblock"));
+    act(() => (mockUnblock.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(error));
+  }
+
+  it("says nothing until something fails", () => {
+    const root = render(<CustomersScreen />);
+    longPress(root.getByTestId, "c-blocked");
+    fireEvent.press(root.getByTestId("action-sheet-item-unblock"));
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+
+  // The whole point: this row looks unchanged either way, so the message IS
+  // the difference between success and failure on this screen.
+  it("makes a failed unblock visibly different from a successful one", () => {
+    const root = render(<CustomersScreen />);
+    failUnblock(root, new TypeError("Network request failed"));
+    expect(root.getByTestId("action-failure-title")).toHaveTextContent(
+      "Couldn't unblock this customer",
+    );
+  });
+
+  it("distinguishes an unreachable server from a refusal", () => {
+    const offline = render(<CustomersScreen />);
+    failUnblock(offline, new TypeError("Network request failed"));
+    expect(offline.getByTestId("action-failure-detail")).toHaveTextContent(/reach the server/i);
+
+    const refused = render(<CustomersScreen />);
+    failUnblock(refused, apiError(403, "forbidden", "Forbidden"));
+    expect(refused.getByTestId("action-failure-detail")).toHaveTextContent(/permission/i);
+  });
+
+  it("keeps two failures down to one readable message", () => {
+    const root = render(<CustomersScreen />);
+    failUnblock(root, new Error("x"));
+    failUnblock(root, new Error("x"));
+    expect(root.getAllByTestId("action-failure-notice")).toHaveLength(1);
+  });
+
+  it("clears itself on dismiss", () => {
+    const root = render(<CustomersScreen />);
+    failUnblock(root, new Error("x"));
+    fireEvent.press(root.getByTestId("action-failure-dismiss"));
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+
+  // The BLOCK path keeps its own inline sheet error, which sits beside the
+  // reason the merchant typed. It must not also raise the floating strip, or
+  // the same failure is reported twice — once behind the open sheet.
+  it("leaves the block sheet's own inline error to the sheet", () => {
+    const root = render(<CustomersScreen />);
+    longPress(root.getByTestId, "c-named");
+    fireEvent.press(root.getByTestId("action-sheet-item-block"));
+    fireEvent.changeText(root.getByLabelText("Block reason"), "Fraud");
+    fireEvent.press(root.getByLabelText("Block customer"));
+    act(() => (mockBlock.mock.calls.at(-1)?.[1].onError as () => void)());
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+});

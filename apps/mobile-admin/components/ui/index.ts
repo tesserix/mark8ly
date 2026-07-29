@@ -37,3 +37,5 @@ export { SwipeRow } from "./SwipeRow";
 export type { SwipeAction, SwipeRowProps } from "./SwipeRow";
 export { ActionSheet } from "./ActionSheet";
 export type { ActionSheetItem, ActionSheetProps } from "./ActionSheet";
+export { ActionFailureNotice } from "./ActionFailureNotice";
+export type { ActionFailureNoticeProps } from "./ActionFailureNotice";

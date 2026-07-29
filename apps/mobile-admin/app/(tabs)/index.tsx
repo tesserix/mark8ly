@@ -13,7 +13,16 @@ import { useApproveReview, useRejectReview } from "@/lib/admin-api/review-action
 import { useUpdateTicketStatus } from "@/lib/admin-api/ticket-actions";
 import { buildQueue, type QueueItem, type QueueItemType } from "@/lib/queue";
 import { useCollapsingScroll } from "@/lib/use-collapsing-scroll";
-import { CollapsingHeader, Hairline, Screen, SwipeRow, Text, type SwipeAction } from "@/components/ui";
+import { useActionFailure } from "@/lib/use-action-failure";
+import {
+  ActionFailureNotice,
+  CollapsingHeader,
+  Hairline,
+  Screen,
+  SwipeRow,
+  Text,
+  type SwipeAction,
+} from "@/components/ui";
 import { QueueRow } from "@/components/dashboard/QueueRow";
 import { MetricsCard } from "@/components/dashboard/MetricsCard";
 import { QueueEmptyState } from "@/components/dashboard/QueueEmptyState";
@@ -67,7 +76,13 @@ const NO_STATS: DashboardStats = {
 /** Per-call react-query mutation callbacks. */
 interface MutationCallbacks {
   onSuccess: () => void;
-  onError: () => void;
+  /**
+   * The parameter is the mutation's error — react-query already passes it
+   * (`onError(error, variables, context)`). It is what lets the failure
+   * notice tell "your device couldn't reach the server" apart from "the
+   * server refused this", which are different problems for the merchant.
+   */
+  onError: (error?: unknown) => void;
 }
 
 const ICON_SIZE = 20;
@@ -219,6 +234,10 @@ export default function DashboardScreen() {
   // reviews and tickets were still in flight.
   const [isRefreshing, setIsRefreshing] = useState(false);
   const cancelSheetRef = useRef<CancelReasonSheetHandle>(null);
+  // The Dashboard builds its own optimistic-hide callbacks rather than going
+  // through `useBusyIds`, so it reaches the shared failure surface directly.
+  // Same state, same copy rules, same strip as the three list screens.
+  const { failure, reportFailure, clearFailure } = useActionFailure();
 
   const reviewItems = useMemo(
     () => reviews.data?.pages[0]?.data.slice(0, SIDE_QUERY_LIMIT) ?? [],
@@ -358,18 +377,30 @@ export default function DashboardScreen() {
    * This used to call `hide(id)` as a side effect of CONSTRUCTING the object,
    * inline inside `mutate(...)`'s arguments: it read as a factory, and any
    * future memoisation of it would have silently stopped hiding rows.
+   *
+   * Restoring the row is necessary but NOT sufficient: on its own it just
+   * makes the queue flicker and settle back to where it started, which reads
+   * as "nothing happened" rather than "that failed". `action` is what turns
+   * the rollback into an explanation.
+   *
+   * @param action A lower-case verb phrase, read after "Couldn't " — e.g.
+   *   `"close this ticket"`.
    */
   const callbacksFor = useCallback(
-    (source: QueueSource, id: string): MutationCallbacks => ({
+    (source: QueueSource, id: string, action: string): MutationCallbacks => ({
       onSuccess: () => {
+        // A notice about the attempt before a successful retry is untrue, and
+        // it would sit there contradicting the row that just disappeared.
+        clearFailure();
         void adminHaptics.actionSucceeded();
       },
-      onError: () => {
+      onError: (error?: unknown) => {
         restore(source, id);
+        reportFailure(error, action);
         void adminHaptics.actionFailed();
       },
     }),
-    [restore],
+    [restore, reportFailure, clearFailure],
   );
 
   const openCancelSheet = useCallback((id: string) => {
@@ -431,7 +462,10 @@ export default function DashboardScreen() {
                   // Hiding is an explicit statement, not a side effect of
                   // building the callbacks object — see `callbacksFor`.
                   hide("dashboard", item.id);
-                  confirmOrder.mutate({ id: item.id }, callbacksFor("dashboard", item.id));
+                  confirmOrder.mutate(
+                    { id: item.id },
+                    callbacksFor("dashboard", item.id, "approve this order"),
+                  );
                 },
               },
             ],
@@ -455,7 +489,10 @@ export default function DashboardScreen() {
                 icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
                 onPress: () => {
                   hide("reviews", item.id);
-                  approveReview.mutate(item.id, callbacksFor("reviews", item.id));
+                  approveReview.mutate(
+                    item.id,
+                    callbacksFor("reviews", item.id, "approve this review"),
+                  );
                 },
               },
             ],
@@ -467,7 +504,10 @@ export default function DashboardScreen() {
                 icon: <X size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
                 onPress: () => {
                   hide("reviews", item.id);
-                  rejectReview.mutate(item.id, callbacksFor("reviews", item.id));
+                  rejectReview.mutate(
+                    item.id,
+                    callbacksFor("reviews", item.id, "reject this review"),
+                  );
                 },
               },
             ],
@@ -486,7 +526,7 @@ export default function DashboardScreen() {
                   hide("tickets", item.id);
                   updateTicketStatus.mutate(
                     { id: item.id, status: "closed" },
-                    callbacksFor("tickets", item.id),
+                    callbacksFor("tickets", item.id, "close this ticket"),
                   );
                 },
               },
@@ -598,6 +638,12 @@ export default function DashboardScreen() {
           );
         })}
       </Animated.ScrollView>
+
+      {/* Why a row the merchant just swiped came back. Only the DIRECT
+          mutations report here — cancel owns its own inline sheet error,
+          which keeps the typed reason on screen beside the message and must
+          not be duplicated behind the sheet. */}
+      <ActionFailureNotice failure={failure} onDismiss={clearFailure} />
 
       <CancelReasonSheet
         ref={cancelSheetRef}

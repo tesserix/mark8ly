@@ -832,3 +832,73 @@ describe("Orders — load and failure states", () => {
     expect(getByText("No orders found")).toBeTruthy();
   });
 });
+
+/**
+ * Task 14 retrofit — a failed approve/fulfil is EXPLAINED.
+ *
+ * Orders shipped the silence this task removes: `settleCallbacks` fired
+ * `actionFailed()` and nothing else, so a merchant whose approve was refused
+ * saw the row come back looking exactly as it had. Every fixture below drives
+ * `onError` — the success path proves nothing about this surface.
+ */
+describe("Orders — surfacing a failed action", () => {
+  function apiError(status: number, code: string, message: string): Error {
+    const err = new Error(message) as Error & { status: number; code: string };
+    err.name = "ApiError";
+    err.status = status;
+    err.code = code;
+    return err;
+  }
+
+  function failApprove(root: ReturnType<typeof render>, error: unknown) {
+    fireEvent.press(root.getByTestId("swipe-o1-action-approve"));
+    act(() => (mockConfirmOrder.mock.calls.at(-1)?.[1].onError as (e: unknown) => void)(error));
+  }
+
+  it("says nothing until something fails", () => {
+    const root = render(<OrdersScreen />);
+    fireEvent.press(root.getByTestId("swipe-o1-action-approve"));
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+
+  it("names the action, and prefers the server's own reason", () => {
+    const root = render(<OrdersScreen />);
+    failApprove(root, apiError(409, "invalid_transition", "cannot transition from cancelled to confirmed"));
+    expect(root.getByTestId("action-failure-title")).toHaveTextContent("Couldn't approve this order");
+    expect(root.getByTestId("action-failure-detail")).toHaveTextContent(
+      /cannot transition from cancelled to confirmed/,
+    );
+  });
+
+  it("tells a dead network apart from a refusal", () => {
+    const root = render(<OrdersScreen />);
+    failApprove(root, new TypeError("Network request failed"));
+    expect(root.getByTestId("action-failure-detail")).toHaveTextContent(/reach the server/i);
+  });
+
+  it("keeps two failures down to one message", () => {
+    const root = render(<OrdersScreen />);
+    failApprove(root, new Error("x"));
+    failApprove(root, new Error("x"));
+    expect(root.getAllByTestId("action-failure-notice")).toHaveLength(1);
+  });
+
+  it("clears itself on dismiss", () => {
+    const root = render(<OrdersScreen />);
+    failApprove(root, new Error("x"));
+    fireEvent.press(root.getByTestId("action-failure-dismiss"));
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+
+  // Cancel and Refund keep their own inline sheet errors, which sit beside
+  // the input the merchant typed. Raising the floating strip as well would
+  // report the same failure twice, once behind an open sheet.
+  it("leaves the cancel sheet's inline error to the sheet", () => {
+    const root = render(<OrdersScreen />);
+    fireEvent.press(root.getByTestId("swipe-o1-action-cancel"));
+    fireEvent.changeText(root.getByLabelText("Cancellation reason"), "Out of stock");
+    fireEvent.press(root.getByLabelText("Cancel order"));
+    act(() => (mockCancelOrder.mock.calls.at(-1)?.[1].onError as () => void)());
+    expect(root.queryByTestId("action-failure-notice")).toBeNull();
+  });
+});

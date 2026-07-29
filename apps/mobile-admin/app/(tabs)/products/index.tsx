@@ -7,6 +7,7 @@ import { useProducts } from "@/lib/hooks/use-products";
 import { useSetProductStatus, type ProductStatus } from "@/lib/admin-api/product-status";
 import { ProductRow } from "@/components/ProductRow";
 import {
+  ActionFailureNotice,
   ActionSheet,
   CollapsingHeader,
   EmptyState,
@@ -48,6 +49,22 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 ];
 
 const ICON_SIZE = 20;
+
+/** The floating add-product button. Shared by its own style and by the
+ *  failure notice, which has to clear it. */
+const FAB_SIZE = 56;
+
+/**
+ * What the merchant tried, read after "Couldn't " in the failure notice.
+ *
+ * Keyed off the SAME `ProductStatus` union the mutation takes, so a fourth
+ * status can never reach the server with no name to report when it fails.
+ */
+const ACTION_FOR_STATUS: Record<ProductStatus, string> = {
+  active: "activate this product",
+  draft: "set this product to draft",
+  archived: "archive this product",
+};
 
 function useDebounce(value: string, delay: number): string {
   const [debounced, setDebounced] = useState(value);
@@ -157,7 +174,13 @@ export default function ProductsScreen() {
     // explaining why "inactive" is not in it).
     (product: Product, status: ProductStatus) => {
       busy.markBusy(product.id);
-      setStatus.mutate({ id: product.id, status }, busy.settleCallbacks(product.id));
+      setStatus.mutate(
+        { id: product.id, status },
+        // The action label is what turns a bare failure haptic into "Couldn't
+        // archive this product — <the server's reason>". Without it the
+        // merchant is left staring at an unchanged row.
+        busy.settleCallbacks(product.id, ACTION_FOR_STATUS[status]),
+      );
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
@@ -432,6 +455,19 @@ export default function ProductsScreen() {
         onDismiss={() => setMenuProduct(null)}
       />
 
+      {/* Why the last swipe changed nothing. Floats above the dock and
+          replaces itself, so a merchant firing several rows during triage
+          gets one readable message rather than a stack.
+
+          Offset by the FAB below it: both are anchored at the same
+          `useDockClearance()` bottom, and without this the add-product button
+          would sit squarely on the strip's dismiss control. */}
+      <ActionFailureNotice
+        failure={busy.failure}
+        onDismiss={busy.dismissFailure}
+        bottomOffset={FAB_SIZE + theme.spacing.md}
+      />
+
       <IconButton
         onPress={() => router.push("/(tabs)/products/new")}
         accessibilityLabel="Add new product"
@@ -475,9 +511,9 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: theme.spacing.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
     backgroundColor: theme.colors.accent,
     alignItems: "center",
     justifyContent: "center",

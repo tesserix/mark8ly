@@ -624,6 +624,11 @@ export default function OrdersScreen() {
         ref={emailSheetRef}
         onSubmit={submitEmailLabel}
         isSubmitting={emailLabel.isPending}
+        // Same contract as the two sheets above. This sheet only grew a
+        // backdrop now, which turns backing out from a deliberate button
+        // press into a one-tap accident — so the shipment it was armed for
+        // has to be released on every close, not just on a send.
+        onDismiss={() => setEmailTarget(null)}
       />
     </Screen>
   );

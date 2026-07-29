@@ -1,6 +1,26 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
-import { View, Pressable, ActivityIndicator, StyleSheet } from "react-native";
-import { BottomSheetModal } from "@gorhom/bottom-sheet";
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
+import {
+  View,
+  Pressable,
+  ActivityIndicator,
+  StyleSheet,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
+import {
+  BottomSheetBackdrop,
+  BottomSheetModal,
+  BottomSheetScrollView,
+  type BottomSheetBackdropProps,
+} from "@gorhom/bottom-sheet";
 import * as Haptics from "expo-haptics";
 import { Text, FieldInput } from "@/components/ui";
 import { theme } from "@/lib/theme";
@@ -40,6 +60,29 @@ interface RefundSheetProps {
   onDismiss?: () => void;
 }
 
+// @gorhom/bottom-sheet ships its own copy of @types/react, whose `ReactNode`
+// includes `bigint`; this project's doesn't, so its components trip TS2786.
+// `appearsOnIndex`/`disappearsOnIndex`/`pressBehavior`/`opacity` live on
+// gorhom's internal `BottomSheetDefaultBackdropProps`, which isn't exported,
+// so they're declared here directly. Identical dodge to `BlockReasonSheet`'s.
+const Backdrop = BottomSheetBackdrop as unknown as ComponentType<
+  BottomSheetBackdropProps & {
+    appearsOnIndex?: number;
+    disappearsOnIndex?: number;
+    pressBehavior?: "none" | "close" | "collapse" | number;
+    opacity?: number;
+    style?: StyleProp<ViewStyle>;
+  }
+>;
+
+// Same TS2786 dodge as `Backdrop`, for the scrolling body — identical to the
+// cast `BlockReasonSheet`, `ActionSheet` and `OptionBuilderSheet` use.
+const ScrollBody = BottomSheetScrollView as unknown as ComponentType<{
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  children?: ReactNode;
+  testID?: string;
+}>;
+
 /**
  * Refund composer. The backend requires a stable `refund_request_id`
  * (idempotency scope) per attempt — generated once when the sheet opens and
@@ -50,6 +93,30 @@ interface RefundSheetProps {
  * The sheet does NOT dismiss itself on submit — it stays open with the
  * submit button showing a spinner until the parent's mutation settles, then
  * calls `dismiss()` on success or passes `error` back in on failure.
+ *
+ * A backdrop (`pressBehavior="close"`) is present because gorhom's hosting
+ * container is `pointerEvents: "box-none"` and `BottomSheetModal` has no
+ * default backdrop: without one the area above the sheet stays live, so over
+ * the Orders LIST a mis-tap lands on an order row and navigates away
+ * mid-composition, throwing the typed amount out. It is a flat, low-opacity
+ * ink scrim (the same token `ActionSheet`, `StoreSelector` and
+ * `BlockReasonSheet` use) — never a blur; this design system bans
+ * glassmorphism.
+ *
+ * EVERY dismissal route is gated on `isSubmitting`, not just the "Cancel"
+ * button — and on a sheet that moves real money the inconsistency was worst
+ * here. `requestIdRef` is regenerated on `present()` and deliberately NOT on
+ * dismissal, so a sheet that closed itself mid-flight and was reopened would
+ * have started a NEW idempotency scope for what the merchant experiences as
+ * the same refund. Gating the swipe and the backdrop keeps the in-flight
+ * refund's scope on screen until it settles. The backdrop drops to
+ * `pressBehavior="none"` rather than being unmounted: gorhom only attaches
+ * its tap gesture when `pressBehavior !== "none"`, but the scrim keeps
+ * `pointerEvents: "auto"` either way, so the tap-through shield stays up.
+ *
+ * There is no Android hardware-back route to gate: @gorhom/bottom-sheet 5.x
+ * registers no `BackHandler` and `BottomSheetModal` renders through a portal,
+ * not a react-native `Modal`, so it has no `onRequestClose` either.
  */
 export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
   function RefundSheet(
@@ -91,17 +158,44 @@ export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
       onSubmit({ amount: parsed, refundRequestId: requestIdRef.current });
     };
 
+    const renderBackdrop = useCallback(
+      (props: BottomSheetBackdropProps): ReactNode => (
+        <Backdrop
+          {...props}
+          appearsOnIndex={0}
+          disappearsOnIndex={-1}
+          pressBehavior={isSubmitting ? "none" : "close"}
+          opacity={1}
+          style={styles.backdrop}
+        />
+      ),
+      [isSubmitting],
+    );
+
     return (
       <BottomSheetModal
         ref={modalRef}
         snapPoints={["52%"]}
-        enablePanDownToClose
+        enablePanDownToClose={!isSubmitting}
         enableDynamicSizing={false}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         onDismiss={onDismiss}
+        backdropComponent={renderBackdrop}
       >
-        <View style={styles.root}>
+        {/* A ScrollView, NOT a plain `View` — a fixed-percentage snap point
+            paired with non-scrolling content is a silent-clipping trap, and
+            `BlockReasonSheet` (which copied this file's `52%`) walked
+            straight into it: at `content_size accessibility-large` the body
+            copy alone grew past 52% of the screen and BOTH buttons were cut
+            off by the sheet's own bounds, with no gesture that could reveal
+            them — i.e. a merchant at accessibility text sizes could not issue
+            a refund at all. This sheet is the WORST case of the three: it
+            carries an extra "Refundable:" line, a conditional
+            over-balance error and a conditional carrier warning, so at AX
+            sizes it overflows sooner than the others. `52%` cannot track
+            Dynamic Type; scrolling inside the bounded sheet can. */}
+        <ScrollBody contentContainerStyle={styles.root} testID="refund-sheet-body">
           <Text preset="h3" color="text">
             Refund order
           </Text>
@@ -170,14 +264,17 @@ export const RefundSheet = forwardRef<RefundSheetHandle, RefundSheetProps>(
               )}
             </Pressable>
           </View>
-        </View>
+        </ScrollBody>
       </BottomSheetModal>
     );
   },
 );
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: theme.spacing.lg, gap: theme.spacing.md },
+  // No `flex: 1`: this is a ScrollView CONTENT container now, and a flexed
+  // content container pins the content to the viewport height — which is the
+  // very thing that clipped the buttons.
+  root: { padding: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: theme.spacing.xxl },
   shipmentNote: {
     backgroundColor: theme.colors.warningTint,
     borderRadius: theme.radii.sm,
@@ -202,4 +299,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   disabled: { opacity: 0.4 },
+  backdrop: {
+    // Flat, low-opacity ink scrim — never a blur/glassmorphism.
+    backgroundColor: theme.colors.overlay,
+  },
 });

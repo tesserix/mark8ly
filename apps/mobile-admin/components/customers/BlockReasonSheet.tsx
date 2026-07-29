@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useCallback,
   useImperativeHandle,
   useRef,
   useState,
@@ -90,19 +91,6 @@ const ScrollBody = BottomSheetScrollView as unknown as ComponentType<{
   testID?: string;
 }>;
 
-function renderBackdrop(props: BottomSheetBackdropProps): ReactNode {
-  return (
-    <Backdrop
-      {...props}
-      appearsOnIndex={0}
-      disappearsOnIndex={-1}
-      pressBehavior="close"
-      opacity={1}
-      style={styles.backdrop}
-    />
-  );
-}
-
 /**
  * Blocking a customer requires a reason — `BlockCustomerRequest.Reason` is
  * `binding:"required"`, so a reason-less block is an unconditional 400, and a
@@ -123,8 +111,22 @@ function renderBackdrop(props: BottomSheetBackdropProps): ReactNode {
  * mis-tap lands on a customer row and navigates away mid-sentence, throwing
  * the typed reason out. It is a flat, low-opacity ink scrim (the same token
  * `ActionSheet` and `StoreSelector` use) — never a blur; this design system
- * bans glassmorphism. The other three reason sheets predate this and should
- * follow.
+ * bans glassmorphism. The other three reason sheets predate this and now
+ * follow it.
+ *
+ * EVERY dismissal route is gated on `isSubmitting`, not just the "Cancel"
+ * button. Telling the merchant "you can't back out right now" by disabling
+ * one control while a swipe-down or a backdrop tap still closes the sheet is
+ * an inconsistency, and it lands the mutation's `onSuccess`/`onError` on a
+ * sheet whose target the parent has already released. The backdrop drops to
+ * `pressBehavior="none"` rather than being unmounted: gorhom only attaches
+ * its tap gesture when `pressBehavior !== "none"`, but the scrim keeps
+ * `pointerEvents: "auto"` either way — so the tap-through shield that is the
+ * whole reason for the backdrop stays up while the block is in flight.
+ *
+ * There is no Android hardware-back route to gate: @gorhom/bottom-sheet 5.x
+ * registers no `BackHandler` and `BottomSheetModal` renders through a portal,
+ * not a react-native `Modal`, so it has no `onRequestClose` either.
  */
 export const BlockReasonSheet = forwardRef<BlockReasonSheetHandle, BlockReasonSheetProps>(
   function BlockReasonSheet({ customerLabel, onSubmit, isSubmitting, error, onDismiss }, ref) {
@@ -149,11 +151,25 @@ export const BlockReasonSheet = forwardRef<BlockReasonSheetHandle, BlockReasonSh
       onSubmit(reason.trim());
     };
 
+    const renderBackdrop = useCallback(
+      (props: BottomSheetBackdropProps): ReactNode => (
+        <Backdrop
+          {...props}
+          appearsOnIndex={0}
+          disappearsOnIndex={-1}
+          pressBehavior={isSubmitting ? "none" : "close"}
+          opacity={1}
+          style={styles.backdrop}
+        />
+      ),
+      [isSubmitting],
+    );
+
     return (
       <BottomSheetModal
         ref={modalRef}
         snapPoints={["52%"]}
-        enablePanDownToClose
+        enablePanDownToClose={!isSubmitting}
         enableDynamicSizing={false}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"

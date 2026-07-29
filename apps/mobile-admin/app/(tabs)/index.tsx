@@ -604,6 +604,13 @@ export default function DashboardScreen() {
         onSubmit={submitCancel}
         isSubmitting={cancelOrder.isPending}
         error={cancelError}
+        // Released on EVERY close, not only on a successful cancel — the same
+        // contract Orders' list screen already had. The sheet renders through
+        // a portal and is ALWAYS mounted, so an order left pinned by a
+        // backed-out sheet is a live, armed submit for an order the merchant
+        // explicitly walked away from. Backing out is a one-tap accident now
+        // that the sheet has a backdrop.
+        onDismiss={() => setCancelTargetId(null)}
       />
     </Screen>
   );

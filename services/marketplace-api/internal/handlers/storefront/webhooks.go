@@ -526,6 +526,31 @@ func (h *WebhookHandler) handleGiftCardEvent(ctx context.Context, evt *payment.W
 				"gift_card_id", gcID, "err", err)
 		}
 
+	case "refund.succeeded":
+		// The merchant refunded the CARD PURCHASE itself. Void the card —
+		// otherwise it keeps its balance and the merchant honours value they
+		// just handed back. This happens even when the customer has already
+		// spent part of it; the shortfall is recorded on the card's ledger.
+		ref := evt.SessionID
+		if ref == "" {
+			ref = evt.ProviderPaymentID
+		}
+		if ref == "" {
+			h.logError("webhook: gift card refund event missing correlation id — card NOT voided, still spendable",
+				"gift_card_id", gcID, "event_id", evt.ProviderEventID)
+			return
+		}
+		card, voided, err := h.giftCardSvc.RefundPurchase(ctx, ref)
+		if err != nil {
+			h.logError("webhook: gift card purchase-refund void failed — card may still be spendable",
+				"gift_card_id", gcID, "ref", ref, "err", err)
+			return
+		}
+		if h.logger != nil && card != nil {
+			h.logger.Info("webhook: gift card voided after purchase refund",
+				"gift_card_id", card.ID, "voided", voided)
+		}
+
 	default:
 		h.logError("webhook: unhandled gift card event type",
 			"event_type", evt.EventType, "gift_card_id", gcID)

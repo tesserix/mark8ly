@@ -45,7 +45,33 @@ type Repository interface {
 
 	// CreditInTx atomically credits the gift card balance (for refunds).
 	// Inserts a transaction row of the given type.
+	//
+	// The UPDATE pins `status <> 'refunded'`: a card whose own purchase was
+	// refunded has already been paid back to the customer in real money, so
+	// crediting it would mint value from nothing. It also flips a `depleted`
+	// card back to `active` — DebitInTx requires status = 'active', so a
+	// restored balance on a depleted card would otherwise be unspendable
+	// money. `disabled` cards keep their status: the balance is frozen, not
+	// destroyed, and becomes spendable again when the merchant re-enables.
+	//
+	// Returns apperrors.ErrGiftCardNotRedeemable when the card is refunded
+	// and apperrors.ErrNotFound when the row is gone.
 	CreditInTx(tx *gorm.DB, cardID uuid.UUID, amount decimal.Decimal, orderID *uuid.UUID, txnType TransactionType, note *string, tenantID uuid.UUID) (balanceAfter decimal.Decimal, err error)
+
+	// VoidForPurchaseRefundInTx voids a card whose PURCHASE was refunded
+	// through the payment provider: status → 'refunded', balance → 0,
+	// payment_status → 'refunded', plus a ledger row recording the value
+	// removed and the shortfall already redeemed.
+	//
+	// Applies even when the customer has already spent part of the balance —
+	// the merchant chose to issue the refund, so the card must stop being
+	// spendable regardless, and the shortfall becomes a recorded merchant
+	// loss rather than a silent one.
+	//
+	// Idempotent: the UPDATE pins `status <> 'refunded'`, so a redelivered
+	// webhook matches no row, writes no duplicate ledger entry and returns
+	// Voided=false with no error.
+	VoidForPurchaseRefundInTx(tx *gorm.DB, cardID uuid.UUID) (*VoidResult, error)
 
 	// ListTransactions returns all transactions for a gift card, ordered
 	// by created_at desc.
@@ -217,7 +243,7 @@ func (gormRepository) CreditInTx(tx *gorm.DB, cardID uuid.UUID, amount decimal.D
 		SET current_balance = current_balance + ?,
 		    status = CASE WHEN status = 'depleted' AND current_balance + ? > 0 THEN 'active' ELSE status END,
 		    updated_at = now()
-		WHERE id = ?
+		WHERE id = ? AND status <> 'refunded'
 		RETURNING id, current_balance`,
 		amount, amount, cardID).Scan(&gc)
 
@@ -225,7 +251,7 @@ func (gormRepository) CreditInTx(tx *gorm.DB, cardID uuid.UUID, amount decimal.D
 		return decimal.Zero, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return decimal.Zero, apperrors.NotFound("gift card")
+		return decimal.Zero, classifyCreditFailure(tx, cardID)
 	}
 
 	newBalance := gc.CurrentBalance
@@ -244,6 +270,85 @@ func (gormRepository) CreditInTx(tx *gorm.DB, cardID uuid.UUID, amount decimal.D
 	}
 
 	return newBalance, nil
+}
+
+// classifyCreditFailure explains why the credit UPDATE matched no row. Same
+// shape as classifyDebitFailure: two independent arms (identity and the
+// refunded guard), so one generic answer would be wrong for one of them.
+// Read-only, failure path only.
+func classifyCreditFailure(tx *gorm.DB, cardID uuid.UUID) error {
+	var gc GiftCard
+	err := tx.Select("id", "status").Where("id = ?", cardID).First(&gc).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return apperrors.NotFound("gift card")
+	}
+	if err != nil {
+		return err
+	}
+	return apperrors.New(apperrors.CodeGiftCardNotRedeemable,
+		"this gift card was refunded and cannot be credited")
+}
+
+// VoidResult reports what a purchase-refund void did, so the caller can log
+// and surface the merchant's loss. Voided is false on a redelivered webhook.
+type VoidResult struct {
+	CardID          uuid.UUID       `gorm:"column:card_id"`
+	TenantID        uuid.UUID       `gorm:"column:tenant_id"`
+	StoreID         uuid.UUID       `gorm:"column:store_id"`
+	InitialBalance  decimal.Decimal `gorm:"column:initial_balance"`
+	PreviousStatus  GiftCardStatus  `gorm:"column:previous_status"`
+	PreviousBalance decimal.Decimal `gorm:"column:previous_balance"`
+
+	// Voided and Redeemed are derived, not scanned.
+	Voided   bool            `gorm:"-"`
+	Redeemed decimal.Decimal `gorm:"-"`
+}
+
+func (gormRepository) VoidForPurchaseRefundInTx(tx *gorm.DB, cardID uuid.UUID) (*VoidResult, error) {
+	// The self-join against `prev` is what makes the pre-update balance
+	// readable from the same statement that zeroes it: in Postgres the FROM
+	// alias sees the row as it was before this UPDATE. Reading it with a
+	// separate SELECT first would reopen exactly the TOCTOU window the
+	// atomic-UPDATE pattern exists to close — a concurrent redeem between
+	// the SELECT and the UPDATE would be reported as un-redeemed.
+	var res VoidResult
+	result := tx.Raw(`
+		UPDATE gift_cards AS gc
+		SET status          = 'refunded',
+		    current_balance = 0,
+		    payment_status  = 'refunded',
+		    updated_at      = now()
+		FROM gift_cards AS prev
+		WHERE gc.id = prev.id
+		  AND gc.id = ?
+		  AND gc.status <> 'refunded'
+		RETURNING gc.id AS card_id, gc.tenant_id, gc.store_id, gc.initial_balance,
+		          prev.status AS previous_status, prev.current_balance AS previous_balance`,
+		cardID).Scan(&res)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		// Either already refunded (redelivered webhook) or gone. Both are
+		// no-ops for a webhook that must never fail the caller.
+		return &VoidResult{CardID: cardID, Voided: false, Redeemed: decimal.Zero}, nil
+	}
+
+	entry := voidLedgerFor(res.InitialBalance, res.PreviousBalance, res.PreviousStatus)
+	res.Voided = true
+	res.Redeemed = entry.Redeemed
+	if !entry.Write {
+		return &res, nil
+	}
+
+	return &res, tx.Create(&Transaction{
+		TenantID:     res.TenantID,
+		GiftCardID:   cardID,
+		Type:         TxnRefund,
+		Amount:       entry.Amount,
+		BalanceAfter: decimal.Zero,
+		Note:         entry.Note,
+	}).Error
 }
 
 func (gormRepository) ListTransactions(ctx context.Context, db *gorm.DB, giftCardID uuid.UUID) ([]Transaction, error) {

@@ -315,6 +315,54 @@ func (s *Service) MarkPurchaseFailed(ctx context.Context, sessionOrIntentID stri
 	return s.repo.MarkPaymentFailed(s.db.WithContext(ctx), gc.ID)
 }
 
+// RefundPurchase voids a gift card whose PURCHASE was refunded through the
+// payment provider, correlated by hosted-checkout session id or payment
+// intent id (whichever the event carried).
+//
+// The card stops being spendable even when part of the balance has already
+// been redeemed: the merchant chose to issue the refund, and leaving a
+// funded card behind means paying for it twice. The value already spent is
+// unrecoverable, so it is written to the ledger as a recorded merchant loss
+// instead of vanishing.
+//
+// Idempotent: a redelivered webhook returns (card, false, nil) and writes
+// nothing.
+func (s *Service) RefundPurchase(ctx context.Context, sessionOrIntentID string) (*GiftCard, bool, error) {
+	if sessionOrIntentID == "" {
+		return nil, false, apperrors.ValidationFailed("reference", "checkout session or payment intent id required")
+	}
+	gc, err := s.repo.GetByCheckoutSessionID(ctx, s.db, sessionOrIntentID)
+	if err != nil {
+		gc, err = s.repo.GetByPaymentIntentID(ctx, s.db, sessionOrIntentID)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+
+	var res *VoidResult
+	if err := s.Unit(ctx, func(tx *gorm.DB) error {
+		var vErr error
+		res, vErr = s.repo.VoidForPurchaseRefundInTx(tx, gc.ID)
+		return vErr
+	}); err != nil {
+		return nil, false, fmt.Errorf("giftcard: void after purchase refund: %w", err)
+	}
+
+	if res.Voided && res.Redeemed.GreaterThan(decimal.Zero) && s.logger != nil {
+		// The merchant will ask about this number. Make it greppable.
+		s.logger.Warn("giftcard: purchase refunded on a partly-spent card — shortfall not recoverable",
+			"card_id", gc.ID, "store_id", gc.StoreID,
+			"redeemed_before_refund", res.Redeemed.StringFixed(2),
+			"initial_balance", res.InitialBalance.StringFixed(2))
+	}
+
+	voided, err := s.repo.GetByID(ctx, s.db, gc.ID, gc.StoreID)
+	if err != nil {
+		return nil, res.Voided, fmt.Errorf("giftcard: reload after void: %w", err)
+	}
+	return voided, res.Voided, nil
+}
+
 func (s *Service) activatePending(ctx context.Context, gc *GiftCard, paymentIntentID string) (*GiftCard, bool, error) {
 	if gc.Status != StatusPending {
 		return gc, false, nil // already activated (or in a non-activatable state)

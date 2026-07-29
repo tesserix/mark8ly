@@ -338,6 +338,15 @@ func (s *StripeGateway) VerifyWebhook(_ context.Context, payload []byte, signatu
 			evt.ProviderPaymentID = obj.PaymentIntent
 		} else if strings.HasPrefix(obj.ID, "pi_") {
 			evt.ProviderPaymentID = obj.ID
+		} else if strings.HasPrefix(obj.ID, "ch_") || strings.HasPrefix(obj.ID, "py_") {
+			// charge.refunded (→ refund.succeeded) carries a Charge, whose
+			// own id is useless for correlation: nothing we persist is keyed
+			// by ch_… . The settled PaymentIntent hangs off `payment_intent`
+			// and IS what gift_cards.payment_intent_id holds, so surface it.
+			// Left empty for a legacy direct charge with no intent rather
+			// than falling back to the charge id, which would look like a
+			// valid correlation key and match nothing.
+			evt.ProviderPaymentID = obj.PaymentIntent
 		}
 	}
 

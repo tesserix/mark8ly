@@ -5,8 +5,14 @@
 // reduced motion is on, a real animation otherwise.
 jest.mock("lucide-react-native", () => new Proxy({}, { get: () => () => null }));
 
+// Grown in inc3 Task 2: the screen now renders a scroll-driven
+// `CollapsingHeader` over an `Animated.FlatList`, and per-row `SwipeRow`s, so
+// this local mock needs the shared-value/scroll-handler/interpolation surface
+// as well as the `FadeIn` this suite is actually about. The ASSERTIONS below
+// are untouched — this is a test-environment gap, not a semantics change.
 jest.mock("react-native-reanimated", () => {
-  const { View } = require("react-native");
+  const { View, FlatList } = require("react-native");
+  const { useRef } = require("react");
   class ChainableAnimation {
     duration() {
       return this;
@@ -15,11 +21,34 @@ jest.mock("react-native-reanimated", () => {
       return this;
     }
   }
+  function interpolate(
+    value: number,
+    inputRange: [number, number],
+    outputRange: [number, number],
+  ) {
+    const [inMin, inMax] = inputRange;
+    const [outMin, outMax] = outputRange;
+    const t = Math.max(0, Math.min(1, (value - inMin) / (inMax - inMin)));
+    return outMin + t * (outMax - outMin);
+  }
   return {
     __esModule: true,
-    default: { View },
+    default: { View, FlatList },
     FadeIn: new ChainableAnimation(),
     Easing: { bezier: () => (t: number) => t },
+    Extrapolation: { CLAMP: "clamp", EXTEND: "extend", IDENTITY: "identity" },
+    interpolate,
+    useAnimatedStyle: (factory: () => unknown) => factory(),
+    useDerivedValue: (factory: () => number) => ({ value: factory() }),
+    useAnimatedScrollHandler: (handler: unknown) => handler,
+    useSharedValue: (initial: number) => {
+      const ref = useRef(undefined) as { current: { value: number } | undefined };
+      if (ref.current === undefined) ref.current = { value: initial };
+      return ref.current;
+    },
+    runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
+    withSpring: (toValue: number) => toValue,
+    withTiming: (toValue: number) => toValue,
     useReducedMotion: jest.fn(() => false),
   };
 });
@@ -40,6 +69,13 @@ jest.mock("@/lib/hooks/use-products", () => ({
     isRefetching: false,
     refetch: jest.fn(),
   }),
+}));
+
+// The screen's status swipes/menu (inc3 Task 2) reach a real react-query
+// mutation, which pulls in the api client and, through it, the auth provider
+// — a module chain this suite has no reason to boot.
+jest.mock("@/lib/admin-api/product-status", () => ({
+  useSetProductStatus: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 
 import { render } from "@testing-library/react-native";

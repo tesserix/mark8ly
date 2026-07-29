@@ -20,6 +20,7 @@ import React from "react";
 import { useConfirmOrder, useCancelOrder } from "@/lib/admin-api/order-actions";
 import { useApproveReview } from "@/lib/admin-api/review-actions";
 import { useUpdateTicketStatus } from "@/lib/admin-api/ticket-actions";
+import { useSetProductStatus } from "@/lib/admin-api/product-status";
 
 jest.mock("@repo/mobile-shared/api/orders", () => ({
   createOrdersApi: () => ({
@@ -42,6 +43,11 @@ jest.mock("@repo/mobile-shared/api/tickets", () => ({
     create: jest.fn(() => Promise.resolve({})),
     reply: jest.fn(() => Promise.resolve({})),
     updateStatus: jest.fn(() => Promise.resolve({})),
+  }),
+}));
+jest.mock("@repo/mobile-shared/api/products", () => ({
+  createProductsApi: () => ({
+    update: jest.fn(() => Promise.resolve({})),
   }),
 }));
 jest.mock("@/lib/api-client", () => ({ useApiClient: () => ({}) }));
@@ -165,6 +171,72 @@ describe("review mutations", () => {
     expect(invalidatedKeys()).toEqual(
       expect.arrayContaining(['["reviews"]', '["review","r1"]', '["dashboard"]']),
     );
+  });
+});
+
+describe("product status mutations", () => {
+  // The Products list is keyed ["products", status, search] and the prefix
+  // ["products"] reaches it — which is the ENTIRE reason that screen needs no
+  // optimistic hide. If this invalidation is ever narrowed to an exact key,
+  // the list stops refetching itself and a merchant's Activate silently does
+  // nothing visible.
+  it("invalidates the products list prefix and the product detail", async () => {
+    const { result } = renderHook(() => useSetProductStatus(), { wrapper });
+    result.current.mutate({ id: "p1", status: "active" });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidatedKeys()).toEqual(
+      expect.arrayContaining(['["products"]', '["product","p1"]']),
+    );
+  });
+
+  // Checked, not assumed. The dashboard payload's only product-shaped blocks
+  // are `top_products` (sales-derived) and `low_stock`, whose query filters on
+  // deleted_at and inventory quantity and never reads `p.status`
+  // (dashboard.go:145-163). A status change moves nothing on it.
+  it("does NOT invalidate the dashboard — no block on it reads product status", async () => {
+    const { result } = renderHook(() => useSetProductStatus(), { wrapper });
+    result.current.mutate({ id: "p1", status: "archived" });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidatedKeys()).not.toContain('["dashboard"]');
+  });
+
+  // Same guard as the orders one above: returning the invalidation promises
+  // from `onSuccess` keeps `isPending` true until the refetch lands, and the
+  // Products screen's per-row busy guard would then hold the row disabled for
+  // the length of a network round trip it has no business waiting on.
+  it("settles the mutation WITHOUT awaiting the refetches its invalidation kicks off", async () => {
+    let releaseRefetch: (() => void) | undefined;
+    let fetches = 0;
+    const queryFn = () => {
+      fetches += 1;
+      if (fetches === 1) return Promise.resolve("initial");
+      return new Promise<string>((resolve) => {
+        releaseRefetch = () => resolve("refetched");
+      });
+    };
+
+    const { result } = renderHook(
+      () => ({
+        list: useQuery({ queryKey: ["products", undefined, undefined], queryFn }),
+        setStatus: useSetProductStatus(),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    act(() => {
+      result.current.setStatus.mutate({ id: "p1", status: "active" });
+    });
+    await waitFor(() => expect(result.current.setStatus.isSuccess).toBe(true));
+
+    expect(fetches).toBe(2);
+    expect(result.current.list.isFetching).toBe(true);
+
+    await act(async () => {
+      releaseRefetch?.();
+    });
   });
 });
 

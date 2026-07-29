@@ -119,6 +119,12 @@ jest.mock("@/lib/hooks/use-products", () => ({
     return { data: { data: [] }, isLoading: false, isRefetching: false, isError: false, refetch: jest.fn() };
   },
 }));
+// Products' status swipes/menu (inc3 Task 2) reach a real react-query
+// mutation, which pulls in the api client and, through it, the auth
+// provider — a module chain this suite has no reason to boot.
+jest.mock("@/lib/admin-api/product-status", () => ({
+  useSetProductStatus: () => ({ mutate: jest.fn(), isPending: false }),
+}));
 jest.mock("@/lib/hooks/use-customers", () => ({
   useCustomers: (params?: Record<string, unknown>) => (mockRecord("customers", params), mockPagedResult()),
 }));
@@ -176,8 +182,10 @@ const CASES: Case[] = [
     Screen: ProductsScreen,
     hook: "products",
     // "Inactive" is deliberately absent: the backend enum is
-    // draft|active|archived and status=inactive was a hard 400.
-    keys: ["all", "active", "draft"],
+    // draft|active|archived and status=inactive was a hard 400. "Archived"
+    // joined in inc3 Task 2 — it is the only route back to a product the
+    // long-press menu archived.
+    keys: ["all", "active", "draft", "archived"],
     tap: "draft",
     expected: { status: "draft" },
     // Products collapses an empty param bag to `undefined` rather than `{}`.

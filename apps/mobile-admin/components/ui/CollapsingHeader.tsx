@@ -50,23 +50,30 @@ export interface CollapsingHeaderProps {
    */
   rightSlot?: ReactNode;
   /**
-   * Renders a back chevron at the leading edge in BOTH states, vertically
-   * centred like `rightSlot`.
+   * Renders a back chevron at the leading edge, present and tappable in BOTH
+   * states — but laid out differently in each, which is the whole shape of
+   * this component's two-state design:
+   *
+   *   - COLLAPSED, it sits INLINE with the h3 title (`< Gift cards +`), the
+   *     standard iOS compact nav bar. The title column is indented past it by
+   *     `44 + theme.spacing.sm`, which is correct there: the chevron
+   *     genuinely IS on the title's line.
+   *   - EXPANDED, it gets its OWN nav row above the editorial block (see
+   *     `NAV_ROW_HEIGHT`), so the eyebrow and serif title start at the screen
+   *     gutter — one left edge with the filter chips and every list row
+   *     beneath. This is iOS's own large-title convention, and it is a
+   *     project design rule, not a preference: round 1 shipped the chevron
+   *     inline in both states and the expanded title started at 72pt against
+   *     rows at 20pt.
    *
    * ADDITIVE, and that is the point: six of the eight list screens increment
    * 3 rolls this primitive across are NESTED routes that used `BackHeader`,
    * and this component had no back affordance at all — so "every screen gets
    * a collapsing header" was impossible without it. Omitted on the two
    * tab-root screens that already use this primitive (Dashboard, Orders), so
-   * their rendering stays bit-identical.
-   *
-   * It is a FIXED-SIZE 44pt control containing no text, so it does NOT
-   * participate in `headerHeightsFor`: the collapsed bar is 56pt at 1× and
-   * 112pt at the cap, both of which contain 44 comfortably. What it does cost
-   * is HORIZONTAL — the title block loses `44 + theme.spacing.sm` — and both
-   * title layers already wrap to two lines and then shrink to a 13pt floor
-   * (see `TITLE_MIN_FONT_SIZE`), so a long title gets smaller rather than
-   * clipped.
+   * their rendering stays bit-identical — including their heights, since the
+   * nav row is only added to `headerHeightsFor` when a leading control is
+   * actually present.
    */
   onBack?: () => void;
   /**
@@ -250,6 +257,27 @@ const COLLAPSED_TITLE_LINE = theme.text.h3.lineHeight;
 export const MAX_FONT_SCALE = TEXT_MAX_FONT_SCALE;
 
 /**
+ * Height of the EXPANDED state's nav row — the band above the editorial block
+ * that holds the leading control and `rightSlot` when a leading control is
+ * present.
+ *
+ * A TRUE CONSTANT, and the only term in `headerHeightsFor` that does not
+ * scale with `fontScale`. Everything else there is a stack of text line
+ * boxes, which RN grows with the Dynamic Type multiplier; this row holds a
+ * chevron (a fixed 22pt glyph in a 44pt `IconButton`) and `rightSlot`, and
+ * `rightSlot` is documented as the caller's to cap at `MAX_FONT_SCALE` if it
+ * contains text. Both existing nested callers pass an `IconButton`, so there
+ * is no text in this row to grow. If a caller ever puts real text in
+ * `rightSlot`, this constant is the thing that has to change with it — the
+ * band would then need the same `× scale` treatment the rest of the
+ * arithmetic gets.
+ *
+ * `theme.touchTarget` rather than a literal 44: the row exists to hold a
+ * touch-target-sized control, so the two must be the same number.
+ */
+export const NAV_ROW_HEIGHT = theme.touchTarget;
+
+/**
  * Header heights for a given device font scale.
  *
  * `styles.block` is `position: absolute; top: 0; bottom: 0` inside a
@@ -292,6 +320,14 @@ export const MAX_FONT_SCALE = TEXT_MAX_FONT_SCALE;
  * measured `collapsedTitleLines`: the shrink is bound by the title's WIDTH,
  * which this height does not touch.)
  *
+ * `hasLeadingControl` adds the ONE non-scaling term: the expanded state's nav
+ * row (see `NAV_ROW_HEIGHT`). It is added, not multiplied, because the row
+ * holds no text — and it is added ONLY to the expanded height, because the
+ * collapsed bar already centres the chevron on the title's own line and pays
+ * nothing for it. When it is false the expression is the one that shipped
+ * before the nav row existed, unchanged: Dashboard and Orders pass no leading
+ * control and must keep byte-identical heights.
+ *
  * Exported so the arithmetic is testable without mocking the RN Dimensions
  * module.
  */
@@ -299,6 +335,7 @@ export function headerHeightsFor(
   fontScale: number,
   hasSubtitle = false,
   collapsedTitleLines = 1,
+  hasLeadingControl = false,
 ): {
   expanded: number;
   collapsed: number;
@@ -312,8 +349,9 @@ export function headerHeightsFor(
     Math.max(Math.round(collapsedTitleLines), 1),
     COLLAPSED_TITLE_LINES,
   );
+  const scaledExpanded = expandedBase * scale;
   return {
-    expanded: expandedBase * scale,
+    expanded: hasLeadingControl ? scaledExpanded + NAV_ROW_HEIGHT : scaledExpanded,
     collapsed: (COLLAPSED_HEIGHT + COLLAPSED_TITLE_LINE * (titleLines - 1)) * scale,
   };
 }
@@ -371,9 +409,30 @@ export function CollapsingHeader({
    * after the height changes returns the same line count.
    */
   const [collapsedTitleLines, setCollapsedTitleLines] = useState(COLLAPSED_TITLE_LINES);
+
+  // `onBack` wins over `leadingSlot` — see the prop docs. Resolved once here
+  // rather than branched in the JSX so there is exactly one leading node and
+  // the precedence can't be re-derived differently in a later edit. Computed
+  // BEFORE the heights because the expanded height depends on it.
+  const leading = onBack ? (
+    <IconButton onPress={onBack} accessibilityLabel="Go back" tone="ink">
+      <ChevronLeft size={22} color={theme.colors.text} strokeWidth={1.75} />
+    </IconButton>
+  ) : (
+    leadingSlot
+  );
+  // Must agree with the `leading ? … : null` the render uses, or the box is
+  // sized for a nav row that isn't drawn (or vice versa).
+  const hasLeading = Boolean(leading);
+
   // `Boolean(subtitle)`, not `subtitle !== undefined` — the render below
   // treats an empty string as absent too, so the height must agree with it.
-  const heights = headerHeightsFor(fontScale, Boolean(subtitle), collapsedTitleLines);
+  const heights = headerHeightsFor(
+    fontScale,
+    Boolean(subtitle),
+    collapsedTitleLines,
+    hasLeading,
+  );
 
   // Single source of truth for collapse progress (0 expanded → 1 collapsed).
   // Reduced motion bypasses the interpolation entirely: any non-zero offset
@@ -401,140 +460,192 @@ export function CollapsingHeader({
   const expandedStyle = useAnimatedStyle(() => ({ opacity: 1 - progress.value }));
   const collapsedStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
-  // `onBack` wins over `leadingSlot` — see the prop docs. Resolved once here
-  // rather than branched in the JSX so there is exactly one leading node and
-  // the precedence can't be re-derived differently in a later edit.
-  const leading = onBack ? (
-    <IconButton onPress={onBack} accessibilityLabel="Go back" tone="ink">
-      <ChevronLeft size={22} color={theme.colors.text} strokeWidth={1.75} />
-    </IconButton>
-  ) : (
-    leadingSlot
+  /**
+   * The nav row grows from `NAV_ROW_HEIGHT` (a band at the top of the
+   * expanded header) into the WHOLE collapsed bar. That single interpolation
+   * is what gives each state its own correct layout from one mounted control:
+   * at progress 0 the chevron is centred in the 44pt band above the editorial
+   * block; at progress 1 the band IS the bar, so the chevron is centred on
+   * the h3 title's line exactly as it shipped.
+   */
+  const navRowStyle = useAnimatedStyle(
+    () => ({
+      height: interpolate(
+        progress.value,
+        [0, 1],
+        [NAV_ROW_HEIGHT, heights.collapsed],
+        Extrapolation.CLAMP,
+      ),
+    }),
+    [heights.collapsed],
   );
+
+  /**
+   * The editorial layer. Where it is MOUNTED is what differs between the two
+   * layouts below — inside the shared title column when there is no leading
+   * control (unchanged for the tab-root callers), or as a direct child of the
+   * container, spanning gutter to gutter UNDER the nav row, when there is.
+   * `styles.blockBelowNav` is what moves it there; the block's own content is
+   * identical either way.
+   */
+  const expandedBlock = (
+    <Animated.View
+      style={
+        hasLeading
+          ? [styles.block, styles.blockBelowNav, expandedStyle]
+          : [styles.block, expandedStyle]
+      }
+      pointerEvents="none"
+      testID="collapsing-header-expanded"
+    >
+      {/* `maxFontSizeMultiplier` + `numberOfLines` on every line, not
+          just the title: the height math above assumes a KNOWN number
+          of line boxes per element, capped at MAX_FONT_SCALE. Dropping
+          either reintroduces the clipping — and lowering the title's
+          allowance to 1 reintroduces the truncated shop name. */}
+      {eyebrow ? (
+        <Text
+          preset={eyebrowPreset}
+          color="textTertiary"
+          style={styles.eyebrow}
+          numberOfLines={1}
+          maxFontSizeMultiplier={MAX_FONT_SCALE}
+        >
+          {eyebrow}
+        </Text>
+      ) : null}
+      {/* Wrap first, shrink second, ellipsise never — see
+          TITLE_MIN_FONT_SIZE. This layer truncated a 37-character shop
+          name at the DEFAULT text size, so the pair is not an
+          accessibility-only concern and must not be reduced to one. */}
+      <Text
+        preset="h1"
+        color="text"
+        numberOfLines={EXPANDED_TITLE_LINES}
+        maxFontSizeMultiplier={MAX_FONT_SCALE}
+        adjustsFontSizeToFit
+        minimumFontScale={EXPANDED_TITLE_MIN_SCALE}
+      >
+        {title}
+      </Text>
+      {subtitle ? (
+        <Text
+          preset="body"
+          color="textSecondary"
+          style={styles.expandedSubtitle}
+          numberOfLines={1}
+          maxFontSizeMultiplier={MAX_FONT_SCALE}
+        >
+          {subtitle}
+        </Text>
+      ) : null}
+    </Animated.View>
+  );
+
+  /**
+   * The compact layer. Always lives in the same column the leading control
+   * and `rightSlot` share, in BOTH layouts — that inline `< Title +` line IS
+   * the collapsed state, and it is correct as it ships.
+   */
+  const collapsedBlock = (
+    <Animated.View
+      style={[styles.block, collapsedStyle]}
+      pointerEvents="none"
+      testID="collapsing-header-collapsed"
+    >
+      {/* Two lines here, as in the expanded layer, and the bar grows to
+          hold the second ONLY when the title actually takes it — see
+          COLLAPSED_TITLE_LINES. The compact bar is still compact for
+          every name that fits; it stops being compact exactly when the
+          alternative is truncating the merchant's shop name, and
+          correctness wins that trade. Do NOT put this back to 1 without
+          also shrinking the box in `headerHeightsFor`, and do not shrink
+          the box without putting this back — they are one contract. */}
+      <Text
+        preset="h3"
+        color="text"
+        numberOfLines={COLLAPSED_TITLE_LINES}
+        maxFontSizeMultiplier={MAX_FONT_SCALE}
+        // The second half of the same contract as the expanded title:
+        // two lines, then shrink to the caption floor, and only then
+        // give up. `headerHeightsFor` is unaffected — shrinking can
+        // only make the content shorter than the box already allows.
+        adjustsFontSizeToFit
+        minimumFontScale={COLLAPSED_TITLE_MIN_SCALE}
+        onTextLayout={(event) => {
+          // `lines` is OPTIONAL, not guaranteed. With
+          // `adjustsFontSizeToFit` on, iOS fires `onTextLayout` for its
+          // font-fitting passes with a payload that carries no `lines`
+          // array at all — reading `.length` off it threw
+          // "Cannot read property 'lines' of null" and took the whole
+          // Dashboard down to a red screen the moment the header
+          // collapsed. Found on device; every test was green, because
+          // the tests hand-build the event.
+          const measured = event.nativeEvent?.lines?.length;
+          if (!measured) return;
+          setCollapsedTitleLines((previous) =>
+            // Same-value guard: `onTextLayout` fires on every layout
+            // pass, and returning the identical number lets React bail
+            // out instead of re-rendering the header on each one.
+            previous === measured ? previous : measured,
+          );
+        }}
+      >
+        {title}
+      </Text>
+      {subtitle ? (
+        <Text
+          preset="caption"
+          color="textSecondary"
+          style={styles.collapsedSubtitle}
+          numberOfLines={1}
+          maxFontSizeMultiplier={MAX_FONT_SCALE}
+        >
+          {subtitle}
+        </Text>
+      ) : null}
+    </Animated.View>
+  );
+
+  // Outside the cross-faded blocks in both layouts, so it is present and
+  // tappable in BOTH states rather than fading with either one. The blocks
+  // are `pointerEvents="none"`, so nothing here can be occluded by them.
+  const trailing = rightSlot ? (
+    <View style={styles.right} testID="collapsing-header-right">
+      {rightSlot}
+    </View>
+  ) : null;
 
   return (
     <Animated.View style={[styles.container, containerStyle]} testID="collapsing-header">
-      <View style={styles.row}>
-        {/* Outside the cross-faded blocks, so it is present and tappable in
-            BOTH states rather than fading with either one. The blocks are
-            `pointerEvents="none"`, so nothing here can be occluded by them. */}
-        {leading ? (
-          <View style={styles.leading} testID="collapsing-header-leading">
-            {leading}
+      {hasLeading ? (
+        <>
+          {/* Nav row + editorial block, iOS large-title style. The chevron
+              and the trailing control live in a band at the TOP; the eyebrow
+              and title sit below them at the screen gutter, sharing one left
+              edge with the rows beneath. As the header collapses the band
+              grows into the whole bar and the two meet on one line. */}
+          <Animated.View style={[styles.navRow, navRowStyle]}>
+            <View style={styles.leading} testID="collapsing-header-leading">
+              {leading}
+            </View>
+            <View style={styles.left}>{collapsedBlock}</View>
+            {trailing}
+          </Animated.View>
+          {expandedBlock}
+        </>
+      ) : (
+        // Unchanged single-row layout for the tab-root callers (Dashboard,
+        // Orders), which have no leading control and therefore no nav row:
+        // both layers share one column beside the trailing slot.
+        <View style={styles.row}>
+          <View style={styles.left}>
+            {expandedBlock}
+            {collapsedBlock}
           </View>
-        ) : null}
-        <View style={styles.left}>
-          <Animated.View
-            style={[styles.block, expandedStyle]}
-            pointerEvents="none"
-            testID="collapsing-header-expanded"
-          >
-            {/* `maxFontSizeMultiplier` + `numberOfLines` on every line, not
-                just the title: the height math above assumes a KNOWN number
-                of line boxes per element, capped at MAX_FONT_SCALE. Dropping
-                either reintroduces the clipping — and lowering the title's
-                allowance to 1 reintroduces the truncated shop name. */}
-            {eyebrow ? (
-              <Text
-                preset={eyebrowPreset}
-                color="textTertiary"
-                style={styles.eyebrow}
-                numberOfLines={1}
-                maxFontSizeMultiplier={MAX_FONT_SCALE}
-              >
-                {eyebrow}
-              </Text>
-            ) : null}
-            {/* Wrap first, shrink second, ellipsise never — see
-                TITLE_MIN_FONT_SIZE. This layer truncated a 37-character shop
-                name at the DEFAULT text size, so the pair is not an
-                accessibility-only concern and must not be reduced to one. */}
-            <Text
-              preset="h1"
-              color="text"
-              numberOfLines={EXPANDED_TITLE_LINES}
-              maxFontSizeMultiplier={MAX_FONT_SCALE}
-              adjustsFontSizeToFit
-              minimumFontScale={EXPANDED_TITLE_MIN_SCALE}
-            >
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text
-                preset="body"
-                color="textSecondary"
-                style={styles.expandedSubtitle}
-                numberOfLines={1}
-                maxFontSizeMultiplier={MAX_FONT_SCALE}
-              >
-                {subtitle}
-              </Text>
-            ) : null}
-          </Animated.View>
-          <Animated.View
-            style={[styles.block, collapsedStyle]}
-            pointerEvents="none"
-            testID="collapsing-header-collapsed"
-          >
-            {/* Two lines here, as in the expanded layer, and the bar grows to
-                hold the second ONLY when the title actually takes it — see
-                COLLAPSED_TITLE_LINES. The compact bar is still compact for
-                every name that fits; it stops being compact exactly when the
-                alternative is truncating the merchant's shop name, and
-                correctness wins that trade. Do NOT put this back to 1 without
-                also shrinking the box in `headerHeightsFor`, and do not shrink
-                the box without putting this back — they are one contract. */}
-            <Text
-              preset="h3"
-              color="text"
-              numberOfLines={COLLAPSED_TITLE_LINES}
-              maxFontSizeMultiplier={MAX_FONT_SCALE}
-              // The second half of the same contract as the expanded title:
-              // two lines, then shrink to the caption floor, and only then
-              // give up. `headerHeightsFor` is unaffected — shrinking can
-              // only make the content shorter than the box already allows.
-              adjustsFontSizeToFit
-              minimumFontScale={COLLAPSED_TITLE_MIN_SCALE}
-              onTextLayout={(event) => {
-                // `lines` is OPTIONAL, not guaranteed. With
-                // `adjustsFontSizeToFit` on, iOS fires `onTextLayout` for its
-                // font-fitting passes with a payload that carries no `lines`
-                // array at all — reading `.length` off it threw
-                // "Cannot read property 'lines' of null" and took the whole
-                // Dashboard down to a red screen the moment the header
-                // collapsed. Found on device; every test was green, because
-                // the tests hand-build the event.
-                const measured = event.nativeEvent?.lines?.length;
-                if (!measured) return;
-                setCollapsedTitleLines((previous) =>
-                  // Same-value guard: `onTextLayout` fires on every layout
-                  // pass, and returning the identical number lets React bail
-                  // out instead of re-rendering the header on each one.
-                  previous === measured ? previous : measured,
-                );
-              }}
-            >
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text
-                preset="caption"
-                color="textSecondary"
-                style={styles.collapsedSubtitle}
-                numberOfLines={1}
-                maxFontSizeMultiplier={MAX_FONT_SCALE}
-              >
-                {subtitle}
-              </Text>
-            ) : null}
-          </Animated.View>
+          {trailing}
         </View>
-        {rightSlot ? (
-          <View style={styles.right} testID="collapsing-header-right">
-            {rightSlot}
-          </View>
-        ) : null}
-      </View>
+      )}
       <Animated.View style={[styles.hairline, collapsedStyle]} pointerEvents="none">
         <Hairline />
       </Animated.View>
@@ -571,6 +682,26 @@ const styles = StyleSheet.create({
     // the leading control takes the tighter `sm` — every point it borrows
     // comes straight out of the merchant's shop name.
   },
+  /**
+   * The EXPANDED state's nav row — and, once collapsed, the whole bar.
+   *
+   * Absolutely positioned against the container and given an ANIMATED height
+   * (`NAV_ROW_HEIGHT` → the collapsed height) rather than sitting in flow,
+   * because those are two different rows visually and only one control is
+   * mounted for both. `alignItems: "stretch"` lets the leading/trailing slots
+   * take that height and centre their glyph inside it, so the chevron is
+   * centred in the 44pt band when expanded and on the title's line when
+   * collapsed. Same gutter and same slot spacing as `styles.row`.
+   */
+  navRow: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "stretch",
+    paddingHorizontal: theme.spacing.xl,
+  },
   left: { flex: 1, position: "relative" },
   leading: {
     minWidth: theme.touchTarget,
@@ -590,6 +721,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     justifyContent: "center",
+  },
+  /**
+   * The EXPANDED block when a nav row is present: pushed below the row and
+   * re-anchored to the screen gutter, so the eyebrow and title share ONE left
+   * edge with the filter chips and list rows underneath instead of being
+   * indented past the chevron. `top` and the nav-row term in
+   * `headerHeightsFor` are one contract — change either and the block either
+   * overlaps the row or clips against the container's `overflow: "hidden"`.
+   */
+  blockBelowNav: {
+    top: NAV_ROW_HEIGHT,
+    left: theme.spacing.xl,
+    right: theme.spacing.xl,
   },
   eyebrow: { marginBottom: 4 },
   expandedSubtitle: { marginTop: 4 },

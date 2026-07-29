@@ -50,6 +50,7 @@ import {
   EXPANDED_TITLE_LINES,
   EXPANDED_TITLE_MIN_SCALE,
   MAX_FONT_SCALE,
+  NAV_ROW_HEIGHT,
   TITLE_MIN_FONT_SIZE,
   headerHeightsFor,
 } from "@/components/ui/CollapsingHeader";
@@ -65,6 +66,94 @@ function opacityOf(node: ReactTestInstance): number | undefined {
 
 function heightOf(node: ReactTestInstance): number | undefined {
   return (StyleSheet.flatten(node.props.style) as { height?: number }).height;
+}
+
+type BoxStyle = {
+  left?: unknown;
+  marginLeft?: unknown;
+  marginRight?: unknown;
+  paddingLeft?: unknown;
+  paddingHorizontal?: unknown;
+  flexDirection?: unknown;
+  width?: unknown;
+  minWidth?: unknown;
+};
+
+function boxStyleOf(node: ReactTestInstance): BoxStyle {
+  return (StyleSheet.flatten(node.props.style) ?? {}) as BoxStyle;
+}
+
+function points(value: unknown): number {
+  return typeof value === "number" ? value : 0;
+}
+
+function paddingLeftOf(style: BoxStyle): number {
+  return style.paddingLeft === undefined
+    ? points(style.paddingHorizontal)
+    : points(style.paddingLeft);
+}
+
+/**
+ * Nearest HOST ancestor. The rendered tree alternates composite and host
+ * nodes carrying identical props (RN's `View` is a `forwardRef` around a
+ * native component), so a naive `.parent` walk visits — and would therefore
+ * double-count — every level twice.
+ */
+function hostParentOf(node: ReactTestInstance): ReactTestInstance | null {
+  let parent: ReactTestInstance | null = node.parent;
+  while (parent && typeof parent.type !== "string") parent = parent.parent;
+  return parent;
+}
+
+function contains(root: ReactTestInstance, target: ReactTestInstance): boolean {
+  if (root === target) return true;
+  for (const child of root.children) {
+    if (typeof child === "string") continue;
+    if (contains(child, target)) return true;
+  }
+  return false;
+}
+
+/**
+ * Resolved left edge of `node` relative to the `collapsing-header` container,
+ * in points.
+ *
+ * Asserting on a single `style.left` would only see ONE of the two ways this
+ * block can end up indented, so this walks the ancestor chain and sums every
+ * contribution: the node's own absolute `left` and `marginLeft`, each
+ * ancestor's horizontal padding, and — for a row — the width of any
+ * fixed-width sibling laid out BEFORE it (`width`/`minWidth` plus its
+ * margins). That last term is exactly the `44 + 8` the back chevron costs
+ * when the title block is nested beside it, which is the misalignment under
+ * test; a fix that merely renamed a style constant would not move this
+ * number.
+ */
+function leftInsetOf(node: ReactTestInstance): number {
+  let inset = 0;
+  let current: ReactTestInstance | null = node;
+  while (current && current.props?.testID !== "collapsing-header") {
+    const own = boxStyleOf(current);
+    inset += points(own.left) + points(own.marginLeft);
+
+    const parent = hostParentOf(current);
+    if (!parent) break;
+    const parentStyle = boxStyleOf(parent);
+    inset += paddingLeftOf(parentStyle);
+
+    if (parentStyle.flexDirection === "row") {
+      for (const sibling of parent.children) {
+        if (typeof sibling === "string") continue;
+        if (contains(sibling, current)) break;
+        const style = boxStyleOf(sibling);
+        inset +=
+          points(style.width === undefined ? style.minWidth : style.width) +
+          points(style.marginLeft) +
+          points(style.marginRight);
+      }
+    }
+    current = parent;
+  }
+  return inset;
 }
 
 describe("CollapsingHeader", () => {
@@ -589,41 +678,144 @@ describe("CollapsingHeader — back affordance", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  // The height contract is computed from MAX_FONT_SCALE; a leading control
-  // that grows the header without headerHeightsFor knowing about it is the
-  // sixth silent-clipping bug waiting to happen. It is a FIXED-SIZE 44pt
-  // control containing no text, so it takes its space horizontally (out of
-  // the title column) and never vertically.
-  it("does not change the header's height in either state", () => {
-    const plainExpanded = render(<CollapsingHeader title="Coupons" scrollY={sharedValue(0)} />);
-    const plainExpandedHeight = heightOf(plainExpanded.getByTestId("collapsing-header"));
-    plainExpanded.unmount();
+  /**
+   * The layout invariant this whole increment is built on, and the assertion
+   * that would have caught the round-1 defect: eyebrow, title, filter chips
+   * and every list row share ONE left edge at `theme.spacing.xl`.
+   *
+   * Round 1 put the chevron INLINE with the expanded title and indented the
+   * title block by `44 + theme.spacing.sm` to clear it, so on device the
+   * eyebrow and serif title started at ~72pt while the chips and rows below
+   * started at 20pt. The ruling: the chevron gets its own nav row above the
+   * editorial block in the expanded state — iOS's own large-title convention.
+   */
+  it("starts the expanded eyebrow and title at the list gutter, not indented past the back control", () => {
+    const { getByTestId } = render(
+      <CollapsingHeader
+        title="Gift cards"
+        eyebrow="MARKETING"
+        onBack={jest.fn()}
+        rightSlot={<RNText>+</RNText>}
+        scrollY={sharedValue(0)}
+      />,
+    );
+    expect(leftInsetOf(getByTestId("collapsing-header-expanded"))).toBe(theme.spacing.xl);
+  });
 
-    const backExpanded = render(
-      <CollapsingHeader title="Coupons" onBack={jest.fn()} scrollY={sharedValue(0)} />,
+  /**
+   * The other half of the ruling: the COLLAPSED bar is CORRECT as it ships
+   * and must not move. There the chevron genuinely IS on the title's line, so
+   * the inline indent is the standard iOS compact-bar look.
+   */
+  it("keeps the collapsed title inline behind the back control, at the nav-bar indent", () => {
+    const { getByTestId } = render(
+      <CollapsingHeader
+        title="Gift cards"
+        eyebrow="MARKETING"
+        onBack={jest.fn()}
+        rightSlot={<RNText>+</RNText>}
+        scrollY={sharedValue(200)}
+      />,
     );
-    expect(heightOf(backExpanded.getByTestId("collapsing-header"))).toBe(plainExpandedHeight);
-    // Still the value `headerHeightsFor` computes for THIS device's font
-    // scale — i.e. the back control did not sneak an extra term into it.
-    expect(plainExpandedHeight).toBe(
-      headerHeightsFor(Dimensions.get("window").fontScale, false, 1).expanded,
+    expect(leftInsetOf(getByTestId("collapsing-header-collapsed"))).toBe(
+      theme.spacing.xl + theme.touchTarget + theme.spacing.sm,
     );
-    backExpanded.unmount();
+  });
 
-    const plainCollapsed = render(
-      <CollapsingHeader title="Coupons" scrollY={sharedValue(200)} />,
+  // Both layers of a header with NO leading control sit at the plain gutter,
+  // before and after this change — the tab-root callers are untouched.
+  it("leaves both layers at the gutter when there is no leading control", () => {
+    const { getByTestId } = render(
+      <CollapsingHeader title="Inbox" eyebrow="ORDERS" scrollY={sharedValue(0)} />,
     );
-    const plainCollapsedHeight = heightOf(plainCollapsed.getByTestId("collapsing-header"));
-    plainCollapsed.unmount();
+    expect(leftInsetOf(getByTestId("collapsing-header-expanded"))).toBe(theme.spacing.xl);
+    expect(leftInsetOf(getByTestId("collapsing-header-collapsed"))).toBe(theme.spacing.xl);
+  });
 
-    const backCollapsed = render(
-      <CollapsingHeader title="Coupons" onBack={jest.fn()} scrollY={sharedValue(200)} />,
-    );
-    expect(heightOf(backCollapsed.getByTestId("collapsing-header"))).toBe(plainCollapsedHeight);
-    // …and the title still renders at the collapsed state with a back control
-    // present, rather than being squeezed out of the row entirely.
-    // Both layers are always mounted, so the title node exists twice.
-    expect(backCollapsed.getAllByText("Coupons")).toHaveLength(2);
+  /**
+   * The height contract. The nav row is a REAL vertical cost now — it holds
+   * the chevron and the trailing `IconButton` above the editorial block — so
+   * `headerHeightsFor` must know about it or the block clips against the
+   * container's `overflow: "hidden"`. It is also a TRUE CONSTANT: the row
+   * contains no text, so unlike every other term here it does not scale with
+   * `fontScale`.
+   */
+  describe("nav row height", () => {
+    it("leaves the arithmetic byte-identical when there is no leading control", () => {
+      // Pinned literals, not a re-derivation: Dashboard and Orders pass
+      // neither `onBack` nor `leadingSlot` and must keep exactly these.
+      expect(headerHeightsFor(1)).toEqual({ expanded: 96, collapsed: 56 });
+      expect(headerHeightsFor(1, true)).toEqual({ expanded: 124, collapsed: 56 });
+      expect(headerHeightsFor(1.5)).toEqual({ expanded: 144, collapsed: 84 });
+      expect(headerHeightsFor(1, false, COLLAPSED_TITLE_LINES)).toEqual({
+        expanded: 96,
+        collapsed: 82,
+      });
+      // …and the new parameter defaults to that same answer.
+      expect(headerHeightsFor(1.6, false, 1, false)).toEqual(headerHeightsFor(1.6, false, 1));
+    });
+
+    it("adds exactly one constant nav row to the expanded height when a leading control is present", () => {
+      expect(NAV_ROW_HEIGHT).toBe(theme.touchTarget);
+      for (const fontScale of [1, 1.35, 1.9, 3.1]) {
+        const plain = headerHeightsFor(fontScale, false, 1);
+        const withNav = headerHeightsFor(fontScale, false, 1, true);
+        // Constant, NOT scaled — a chevron and an icon button, no text.
+        expect(withNav.expanded - plain.expanded).toBe(NAV_ROW_HEIGHT);
+        // The compact bar already centres the chevron on the title's line, so
+        // it pays nothing.
+        expect(withNav.collapsed).toBe(plain.collapsed);
+      }
+    });
+
+    it("sizes the rendered container off the nav row, in the expanded state only", () => {
+      const { fontScale } = Dimensions.get("window");
+
+      const plainExpanded = render(<CollapsingHeader title="Coupons" scrollY={sharedValue(0)} />);
+      expect(heightOf(plainExpanded.getByTestId("collapsing-header"))).toBe(
+        headerHeightsFor(fontScale, false, 1).expanded,
+      );
+      plainExpanded.unmount();
+
+      const backExpanded = render(
+        <CollapsingHeader title="Coupons" onBack={jest.fn()} scrollY={sharedValue(0)} />,
+      );
+      expect(heightOf(backExpanded.getByTestId("collapsing-header"))).toBe(
+        headerHeightsFor(fontScale, false, 1, true).expanded,
+      );
+      backExpanded.unmount();
+
+      const plainCollapsed = render(
+        <CollapsingHeader title="Coupons" scrollY={sharedValue(200)} />,
+      );
+      const plainCollapsedHeight = heightOf(plainCollapsed.getByTestId("collapsing-header"));
+      plainCollapsed.unmount();
+
+      const backCollapsed = render(
+        <CollapsingHeader title="Coupons" onBack={jest.fn()} scrollY={sharedValue(200)} />,
+      );
+      expect(heightOf(backCollapsed.getByTestId("collapsing-header"))).toBe(plainCollapsedHeight);
+      // …and the title still renders at the collapsed state with a back
+      // control present, rather than being squeezed out of the row entirely.
+      // Both layers are always mounted, so the title node exists twice.
+      expect(backCollapsed.getAllByText("Coupons")).toHaveLength(2);
+    });
+
+    it("keeps the expanded editorial block clear of the nav row it now sits under", () => {
+      const { getByTestId } = render(
+        <CollapsingHeader
+          title="Gift cards"
+          eyebrow="MARKETING"
+          onBack={jest.fn()}
+          scrollY={sharedValue(0)}
+        />,
+      );
+      const block = boxStyleOf(getByTestId("collapsing-header-expanded")) as { top?: unknown };
+      // `styles.block` is `top: 0; bottom: 0` — the editorial layer must be
+      // pushed BELOW the nav row, and the container grown by the same amount
+      // (asserted above), or the two overlap.
+      expect(block.top).toBe(NAV_ROW_HEIGHT);
+    });
   });
 
   describe("leadingSlot", () => {

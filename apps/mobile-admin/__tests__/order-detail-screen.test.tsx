@@ -62,38 +62,55 @@ jest.mock("@/lib/admin-api/order-actions", () => ({
   useRefundOrder: () => ({ mutate: mockRefund, isPending: false }),
 }));
 
-// The two sheets are stubbed to RECORD `present()`.
+// The two sheets are stubbed to RECORD `present()` and capture `onSubmit`.
 //
 // The shared gorhom mock renders a `BottomSheetModal`'s children
 // unconditionally, so "is the sheet on screen?" is not a question this
 // harness can answer — asserting on the sheet's own controls would pass even
 // if the screen never opened it. Recording the imperative `present()` call is
 // the real contract: the menu row must OPEN the sheet and must not fire the
-// mutation.
+// mutation. We also capture the `onSubmit` handler from props so the test can
+// trigger the component's actual mutation with its real callbacks.
 const mockCancelPresent = jest.fn();
 const mockRefundPresent = jest.fn();
+let capturedCancelOnSubmit: ((reason: string) => void) | undefined;
+let capturedRefundOnSubmit:
+  | (({ amount, refundRequestId }: { amount?: number; refundRequestId: string }) => void)
+  | undefined;
+
 jest.mock("@/components/orders/CancelReasonSheet", () => {
   const { forwardRef, useImperativeHandle } = require("react");
   return {
-    CancelReasonSheet: forwardRef((_props: unknown, ref: unknown) => {
-      useImperativeHandle(ref, () => ({
-        present: mockCancelPresent,
-        dismiss: jest.fn(),
-      }));
-      return null;
-    }),
+    CancelReasonSheet: forwardRef(
+      (props: { onSubmit?: (reason: string) => void }, ref: unknown) => {
+        capturedCancelOnSubmit = props.onSubmit;
+        useImperativeHandle(ref, () => ({
+          present: mockCancelPresent,
+          dismiss: jest.fn(),
+        }));
+        return null;
+      }
+    ),
   };
 });
 jest.mock("@/components/orders/RefundSheet", () => {
   const { forwardRef, useImperativeHandle } = require("react");
   return {
-    RefundSheet: forwardRef((_props: unknown, ref: unknown) => {
-      useImperativeHandle(ref, () => ({
-        present: mockRefundPresent,
-        dismiss: jest.fn(),
-      }));
-      return null;
-    }),
+    RefundSheet: forwardRef(
+      (
+        props: {
+          onSubmit?: ({ amount, refundRequestId }: { amount?: number; refundRequestId: string }) => void;
+        },
+        ref: unknown
+      ) => {
+        capturedRefundOnSubmit = props.onSubmit;
+        useImperativeHandle(ref, () => ({
+          present: mockRefundPresent,
+          dismiss: jest.fn(),
+        }));
+        return null;
+      }
+    ),
   };
 });
 
@@ -431,5 +448,94 @@ describe("Order detail — confirm/fulfil failure surface", () => {
 
     expect(noticeStyle.bottom as number).toBeGreaterThanOrEqual(barTop);
     spy.mockRestore();
+  });
+});
+
+describe("Order detail — cancel/refund haptics", () => {
+  it("calls actionFailed when cancel fails", () => {
+    renderOrder(FIXTURES.pending);
+
+    // The component passes handleCancelSubmit to the sheet as onSubmit.
+    // Simulate the sheet calling it, which triggers the mutation.
+    if (!capturedCancelOnSubmit) throw new Error("Sheet onSubmit not captured");
+    act(() => {
+      capturedCancelOnSubmit!("test reason");
+    });
+
+    // Verify the mutation was called with callbacks
+    expect(mockCancel).toHaveBeenCalledTimes(1);
+    expect(mockCancel).toHaveBeenCalledWith({ id: "o1", reason: "test reason" }, expect.any(Object));
+
+    // Trigger the error callback to invoke the haptics
+    act(() => {
+      mutationCallbacks(mockCancel).onError(new Error("boom"));
+    });
+
+    expect(adminHaptics.actionFailed).toHaveBeenCalled();
+  });
+
+  it("calls actionSucceeded when cancel succeeds", () => {
+    renderOrder(FIXTURES.pending);
+
+    // Simulate the sheet calling handleCancelSubmit
+    if (!capturedCancelOnSubmit) throw new Error("Sheet onSubmit not captured");
+    act(() => {
+      capturedCancelOnSubmit!("test reason");
+    });
+
+    // Verify the mutation was called
+    expect(mockCancel).toHaveBeenCalledTimes(1);
+
+    // Trigger the success callback to invoke the haptics
+    act(() => {
+      mutationCallbacks(mockCancel).onSuccess();
+    });
+
+    expect(adminHaptics.actionSucceeded).toHaveBeenCalled();
+  });
+
+  it("calls actionFailed when refund fails", () => {
+    renderOrder(FIXTURES.confirmed);
+
+    // The component passes handleRefundSubmit to the sheet as onSubmit.
+    // Simulate the sheet calling it, which triggers the mutation.
+    if (!capturedRefundOnSubmit) throw new Error("Sheet onSubmit not captured");
+    act(() => {
+      capturedRefundOnSubmit!({ amount: 50, refundRequestId: "req-123" });
+    });
+
+    // Verify the mutation was called with callbacks
+    expect(mockRefund).toHaveBeenCalledTimes(1);
+    expect(mockRefund).toHaveBeenCalledWith(
+      { id: "o1", body: { amount: 50, refund_request_id: "req-123" } },
+      expect.any(Object)
+    );
+
+    // Trigger the error callback to invoke the haptics
+    act(() => {
+      mutationCallbacks(mockRefund).onError(new Error("boom"));
+    });
+
+    expect(adminHaptics.actionFailed).toHaveBeenCalled();
+  });
+
+  it("calls actionSucceeded when refund succeeds", () => {
+    renderOrder(FIXTURES.confirmed);
+
+    // Simulate the sheet calling handleRefundSubmit
+    if (!capturedRefundOnSubmit) throw new Error("Sheet onSubmit not captured");
+    act(() => {
+      capturedRefundOnSubmit!({ amount: 50, refundRequestId: "req-123" });
+    });
+
+    // Verify the mutation was called
+    expect(mockRefund).toHaveBeenCalledTimes(1);
+
+    // Trigger the success callback to invoke the haptics
+    act(() => {
+      mutationCallbacks(mockRefund).onSuccess();
+    });
+
+    expect(adminHaptics.actionSucceeded).toHaveBeenCalled();
   });
 });

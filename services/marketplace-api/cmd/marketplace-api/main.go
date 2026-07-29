@@ -635,7 +635,7 @@ func main() {
 		refundGatewayEnabled := os.Getenv("REFUND_GATEWAY_ENABLED") == "true"
 		paymentSvc := payment.NewService(payment.NewRepository(conn))
 		refundResolver := orderrefund.NewResolver(conn).WithSecretStore(carrierSecretStore).WithEncryptor(apiKeyEncryptor)
-		refundCoordinator := orderrefund.NewCoordinator(conn, refundResolver, paymentSvc, orderSvc, orderRepo, refundGatewayEnabled)
+		refundCoordinator := orderrefund.NewCoordinator(conn, refundResolver, paymentSvc, orderSvc, orderRepo, refundGatewayEnabled).WithLogger(log)
 		log.Info("refund coordinator wired (admin)", "gateway_enabled", refundGatewayEnabled)
 		// Order document mailer — invoice on accept, receipt on delivery.
 		// Built up here because both OrdersHandler and ShipmentsHandler need
@@ -1282,7 +1282,7 @@ func main() {
 		refundGatewayEnabledSF := os.Getenv("REFUND_GATEWAY_ENABLED") == "true"
 		paymentSvcSF := payment.NewService(payment.NewRepository(conn))
 		refundResolverSF := orderrefund.NewResolver(conn).WithSecretStore(carrierSecretStore).WithEncryptor(apiKeyEncryptor)
-		refundCoordinatorSF := orderrefund.NewCoordinator(conn, refundResolverSF, paymentSvcSF, orderSvcSF, orderRepoSF, refundGatewayEnabledSF)
+		refundCoordinatorSF := orderrefund.NewCoordinator(conn, refundResolverSF, paymentSvcSF, orderSvcSF, orderRepoSF, refundGatewayEnabledSF).WithLogger(log)
 		log.Info("refund coordinator wired (storefront)", "gateway_enabled", refundGatewayEnabledSF)
 
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log).

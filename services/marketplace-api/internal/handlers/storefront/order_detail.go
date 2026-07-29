@@ -356,6 +356,7 @@ func (timelineRow) TableName() string { return "order_events" }
 // a new admin-only kind can't leak just by being written to order_events.
 var customerHiddenEventKinds = []string{
 	string(order.EventKindPickupFailed),
+	string(order.EventKindGiftCardCreditSkipped),
 }
 
 func (h *OrderDetailHandler) loadTimeline(ctx context.Context, orderID uuid.UUID) []storefrontTimelineEntry {

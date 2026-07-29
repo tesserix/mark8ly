@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"time"
 
@@ -45,9 +46,14 @@ type RefundCommand struct {
 // reports back to the caller.
 type RefundResult struct {
 	ProviderRefundID string
-	Amount           decimal.Decimal
-	PaymentStatus    order.PaymentStatus
-	AlreadyDone      bool
+	// Amount is the TOTAL returned to the customer, across both the payment
+	// gateway and any gift card that part-paid the order.
+	Amount decimal.Decimal
+	// GiftCardAmount is the slice of Amount that went back as store credit
+	// rather than real money.
+	GiftCardAmount decimal.Decimal
+	PaymentStatus  order.PaymentStatus
+	AlreadyDone    bool
 }
 
 // resolver is the narrow surface Coordinator needs from *Resolver — reading
@@ -78,6 +84,7 @@ type Coordinator struct {
 	// shipping/shipmentcancel import. Production wraps the call in a detached
 	// goroutine; the hook itself never errors back.
 	cancelShipments func(ctx context.Context, orderID uuid.UUID)
+	logger          *slog.Logger
 }
 
 // NewCoordinator constructs a Coordinator. enabled gates whether Refund is
@@ -86,6 +93,26 @@ type Coordinator struct {
 func NewCoordinator(db *gorm.DB, res resolver, pay *payment.Service, orders *order.Service, orderRepo order.Repository, enabled bool) *Coordinator {
 	return &Coordinator{db: db, res: res, pay: pay, orders: orders, orderRepo: orderRepo, enabled: enabled}
 }
+
+// WithLogger attaches a logger for the best-effort side of the saga (the
+// gift-card credit). Nil-safe by omission. Chainable.
+func (c *Coordinator) WithLogger(l *slog.Logger) *Coordinator {
+	c.logger = l
+	return c
+}
+
+func (c *Coordinator) logError(msg string, args ...any) {
+	if c.logger != nil {
+		c.logger.Error(msg, args...)
+	}
+}
+
+// storeCreditRefundID is the provider_refund_id for a refund that moved no
+// gateway money — the gateway portion was already fully returned and this
+// refund is pure store credit. A synthetic id keeps the ledger row uniform
+// (and the sweeper's `status = 'pending'` claim query away from it) without
+// pretending a provider was involved.
+func storeCreditRefundID(ledgerID string) string { return "store_credit_" + ledgerID }
 
 // DeriveStatus picks partially_refunded vs refunded from the post-refund
 // total: refunded so far plus the amount about to be refunded, compared
@@ -145,7 +172,7 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 	}
 
 	key := idempotencyKey(cmd.OrderID, cmd.ScopeID)
-	refundCap := decimal.Min(o.GrandTotal, pc.CapturedTotal)
+	gatewayCharged := decimal.Min(o.GrandTotal, pc.CapturedTotal)
 
 	// tx #1 — serialize on the order row, validate against the authoritative
 	// balance INCLUDING in-flight pending refunds, then reserve the ledger
@@ -157,6 +184,7 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 	var (
 		ledger        *payment.RefundTransaction
 		amount        decimal.Decimal
+		split         RefundSplit
 		target        order.PaymentStatus
 		currentStatus order.PaymentStatus
 		replay        refundReplay
@@ -168,15 +196,43 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 		}
 		currentStatus = order.PaymentStatus(locked.PaymentStatus)
 
-		amount = locked.GrandTotal.Sub(locked.RefundedAmount) // full remaining
+		// Replay detection comes FIRST. A same-ScopeID re-entry must resolve
+		// to the original outcome even when the order now has no refundable
+		// balance left — which is exactly the state its own success created.
+		prior, found, pErr := c.findLedgerByKey(tx, key)
+		if pErr != nil {
+			return pErr
+		}
+		if found {
+			ledger = prior
+			if prior.Status == refundStatusSucceeded {
+				replay = replaySucceeded
+			} else {
+				replay = replayPending
+			}
+			return nil
+		}
+
+		state, sErr := c.ledgerState(tx, locked, gatewayCharged)
+		if sErr != nil {
+			return sErr
+		}
+
+		amount = state.Remaining() // full remaining, across BOTH ledgers
 		if cmd.Amount != nil {
 			amount = *cmd.Amount
 		}
-		if amount.LessThanOrEqual(decimal.Zero) {
-			return apperrors.ValidationFailed("amount", "refund amount must be positive")
+		split, sErr = SplitRefund(state, amount)
+		if sErr != nil {
+			return sErr
 		}
-		target = DeriveStatus(locked.RefundedAmount, amount, locked.GrandTotal)
+		// Only the gateway slice moves orders.refunded_amount, which is
+		// measured against grand_total — itself gateway-only.
+		target = DeriveStatus(locked.RefundedAmount, split.Gateway, locked.GrandTotal)
 
+		// The ledger row's amount is the TOTAL of the refund, both sides. It
+		// is the only place the customer's full intent is persisted, so the
+		// sweeper can re-derive the split for a crashed saga from it.
 		row, wasCreated, rErr := c.pay.ReserveRefund(ctx, tx, payment.ReserveRefundInput{
 			TenantID:          locked.TenantID.String(),
 			StoreID:           locked.StoreID.String(),
@@ -194,27 +250,13 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 		ledger = row
 
 		if !wasCreated {
-			// Same-ScopeID replay: a succeeded row is an idempotent success; a
-			// still-pending row is a conflict (crash-recovery of stuck rows is
-			// the sweeper's job, not Refund's — re-running here risks a double
-			// bump under RecordRefund's cap-only guard).
+			// Lost a race with a concurrent same-ScopeID caller between the
+			// lookup above and this insert. Same classification as a replay.
 			if row.Status == refundStatusSucceeded {
 				replay = replaySucceeded
 			} else {
 				replay = replayPending
 			}
-			return nil
-		}
-
-		// Cap check on committed balance + all in-flight pending refunds for
-		// this order (our just-inserted row included). Exceeding the cap rolls
-		// back this tx, removing the reservation we just made.
-		pendingSum, pErr := sumPendingRefunds(tx, cmd.OrderID)
-		if pErr != nil {
-			return pErr
-		}
-		if locked.RefundedAmount.Add(pendingSum).GreaterThan(refundCap) {
-			return apperrors.ErrRefundExceedsTotal
 		}
 		return nil
 	}); err != nil {
@@ -239,26 +281,31 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 	// failure (bad request, invalid id, already refunded) the row is moved to
 	// 'failed' so it is never re-driven forever — it surfaces for manual
 	// reconciliation instead.
-	ref, err := c.pay.ExecuteGatewayRefund(ctx, gw, payment.RefundInput{
-		ProviderPaymentID: pc.ProviderPaymentID,
-		Amount:            amount,
-		CurrencyCode:      o.CurrencyCode,
-		Reason:            cmd.Reason,
-		IdempotencyKey:    key,
-	})
-	if err != nil {
-		if payment.IsPermanentGatewayError(err) {
-			_ = c.pay.MarkRefundFailed(ctx, c.db, ledger.ID)
+	//
+	// Skipped entirely when the gateway portion is already fully returned and
+	// this refund is pure store credit — asking a provider to refund zero is
+	// an error, not a no-op.
+	providerRefundID := storeCreditRefundID(ledger.ID)
+	if split.Gateway.GreaterThan(decimal.Zero) {
+		ref, err := c.pay.ExecuteGatewayRefund(ctx, gw, payment.RefundInput{
+			ProviderPaymentID: pc.ProviderPaymentID,
+			Amount:            split.Gateway,
+			CurrencyCode:      o.CurrencyCode,
+			Reason:            cmd.Reason,
+			IdempotencyKey:    key,
+		})
+		if err != nil {
+			if payment.IsPermanentGatewayError(err) {
+				_ = c.pay.MarkRefundFailed(ctx, c.db, ledger.ID)
+			}
+			return RefundResult{}, err
 		}
-		return RefundResult{}, err
+		providerRefundID = ref.ProviderRefundID
 	}
 
-	// tx #2 — finalize ledger + bookkeeping, atomic.
+	// tx #2 — finalize ledger + bookkeeping + the gift-card credit, atomic.
 	if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := c.pay.FinalizeRefund(ctx, tx, ledger.ID, ref.ProviderRefundID, refundStatusSucceeded); err != nil {
-			return err
-		}
-		return c.orders.RecordRefund(ctx, tx, cmd.OrderID, amount, target, cmd.Reason)
+		return c.settle(ctx, tx, cmd.OrderID, ledger.ID, providerRefundID, split.Gateway, target, cmd.Reason)
 	}); err != nil {
 		return RefundResult{}, err
 	}
@@ -269,9 +316,78 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 	c.maybeCancelShipments(ctx, cmd.OrderID, target)
 
 	return RefundResult{
-		ProviderRefundID: ref.ProviderRefundID,
+		ProviderRefundID: providerRefundID,
 		Amount:           amount,
+		GiftCardAmount:   split.GiftCard,
 		PaymentStatus:    target,
+	}, nil
+}
+
+// settle finalizes one refund: the ledger row, the order's gateway
+// bookkeeping, and the gift-card credit — in one transaction, under the
+// order's row lock.
+//
+// The lock is what makes the credit safe against a concurrent finalizer
+// (a sweeper re-driving the same order): both compute the amount still owed
+// from committed rows, and the second one sees the first one's credit.
+func (c *Coordinator) settle(
+	ctx context.Context, tx *gorm.DB,
+	orderID uuid.UUID, ledgerID, providerRefundID string,
+	gatewayAmount decimal.Decimal, target order.PaymentStatus, reason string,
+) error {
+	locked, err := lockOrder(tx, orderID)
+	if err != nil {
+		return err
+	}
+	if err := c.pay.FinalizeRefund(ctx, tx, ledgerID, providerRefundID, refundStatusSucceeded); err != nil {
+		return err
+	}
+	// A pure store-credit refund moves no gateway money, so there is nothing
+	// to bump on the order — and nothing to transition, since the gateway
+	// portion being exhausted is precisely what routed this refund to the
+	// card. RecordRefund rejects a zero amount, so calling it would fail the
+	// whole settlement.
+	if gatewayAmount.GreaterThan(decimal.Zero) {
+		if err := c.orders.RecordRefund(ctx, tx, orderID, gatewayAmount, target, reason); err != nil {
+			return err
+		}
+	}
+	// Best-effort and savepoint-isolated: the gateway has already moved real
+	// money, so a gift-card problem must never unwind the record of it.
+	c.returnGiftCardPortion(ctx, tx, locked, reason)
+	return nil
+}
+
+// findLedgerByKey looks up an existing refund reservation by idempotency key.
+func (c *Coordinator) findLedgerByKey(tx *gorm.DB, key string) (*payment.RefundTransaction, bool, error) {
+	var row payment.RefundTransaction
+	err := tx.Where("idempotency_key = ?", key).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return &row, true, nil
+}
+
+// ledgerState assembles the four persisted sums a split is derived from,
+// inside the caller's transaction and under the order's row lock.
+func (c *Coordinator) ledgerState(tx *gorm.DB, locked *order.Order, gatewayCharged decimal.Decimal) (RefundLedgerState, error) {
+	gc, err := readGiftCardLedger(tx, locked.ID)
+	if err != nil {
+		return RefundLedgerState{}, err
+	}
+	pending, err := sumPendingRefunds(tx, locked.ID)
+	if err != nil {
+		return RefundLedgerState{}, err
+	}
+	return RefundLedgerState{
+		GatewayCharged:   gatewayCharged,
+		GatewayReturned:  locked.RefundedAmount,
+		GiftCardApplied:  gc.Applied,
+		GiftCardReturned: gc.Returned,
+		InFlight:         pending,
 	}, nil
 }
 
@@ -289,6 +405,26 @@ func (c *Coordinator) maybeCancelShipments(ctx context.Context, orderID uuid.UUI
 		return
 	}
 	c.cancelShipments(ctx, orderID)
+}
+
+// resumeSplit re-derives the gateway/gift-card division for a pending row
+// the sweeper is re-driving. The row itself is excluded from InFlight — it is
+// the refund being settled, not a competitor for the same capacity.
+func (c *Coordinator) resumeSplit(ctx context.Context, o *order.Order, row payment.RefundTransaction) (RefundSplit, error) {
+	var state RefundLedgerState
+	err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		s, sErr := c.ledgerState(tx, o, o.GrandTotal)
+		if sErr != nil {
+			return sErr
+		}
+		s.InFlight = clampZero(s.InFlight.Sub(row.Amount))
+		state = s
+		return nil
+	})
+	if err != nil {
+		return RefundSplit{}, err
+	}
+	return SplitRefund(state, row.Amount)
 }
 
 // lockOrder reads an order FOR UPDATE, serialising concurrent refunds on the
@@ -379,21 +515,35 @@ func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration
 		if err != nil {
 			continue
 		}
-		ref, err := c.pay.ExecuteGatewayRefund(ctx, gw, payment.RefundInput{
-			ProviderPaymentID: row.ProviderPaymentID, Amount: row.Amount,
-			CurrencyCode: o.CurrencyCode, Reason: row.Reason, IdempotencyKey: row.IdempotencyKey,
-		})
+
+		// row.Amount is the TOTAL of the refund. Re-derive how much of it the
+		// gateway still owes, so a crashed saga is resumed with the same
+		// gateway-first rule that reserved it — and never asks the provider
+		// for more than it captured.
+		split, err := c.resumeSplit(ctx, o, row)
 		if err != nil {
-			// Permanent failure will never succeed on retry — move it to
-			// 'failed' so subsequent sweeps skip it (the claim query only
-			// selects 'pending'). Transient failures are left pending to
-			// retry on the next sweep.
-			if payment.IsPermanentGatewayError(err) {
-				_ = c.pay.MarkRefundFailed(ctx, c.db, row.ID)
-			}
 			continue
 		}
-		target := DeriveStatus(o.RefundedAmount, row.Amount, o.GrandTotal)
+
+		providerRefundID := storeCreditRefundID(row.ID)
+		if split.Gateway.GreaterThan(decimal.Zero) {
+			ref, rErr := c.pay.ExecuteGatewayRefund(ctx, gw, payment.RefundInput{
+				ProviderPaymentID: row.ProviderPaymentID, Amount: split.Gateway,
+				CurrencyCode: o.CurrencyCode, Reason: row.Reason, IdempotencyKey: row.IdempotencyKey,
+			})
+			if rErr != nil {
+				// Permanent failure will never succeed on retry — move it to
+				// 'failed' so subsequent sweeps skip it (the claim query only
+				// selects 'pending'). Transient failures are left pending to
+				// retry on the next sweep.
+				if payment.IsPermanentGatewayError(rErr) {
+					_ = c.pay.MarkRefundFailed(ctx, c.db, row.ID)
+				}
+				continue
+			}
+			providerRefundID = ref.ProviderRefundID
+		}
+		target := DeriveStatus(o.RefundedAmount, split.Gateway, o.GrandTotal)
 
 		// Status-guarded finalize: the UPDATE only flips rows still
 		// 'pending'. If a concurrent sweep run already finalized this row
@@ -405,10 +555,14 @@ func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration
 		// keep the shared method's Task-6 contract untouched.
 		finalized := false
 		if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			locked, lErr := lockOrder(tx, oid)
+			if lErr != nil {
+				return lErr
+			}
 			res := tx.Exec(
 				`UPDATE refund_transactions SET status = 'succeeded', provider_refund_id = ?, updated_at = now()
 				  WHERE id = ? AND status = 'pending'`,
-				ref.ProviderRefundID, row.ID,
+				providerRefundID, row.ID,
 			)
 			if res.Error != nil {
 				return res.Error
@@ -419,7 +573,15 @@ func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration
 				return nil
 			}
 			finalized = true
-			return c.orders.RecordRefund(ctx, tx, oid, row.Amount, target, row.Reason)
+			if split.Gateway.GreaterThan(decimal.Zero) {
+				if rErr := c.orders.RecordRefund(ctx, tx, oid, split.Gateway, target, row.Reason); rErr != nil {
+					return rErr
+				}
+			}
+			// Recomputed from committed totals, so a resumed saga returns
+			// the store-credit portion its crashed predecessor never got to.
+			c.returnGiftCardPortion(ctx, tx, locked, row.Reason)
+			return nil
 		}); err != nil {
 			continue
 		}

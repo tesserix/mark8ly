@@ -47,7 +47,7 @@ func TestVoidLedgerFor(t *testing.T) {
 			wantWrite:  true, wantAmount: "0", wantRedeemed: "100.00",
 		},
 		{
-			name: "disabled card keeps its frozen balance as the void amount",
+			name:    "disabled card keeps its frozen balance as the void amount",
 			initial: "80.00", prevBalance: "80.00", prevStatus: StatusDisabled,
 			wantWrite: true, wantAmount: "-80.00", wantRedeemed: "0",
 		},

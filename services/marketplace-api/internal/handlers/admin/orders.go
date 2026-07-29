@@ -536,7 +536,10 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 		ResourceID:   id.String(),
 		Severity:     audit.SeverityWarning,
 		Metadata: map[string]any{
-			"refund_amount":      res.Amount,
+			"refund_amount": res.Amount,
+			// Split out because refunded_total counts gateway money only —
+			// the store-credit slice is otherwise invisible in the audit trail.
+			"gift_card_amount":   res.GiftCardAmount,
 			"refunded_total":     o.RefundedAmount,
 			"payment_status":     res.PaymentStatus,
 			"provider_refund_id": res.ProviderRefundID,

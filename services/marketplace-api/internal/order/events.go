@@ -49,7 +49,30 @@ const (
 	// timeline (see loadTimeline's admin-only kinds). Never surface it to
 	// buyers.
 	EventKindPickupFailed EventKind = "pickup_failed"
+	// EventKindGiftCardCredited records the store-credit half of a refund.
+	// orders.refunded_amount only counts gateway money, so without this the
+	// portion returned to a gift card is invisible on the order and the
+	// refund looks smaller than it was. Customer-facing.
+	EventKindGiftCardCredited EventKind = "gift_card_credited"
+	// EventKindGiftCardCreditSkipped records store credit that could NOT be
+	// returned to a card — most often because the card's own purchase was
+	// already refunded, so crediting it would create value from nothing.
+	// It is a reconciliation task for the merchant, not something a buyer
+	// should read, so it is EXCLUDED from the storefront timeline (see
+	// loadTimeline's admin-only kinds).
+	EventKindGiftCardCreditSkipped EventKind = "gift_card_credit_skipped"
 )
+
+// GiftCardRefundPayload is written for both gift-card refund event kinds.
+type GiftCardRefundPayload struct {
+	GiftCardID  string `json:"gift_card_id"`
+	Amount      string `json:"amount"`
+	Description string `json:"description,omitempty"`
+}
+
+// EncodeGiftCardRefund produces a datatypes.JSON payload for the gift-card
+// refund kinds.
+func EncodeGiftCardRefund(p GiftCardRefundPayload) datatypes.JSON { return mustJSON(p) }
 
 // ShipmentEventPayload is written for every shipment lifecycle event.
 // Customer UIs can render the tracking timeline off this list alone —

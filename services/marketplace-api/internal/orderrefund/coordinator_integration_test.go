@@ -28,6 +28,8 @@ var coordinatorTruncateTables = []string{
 	"refund_transactions",
 	"payment_transactions",
 	"payment_gateway_configs",
+	"gift_card_transactions",
+	"gift_cards",
 	"orders",
 	"stores",
 }

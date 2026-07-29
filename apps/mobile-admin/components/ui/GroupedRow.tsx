@@ -2,20 +2,24 @@ import { type ReactNode } from "react";
 import { StyleSheet, View, useWindowDimensions, type AccessibilityRole } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 import { PressableRow } from "./PressableRow";
+import { SHEET_ACTIONS_STACK_SCALE } from "./SheetActions";
 import { Text } from "./Text";
 import { theme } from "@/lib/theme";
 
 /**
  * Above this device font scale, a right-hand `value` stacks beneath the
- * label instead of sharing its line with it. Same threshold and reasoning
- * `SheetActions` uses for its button pair (`SHEET_ACTIONS_STACK_SCALE`, see
- * `components/ui/SheetActions.tsx`): 1.3 is roughly where `bodyEmphasis`
- * reaches ~21pt, and a label like "Notification settings" alongside a value
- * no longer both fit one line at a comfortable row width — either one
- * truncates or the row silently clips, which is the exact "Row labels …
- * clipped before" shape the controller addendum calls out at Step 6.6.
+ * label instead of sharing its line with it. Reuses `SheetActions`'
+ * `SHEET_ACTIONS_STACK_SCALE` rather than re-declaring the same number: both
+ * thresholds exist for the identical reason (`bodyEmphasis` outgrowing a
+ * shared line at a realistic device width — see
+ * `components/ui/SheetActions.tsx`), so importing the constant means the two
+ * can't silently desync. 1.3 is roughly where `bodyEmphasis` reaches ~21pt,
+ * and a label like "Notification settings" alongside a value no longer both
+ * fit one line at a comfortable row width — either one truncates or the row
+ * silently clips, which is the exact "Row labels … clipped before" shape the
+ * controller addendum calls out at Step 6.6.
  */
-const VALUE_STACK_SCALE = 1.3;
+const VALUE_STACK_SCALE = SHEET_ACTIONS_STACK_SCALE;
 
 export interface GroupedRowProps {
   label: string;
@@ -82,7 +86,14 @@ export function GroupedRow({
     <>
       {icon ? <View style={styles.icon}>{icon}</View> : null}
       <View style={styles.textBlock}>
-        <Text preset="bodyEmphasis" color="text" numberOfLines={1}>
+        {/* No `numberOfLines`: the old local `Row` this was promoted from
+            never clamped its label either, letting it wrap and the row (a
+            `minHeight`, never a `height`) grow to fit. That's the mechanism
+            that lets this row survive accessibility text sizes — clamping
+            here would silently ellipsize labels like "Notification
+            settings" at 2x instead. See the controller addendum's Step 6.6
+            and the code-review finding this fixes. */}
+        <Text preset="bodyEmphasis" color="text">
           {label}
         </Text>
         {hint ? (
@@ -199,6 +210,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.xs,
     alignItems: "center",
     justifyContent: "center",
+    // The old local `Row` wrapped its trailing node (the badge) in
+    // `rowTrailing` (`marginRight: theme.spacing.xs`) on top of
+    // `PressableRow`'s own `gap: theme.row.gap` (16) — 20pt total between
+    // badge and chevron. `badge` here is rendered as its own sibling
+    // (not through `trailing`), so that 4pt has to be restored explicitly
+    // or the badge sits 16pt from the chevron instead of 20pt.
+    marginRight: theme.spacing.xs,
   },
   badgeLabel: { fontSize: 10, fontWeight: "700" },
 });

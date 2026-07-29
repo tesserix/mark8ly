@@ -138,6 +138,19 @@ describe("GroupedRow", () => {
     expect(style.height).toBeUndefined();
   });
 
+  // Code-review guard: the old local `Row` in `more/index.tsx` (deleted by
+  // this task) never clamped its label — that's what let the row (a
+  // `minHeight`, never a `height`) grow to fit a wrapped label at raised
+  // accessibility text sizes. A `numberOfLines={1}` here would silently
+  // ellipsize labels like "Notification settings" instead of letting them
+  // wrap, which is this app's most repeated defect class in a subtler form.
+  it("never clamps the label to a single line", () => {
+    const { getByText } = render(
+      <GroupedRow label="Notification settings" onPress={jest.fn()} />,
+    );
+    expect(getByText("Notification settings").props.numberOfLines).toBeUndefined();
+  });
+
   it("defaults the chevron on when onPress is set and off when it is not", () => {
     const withPress = render(<GroupedRow label="Team" onPress={jest.fn()} testID="row" />);
     expect(withPress.queryByTestId("row-chevron")).toBeTruthy();

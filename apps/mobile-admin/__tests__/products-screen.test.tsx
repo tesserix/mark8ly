@@ -103,6 +103,16 @@ const mockListCalls: (ListParams | undefined)[] = [];
 let mockProducts: unknown[] = [];
 let mockIsError = false;
 let mockIsLoading = false;
+/**
+ * Forces `meta.total` apart from the number of rows.
+ *
+ * Null (the default) keeps the two equal, which is what a small store looks
+ * like — but ONLY that. `useProducts` pins `page_size=100` with no
+ * pagination, so the real 162-product store returns `total: 162` over 100
+ * rows, and a fixture that computes `total` from `rows.length` makes the two
+ * definitionally equal and cannot express the case at all.
+ */
+let mockTotalOverride: number | null = null;
 const mockRefetch = jest.fn();
 
 jest.mock("@/lib/hooks/use-products", () => ({
@@ -116,7 +126,12 @@ jest.mock("@/lib/hooks/use-products", () => ({
         ? undefined
         : {
             data: rows,
-            meta: { page: 1, page_size: 100, total: rows.length, total_pages: 1 },
+            meta: {
+              page: 1,
+              page_size: 100,
+              total: mockTotalOverride ?? rows.length,
+              total_pages: 1,
+            },
           },
       isLoading: mockIsLoading,
       isRefetching: false,
@@ -135,7 +150,7 @@ import { act, fireEvent, render } from "@testing-library/react-native";
 import { Alert, StyleSheet } from "react-native";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import ProductsScreen from "../app/(tabs)/products/index";
-import { MAX_FONT_SCALE } from "@/components/ui";
+import { ProductRow } from "@/components/ProductRow";
 import { theme } from "@/lib/theme";
 import {
   CONSTRUCTIVE_TONE,
@@ -143,6 +158,7 @@ import {
   assertNoAutoFire,
   assertSwipeConvention,
   swipeRow,
+  type Root,
   type RowActions,
 } from "../test-utils/swipe-convention";
 import type { Product } from "@repo/mobile-shared/api/types";
@@ -175,11 +191,31 @@ beforeEach(() => {
   mockProducts = [DRAFT, ACTIVE, ARCHIVED];
   mockIsError = false;
   mockIsLoading = false;
+  mockTotalOverride = null;
 });
 
 /** Opens the long-press menu on a given row. */
 function longPress(getByTestId: (id: string) => unknown, id: string) {
   fireEvent(getByTestId(`product-row-${id}`) as never, "longPress");
+}
+
+/** Every mounted `ProductRow`, so its props can be read directly. */
+function productRows(root: Root) {
+  return root.findAllByType(ProductRow);
+}
+
+/**
+ * One row's mounted `ProductRow` element.
+ *
+ * The busy guard is asserted on `onLongPress` THROUGH THIS, not through
+ * "firing longPress produced no sheet": `fireEvent(el, "longPress")` against
+ * an element with no handler is a silent no-op, so that proxy passes both
+ * when the guard holds and when the event never dispatched at all.
+ */
+function productRow(root: Root, id: string) {
+  return productRows(root).find(
+    (n) => (n.props as { product: Product }).product.id === id,
+  );
 }
 
 /** The destructive button the Archive confirm hands to `Alert.alert`. */
@@ -198,15 +234,34 @@ describe("Products — header", () => {
     expect(getAllByText("CATALOGUE").length).toBeGreaterThan(0);
   });
 
-  it("carries the count of what is on screen in the right slot", () => {
+  it("carries the size of the filtered scope in the right slot", () => {
     const { getByTestId } = render(<ProductsScreen />);
-    expect(getByTestId("products-count")).toHaveTextContent("3 products");
+    expect(getByTestId("products-count")).toHaveTextContent("3 total");
   });
 
   it("counts the FILTERED scope, not a stale whole-catalogue number", () => {
     const { getByTestId } = render(<ProductsScreen />);
     fireEvent.press(getByTestId("filter-chip-active-target"));
-    expect(getByTestId("products-count")).toHaveTextContent("1 product");
+    expect(getByTestId("products-count")).toHaveTextContent("1 total");
+  });
+
+  /**
+   * The count describes THE FILTER, never the rows.
+   *
+   * `useProducts` pins `page_size=100` with no pagination, so above 100 the
+   * two genuinely differ — the real 162-product store renders 100 rows. A
+   * slot reading "162 products" over them is read as a list length and is
+   * wrong by 62; "162 total" is true of the scope the merchant asked for
+   * whatever the page ceiling is.
+   *
+   * Nothing else in this file can catch that: `meta.total` is normally
+   * `rows.length` by construction, which makes the claim unfalsifiable.
+   */
+  it("reports the size of the FILTER, not the number of rows it can show", () => {
+    mockTotalOverride = 162;
+    const { getByTestId, UNSAFE_root } = render(<ProductsScreen />);
+    expect(productRows(UNSAFE_root)).toHaveLength(3);
+    expect(getByTestId("products-count")).toHaveTextContent("162 total");
   });
 
   it("hides the count on an empty catalogue rather than showing a zero", () => {
@@ -215,15 +270,18 @@ describe("Products — header", () => {
     expect(queryByTestId("products-count")).toBeNull();
   });
 
-  // `CollapsingHeader` computes its container height from MAX_FONT_SCALE and
-  // gives every line it draws itself a known allowance. A `rightSlot` is
-  // outside that loop, so an uncapped, unbounded-line-count text slot is
-  // measured against a box that was never sized for it.
-  it("honours the header's Dynamic Type contract in the slot it fills", () => {
+  // `CollapsingHeader` sizes its container for ONE line of a `rightSlot` it
+  // does not otherwise own, and `Text` does not default `numberOfLines` — so
+  // this is the slot's own contract and it reddens the moment the prop goes.
+  //
+  // The font-scale cap that used to be asserted alongside it is NOT the
+  // screen's contract: `Text` applies `MAX_FONT_SCALE` at the chokepoint and
+  // `CollapsingHeader` derives its arithmetic from that same constant, so
+  // deleting the (now removed) explicit prop left the assertion green. It
+  // asserted a framework default.
+  it("keeps the count slot to the single line the header sizes for", () => {
     const { getByTestId } = render(<ProductsScreen />);
-    const count = getByTestId("products-count");
-    expect(count.props.maxFontSizeMultiplier).toBe(MAX_FONT_SCALE);
-    expect(count.props.numberOfLines).toBe(1);
+    expect(getByTestId("products-count").props.numberOfLines).toBe(1);
   });
 
   // Products is a TAB ROOT: no `onBack`, no `leadingSlot`, therefore no nav
@@ -450,11 +508,21 @@ describe("Products — long-press menu", () => {
     expect(mockPush).toHaveBeenCalledWith("/(tabs)/products/p-active");
   });
 
-  it("marks Archive as the destructive item", () => {
-    const { getByTestId } = render(<ProductsScreen />);
+  // Tone → paint, modelled on the swipe suite's own paint assertion: the old
+  // version of this test only asserted the row EXISTED, so deleting
+  // `tone: "danger"` left Archive sitting in default ink with the test green.
+  it("paints Archive as the destructive item, not merely labels it", () => {
+    const { getByText, getByTestId } = render(<ProductsScreen />);
     longPress(getByTestId, "p-active");
     // Danger ink, the same treatment Orders' "Cancel order" carries.
-    expect(getByTestId("action-sheet-item-archive")).toBeTruthy();
+    expect(StyleSheet.flatten(getByText("Archive").props.style).color).toBe(
+      theme.colors.danger,
+    );
+    // And discriminating: a sibling in the same sheet is NOT painted danger,
+    // so this cannot pass by every label happening to be oxblood.
+    expect(StyleSheet.flatten(getByText("Edit").props.style)?.color).not.toBe(
+      theme.colors.danger,
+    );
   });
 
   it("puts Archive behind a confirm and does not fire the mutation until it is accepted", () => {
@@ -524,11 +592,19 @@ describe("Products — no optimistic hide", () => {
     fireEvent.press(getByTestId("swipe-p-draft-action-activate"));
 
     expect(swipeRow(UNSAFE_root, "swipe-p-draft")?.props.enabled).toBe(false);
+    // The long-press half asserted DIRECTLY on the prop. This is the NEW half
+    // of the guard for this screen family — `SwipeRow.enabled` does not reach
+    // `onLongPress`, which is the whole reason the constraint exists — so it
+    // gets the unambiguous assertion rather than the "no sheet appeared"
+    // proxy (which passes whether the handler is absent or the event simply
+    // never dispatched). The proxy is kept as a second line below.
+    expect(productRow(UNSAFE_root, "p-draft")?.props.onLongPress).toBeUndefined();
     longPress(getByTestId, "p-draft");
     expect(queryByTestId("action-sheet-item-archive")).toBeNull();
 
     // A DIFFERENT row is untouched — the guard is per row.
     expect(swipeRow(UNSAFE_root, "swipe-p-active")?.props.enabled).not.toBe(false);
+    expect(productRow(UNSAFE_root, "p-active")?.props.onLongPress).toBeDefined();
     longPress(getByTestId, "p-active");
     expect(getByTestId("action-sheet-item-archive")).toBeTruthy();
   });
@@ -539,6 +615,7 @@ describe("Products — no optimistic hide", () => {
     act(() => (mockSetStatus.mock.calls[0][1].onSuccess as () => void)());
 
     expect(swipeRow(UNSAFE_root, "swipe-p-draft")?.props.enabled).not.toBe(false);
+    expect(productRow(UNSAFE_root, "p-draft")?.props.onLongPress).toBeDefined();
     longPress(getByTestId, "p-draft");
     expect(getByTestId("action-sheet-item-archive")).toBeTruthy();
   });
@@ -615,6 +692,27 @@ describe("Products — rows", () => {
     const { getByTestId } = render(<ProductsScreen />);
     fireEvent.press(getByTestId("product-row-p-active"));
     expect(mockPush).toHaveBeenCalledWith("/(tabs)/products/p-active");
+  });
+
+  /**
+   * The badge and the announcement are ONE string.
+   *
+   * They were computed separately: the badge titleised, the row's
+   * `accessibilityLabel` interpolated the raw wire value, so VoiceOver said
+   * "archived" beside a chip reading "Archived" — and an unexpected server
+   * status would have been announced (and painted) verbatim as
+   * "out_of_stock". The `-badge` testID exists to assert this pairing
+   * without matching the row's whole label string.
+   */
+  it("announces exactly the status its badge paints", () => {
+    const { getByTestId } = render(<ProductsScreen />);
+    expect(getByTestId("product-row-p-archived-badge").props.accessibilityLabel).toBe(
+      "Status: Archived",
+    );
+
+    const rowLabel = getByTestId("product-row-p-archived").props.accessibilityLabel as string;
+    expect(rowLabel).toContain("Archived");
+    expect(rowLabel).not.toContain("archived");
   });
 
   it("keeps the FAB reachable for adding a product", () => {

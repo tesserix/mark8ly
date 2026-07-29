@@ -24,11 +24,22 @@ import { theme } from "@/lib/theme";
 import { deriveSku } from "@/lib/sku";
 import { getErrorMessage } from "@/lib/product-alerts";
 import type { CategoryRef } from "@repo/mobile-shared/api/schemas/categories";
+import type { ProductStatus } from "@/lib/admin-api/product-status";
 
-/** The backend enum is draft|active|archived — "inactive" is a 400. */
-type ProductStatus = "draft" | "active";
+/**
+ * A DIFFERENT domain from the list screen's, deliberately: this is the set a
+ * product may be CREATED in, and "archived" is not one of them — archiving is
+ * an action taken on a product that already exists, not a state you can file
+ * a new one under. So the two values stay two.
+ *
+ * But it is now a provable SUBSET of the backend enum rather than a third
+ * independent set of literals: `Extract` fails to compile if either value
+ * ever stops being a real status (the way "inactive" — a hard 400 — once
+ * was).
+ */
+type NewProductStatus = Extract<ProductStatus, "draft" | "active">;
 
-const STATUS_OPTIONS: { key: ProductStatus; label: string }[] = [
+const STATUS_OPTIONS: { key: NewProductStatus; label: string }[] = [
   { key: "draft", label: "Draft" },
   { key: "active", label: "Active" },
 ];
@@ -53,7 +64,7 @@ export default function NewProductScreen() {
   const [price, setPrice] = useState("");
   const [sku, setSku] = useState("");
   const [stock, setStock] = useState("");
-  const [status, setStatus] = useState<ProductStatus>("draft");
+  const [status, setStatus] = useState<NewProductStatus>("draft");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
 
   // Inline validation errors — surfaced under the field, never as an Alert.
@@ -243,7 +254,7 @@ export default function NewProductScreen() {
 
         <Eyebrow label="Status" />
         <Card variant="ghost" padding="md" style={styles.card}>
-          <SegmentedControl<ProductStatus> segments={STATUS_OPTIONS} value={status} onChange={setStatus} />
+          <SegmentedControl<NewProductStatus> segments={STATUS_OPTIONS} value={status} onChange={setStatus} />
         </Card>
 
         <Eyebrow label="Category" />

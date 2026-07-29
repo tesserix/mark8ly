@@ -6,6 +6,7 @@ import {
   formatMoney,
   productCurrency,
   productPrice,
+  productStatusLabel,
   productStock,
   productThumb,
 } from "@/lib/product-display";
@@ -21,11 +22,6 @@ interface ProductRowProps {
   onLongPress?: (product: Product) => void;
 }
 
-/** "archived" → "Archived". The badge sits beside "Active" in one column. */
-function titleize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
 /**
  * Deliberately NOT wrapped in `SwipeRow` — the caller wraps it, the same
  * split `OrderRow`/`QueueRow` use, because the legal swipe actions depend on
@@ -39,6 +35,10 @@ export function ProductRow({ product, onPress, onLongPress }: ProductRowProps) {
   const priceLabel =
     price === undefined ? "—" : formatMoney(price, productCurrency(product));
   const lowStock = stock <= 5;
+  // ONE string for the badge and the announcement. They used to be computed
+  // separately and disagreed: the badge read "Archived", VoiceOver read
+  // "archived".
+  const statusLabel = productStatusLabel(product.status);
 
   return (
     <PressableRow
@@ -47,7 +47,7 @@ export function ProductRow({ product, onPress, onLongPress }: ProductRowProps) {
       onLongPress={onLongPress ? () => onLongPress(product) : undefined}
       style={styles.row}
       testID={`product-row-${product.id}`}
-      accessibilityLabel={`${product.title}, ${priceLabel}, stock ${stock}, ${product.status}`}
+      accessibilityLabel={`${product.title}, ${priceLabel}, stock ${stock}, ${statusLabel}`}
       accessibilityHint={onLongPress ? "Long press for more actions" : undefined}
     >
       <Thumb uri={thumb} recyclingKey={product.id} />
@@ -67,7 +67,7 @@ export function ProductRow({ product, onPress, onLongPress }: ProductRowProps) {
       </View>
 
       <StatusBadge
-        label={titleize(product.status)}
+        label={statusLabel}
         tone={isActive ? "success" : "muted"}
         testID={`product-row-${product.id}-badge`}
       />

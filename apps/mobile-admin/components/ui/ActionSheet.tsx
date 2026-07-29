@@ -24,7 +24,7 @@ import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import { Eyebrow } from "./Eyebrow";
 import { Hairline } from "./Hairline";
 import { PressableRow } from "./PressableRow";
-import { Text } from "./Text";
+import { MAX_FONT_SCALE, Text } from "./Text";
 import { theme } from "@/lib/theme";
 
 export interface ActionSheetItem {
@@ -53,6 +53,13 @@ export interface ActionSheetItem {
 }
 
 export interface ActionSheetProps {
+  /**
+   * Optional identifying line above the items. ARBITRARY caller text is
+   * safe here — a merchant's product title, a customer's name, a ticket
+   * subject: it is clamped to `TITLE_LINES` and the height budget reserves
+   * exactly that many lines, so a long title truncates rather than pushing
+   * the last item below the fold.
+   */
   title?: string;
   items: ActionSheetItem[];
   visible: boolean;
@@ -69,17 +76,103 @@ export interface ActionSheetProps {
   onDismiss: () => void;
 }
 
-// Eyebrow's own padding (theme.spacing.lg top, theme.spacing.sm bottom)
-// plus its `eyebrow` text preset's 16pt line height — matches its rendered
-// height closely enough for a snap-point estimate (a few px of slack is
-// invisible against the sheet's own top handle/grabber padding).
-const TITLE_BLOCK_HEIGHT = theme.spacing.lg + 16 + theme.spacing.sm;
+/**
+ * How many line boxes the title may occupy — and the number the height
+ * budget below is allowed to assume.
+ *
+ * ONE, and the `Eyebrow` below is clamped to the same constant so the two
+ * cannot drift. The budget used to assume a single line while rendering an
+ * unclamped `Eyebrow`, which held only because the first caller passed
+ * `Order #1042`. Products passes a merchant's own product title: "Insulated
+ * Stainless Steel Sport Water Bottle 1L — Bondi Edition" wrapped to three
+ * uppercased, letter-spaced lines, the snap point came up ~32pt short, and
+ * the menu's last item fell below the fold. Every screen after this one
+ * passes arbitrary text too (customer names, review bodies, campaign names,
+ * ticket subjects).
+ *
+ * Raising it is a real design change, not a knob: it makes EVERY sheet taller
+ * (a one-line title would then reserve two lines' worth of empty space), so
+ * the title truncates instead. A menu's title identifies the target; it is
+ * not the place to read the whole of it.
+ */
+const TITLE_LINES = 1;
+// Read off the same tokens the rendered text uses, so a type-scale change
+// moves the budget with it rather than orphaning a literal.
+const EYEBROW_LINE_HEIGHT = theme.text.eyebrow.lineHeight ?? 16;
+const BODY_LINE_HEIGHT = theme.text.body.lineHeight ?? 24;
 // gorhom's built-in handle/grabber area above the content.
 const HANDLE_HEIGHT = 24;
 // Minimum gap kept between the sheet's top edge and the screen's safe-area
 // top inset when a long item list would otherwise push the snap point tall
 // enough to reach (or clip under) the notch.
 const TOP_CLEARANCE = theme.spacing.xxl;
+
+export interface ActionSheetHeightInput {
+  itemCount: number;
+  hasTitle: boolean;
+  /**
+   * The OS Dynamic Type / font-scale multiplier, RAW. Capped internally at
+   * `MAX_FONT_SCALE` because `Text` caps every label it renders at exactly
+   * that — budgeting against the uncapped OS value would reserve space for
+   * text that can never be drawn.
+   */
+  fontScale: number;
+  bottomPadding: number;
+  windowHeight: number;
+  topInset: number;
+}
+
+/**
+ * The sheet's snap-point height, as pure arithmetic over its known pieces.
+ *
+ * Exported (and unit-tested at explicit `fontScale` values) because this is
+ * the part that cannot be seen in a screenshot: an under-budget of one line
+ * parks the last row just below the fold, where it is reachable only by
+ * scrolling inside a menu that gives no hint it scrolls.
+ *
+ * Dynamic Type moves BOTH terms, which the first version of this arithmetic
+ * missed — it measured everything at 1×. At the accessibility text sizes a
+ * title line is 32pt not 16, and a row's single 17/24 label needs
+ * 24×2 + 14×2 = 76pt, past `theme.row.minHeightSingle`'s 64. A four-item menu
+ * was therefore ~64pt short at AX sizes (recorded on device against Products
+ * AND Orders, whose menu is also four items).
+ */
+export function actionSheetHeight({
+  itemCount,
+  hasTitle,
+  fontScale,
+  bottomPadding,
+  windowHeight,
+  topInset,
+}: ActionSheetHeightInput): number {
+  const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+  // `theme.row.minHeightSingle` is a FLOOR on `PressableRow`, not its height:
+  // above ~1.3× the label's own line box plus the row's fixed vertical
+  // padding is what actually sizes the row.
+  const rowHeight = Math.max(
+    theme.row.minHeightSingle,
+    BODY_LINE_HEIGHT * scale + theme.row.paddingV * 2,
+  );
+  // Eyebrow's own padding (theme.spacing.lg top, theme.spacing.sm bottom) —
+  // fixed, it does not scale — plus its clamped line boxes, which do.
+  const titleHeight = hasTitle
+    ? theme.spacing.lg + EYEBROW_LINE_HEIGHT * TITLE_LINES * scale + theme.spacing.sm
+    : 0;
+  const chromeHeight = HANDLE_HEIGHT + bottomPadding;
+  const computedHeight = itemCount * rowHeight + titleHeight + chromeHeight;
+  // Clamp so a long item list can't pin the sheet to y=0 under the notch —
+  // content sits in `ScrollBody` (see doc comment), so anything past the
+  // clamp is still reachable by scrolling, not silently truncated.
+  const maxHeight = windowHeight - topInset - TOP_CLEARANCE;
+  // Floor at the sheet's own chrome height. Without this, a degenerate
+  // `windowHeight` (e.g. 0 before layout settles) drives `maxHeight`
+  // negative, and `normalizeSnapPoint` would then position the sheet BELOW
+  // the container — `present()` still reports success, but the sheet is
+  // invisible off-screen. That's the exact zero-height failure mode the
+  // dynamic-sizing dodge already fixed once; this floor closes the same
+  // failure mode for the clamp path.
+  return Math.max(Math.min(computedHeight, maxHeight), chromeHeight);
+}
 
 // @gorhom/bottom-sheet ships its own copy of @types/react, whose `ReactNode`
 // includes `bigint`; this project's doesn't, so its components trip TS2786
@@ -187,7 +280,7 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
   const modalRef = useRef<BottomSheetModal>(null);
   const wasVisible = useRef(false);
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, fontScale } = useWindowDimensions();
   const hasItems = items.length > 0;
 
   // At least the home-indicator inset, but never less than the sheet's
@@ -195,25 +288,21 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
   // bottom inset) still get real breathing room under the last row.
   const bottomPadding = Math.max(insets.bottom, theme.spacing.xl);
 
-  const snapPoints = useMemo(() => {
-    const rowsHeight = items.length * theme.row.minHeightSingle;
-    const titleHeight = title ? TITLE_BLOCK_HEIGHT : 0;
-    const chromeHeight = HANDLE_HEIGHT + bottomPadding;
-    const computedHeight = rowsHeight + titleHeight + chromeHeight;
-    // Clamp so a long item list can't pin the sheet to y=0 under the notch —
-    // content now sits in `ScrollBody` (see doc comment), so anything past
-    // the clamp is still reachable by scrolling, not silently truncated.
-    const maxHeight = windowHeight - insets.top - TOP_CLEARANCE;
-    // Floor at the sheet's own chrome height. Without this, a degenerate
-    // `windowHeight` (e.g. 0 before layout settles) drives `maxHeight`
-    // negative, and `normalizeSnapPoint` would then position the sheet
-    // BELOW the container — `present()` still reports success, but the
-    // sheet is invisible off-screen. That's the exact zero-height failure
-    // mode the dynamic-sizing dodge above already fixed once; this floor
-    // closes the same failure mode for the clamp path.
-    const minHeight = HANDLE_HEIGHT + bottomPadding;
-    return [Math.max(Math.min(computedHeight, maxHeight), minHeight)];
-  }, [items.length, title, bottomPadding, windowHeight, insets.top]);
+  const snapPoints = useMemo(
+    () => [
+      actionSheetHeight({
+        itemCount: items.length,
+        hasTitle: Boolean(title),
+        fontScale,
+        bottomPadding,
+        windowHeight,
+        topInset: insets.top,
+      }),
+    ],
+    // `title` by PRESENCE only — the budget reserves the same clamped block
+    // whatever the copy is, which is the whole point of the clamp.
+    [items.length, title, fontScale, bottomPadding, windowHeight, insets.top],
+  );
 
   useEffect(() => {
     if (visible && hasItems && !wasVisible.current) {
@@ -280,7 +369,7 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
       handleIndicatorStyle={styles.handleIndicator}
     >
       <ScrollBody contentContainerStyle={{ paddingBottom: bottomPadding }}>
-        {title ? <Eyebrow label={title} /> : null}
+        {title ? <Eyebrow label={title} numberOfLines={TITLE_LINES} /> : null}
         {items.map((item, index) => (
           <View key={item.key}>
             {index > 0 ? <Hairline inset={theme.row.paddingH} /> : null}

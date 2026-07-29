@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { Check, FileText, Plus } from "lucide-react-native";
 import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import { useProducts } from "@/lib/hooks/use-products";
-import { useSetProductStatus } from "@/lib/admin-api/product-status";
+import { useSetProductStatus, type ProductStatus } from "@/lib/admin-api/product-status";
 import { ProductRow } from "@/components/ProductRow";
 import {
   ActionSheet,
@@ -13,7 +13,6 @@ import {
   FilterChips,
   Hairline,
   IconButton,
-  MAX_FONT_SCALE,
   Screen,
   SearchField,
   SwipeRow,
@@ -28,7 +27,10 @@ import { DISCLOSURE_EASING } from "@/components/products/disclosure-motion";
 import type { Product } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
-type FilterKey = "all" | "active" | "draft" | "archived";
+// Every chip except "all" IS a backend status value, so the union says so
+// rather than restating the three literals — a fourth status added to
+// `ProductStatus` can then never leave this screen behind silently typed.
+type FilterKey = "all" | ProductStatus;
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "All" },
@@ -117,14 +119,24 @@ export default function ProductsScreen() {
 
   const products = useMemo(() => data?.data ?? [], [data]);
   /**
-   * The header count, read off the VISIBLE query's own meta.
+   * The header count: how many products MATCH the current chip and search —
+   * read off the visible query's own `meta.total`.
+   *
+   * It is deliberately NOT a count of the rows below it, and the copy says
+   * "total" rather than "products" for exactly that reason. `useProducts`
+   * pins `page_size=100` with no pagination yet, so a 162-product store
+   * renders 100 rows; a slot reading "162 products" over them would be read
+   * as a list length and be wrong by 62. The scope the filter selects is the
+   * number a merchant is actually asking for ("how many drafts do I have"),
+   * and it stays true whatever the page ceiling is.
    *
    * Deliberately unlike Orders, which pins its count to a separate
-   * `status: "pending"` query. That count describes a scope the merchant may
-   * not be looking at, so deriving it from a filtered list would report
-   * "3 pending" on the Cancelled tab. This one describes the scope on screen,
-   * so the visible query is not merely the cheap source — it is the only one
-   * that can stay true as the chips change, and it costs no extra request.
+   * `status: "pending"` query — that count describes a fixed scope the
+   * merchant may not be looking at, so deriving it from a filtered list
+   * would report "3 pending" on the Cancelled tab. This one tracks the
+   * chips, so the visible query is not merely the cheap source: it is the
+   * only one that can stay true as they change, and it costs no extra
+   * request.
    */
   const total = data?.meta?.total ?? 0;
 
@@ -140,7 +152,10 @@ export default function ProductsScreen() {
   );
 
   const setProductStatus = useCallback(
-    (product: Product, status: "draft" | "active" | "archived") => {
+    // The union is imported, not re-declared: `useSetProductStatus` already
+    // owns the definition of what the backend accepts (and the comment
+    // explaining why "inactive" is not in it).
+    (product: Product, status: ProductStatus) => {
       busy.markBusy(product.id);
       setStatus.mutate({ id: product.id, status }, busy.settleCallbacks(product.id));
     },
@@ -311,14 +326,17 @@ export default function ProductsScreen() {
               preset="caption"
               color="textTertiary"
               style={styles.count}
+              // The slot's OWN contract, and the only half of it `Text` does
+              // not already give: `CollapsingHeader` sizes its box for one
+              // line of a slot it doesn't otherwise own. The font-scale cap
+              // is NOT restated here — `Text` applies `MAX_FONT_SCALE` at the
+              // chokepoint and the header derives its arithmetic from that
+              // same constant, so the two cannot drift and a per-call opt-in
+              // is the very thing that default exists to remove.
               numberOfLines={1}
-              // Explicit, not inherited: `CollapsingHeader` computes its own
-              // height from this exact multiplier, so a slot it doesn't own
-              // has to state that it honours the same contract.
-              maxFontSizeMultiplier={MAX_FONT_SCALE}
               testID="products-count"
             >
-              {total} {total === 1 ? "product" : "products"}
+              {total} total
             </Text>
           ) : undefined
         }

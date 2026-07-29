@@ -131,8 +131,14 @@ import { Text as RNText } from "react-native";
 import { render, fireEvent, within } from "@testing-library/react-native";
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActionSheet, type ActionSheetItem, type ActionSheetProps } from "@/components/ui/ActionSheet";
+import {
+  ActionSheet,
+  actionSheetHeight,
+  type ActionSheetItem,
+  type ActionSheetProps,
+} from "@/components/ui/ActionSheet";
 import { Eyebrow } from "@/components/ui/Eyebrow";
+import { MAX_FONT_SCALE } from "@/components/ui/Text";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import { theme } from "@/lib/theme";
 
@@ -162,6 +168,21 @@ function items(overrides: Partial<ActionSheetItem>[] = []): ActionSheetItem[] {
   ];
   return base.map((item, i) => ({ ...item, ...overrides[i] }));
 }
+
+/** The single snap point the component handed the modal on its last render. */
+function lastSnapPoint(): number {
+  const calls = mockSpies.snapPointsSpy.mock.calls;
+  return (calls[calls.length - 1][0] as number[])[0];
+}
+
+/**
+ * A REAL merchant product title, not a placeholder. The only title this sheet
+ * had ever been given was `Order #1042`, which cannot wrap at any text size —
+ * which is exactly why the one-line height budget survived review. Products
+ * (and every screen after it: customers, reviews, campaigns, tickets) passes
+ * arbitrary text.
+ */
+const LONG_TITLE = "Insulated Stainless Steel Sport Water Bottle 1L — Bondi Edition";
 
 function manyItems(count: number): ActionSheetItem[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -533,6 +554,45 @@ describe("ActionSheet", () => {
     // value drives `maxHeight` deeply negative regardless of the real
     // `useWindowDimensions()` value under jest, so this doesn't depend on
     // knowing the test environment's simulated device height.
+    /**
+     * The title's line budget.
+     *
+     * `snapPoints` reserves exactly `TITLE_LINES` (one) eyebrow line for the
+     * title block. That held for `Order #1042` and for nothing else: `Eyebrow`
+     * rendered its label with no `numberOfLines`, in the uppercased,
+     * letter-spaced `eyebrow` preset, so a real product title wrapped to two
+     * or three lines and the sheet came up 16–32pt short — enough to park a
+     * four-item menu's last row below the fold, reachable only by scrolling
+     * inside a menu that gives no hint it scrolls.
+     */
+    describe("title block", () => {
+      it("clamps the title to one line, so arbitrary caller text cannot wrap past its budget", () => {
+        const { getByText } = render(
+          <ActionSheet title={LONG_TITLE} items={items()} visible onDismiss={jest.fn()} />,
+        );
+        expect(getByText(LONG_TITLE).props.numberOfLines).toBe(1);
+      });
+
+      it("budgets a long title at exactly the same height as a short one", () => {
+        render(<ActionSheet title="Order #1042" items={items()} visible onDismiss={jest.fn()} />);
+        const short = lastSnapPoint();
+
+        render(<ActionSheet title={LONG_TITLE} items={items()} visible onDismiss={jest.fn()} />);
+        expect(lastSnapPoint()).toBe(short);
+      });
+
+      // The other half of the same contract: the block must be reserved at
+      // all. A budget that ignored the title would also be "the same for a
+      // long title as a short one".
+      it("reserves the title block in the budget, not only in the render", () => {
+        render(<ActionSheet items={items()} visible onDismiss={jest.fn()} />);
+        const untitled = lastSnapPoint();
+
+        render(<ActionSheet title={LONG_TITLE} items={items()} visible onDismiss={jest.fn()} />);
+        expect(lastSnapPoint()).toBeGreaterThan(untitled);
+      });
+    });
+
     it("floors the snap-point height at handle height + bottom padding when maxHeight goes negative", () => {
       mockUseSafeAreaInsets.mockReturnValueOnce({ top: 100000, bottom: 0, left: 0, right: 0 });
       render(<ActionSheet items={items()} visible onDismiss={jest.fn()} />);
@@ -631,5 +691,78 @@ describe("ActionSheet — disabled items", () => {
     );
     expect(getByTestId("action-sheet-item-fulfil")).toBeTruthy();
     expect(getByTestId("action-sheet-item-cancel")).toBeTruthy();
+  });
+});
+
+/**
+ * The height budget, as arithmetic.
+ *
+ * Split out of the component so it can be exercised at Dynamic Type scales
+ * the jest environment does not let a test set: `useWindowDimensions` reports
+ * one fixed `fontScale`, and this is precisely the part that cannot be seen
+ * in a screenshot — an under-budget of one line parks the last row just below
+ * the fold, where nothing about the failure is visible above it.
+ *
+ * The expected values are written as literals, derived in each comment, so a
+ * change to the arithmetic reddens these instead of being restated by them.
+ */
+describe("actionSheetHeight", () => {
+  // Chrome: HANDLE_HEIGHT (24) + bottomPadding (theme.spacing.xl, 20) = 44.
+  // The window is a modern iPhone's, so nothing clamps at these sizes.
+  const base = {
+    itemCount: 4,
+    hasTitle: true,
+    bottomPadding: theme.spacing.xl,
+    windowHeight: 852,
+    topInset: 59,
+  };
+
+  // 4 × theme.row.minHeightSingle (64) = 256, title block
+  // theme.spacing.lg (16) + one 16pt eyebrow line + theme.spacing.sm (8) = 40,
+  // chrome 44. Total 340.
+  it("fits four items and a one-line title at the default text size", () => {
+    expect(actionSheetHeight({ ...base, fontScale: 1 })).toBe(340);
+  });
+
+  // Dynamic Type moves BOTH terms. A row's 17/24 label at 2× needs
+  // 24×2 + theme.row.paddingV×2 (28) = 76pt, past the 64pt minHeight the
+  // budget used to assume; the title line is 32 instead of 16. So
+  // 4 × 76 = 304, title 16 + 32 + 8 = 56, chrome 44 → 404, i.e. 64pt more
+  // than the unscaled figure. That 64pt was the whole of the on-device
+  // "Archive needs an internal scroll at accessibility-large" defect.
+  it("grows every row AND the title with Dynamic Type — a 64pt box does not hold a 2x label", () => {
+    expect(actionSheetHeight({ ...base, fontScale: 2 })).toBe(404);
+    expect(actionSheetHeight({ ...base, fontScale: 2 }) - actionSheetHeight({ ...base, fontScale: 1 })).toBe(64);
+  });
+
+  // `Text` caps every label it draws at MAX_FONT_SCALE, so budgeting against
+  // the raw OS multiplier (iOS reaches ~3.1x at AX5) would reserve space for
+  // text that can never be rendered.
+  it("caps the budget at MAX_FONT_SCALE, because Text caps the text", () => {
+    expect(actionSheetHeight({ ...base, fontScale: 3.1 })).toBe(
+      actionSheetHeight({ ...base, fontScale: MAX_FONT_SCALE }),
+    );
+  });
+
+  // Below 1x the row's own 64pt minHeight is what holds, not the shrunken
+  // line box — the budget must not follow the text down.
+  it("never budgets a row below its own minHeight at reduced text sizes", () => {
+    expect(actionSheetHeight({ ...base, fontScale: 0.8 })).toBe(
+      actionSheetHeight({ ...base, fontScale: 1 }),
+    );
+  });
+
+  it("drops the title block entirely when there is no title", () => {
+    // 340 less the 40pt title block.
+    expect(actionSheetHeight({ ...base, hasTitle: false, fontScale: 1 })).toBe(300);
+  });
+
+  it("still clamps a long list under the notch, and still floors at its own chrome", () => {
+    const clamped = actionSheetHeight({ ...base, itemCount: 30, fontScale: 1 });
+    expect(clamped).toBe(852 - 59 - theme.spacing.xxl);
+    expect(clamped).toBeLessThan(30 * theme.row.minHeightSingle);
+
+    const degenerate = actionSheetHeight({ ...base, windowHeight: 0, fontScale: 1 });
+    expect(degenerate).toBe(44);
   });
 });

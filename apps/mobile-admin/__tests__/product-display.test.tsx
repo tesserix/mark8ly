@@ -5,6 +5,7 @@ import {
   productStock,
   productThumb,
   productCurrency,
+  productStatusLabel,
   formatMoney,
 } from "@/lib/product-display";
 import type { Product } from "@repo/mobile-shared/api/types";
@@ -118,5 +119,30 @@ describe("formatMoney", () => {
 
   it("falls back to a bare number when no currency is known", () => {
     expect(formatMoney(199)).toContain("199");
+  });
+});
+
+/**
+ * One display string for the status, used by BOTH the badge and the row's
+ * `accessibilityLabel` — they used to be computed separately and disagreed.
+ */
+describe("productStatusLabel", () => {
+  it("titleises the three statuses the backend actually returns", () => {
+    expect(productStatusLabel("draft")).toBe("Draft");
+    expect(productStatusLabel("active")).toBe("Active");
+    expect(productStatusLabel("archived")).toBe("Archived");
+  });
+
+  // The wire schema types `status` as a bare `z.string()` on purpose — a
+  // server that grows a fourth status must not blank the catalogue — so this
+  // has to cope with a value it has never seen. Plain titleising rendered the
+  // wire token verbatim ("Out_of_stock") on screen and to VoiceOver.
+  it("humanises a status it has never seen instead of leaking the wire token", () => {
+    expect(productStatusLabel("out_of_stock")).toBe("Out of stock");
+    expect(productStatusLabel("pending-review")).toBe("Pending review");
+  });
+
+  it("never announces an empty badge", () => {
+    expect(productStatusLabel("")).toBe("Unknown");
   });
 });

@@ -9,20 +9,31 @@ interface CouponRowProps {
   coupon: Coupon;
   currency: string;
   onPress: (coupon: Coupon) => void;
+  /**
+   * Opens the row's long-press menu. OPTIONAL rather than always-supplied
+   * because absence is the guard: the list screen passes `undefined` while
+   * this row's own request is in flight, which is what actually disarms the
+   * gesture — a handler that returned early would still let the row engage
+   * its long-press feedback. `SwipeRow.enabled` does NOT reach this, which is
+   * why the two controls are gated separately.
+   */
+  onLongPress?: (coupon: Coupon) => void;
 }
 
 function titleize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-export function CouponRow({ coupon, currency, onPress }: CouponRowProps) {
+export function CouponRow({ coupon, currency, onPress, onLongPress }: CouponRowProps) {
   return (
     <PressableRow
       lines={2}
       onPress={() => onPress(coupon)}
+      onLongPress={onLongPress ? () => onLongPress(coupon) : undefined}
       style={styles.row}
       testID={`coupon-row-${coupon.id}`}
       accessibilityLabel={`Coupon ${coupon.code}, ${coupon.status}`}
+      accessibilityHint={onLongPress ? "Long press for more actions" : undefined}
     >
       <View style={styles.info}>
         <View style={styles.topRow}>

@@ -3,8 +3,11 @@ jest.mock("@/lib/api-client", () => ({ useApiClient: () => ({}) }));
 import { nextProductPage } from "@/lib/hooks/use-products";
 import type { ProductListResponse } from "@repo/mobile-shared/api/schemas/products";
 
+// PAGE_SIZE must match the actual hook for test data to reflect the real pagination behavior
+const PAGE_SIZE = 50;
+
 function pageOf(page: number, total_pages: number): ProductListResponse {
-  return { data: [], meta: { page, page_size: 20, total: total_pages * 20, total_pages } };
+  return { data: [], meta: { page, page_size: PAGE_SIZE, total: total_pages * PAGE_SIZE, total_pages } };
 }
 
 describe("nextProductPage", () => {

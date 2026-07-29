@@ -3,6 +3,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { useProducts } from "@/lib/hooks/use-products";
 
+// PAGE_SIZE must match the actual hook's PAGE_SIZE for tests to verify
+// the correct pagination size is sent to the API.
+const PAGE_SIZE = 50;
+
 // The real api module is mocked below, so this never goes through
 // productListSchema (it would fail — no options/variants/media on these
 // fixtures). It's a stub for the mocked list() call, not a stand-in for a
@@ -10,7 +14,7 @@ import { useProducts } from "@/lib/hooks/use-products";
 function page(pageNum: number, totalPages: number) {
   return {
     data: [{ id: `product-${pageNum}`, title: `Sample Product ${pageNum}`, status: "active" }],
-    meta: { page: pageNum, page_size: 20, total: totalPages, total_pages: totalPages },
+    meta: { page: pageNum, page_size: PAGE_SIZE, total: totalPages * PAGE_SIZE, total_pages: totalPages },
   };
 }
 
@@ -57,7 +61,7 @@ describe("useProducts", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(__mockList).toHaveBeenCalledWith({
       page: "1",
-      page_size: "20",
+      page_size: "50",
     });
   });
 
@@ -68,7 +72,7 @@ describe("useProducts", () => {
     expect(__mockList).toHaveBeenCalledWith({
       status: "active",
       page: "1",
-      page_size: "20",
+      page_size: "50",
     });
   });
 
@@ -79,7 +83,7 @@ describe("useProducts", () => {
     expect(__mockList).toHaveBeenCalledWith({
       search: "test",
       page: "1",
-      page_size: "20",
+      page_size: "50",
     });
   });
 
@@ -94,7 +98,7 @@ describe("useProducts", () => {
       status: "active",
       search: "test",
       page: "1",
-      page_size: "20",
+      page_size: "50",
     });
   });
 
@@ -116,7 +120,7 @@ describe("useProducts", () => {
     });
     await waitFor(() => expect(result.current.data?.pages).toHaveLength(2));
 
-    expect(__mockList).toHaveBeenLastCalledWith({ page: "2", page_size: "20" });
+    expect(__mockList).toHaveBeenLastCalledWith({ page: "2", page_size: "50" });
     // APPENDED — page 1 is still there, not dropped.
     expect(result.current.data?.pages.map((p) => p.data[0]?.id)).toEqual([
       "product-1",
@@ -156,7 +160,7 @@ describe("useProducts", () => {
     expect(__mockList).toHaveBeenLastCalledWith({
       status: "archived",
       page: "1",
-      page_size: "20",
+      page_size: "50",
     });
     expect(archived.result.current.data?.pages).toHaveLength(1);
   });

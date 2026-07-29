@@ -14,9 +14,9 @@ interface ProductListParams {
 // pagination behind it, so a store with more than 100 products silently lost
 // everything past the first page. That ceiling is gone now that this walks
 // every page via infinite scroll; PAGE_SIZE is just the per-request size,
-// matching the majority of the other paginated list hooks (gift cards,
-// coupons, campaigns, audit logs, tickets all use the same default).
-const PAGE_SIZE = 20;
+// matching the majority of the other paginated list hooks (customers, orders,
+// reviews all use 50).
+const PAGE_SIZE = 50;
 
 /**
  * The page param for the NEXT page, or undefined once the last page has been

@@ -54,8 +54,7 @@
         "GIP_TENANT_ID": "MP-Internal-e986p",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a",
-        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": ""
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a"
       }
     }
   },

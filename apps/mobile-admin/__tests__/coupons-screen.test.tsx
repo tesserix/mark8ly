@@ -404,8 +404,13 @@ describe("Coupons — long-press menu", () => {
   });
 
   // Neither toggle is destructive: both are reversible, so nothing in this
-  // sheet is painted oxblood. Asserted so a later "Delete" cannot slip back
-  // in wearing the danger tone.
+  // sheet is painted oxblood.
+  //
+  // NOTE this loop iterates the fixed KEYS, so it cannot see a FOURTH item
+  // added later — a re-added "Delete" wearing the danger tone is caught by
+  // the count-plus-queryByText(/delete/i) test above, not by this one. This
+  // test's job is narrower: that none of the three items we DO ship is
+  // painted destructive.
   it("paints no item in the sheet as destructive", () => {
     const { getByTestId } = render(<CouponsScreen />);
     longPress(getByTestId, "c-active");
@@ -416,7 +421,7 @@ describe("Coupons — long-press menu", () => {
     }
   });
 
-  it("enables an expired-then-edited coupon from the menu once it is disabled", () => {
+  it("enables a disabled coupon from the menu", () => {
     const { getByTestId } = render(<CouponsScreen />);
     longPress(getByTestId, "c-disabled");
     fireEvent.press(getByTestId("action-sheet-item-enable"));

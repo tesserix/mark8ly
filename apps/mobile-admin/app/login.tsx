@@ -87,19 +87,27 @@ function GoogleMark({ size = PROVIDER_MARK }: { size?: number }) {
 }
 
 /**
- * The Apple mark, monochrome as Apple requires, drawn in Paper on the solid
- * Ink fill of the official BLACK Sign in with Apple appearance. Black is one
- * of the three appearances Apple publishes (black / white / white-with-black-
- * outline) and is the only one that needs no interpretation here: our
- * elevated surface is #FFFFFF on a #F7F6F2 page, so a "white" button would
- * need an outline, and our hairline border token is bone (#E2DFD6), not the
- * black Apple specifies. Paper on Ink is 17.7:1.
+ * The Apple mark, monochrome as Apple requires, drawn in Ink on our elevated
+ * Paper surface — the official WHITE-WITH-BLACK-OUTLINE appearance, one of the
+ * three Apple publishes (black / white / white-with-outline).
+ *
+ * We used to render the BLACK appearance, a solid ink fill. It was compliant,
+ * but it put a second solid on a page whose only solid is meant to be the
+ * full-width ink "Sign in" bar, and it left the two provider targets visibly
+ * mismatched — an outlined white box beside a filled black one. The outline
+ * appearance is what lets both targets be the same Paper surface with the same
+ * hairline, which is the actual design intent this row was built for.
+ *
+ * Ink on Paper is 17.4:1. The hairline is `border` (bone), NOT the black Apple
+ * draws in its own artwork — the mark itself is unaltered, which is what Apple
+ * constrains; the surrounding button is ours to style, and every other target
+ * in this app uses this same hairline.
  */
 function AppleMark({ size = PROVIDER_MARK }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" testID="apple-mark">
       <Path
-        fill={theme.colors.inverse}
+        fill={theme.colors.text}
         d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.416-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.088-4.61 1.088zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"
       />
     </Svg>
@@ -287,12 +295,13 @@ export default function LoginScreen() {
                   disabled={submitting}
                   onPress={handleAppleSignIn}
                   testID="provider-apple"
-                  // "onDark" tone: the mark sits on a solid ink fill, so it
-                  // takes the light ripple and the gentler solid-fill dim —
-                  // a 45% fade on a filled surface reads as broken, not
-                  // pressed (see lib/theme.ts).
-                  tone="onDark"
-                  style={[styles.providerBox, styles.providerBoxInk]}
+                  // "ink" tone, matching Google: both targets are now the same
+                  // outline/Paper surface, so both take the dark ripple and the
+                  // standard iOS press dim. (The "onDark" tone exists for solid
+                  // fills, where a 45% fade reads as broken rather than pressed
+                  // — see lib/theme.ts. Nothing on this row is solid any more.)
+                  tone="ink"
+                  style={[styles.providerBox, styles.providerBoxOutline]}
                 >
                   <AppleMark />
                 </IconButton>
@@ -365,8 +374,5 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.elevated,
     borderWidth: 1,
     borderColor: theme.colors.border,
-  },
-  providerBoxInk: {
-    backgroundColor: theme.colors.text,
   },
 });

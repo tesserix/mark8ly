@@ -247,11 +247,35 @@ describe('provider icon row', () => {
     const path = paths[0];
     expect(typeof path?.props.d).toBe('string');
     expect((path?.props.d as string).length).toBeGreaterThan(0);
-    // Monochrome: the paper-coloured mark sits on the solid ink fill of the
-    // official black Sign in with Apple appearance.
-    expect(path?.props.fill).toBe(theme.colors.inverse);
+    // Monochrome: the INK mark sits on our elevated Paper surface — the
+    // official white-with-outline Sign in with Apple appearance. 17.4:1.
+    expect(path?.props.fill).toBe(theme.colors.text);
     const box = StyleSheet.flatten(utils.getByTestId('provider-apple').props.style);
-    expect(box.backgroundColor).toBe(theme.colors.text);
+    expect(box.backgroundColor).toBe(theme.colors.elevated);
+  });
+
+  // The row previously paired an outlined white Google box with a SOLID INK
+  // Apple box. Both were individually compliant, but the mismatch was the
+  // loudest thing on the screen, and the solid fill contradicted this row's
+  // own stated intent — that collapsing the providers to icons leaves the
+  // full-width ink "Sign in" bar as the ONLY solid on the page.
+  //
+  // Pinning the two surfaces as identical is what stops that regressing:
+  // asserting Apple's colours alone would still pass if Google's box were
+  // the one that changed.
+  it('gives both provider targets one identical surface treatment', () => {
+    const { getByTestId } = render(<LoginScreen />);
+    const google = StyleSheet.flatten(getByTestId('provider-google').props.style);
+    const apple = StyleSheet.flatten(getByTestId('provider-apple').props.style);
+
+    expect(apple.backgroundColor).toBe(google.backgroundColor);
+    expect(apple.borderWidth).toBe(google.borderWidth);
+    expect(apple.borderColor).toBe(google.borderColor);
+    expect(apple.borderRadius).toBe(google.borderRadius);
+
+    // …and that shared surface is Paper with a hairline, not a solid fill.
+    expect(apple.backgroundColor).toBe(theme.colors.elevated);
+    expect(apple.borderWidth).toBeGreaterThan(0);
   });
 
   it('disables both providers while a sign-in is in flight', async () => {

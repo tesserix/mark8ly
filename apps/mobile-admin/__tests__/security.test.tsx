@@ -38,10 +38,11 @@ jest.mock("react-native-safe-area-context", () => {
 });
 
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
-import { Alert } from "react-native";
+import { Alert, StyleSheet } from "react-native";
 import { LastSignInMethodError } from "@repo/mobile-shared/auth/errors";
 import { configureGoogleSignin } from "@/lib/social-auth";
 import SecurityScreen from "../app/(tabs)/more/security";
+import { theme } from "@/lib/theme";
 
 function setAuth(overrides: Record<string, unknown> = {}) {
   Object.keys(mockAuth).forEach((k) => delete mockAuth[k]);
@@ -173,5 +174,20 @@ describe("SecurityScreen", () => {
     await waitFor(() => expect(getByLabelText("Link Google")).toBeTruthy());
     fireEvent.press(getByLabelText("Link Google"));
     expect(await findByText(/already linked to a different Mark8ly account/i)).toBeTruthy();
+  });
+
+  // Task 9: these rows were a hand-rolled `minHeight: 56` / `paddingHorizontal:
+  // theme.spacing.md` (12pt) View — an 8pt/4pt density inconsistency against
+  // every other row in the app, which uses `theme.row.minHeightSingle` (64)
+  // and `theme.row.paddingH` (20) via GroupedRow. Migrating onto GroupedRow
+  // closes that gap; this guards it doesn't regress back to the old density.
+  it("gives each method row the app-wide 64pt/20pt row density, not the old 56pt/12pt one", async () => {
+    setAuth({ linkedProviderIds: jest.fn().mockResolvedValue(["password"]) });
+    const { findByLabelText } = render(<SecurityScreen />);
+    const row = await findByLabelText("Password, Connected");
+    const style = StyleSheet.flatten(row.props.style);
+    expect(style.minHeight).toBe(theme.row.minHeightSingle);
+    expect(style.height).toBeUndefined();
+    expect(style.paddingHorizontal).toBe(theme.row.paddingH);
   });
 });

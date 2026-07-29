@@ -6,7 +6,17 @@ import { ApiError } from "@repo/mobile-shared/api/client";
 import { ASSIGNABLE_ROLES } from "@repo/mobile-shared/api/schemas/team";
 import { useTeamMembers, useTeamInvitations } from "@/lib/hooks/use-team";
 import { useUpdateMemberRole, useRevokeInvitation } from "@/lib/admin-api/team-actions";
-import { BackHeader, Eyebrow, EmptyState, Hairline, IconButton, PressableRow, Screen, StatusBadge, Text, type StatusTone } from "@/components/ui";
+import {
+  BackHeader,
+  EmptyState,
+  GroupedList,
+  GroupedRow,
+  IconButton,
+  Screen,
+  StatusBadge,
+  Text,
+  type StatusTone,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 import { Alert } from "react-native";
@@ -138,73 +148,73 @@ export default function TeamScreen() {
           contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.text} />}
         >
-          <Eyebrow label="Members" style={styles.section} />
-          <View style={styles.card}>
-            {memberList.map((m, i) => {
-              // The owner row — and every row while a role change is in
-              // flight — is non-interactive: no tap does anything. Rendered
-              // via PressableRow's `disabled` prop rather than a separate
-              // plain View, so it still gets the row's layout/background for
-              // free and suppresses press feedback and the "Tap to change
-              // role" affordance announced to VoiceOver automatically.
-              const disabled = m.kind === "owner" || updateRole.isPending;
-              const rowContent = (
-                <>
-                  <Text preset="body" color="text" numberOfLines={1} style={styles.email}>
-                    {m.email}
-                  </Text>
-                  <StatusBadge label={titleize(m.role)} tone={ROLE_TONE[m.role] ?? "muted"} />
-                </>
-              );
-              return (
-                <View key={m.email}>
-                  {i > 0 ? <Hairline /> : null}
-                  <PressableRow
-                    style={styles.memberRow}
-                    onPress={() => onChangeRole(m)}
-                    disabled={disabled}
-                    accessibilityLabel={
-                      disabled
-                        ? `${m.email}, ${m.role}`
-                        : `${m.email}, ${m.role}. Tap to change role`
-                    }
-                  >
-                    {rowContent}
-                  </PressableRow>
-                </View>
-              );
-            })}
-          </View>
+          <GroupedList
+            sections={[
+              {
+                key: "members",
+                label: "Members",
+                rows: memberList.map((m) => {
+                  // The owner row — and every row while a role change is in
+                  // flight — is non-interactive: no tap does anything.
+                  // Omitting `onPress` now produces a genuinely
+                  // non-interactive row (GroupedRow's plain-View branch)
+                  // rather than a disabled PressableRow, which announced as
+                  // a dimmed button to VoiceOver even though nothing was
+                  // pressable.
+                  const disabled = m.kind === "owner" || updateRole.isPending;
+                  return (
+                    <GroupedRow
+                      key={m.email}
+                      label={m.email}
+                      trailing={<StatusBadge label={titleize(m.role)} tone={ROLE_TONE[m.role] ?? "muted"} />}
+                      onPress={disabled ? undefined : () => onChangeRole(m)}
+                      accessibilityLabel={
+                        disabled
+                          ? `${m.email}, ${m.role}`
+                          : `${m.email}, ${m.role}. Tap to change role`
+                      }
+                    />
+                  );
+                }),
+              },
+            ]}
+          />
 
-          <Eyebrow label="Pending invitations" style={styles.section} />
-          <View style={styles.card}>
-            {inviteList.length === 0 ? (
-              <Text preset="body" color="textTertiary">
+          {inviteList.length === 0 ? (
+            <View style={styles.emptySection}>
+              <Text preset="eyebrow" color="textTertiary" style={styles.emptySectionLabel}>
+                Pending invitations
+              </Text>
+              <Text preset="body" color="textTertiary" style={styles.emptySectionLabel}>
                 No pending invitations.
               </Text>
-            ) : (
-              inviteList.map((inv, i) => (
-                <View key={inv.id}>
-                  {i > 0 ? <Hairline /> : null}
-                  <View style={styles.row}>
-                    <View style={styles.inviteInfo}>
-                      <Text preset="body" color="text" numberOfLines={1}>
-                        {inv.email}
-                      </Text>
-                      <Text preset="caption" color="textTertiary">
-                        {titleize(inv.role)} · {titleize(inv.status)}
-                      </Text>
-                    </View>
-                    <RevokeInviteButton
-                      onPress={() => onRevoke(inv)}
-                      disabled={revoke.isPending}
-                      accessibilityLabel={`Revoke invite to ${inv.email}`}
+            </View>
+          ) : (
+            <GroupedList
+              sections={[
+                {
+                  key: "invitations",
+                  label: "Pending invitations",
+                  // Invitations are always non-interactive — no `onPress` —
+                  // the only press target on the row is Revoke, in trailing.
+                  rows: inviteList.map((inv) => (
+                    <GroupedRow
+                      key={inv.id}
+                      label={inv.email}
+                      hint={`${titleize(inv.role)} · ${titleize(inv.status)}`}
+                      trailing={
+                        <RevokeInviteButton
+                          onPress={() => onRevoke(inv)}
+                          disabled={revoke.isPending}
+                          accessibilityLabel={`Revoke invite to ${inv.email}`}
+                        />
+                      }
                     />
-                  </View>
-                </View>
-              ))
-            )}
-          </View>
+                  )),
+                },
+              ]}
+            />
+          )}
 
           {memberList.length === 0 && inviteList.length === 0 ? (
             <EmptyState align="left" title="No team yet" message="Invite teammates to help run your store." />
@@ -220,38 +230,23 @@ export default function TeamScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { paddingBottom: theme.spacing.huge },
   // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH so
-  // this screen's rows and section labels sit flush with every other list
-  // screen. Not theme.spacing.lg — that token is shared with non-gutter
-  // spacing throughout the app and must not move.
-  section: { paddingHorizontal: theme.spacing.xl, paddingTop: theme.spacing.xl },
-  card: { paddingHorizontal: theme.spacing.xl, marginTop: theme.spacing.sm },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: theme.spacing.md,
-    gap: theme.spacing.md,
+  // GroupedList's eyebrows/cards and the two hand-rolled blocks below (the
+  // empty-invitations copy, the closing note) share one left edge. Not
+  // theme.spacing.lg — that token is shared with non-gutter spacing
+  // throughout the app and must not move.
+  scroll: {
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.xs,
+    gap: theme.spacing.lg,
   },
-  // PressableRow already owns flexDirection/alignItems/padding/gap. Two
-  // overrides: `justifyContent` for the email/role-badge space-between, and
-  // `paddingHorizontal: 0` — the wrapping `card` above already adds the
-  // screen gutter, and PressableRow's own base adds theme.row.paddingH (20)
-  // on top of that, which would indent member rows a further 20pt past the
-  // plain-View invitation rows below (also inside `card`, no row padding of
-  // their own) — visibly misaligned under the same eyebrows. Zeroing it here
-  // keeps both columns flush at the card's gutter. No backgroundColor
-  // override — this list sits directly on Screen's paper background (no
-  // Card/elevated wrapper here), which is exactly PressableRow's own
-  // default, so the pre-migration transparency was already correct.
-  // Owner/pending-mutation rows use the same style via PressableRow's
-  // `disabled` prop instead of a hand-mirrored static twin — see
-  // PressableRow.tsx.
-  memberRow: { justifyContent: "space-between", paddingHorizontal: 0 },
-  email: { flexShrink: 1 },
-  inviteInfo: { flex: 1, gap: 2 },
-  note: { paddingHorizontal: theme.spacing.xl, paddingTop: theme.spacing.md },
+  // Mirrors GroupedList's own eyebrow + row styling exactly, for the one
+  // state GroupedList itself doesn't render: zero invitations. An empty
+  // Card would be a visible blank box; this keeps the pre-migration "No
+  // pending invitations." copy instead.
+  emptySection: { gap: theme.spacing.sm },
+  emptySectionLabel: { paddingHorizontal: theme.spacing.xs },
+  note: { paddingTop: theme.spacing.md },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   // NOT `styles.centered` for the error state: that wrapper's
   // `alignItems: "center"` shrink-wraps and re-centres its child, silently

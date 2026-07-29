@@ -15,7 +15,7 @@ import {
   PREFERENCE_TYPES,
   type PreferenceType,
 } from "@/lib/hooks/use-notification-preferences";
-import { BackHeader, Hairline, Screen, Text } from "@/components/ui";
+import { BackHeader, GroupedList, GroupedRow, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
@@ -65,29 +65,37 @@ export default function NotificationSettingsScreen() {
       ) : (
         <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
           {/* Device-level push master. Separate from the per-type prefs below:
-              this governs whether THIS device buzzes at all. */}
-          <View style={styles.switchRow}>
-            <View style={styles.switchText}>
-              <Text preset="body" color="text">
-                Push notifications
-              </Text>
-              <Text preset="caption" color="textTertiary">
-                Alerts on this device when something needs you.
-              </Text>
-            </View>
-            <Switch
-              value={effectiveOn}
-              onValueChange={onToggle}
-              disabled={busy}
-              trackColor={{ true: theme.colors.accent }}
-              accessibilityLabel="Toggle push notifications"
-            />
-          </View>
+              this governs whether THIS device buzzes at all. Unlabelled
+              section — a single row, no eyebrow above it, same as it had no
+              heading pre-migration. */}
+          <GroupedList
+            sections={[
+              {
+                key: "push",
+                rows: [
+                  <GroupedRow
+                    key="push-toggle"
+                    label="Push notifications"
+                    hint="Alerts on this device when something needs you."
+                    accessibilityLabel="Push notifications"
+                    trailing={
+                      <Switch
+                        value={effectiveOn}
+                        onValueChange={onToggle}
+                        disabled={busy}
+                        trackColor={{ true: theme.colors.accent }}
+                        accessibilityLabel="Toggle push notifications"
+                      />
+                    }
+                  />,
+                ],
+              },
+            ]}
+          />
 
           {blocked ? (
-            <>
-              <Hairline />
-              <Text preset="caption" color="warning" style={styles.note}>
+            <View style={styles.blockedNote}>
+              <Text preset="caption" color="warning">
                 Notifications are blocked in your device settings. Turn them on for
                 Mark8ly Admin to receive alerts.
               </Text>
@@ -100,7 +108,7 @@ export default function NotificationSettingsScreen() {
               >
                 Open device settings
               </Text>
-            </>
+            </View>
           ) : null}
 
           <AlertTypesSection />
@@ -137,21 +145,28 @@ function AlertTypesSection() {
     [local, update],
   );
 
-  return (
-    <View style={styles.section}>
-      <Text preset="eyebrow" color="textTertiary" style={styles.sectionLabel}>
-        Alert types
-      </Text>
-      <Text preset="caption" color="textTertiary" style={styles.sectionIntro}>
-        Choose what your store notifies you about. Applies to everyone on this
-        store, in the inbox and push.
-      </Text>
-
-      {isLoading || !local ? (
+  // Loading/error are transient, non-list states — rendered as a plain
+  // eyebrow + status block rather than through GroupedList, matching how
+  // this section looked pre-migration (it never had a Card to begin with).
+  if (isLoading || !local) {
+    return (
+      <View style={styles.section}>
+        <Text preset="eyebrow" color="textTertiary" style={styles.sectionLabel}>
+          Alert types
+        </Text>
         <View style={styles.rowLoading}>
           <ActivityIndicator size="small" color={theme.colors.textTertiary} />
         </View>
-      ) : isError ? (
+      </View>
+    );
+  }
+
+  if (isError) {
+    return (
+      <View style={styles.section}>
+        <Text preset="eyebrow" color="textTertiary" style={styles.sectionLabel}>
+          Alert types
+        </Text>
         <View style={styles.rowLoading}>
           <Text preset="caption" color="textTertiary">
             Couldn&apos;t load alert types.
@@ -166,50 +181,61 @@ function AlertTypesSection() {
             Retry
           </Text>
         </View>
-      ) : (
-        PREFERENCE_TYPES.map((key, i) => (
-          <View key={key}>
-            {i > 0 ? <Hairline /> : null}
-            <View style={styles.switchRow}>
-              <View style={styles.switchText}>
-                <Text preset="body" color="text">
-                  {TYPE_COPY[key].label}
-                </Text>
-                <Text preset="caption" color="textTertiary">
-                  {TYPE_COPY[key].hint}
-                </Text>
-              </View>
-              <Switch
-                value={local[key]}
-                onValueChange={(next) => onToggleType(key, next)}
-                disabled={update.isPending}
-                trackColor={{ true: theme.colors.accent }}
-                accessibilityLabel={`Toggle ${TYPE_COPY[key].label} notifications`}
-              />
-            </View>
-          </View>
-        ))
-      )}
-    </View>
+      </View>
+    );
+  }
+
+  return (
+    <GroupedList
+      sections={[
+        {
+          key: "alert-types",
+          label: "Alert types",
+          rows: PREFERENCE_TYPES.map((key) => (
+            <GroupedRow
+              key={key}
+              label={TYPE_COPY[key].label}
+              hint={TYPE_COPY[key].hint}
+              accessibilityLabel={`${TYPE_COPY[key].label}, ${TYPE_COPY[key].hint}`}
+              trailing={
+                <Switch
+                  value={local[key]}
+                  onValueChange={(next) => onToggleType(key, next)}
+                  disabled={update.isPending}
+                  trackColor={{ true: theme.colors.accent }}
+                  accessibilityLabel={`Toggle ${TYPE_COPY[key].label} notifications`}
+                />
+              }
+            />
+          )),
+          // The screen's original intro copy, describing the five toggles
+          // below it — GroupedList's construction always renders `footer`
+          // AFTER the Card, so it now reads as a footnote under the list
+          // rather than a lead-in above it. See the task-9 report for why
+          // this binds to the Alert types section rather than the push
+          // section above.
+          footer:
+            "Choose what your store notifies you about. Applies to everyone on this store, in the inbox and push.",
+        },
+      ]}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: theme.spacing.lg, gap: theme.spacing.md },
-  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
-  switchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+  // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH so the
+  // push toggle, the Alert types eyebrow/card and the blocked-permission
+  // note all share one left edge. Not theme.spacing.lg.
+  scroll: {
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.xs,
+    gap: theme.spacing.lg,
   },
-  switchText: { flex: 1, gap: 2 },
-  note: { marginTop: theme.spacing.xs },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  blockedNote: { gap: theme.spacing.xs },
   link: { marginTop: theme.spacing.xs },
-  section: { marginTop: theme.spacing.lg, gap: theme.spacing.xs },
-  sectionLabel: { marginBottom: 2 },
-  sectionIntro: { marginBottom: theme.spacing.xs },
+  section: { gap: theme.spacing.xs },
+  sectionLabel: { paddingHorizontal: theme.spacing.xs },
   rowLoading: {
     paddingVertical: theme.spacing.lg,
     alignItems: "center",

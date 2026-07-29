@@ -3,7 +3,6 @@ import { useRouter, type Href } from "expo-router";
 import {
   Bell,
   BellRing,
-  ChevronRight,
   FileText,
   LifeBuoy,
   Megaphone,
@@ -18,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { useNotifications } from "../../../lib/hooks/use-notifications";
-import { Card, Hairline, PageHeader, PressableRow, Screen, Text } from "@/components/ui";
+import { GroupedList, GroupedRow, PageHeader, Screen, Text, type GroupedListSection } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
@@ -28,34 +27,6 @@ const APP_VERSION = "1.0.0";
 // policy stays reachable post-login (App Store 5.1.1(i) / Play requirement).
 const PRIVACY_URL = "https://mark8ly.com/privacy";
 const TERMS_URL = "https://mark8ly.com/terms";
-
-interface RowProps {
-  icon: React.ReactNode;
-  label: string;
-  trailing?: React.ReactNode;
-  onPress: () => void;
-  accessibilityLabel: string;
-  /** Privacy Policy / Terms leave the app via `Linking.openURL()` — those announce as "link", not "button". */
-  accessibilityRole?: "button" | "link";
-}
-
-function Row({ icon, label, trailing, onPress, accessibilityLabel, accessibilityRole }: RowProps) {
-  return (
-    <PressableRow
-      style={styles.row}
-      onPress={onPress}
-      accessibilityLabel={accessibilityLabel}
-      accessibilityRole={accessibilityRole}
-    >
-      <View style={styles.rowIcon}>{icon}</View>
-      <Text preset="bodyEmphasis" color="text" style={styles.rowLabel}>
-        {label}
-      </Text>
-      {trailing ? <View style={styles.rowTrailing}>{trailing}</View> : null}
-      <ChevronRight size={16} color={theme.colors.textTertiary} strokeWidth={1.75} />
-    </PressableRow>
-  );
-}
 
 interface NavItem {
   key: string;
@@ -105,70 +76,61 @@ export default function MoreScreen() {
   const { data: notifications } = useNotifications();
   const unreadCount = notifications?.notifications.filter((n) => !n.is_read).length ?? 0;
 
+  // The construction is more/index.tsx's own — GroupedList/GroupedRow are
+  // this screen's hand-built eyebrow+Card+Hairline section loop and `Row`,
+  // promoted into a shared primitive. This screen must render visually
+  // unchanged: it is the primitive's SOURCE, not a consumer being migrated
+  // to a new look.
+  const sections: GroupedListSection[] = [
+    ...SECTIONS.map((section) => ({
+      key: section.title,
+      label: section.title,
+      rows: section.items.map((item) => {
+        const Icon = item.icon;
+        const showBadge = item.showUnread && unreadCount > 0;
+        return (
+          <GroupedRow
+            key={item.key}
+            icon={<Icon size={18} color={theme.colors.text} strokeWidth={1.75} />}
+            label={item.label}
+            accessibilityLabel={
+              showBadge ? `${item.a11y}, ${unreadCount} unread` : item.a11y
+            }
+            onPress={() => router.push(item.href)}
+            badge={showBadge ? (unreadCount > 99 ? "99+" : String(unreadCount)) : undefined}
+          />
+        );
+      }),
+    })),
+    {
+      key: "legal",
+      label: "Legal",
+      rows: [
+        <GroupedRow
+          key="privacy"
+          icon={<FileText size={18} color={theme.colors.text} strokeWidth={1.75} />}
+          label="Privacy Policy"
+          accessibilityLabel="Privacy Policy — opens in your browser"
+          accessibilityRole="link"
+          onPress={() => Linking.openURL(PRIVACY_URL)}
+        />,
+        <GroupedRow
+          key="terms"
+          icon={<Scale size={18} color={theme.colors.text} strokeWidth={1.75} />}
+          label="Terms of Service"
+          accessibilityLabel="Terms of Service — opens in your browser"
+          accessibilityRole="link"
+          onPress={() => Linking.openURL(TERMS_URL)}
+        />,
+      ],
+    },
+  ];
+
   return (
     <Screen>
       <PageHeader eyebrow="MORE" title="Settings" />
       <ScrollView contentContainerStyle={[styles.body, { paddingBottom: dockPad }]}>
-        {SECTIONS.map((section) => (
-          <View key={section.title} style={styles.section}>
-            <Text preset="eyebrow" color="textTertiary" style={styles.sectionLabel}>
-              {section.title}
-            </Text>
-            <Card padding={0}>
-              {section.items.map((item, i) => {
-                const Icon = item.icon;
-                const showBadge = item.showUnread && unreadCount > 0;
-                return (
-                  <View key={item.key}>
-                    {i > 0 ? (
-                      <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
-                    ) : null}
-                    <Row
-                      icon={<Icon size={18} color={theme.colors.text} strokeWidth={1.75} />}
-                      label={item.label}
-                      accessibilityLabel={
-                        showBadge ? `${item.a11y}, ${unreadCount} unread` : item.a11y
-                      }
-                      onPress={() => router.push(item.href)}
-                      trailing={
-                        showBadge ? (
-                          <View style={styles.badge}>
-                            <Text preset="caption" color="inverse" style={styles.badgeLabel}>
-                              {unreadCount > 99 ? "99+" : String(unreadCount)}
-                            </Text>
-                          </View>
-                        ) : null
-                      }
-                    />
-                  </View>
-                );
-              })}
-            </Card>
-          </View>
-        ))}
-
-        <View style={styles.section}>
-          <Text preset="eyebrow" color="textTertiary" style={styles.sectionLabel}>
-            Legal
-          </Text>
-          <Card padding={0}>
-            <Row
-              icon={<FileText size={18} color={theme.colors.text} strokeWidth={1.75} />}
-              label="Privacy Policy"
-              accessibilityLabel="Privacy Policy — opens in your browser"
-              accessibilityRole="link"
-              onPress={() => Linking.openURL(PRIVACY_URL)}
-            />
-            <Hairline inset={theme.spacing.huge + theme.spacing.xs} />
-            <Row
-              icon={<Scale size={18} color={theme.colors.text} strokeWidth={1.75} />}
-              label="Terms of Service"
-              accessibilityLabel="Terms of Service — opens in your browser"
-              accessibilityRole="link"
-              onPress={() => Linking.openURL(TERMS_URL)}
-            />
-          </Card>
-        </View>
+        <GroupedList sections={sections} />
 
         <View style={styles.footer}>
           <Settings size={14} color={theme.colors.textTertiary} strokeWidth={1.75} />
@@ -188,30 +150,11 @@ const styles = StyleSheet.create({
     // token is shared with non-gutter spacing throughout the app.
     paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.xs,
+    // Spaces GroupedList from the footer below it. GroupedList owns the gap
+    // BETWEEN its own sections internally (also theme.spacing.lg), so the
+    // rhythm here is identical to the pre-extraction hand-built section loop.
     gap: theme.spacing.lg,
   },
-  section: { gap: theme.spacing.sm },
-  sectionLabel: { paddingHorizontal: theme.spacing.xs },
-  // Pre-migration this row had no backgroundColor of its own (transparent),
-  // letting the parent Card's elevated (white) surface show through.
-  // PressableRow's base sets backgroundColor: theme.colors.background
-  // (paper), which would otherwise paint a visible seam against the Card —
-  // match that surface explicitly instead of relying on transparency (same
-  // fix as StorePicker).
-  row: { backgroundColor: theme.colors.elevated },
-  rowIcon: { width: 22, alignItems: "center" },
-  rowLabel: { flex: 1 },
-  rowTrailing: { marginRight: theme.spacing.xs },
-  badge: {
-    backgroundColor: theme.colors.danger,
-    borderRadius: 10,
-    minWidth: 22,
-    height: 20,
-    paddingHorizontal: theme.spacing.xs,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  badgeLabel: { fontSize: 10, fontWeight: "700" },
   footer: {
     flexDirection: "row",
     alignItems: "center",

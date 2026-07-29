@@ -7,7 +7,7 @@ import {
   signInWithAppleNative,
   signInWithGoogleNative,
 } from "@/lib/social-auth";
-import { BackHeader, Card, Eyebrow, Hairline, Screen, Text } from "@/components/ui";
+import { BackHeader, GroupedList, GroupedRow, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === "demo";
@@ -161,58 +161,67 @@ export default function SecurityScreen(): React.JSX.Element {
   return (
     <Screen>
       <BackHeader eyebrow="SECURITY" title="Sign-in methods" />
-      <Eyebrow label="Ways to sign in" style={styles.eyebrow} />
-      <Card padding={0} style={styles.card}>
-        {METHODS.map((m, i) => {
-          const isLinked = linked?.includes(m.id) ?? false;
-          const linkableId = isLinkableProviderId(m.id) ? m.id : null;
-          return (
-            <View key={m.id}>
-              {i > 0 ? <Hairline /> : null}
-              <View style={styles.row}>
-                <View style={styles.rowInfo}>
-                  <Text preset="bodyEmphasis" color="text">
-                    {m.label}
-                  </Text>
-                  <Text preset="caption" color="textTertiary">
-                    {linked === null ? "Checking…" : isLinked ? "Connected" : "Not connected"}
-                  </Text>
-                </View>
-                {linked === null ? null : isLinked ? (
-                  <MethodActionButton
-                    tone="danger"
-                    label="Remove"
-                    accessibilityLabel={`Remove ${m.label}`}
-                    disabled={busy}
-                    onPress={() => handleRemove(m.id, m.label)}
+      <View style={styles.body}>
+        <GroupedList
+          sections={[
+            {
+              key: "methods",
+              label: "Ways to sign in",
+              rows: METHODS.map((m) => {
+                const isLinked = linked?.includes(m.id) ?? false;
+                const linkableId = isLinkableProviderId(m.id) ? m.id : null;
+                const status = linked === null ? "Checking…" : isLinked ? "Connected" : "Not connected";
+                return (
+                  <GroupedRow
+                    key={m.id}
+                    label={m.label}
+                    hint={status}
+                    // No `onPress` — the row itself does nothing; Remove/Link
+                    // is a separate press target carried in `trailing`. This
+                    // was already a non-interactive View pre-migration, just
+                    // one at a 56pt/12pt density instead of every other row
+                    // in the app's 64pt/20pt — the real inconsistency this
+                    // migration closes.
+                    accessibilityLabel={`${m.label}, ${status}`}
+                    trailing={
+                      linked === null ? undefined : isLinked ? (
+                        <MethodActionButton
+                          tone="danger"
+                          label="Remove"
+                          accessibilityLabel={`Remove ${m.label}`}
+                          disabled={busy}
+                          onPress={() => handleRemove(m.id, m.label)}
+                        />
+                      ) : m.linkable && linkableId ? (
+                        <MethodActionButton
+                          tone="neutral"
+                          label="Link"
+                          accessibilityLabel={`Link ${m.label}`}
+                          disabled={busy}
+                          onPress={() => handleLink(linkableId)}
+                        />
+                      ) : undefined
+                    }
                   />
-                ) : m.linkable && linkableId ? (
-                  <MethodActionButton
-                    tone="neutral"
-                    label="Link"
-                    accessibilityLabel={`Link ${m.label}`}
-                    disabled={busy}
-                    onPress={() => handleLink(linkableId)}
-                  />
-                ) : null}
-              </View>
-            </View>
-          );
-        })}
-      </Card>
+                );
+              }),
+            },
+          ]}
+        />
 
-      {error ? (
-        <View style={styles.errorWrap}>
-          <Text
-            preset="caption"
-            color="danger"
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-          >
-            {error}
-          </Text>
-        </View>
-      ) : null}
+        {error ? (
+          <View style={styles.errorWrap}>
+            <Text
+              preset="caption"
+              color="danger"
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+            >
+              {error}
+            </Text>
+          </View>
+        ) : null}
+      </View>
     </Screen>
   );
 }
@@ -220,17 +229,6 @@ export default function SecurityScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   // Screen gutter: theme.spacing.xl (20), matching theme.row.paddingH used
   // by every other row in the app. Not theme.spacing.lg.
-  card: { marginHorizontal: theme.spacing.xl },
-  // Eyebrow's own default gutter is theme.spacing.lg (16) — override
-  // explicitly to match `card` above so "Ways to sign in" sits flush with it.
-  eyebrow: { paddingHorizontal: theme.spacing.xl },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
-    minHeight: 56,
-  },
-  rowInfo: { flex: 1, gap: 2 },
-  errorWrap: { paddingHorizontal: theme.spacing.xl, paddingTop: theme.spacing.md },
+  body: { paddingHorizontal: theme.spacing.xl, paddingTop: theme.spacing.xs },
+  errorWrap: { paddingTop: theme.spacing.md },
 });

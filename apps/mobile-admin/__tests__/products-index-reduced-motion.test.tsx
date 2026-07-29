@@ -77,6 +77,12 @@ jest.mock("@/lib/hooks/use-products", () => ({
 jest.mock("@/lib/admin-api/product-status", () => ({
   useSetProductStatus: () => ({ mutate: jest.fn(), isPending: false }),
 }));
+// Task 12's quick-edit mutation reaches the same api-client/auth-provider
+// module chain the status mutation above does, and for the same reason is
+// stubbed rather than booted.
+jest.mock("@/lib/admin-api/variant-quick-edit", () => ({
+  useQuickEditVariant: () => ({ mutate: jest.fn(), isPending: false }),
+}));
 
 import { render } from "@testing-library/react-native";
 import ProductsScreen from "../app/(tabs)/products/index";

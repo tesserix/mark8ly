@@ -146,6 +146,15 @@ jest.mock("@/lib/admin-api/product-status", () => ({
   useSetProductStatus: () => ({ mutate: mockSetStatus, isPending: false }),
 }));
 
+// Task 12's quick-edit mutation reaches the same api-client → auth-provider
+// module chain the status mutation does, which this suite has no reason to
+// boot. The variant-resolution behaviour behind the two menu items it feeds
+// is covered in products-quick-edit.test.tsx, against fixtures that actually
+// have variants — every product in THIS file has none.
+jest.mock("@/lib/admin-api/variant-quick-edit", () => ({
+  useQuickEditVariant: () => ({ mutate: jest.fn(), isPending: false }),
+}));
+
 import { act, fireEvent, render } from "@testing-library/react-native";
 import { Alert, StyleSheet } from "react-native";
 import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
@@ -442,23 +451,27 @@ describe("Products — swipe", () => {
 });
 
 describe("Products — long-press menu", () => {
-  const KEYS = ["edit", "activate", "draft", "archive"];
+  // Six since Task 12 added Edit price and Adjust stock. The fixtures in this
+  // file all have `variants: []`, so BOTH of those are disabled here — which
+  // is the point: `snapPoints` memoises on `items.length`, so a dropped item
+  // resizes the sheet under the merchant's thumb between two rows of the same
+  // list. Illegal actions are DISABLED, never dropped. The variant-resolution
+  // behaviour behind the two new items lives in products-quick-edit.test.tsx,
+  // which carries the single- and multi-variant fixtures.
+  const KEYS = ["edit", "price", "stock", "activate", "draft", "archive"];
 
-  // `snapPoints` memoises on `items.length`, so a dropped item resizes the
-  // sheet under the merchant's thumb. Illegal actions are DISABLED, never
-  // dropped. (Task 12 takes this to six — update the number here with it.)
-  it("always renders four items so the sheet never resizes", () => {
+  it("always renders six items so the sheet never resizes", () => {
     const { getByTestId, getAllByTestId, queryAllByTestId } = render(<ProductsScreen />);
 
     longPress(getByTestId, "p-active");
-    expect(getAllByTestId(/^action-sheet-item-/)).toHaveLength(4);
+    expect(getAllByTestId(/^action-sheet-item-/)).toHaveLength(6);
     for (const key of KEYS) expect(getByTestId(`action-sheet-item-${key}`)).toBeTruthy();
 
-    // The same four on the state where THREE of them are illegal.
+    // The same six on the state where MOST of them are illegal.
     fireEvent.press(getByTestId("action-sheet-item-edit"));
     expect(queryAllByTestId(/^action-sheet-item-/)).toHaveLength(0);
     longPress(getByTestId, "p-archived");
-    expect(getAllByTestId(/^action-sheet-item-/)).toHaveLength(4);
+    expect(getAllByTestId(/^action-sheet-item-/)).toHaveLength(6);
     for (const key of KEYS) expect(getByTestId(`action-sheet-item-${key}`)).toBeTruthy();
   });
 

@@ -125,6 +125,12 @@ jest.mock("@/lib/hooks/use-products", () => ({
 jest.mock("@/lib/admin-api/product-status", () => ({
   useSetProductStatus: () => ({ mutate: jest.fn(), isPending: false }),
 }));
+// Task 12's quick-edit mutation reaches the same api-client/auth-provider
+// module chain the status mutation above does, and for the same reason is
+// stubbed rather than booted.
+jest.mock("@/lib/admin-api/variant-quick-edit", () => ({
+  useQuickEditVariant: () => ({ mutate: jest.fn(), isPending: false }),
+}));
 jest.mock("@/lib/hooks/use-customers", () => ({
   useCustomers: (params?: Record<string, unknown>) => (mockRecord("customers", params), mockPagedResult()),
 }));
@@ -154,6 +160,13 @@ jest.mock("@/lib/admin-api/ticket-actions", () => ({
 }));
 jest.mock("@/lib/hooks/use-gift-cards", () => ({
   useGiftCards: (params?: Record<string, unknown>) => (mockRecord("giftCards", params), mockPagedResult()),
+}));
+// Gift cards' Enable/Disable (inc3 Task 13), same module-chain reason as the
+// mutation stubs above. Only the HOOK is stubbed: the legality predicate the
+// screen gates its gestures on lives in `lib/gift-card-status.ts`, which has
+// no dependencies at all and so loads here unmocked.
+jest.mock("@/lib/admin-api/gift-card-actions", () => ({
+  useSetGiftCardStatus: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 jest.mock("@/lib/hooks/use-campaigns", () => ({
   useCampaigns: (params?: Record<string, unknown>) => (mockRecord("campaigns", params), mockPagedResult()),

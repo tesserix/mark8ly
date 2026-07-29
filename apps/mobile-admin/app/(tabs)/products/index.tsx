@@ -25,7 +25,25 @@ import { useBusyIds } from "@/lib/use-busy-ids";
 import { useCollapsingScroll } from "@/lib/use-collapsing-scroll";
 import { theme } from "@/lib/theme";
 import { DISCLOSURE_EASING } from "@/components/products/disclosure-motion";
-import type { Product } from "@repo/mobile-shared/api/types";
+import {
+  useQuickEditVariant,
+  type VariantEditField,
+} from "@/lib/admin-api/variant-quick-edit";
+import {
+  VariantValueSheet,
+  type VariantEditTarget,
+} from "@/components/products/VariantValueSheet";
+import {
+  VariantPickerSheet,
+  type VariantPickTarget,
+} from "@/components/products/VariantPickerSheet";
+import {
+  FIELD_FAILURE_ACTION,
+  FIELD_MENU_LABEL,
+} from "@/components/products/variant-edit-copy";
+import { sortVariants } from "@/components/products/variant-identity";
+import { describeActionFailure } from "@/lib/action-failure-message";
+import type { Product, ProductVariant } from "@repo/mobile-shared/api/types";
 import { useDockClearance } from "@/components/navigation/dock-metrics";
 
 // Every chip except "all" IS a backend status value, so the union says so
@@ -159,9 +177,30 @@ export default function ProductsScreen() {
 
   const busy = useBusyIds();
   const setStatus = useSetProductStatus();
+  const quickEdit = useQuickEditVariant();
   // The product whose long-press menu is open. Also the only thing keeping
   // the menu mounted — `ActionSheet` is a controlled component.
   const [menuProduct, setMenuProduct] = useState<Product | null>(null);
+  /**
+   * The two steps of a quick edit, as two independent targets.
+   *
+   * `pickTarget` is only ever set for a MULTI-variant product (the
+   * single-variant case skips straight to `editTarget`), and each is cleared
+   * by its own sheet's `onDismiss`. Nothing derives one from the other: a
+   * merchant who backs out of the numeric sheet has not re-opened the picker,
+   * and a picker that stayed mounted under the numeric sheet would leave live
+   * variant rows a stray tap could re-aim the edit at.
+   */
+  const [pickTarget, setPickTarget] = useState<VariantPickTarget | null>(null);
+  const [editTarget, setEditTarget] = useState<VariantEditTarget | null>(null);
+  /**
+   * The last quick-edit failure, as LOCAL state — deliberately not
+   * `quickEdit.error`. react-query never resets a mutation error, so binding
+   * the sheet to it means one failed edit greets the merchant on every
+   * subsequent sheet, on every other product, for the life of the screen.
+   * Cleared every time a sheet is presented.
+   */
+  const [editError, setEditError] = useState<string | null>(null);
 
   const handlePress = useCallback(
     (product: Product) => router.push(`/(tabs)/products/${product.id}`),
@@ -212,6 +251,77 @@ export default function ProductsScreen() {
       );
     },
     [setProductStatus],
+  );
+
+  /**
+   * Opens a quick edit on one field of one variant.
+   *
+   * The variant-resolution step the plan called feature work: the endpoint is
+   * `PATCH /products/:id/variants/:variantId`, so a per-PRODUCT gesture has to
+   * name a variant before it can send anything.
+   *
+   *  - ONE variant → straight to the numeric sheet. This is the common case
+   *    and it must not cost an extra tap to confirm the only possible answer.
+   *  - MORE than one → the picker first. 8 of the store's 12 active products
+   *    have 2-5 variants; guessing which one the merchant meant writes a price
+   *    to the wrong SKU.
+   *  - NONE → nothing happens, and no branch here says so. The menu items are
+   *    `disabled` in that state, and a picker handed an empty variant list
+   *    never presents itself (`ActionSheet` requires at least one item). A
+   *    guard here could not be reached by any test, which is the definition of
+   *    unverifiable code.
+   */
+  const openField = useCallback((product: Product, field: VariantEditField) => {
+    setEditError(null);
+    const variants = sortVariants(product.variants);
+    if (variants.length === 1) {
+      setEditTarget({ product, variant: variants[0]!, field });
+      return;
+    }
+    setPickTarget({ product, field });
+  }, []);
+
+  const chooseVariant = useCallback(
+    (variant: ProductVariant) => {
+      if (!pickTarget) return;
+      setEditError(null);
+      setEditTarget({ product: pickTarget.product, variant, field: pickTarget.field });
+    },
+    [pickTarget],
+  );
+
+  /**
+   * Sends ONE field. No optimistic update: `useQuickEditVariant` invalidates
+   * ["products"], which prefix-matches this screen's own key, so the row's
+   * price changes when the refetch says so and not a moment earlier — exactly
+   * as the status swipes work, and for the same reason.
+   *
+   * On failure the sheet STAYS OPEN carrying the reason, so the merchant can
+   * correct a value they already typed; the screen's own failure notice is
+   * raised too (via `settleCallbacks`), because the sheet may well be
+   * dismissed before it is read.
+   */
+  const submitVariantValue = useCallback(
+    (target: VariantEditTarget, value: number) => {
+      const { product, variant, field } = target;
+      const settle = busy.settleCallbacks(product.id, FIELD_FAILURE_ACTION[field]);
+      busy.markBusy(product.id);
+      setEditError(null);
+      quickEdit.mutate(
+        { productId: product.id, variantId: variant.id, field, value },
+        {
+          onSuccess: () => {
+            settle.onSuccess();
+            setEditTarget(null);
+          },
+          onError: (error) => {
+            settle.onError(error);
+            setEditError(describeActionFailure(error, FIELD_FAILURE_ACTION[field]).detail);
+          },
+        },
+      );
+    },
+    [quickEdit, busy.markBusy, busy.settleCallbacks],
   );
 
   /**
@@ -269,19 +379,42 @@ export default function ProductsScreen() {
   );
 
   /**
-   * The long-press menu. ALWAYS these four items, in this order — illegal
+   * The long-press menu. ALWAYS these six items, in this order — illegal
    * ones are `disabled` rather than dropped, because `ActionSheet`'s
    * `snapPoints` memoises on `items.length` and a dropped item resizes the
    * sheet under the merchant's thumb. See `ActionSheetItem.disabled`.
+   *
+   * Ordered by what the merchant is doing rather than by how the actions were
+   * added: the three ways to change the product's CONTENT first, the two
+   * status flips next, and the one irreversible action last, where a thumb
+   * travelling down the list arrives at it deliberately.
+   *
+   * The two quick edits are disabled on a product with no variants — there is
+   * nothing for the per-variant endpoint to address — and disabled is the
+   * whole answer: dropping them would make the menu four items on one row and
+   * six on the next.
    */
   const menuItems = useMemo((): ActionSheetItem[] => {
     const target = menuProduct;
     if (!target) return [];
+    const hasVariants = target.variants.length > 0;
     return [
       {
         key: "edit",
         label: "Edit",
         onPress: () => handlePress(target),
+      },
+      {
+        key: "price",
+        label: FIELD_MENU_LABEL.price,
+        disabled: !hasVariants,
+        onPress: () => openField(target, "price"),
+      },
+      {
+        key: "stock",
+        label: FIELD_MENU_LABEL.inventory_quantity,
+        disabled: !hasVariants,
+        onPress: () => openField(target, "inventory_quantity"),
       },
       {
         key: "activate",
@@ -303,7 +436,7 @@ export default function ProductsScreen() {
         onPress: () => confirmArchive(target),
       },
     ];
-  }, [menuProduct, handlePress, setProductStatus, confirmArchive]);
+  }, [menuProduct, handlePress, setProductStatus, confirmArchive, openField]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: Product; index: number }) => {
@@ -453,6 +586,34 @@ export default function ProductsScreen() {
         items={menuItems}
         visible={menuProduct !== null}
         onDismiss={() => setMenuProduct(null)}
+      />
+
+      {/* Step one of a quick edit on a multi-variant product. Clears its own
+          target on dismiss, so backing out of it leaves nothing mounted. */}
+      <VariantPickerSheet
+        target={pickTarget}
+        onChoose={chooseVariant}
+        onDismiss={() => setPickTarget(null)}
+      />
+
+      {/* Step two — or step one on a single-variant product.
+          `onDismiss` clears the target UNCONDITIONALLY, including on a
+          dismiss-without-submit: Orders shipped the bug where a backed-out
+          sheet kept its target and the next row's sheet opened on the
+          previous row's context.
+
+          It does NOT also clear `editError`. Every route that opens this
+          sheet clears it (see `openField`/`chooseVariant`), so a second
+          clear here would be a line no test could redden — and this app has
+          been explicit that belt-and-braces no test can load-bear is just
+          unverifiable code. The message is unrenderable while the target is
+          null either way: the body is mounted only alongside it. */}
+      <VariantValueSheet
+        target={editTarget}
+        isSubmitting={quickEdit.isPending}
+        error={editError}
+        onSubmit={submitVariantValue}
+        onDismiss={() => setEditTarget(null)}
       />
 
       {/* Why the last swipe changed nothing. Floats above the dock and

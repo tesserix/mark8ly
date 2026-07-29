@@ -454,7 +454,7 @@ func (h *WebhookHandler) processEvent(ctx context.Context, provider string, evt 
 	// we don't want to fall through to order.Confirm for a card that has
 	// no matching order row.
 	if gcID := evt.Metadata["gift_card_id"]; gcID != "" {
-		h.handleGiftCardEvent(ctx, evt, gcID)
+		h.handleGiftCardEvent(ctx, provider, evt, gcID)
 		return
 	}
 
@@ -480,10 +480,47 @@ func (h *WebhookHandler) processEvent(ctx context.Context, provider string, evt 
 	}
 }
 
+// giftCardRefundFrom translates a `refund.succeeded` webhook event into the
+// correlation reference and the refund input for giftcard.RefundPurchase.
+//
+// The merchant refunded the CARD PURCHASE itself, so value has to come off
+// the balance — otherwise the card still spends money that was handed back.
+// But only a FULL refund voids the card: Stripe fires `charge.refunded` for
+// partial refunds too, so acting on the event type alone destroys a
+// customer's whole remaining balance over a fractional refund.
+//
+// When the event cannot support that distinction this returns a non-empty
+// reason and the caller must do NOTHING. Guessing "full" is exactly the bug
+// this path exists to prevent, and guessing "partial" has no amount to work
+// with. Leaving the card alone and logging loudly is the only honest option
+// — the merchant can disable it from the admin gift-card screen meanwhile.
+//
+// Providers that cannot report an amount breakdown (Razorpay, PayPal) land
+// here with a nil evt.Refund and are refused, by design.
+func giftCardRefundFrom(evt *payment.WebhookEvent) (ref string, in giftcard.PurchaseRefund, reason string) {
+	ref = evt.SessionID
+	if ref == "" {
+		ref = evt.ProviderPaymentID
+	}
+	if ref == "" {
+		return "", in, "missing correlation id"
+	}
+	if evt.Refund == nil {
+		return "", in, "provider reported no refund amount breakdown"
+	}
+	if !evt.Refund.RefundedTotal.IsPositive() {
+		return "", in, "refunded amount is not positive"
+	}
+	return ref, giftcard.PurchaseRefund{
+		RefundedTotal: evt.Refund.RefundedTotal,
+		Full:          evt.Refund.Full,
+	}, ""
+}
+
 // handleGiftCardEvent routes a gift-card-tagged webhook event to the
 // giftcard service. We dispatch by checkout_session_id when available
 // (checkout.* events) and fall back to the payment_intent id otherwise.
-func (h *WebhookHandler) handleGiftCardEvent(ctx context.Context, evt *payment.WebhookEvent, gcID string) {
+func (h *WebhookHandler) handleGiftCardEvent(ctx context.Context, provider string, evt *payment.WebhookEvent, gcID string) {
 	if h.giftCardSvc == nil {
 		h.logError("webhook: gift card service not wired",
 			"event_type", evt.EventType, "gift_card_id", gcID)
@@ -527,28 +564,25 @@ func (h *WebhookHandler) handleGiftCardEvent(ctx context.Context, evt *payment.W
 		}
 
 	case "refund.succeeded":
-		// The merchant refunded the CARD PURCHASE itself. Void the card —
-		// otherwise it keeps its balance and the merchant honours value they
-		// just handed back. This happens even when the customer has already
-		// spent part of it; the shortfall is recorded on the card's ledger.
-		ref := evt.SessionID
-		if ref == "" {
-			ref = evt.ProviderPaymentID
-		}
-		if ref == "" {
-			h.logError("webhook: gift card refund event missing correlation id — card NOT voided, still spendable",
-				"gift_card_id", gcID, "event_id", evt.ProviderEventID)
+		ref, in, reason := giftCardRefundFrom(evt)
+		if reason != "" {
+			h.logError("webhook: gift card refund event not actionable — card NOT adjusted, full balance still spendable; disable it manually if the refund was real",
+				"reason", reason, "gift_card_id", gcID,
+				"provider", provider, "event_id", evt.ProviderEventID)
 			return
 		}
-		card, voided, err := h.giftCardSvc.RefundPurchase(ctx, ref)
+		card, res, err := h.giftCardSvc.RefundPurchase(ctx, ref, in)
 		if err != nil {
-			h.logError("webhook: gift card purchase-refund void failed — card may still be spendable",
+			h.logError("webhook: gift card purchase-refund failed — refunded value may still be spendable",
 				"gift_card_id", gcID, "ref", ref, "err", err)
 			return
 		}
-		if h.logger != nil && card != nil {
-			h.logger.Info("webhook: gift card voided after purchase refund",
-				"gift_card_id", card.ID, "voided", voided)
+		if h.logger != nil && card != nil && res != nil {
+			h.logger.Info("webhook: gift card purchase refund applied",
+				"gift_card_id", card.ID, "applied", res.Applied, "voided", res.Voided,
+				"clawed_back", res.Clawback.StringFixed(2),
+				"balance_after", res.NewBalance.StringFixed(2),
+				"status_after", res.NewStatus)
 		}
 
 	default:

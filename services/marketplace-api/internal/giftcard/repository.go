@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -58,20 +59,26 @@ type Repository interface {
 	// and apperrors.ErrNotFound when the row is gone.
 	CreditInTx(tx *gorm.DB, cardID uuid.UUID, amount decimal.Decimal, orderID *uuid.UUID, txnType TransactionType, note *string, tenantID uuid.UUID) (balanceAfter decimal.Decimal, err error)
 
-	// VoidForPurchaseRefundInTx voids a card whose PURCHASE was refunded
-	// through the payment provider: status → 'refunded', balance → 0,
-	// payment_status → 'refunded', plus a ledger row recording the value
-	// removed and the shortfall already redeemed.
+	// ApplyPurchaseRefundInTx applies a provider refund issued against the
+	// card's OWN purchase: it removes exactly the newly-refunded value from
+	// current_balance and records it on the ledger.
 	//
-	// Applies even when the customer has already spent part of the balance —
-	// the merchant chose to issue the refund, so the card must stop being
-	// spendable regardless, and the shortfall becomes a recorded merchant
-	// loss rather than a silent one.
+	// Only a FULL purchase refund voids the card (status → 'refunded',
+	// balance → 0, payment_status → 'refunded'). A partial refund leaves
+	// the remainder spendable — Stripe sends `charge.refunded` for partial
+	// refunds too, so voiding on every refund event destroyed value the
+	// merchant never refunded.
 	//
-	// Idempotent: the UPDATE pins `status <> 'refunded'`, so a redelivered
-	// webhook matches no row, writes no duplicate ledger entry and returns
-	// Voided=false with no error.
-	VoidForPurchaseRefundInTx(tx *gorm.DB, cardID uuid.UUID) (*VoidResult, error)
+	// When the customer has already spent below the refunded amount the
+	// balance is floored at zero and the difference is recorded as a
+	// shortfall — an unrecoverable merchant loss rather than a silent one.
+	// The balance can never go negative.
+	//
+	// Idempotent via the cumulative total: in.RefundedTotal is the running
+	// total the provider reports, and the card stores what it has already
+	// applied, so a redelivered or out-of-order webhook has a non-positive
+	// delta and returns Applied=false having written nothing.
+	ApplyPurchaseRefundInTx(tx *gorm.DB, cardID uuid.UUID, in PurchaseRefund) (*PurchaseRefundResult, error)
 
 	// ListTransactions returns all transactions for a gift card, ordered
 	// by created_at desc.
@@ -289,65 +296,99 @@ func classifyCreditFailure(tx *gorm.DB, cardID uuid.UUID) error {
 		"this gift card was refunded and cannot be credited")
 }
 
-// VoidResult reports what a purchase-refund void did, so the caller can log
-// and surface the merchant's loss. Voided is false on a redelivered webhook.
-type VoidResult struct {
-	CardID          uuid.UUID       `gorm:"column:card_id"`
-	TenantID        uuid.UUID       `gorm:"column:tenant_id"`
-	StoreID         uuid.UUID       `gorm:"column:store_id"`
-	InitialBalance  decimal.Decimal `gorm:"column:initial_balance"`
-	PreviousStatus  GiftCardStatus  `gorm:"column:previous_status"`
-	PreviousBalance decimal.Decimal `gorm:"column:previous_balance"`
+// PurchaseRefundResult reports what applying a purchase refund did, so the
+// caller can log the merchant's loss. Applied is false on a redelivered or
+// out-of-order webhook, and on a card that was already voided or is gone.
+type PurchaseRefundResult struct {
+	CardID   uuid.UUID
+	TenantID uuid.UUID
+	StoreID  uuid.UUID
 
-	// Voided and Redeemed are derived, not scanned.
-	Voided   bool            `gorm:"-"`
-	Redeemed decimal.Decimal `gorm:"-"`
+	Applied bool
+	Voided  bool // true only for a FULL purchase refund
+
+	// Clawback is the value removed from the balance; Shortfall is the
+	// refunded value the customer had already spent, which is gone.
+	Clawback  decimal.Decimal
+	Shortfall decimal.Decimal
+
+	PreviousStatus  GiftCardStatus
+	PreviousBalance decimal.Decimal
+	NewStatus       GiftCardStatus
+	NewBalance      decimal.Decimal
 }
 
-func (gormRepository) VoidForPurchaseRefundInTx(tx *gorm.DB, cardID uuid.UUID) (*VoidResult, error) {
-	// The self-join against `prev` is what makes the pre-update balance
-	// readable from the same statement that zeroes it: in Postgres the FROM
-	// alias sees the row as it was before this UPDATE. Reading it with a
-	// separate SELECT first would reopen exactly the TOCTOU window the
-	// atomic-UPDATE pattern exists to close — a concurrent redeem between
-	// the SELECT and the UPDATE would be reported as un-redeemed.
-	var res VoidResult
-	result := tx.Raw(`
-		UPDATE gift_cards AS gc
-		SET status          = 'refunded',
-		    current_balance = 0,
-		    payment_status  = 'refunded',
-		    updated_at      = now()
-		FROM gift_cards AS prev
-		WHERE gc.id = prev.id
-		  AND gc.id = ?
-		  AND gc.status <> 'refunded'
-		RETURNING gc.id AS card_id, gc.tenant_id, gc.store_id, gc.initial_balance,
-		          prev.status AS previous_status, prev.current_balance AS previous_balance`,
-		cardID).Scan(&res)
-	if result.Error != nil {
-		return nil, result.Error
+func (gormRepository) ApplyPurchaseRefundInTx(tx *gorm.DB, cardID uuid.UUID, in PurchaseRefund) (*PurchaseRefundResult, error) {
+	// SELECT ... FOR UPDATE rather than the atomic UPDATE ... WHERE pattern
+	// used by DebitInTx: a partial clawback is arithmetic over the CURRENT
+	// balance and the total already refunded, and expressing that in the SET
+	// clause would bury the money maths in a SQL string that only an
+	// integration test can reach. The row lock is held for the rest of the
+	// caller's transaction, so a concurrent redeem serialises behind it and
+	// there is no TOCTOU window — the lock, not a re-checked predicate, is
+	// what closes it. All the arithmetic lives in purchaseRefundFor, which
+	// the default (untagged) test suite covers exhaustively.
+	var prev GiftCard
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", cardID).First(&prev).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// A webhook must never fail the provider over a card that is gone.
+		return &PurchaseRefundResult{CardID: cardID}, nil
 	}
-	if result.RowsAffected == 0 {
-		// Either already refunded (redelivered webhook) or gone. Both are
-		// no-ops for a webhook that must never fail the caller.
-		return &VoidResult{CardID: cardID, Voided: false, Redeemed: decimal.Zero}, nil
+	if err != nil {
+		return nil, err
 	}
 
-	entry := voidLedgerFor(res.InitialBalance, res.PreviousBalance, res.PreviousStatus)
-	res.Voided = true
-	res.Redeemed = entry.Redeemed
-	if !entry.Write {
-		return &res, nil
+	eff := purchaseRefundFor(cardRefundState{
+		Initial:  prev.InitialBalance,
+		Balance:  prev.CurrentBalance,
+		Status:   prev.Status,
+		Refunded: prev.RefundedAmount,
+	}, in)
+
+	res := &PurchaseRefundResult{
+		CardID:          cardID,
+		TenantID:        prev.TenantID,
+		StoreID:         prev.StoreID,
+		Applied:         eff.Apply,
+		Voided:          eff.Voided,
+		Clawback:        eff.Clawback,
+		Shortfall:       eff.Shortfall,
+		PreviousStatus:  prev.Status,
+		PreviousBalance: prev.CurrentBalance,
+		NewStatus:       eff.NewStatus,
+		NewBalance:      eff.NewBalance,
+	}
+	if !eff.Apply {
+		return res, nil
 	}
 
-	return &res, tx.Create(&Transaction{
-		TenantID:     res.TenantID,
+	updates := map[string]any{
+		"current_balance": eff.NewBalance,
+		"status":          eff.NewStatus,
+		"refunded_amount": in.RefundedTotal,
+		"updated_at":      gorm.Expr("now()"),
+	}
+	// payment_status tracks the GATEWAY payment, so only a full refund
+	// changes it. A partially refunded purchase is still a paid one; how
+	// much came back is carried by refunded_amount.
+	if eff.Voided {
+		updates["payment_status"] = PaymentStatusRefunded
+	}
+	if err := tx.Model(&GiftCard{}).Where("id = ?", cardID).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+
+	if !eff.WriteLedger {
+		return res, nil
+	}
+	return res, tx.Create(&Transaction{
+		TenantID:     prev.TenantID,
 		GiftCardID:   cardID,
 		Type:         TxnRefund,
-		Amount:       entry.Amount,
-		BalanceAfter: decimal.Zero,
-		Note:         entry.Note,
+		Amount:       eff.LedgerAmount,
+		BalanceAfter: eff.NewBalance,
+		Note:         eff.Note,
 	}).Error
 }
 

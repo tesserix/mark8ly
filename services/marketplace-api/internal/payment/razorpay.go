@@ -260,6 +260,12 @@ func (r *RazorpayGateway) VerifyWebhook(_ context.Context, payload []byte, signa
 
 	entity := raw.Payload.Payment.Entity
 
+	// WebhookEvent.Refund is deliberately left nil. Razorpay reports a
+	// refund under `payload.refund.entity`, which this parser does not read,
+	// so we cannot honestly say how much came back or whether the payment is
+	// now fully refunded. Nil means UNKNOWN — consumers that void value on a
+	// full refund must refuse to act rather than treat this as full. See
+	// RefundDetail's doc comment.
 	orderID := entity.Notes["order_id"]
 	if orderID == "" {
 		orderID = entity.OrderID

@@ -315,52 +315,66 @@ func (s *Service) MarkPurchaseFailed(ctx context.Context, sessionOrIntentID stri
 	return s.repo.MarkPaymentFailed(s.db.WithContext(ctx), gc.ID)
 }
 
-// RefundPurchase voids a gift card whose PURCHASE was refunded through the
-// payment provider, correlated by hosted-checkout session id or payment
-// intent id (whichever the event carried).
+// RefundPurchase applies a provider refund issued against a gift card's own
+// PURCHASE, correlated by hosted-checkout session id or payment intent id
+// (whichever the event carried).
 //
-// The card stops being spendable even when part of the balance has already
-// been redeemed: the merchant chose to issue the refund, and leaving a
-// funded card behind means paying for it twice. The value already spent is
-// unrecoverable, so it is written to the ledger as a recorded merchant loss
-// instead of vanishing.
+// It removes exactly the newly-refunded value from the balance. Only a FULL
+// purchase refund voids the card — Stripe sends `charge.refunded` for
+// partial refunds too, so voiding on every refund event destroyed a
+// customer's whole remaining balance when a merchant refunded a fraction of
+// the purchase.
 //
-// Idempotent: a redelivered webhook returns (card, false, nil) and writes
-// nothing.
-func (s *Service) RefundPurchase(ctx context.Context, sessionOrIntentID string) (*GiftCard, bool, error) {
+// When the customer has already spent below the refunded amount, the
+// balance floors at zero and the difference is written to the ledger as a
+// recorded merchant loss instead of vanishing. The balance never goes
+// negative.
+//
+// Idempotent through in.RefundedTotal, which is the provider's CUMULATIVE
+// refunded total: a redelivered webhook has nothing left to apply and
+// returns Applied=false having written nothing, and sequential partials
+// each claw back only their own delta.
+func (s *Service) RefundPurchase(ctx context.Context, sessionOrIntentID string, in PurchaseRefund) (*GiftCard, *PurchaseRefundResult, error) {
 	if sessionOrIntentID == "" {
-		return nil, false, apperrors.ValidationFailed("reference", "checkout session or payment intent id required")
+		return nil, nil, apperrors.ValidationFailed("reference", "checkout session or payment intent id required")
+	}
+	if in.RefundedTotal.LessThanOrEqual(decimal.Zero) {
+		// Refusing here rather than treating a missing amount as a full
+		// refund is the whole point: "unknown" must never become "void it".
+		return nil, nil, apperrors.ValidationFailed("refunded_total", "refunded amount must be positive")
 	}
 	gc, err := s.repo.GetByCheckoutSessionID(ctx, s.db, sessionOrIntentID)
 	if err != nil {
 		gc, err = s.repo.GetByPaymentIntentID(ctx, s.db, sessionOrIntentID)
 		if err != nil {
-			return nil, false, err
+			return nil, nil, err
 		}
 	}
 
-	var res *VoidResult
+	var res *PurchaseRefundResult
 	if err := s.Unit(ctx, func(tx *gorm.DB) error {
 		var vErr error
-		res, vErr = s.repo.VoidForPurchaseRefundInTx(tx, gc.ID)
+		res, vErr = s.repo.ApplyPurchaseRefundInTx(tx, gc.ID, in)
 		return vErr
 	}); err != nil {
-		return nil, false, fmt.Errorf("giftcard: void after purchase refund: %w", err)
+		return nil, nil, fmt.Errorf("giftcard: apply purchase refund: %w", err)
 	}
 
-	if res.Voided && res.Redeemed.GreaterThan(decimal.Zero) && s.logger != nil {
+	if res.Applied && res.Shortfall.GreaterThan(decimal.Zero) && s.logger != nil {
 		// The merchant will ask about this number. Make it greppable.
-		s.logger.Warn("giftcard: purchase refunded on a partly-spent card — shortfall not recoverable",
+		s.logger.Warn("giftcard: purchase refunded beyond the remaining balance — shortfall not recoverable",
 			"card_id", gc.ID, "store_id", gc.StoreID,
-			"redeemed_before_refund", res.Redeemed.StringFixed(2),
-			"initial_balance", res.InitialBalance.StringFixed(2))
+			"shortfall", res.Shortfall.StringFixed(2),
+			"clawed_back", res.Clawback.StringFixed(2),
+			"refunded_total", in.RefundedTotal.StringFixed(2),
+			"full_refund", in.Full)
 	}
 
-	voided, err := s.repo.GetByID(ctx, s.db, gc.ID, gc.StoreID)
+	updated, err := s.repo.GetByID(ctx, s.db, gc.ID, gc.StoreID)
 	if err != nil {
-		return nil, res.Voided, fmt.Errorf("giftcard: reload after void: %w", err)
+		return nil, res, fmt.Errorf("giftcard: reload after purchase refund: %w", err)
 	}
-	return voided, res.Voided, nil
+	return updated, res, nil
 }
 
 func (s *Service) activatePending(ctx context.Context, gc *GiftCard, paymentIntentID string) (*GiftCard, bool, error) {

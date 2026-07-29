@@ -354,6 +354,11 @@ func (p *PayPalGateway) VerifyWebhook(ctx context.Context, payload []byte, signa
 	}
 	_ = json.Unmarshal(rawEvent.Resource, &resource)
 
+	// WebhookEvent.Refund is deliberately left nil. A PayPal refund resource
+	// reports its own value but not the captured total it was taken from, so
+	// this parser cannot tell a partial refund from a full one. Nil means
+	// UNKNOWN — consumers that void value on a full refund must refuse to
+	// act rather than treat this as full. See RefundDetail's doc comment.
 	evt := &WebhookEvent{
 		ProviderEventID: rawEvent.ID,
 		EventType:       normalizePayPalEvent(rawEvent.EventType),

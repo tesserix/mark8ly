@@ -55,6 +55,17 @@ type GiftCard struct {
 	CurrentBalance decimal.Decimal `gorm:"column:current_balance;type:numeric(12,2);not null"`
 	CurrencyCode   string          `gorm:"column:currency_code;type:char(3);not null"`
 	Status         GiftCardStatus  `gorm:"column:status;type:varchar(20);not null;default:active"`
+	// RefundedAmount is the CUMULATIVE value refunded against this card's
+	// own purchase through the payment provider. It tracks the provider's
+	// running total (Stripe's `charge.amount_refunded`) so that sequential
+	// partial refunds claw back only their delta and a redelivered webhook
+	// claws back nothing. Zero for admin-issued cards and for any card
+	// whose purchase was never refunded.
+	//
+	// Scale 3, unlike the balance columns: it is compared against the
+	// provider's reported total, so it must round-trip that total exactly
+	// even for a three-decimal currency. See migration 000098.
+	RefundedAmount decimal.Decimal `gorm:"column:refunded_amount;type:numeric(12,3);not null;default:0"`
 	SenderName     *string         `gorm:"column:sender_name;type:varchar(200)"`
 	SenderEmail    *string         `gorm:"column:sender_email;type:varchar(300)"`
 	RecipientName  *string         `gorm:"column:recipient_name;type:varchar(200)"`

@@ -40,6 +40,58 @@ func TestToMinorUnits_CurrencyAware(t *testing.T) {
 	}
 }
 
+// TestFromMinorUnits_CurrencyAware is the inverse of toMinorUnits: webhook
+// payloads carry minor units and the domain works in decimal major units.
+// Getting this wrong by a factor of 100 in the gift-card refund path would
+// claw back 100x (or 1/100th of) the refunded value.
+func TestFromMinorUnits_CurrencyAware(t *testing.T) {
+	cases := []struct {
+		name     string
+		minor    int64
+		currency string
+		want     string
+	}{
+		{"usd two decimals", 1000, "USD", "10.00"},
+		{"usd lowercase", 1000, "usd", "10.00"},
+		{"usd sub-dollar", 7, "USD", "0.07"},
+		{"eur two decimals", 12055, "EUR", "120.55"},
+		{"jpy zero decimals", 1000, "JPY", "1000"},
+		{"krw zero decimals", 50000, "KRW", "50000"},
+		{"kwd three decimals", 10500, "KWD", "10.500"},
+		{"bhd three decimals", 1234, "BHD", "1.234"},
+		{"unknown currency defaults to 2dp", 500, "ZZZ", "5.00"},
+		{"empty currency defaults to 2dp", 500, "", "5.00"},
+		{"zero", 0, "USD", "0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := fromMinorUnits(tc.minor, tc.currency)
+			want := decimal.RequireFromString(tc.want)
+			if !got.Equal(want) {
+				t.Fatalf("fromMinorUnits(%d, %q) = %s, want %s", tc.minor, tc.currency, got, want)
+			}
+		})
+	}
+}
+
+// Round-tripping through both conversions must be lossless for every
+// currency exponent — a drift here silently moves money.
+func TestMinorUnits_RoundTrip(t *testing.T) {
+	for _, tc := range []struct {
+		amount   string
+		currency string
+	}{
+		{"10.00", "USD"}, {"0.01", "USD"}, {"120.55", "EUR"},
+		{"1000", "JPY"}, {"10.500", "KWD"}, {"5.00", "ZZZ"},
+	} {
+		amt := decimal.RequireFromString(tc.amount)
+		back := fromMinorUnits(toMinorUnits(amt, tc.currency), tc.currency)
+		if !back.Equal(amt) {
+			t.Fatalf("round trip %s %s = %s", tc.amount, tc.currency, back)
+		}
+	}
+}
+
 func TestStripeRefundReason_MapsToEnum(t *testing.T) {
 	cases := map[string]string{
 		"":                      "requested_by_customer",

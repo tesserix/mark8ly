@@ -310,13 +310,14 @@ func (s *StripeGateway) VerifyWebhook(_ context.Context, payload []byte, signatu
 	//   - checkout.session.*        → id=<cs_…>, amount_total, currency,
 	//                                  payment_intent=<pi_…>, metadata
 	var obj struct {
-		ID            string            `json:"id"`
-		Metadata      map[string]string `json:"metadata"`
-		Amount        int64             `json:"amount"`
-		AmountTotal   int64             `json:"amount_total"`
-		Currency      string            `json:"currency"`
-		PaymentMethod string            `json:"payment_method"`
-		PaymentIntent string            `json:"payment_intent"`
+		ID             string            `json:"id"`
+		Metadata       map[string]string `json:"metadata"`
+		Amount         int64             `json:"amount"`
+		AmountTotal    int64             `json:"amount_total"`
+		AmountRefunded int64             `json:"amount_refunded"`
+		Currency       string            `json:"currency"`
+		PaymentMethod  string            `json:"payment_method"`
+		PaymentIntent  string            `json:"payment_intent"`
 	}
 	if err := json.Unmarshal(raw.Data.Object, &obj); err == nil {
 		evt.Metadata = obj.Metadata
@@ -347,6 +348,27 @@ func (s *StripeGateway) VerifyWebhook(_ context.Context, payload []byte, signatu
 			// than falling back to the charge id, which would look like a
 			// valid correlation key and match nothing.
 			evt.ProviderPaymentID = obj.PaymentIntent
+		}
+
+		// Stripe fires `charge.refunded` for PARTIAL refunds as well as
+		// full ones, so the event type alone says nothing about how much
+		// value came back. The Charge carries `amount` (what was charged)
+		// and `amount_refunded` (the cumulative total refunded so far),
+		// and that pair is the only thing that makes the two cases
+		// distinguishable downstream.
+		//
+		// Both are minor units (cents for AUD, yen for JPY, fils for KWD),
+		// so they are converted through the currency exponent — dividing
+		// by a hard-coded 100 would be a 100x error on either side.
+		//
+		// Left nil when the object carries no usable pair: a caller must be
+		// able to tell "unknown" from "the whole thing was refunded".
+		if evt.EventType == "refund.succeeded" && obj.Amount > 0 && obj.AmountRefunded > 0 {
+			evt.Refund = &RefundDetail{
+				RefundedTotal: fromMinorUnits(obj.AmountRefunded, obj.Currency),
+				OriginalTotal: fromMinorUnits(obj.Amount, obj.Currency),
+				Full:          obj.AmountRefunded >= obj.Amount,
+			}
 		}
 	}
 
@@ -447,4 +469,14 @@ func toMinorUnits(amount decimal.Decimal, currency string) int64 {
 	exp := currencyExponent(currency)
 	factor := decimal.New(1, exp) // 10^exp
 	return amount.Mul(factor).Round(0).IntPart()
+}
+
+// fromMinorUnits is the exact inverse of toMinorUnits: it turns the minor
+// units a provider webhook reports (5000) back into the major-unit decimal
+// the domain works in (50.00 for AUD, 5000 for JPY, 5.000 for KWD).
+//
+// decimal.New(v, -exp) is v x 10^-exp — an exact scale change, no division
+// and no float, so no representation error can creep into a money value.
+func fromMinorUnits(minor int64, currency string) decimal.Decimal {
+	return decimal.New(minor, -currencyExponent(currency))
 }

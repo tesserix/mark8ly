@@ -32,7 +32,7 @@ type CheckoutGateway interface {
 
 // CreateCheckoutSessionInput describes a hosted checkout session.
 type CreateCheckoutSessionInput struct {
-	ReferenceID   string            // our internal id (e.g. gift card uuid) — passed as metadata
+	ReferenceID   string // our internal id (e.g. gift card uuid) — passed as metadata
 	Amount        decimal.Decimal
 	CurrencyCode  string
 	CustomerEmail string
@@ -102,16 +102,47 @@ type WebhookEvent struct {
 	// Checkout sessions + PaymentIntents, we propagate the `metadata`
 	// map so downstream handlers (gift card webhook, etc.) can correlate
 	// via custom keys like `gift_card_id`.
-	Metadata        map[string]string
+	Metadata map[string]string
 	// ProviderPaymentID is the payment intent / charge id (Stripe) or
 	// equivalent — useful when the event originated from a session and
 	// the caller needs to record the settled payment intent separately.
 	ProviderPaymentID string
 	// SessionID is the provider hosted-checkout session id (Stripe
 	// checkout.session.*). Empty for direct intent events.
-	SessionID string
-	Amount          decimal.Decimal
-	CurrencyCode    string
-	PaymentMethod   string
-	RawPayload      []byte
+	SessionID     string
+	Amount        decimal.Decimal
+	CurrencyCode  string
+	PaymentMethod string
+	RawPayload    []byte
+
+	// Refund carries the amount breakdown of a "refund.succeeded" event.
+	//
+	// NIL MEANS UNKNOWN, NOT FULL. Providers that cannot report the
+	// breakdown leave this nil, and a caller that needs to distinguish a
+	// partial refund from a full one MUST refuse to act rather than assume.
+	// Assuming "full" here is exactly how a $10 refund destroys a $100
+	// gift card.
+	Refund *RefundDetail
+}
+
+// RefundDetail is the amount breakdown of a refund event, in MAJOR currency
+// units (the domain's decimal), already converted from whatever minor-unit
+// representation the provider used.
+type RefundDetail struct {
+	// RefundedTotal is the CUMULATIVE value refunded against the original
+	// payment so far — not just this one refund. Stripe's
+	// `charge.amount_refunded` is cumulative and this mirrors it
+	// deliberately: a running total makes sequential partial refunds
+	// accumulate exactly once each, and makes a redelivered webhook a
+	// no-op for any consumer that stores what it has already applied.
+	RefundedTotal decimal.Decimal
+
+	// OriginalTotal is the full value of the payment being refunded.
+	OriginalTotal decimal.Decimal
+
+	// Full reports that the entire original payment has now been refunded
+	// (RefundedTotal >= OriginalTotal). Consumers that void or cancel
+	// something on refund must gate on this, never on the mere arrival of
+	// a refund event.
+	Full bool
 }

@@ -350,7 +350,12 @@ export default function OrdersScreen() {
         ],
       };
     },
-    [confirmOrder, busy, openCancelSheet],
+    // The two STABLE callbacks off `busy`, not the whole object: its identity
+    // changes on every busy transition, so depending on it re-derives this
+    // callback — and therefore `renderItem` and every row's actions — each
+    // time a mutation starts or settles. Behaviour is identical either way;
+    // this is the template screen the rest of the increment copies.
+    [confirmOrder, busy.markBusy, busy.settleCallbacks, openCancelSheet],
   );
 
   /**
@@ -409,7 +414,9 @@ export default function OrdersScreen() {
     menuOrder,
     shipment,
     fulfillOrder,
-    busy,
+    // Stable callbacks, not the whole `busy` object — see `actionsFor`.
+    busy.markBusy,
+    busy.settleCallbacks,
     openRefundSheet,
     openCancelSheet,
   ]);

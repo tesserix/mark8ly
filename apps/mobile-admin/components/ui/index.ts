@@ -23,6 +23,12 @@ export type { MonogramProps } from "./Monogram";
 export {
   CollapsingHeader,
   COLLAPSE_DISTANCE,
+  // Part of the height contract — the band a leading control and `rightSlot`
+  // share, and the line-box allowance both slots are documented against.
+  // Exported here so consumers don't have to reach past the barrel into the
+  // module for it. `navRowHeightFor` applies the font scale to it.
+  NAV_ROW_HEIGHT,
+  navRowHeightFor,
   TITLE_MIN_FONT_SIZE,
   titleMinimumFontScale,
 } from "./CollapsingHeader";

@@ -437,11 +437,6 @@ describe("Dashboard — the swipe convention", () => {
     expect(approve.backgroundColor).not.toBe(cancel.backgroundColor);
   });
 
-  // This app has no undo, so nothing may fire from the drag itself.
-  it("never opts any action into full-swipe auto-fire", () => {
-    const { UNSAFE_root } = render(<DashboardScreen />);
-    assertNoAutoFire(UNSAFE_root);
-  });
 });
 
 describe("Dashboard — empty state", () => {
@@ -587,6 +582,10 @@ describe("Dashboard — swipe actions", () => {
     expect(mockUpdateTicketStatus.mock.calls[0][0]).toEqual({ id: "t1", status: "closed" });
   });
 
+  // Nothing may fire from the drag itself — the invariant over every row on
+  // the screen, not one. (This was duplicated verbatim in the swipe-convention
+  // block; hoisting both to `assertNoAutoFire` made the two copies identical,
+  // so the better-named one is the one that stayed.)
   it("never opts any action into full-swipe auto-fire (this app has no undo)", () => {
     const { UNSAFE_root } = render(<DashboardScreen />);
     assertNoAutoFire(UNSAFE_root);

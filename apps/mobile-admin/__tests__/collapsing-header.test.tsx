@@ -53,6 +53,7 @@ import {
   NAV_ROW_HEIGHT,
   TITLE_MIN_FONT_SIZE,
   headerHeightsFor,
+  navRowHeightFor,
 } from "@/components/ui/CollapsingHeader";
 import { theme } from "@/lib/theme";
 
@@ -733,12 +734,16 @@ describe("CollapsingHeader — back affordance", () => {
   });
 
   /**
-   * The height contract. The nav row is a REAL vertical cost now — it holds
-   * the chevron and the trailing `IconButton` above the editorial block — so
+   * The height contract. The nav row is a REAL vertical cost — it holds the
+   * leading control and `rightSlot` above the editorial block — so
    * `headerHeightsFor` must know about it or the block clips against the
-   * container's `overflow: "hidden"`. It is also a TRUE CONSTANT: the row
-   * contains no text, so unlike every other term here it does not scale with
-   * `fontScale`.
+   * container's `overflow: "hidden"`.
+   *
+   * It scales with `fontScale` like every other term here. It shipped as a
+   * true constant, on the argument that the band holds only fixed glyphs;
+   * both slots take arbitrary nodes, and Orders' own shipped pattern puts a
+   * caption in `rightSlot`, so at `fontScale: 2` that argument bought a ~72pt
+   * two-line caption inside a 44pt band inside `overflow: "hidden"`.
    */
   describe("nav row height", () => {
     it("leaves the arithmetic byte-identical when there is no leading control", () => {
@@ -755,17 +760,96 @@ describe("CollapsingHeader — back affordance", () => {
       expect(headerHeightsFor(1.6, false, 1, false)).toEqual(headerHeightsFor(1.6, false, 1));
     });
 
-    it("adds exactly one constant nav row to the expanded height when a leading control is present", () => {
+    it("adds exactly one nav row to the expanded height when a leading control is present", () => {
       expect(NAV_ROW_HEIGHT).toBe(theme.touchTarget);
       for (const fontScale of [1, 1.35, 1.9, 3.1]) {
         const plain = headerHeightsFor(fontScale, false, 1);
         const withNav = headerHeightsFor(fontScale, false, 1, true);
-        // Constant, NOT scaled — a chevron and an icon button, no text.
-        expect(withNav.expanded - plain.expanded).toBe(NAV_ROW_HEIGHT);
+        // Stated as a sum rather than a difference: at 1.9 the subtraction
+        // lands on 83.60000000000002 and asserts a float artifact instead of
+        // the contract.
+        expect(withNav.expanded).toBe(plain.expanded + navRowHeightFor(fontScale));
+        expect(withNav.expanded).toBeGreaterThan(plain.expanded);
         // The compact bar already centres the chevron on the title's line, so
         // it pays nothing.
         expect(withNav.collapsed).toBe(plain.collapsed);
       }
+    });
+
+    /**
+     * The band scales, and this is the assertion that says why.
+     *
+     * `rightSlot` and `leadingSlot` take arbitrary nodes, and the pattern
+     * Orders already ships is a caption ("5 pending"). Two capped caption
+     * lines are 36pt at 1× and 72pt at the capped 2× — against a band that
+     * used to be a flat 44 at every size, inside `overflow: "hidden"`, with
+     * the editorial block pinned directly beneath it. Nothing in
+     * `headerHeightsFor` could absorb it, and nothing would have failed: the
+     * clip is silent.
+     *
+     * Scaling the band by the SAME clamped multiplier the text is capped at
+     * makes the fit structural rather than a per-caller flag someone can
+     * forget to pass — `content = C × s` inside `box = H × s` holds at every
+     * scale once it holds at one.
+     */
+    const NAV_SLOT_ALLOWANCE = theme.text.caption.lineHeight * 2;
+
+    it.each([1, 1.35, 1.6, 1.9, 3.1])(
+      "keeps the nav row taller than the text its slots are documented to hold, at fontScale %s",
+      (fontScale) => {
+        const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+        expect(navRowHeightFor(fontScale)).toBeGreaterThan(NAV_SLOT_ALLOWANCE * scale);
+        // …and the band never dips under the touch target it exists to hold.
+        expect(navRowHeightFor(fontScale)).toBeGreaterThanOrEqual(theme.touchTarget);
+      },
+    );
+
+    it("leaves the default-size band exactly as it shipped, and caps its growth with everything else", () => {
+      expect(navRowHeightFor(1)).toBe(NAV_ROW_HEIGHT);
+      expect(navRowHeightFor(0.85)).toBe(NAV_ROW_HEIGHT);
+      expect(navRowHeightFor(3.1)).toBe(navRowHeightFor(MAX_FONT_SCALE));
+      expect(navRowHeightFor(1.9)).toBeGreaterThan(navRowHeightFor(1));
+    });
+
+    /**
+     * End to end through the component, with the exact combination Task 5
+     * (Tickets) is specified to ship — `onBack` AND a text-bearing
+     * `rightSlot` — at the jest environment's raised font scale (2).
+     *
+     * The rendered band, the editorial block's `top` and the nav-row term
+     * inside the container height are ONE number; if any of the three is left
+     * on the unscaled constant the caption clips or the block overlaps the
+     * row. Asserting all three against `navRowHeightFor` is what makes that
+     * impossible to half-fix.
+     */
+    it("gives a text-bearing rightSlot a band that fits it, alongside a back control", () => {
+      const { getByTestId } = render(
+        <CollapsingHeader
+          title="Gift cards"
+          eyebrow="MARKETING"
+          onBack={jest.fn()}
+          rightSlot={<RNText maxFontSizeMultiplier={MAX_FONT_SCALE}>5 pending</RNText>}
+          scrollY={sharedValue(0)}
+        />,
+      );
+      const { fontScale } = Dimensions.get("window");
+      const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+      const band = navRowHeightFor(fontScale);
+
+      expect(scale).toBeGreaterThan(1);
+      expect(heightOf(getByTestId("collapsing-header-nav-row"))).toBe(band);
+      expect(band).toBeGreaterThan(NAV_SLOT_ALLOWANCE * scale);
+      // The block sits below the band it was measured against…
+      expect(
+        (boxStyleOf(getByTestId("collapsing-header-expanded")) as { top?: unknown }).top,
+      ).toBe(band);
+      // …and the container is tall enough for both, so neither clips.
+      expect(heightOf(getByTestId("collapsing-header"))).toBe(
+        headerHeightsFor(fontScale, false, 1, true).expanded,
+      );
+      expect(heightOf(getByTestId("collapsing-header"))!).toBeGreaterThanOrEqual(
+        band + headerHeightsFor(fontScale, false, 1).expanded,
+      );
     });
 
     it("sizes the rendered container off the nav row, in the expanded state only", () => {
@@ -811,10 +895,14 @@ describe("CollapsingHeader — back affordance", () => {
         />,
       );
       const block = boxStyleOf(getByTestId("collapsing-header-expanded")) as { top?: unknown };
+      const { fontScale } = Dimensions.get("window");
       // `styles.block` is `top: 0; bottom: 0` — the editorial layer must be
       // pushed BELOW the nav row, and the container grown by the same amount
-      // (asserted above), or the two overlap.
-      expect(block.top).toBe(NAV_ROW_HEIGHT);
+      // (asserted above), or the two overlap. The offset tracks the SCALED
+      // band, not the unscaled constant, or the two disagree at every text
+      // size above the default.
+      expect(block.top).toBe(navRowHeightFor(fontScale));
+      expect(block.top).not.toBe(NAV_ROW_HEIGHT);
     });
   });
 
@@ -829,6 +917,31 @@ describe("CollapsingHeader — back affordance", () => {
       );
       expect(getByText("Close")).toBeTruthy();
       expect(queryByLabelText("Go back")).toBeNull();
+    });
+
+    /**
+     * The horizontal half of the same exposure `styles.right` documents. This
+     * slot's comment used to assert it was "a fixed-size glyph button with no
+     * text in it" — true of the `onBack` chevron, false of the escape hatch
+     * the prop exists to provide, and the suite's own example above renders a
+     * `Close` LABEL. `left` is `flex: 1` (`flexBasis: 0`) with no basis to
+     * shrink from, so an unshrinkable leading slot that grows at an
+     * accessibility size takes the title column's width to zero — exactly
+     * what shipped once on Orders' "Inbox".
+     */
+    it("shrinks the leading slot rather than the title, and floors it at the touch target", () => {
+      const { getByTestId } = render(
+        <CollapsingHeader
+          title="Coupons"
+          leadingSlot={<RNText maxFontSizeMultiplier={MAX_FONT_SCALE}>Close</RNText>}
+          scrollY={sharedValue(0)}
+        />,
+      );
+      const leading = StyleSheet.flatten(
+        getByTestId("collapsing-header-leading").props.style,
+      ) as { flexShrink?: number; minWidth?: number };
+      expect(leading.flexShrink).toBe(1);
+      expect(leading.minWidth).toBe(theme.touchTarget);
     });
 
     // Documented precedence, asserted: `onBack` is the common case and the

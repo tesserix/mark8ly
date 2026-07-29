@@ -43,10 +43,24 @@ export interface CollapsingHeaderProps {
   /**
    * Trailing content, vertically centred against both header states.
    *
-   * If it contains TEXT, cap it at `MAX_FONT_SCALE` like every line this
-   * primitive draws itself — the container's height is computed from that
-   * multiplier (see `headerHeightsFor`), so an uncapped slot is measured
-   * against a box that was never sized for it.
+   * Where it LIVES depends on whether there is a leading control: without one
+   * it shares the single row with the title column; with one it sits in the
+   * nav row band (see `NAV_ROW_HEIGHT`). Both boxes are sized by
+   * `headerHeightsFor`, and both clip against the container's
+   * `overflow: "hidden"`, so the same two rules apply either way:
+   *
+   *   - Cap any TEXT at `MAX_FONT_SCALE`, like every line this primitive
+   *     draws itself. The heights are computed from that multiplier, so an
+   *     uncapped slot is measured against a box that was never sized for it.
+   *   - Keep its line boxes inside `NAV_ROW_HEIGHT` UNSCALED points — 44, so
+   *     two `caption` lines (18 + 18) or one `body` line (24), and no more.
+   *     That is what the band actually holds: it is `NAV_ROW_HEIGHT × the
+   *     same clamped multiplier` the text scales by, so an allowance that
+   *     fits at 1× fits at every text size. A third caption line (54) does
+   *     not fit at ANY size and will clip silently.
+   *
+   * Horizontally the slot shrinks before the title does, down to the 44pt
+   * touch target — see `styles.right`.
    */
   rightSlot?: ReactNode;
   /**
@@ -81,6 +95,16 @@ export interface CollapsingHeaderProps {
    * route, say). Ignored when `onBack` is set — `onBack` is the common case
    * and the one the rollout uses, so a screen that passes both gets the back
    * chevron rather than two stacked leading controls.
+   *
+   * Same two rules as `rightSlot`, because it shares the same band: cap any
+   * TEXT at `MAX_FONT_SCALE`, and keep its line boxes inside `NAV_ROW_HEIGHT`
+   * unscaled points (two `caption` lines, or one `body` line). The chevron
+   * `onBack` renders is a fixed 22pt glyph in a 44pt `IconButton` and pays
+   * neither cost, but this prop exists precisely so a caller can pass
+   * something that is not that — a `Close` label is the obvious one.
+   *
+   * Horizontally it shrinks to the 44pt touch target before the title column
+   * gives up any width — see `styles.leading`.
    */
   leadingSlot?: ReactNode;
   /**
@@ -259,23 +283,56 @@ export const MAX_FONT_SCALE = TEXT_MAX_FONT_SCALE;
 /**
  * Height of the EXPANDED state's nav row — the band above the editorial block
  * that holds the leading control and `rightSlot` when a leading control is
- * present.
- *
- * A TRUE CONSTANT, and the only term in `headerHeightsFor` that does not
- * scale with `fontScale`. Everything else there is a stack of text line
- * boxes, which RN grows with the Dynamic Type multiplier; this row holds a
- * chevron (a fixed 22pt glyph in a 44pt `IconButton`) and `rightSlot`, and
- * `rightSlot` is documented as the caller's to cap at `MAX_FONT_SCALE` if it
- * contains text. Both existing nested callers pass an `IconButton`, so there
- * is no text in this row to grow. If a caller ever puts real text in
- * `rightSlot`, this constant is the thing that has to change with it — the
- * band would then need the same `× scale` treatment the rest of the
- * arithmetic gets.
+ * present — at fontScale 1. `navRowHeightFor` is the number the layout
+ * actually uses.
  *
  * `theme.touchTarget` rather than a literal 44: the row exists to hold a
  * touch-target-sized control, so the two must be the same number.
+ *
+ * It doubles as the LINE-BOX ALLOWANCE the two slots are documented against
+ * (two `caption` lines, or one `body` line), and those are one number on
+ * purpose — see `navRowHeightFor`.
  */
 export const NAV_ROW_HEIGHT = theme.touchTarget;
+
+/** The clamp every height in this file is computed against. */
+function clampFontScale(fontScale: number): number {
+  return Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+}
+
+/**
+ * The nav row's height at a given device font scale.
+ *
+ * This band USED to be the one term in `headerHeightsFor` that did not scale,
+ * on the argument that it holds a chevron and an `IconButton` — fixed glyphs
+ * with nothing for Dynamic Type to grow. That was true of the two callers
+ * that existed when it was written and false of the prop's contract: both
+ * slots take arbitrary nodes, and Orders' own shipped pattern puts a caption
+ * ("5 pending") in `rightSlot`. At `fontScale: 2` that caption is a ~36pt
+ * line box, two lines of it ~72pt, inside a 44pt band inside a container with
+ * `overflow: "hidden"` — the same silent clip this file's height arithmetic
+ * exists to make structurally impossible, with the editorial block pinned
+ * underneath it and no parameter able to absorb it.
+ *
+ * The alternative fix was a caller-declared flag (`rightSlotHasText`) feeding
+ * a bigger constant. Rejected: a boolean the next of nine screens has to
+ * REMEMBER to pass is exactly how this recurs — it clips silently, and every
+ * test stays green, when someone forgets. Scaling instead makes the band obey
+ * the same rule as every other box here (`content = C × s` inside
+ * `box = H × s`, so an inequality that holds at s = 1 holds at every s), and
+ * a caller cannot forget to be correct.
+ *
+ * The allowance that buys: `NAV_ROW_HEIGHT` (44) unscaled points of line box,
+ * i.e. two `caption` lines (36 < 44) or one `body` line (24 < 44), strictly
+ * inside the band at every scale. Three caption lines (54) fit at no scale
+ * and are documented as out of contract on both slot props.
+ *
+ * At fontScale 1 this is `NAV_ROW_HEIGHT` exactly, so the default-size
+ * geometry that shipped is unchanged to the point.
+ */
+export function navRowHeightFor(fontScale: number): number {
+  return NAV_ROW_HEIGHT * clampFontScale(fontScale);
+}
 
 /**
  * Header heights for a given device font scale.
@@ -320,13 +377,14 @@ export const NAV_ROW_HEIGHT = theme.touchTarget;
  * measured `collapsedTitleLines`: the shrink is bound by the title's WIDTH,
  * which this height does not touch.)
  *
- * `hasLeadingControl` adds the ONE non-scaling term: the expanded state's nav
- * row (see `NAV_ROW_HEIGHT`). It is added, not multiplied, because the row
- * holds no text — and it is added ONLY to the expanded height, because the
- * collapsed bar already centres the chevron on the title's own line and pays
- * nothing for it. When it is false the expression is the one that shipped
- * before the nav row existed, unchanged: Dashboard and Orders pass no leading
- * control and must keep byte-identical heights.
+ * `hasLeadingControl` adds the expanded state's nav row (see
+ * `navRowHeightFor`, which applies the same clamped multiplier as everything
+ * else here — the band holds two caller-supplied slots, so it is not the
+ * fixed-glyph row it was first written as). It is added ONLY to the expanded
+ * height, because the collapsed bar already centres the chevron on the
+ * title's own line and pays nothing for it. When it is false the expression
+ * is the one that shipped before the nav row existed, unchanged: Dashboard
+ * and Orders pass no leading control and must keep byte-identical heights.
  *
  * Exported so the arithmetic is testable without mocking the RN Dimensions
  * module.
@@ -340,7 +398,7 @@ export function headerHeightsFor(
   expanded: number;
   collapsed: number;
 } {
-  const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+  const scale = clampFontScale(fontScale);
   const expandedBase = hasSubtitle ? EXPANDED_HEIGHT_WITH_SUBTITLE : EXPANDED_HEIGHT;
   // Clamped, not trusted: this is fed from a native layout callback, and a 0
   // (or a 3 from some future allowance bump) must not silently resize the box
@@ -351,7 +409,9 @@ export function headerHeightsFor(
   );
   const scaledExpanded = expandedBase * scale;
   return {
-    expanded: hasLeadingControl ? scaledExpanded + NAV_ROW_HEIGHT : scaledExpanded,
+    expanded: hasLeadingControl
+      ? scaledExpanded + navRowHeightFor(fontScale)
+      : scaledExpanded,
     collapsed: (COLLAPSED_HEIGHT + COLLAPSED_TITLE_LINE * (titleLines - 1)) * scale,
   };
 }
@@ -433,6 +493,11 @@ export function CollapsingHeader({
     collapsedTitleLines,
     hasLeading,
   );
+  // The band's height, the editorial block's `top` and the nav-row term
+  // inside `heights.expanded` are ONE number — read from one place so a
+  // change to `navRowHeightFor` cannot move two of the three and overlap or
+  // clip the third.
+  const navRowHeight = navRowHeightFor(fontScale);
 
   // Single source of truth for collapse progress (0 expanded → 1 collapsed).
   // Reduced motion bypasses the interpolation entirely: any non-zero offset
@@ -461,23 +526,23 @@ export function CollapsingHeader({
   const collapsedStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   /**
-   * The nav row grows from `NAV_ROW_HEIGHT` (a band at the top of the
-   * expanded header) into the WHOLE collapsed bar. That single interpolation
-   * is what gives each state its own correct layout from one mounted control:
-   * at progress 0 the chevron is centred in the 44pt band above the editorial
-   * block; at progress 1 the band IS the bar, so the chevron is centred on
-   * the h3 title's line exactly as it shipped.
+   * The nav row grows from `navRowHeightFor(fontScale)` (a band at the top of
+   * the expanded header) into the WHOLE collapsed bar. That single
+   * interpolation is what gives each state its own correct layout from one
+   * mounted control: at progress 0 the chevron is centred in the band above
+   * the editorial block; at progress 1 the band IS the bar, so the chevron is
+   * centred on the h3 title's line exactly as it shipped.
    */
   const navRowStyle = useAnimatedStyle(
     () => ({
       height: interpolate(
         progress.value,
         [0, 1],
-        [NAV_ROW_HEIGHT, heights.collapsed],
+        [navRowHeight, heights.collapsed],
         Extrapolation.CLAMP,
       ),
     }),
-    [heights.collapsed],
+    [navRowHeight, heights.collapsed],
   );
 
   /**
@@ -492,7 +557,7 @@ export function CollapsingHeader({
     <Animated.View
       style={
         hasLeading
-          ? [styles.block, styles.blockBelowNav, expandedStyle]
+          ? [styles.block, styles.blockBelowNav, { top: navRowHeight }, expandedStyle]
           : [styles.block, expandedStyle]
       }
       pointerEvents="none"
@@ -625,7 +690,10 @@ export function CollapsingHeader({
               and title sit below them at the screen gutter, sharing one left
               edge with the rows beneath. As the header collapses the band
               grows into the whole bar and the two meet on one line. */}
-          <Animated.View style={[styles.navRow, navRowStyle]}>
+          <Animated.View
+            style={[styles.navRow, navRowStyle]}
+            testID="collapsing-header-nav-row"
+          >
             <View style={styles.leading} testID="collapsing-header-leading">
               {leading}
             </View>
@@ -709,10 +777,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: theme.spacing.sm,
-    // NOT `flexShrink: 1` (which `right` needs): this slot is a fixed-size
-    // glyph button with no text in it, so there is nothing for a raised text
-    // size to grow — and shrinking it below 44 would break the touch target.
-    flexShrink: 0,
+    // Shrinkable, for the same reason `right` is. This slot is a fixed-size
+    // glyph button for `onBack` — the case that shipped, and one with nothing
+    // for a raised text size to grow — but `leadingSlot` exists precisely so
+    // a route can pass something else, and the suite's own example is a
+    // `Close` LABEL. `left` is `flex: 1` (`flexBasis: 0`), so it has no basis
+    // to shrink from: an unshrinkable leading slot that grows past the row
+    // drives the title column's resolved width to zero, which is the failure
+    // `styles.right` documents having already shipped once on Orders.
+    // `minWidth` above is a hard floor in flexbox, so the touch target
+    // survives the shrink — and the `onBack` chevron, whose content is
+    // exactly 44pt wide, has nothing to give up and lays out identically.
+    flexShrink: 1,
   },
   block: {
     position: "absolute",
@@ -726,12 +802,16 @@ const styles = StyleSheet.create({
    * The EXPANDED block when a nav row is present: pushed below the row and
    * re-anchored to the screen gutter, so the eyebrow and title share ONE left
    * edge with the filter chips and list rows underneath instead of being
-   * indented past the chevron. `top` and the nav-row term in
-   * `headerHeightsFor` are one contract — change either and the block either
-   * overlaps the row or clips against the container's `overflow: "hidden"`.
+   * indented past the chevron.
+   *
+   * `top` is NOT here: it is `navRowHeightFor(fontScale)`, applied inline at
+   * the call site, because the band scales with Dynamic Type (see
+   * `navRowHeightFor`) and a `StyleSheet` constant cannot. It and the
+   * nav-row term in `headerHeightsFor` are one contract — move either and the
+   * block overlaps the row or clips against the container's
+   * `overflow: "hidden"`.
    */
   blockBelowNav: {
-    top: NAV_ROW_HEIGHT,
     left: theme.spacing.xl,
     right: theme.spacing.xl,
   },

@@ -64,10 +64,13 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/lib/hooks/use-products", () => ({
   useProducts: () => ({
-    data: { data: [] },
+    data: { pages: [{ data: [], meta: { page: 1, total: 0, total_pages: 1 } }] },
     isLoading: false,
     isRefetching: false,
     refetch: jest.fn(),
+    fetchNextPage: jest.fn(),
+    hasNextPage: false,
+    isFetchingNextPage: false,
   }),
 }));
 

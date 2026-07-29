@@ -148,32 +148,41 @@ export default function ProductsScreen() {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
   };
 
-  const { data, isLoading, isRefetching, isError, refetch } = useProducts(
-    Object.keys(queryParams).length > 0 ? queryParams : undefined,
-  );
+  const {
+    data,
+    isLoading,
+    isRefetching,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useProducts(Object.keys(queryParams).length > 0 ? queryParams : undefined);
 
-  const products = useMemo(() => data?.data ?? [], [data]);
+  const products = useMemo(() => data?.pages.flatMap((page) => page.data) ?? [], [data]);
   /**
    * The header count: how many products MATCH the current chip and search —
-   * read off the visible query's own `meta.total`.
+   * read off the first page's own `meta.total`, same as Orders' pending
+   * count (`app/(tabs)/orders/index.tsx`). `total` is stable across every
+   * page of the same query, so the first page is as good a source as any and
+   * needs no extra request.
    *
    * It is deliberately NOT a count of the rows below it, and the copy says
-   * "total" rather than "products" for exactly that reason. `useProducts`
-   * pins `page_size=100` with no pagination yet, so a 162-product store
-   * renders 100 rows; a slot reading "162 products" over them would be read
-   * as a list length and be wrong by 62. The scope the filter selects is the
+   * "total" rather than "products" for exactly that reason: `useProducts`
+   * now paginates, so the rows on screen grow as the merchant scrolls while
+   * this number does not move. Reading it as a list length would be wrong
+   * from the first scroll past page one. The scope the filter selects is the
    * number a merchant is actually asking for ("how many drafts do I have"),
-   * and it stays true whatever the page ceiling is.
+   * and it stays true regardless of how many pages have loaded.
    *
    * Deliberately unlike Orders, which pins its count to a separate
    * `status: "pending"` query — that count describes a fixed scope the
    * merchant may not be looking at, so deriving it from a filtered list
    * would report "3 pending" on the Cancelled tab. This one tracks the
    * chips, so the visible query is not merely the cheap source: it is the
-   * only one that can stay true as they change, and it costs no extra
-   * request.
+   * only one that can stay true as they change.
    */
-  const total = data?.meta?.total ?? 0;
+  const total = data?.pages[0]?.meta?.total ?? 0;
 
   const busy = useBusyIds();
   const setStatus = useSetProductStatus();
@@ -206,6 +215,10 @@ export default function ProductsScreen() {
     (product: Product) => router.push(`/(tabs)/products/${product.id}`),
     [router],
   );
+
+  const handleEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const setProductStatus = useCallback(
     // The union is imported, not re-declared: `useSetProductStatus` already
@@ -548,12 +561,25 @@ export default function ProductsScreen() {
             style={styles.listFlex}
             contentContainerStyle={[styles.list, { paddingBottom: dockPad }]}
             keyboardShouldPersistTaps="handled"
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
             refreshControl={
               <RefreshControl
                 refreshing={isRefetching}
                 onRefresh={refetch}
                 tintColor={theme.colors.text}
               />
+            }
+            // A real end marker, not a spinner that spins forever: null once
+            // there is no next page (including a store with only one page),
+            // and the same fixed-box spinner every other paginated list uses
+            // while a page is actually in flight.
+            ListFooterComponent={
+              isFetchingNextPage ? (
+                <View style={styles.footer}>
+                  <ActivityIndicator size="small" color={theme.colors.text} />
+                </View>
+              ) : null
             }
             // Three genuinely different empty moments, and the screen used
             // to tell a merchant with 162 products to "add your first
@@ -654,6 +680,10 @@ const styles = StyleSheet.create({
   listFlex: { flex: 1 },
   list: {
     flexGrow: 1,
+  },
+  footer: {
+    paddingVertical: theme.spacing.lg,
+    alignItems: "center",
   },
   centered: {
     flex: 1,

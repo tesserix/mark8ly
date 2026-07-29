@@ -81,13 +81,20 @@ let mockProducts: unknown[] = [];
 jest.mock("@/lib/hooks/use-products", () => ({
   useProducts: () => ({
     data: {
-      data: mockProducts,
-      meta: { page: 1, page_size: 100, total: mockProducts.length, total_pages: 1 },
+      pages: [
+        {
+          data: mockProducts,
+          meta: { page: 1, page_size: 100, total: mockProducts.length, total_pages: 1 },
+        },
+      ],
     },
     isLoading: false,
     isRefetching: false,
     isError: false,
     refetch: jest.fn(),
+    fetchNextPage: jest.fn(),
+    hasNextPage: false,
+    isFetchingNextPage: false,
   }),
 }));
 

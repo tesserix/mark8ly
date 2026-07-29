@@ -21,6 +21,7 @@ import { useConfirmOrder, useCancelOrder } from "@/lib/admin-api/order-actions";
 import { useApproveReview } from "@/lib/admin-api/review-actions";
 import { useUpdateTicketStatus } from "@/lib/admin-api/ticket-actions";
 import { useSetProductStatus } from "@/lib/admin-api/product-status";
+import { useProducts } from "@/lib/hooks/use-products";
 
 jest.mock("@repo/mobile-shared/api/orders", () => ({
   createOrdersApi: () => ({
@@ -45,12 +46,21 @@ jest.mock("@repo/mobile-shared/api/tickets", () => ({
     updateStatus: jest.fn(() => Promise.resolve({})),
   }),
 }));
-jest.mock("@repo/mobile-shared/api/products", () => ({
-  createProductsApi: () => ({
-    update: jest.fn(() => Promise.resolve({})),
-  }),
-}));
+jest.mock("@repo/mobile-shared/api/products", () => {
+  const mockUpdate = jest.fn(() => Promise.resolve({}));
+  const mockList = jest.fn();
+  return {
+    createProductsApi: () => ({
+      update: mockUpdate,
+      list: mockList,
+    }),
+    __mockList: mockList,
+  };
+});
 jest.mock("@/lib/api-client", () => ({ useApiClient: () => ({}) }));
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { __mockList } = require("@repo/mobile-shared/api/products") as { __mockList: jest.Mock };
 
 let queryClient: QueryClient;
 let invalidate: jest.SpyInstance;
@@ -237,6 +247,63 @@ describe("product status mutations", () => {
     await act(async () => {
       releaseRefetch?.();
     });
+  });
+
+  /**
+   * Task 15's specific regression — react-query invalidation is PREFIX
+   * matching (`exact: false` by default in v5): `invalidateQueries({queryKey:
+   * ["products"]})` reaches `["products", status, search]` whether that key
+   * belongs to a plain query or an infinite one, but an infinite query's
+   * cache shape (`{pages: [...], pageParams: [...]}`) differs from a plain
+   * one's. The risk this guards: does the invalidated refetch keep every
+   * page the merchant had already scrolled through, or does it collapse back
+   * to just page 1 and silently yank a merchant on page 3 back to the top?
+   *
+   * v5's documented default for an invalidated infinite query is to refetch
+   * every currently-loaded page, in order, and keep them all — this is the
+   * test that would catch it if that ever stopped being true (a
+   * `refetchType`/`maxPages` misconfiguration, a hook rewritten as a plain
+   * `useQuery` that silently drops pages 2+, etc).
+   */
+  it("keeps every already-loaded page on the infinite products cache after invalidation — does not reset to page 1", async () => {
+    __mockList.mockImplementation((params: { page?: string }) => {
+      const pageNum = Number(params.page ?? "1");
+      return Promise.resolve({
+        data: [{ id: `p${pageNum}`, title: `Product ${pageNum}`, status: "active" }],
+        meta: { page: pageNum, page_size: 20, total: 2, total_pages: 2 },
+      });
+    });
+
+    const { result } = renderHook(
+      () => ({
+        list: useProducts(),
+        setStatus: useSetProductStatus(),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+    expect(result.current.list.data?.pages).toHaveLength(1);
+
+    // The merchant scrolls to page 2 — the exact position a mutation fired
+    // from THAT row must not disturb.
+    act(() => {
+      result.current.list.fetchNextPage();
+    });
+    await waitFor(() => expect(result.current.list.data?.pages).toHaveLength(2));
+
+    // A status change on the row the merchant is looking at, on page 2.
+    act(() => {
+      result.current.setStatus.mutate({ id: "p2", status: "active" });
+    });
+    await waitFor(() => expect(result.current.setStatus.isSuccess).toBe(true));
+
+    // The invalidation-driven refetch lands asynchronously.
+    await waitFor(() => expect(result.current.list.isFetching).toBe(false));
+
+    // BOTH pages are still there — the merchant is still looking at page 2's
+    // worth of products, not silently dropped back to page 1's single row.
+    expect(result.current.list.data?.pages).toHaveLength(2);
+    expect(result.current.list.data?.pages.map((p) => p.data[0]?.id)).toEqual(["p1", "p2"]);
   });
 });
 

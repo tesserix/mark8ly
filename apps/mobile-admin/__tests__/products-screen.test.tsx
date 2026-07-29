@@ -104,16 +104,29 @@ let mockProducts: unknown[] = [];
 let mockIsError = false;
 let mockIsLoading = false;
 /**
- * Forces `meta.total` apart from the number of rows.
+ * Forces `meta.total` apart from the number of rows on the FIRST page.
  *
- * Null (the default) keeps the two equal, which is what a small store looks
- * like — but ONLY that. `useProducts` pins `page_size=100` with no
- * pagination, so the real 162-product store returns `total: 162` over 100
- * rows, and a fixture that computes `total` from `rows.length` makes the two
- * definitionally equal and cannot express the case at all.
+ * Null (the default) keeps the two equal, which is what a single-page store
+ * looks like — but ONLY that. Every existing products test used to mock
+ * `meta.total = rows.length`, which is exactly why no test could catch the
+ * original defect (page_size=100, no pagination): the two are
+ * definitionally equal by construction and cannot express a store with more
+ * rows than one page fits. `mockExtraPages` (below) is the fixture that
+ * actually has more than one page; this override lets the header count be
+ * pinned independently of it.
  */
 let mockTotalOverride: number | null = null;
+/**
+ * Pages BEYOND the first — the fixture with more rows than one page
+ * (Controller addendum §3: the demo store no longer has enough products to
+ * reproduce this live, so the unit test is the only place it can be shown).
+ * Defaults to none, which is every pre-pagination fixture in this file.
+ */
+let mockExtraPages: { data: unknown[]; meta: Record<string, number> }[] = [];
+let mockHasNextPage = false;
+let mockIsFetchingNextPage = false;
 const mockRefetch = jest.fn();
+const mockFetchNextPage = jest.fn();
 
 jest.mock("@/lib/hooks/use-products", () => ({
   useProducts: (params?: ListParams) => {
@@ -121,22 +134,24 @@ jest.mock("@/lib/hooks/use-products", () => ({
     const rows = params?.status
       ? mockProducts.filter((p) => (p as { status: string }).status === params.status)
       : mockProducts;
+    const firstPage = {
+      data: rows,
+      meta: {
+        page: 1,
+        page_size: 100,
+        total: mockTotalOverride ?? rows.length,
+        total_pages: 1 + mockExtraPages.length,
+      },
+    };
     return {
-      data: mockIsError
-        ? undefined
-        : {
-            data: rows,
-            meta: {
-              page: 1,
-              page_size: 100,
-              total: mockTotalOverride ?? rows.length,
-              total_pages: 1,
-            },
-          },
+      data: mockIsError ? undefined : { pages: [firstPage, ...mockExtraPages] },
       isLoading: mockIsLoading,
       isRefetching: false,
       isError: mockIsError,
       refetch: mockRefetch,
+      fetchNextPage: mockFetchNextPage,
+      hasNextPage: mockHasNextPage,
+      isFetchingNextPage: mockIsFetchingNextPage,
     };
   },
 }));
@@ -201,6 +216,9 @@ beforeEach(() => {
   mockIsError = false;
   mockIsLoading = false;
   mockTotalOverride = null;
+  mockExtraPages = [];
+  mockHasNextPage = false;
+  mockIsFetchingNextPage = false;
 });
 
 /** Opens the long-press menu on a given row. */
@@ -732,6 +750,86 @@ describe("Products — rows", () => {
     const { getByLabelText } = render(<ProductsScreen />);
     fireEvent.press(getByLabelText("Add new product"));
     expect(mockPush).toHaveBeenCalledWith("/(tabs)/products/new");
+  });
+});
+
+/**
+ * Task 15 — `useProducts` used to pin `page_size=100` with no pagination at
+ * all, so anything past the first 100 products was unreachable from the
+ * phone, not merely slow to reach. These pin the screen's half of the fix:
+ * it reads every loaded page (not just the first), asks for the next one at
+ * the right moments, and shows a real end state rather than a spinner that
+ * never resolves. The hook's own page-advance arithmetic is covered
+ * separately in products-pagination.test.tsx and use-products.test.tsx —
+ * this file's `useProducts` is mocked, so it cannot exercise that math, only
+ * how the screen reacts to the shape react-query hands back.
+ */
+describe("Products — pagination", () => {
+  const PAGE_TWO_PRODUCT = product({ id: "p-page-two", title: "Bronte Beanie" });
+
+  it("renders rows from every loaded page, not only the first", () => {
+    mockExtraPages = [
+      { data: [PAGE_TWO_PRODUCT], meta: { page: 2, page_size: 100, total: 4, total_pages: 2 } },
+    ];
+    const { getByTestId, UNSAFE_root } = render(<ProductsScreen />);
+    expect(productRows(UNSAFE_root)).toHaveLength(4);
+    expect(getByTestId("product-row-p-page-two")).toBeTruthy();
+  });
+
+  it("asks for the next page when the list end is reached and one is available", () => {
+    mockHasNextPage = true;
+    const { getByTestId } = render(<ProductsScreen />);
+    getByTestId("products-list").props.onEndReached();
+    expect(mockFetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  // Without this, scrolling near the bottom while a page is already in
+  // flight would queue a second request for the same page.
+  it("does not ask again while a page is already in flight", () => {
+    mockHasNextPage = true;
+    mockIsFetchingNextPage = true;
+    const { getByTestId } = render(<ProductsScreen />);
+    getByTestId("products-list").props.onEndReached();
+    expect(mockFetchNextPage).not.toHaveBeenCalled();
+  });
+
+  // The end of the list is a real state, not a request that just never
+  // happens to return more rows — asking again would be a silent, endless
+  // poll against a store that has nothing further to give.
+  it("does not ask again once every page has been loaded", () => {
+    mockHasNextPage = false;
+    const { getByTestId } = render(<ProductsScreen />);
+    getByTestId("products-list").props.onEndReached();
+    expect(mockFetchNextPage).not.toHaveBeenCalled();
+  });
+
+  // A spinner that never resolves is worse than the old 100-row cap — this is
+  // the real end marker: present only while a page is actually in flight,
+  // gone once it lands, so the merchant sees the list settle rather than
+  // spin forever past the last row.
+  it("shows a loading footer only while the next page is actually in flight", () => {
+    mockIsFetchingNextPage = true;
+    const { getByTestId } = render(<ProductsScreen />);
+    expect(getByTestId("products-list").props.ListFooterComponent).toBeTruthy();
+  });
+
+  it("shows no loading footer once the fetch has settled", () => {
+    mockIsFetchingNextPage = false;
+    const { getByTestId } = render(<ProductsScreen />);
+    expect(getByTestId("products-list").props.ListFooterComponent).toBeNull();
+  });
+
+  // The count describes the FILTER's total, off the first page's own meta —
+  // it must not grow as more pages load, or it stops meaning "how many
+  // drafts do I have" and starts meaning "how many rows are on screen".
+  it("keeps the header count pinned to the first page's total as later pages load", () => {
+    mockTotalOverride = 40;
+    mockExtraPages = [
+      { data: [PAGE_TWO_PRODUCT], meta: { page: 2, page_size: 100, total: 40, total_pages: 2 } },
+    ];
+    const { getByTestId, UNSAFE_root } = render(<ProductsScreen />);
+    expect(productRows(UNSAFE_root)).toHaveLength(4);
+    expect(getByTestId("products-count")).toHaveTextContent("40 total");
   });
 });
 

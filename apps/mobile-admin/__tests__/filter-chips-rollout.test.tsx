@@ -113,11 +113,9 @@ function mockPagedResult() {
 }
 
 jest.mock("@/lib/hooks/use-products", () => ({
-  useProducts: (params?: Record<string, unknown>) => {
-    mockRecord("products", params);
-    // Products is the one non-paginated list here.
-    return { data: { data: [] }, isLoading: false, isRefetching: false, isError: false, refetch: jest.fn() };
-  },
+  useProducts: (params?: Record<string, unknown>) => (
+    mockRecord("products", params), mockPagedResult()
+  ),
 }));
 // Products' status swipes/menu (inc3 Task 2) reach a real react-query
 // mutation, which pulls in the api client and, through it, the auth

@@ -139,8 +139,18 @@ jest.mock("@/lib/admin-api/customer-actions", () => ({
 jest.mock("@/lib/hooks/use-reviews", () => ({
   useReviews: (params?: Record<string, unknown>) => (mockRecord("reviews", params), mockPagedResult()),
 }));
+// Reviews' swipes + menu (inc3 Task 4), same module-chain reason as the two
+// mutation stubs above.
+jest.mock("@/lib/admin-api/review-actions", () => ({
+  useApproveReview: () => ({ mutate: jest.fn(), isPending: false }),
+  useRejectReview: () => ({ mutate: jest.fn(), isPending: false }),
+}));
 jest.mock("@/lib/hooks/use-tickets", () => ({
   useTickets: (params?: Record<string, unknown>) => (mockRecord("tickets", params), mockPagedResult()),
+}));
+// Tickets' gated Close swipe (inc3 Task 5).
+jest.mock("@/lib/admin-api/ticket-actions", () => ({
+  useUpdateTicketStatus: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 jest.mock("@/lib/hooks/use-gift-cards", () => ({
   useGiftCards: (params?: Record<string, unknown>) => (mockRecord("giftCards", params), mockPagedResult()),
@@ -150,6 +160,10 @@ jest.mock("@/lib/hooks/use-campaigns", () => ({
 }));
 jest.mock("@/lib/hooks/use-coupons", () => ({
   useCoupons: (params?: Record<string, unknown>) => (mockRecord("coupons", params), mockPagedResult()),
+}));
+// Coupons' enable/disable swipes (inc3 Task 6).
+jest.mock("@/lib/admin-api/coupon-actions", () => ({
+  usePatchCoupon: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 
 import type { ComponentType } from "react";

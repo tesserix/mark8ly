@@ -15,20 +15,28 @@ name: Mobile Admin - EAS Build
 # Create one at https://expo.dev/accounts/tesserix-org/settings/access-tokens
 # then add it:  gh secret set EXPO_TOKEN --repo tesserix/mark8ly
 #
-# submit=true appends --auto-submit, which after the build uploads to
-# TestFlight using submit.production in eas.json (appleTeamId + ascAppId). For
-# that to run non-interactively in CI, the EAS project must already hold the
-# iOS credentials — set them up ONCE locally (needs an Apple login):
+# submit=true (always true for tag pushes) appends --auto-submit, which after
+# the build uploads to TestFlight + the Play internal track using
+# submit.production in eas.json. For that to run non-interactively in CI, the
+# EAS project must already hold credentials for BOTH platforms — set them up
+# ONCE locally:
 #   cd apps/mobile-admin
-#   eas credentials     # iOS → Distribution cert + provisioning profile
+#   eas credentials     # iOS → Distribution cert + provisioning profile (needs an Apple login)
 #   eas credentials     # iOS → App Store Connect API Key (for submit)
+#   eas credentials     # Android → upload/release keystore (needs a Google login)
+#   eas secret:create --scope project --type file \
+#     --name PLAY_SERVICE_ACCOUNT_KEY --value ./play-service-account.json
+# eas.json's submit.production.android.serviceAccountKeyPath references that
+# secret as @secret:PLAY_SERVICE_ACCOUNT_KEY — see docs/superpowers/plans/
+# 2026-07-29-android-release-parity.md for the full setup checklist.
 # After that one-time setup, this workflow builds + submits with no GitHub
 # secrets beyond EXPO_TOKEN (and GHCR_PAT for the @tesserix registry install).
 
 on:
-  # Push a release tag to build + ship to TestFlight automatically, e.g.:
+  # Push a release tag to build + ship to both stores automatically, e.g.:
   #   git tag mobile-admin-v1.0.0 && git push origin mobile-admin-v1.0.0
-  # Tag builds are always iOS / production / --auto-submit.
+  # Tag builds are always all platforms (iOS + Android) / production /
+  # --auto-submit (TestFlight + Play internal track).
   push:
     tags:
       - "mobile-admin-v*"
@@ -96,11 +104,13 @@ jobs:
 
       - name: Queue EAS build
         working-directory: apps/mobile-admin
-        # Tag pushes → always ios / production / --auto-submit (TestFlight).
-        # Manual runs use the chosen inputs; --auto-submit only when submit=true.
+        # Tag pushes → always all / production / --auto-submit (TestFlight +
+        # Play internal). `inputs.platform` only exists on workflow_dispatch
+        # (where its choice input always carries a value), so this fallback
+        # only ever applies to tag pushes; manual runs are unaffected.
         run: |
           eas build \
-            --platform "${{ inputs.platform || 'ios' }}" \
+            --platform "${{ inputs.platform || 'all' }}" \
             --profile "${{ inputs.profile || 'production' }}" \
             --non-interactive \
             --no-wait \

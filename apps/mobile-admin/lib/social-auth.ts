@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { AuthCancelledError } from "@repo/mobile-shared/auth/errors";
@@ -10,6 +11,16 @@ export function configureGoogleSignin(): void {
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
   if (!webClientId) {
     throw new Error("EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not configured");
+  }
+  // The Android OAuth client itself isn't passed to GoogleSignin.configure() —
+  // the SDK matches it automatically via google-services.json's registered
+  // client for this package name + signing certificate SHA-1. But that
+  // Android client doesn't exist until the Firebase console work lands, so
+  // this guard exists purely to fail loudly here instead of letting
+  // signIn() reach Play Services and fail with an opaque DEVELOPER_ERROR.
+  // Same precedent as the webClientId check above.
+  if (Platform.OS === "android" && !process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID) {
+    throw new Error("EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID is not configured");
   }
   GoogleSignin.configure({
     webClientId,

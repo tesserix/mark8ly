@@ -11,6 +11,7 @@ jest.mock("expo-apple-authentication", () => ({
   AppleAuthenticationScope: { FULL_NAME: 1, EMAIL: 0 },
 }));
 
+import { Platform } from "react-native";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { AuthCancelledError } from "@repo/mobile-shared/auth/errors";
@@ -19,7 +20,76 @@ import { signInWithAppleNative, signInWithGoogleNative } from "@/lib/social-auth
 const mockGoogleSignIn = GoogleSignin.signIn as jest.Mock;
 const mockAppleSignIn = AppleAuthentication.signInAsync as jest.Mock;
 
+const ORIGINAL_PLATFORM_OS = Platform.OS;
+const ORIGINAL_ENV = { ...process.env };
+
 beforeEach(() => jest.clearAllMocks());
+
+afterEach(() => {
+  Platform.OS = ORIGINAL_PLATFORM_OS;
+  process.env = { ...ORIGINAL_ENV };
+});
+
+// configureGoogleSignin() caches its result in a module-scoped `configured`
+// flag, so each case here needs its own fresh module instance — otherwise
+// only the first case in the block would ever observe a real configure()
+// call or throw; every case after it would silently short-circuit on the
+// `if (configured) return;` guard and the assertion would pass for the wrong
+// reason.
+function loadFreshSocialAuth(): {
+  configureGoogleSignin: () => void;
+  googleConfigureMock: jest.Mock;
+} {
+  let configureGoogleSignin!: () => void;
+  let googleConfigureMock!: jest.Mock;
+  jest.isolateModules(() => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    configureGoogleSignin = require("@/lib/social-auth").configureGoogleSignin;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    googleConfigureMock = require("@react-native-google-signin/google-signin").GoogleSignin
+      .configure;
+  });
+  return { configureGoogleSignin, googleConfigureMock };
+}
+
+describe("configureGoogleSignin", () => {
+  it("throws when EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is missing", () => {
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = "";
+    delete process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+    const { configureGoogleSignin } = loadFreshSocialAuth();
+    expect(() => configureGoogleSignin()).toThrow(/EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID/);
+  });
+
+  it("on Android, throws when EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID is missing — A3 guard", () => {
+    // Without a real Android OAuth client (A1), GoogleSignin.configure()
+    // would otherwise succeed and let signIn() reach Play Services, which
+    // fails with an opaque DEVELOPER_ERROR instead of a clear message.
+    Platform.OS = "android";
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = "web-client-id";
+    delete process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+    const { configureGoogleSignin, googleConfigureMock } = loadFreshSocialAuth();
+    expect(() => configureGoogleSignin()).toThrow(/EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID/);
+    expect(googleConfigureMock).not.toHaveBeenCalled();
+  });
+
+  it("on Android, configures successfully once EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID is set", () => {
+    Platform.OS = "android";
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = "web-client-id";
+    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID = "android-client-id";
+    const { configureGoogleSignin, googleConfigureMock } = loadFreshSocialAuth();
+    expect(() => configureGoogleSignin()).not.toThrow();
+    expect(googleConfigureMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("on iOS, never requires EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID", () => {
+    Platform.OS = "ios";
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = "web-client-id";
+    delete process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+    const { configureGoogleSignin, googleConfigureMock } = loadFreshSocialAuth();
+    expect(() => configureGoogleSignin()).not.toThrow();
+    expect(googleConfigureMock).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("signInWithGoogleNative", () => {
   it("throws AuthCancelledError when the SDK RESOLVES with type:cancelled", async () => {

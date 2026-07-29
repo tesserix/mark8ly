@@ -320,12 +320,18 @@ describe("Sweep A guard — a useCallback that calls a mutation's .mutate must d
   // Scoped to the four screens Task 11's Sweep A actually touched
   // (customers/[id].tsx, products/[id].tsx, more/account.tsx,
   // orders/[id].tsx) rather than the whole app: a repo-wide sweep found the
-  // SAME pre-existing defect in 14 more sites across 12 further files that
-  // predate increment 3 (campaigns/coupons/segments/tickets detail+create
-  // screens, gift-cards/new, loyalty member adjust, branding, team invite,
-  // and one product-media hook) — out of this task's stated scope and
-  // guarded (without being fixed) by the ratchet describe block below. The
-  // DETECTION logic below is
+  // SAME pre-existing defect in 45 more sites across 28 further files that
+  // predate increment 3 (customers index + reviews detail/index, the
+  // Dashboard, campaigns/coupons/segments/tickets detail+list+create
+  // screens, gift-cards index+new, loyalty index + member adjust, branding,
+  // notification-settings, team index+invite, orders index, products index +
+  // new, and one product-media hook) — out of this task's stated scope and
+  // guarded (without being fixed) by the ratchet describe block below. This
+  // count was re-measured after fixing the detector itself (see
+  // `bareMutationDeps` above): the original regex required a dep array's
+  // closing `]` to be followed immediately by `)`, so it missed every
+  // Prettier-formatted multi-line `useCallback` (which trails the array with
+  // a comma) and undercounted this at 14. The DETECTION logic below is
   // generic (balanced-paren useCallback extraction), so a new violation
   // added to any of these four files — not just the ones fixed today — is
   // caught automatically.
@@ -345,23 +351,41 @@ describe("Sweep A guard — a useCallback that calls a mutation's .mutate must d
   });
 });
 
-describe("Sweep A ratchet — the 14 pre-existing violations left out of Sweep A's scope must not grow", () => {
+describe("Sweep A ratchet — the 45 pre-existing violations left out of Sweep A's scope must not grow", () => {
   // WHAT this constant is: the count of useCallback-depends-on-a-mutation-
   // OBJECT sites (the exact defect Sweep A fixed above) in app/ + lib/,
   // OUTSIDE the four SWEEP_A_FILES already fixed and guarded by name above.
   // Measured directly by running findViolationSites() over the repo as it
-  // stood when this ratchet was added — see the failure message below for
-  // the current, always-fresh file:line list rather than trusting this
+  // stood when this ratchet was added, using the FORMATTING-INSENSITIVE
+  // detector (see `bareMutationDeps` above) — see the failure message below
+  // for the current, always-fresh file:line list rather than trusting this
   // comment to stay in sync.
   //
-  // WHY these sites are out of scope here: they predate increment 3
-  // (campaigns, coupons, gift-cards, segments, tickets, loyalty, branding,
-  // team-invite screens, and one product-media hook) and fixing 14 sites
-  // across a dozen files was explicitly deferred out of Task 11 — see the
-  // Sweep A comment above and the task report. This describe block exists
-  // so that deferral doesn't also mean "and nobody will notice if it gets
-  // worse": every one of these sites is still a real defect (a useCallback
-  // that never memoises anything, because `useMutation` hands back a fresh
+  // This number was re-measured from 14 to 45 as part of fixing the
+  // detector's blind spot: the original regex required a dep array's `]` to
+  // be followed immediately by `)`, so every Prettier-formatted multi-line
+  // `useCallback` — which trails the dep array with a comma — was invisible
+  // to it. 14 was never the true count; it was the count the broken
+  // detector happened to see.
+  //
+  // WHY these sites are out of scope here: they predate increment 3, across
+  // 28 files — customers/index.tsx, customers/reviews/[id].tsx,
+  // customers/reviews/index.tsx, (tabs)/index.tsx (Dashboard),
+  // more/marketing/campaigns/[id].tsx, campaigns/index.tsx, campaigns/new.tsx,
+  // more/marketing/coupons/[id].tsx, coupons/index.tsx, coupons/new.tsx,
+  // more/marketing/gift-cards/index.tsx, gift-cards/new.tsx,
+  // more/marketing/loyalty/index.tsx, loyalty/members/[id].tsx,
+  // more/marketing/segments/[id].tsx, segments/index.tsx, segments/new.tsx,
+  // more/settings/branding.tsx, more/settings/notification-settings.tsx,
+  // more/settings/team/index.tsx, team/invite.tsx,
+  // more/settings/tickets/[id].tsx, tickets/index.tsx, tickets/new.tsx,
+  // orders/index.tsx, products/index.tsx, products/new.tsx, and
+  // lib/hooks/use-product-media-handlers.ts — and fixing 45 sites across
+  // those files was explicitly deferred out of Task 11 — see the Sweep A
+  // comment above and the task report. This describe block exists so that
+  // deferral doesn't also mean "and nobody will notice if it gets worse":
+  // every one of these sites is still a real defect (a useCallback that
+  // never memoises anything, because `useMutation` hands back a fresh
   // object every render), just not one this task fixes.
   //
   // THE CORRECT DIRECTION IS DOWN. This is a ratchet, not a budget: as
@@ -370,7 +394,19 @@ describe("Sweep A ratchet — the 14 pre-existing violations left out of Sweep A
   // fails loudly, on purpose, if the measured count drops below the
   // constant, precisely so a stale ceiling can never silently re-permit a
   // regression back up to a number that used to be true.
-  const KNOWN_VIOLATION_CEILING = 14;
+  //
+  // Exact equality (not `<=`) is intentional and, after the detector fix
+  // above, safe against the false-fail the exact form previously risked: an
+  // unrelated PR that merely reflows one of these `useCallback`s (different
+  // printWidth, a comment added/removed inside the array, single-line vs
+  // multi-line) no longer changes what this scan sees, because the detector
+  // no longer depends on where Prettier puts the line breaks or the
+  // trailing comma. Verified directly: reformatting orders/index.tsx with a
+  // narrower printWidth (which reflowed several of these very call sites,
+  // including the `refundOrder` one) left the detected count unchanged.
+  // Exact equality still means "the ceiling itself must move, in either
+  // direction" the moment the true count changes — which is the point.
+  const KNOWN_VIOLATION_CEILING = 45;
 
   const RATCHET_CORPUS = [...APP_FILES, ...LIB_FILES].filter((f) => !SWEEP_A_FILES.includes(f));
 

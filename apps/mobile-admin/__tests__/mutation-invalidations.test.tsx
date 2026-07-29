@@ -21,6 +21,7 @@ import { useConfirmOrder, useCancelOrder } from "@/lib/admin-api/order-actions";
 import { useApproveReview } from "@/lib/admin-api/review-actions";
 import { useUpdateTicketStatus } from "@/lib/admin-api/ticket-actions";
 import { useSetProductStatus } from "@/lib/admin-api/product-status";
+import { useUpdateVariant } from "@/lib/admin-api/product-crud";
 import { useProducts } from "@/lib/hooks/use-products";
 
 jest.mock("@repo/mobile-shared/api/orders", () => ({
@@ -48,10 +49,12 @@ jest.mock("@repo/mobile-shared/api/tickets", () => ({
 }));
 jest.mock("@repo/mobile-shared/api/products", () => {
   const mockUpdate = jest.fn(() => Promise.resolve({}));
+  const mockUpdateVariant = jest.fn(() => Promise.resolve({}));
   const mockList = jest.fn();
   return {
     createProductsApi: () => ({
       update: mockUpdate,
+      updateVariant: mockUpdateVariant,
       list: mockList,
     }),
     __mockList: mockList,
@@ -302,6 +305,69 @@ describe("product status mutations", () => {
 
     // BOTH pages are still there — the merchant is still looking at page 2's
     // worth of products, not silently dropped back to page 1's single row.
+    expect(result.current.list.data?.pages).toHaveLength(2);
+    expect(result.current.list.data?.pages.map((p) => p.data[0]?.id)).toEqual(["p1", "p2"]);
+  });
+});
+
+describe("product variant mutations (editor)", () => {
+  // Sweep C, Task 11: `useUpdateVariant` — the product EDITOR's save path for
+  // a variant's price/stock (`app/(tabs)/products/[id].tsx`) — invalidated
+  // only `["product", id]`. Editing a variant's price in the editor left the
+  // Products LIST showing the pre-edit price until something else happened to
+  // invalidate it. `useQuickEditVariant` in variant-quick-edit.ts (the LIST
+  // screen's own quick-edit hook — deliberately a different hook, see that
+  // file's docstring) already invalidated both; this brings the editor's hook
+  // to the same shape.
+  it("invalidates the products list prefix as well as the product detail", async () => {
+    const { result } = renderHook(() => useUpdateVariant(), { wrapper });
+    result.current.mutate({ productId: "p1", variantId: "v1", body: { price: 999 } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidatedKeys()).toEqual(
+      expect.arrayContaining(['["products"]', '["product","p1"]']),
+    );
+  });
+
+  // The same regression Task 15 introduced a risk for on `useSetProductStatus`
+  // above: react-query invalidation is PREFIX matching, and an invalidated
+  // infinite query must refetch and KEEP every already-loaded page, not
+  // collapse back to page 1. A merchant who edited a variant's price from the
+  // editor, having reached that product by scrolling to page 2 of the list,
+  // must land back on page 2 — not be silently returned to page 1.
+  it("keeps every already-loaded page on the infinite products cache after a variant edit — does not reset to page 1", async () => {
+    __mockList.mockImplementation((params: { page?: string }) => {
+      const pageNum = Number(params.page ?? "1");
+      return Promise.resolve({
+        data: [{ id: `p${pageNum}`, title: `Product ${pageNum}`, status: "active" }],
+        meta: { page: pageNum, page_size: 20, total: 2, total_pages: 2 },
+      });
+    });
+
+    const { result } = renderHook(
+      () => ({
+        list: useProducts(),
+        updateVariant: useUpdateVariant(),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+    expect(result.current.list.data?.pages).toHaveLength(1);
+
+    act(() => {
+      result.current.list.fetchNextPage();
+    });
+    await waitFor(() => expect(result.current.list.data?.pages).toHaveLength(2));
+
+    // A variant price edit, from the editor, on a product the merchant
+    // reached via page 2.
+    act(() => {
+      result.current.updateVariant.mutate({ productId: "p2", variantId: "v1", body: { price: 500 } });
+    });
+    await waitFor(() => expect(result.current.updateVariant.isSuccess).toBe(true));
+
+    await waitFor(() => expect(result.current.list.isFetching).toBe(false));
+
     expect(result.current.list.data?.pages).toHaveLength(2);
     expect(result.current.list.data?.pages.map((p) => p.data[0]?.id)).toEqual(["p1", "p2"]);
   });

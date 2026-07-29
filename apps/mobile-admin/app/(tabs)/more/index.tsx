@@ -48,7 +48,7 @@ const SECTIONS: ReadonlyArray<{ title: string; items: readonly NavItem[] }> = [
     items: [
       { key: "branding", icon: Palette, label: "Branding", a11y: "Branding — storefront tagline, announcement, socials", href: "/(tabs)/more/settings/branding" },
       { key: "team", icon: Users, label: "Team", a11y: "Team — members, roles and invitations", href: "/(tabs)/more/settings/team" },
-      { key: "tickets", icon: Ticket, label: "Support tickets", a11y: "Support tickets — customer support requests", href: "/(tabs)/more/settings/tickets" },
+      { key: "tickets", icon: Ticket, label: "Tickets", a11y: "Tickets — customer support requests", href: "/(tabs)/more/settings/tickets" },
       { key: "audit", icon: ScrollText, label: "Audit log", a11y: "Audit log — recent activity in your store", href: "/(tabs)/more/settings/audit-logs" },
       { key: "notif-settings", icon: BellRing, label: "Notification settings", a11y: "Notification settings — which alerts your store sends", href: "/(tabs)/more/settings/notification-settings" },
     ],

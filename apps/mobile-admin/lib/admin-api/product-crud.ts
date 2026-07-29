@@ -82,6 +82,15 @@ export function useUpdateVariant() {
       body: UpdateVariantBody;
     }) => productsApi.updateVariant(productId, variantId, body),
     onSuccess: (_data, variables) => {
+      // ["products"] prefix-matches the list key (["products", status,
+      // search] and, since Task 15, the infinite-query page keys under it),
+      // so the Products LIST refetches and stops showing the pre-edit price
+      // or stock. Editing a variant from the product EDITOR left the list
+      // stale until something else happened to invalidate it — the same
+      // defect `useQuickEditVariant` in variant-quick-edit.ts (the list
+      // screen's OWN quick-edit hook, deliberately not this one) already
+      // guards against.
+      queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["product", variables.productId] });
     },
   });

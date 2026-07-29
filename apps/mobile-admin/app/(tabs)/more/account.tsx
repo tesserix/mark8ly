@@ -54,7 +54,8 @@ export default function AccountScreen() {
         },
       ],
     );
-  }, [deleteMutation]);
+    // `deleteMutation` is a new object every render; `.mutate` is stable.
+  }, [deleteMutation.mutate]);
 
   return (
     <Screen>

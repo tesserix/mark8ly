@@ -54,6 +54,7 @@ export function useAddOptionHandler(
         );
       }
     },
-    [id, product, updateMutation],
+    // `updateMutation` is a new object every render; `.mutate` is stable.
+    [id, product, updateMutation.mutate],
   );
 }

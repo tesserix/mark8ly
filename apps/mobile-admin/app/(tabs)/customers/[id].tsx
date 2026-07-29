@@ -163,7 +163,10 @@ export default function CustomerDetailScreen() {
     setBlockError(null);
     setIsBlockSheetOpen(true);
     blockSheetRef.current?.present();
-  }, [customer, isBlocked, unblockMutation]);
+    // `unblockMutation` is a NEW object every render (`useMutation`'s
+    // return value is not referentially stable) — depend on `.mutate`,
+    // which is, or this callback rebuilds on every render regardless.
+  }, [customer, isBlocked, unblockMutation.mutate]);
 
   const handleBlockSubmit = useCallback(
     (reason: string) => {
@@ -179,7 +182,9 @@ export default function CustomerDetailScreen() {
         },
       );
     },
-    [customer, blockMutation],
+    // Same reason as `handleBlockToggle` above: `.mutate`, not the mutation
+    // object, is the stable dependency.
+    [customer, blockMutation.mutate],
   );
 
   if (error) {

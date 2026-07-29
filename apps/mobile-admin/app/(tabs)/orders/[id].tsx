@@ -258,7 +258,9 @@ export default function OrderDetailScreen() {
           confirmMutation.mutate({ id, body: { payment_status: "paid" } }, confirmCallbacks()),
       },
     ]);
-  }, [id, confirmMutation, confirmCallbacks]);
+    // `confirmMutation` is a new object every render; `.mutate` is stable.
+    // `confirmCallbacks` is itself a stable `useCallback`.
+  }, [id, confirmMutation.mutate, confirmCallbacks]);
 
   const handleFulfill = useCallback(() => {
     Alert.alert("Mark fulfilled", "Mark this order as fulfilled?", [
@@ -278,7 +280,8 @@ export default function OrderDetailScreen() {
           }),
       },
     ]);
-  }, [id, fulfillMutation, reportFailure, clearFailure]);
+    // `fulfillMutation` is a new object every render; `.mutate` is stable.
+  }, [id, fulfillMutation.mutate, reportFailure, clearFailure]);
 
   const handleCancelSubmit = useCallback(
     (reason: string) => {
@@ -349,7 +352,8 @@ export default function OrderDetailScreen() {
         },
       );
     },
-    [id, refundMutation],
+    // `refundMutation` is a new object every render; `.mutate` is stable.
+    [id, refundMutation.mutate],
   );
 
   const handleEmailInvoice = useCallback(() => {
@@ -369,7 +373,9 @@ export default function OrderDetailScreen() {
         },
       },
     );
-  }, [id, emailInvoiceMutation]);
+    // `emailInvoiceMutation` is a new object every render; `.mutate` is
+    // stable.
+  }, [id, emailInvoiceMutation.mutate]);
 
   const handleEmailReceipt = useCallback(() => {
     emailReceiptMutation.mutate(
@@ -390,7 +396,9 @@ export default function OrderDetailScreen() {
         },
       },
     );
-  }, [id, emailReceiptMutation]);
+    // `emailReceiptMutation` is a new object every render; `.mutate` is
+    // stable.
+  }, [id, emailReceiptMutation.mutate]);
 
   const openCancelSheet = useCallback(() => {
     setCancelError(null);

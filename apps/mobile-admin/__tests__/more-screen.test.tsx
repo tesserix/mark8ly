@@ -54,7 +54,7 @@ describe("MoreScreen", () => {
     for (const label of [
       "Branding",
       "Team",
-      "Support tickets",
+      "Tickets",
       "Audit log",
       "Notification settings",
       "Marketing",

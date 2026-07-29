@@ -138,7 +138,9 @@ export default function ProductDetailScreen() {
         },
       },
     );
-  }, [id, title, description, isActive, updateMutation]);
+    // `updateMutation` is a new object every render; `.mutate` is the
+    // stable part of it, and the correct dependency.
+  }, [id, title, description, isActive, updateMutation.mutate]);
 
   const { handleAddMedia, handleDeleteExistingMedia, handleReorderMedia, handleAltChange } =
     useProductMediaHandlers({ id, product, addMediaMutation, deleteMediaMutation, updateMediaMutation });
@@ -150,7 +152,7 @@ export default function ProductDetailScreen() {
         alertOnError("Failed to save variant. Please try again."),
       );
     },
-    [id, updateVariantMutation],
+    [id, updateVariantMutation.mutate],
   );
 
   // Options and categories both route through UpdateAggregate (products.go:172).
@@ -164,7 +166,7 @@ export default function ProductDetailScreen() {
         alertOnError("Failed to update options. Please try again."),
       );
     },
-    [id, updateMutation],
+    [id, updateMutation.mutate],
   );
 
   const handleAddOption = useAddOptionHandler(id, product, updateMutation);
@@ -175,7 +177,7 @@ export default function ProductDetailScreen() {
         alertOnError("Failed to update categories. Please try again."),
       );
     },
-    [id, updateMutation],
+    [id, updateMutation.mutate],
   );
 
   if (error) {

@@ -280,6 +280,7 @@ export default function ProductDetailScreen() {
         <View onLayout={(e) => registerSectionOffset("photos", e.nativeEvent.layout.y)}>
           <Eyebrow
             label="Photos"
+            style={styles.eyebrowGutter}
             rightSlot={
               <Pressable
                 onPress={handleAddMedia}
@@ -314,7 +315,7 @@ export default function ProductDetailScreen() {
         </View>
 
         <View>
-          <Eyebrow label="Details" />
+          <Eyebrow label="Details" style={styles.eyebrowGutter} />
           <Card variant="ghost" padding="md" style={styles.card}>
             <Hairline style={styles.cardTopHairline} />
             <FieldInput
@@ -367,7 +368,7 @@ export default function ProductDetailScreen() {
         </View>
 
         <View>
-          <Eyebrow label="Categories" />
+          <Eyebrow label="Categories" style={styles.eyebrowGutter} />
           <Card variant="ghost" padding="md" style={styles.card}>
             <Hairline style={styles.cardTopHairline} />
             <CategoryField
@@ -386,7 +387,7 @@ export default function ProductDetailScreen() {
         {/* Price, SKU and stock live on the VARIANT, not the product — the
             product-level fields this screen used to edit are not on the wire. */}
         <View onLayout={(e) => registerSectionOffset("variants", e.nativeEvent.layout.y)}>
-          <Eyebrow label="Variants" />
+          <Eyebrow label="Variants" style={styles.eyebrowGutter} />
           <Card padding={0} style={styles.card}>
             {variants.length > 0 ? (
               variants.map((v, i) => (
@@ -420,8 +421,12 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.huge,
   },
   card: {
-    marginHorizontal: theme.spacing.lg,
+    marginHorizontal: theme.spacing.xl,
   },
+  // Eyebrow's own default gutter (lg/16) is 4pt short of this screen's card
+  // inset above — set explicitly per screen, never by changing Eyebrow's
+  // default (see components/ui/Eyebrow.tsx). One left edge for every section.
+  eyebrowGutter: { paddingHorizontal: theme.spacing.xl },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -457,6 +462,7 @@ const styles = StyleSheet.create({
   // Eyebrow of the next movement, so the boundary reads with more air.
   movementBreak: {
     paddingTop: theme.spacing.xxl,
+    paddingHorizontal: theme.spacing.xl,
   },
   // Ghost cards (Details/Options/Categories) carry a top Hairline instead of
   // a border — this is its top margin, standing in for the removed border.
@@ -468,6 +474,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    minHeight: theme.row.minHeightSingle,
+    paddingVertical: theme.row.paddingV,
   },
   empty: {
     paddingHorizontal: theme.spacing.md,

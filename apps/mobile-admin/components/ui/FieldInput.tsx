@@ -44,6 +44,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.sm,
     color: theme.colors.text,
     backgroundColor: theme.colors.surfaceAlt,
+    // Was absent — TextInput rendered at RN's default size in the system
+    // font, silently skipping the `body` preset every other text surface in
+    // the app goes through (see Text.tsx). TextInput can't take a NativeWind
+    // preset className the way <Text> does, so this resolves to the same
+    // real values `SearchField`'s input already anchors to `theme.text.body`.
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.text.body.fontSize,
+    lineHeight: theme.text.body.lineHeight,
   },
   multiline: { minHeight: 96, paddingTop: theme.spacing.sm },
 });

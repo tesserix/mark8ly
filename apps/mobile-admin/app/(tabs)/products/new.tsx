@@ -192,7 +192,7 @@ export default function NewProductScreen() {
             contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + FOOTER_CLEARANCE }]}
             keyboardShouldPersistTaps="handled"
           >
-        <Eyebrow label="Essentials" />
+        <Eyebrow label="Essentials" style={styles.eyebrowGutter} />
         <Card variant="ghost" padding="md" style={styles.card}>
           <FieldInput
             label="Title *"
@@ -261,12 +261,12 @@ export default function NewProductScreen() {
           />
         </Card>
 
-        <Eyebrow label="Status" />
+        <Eyebrow label="Status" style={styles.eyebrowGutter} />
         <Card variant="ghost" padding="md" style={styles.card}>
           <SegmentedControl<NewProductStatus> segments={STATUS_OPTIONS} value={status} onChange={setStatus} />
         </Card>
 
-        <Eyebrow label="Category" />
+        <Eyebrow label="Category" style={styles.eyebrowGutter} />
         <Card variant="ghost" padding="md" style={styles.card}>
           <CategoryField
             categories={categories ?? []}
@@ -332,7 +332,11 @@ export default function NewProductScreen() {
 const styles = StyleSheet.create({
   kav: { flex: 1 },
   scroll: { paddingTop: theme.spacing.md },
-  card: { marginHorizontal: theme.spacing.lg, gap: theme.spacing.sm },
+  card: { marginHorizontal: theme.spacing.xl, gap: theme.spacing.sm },
+  // Eyebrow's own default gutter (lg/16) is 4pt short of this screen's card
+  // inset above — set explicitly per screen, never by changing Eyebrow's
+  // default (see components/ui/Eyebrow.tsx). One left edge for every section.
+  eyebrowGutter: { paddingHorizontal: theme.spacing.xl },
   row: { flexDirection: "row", gap: theme.spacing.sm },
   half: { flex: 1 },
   draftBtn: {

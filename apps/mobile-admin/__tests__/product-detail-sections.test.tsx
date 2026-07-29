@@ -86,3 +86,32 @@ describe("product detail screen composition", () => {
     expect(source.split("\n").length).toBeLessThan(500);
   });
 });
+
+describe("product detail screen — density and type (task 10)", () => {
+  it("widens the card gutter to the screen's own 20pt inset, matching the header", () => {
+    expect(source).toMatch(/card:\s*\{\s*marginHorizontal:\s*theme\.spacing\.xl,?\s*\}/);
+  });
+
+  it("defines a screen-level eyebrowGutter style at the card's own 20pt gutter", () => {
+    expect(source).toContain("eyebrowGutter: { paddingHorizontal: theme.spacing.xl },");
+  });
+
+  it("applies eyebrowGutter to the Photos, Details, Categories and Variants eyebrows", () => {
+    expect(source.match(/style=\{styles\.eyebrowGutter\}/g)?.length).toBe(4);
+  });
+
+  it("folds the same 20pt gutter into the Options movement-break eyebrow", () => {
+    expect(source).toMatch(
+      /movementBreak:\s*\{[\s\S]*?paddingTop:\s*theme\.spacing\.xxl,[\s\S]*?paddingHorizontal:\s*theme\.spacing\.xl,?[\s\S]*?\}/,
+    );
+  });
+
+  it("promotes the Active switch row onto the row scale — 64pt minHeight, 14pt vertical padding", () => {
+    expect(source).toMatch(
+      /switchRow:\s*\{[\s\S]*?minHeight:\s*theme\.row\.minHeightSingle,[\s\S]*?\}/,
+    );
+    expect(source).toMatch(
+      /switchRow:\s*\{[\s\S]*?paddingVertical:\s*theme\.row\.paddingV,[\s\S]*?\}/,
+    );
+  });
+});

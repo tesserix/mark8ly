@@ -1,5 +1,7 @@
 import { render, fireEvent } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 import { FieldInput, FieldLabel } from "@/components/ui/FieldInput";
+import { theme } from "@/lib/theme";
 
 jest.mock("lucide-react-native", () => new Proxy({}, { get: () => () => null }));
 
@@ -26,5 +28,23 @@ describe("FieldInput", () => {
   it("FieldLabel renders caption text", () => {
     const { getByText } = render(<FieldLabel label="SKU" />);
     expect(getByText("SKU")).toBeTruthy();
+  });
+
+  it("renders input text at the app's 17pt body baseline in the app's sans family — not the RN default (task 10)", () => {
+    const { getByLabelText } = render(
+      <FieldInput value="x" onChangeText={() => {}} accessibilityLabel="F" />,
+    );
+    const style = StyleSheet.flatten(getByLabelText("F").props.style);
+    expect(style.fontFamily).toBe(theme.fonts.sans);
+    expect(style.fontSize).toBe(theme.text.body.fontSize);
+    expect(style.lineHeight).toBe(theme.text.body.lineHeight);
+  });
+
+  it("keeps the box's 44pt minHeight — already on the baseline, not a defect this pass fixes (task 10)", () => {
+    const { getByLabelText } = render(
+      <FieldInput value="x" onChangeText={() => {}} accessibilityLabel="F" />,
+    );
+    const style = StyleSheet.flatten(getByLabelText("F").props.style);
+    expect(style.minHeight).toBe(44);
   });
 });

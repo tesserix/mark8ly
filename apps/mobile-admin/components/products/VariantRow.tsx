@@ -106,13 +106,13 @@ export function VariantRow({ variant, onUpdate, defaultOpen = false }: VariantRo
 
 const styles = StyleSheet.create({
   summary: {
-    minHeight: 56,
+    minHeight: theme.row.minHeightSingle,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: theme.spacing.sm,
     paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.lg,
+    paddingHorizontal: theme.row.paddingH,
   },
   summaryText: {
     flex: 1,

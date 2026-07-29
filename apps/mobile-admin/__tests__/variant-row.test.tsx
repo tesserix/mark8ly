@@ -31,8 +31,10 @@ jest.mock("react-native-reanimated", () => {
 });
 
 import { render, fireEvent } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 import { VariantRow, stockTone, LOW_STOCK } from "@/components/products/VariantRow";
 import { formatMoney } from "@/lib/product-display";
+import { theme } from "@/lib/theme";
 
 const BASE_VARIANT = {
   id: "v1",
@@ -119,6 +121,15 @@ describe("VariantRow", () => {
       <VariantRow variant={soleVariant as never} onUpdate={jest.fn()} />,
     );
     expect(queryByLabelText("SKU")).toBeNull();
+  });
+
+  it("sizes the summary row at the 64pt row-scale minHeight with the 20pt row gutter", () => {
+    const { getByRole } = render(
+      <VariantRow variant={BASE_VARIANT as never} onUpdate={jest.fn()} />,
+    );
+    const style = StyleSheet.flatten(getByRole("button").props.style);
+    expect(style.minHeight).toBe(theme.row.minHeightSingle);
+    expect(style.paddingHorizontal).toBe(theme.row.paddingH);
   });
 });
 

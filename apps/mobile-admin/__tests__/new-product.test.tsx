@@ -60,6 +60,11 @@ import { render, fireEvent } from "@testing-library/react-native";
 import { Alert } from "react-native";
 import NewProductScreen from "../app/(tabs)/products/new";
 
+// tsconfig scopes `types` to ["jest"] only, so Node's ambient globals aren't
+// picked up automatically — declare the one the density-and-type describe
+// block below needs (same fix as product-detail-sections.test.tsx).
+declare const __dirname: string;
+
 const FAKE_PRODUCT = { id: "product-1", title: "Ceramic Mug" };
 
 beforeEach(() => {
@@ -259,5 +264,24 @@ describe("NewProductScreen — hand-off on success", () => {
       pathname: "/(tabs)/products/[id]",
       params: { id: "product-1", created: "1" },
     });
+  });
+});
+
+describe("NewProductScreen — density and type (task 10)", () => {
+  const source = require("fs").readFileSync(
+    require("path").join(__dirname, "../app/(tabs)/products/new.tsx"),
+    "utf8",
+  );
+
+  it("widens the card gutter to the screen's own 20pt inset", () => {
+    expect(source).toMatch(/card:\s*\{\s*marginHorizontal:\s*theme\.spacing\.xl,/);
+  });
+
+  it("defines a screen-level eyebrowGutter style at the card's own 20pt gutter", () => {
+    expect(source).toContain("eyebrowGutter: { paddingHorizontal: theme.spacing.xl },");
+  });
+
+  it("gives all three eyebrows (Essentials, Status, Category) the same 20pt gutter", () => {
+    expect(source.match(/style=\{styles\.eyebrowGutter\}/g)?.length).toBe(3);
   });
 });

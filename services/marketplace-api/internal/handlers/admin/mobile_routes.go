@@ -185,6 +185,15 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 					orders.POST("/:id/shipments/:shipmentId/pickup/schedule",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
 						deps.ShipmentsHandler.SchedulePickup)
+					// "Cancel / return shipment". Landed on the web table
+					// (routes.go) after this group was copied from it — the
+					// same drift that hid gift-card enable/disable. The mobile
+					// client has always called it (packages/mobile-shared/
+					// api/shipments.ts → ShippingPanel), so every tap 404'd at
+					// the gin tree with the handler never reached.
+					orders.POST("/:id/shipments/:shipmentId/cancel",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.CancelShipment)
 				}
 			}
 		}

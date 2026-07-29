@@ -92,7 +92,16 @@ function extractUseCallbacks(source: string): string[] {
  * appear bare (not as `.mutate`) in its own trailing dependency array.
  */
 function bareMutationDeps(call: string): string[] {
-  const depsMatch = call.match(/\[([^[\]]*)\]\s*\)\s*$/);
+  // FORMATTING-INSENSITIVE by construction: `\s` matches the newlines a
+  // multi-line dep array spans (and any comments living inside it, since
+  // `[^[\]]*` swallows arbitrary non-bracket text), and the optional `,?`
+  // absorbs the trailing comma Prettier ALWAYS adds after the last argument
+  // of a multi-line call — e.g.
+  //   }, [id, cancelMutation, apiClient],\n);
+  // Without it, every multi-line `useCallback` (the majority of the ones
+  // with more than a couple of deps) returns no match here and the whole
+  // detector goes blind to it.
+  const depsMatch = call.match(/\[([^[\]]*)\]\s*,?\s*\)\s*$/);
   if (!depsMatch) return [];
   const deps = depsMatch[1]
     .split(",")

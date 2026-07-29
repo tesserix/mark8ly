@@ -326,7 +326,8 @@ export default function OrderDetailScreen() {
         },
       );
     },
-    [id, cancelMutation, apiClient],
+    // `cancelMutation` is a new object every render; `.mutate` is stable.
+    [id, cancelMutation.mutate, apiClient],
   );
 
   const handleRefundSubmit = useCallback(

@@ -127,6 +127,21 @@ export default function CustomerDetailScreen() {
   const blockMutation = useBlockCustomer();
   const unblockMutation = useUnblockCustomer();
   const blockSheetRef = useRef<BlockReasonSheetHandle>(null);
+  // Local, NOT `blockMutation.error`. react-query never resets a mutation
+  // error, so binding the sheet straight to it means one failed block greets
+  // the merchant every subsequent time the sheet opens. Cleared on present.
+  const [blockError, setBlockError] = useState<string | null>(null);
+  /**
+   * Whether a block is actually being collected — the detail screen's
+   * equivalent of the list screen's `blockTarget`, and released by the same
+   * `onDismiss`.
+   *
+   * It exists because the sheet is ALWAYS MOUNTED (gorhom renders through a
+   * portal): naming the customer in it unconditionally would put a second
+   * copy of a no-name customer's email on a screen whose whole point is that
+   * the address is stated exactly once. Armed only while the sheet is up.
+   */
+  const [isBlockSheetOpen, setIsBlockSheetOpen] = useState(false);
 
   const isBlocked = customer?.status === "blocked";
   const isMutating = blockMutation.isPending || unblockMutation.isPending;
@@ -145,13 +160,24 @@ export default function CustomerDetailScreen() {
       return;
     }
     // Blocking requires a typed reason (matches web) — collected in the sheet.
+    setBlockError(null);
+    setIsBlockSheetOpen(true);
     blockSheetRef.current?.present();
   }, [customer, isBlocked, unblockMutation]);
 
   const handleBlockSubmit = useCallback(
     (reason: string) => {
       if (!customer) return;
-      blockMutation.mutate({ id: customer.id, reason });
+      // The sheet no longer closes itself on submit — it stays open with a
+      // spinner until this settles, so a failed block keeps the typed reason
+      // instead of discarding it silently.
+      blockMutation.mutate(
+        { id: customer.id, reason },
+        {
+          onSuccess: () => blockSheetRef.current?.dismiss(),
+          onError: () => setBlockError("Couldn't block this customer. Try again."),
+        },
+      );
     },
     [customer, blockMutation],
   );
@@ -340,8 +366,19 @@ export default function CustomerDetailScreen() {
 
       <BlockReasonSheet
         ref={blockSheetRef}
+        // Same `customerIdentity` line the head above draws, so the sheet
+        // names the customer the way the rest of the app does — but only
+        // while the sheet is up (see `isBlockSheetOpen`).
+        customerLabel={isBlockSheetOpen ? identity.title : undefined}
         onSubmit={handleBlockSubmit}
         isSubmitting={blockMutation.isPending}
+        error={blockError}
+        // Fires on EVERY close, including a back-out. Neither the error nor
+        // the armed identity may survive into the next open.
+        onDismiss={() => {
+          setIsBlockSheetOpen(false);
+          setBlockError(null);
+        }}
       />
     </Screen>
   );

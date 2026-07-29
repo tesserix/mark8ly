@@ -128,6 +128,14 @@ jest.mock("@/lib/admin-api/product-status", () => ({
 jest.mock("@/lib/hooks/use-customers", () => ({
   useCustomers: (params?: Record<string, unknown>) => (mockRecord("customers", params), mockPagedResult()),
 }));
+// Customers' long-press menu (inc3 Task 3) reaches real react-query
+// mutations, which pull in the api client and, through it, the auth provider
+// — the same module chain Products' status mutation had to be stubbed out of
+// two lines above.
+jest.mock("@/lib/admin-api/customer-actions", () => ({
+  useBlockCustomer: () => ({ mutate: jest.fn(), isPending: false }),
+  useUnblockCustomer: () => ({ mutate: jest.fn(), isPending: false }),
+}));
 jest.mock("@/lib/hooks/use-reviews", () => ({
   useReviews: (params?: Record<string, unknown>) => (mockRecord("reviews", params), mockPagedResult()),
 }));

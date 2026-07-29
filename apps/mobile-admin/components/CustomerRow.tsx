@@ -8,6 +8,13 @@ import type { Customer } from "@repo/mobile-shared/api/types";
 interface CustomerRowProps {
   customer: Customer;
   onPress: (customer: Customer) => void;
+  /**
+   * Opens the row's action menu. OPTIONAL and undefined-able on purpose: the
+   * list screen passes `undefined` while this row's own request is in flight,
+   * which is what actually disarms the gesture — a handler that returns early
+   * would still let the row engage its long-press feedback.
+   */
+  onLongPress?: (customer: Customer) => void;
   /** The active store's currency code (e.g. "AUD"); undefined falls back to a plain amount. */
   currencyCode?: string;
 }
@@ -15,7 +22,12 @@ interface CustomerRowProps {
 /** 40pt, not `Thumb`'s 60 — this row's density predates the shared tile and isn't what's being fixed here. */
 const AVATAR = 40;
 
-export function CustomerRow({ customer, onPress, currencyCode }: CustomerRowProps) {
+export function CustomerRow({
+  customer,
+  onPress,
+  onLongPress,
+  currencyCode,
+}: CustomerRowProps) {
   // ONE source for "who is this" — see lib/customer-identity.ts. `subtitle` is
   // absent for a customer with no name, because their email is already the
   // title; this row used to render the email unconditionally underneath and
@@ -35,9 +47,11 @@ export function CustomerRow({ customer, onPress, currencyCode }: CustomerRowProp
     <PressableRow
       lines={2}
       onPress={() => onPress(customer)}
+      onLongPress={onLongPress ? () => onLongPress(customer) : undefined}
       style={styles.row}
       testID={`customer-row-${customer.id}`}
       accessibilityLabel={a11yParts.join(", ")}
+      accessibilityHint={onLongPress ? "Long press for more actions" : undefined}
     >
       <Monogram
         label={identity.title}

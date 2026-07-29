@@ -16,10 +16,16 @@ jest.mock("react-native-safe-area-context", () => {
   return { __esModule: true, ...mock.default };
 });
 
-jest.mock("@gorhom/bottom-sheet", () => {
-  const { View } = require("react-native");
-  return { BottomSheetModal: View, BottomSheetView: View, BottomSheetTextInput: View };
-});
+// No local `jest.mock("@gorhom/bottom-sheet", …)`. It used to stub three
+// exports as bare `View`s, which is a divergent fourth copy of a mock the
+// jest config already maps globally (`lib/test-support/gorhom-bottom-sheet-mock`)
+// — and it silently omitted whichever exports the sheet had not needed YET.
+// `BlockReasonSheet` gaining a `BottomSheetScrollView` body (so its actions
+// stay reachable at accessibility text sizes) made every test in this file
+// throw `Cannot read properties of undefined (reading 'displayName')`, because
+// the missing export arrived as `undefined` and NativeWind's JSX interop reads
+// `displayName` off every component type. The mapped mock carries the whole
+// surface, so it cannot go stale that way.
 
 const mockBack = jest.fn();
 jest.mock("expo-router", () => ({

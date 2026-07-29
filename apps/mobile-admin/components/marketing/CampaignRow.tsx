@@ -8,9 +8,15 @@ import type { Campaign } from "@repo/mobile-shared/api/types";
 interface CampaignRowProps {
   campaign: Campaign;
   onPress: (campaign: Campaign) => void;
+  /**
+   * Opens the long-press action menu on the Campaigns screen. Optional so the
+   * row stays usable on any list that has no per-row menu — the same contract
+   * `ProductRow`, `CustomerRow` and `CouponRow` carry.
+   */
+  onLongPress?: (campaign: Campaign) => void;
 }
 
-export function CampaignRow({ campaign, onPress }: CampaignRowProps) {
+export function CampaignRow({ campaign, onPress, onLongPress }: CampaignRowProps) {
   const sub =
     campaign.status === "sent"
       ? `${campaign.delivered} delivered · ${campaign.opened} opened`
@@ -19,9 +25,15 @@ export function CampaignRow({ campaign, onPress }: CampaignRowProps) {
     <PressableRow
       lines={2}
       onPress={() => onPress(campaign)}
+      onLongPress={onLongPress ? () => onLongPress(campaign) : undefined}
       style={styles.row}
       testID={`campaign-row-${campaign.id}`}
       accessibilityLabel={`Campaign ${campaign.name}, ${campaign.status}`}
+      // Announced only when there is actually a menu behind the gesture —
+      // the row is also mounted with the handler suppressed while its own
+      // delete is in flight, and promising actions that aren't there is worse
+      // than promising none.
+      accessibilityHint={onLongPress ? "Long press for more actions" : undefined}
     >
       <View style={styles.info}>
         <View style={styles.topRow}>

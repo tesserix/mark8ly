@@ -158,6 +158,12 @@ jest.mock("@/lib/hooks/use-gift-cards", () => ({
 jest.mock("@/lib/hooks/use-campaigns", () => ({
   useCampaigns: (params?: Record<string, unknown>) => (mockRecord("campaigns", params), mockPagedResult()),
 }));
+// Campaigns' gated Delete menu (inc3 Task 7), same module-chain reason as the
+// mutation stubs above: the real hook reaches `useApiClient`, and through it
+// the auth provider, which this suite has no reason to boot.
+jest.mock("@/lib/admin-api/campaign-actions", () => ({
+  useDeleteCampaign: () => ({ mutate: jest.fn(), isPending: false }),
+}));
 jest.mock("@/lib/hooks/use-coupons", () => ({
   useCoupons: (params?: Record<string, unknown>) => (mockRecord("coupons", params), mockPagedResult()),
 }));

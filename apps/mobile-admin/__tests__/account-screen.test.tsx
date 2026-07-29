@@ -26,7 +26,7 @@ jest.mock("react-native-safe-area-context", () => {
   return { __esModule: true, ...mock.default };
 });
 
-import { StyleSheet } from "react-native";
+import { Dimensions, StyleSheet } from "react-native";
 import { fireEvent, render } from "@testing-library/react-native";
 import AccountScreen from "../app/(tabs)/more/account";
 import { theme } from "@/lib/theme";
@@ -40,8 +40,23 @@ function setAuth(overrides: Record<string, unknown> = {}) {
   );
 }
 
+/**
+ * This jest environment's UNMOCKED `Dimensions.get("window")` default is
+ * `{ width: 750, height: 1334, scale: 2, fontScale: 2 }` — i.e. every test
+ * in this file that doesn't call this runs at 2x accessibility text size,
+ * where `GroupedRow` ALREADY stacks (and free-wraps) any `value` on its own,
+ * masking the exact defect finding 3 is about. "At NORMAL text size" (the
+ * bug's own reproduction condition) means fontScale 1 on an ordinary
+ * 390pt-wide device — set explicitly, matching the pattern in
+ * grouped-list.test.tsx's `setFontScale`.
+ */
+function setNormalTextSize() {
+  jest.spyOn(Dimensions, "get").mockReturnValue({ width: 390, height: 844, scale: 3, fontScale: 1 });
+}
+
 describe("AccountScreen — Profile / Store grouped rows", () => {
   beforeEach(() => setAuth());
+  afterEach(() => jest.restoreAllMocks());
 
   it("renders the profile fields as label + right-hand value", () => {
     const { getByText } = render(<AccountScreen />);
@@ -49,6 +64,33 @@ describe("AccountScreen — Profile / Store grouped rows", () => {
     expect(getByText("Jane Merchant")).toBeTruthy();
     expect(getByText("Email")).toBeTruthy();
     expect(getByText("jane@example.com")).toBeTruthy();
+  });
+
+  // `jane@example.com` (16 chars) never reproduces truncation — it fits an
+  // inline, single-line, numberOfLines={1} value comfortably. A merchant's
+  // real work email does not: this is realistic length for a
+  // firstname.lastname address on a company domain, and long enough to
+  // clip well before the row's right edge on an ordinary 390pt device.
+  const LONG_EMAIL = "firstname.lastname@theircompany.com.au";
+
+  it("renders a realistically long email in full, not clipped to one line, at default text size", () => {
+    setNormalTextSize();
+    setAuth({ user: { displayName: "Jane Merchant", email: LONG_EMAIL } });
+    const { getByText } = render(<AccountScreen />);
+    const valueNode = getByText(LONG_EMAIL);
+    // `numberOfLines={1}` is exactly the mechanism that silently truncates a
+    // value too long for the row's inline slot — a merchant reading their
+    // own address gets `firstname.lastn…` back with no way to see the rest.
+    // The identity fields must NOT be clamped at default text size.
+    expect(valueNode.props.numberOfLines).toBeUndefined();
+  });
+
+  it("renders a realistically long display name in full, not clipped to one line, at default text size", () => {
+    setNormalTextSize();
+    setAuth({ user: { displayName: "Alexandria Fitzgerald-Cunningham", email: LONG_EMAIL } });
+    const { getByText } = render(<AccountScreen />);
+    const valueNode = getByText("Alexandria Fitzgerald-Cunningham");
+    expect(valueNode.props.numberOfLines).toBeUndefined();
   });
 
   it("falls back to placeholder copy for missing profile fields", () => {

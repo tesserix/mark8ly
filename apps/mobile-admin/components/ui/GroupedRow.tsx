@@ -56,6 +56,23 @@ export interface GroupedRowProps {
    * report for the full justification.
    */
   hint?: string;
+  /**
+   * Forces the label-above/value-below stacked layout — with the value free
+   * to wrap onto multiple lines — REGARDLESS of `fontScale`, instead of only
+   * above `VALUE_STACK_SCALE`. Below that threshold `value` otherwise renders
+   * inline with `numberOfLines={1}`, which is fine for a short, bounded
+   * caption but silently clips an unbounded one (an email address, a full
+   * name) at ordinary text size on an ordinary phone width. `jane@example.com`
+   * (16 chars) never reproduced this; `firstname.lastname@theircompany.com.au`
+   * does, at 100% text size, on a 390pt-wide device.
+   *
+   * ADDITIVE opt-in: every other `GroupedRow` call site keeps the existing
+   * inline-with-clamp behaviour unless it sets this explicitly. Use it for
+   * values that are identity data the merchant must be able to read in full
+   * (their own email, their own name) rather than a short enum/status
+   * caption a single clamped line was always going to be enough for.
+   */
+  wrapValue?: boolean;
 }
 
 /**
@@ -76,9 +93,10 @@ export function GroupedRow({
   chevron,
   testID,
   hint,
+  wrapValue,
 }: GroupedRowProps) {
   const { fontScale } = useWindowDimensions();
-  const stackValue = value !== undefined && fontScale > VALUE_STACK_SCALE;
+  const stackValue = value !== undefined && (wrapValue || fontScale > VALUE_STACK_SCALE);
   const showChevron = chevron ?? Boolean(onPress);
   const computedLabel = accessibilityLabel ?? (value ? `${label}, ${value}` : label);
 

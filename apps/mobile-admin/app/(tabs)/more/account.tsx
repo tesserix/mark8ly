@@ -72,8 +72,17 @@ export default function AccountScreen() {
               key: "profile",
               label: "Profile",
               rows: [
-                <GroupedRow key="name" label="Name" value={user?.displayName ?? "Not set"} />,
-                <GroupedRow key="email" label="Email" value={user?.email ?? "—"} />,
+                // `wrapValue`: these are the merchant's own identity fields
+                // — an email or a name is unbounded and must stay fully
+                // readable at default text size, not clip to one line the
+                // way a short caption safely can (see GroupedRow.tsx).
+                <GroupedRow
+                  key="name"
+                  label="Name"
+                  value={user?.displayName ?? "Not set"}
+                  wrapValue
+                />,
+                <GroupedRow key="email" label="Email" value={user?.email ?? "—"} wrapValue />,
               ],
             },
             {

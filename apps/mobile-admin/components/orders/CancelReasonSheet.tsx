@@ -7,14 +7,7 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
-import {
-  View,
-  Pressable,
-  ActivityIndicator,
-  StyleSheet,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
+import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
@@ -22,7 +15,7 @@ import {
   type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
 import * as Haptics from "expo-haptics";
-import { Text, FieldInput } from "@/components/ui";
+import { Text, FieldInput, SheetActions, SheetActionButton } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 export interface CancelReasonSheetHandle {
@@ -203,34 +196,21 @@ export const CancelReasonSheet = forwardRef<CancelReasonSheetHandle, CancelReaso
               {error}
             </Text>
           ) : null}
-          <View style={styles.actions}>
-            <Pressable
-              style={[styles.keepBtn, isSubmitting && styles.disabled]}
+          <SheetActions>
+            <SheetActionButton
+              label="Keep order"
               onPress={() => modalRef.current?.dismiss()}
               disabled={isSubmitting}
-              accessibilityRole="button"
-              accessibilityLabel="Keep order"
-            >
-              <Text preset="bodyEmphasis" color="text">
-                Keep order
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.cancelBtn, !canSubmit && styles.disabled]}
+            />
+            <SheetActionButton
+              label="Cancel Order"
+              accessibilityLabel="Cancel order"
+              tone="danger"
               onPress={handleSubmit}
               disabled={!canSubmit}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel order"
-            >
-              {isSubmitting ? (
-                <ActivityIndicator size="small" color={theme.colors.inverse} />
-              ) : (
-                <Text preset="bodyEmphasis" color="inverse">
-                  Cancel Order
-                </Text>
-              )}
-            </Pressable>
-          </View>
+              busy={isSubmitting}
+            />
+          </SheetActions>
         </ScrollBody>
       </BottomSheetModal>
     );
@@ -242,25 +222,6 @@ const styles = StyleSheet.create({
   // content container pins the content to the viewport height — which is the
   // very thing that clipped the buttons.
   root: { padding: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: theme.spacing.xxl },
-  actions: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.sm },
-  keepBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: theme.radii.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cancelBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: theme.radii.md,
-    backgroundColor: theme.colors.danger,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  disabled: { opacity: 0.4 },
   backdrop: {
     // Flat, low-opacity ink scrim — never a blur/glassmorphism.
     backgroundColor: theme.colors.overlay,

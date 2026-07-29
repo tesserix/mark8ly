@@ -7,21 +7,14 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
-import {
-  View,
-  Pressable,
-  ActivityIndicator,
-  StyleSheet,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
+import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
   BottomSheetScrollView,
   type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
-import { Text, FieldInput } from "@/components/ui";
+import { Text, FieldInput, SheetActions, SheetActionButton } from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 export interface EmailLabelSheetHandle {
@@ -178,40 +171,26 @@ export const EmailLabelSheet = forwardRef<EmailLabelSheetHandle, EmailLabelSheet
             autoFocus
             editable={!isSubmitting}
           />
-          <View style={styles.actions}>
+          <SheetActions>
             {/* Gated on `isSubmitting` like the other two order sheets, so
                 the button agrees with the swipe and the backdrop rather than
                 being the one route left open. Unreachable in practice — this
                 sheet dismisses ITSELF the moment `onSubmit` returns, so it is
                 never on screen with a send in flight — but leaving the three
                 routes disagreeing is how the inconsistency got here. */}
-            <Pressable
-              style={[styles.cancelBtn, isSubmitting && styles.disabled]}
+            <SheetActionButton
+              label="Cancel"
               onPress={() => modalRef.current?.dismiss()}
               disabled={isSubmitting}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel"
-            >
-              <Text preset="bodyEmphasis" color="text">
-                Cancel
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.sendBtn, !canSubmit && styles.disabled]}
+            />
+            <SheetActionButton
+              label="Send label"
+              tone="ink"
               onPress={handleSubmit}
               disabled={!canSubmit}
-              accessibilityRole="button"
-              accessibilityLabel="Send label"
-            >
-              {isSubmitting ? (
-                <ActivityIndicator size="small" color={theme.colors.inverse} />
-              ) : (
-                <Text preset="bodyEmphasis" color="inverse">
-                  Send label
-                </Text>
-              )}
-            </Pressable>
-          </View>
+              busy={isSubmitting}
+            />
+          </SheetActions>
         </ScrollBody>
       </BottomSheetModal>
     );
@@ -223,25 +202,6 @@ const styles = StyleSheet.create({
   // content container pins the content to the viewport height — which is the
   // very thing that clipped the buttons.
   root: { padding: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: theme.spacing.xxl },
-  actions: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.sm },
-  cancelBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: theme.radii.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sendBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: theme.radii.md,
-    backgroundColor: theme.colors.text,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  disabled: { opacity: 0.4 },
   backdrop: {
     // Flat, low-opacity ink scrim — never a blur/glassmorphism.
     backgroundColor: theme.colors.overlay,

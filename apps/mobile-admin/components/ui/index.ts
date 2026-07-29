@@ -39,3 +39,22 @@ export { ActionSheet } from "./ActionSheet";
 export type { ActionSheetItem, ActionSheetProps } from "./ActionSheet";
 export { ActionFailureNotice } from "./ActionFailureNotice";
 export type { ActionFailureNoticeProps } from "./ActionFailureNotice";
+export {
+  StickyActionBar,
+  STICKY_BAR_HEIGHT,
+  STICKY_BAR_CONTENT_HEIGHT,
+  stickyBarHeightFor,
+  useStickyBarHeight,
+} from "./StickyActionBar";
+export type { StickyActionBarProps } from "./StickyActionBar";
+export {
+  SheetActions,
+  SheetActionButton,
+  SHEET_BUTTON_MIN_HEIGHT,
+  SHEET_ACTIONS_STACK_SCALE,
+} from "./SheetActions";
+export type {
+  SheetActionsProps,
+  SheetActionButtonProps,
+  SheetActionTone,
+} from "./SheetActions";

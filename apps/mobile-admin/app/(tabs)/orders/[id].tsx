@@ -1,17 +1,18 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Platform,
   View,
   ScrollView,
+  useWindowDimensions,
   Pressable,
   Alert,
   ActivityIndicator,
   StyleSheet,
-  type StyleProp,
-  type ViewStyle,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams } from "expo-router";
+import { MoreHorizontal } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useOrder } from "../../../lib/hooks/use-orders";
 import {
@@ -20,7 +21,20 @@ import {
   useCancelOrder,
   useRefundOrder,
 } from "../../../lib/admin-api/order-actions";
-import { BackHeader, Eyebrow, Hairline, Screen, Text } from "@/components/ui";
+import {
+  ActionSheet,
+  BackHeader,
+  Eyebrow,
+  Hairline,
+  IconButton,
+  Screen,
+  StickyActionBar,
+  STICKY_BAR_CONTENT_HEIGHT,
+  MAX_FONT_SCALE,
+  Text,
+  useStickyBarHeight,
+} from "@/components/ui";
+import type { ActionSheetItem } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/money";
 import { OrderStatusBadges } from "@/components/orders/OrderStatusBadges";
@@ -33,7 +47,10 @@ import { useApiClient } from "@/lib/api-client";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { createShipmentsApi } from "@repo/mobile-shared/api/shipments";
 import type { OrderItem, OrderAddress } from "@repo/mobile-shared/api/types";
-import { useDockClearance } from "@/components/navigation/dock-metrics";
+// NOT `useDockClearance()`: that helper sizes content clearance for the dock
+// alone, and this screen's content now has to clear the sticky action bar the
+// dock sits under as well. The two terms are composed explicitly below.
+import { DOCK_BOTTOM_GAP, DOCK_HEIGHT } from "@/components/navigation/dock-metrics";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-AU", {
@@ -140,8 +157,35 @@ function AddressBlock({ address }: { address: OrderAddress }) {
   );
 }
 
+/** The terminal-state caption that stands in for an action when none is legal. */
+const TERMINAL_CAPTION: Record<string, string> = {
+  fulfilled: "Order fulfilled",
+  cancelled: "Order cancelled",
+};
+
 export default function OrderDetailScreen() {
-  const dockPad = useDockClearance();
+  const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
+  // The bar sits ABOVE the floating dock, so its own offset is the dock's
+  // full footprint plus a hairline gap.
+  const barBottom = insets.bottom + DOCK_BOTTOM_GAP + DOCK_HEIGHT + theme.spacing.xs;
+  const estimatedBarHeight = useStickyBarHeight();
+  // `stickyBarHeightFor` assumes a single scaled line box. A primary label
+  // that wraps at accessibility sizes makes the real bar taller, and an
+  // under-estimate hides the last row of content behind it — silently. Take
+  // the larger of the estimate and what the bar actually measured, so the
+  // padding can only ever grow, never shrink under the merchant's thumb.
+  const [measuredBarHeight, setMeasuredBarHeight] = useState(0);
+  const barHeight = Math.max(estimatedBarHeight, measuredBarHeight);
+  const scrollPad = barBottom + barHeight + theme.spacing.md;
+  // The primary slot's floor. Scaled, because `bodyEmphasis` is 32pt at the
+  // app's 2× cap and a 48pt box cannot hold it — the eighth instance of that
+  // exact defect is the one this task also had to fix in the sheets. Shared
+  // by the button AND the caption so the bar cannot change height with the
+  // order's state.
+  const primaryMinHeight =
+    STICKY_BAR_CONTENT_HEIGHT * Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+  const [menuOpen, setMenuOpen] = useState(false);
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: order, isLoading, error } = useOrder(id);
   const storeCurrency = useTenantStore((s) => s.activeStore?.currency_code);
@@ -295,6 +339,66 @@ export default function OrderDetailScreen() {
     );
   }, [id, emailReceiptMutation]);
 
+  const openCancelSheet = useCallback(() => {
+    setCancelError(null);
+    cancelSheetRef.current?.present();
+  }, []);
+
+  const openRefundSheet = useCallback(() => {
+    setRefundError(null);
+    refundSheetRef.current?.present();
+  }, []);
+
+  /**
+   * The overflow menu — ALWAYS these four items, in this order, with
+   * `disabled` carrying legality.
+   *
+   * Identical construction to the Orders list menu and for the same reason:
+   * `ActionSheet` derives its snap point from `items.length`, so dropping an
+   * illegal action would resize the sheet between orders. A greyed row also
+   * tells the merchant the action exists and why it isn't available; a
+   * missing one tells them nothing.
+   *
+   * Neither Cancel nor Refund FIRES here — both open their sheet. Cancel
+   * because `CancelOrderRequest.Reason` is `binding:"required"` server-side,
+   * Refund because `refund_request_id` is the manual idempotency key and a
+   * fresh one means a second real gateway refund.
+   */
+  const menuItems = useMemo<ActionSheetItem[]>(
+    () => [
+      {
+        key: "refund",
+        label: "Refund",
+        disabled: !(
+          order?.payment_status === "paid" || order?.payment_status === "partially_refunded"
+        ),
+        onPress: openRefundSheet,
+      },
+      // Never disabled: the server 422s when the order has no customer email
+      // and `handleEmailInvoice` already Alerts that. Guessing at it here
+      // would grey the row out on orders where it would have worked.
+      { key: "invoice", label: "Email invoice", onPress: handleEmailInvoice },
+      // Never disabled: the server 409s before delivery and
+      // `handleEmailReceipt` already Alerts that.
+      { key: "receipt", label: "Email receipt", onPress: handleEmailReceipt },
+      {
+        key: "cancel",
+        label: "Cancel order",
+        tone: "danger",
+        disabled: order?.status === "cancelled" || order?.status === "fulfilled",
+        onPress: openCancelSheet,
+      },
+    ],
+    [
+      order?.payment_status,
+      order?.status,
+      openRefundSheet,
+      openCancelSheet,
+      handleEmailInvoice,
+      handleEmailReceipt,
+    ],
+  );
+
   if (error) {
     return (
       <Screen>
@@ -325,7 +429,7 @@ export default function OrderDetailScreen() {
   return (
     <Screen>
       <BackHeader eyebrow="ORDER" title={`#${order.order_number}`} />
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockPad }]}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: scrollPad }]}>
         <View style={styles.heading}>
           <Text preset="h1" color="text">
             #{order.order_number}
@@ -403,69 +507,72 @@ export default function OrderDetailScreen() {
         />
 
         <Eyebrow label="Documents" style={styles.section} />
+        {/* The two send buttons moved into the bar's overflow menu — their
+            behaviour is unchanged, only their placement. The disclaimer stays
+            here because it explains the document, not the control. */}
         <View style={styles.card}>
-          <View style={styles.docRow}>
-            <ActionButton
-              variant="secondary"
-              label={emailInvoiceMutation.isPending ? "Sending…" : "Email invoice"}
-              onPress={handleEmailInvoice}
-              disabled={emailInvoiceMutation.isPending || emailReceiptMutation.isPending}
-              style={styles.flex1}
-            />
-            <ActionButton
-              variant="secondary"
-              label={emailReceiptMutation.isPending ? "Sending…" : "Email receipt"}
-              onPress={handleEmailReceipt}
-              disabled={emailInvoiceMutation.isPending || emailReceiptMutation.isPending}
-              style={styles.flex1}
-            />
-          </View>
           <Text preset="caption" color="textTertiary">
-            The receipt sends only after the shipment is delivered.
+            {emailInvoiceMutation.isPending || emailReceiptMutation.isPending
+              ? "Sending…"
+              : "Invoice and receipt are sent from the actions menu. The receipt sends only after the shipment is delivered."}
           </Text>
         </View>
 
-        <View style={styles.actions}>
-          {order.status === "pending" ? (
-            <ActionButton
-              variant="primary"
-              label={confirmMutation.isPending ? "Confirming…" : "Confirm Order"}
-              onPress={handleConfirm}
-              disabled={isMutating}
-            />
-          ) : null}
-          {order.status === "confirmed" ? (
-            <ActionButton
-              variant="primary"
-              label={fulfillMutation.isPending ? "Fulfilling…" : "Mark Fulfilled"}
-              onPress={handleFulfill}
-              disabled={isMutating}
-            />
-          ) : null}
-          {order.payment_status === "paid" || order.payment_status === "partially_refunded" ? (
-            <ActionButton
-              variant="secondary"
-              label={refundMutation.isPending ? "Refunding…" : "Refund"}
-              onPress={() => {
-                setRefundError(null);
-                refundSheetRef.current?.present();
-              }}
-              disabled={isMutating}
-            />
-          ) : null}
-          {order.status !== "cancelled" && order.status !== "fulfilled" ? (
-            <ActionButton
-              variant="danger"
-              label={cancelMutation.isPending ? "Cancelling…" : "Cancel Order"}
-              onPress={() => {
-                setCancelError(null);
-                cancelSheetRef.current?.present();
-              }}
-              disabled={isMutating}
-            />
-          ) : null}
-        </View>
       </ScrollView>
+
+      {/* The bar's height is the SAME in every order state — when no action is
+          legal the primary slot holds a caption in the same box rather than
+          collapsing. A bar that appears and disappears reflows the screen
+          under the merchant's thumb, and a `paddingBottom` that varies with
+          state is the same class of defect as the silent clips this app keeps
+          shipping. */}
+      <StickyActionBar
+        bottom={barBottom}
+        onHeightChange={setMeasuredBarHeight}
+        testID="order-action-bar"
+      >
+        {order.status === "pending" ? (
+          <PrimaryAction
+            label={confirmMutation.isPending ? "Confirming…" : "Confirm order"}
+            onPress={handleConfirm}
+            disabled={isMutating}
+            minHeight={primaryMinHeight}
+          />
+        ) : order.status === "confirmed" ? (
+          <PrimaryAction
+            label={fulfillMutation.isPending ? "Fulfilling…" : "Mark fulfilled"}
+            onPress={handleFulfill}
+            disabled={isMutating}
+            minHeight={primaryMinHeight}
+          />
+        ) : (
+          /* A caption, NOT a disabled button: a disabled button still
+             announces as "button, dimmed" and invites a tap that can never
+             do anything. This is a statement of fact about the order. */
+          <View
+            testID="order-terminal-caption"
+            style={[styles.primarySlot, { minHeight: primaryMinHeight }]}
+          >
+            <Text preset="bodyEmphasis" color="textSecondary" align="center">
+              {TERMINAL_CAPTION[order.status] ?? `Order ${order.status}`}
+            </Text>
+          </View>
+        )}
+        <IconButton
+          accessibilityLabel="More order actions"
+          onPress={() => setMenuOpen(true)}
+          testID="order-actions-overflow"
+        >
+          <MoreHorizontal size={20} color={theme.colors.text} />
+        </IconButton>
+      </StickyActionBar>
+
+      <ActionSheet
+        title={`Order #${order.order_number}`}
+        items={menuItems}
+        visible={menuOpen}
+        onDismiss={() => setMenuOpen(false)}
+      />
 
       <CancelReasonSheet
         ref={cancelSheetRef}
@@ -474,6 +581,7 @@ export default function OrderDetailScreen() {
         hasShipment={!!shipment}
         carrier={shipment?.provider}
         error={cancelError}
+        onDismiss={() => setCancelError(null)}
       />
       <RefundSheet
         ref={refundSheetRef}
@@ -483,41 +591,31 @@ export default function OrderDetailScreen() {
         refundableAmount={Math.max(order.grand_total - order.refunded_amount, 0)}
         currencyCode={currency}
         error={refundError}
+        onDismiss={() => setRefundError(null)}
       />
     </Screen>
   );
 }
 
-function ActionButton({
-  variant,
+/**
+ * The bar's primary action.
+ *
+ * `minHeight`, never `height`: at accessibility text sizes "Mark fulfilled"
+ * is a ~45pt line box (and wraps to ~90pt on a narrow device), and a 48pt
+ * fixed box clips it. The caller passes the scaled floor so this box and the
+ * terminal caption that replaces it are always the same height.
+ */
+function PrimaryAction({
   label,
   onPress,
   disabled,
-  style,
+  minHeight,
 }: {
-  variant: "primary" | "secondary" | "danger";
   label: string;
   onPress: () => void;
   disabled?: boolean;
-  style?: StyleProp<ViewStyle>;
+  minHeight: number;
 }) {
-  const btnStyle =
-    variant === "primary"
-      ? styles.btnPrimary
-      : variant === "danger"
-        ? styles.btnDanger
-        : styles.btnSecondary;
-  const color = variant === "primary" ? "inverse" : variant === "danger" ? "danger" : "text";
-  // Primary is a solid moss fill (light text on it); secondary/danger are
-  // outline-only on Paper. Tune the press feedback so it reads on each.
-  const ripple =
-    variant === "primary"
-      ? theme.press.rippleOnDark
-      : variant === "danger"
-        ? theme.press.rippleDanger
-        : theme.press.rippleInk;
-  const pressedOpacity =
-    variant === "primary" ? theme.press.opacitySolidFill : theme.press.opacityStandard;
   // NativeWind's JSX interop doesn't resolve a function `style` prop the way
   // it resolves a plain array — press state is tracked explicitly instead.
   const [pressed, setPressed] = useState(false);
@@ -529,15 +627,20 @@ function ActionButton({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
-      android_ripple={ripple}
+      accessibilityState={{ disabled: !!disabled }}
+      android_ripple={theme.press.rippleOnDark}
+      testID="order-primary-action"
       style={[
-        btnStyle,
-        disabled && styles.btnDisabled,
-        style,
-        pressed && Platform.OS === "ios" ? { opacity: pressedOpacity } : null,
+        styles.primarySlot,
+        styles.btnPrimary,
+        { minHeight },
+        disabled ? styles.btnDisabled : null,
+        pressed && !disabled && Platform.OS === "ios"
+          ? { opacity: theme.press.opacitySolidFill }
+          : null,
       ]}
     >
-      <Text preset="bodyEmphasis" color={color}>
+      <Text preset="bodyEmphasis" color="inverse" align="center">
         {label}
       </Text>
     </Pressable>
@@ -573,35 +676,17 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
   },
   addressBlock: { paddingVertical: theme.spacing.md, gap: 2 },
-  docRow: { flexDirection: "row", gap: theme.spacing.md, marginBottom: theme.spacing.sm },
-  flex1: { flex: 1 },
-  actions: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.xl,
-    gap: theme.spacing.sm,
-  },
-  btnPrimary: {
-    backgroundColor: theme.colors.accent,
-    height: 48,
+  // The one box the bar's primary slot uses, whichever of the two things is
+  // in it. `minHeight` arrives from the caller (font-scaled) — there is
+  // deliberately no `height` here.
+  primarySlot: {
+    flex: 1,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
     borderRadius: theme.radii.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  btnSecondary: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    height: 48,
-    borderRadius: theme.radii.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  btnDanger: {
-    borderWidth: 1,
-    borderColor: theme.colors.danger,
-    height: 48,
-    borderRadius: theme.radii.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  btnPrimary: { backgroundColor: theme.colors.accent },
   btnDisabled: { opacity: 0.5 },
 });

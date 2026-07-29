@@ -18,7 +18,16 @@ import {
   useCategories,
   useCreateCategory,
 } from "../../../lib/admin-api/product-crud";
-import { BackHeader, Card, Eyebrow, FieldInput, Screen, SegmentedControl, Text } from "@/components/ui";
+import {
+  BackHeader,
+  Card,
+  Eyebrow,
+  FieldInput,
+  Screen,
+  SegmentedControl,
+  StickyActionBar,
+  Text,
+} from "@/components/ui";
 import { CategoryField } from "@/components/products/CategoryField";
 import { theme } from "@/lib/theme";
 import { deriveSku } from "@/lib/sku";
@@ -272,7 +281,7 @@ export default function NewProductScreen() {
         </Card>
       </ScrollView>
 
-      <View style={[styles.footer, { bottom: insets.bottom }]}>
+      <StickyActionBar bottom={insets.bottom}>
         <Pressable
           onPress={() => handleSubmit(true)}
           onPressIn={() => setDraftPressed(true)}
@@ -313,7 +322,7 @@ export default function NewProductScreen() {
             </Text>
           )}
         </Pressable>
-      </View>
+      </StickyActionBar>
         </KeyboardAvoidingView>
       </Screen>
     </BottomSheetModalProvider>
@@ -326,18 +335,6 @@ const styles = StyleSheet.create({
   card: { marginHorizontal: theme.spacing.lg, gap: theme.spacing.sm },
   row: { flexDirection: "row", gap: theme.spacing.sm },
   half: { flex: 1 },
-  footer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    backgroundColor: theme.colors.background,
-    borderTopWidth: theme.hairline,
-    borderTopColor: theme.colors.hairline,
-  },
   draftBtn: {
     paddingHorizontal: theme.spacing.lg,
     borderRadius: theme.radii.md,

@@ -7,7 +7,7 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
-import { View, Pressable, ActivityIndicator, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { View, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
@@ -15,7 +15,13 @@ import {
   type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
 import * as Haptics from "expo-haptics";
-import { Text, FieldInput, titleMinimumFontScale } from "@/components/ui";
+import {
+  Text,
+  FieldInput,
+  titleMinimumFontScale,
+  SheetActions,
+  SheetActionButton,
+} from "@/components/ui";
 import { theme } from "@/lib/theme";
 
 export interface BlockReasonSheetHandle {
@@ -231,34 +237,21 @@ export const BlockReasonSheet = forwardRef<BlockReasonSheetHandle, BlockReasonSh
             </Text>
           ) : null}
 
-          <View style={styles.actions}>
-            <Pressable
-              style={[styles.cancelBtn, isSubmitting && styles.disabled]}
+          <SheetActions>
+            <SheetActionButton
+              label="Cancel"
               onPress={() => modalRef.current?.dismiss()}
               disabled={isSubmitting}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel"
-            >
-              <Text preset="bodyEmphasis" color="text">
-                Cancel
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.blockBtn, !canSubmit && styles.disabled]}
+            />
+            <SheetActionButton
+              label="Block Customer"
+              accessibilityLabel="Block customer"
+              tone="danger"
               onPress={handleSubmit}
               disabled={!canSubmit}
-              accessibilityRole="button"
-              accessibilityLabel="Block customer"
-            >
-              {isSubmitting ? (
-                <ActivityIndicator size="small" color={theme.colors.inverse} />
-              ) : (
-                <Text preset="bodyEmphasis" color="inverse">
-                  Block Customer
-                </Text>
-              )}
-            </Pressable>
-          </View>
+              busy={isSubmitting}
+            />
+          </SheetActions>
         </ScrollBody>
       </BottomSheetModal>
     );
@@ -270,25 +263,6 @@ const styles = StyleSheet.create({
   // content container pins the content to the viewport height — which is the
   // very thing that clipped the buttons.
   root: { padding: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: theme.spacing.xxl },
-  actions: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.sm },
-  cancelBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: theme.radii.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  blockBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: theme.radii.md,
-    backgroundColor: theme.colors.danger,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  disabled: { opacity: 0.4 },
   backdrop: {
     // Flat, low-opacity ink scrim — never a blur/glassmorphism.
     backgroundColor: theme.colors.overlay,

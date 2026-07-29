@@ -138,7 +138,7 @@ jest.mock("@/lib/hooks/use-products", () => ({
       data: rows,
       meta: {
         page: 1,
-        page_size: 100,
+        page_size: 50,
         total: mockTotalOverride ?? rows.length,
         total_pages: 1 + mockExtraPages.length,
       },
@@ -275,11 +275,12 @@ describe("Products — header", () => {
   /**
    * The count describes THE FILTER, never the rows.
    *
-   * `useProducts` pins `page_size=100` with no pagination, so above 100 the
-   * two genuinely differ — the real 162-product store renders 100 rows. A
-   * slot reading "162 products" over them is read as a list length and is
-   * wrong by 62; "162 total" is true of the scope the merchant asked for
-   * whatever the page ceiling is.
+   * `useProducts` fetches `page_size=50` per request via infinite scroll, so
+   * a screen that has only loaded its first page still has a `meta.total`
+   * larger than the rows currently on screen — here, 3 rows loaded against a
+   * 162-product store. A slot reading "3 products" over them is read as a
+   * list length and is wrong; "162 total" is true of the scope the merchant
+   * asked for regardless of how many pages have loaded so far.
    *
    * Nothing else in this file can catch that: `meta.total` is normally
    * `rows.length` by construction, which makes the claim unfalsifiable.
@@ -769,7 +770,7 @@ describe("Products — pagination", () => {
 
   it("renders rows from every loaded page, not only the first", () => {
     mockExtraPages = [
-      { data: [PAGE_TWO_PRODUCT], meta: { page: 2, page_size: 100, total: 4, total_pages: 2 } },
+      { data: [PAGE_TWO_PRODUCT], meta: { page: 2, page_size: 50, total: 4, total_pages: 2 } },
     ];
     const { getByTestId, UNSAFE_root } = render(<ProductsScreen />);
     expect(productRows(UNSAFE_root)).toHaveLength(4);
@@ -825,7 +826,7 @@ describe("Products — pagination", () => {
   it("keeps the header count pinned to the first page's total as later pages load", () => {
     mockTotalOverride = 40;
     mockExtraPages = [
-      { data: [PAGE_TWO_PRODUCT], meta: { page: 2, page_size: 100, total: 40, total_pages: 2 } },
+      { data: [PAGE_TWO_PRODUCT], meta: { page: 2, page_size: 50, total: 40, total_pages: 2 } },
     ];
     const { getByTestId, UNSAFE_root } = render(<ProductsScreen />);
     expect(productRows(UNSAFE_root)).toHaveLength(4);

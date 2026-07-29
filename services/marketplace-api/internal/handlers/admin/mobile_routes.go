@@ -275,6 +275,18 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 				gc.GET("/:id",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsViewRole),
 					deps.GiftCardHandler.Get)
+				// Disable/Enable landed on the web table (routes.go) after
+				// this group was copied from it, so the phone could not reach
+				// them at all — gin refused the request at the tree and the
+				// handler never ran. Same handlers, same GiftCardsEditRole
+				// gate as Issue above; only the auth chain differs (bearer
+				// rather than header-trust), which the group already applies.
+				gc.POST("/:id/disable",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsEditRole),
+					deps.GiftCardHandler.Disable)
+				gc.POST("/:id/enable",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.GiftCardsEditRole),
+					deps.GiftCardHandler.Enable)
 			}
 		}
 

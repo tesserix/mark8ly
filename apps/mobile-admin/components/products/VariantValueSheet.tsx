@@ -11,7 +11,9 @@ import {
   Pressable,
   StyleSheet,
   View,
+  type NativeSyntheticEvent,
   type StyleProp,
+  type TextInputSelectionChangeEventData,
   type ViewStyle,
 } from "react-native";
 import {
@@ -267,6 +269,46 @@ function VariantValueForm({
   const initial = String(current);
   const [text, setText] = useState(initial);
 
+  /**
+   * The pre-filled value, SELECTED, so the common case (replace it) is one
+   * keystroke.
+   *
+   * `selectTextOnFocus` alone does not do this and never did: on iOS it acts
+   * on a focus the USER causes, and this field is focused by `autoFocus`
+   * during mount, before the native view has text to select. On device the
+   * caret simply sat at the end of "89" and a merchant had to clear four
+   * characters by hand — while the unit test asserting
+   * `selectTextOnFocus === true` stayed green, because the prop really was
+   * set. It is left set for the tap-back-in case; the controlled `selection`
+   * below is what actually selects on open.
+   *
+   * Control is RELEASED the moment the merchant does anything — types, or
+   * puts the caret anywhere other than the full-select this sets — because a
+   * `selection` prop pinned across edits fights the keyboard for the caret.
+   * The programmatic full-select echoes back through `onSelectionChange`
+   * with exactly these values, so that echo is deliberately not treated as
+   * the merchant moving the caret.
+   */
+  const [selection, setSelection] = useState<{ start: number; end: number } | undefined>(() => ({
+    start: 0,
+    end: initial.length,
+  }));
+  const releaseSelection = useCallback(() => setSelection(undefined), []);
+  const handleSelectionChange = useCallback(
+    (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+      const { start, end } = event.nativeEvent.selection;
+      if (start !== 0 || end !== initial.length) releaseSelection();
+    },
+    [initial.length, releaseSelection],
+  );
+  const handleChangeText = useCallback(
+    (next: string) => {
+      releaseSelection();
+      setText(next);
+    },
+    [releaseSelection],
+  );
+
   const parsed = validateVariantValue(field, text);
   const trimmed = text.trim();
 
@@ -307,15 +349,18 @@ function VariantValueForm({
         label={FIELD_INPUT_LABEL[field]}
         testID="variant-value-input"
         value={text}
-        onChangeText={setText}
+        onChangeText={handleChangeText}
+        selection={selection}
+        onSelectionChange={handleSelectionChange}
         accessibilityLabel={`${FIELD_INPUT_LABEL[field]} for ${variantLabel(variant)}`}
         // decimal-pad for money, number-pad for a count: a keypad offering a
         // decimal point for a stock level invites the fractional value the
         // validator then has to refuse.
         keyboardType={isPrice ? "decimal-pad" : "number-pad"}
         autoFocus
-        // Pre-filled AND selected, so the common case (replace it) is one
-        // keystroke rather than a hold-and-delete.
+        // Kept for a later tap back INTO the field; the controlled
+        // `selection` above is what selects on open. See its doc comment —
+        // this prop alone never worked with `autoFocus`.
         selectTextOnFocus
         editable={!isSubmitting}
       />

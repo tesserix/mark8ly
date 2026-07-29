@@ -105,7 +105,11 @@ import ProductsScreen from "../app/(tabs)/products/index";
 import { ProductRow } from "@/components/ProductRow";
 import { actionSheetHeight } from "@/components/ui/ActionSheet";
 import { MAX_FONT_SCALE } from "@/components/ui/Text";
-import { sortVariants, variantLabel } from "@/components/products/variant-identity";
+import {
+  sortVariants,
+  variantDetail,
+  variantLabel,
+} from "@/components/products/variant-identity";
 import { validateVariantValue } from "@/components/products/VariantValueSheet";
 import { theme } from "@/lib/theme";
 import type { Product, ProductVariant } from "@repo/mobile-shared/api/types";
@@ -403,11 +407,114 @@ describe("Products — variant resolution", () => {
     const labels = root
       .queryAllByTestId(/^action-sheet-item-variant-/)
       .map((node) => node.props.accessibilityLabel);
+    // The stock level is announced WITH the name, not left to be discovered:
+    // it is what the merchant is choosing by.
     expect(labels).toEqual([
-      "Blue / S · CAP-BL-S",
-      "Sand / M · CAP-SD-M",
-      "Blue / L · CAP-BL-L",
+      "Blue / S · CAP-BL-S, 9 in stock",
+      "Sand / M · CAP-SD-M, 0 in stock",
+      "Blue / L · CAP-BL-L, 2 in stock",
     ]);
+  });
+
+  /**
+   * The picker used to show a bare name and nothing else.
+   *
+   * "Adjust stock" asked which variant to restock while showing no
+   * quantities, and the product row above it shows only the store-wide
+   * TOTAL — so finding the low variant cost an open/read/back-out cycle per
+   * variant. On a product whose variants have no option values the rows are
+   * bare SKUs, so there was nothing to choose between at all.
+   */
+  it("shows each variant's current stock when adjusting stock", () => {
+    const root = render(<ProductsScreen />);
+    menuAction(root, "p-multi", "stock");
+
+    const details = root
+      .queryAllByTestId(/^action-sheet-detail-variant-/)
+      .map((node) => node.props.children);
+    // Zero is a real answer — and the variant most likely to need
+    // restocking, so it must never be dropped by a truthiness check.
+    expect(details).toEqual(["9 in stock", "0 in stock", "2 in stock"]);
+  });
+
+  it("shows each variant's current price when editing price", () => {
+    const root = render(<ProductsScreen />);
+    menuAction(root, "p-multi", "price");
+
+    const details = root
+      .queryAllByTestId(/^action-sheet-detail-variant-/)
+      .map((node) => node.props.children);
+    expect(details).toEqual(["$25.00", "$27.50", "$30.00"]);
+  });
+
+  it("keeps the value on its OWN line, never appended to the name", () => {
+    const root = render(<ProductsScreen />);
+    menuAction(root, "p-multi", "stock");
+    // The label is still exactly the variant's name — a suffix would be the
+    // first thing an ellipsis ate on a narrow device at AX text sizes.
+    expect(variantLabel(MULTI.variants[0]!)).toBe("Blue / L · CAP-BL-L");
+    expect(root.getByTestId("action-sheet-detail-variant-v-blue-l").props.children).toBe(
+      "2 in stock",
+    );
+  });
+
+  it("names the value for each field", () => {
+    expect(variantDetail(MULTI.variants[2]!, "inventory_quantity")).toBe("0 in stock");
+    expect(variantDetail(MULTI.variants[2]!, "price")).toBe("$27.50");
+    // Singular, because "1 in stocks" is not English and this row is read in
+    // a hurry.
+    expect(variantDetail(variant({ inventory_quantity: 1 }), "inventory_quantity")).toBe(
+      "1 in stock",
+    );
+  });
+
+  /**
+   * A detail row is a TWO-LINE stack, and budgeting it as one line is the
+   * same one-line under-budget that once parked a four-item menu's last row
+   * below the fold. A five-variant picker at the largest text size the app
+   * will draw is the shape that would hit it.
+   */
+  it("budgets the picker's extra line rather than clipping the last variant", () => {
+    const geometry = {
+      hasTitle: true,
+      bottomPadding: theme.spacing.xl,
+      windowHeight: 852,
+      topInset: 59,
+    };
+    const plain = actionSheetHeight({ ...geometry, itemCount: 5, fontScale: MAX_FONT_SCALE });
+    const withDetails = actionSheetHeight({
+      ...geometry,
+      itemCount: 5,
+      detailCount: 5,
+      fontScale: MAX_FONT_SCALE,
+    });
+    expect(withDetails).toBeGreaterThan(plain);
+    expect(withDetails).toBeLessThanOrEqual(
+      geometry.windowHeight - geometry.topInset - theme.spacing.xxl,
+    );
+    const detailRowAtMax = Math.max(
+      theme.row.minHeightDouble,
+      ((theme.text.body.lineHeight ?? 24) + (theme.text.caption.lineHeight ?? 18)) *
+        MAX_FONT_SCALE +
+        theme.spacing.xs +
+        theme.row.paddingV * 2,
+    );
+    expect(withDetails).toBeGreaterThanOrEqual(5 * detailRowAtMax);
+  });
+
+  // Every menu in the app that has no detail rows must compute exactly the
+  // height it did before this line existed.
+  it("leaves a detail-free menu's budget untouched", () => {
+    const geometry = {
+      hasTitle: true,
+      bottomPadding: theme.spacing.xl,
+      windowHeight: 852,
+      topInset: 59,
+      fontScale: 1,
+    };
+    expect(actionSheetHeight({ ...geometry, itemCount: 6 })).toBe(
+      actionSheetHeight({ ...geometry, itemCount: 6, detailCount: 0 }),
+    );
   });
 
   it("opens the numeric sheet on the variant that was chosen", () => {
@@ -429,13 +536,62 @@ describe("Products — the numeric sheet", () => {
     menuAction(root, "p-single", "price");
   }
 
+  /**
+   * `selectTextOnFocus` is NOT the mechanism, and asserting it was how this
+   * shipped broken: the prop really was set, the test really was green, and
+   * on device the caret sat at the end of "89" so a merchant had to clear
+   * four characters by hand. On iOS it acts on a focus the USER causes, and
+   * this field is focused by `autoFocus` during mount. The controlled
+   * `selection` is what actually selects, so that is what is asserted.
+   */
   it("pre-fills the current value and selects it so it can be overtyped", () => {
     const root = render(<ProductsScreen />);
     openPrice(root);
     const input = root.getByTestId("variant-value-input");
     expect(input.props.value).toBe("89");
-    expect(input.props.selectTextOnFocus).toBe(true);
     expect(input.props.autoFocus).toBe(true);
+    expect(input.props.selection).toEqual({ start: 0, end: 2 });
+  });
+
+  it("releases the selection the moment the merchant types", () => {
+    const root = render(<ProductsScreen />);
+    openPrice(root);
+    fireEvent.changeText(root.getByTestId("variant-value-input"), "9");
+    // A `selection` pinned across edits fights the keyboard for the caret.
+    expect(root.getByTestId("variant-value-input").props.selection).toBeUndefined();
+  });
+
+  it("releases the selection when the merchant moves the caret themselves", () => {
+    const root = render(<ProductsScreen />);
+    openPrice(root);
+    fireEvent(root.getByTestId("variant-value-input"), "selectionChange", {
+      nativeEvent: { selection: { start: 1, end: 1 } },
+    });
+    expect(root.getByTestId("variant-value-input").props.selection).toBeUndefined();
+  });
+
+  // The programmatic full-select echoes back through onSelectionChange with
+  // exactly the values it just set; treating that echo as the merchant
+  // moving the caret would cancel the selection it had only just made.
+  it("does not mistake its own select-all echo for a caret move", () => {
+    const root = render(<ProductsScreen />);
+    openPrice(root);
+    fireEvent(root.getByTestId("variant-value-input"), "selectionChange", {
+      nativeEvent: { selection: { start: 0, end: 2 } },
+    });
+    expect(root.getByTestId("variant-value-input").props.selection).toEqual({
+      start: 0,
+      end: 2,
+    });
+  });
+
+  it("selects the whole of a longer value too", () => {
+    const root = render(<ProductsScreen />);
+    menuAction(root, "p-multi", "price");
+    fireEvent.press(root.getByTestId("action-sheet-item-variant-v-sand-m"));
+    const input = root.getByTestId("variant-value-input");
+    expect(input.props.value).toBe("27.5");
+    expect(input.props.selection).toEqual({ start: 0, end: 4 });
   });
 
   it("uses the keypad that matches the field", () => {

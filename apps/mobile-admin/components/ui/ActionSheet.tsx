@@ -49,6 +49,26 @@ export interface ActionSheetItem {
    * Additive and defaulted off: every existing call site is unaffected.
    */
   disabled?: boolean;
+  /**
+   * A second line under the label, for the VALUE a merchant is choosing by.
+   *
+   * Products' variant picker is the case that forced it: "Adjust stock" asked
+   * which variant to restock while showing no quantities, and the product row
+   * above it shows only the total — so finding the low variant cost five
+   * open-read-back-out cycles. On this store the variants carry no option
+   * values either, so the rows were bare SKUs with nothing to choose between.
+   *
+   * It is a SEPARATE LINE, not appended to `label`, and that is the whole
+   * point: a suffix would be the first thing an ellipsis ate on a narrow
+   * device at accessibility text sizes — the value would be truncated away
+   * and the row would be no better than before. Its own line is short enough
+   * to survive, and the height budget below reserves it (`detailCount`), so
+   * adding one cannot push the last row below the fold.
+   *
+   * Additive and defaulted off: a row without one is the single-line row it
+   * always was, at exactly the height it always was.
+   */
+  detail?: string;
   onPress: () => void;
 }
 
@@ -100,6 +120,10 @@ const TITLE_LINES = 1;
 // moves the budget with it rather than orphaning a literal.
 const EYEBROW_LINE_HEIGHT = theme.text.eyebrow.lineHeight ?? 16;
 const BODY_LINE_HEIGHT = theme.text.body.lineHeight ?? 24;
+// The `detail` second line, and the gap above it — same 13/18 caption and
+// same 4pt stack gap every two-line row in the app uses (see `SegmentRow`).
+const CAPTION_LINE_HEIGHT = theme.text.caption.lineHeight ?? 18;
+const DETAIL_STACK_GAP = theme.spacing.xs;
 // gorhom's built-in handle/grabber area above the content.
 const HANDLE_HEIGHT = 24;
 // Minimum gap kept between the sheet's top edge and the screen's safe-area
@@ -109,6 +133,14 @@ const TOP_CLEARANCE = theme.spacing.xxl;
 
 export interface ActionSheetHeightInput {
   itemCount: number;
+  /**
+   * How many of those items carry a `detail` second line. Optional and
+   * defaulted to 0, so every pre-existing call site computes exactly the
+   * height it did before. A detail row is a two-line stack, not a one-line
+   * row, and budgeting it as one line is the same one-line under-budget that
+   * put a four-item menu's last row below the fold at AX sizes.
+   */
+  detailCount?: number;
   hasTitle: boolean;
   /**
    * The OS Dynamic Type / font-scale multiplier, RAW. Capped internally at
@@ -139,6 +171,7 @@ export interface ActionSheetHeightInput {
  */
 export function actionSheetHeight({
   itemCount,
+  detailCount = 0,
   hasTitle,
   fontScale,
   bottomPadding,
@@ -158,8 +191,20 @@ export function actionSheetHeight({
   const titleHeight = hasTitle
     ? theme.spacing.lg + EYEBROW_LINE_HEIGHT * TITLE_LINES * scale + theme.spacing.sm
     : 0;
+  // A `detail` row carries a 17/24 label AND a 13/18 caption, both scaling,
+  // with the 4pt stack gap between them — floored at the app's two-line row
+  // density, exactly as the single-line case is floored at the one-line one.
+  const detailRowHeight = Math.max(
+    theme.row.minHeightDouble,
+    (BODY_LINE_HEIGHT + CAPTION_LINE_HEIGHT) * scale + DETAIL_STACK_GAP + theme.row.paddingV * 2,
+  );
+  const details = Math.min(Math.max(detailCount, 0), itemCount);
   const chromeHeight = HANDLE_HEIGHT + bottomPadding;
-  const computedHeight = itemCount * rowHeight + titleHeight + chromeHeight;
+  const computedHeight =
+    (itemCount - details) * rowHeight +
+    details * detailRowHeight +
+    titleHeight +
+    chromeHeight;
   // Clamp so a long item list can't pin the sheet to y=0 under the notch —
   // content sits in `ScrollBody` (see doc comment), so anything past the
   // clamp is still reachable by scrolling, not silently truncated.
@@ -288,10 +333,15 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
   // bottom inset) still get real breathing room under the last row.
   const bottomPadding = Math.max(insets.bottom, theme.spacing.xl);
 
+  // By COUNT, not by identity: the budget cares how many rows are two lines
+  // tall, never what they say.
+  const detailCount = items.reduce((total, item) => (item.detail ? total + 1 : total), 0);
+
   const snapPoints = useMemo(
     () => [
       actionSheetHeight({
         itemCount: items.length,
+        detailCount,
         hasTitle: Boolean(title),
         fontScale,
         bottomPadding,
@@ -301,7 +351,7 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
     ],
     // `title` by PRESENCE only — the budget reserves the same clamped block
     // whatever the copy is, which is the whole point of the clamp.
-    [items.length, title, fontScale, bottomPadding, windowHeight, insets.top],
+    [items.length, detailCount, title, fontScale, bottomPadding, windowHeight, insets.top],
   );
 
   useEffect(() => {
@@ -376,28 +426,47 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
             <PressableRow
               onPress={() => handlePress(item)}
               disabled={item.disabled}
-              accessibilityLabel={item.label}
+              lines={item.detail ? 2 : 1}
+              // The detail is CONTENT, not a hint — a merchant using
+              // VoiceOver picks a variant by its stock level exactly as a
+              // sighted one does, so it is announced with the label rather
+              // than left to be discovered.
+              accessibilityLabel={item.detail ? `${item.label}, ${item.detail}` : item.label}
               testID={`action-sheet-item-${item.key}`}
               ripple={item.tone === "danger" ? theme.press.rippleDanger : theme.press.rippleInk}
             >
               {item.icon}
-              <Text
-                preset="body"
-                numberOfLines={1}
-                // Disabled wins over tone: a disabled DANGER row painted
-                // oxblood still reads as an armed destructive action.
-                // Tertiary (#5C5953) is the AA-passing muted ink — never the
-                // banned rgba(14,14,12,0.5).
-                color={
-                  item.disabled
-                    ? theme.colors.textTertiary
-                    : item.tone === "danger"
-                      ? theme.colors.danger
-                      : undefined
-                }
-              >
-                {item.label}
-              </Text>
+              <View style={styles.body}>
+                <Text
+                  preset="body"
+                  numberOfLines={1}
+                  // Disabled wins over tone: a disabled DANGER row painted
+                  // oxblood still reads as an armed destructive action.
+                  // Tertiary (#5C5953) is the AA-passing muted ink — never the
+                  // banned rgba(14,14,12,0.5).
+                  color={
+                    item.disabled
+                      ? theme.colors.textTertiary
+                      : item.tone === "danger"
+                        ? theme.colors.danger
+                        : undefined
+                  }
+                >
+                  {item.label}
+                </Text>
+                {item.detail ? (
+                  <Text
+                    preset="caption"
+                    numberOfLines={1}
+                    color={
+                      item.disabled ? theme.colors.textTertiary : theme.colors.textSecondary
+                    }
+                    testID={`action-sheet-detail-${item.key}`}
+                  >
+                    {item.detail}
+                  </Text>
+                ) : null}
+              </View>
             </PressableRow>
           </View>
         ))}
@@ -407,6 +476,12 @@ export function ActionSheet({ title, items, visible, onDismiss }: ActionSheetPro
 }
 
 const styles = StyleSheet.create({
+  // The label (and its optional detail line) as one column, so a two-line
+  // row stacks rather than trying to fit both on the row's single baseline.
+  // `flex: 1` claims the space left of nothing — the row has no trailing
+  // slot — so the label's own `numberOfLines={1}` truncation point is
+  // unchanged from before this stack existed.
+  body: { flex: 1, gap: theme.spacing.xs },
   background: {
     backgroundColor: theme.colors.background,
   },

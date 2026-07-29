@@ -3,7 +3,7 @@ import { ActionSheet, type ActionSheetItem } from "@/components/ui";
 import type { Product, ProductVariant } from "@repo/mobile-shared/api/types";
 import type { VariantEditField } from "@/lib/admin-api/variant-quick-edit";
 import { FIELD_TITLE } from "./variant-edit-copy";
-import { sortVariants, variantLabel } from "./variant-identity";
+import { sortVariants, variantDetail, variantLabel } from "./variant-identity";
 
 export interface VariantPickTarget {
   product: Product;
@@ -50,6 +50,11 @@ export function VariantPickerSheet({ target, onChoose, onDismiss }: VariantPicke
     return sortVariants(target.product.variants).map((variant) => ({
       key: `variant-${variant.id}`,
       label: variantLabel(variant),
+      // The value being edited, on the row — otherwise the merchant is being
+      // asked which variant to change without being shown the thing they are
+      // changing it from. `ActionSheet` budgets the extra line, so the
+      // picker's last row cannot fall below the fold because of it.
+      detail: variantDetail(variant, target.field),
       onPress: () => onChoose(variant),
     }));
   }, [target, onChoose]);

@@ -28,9 +28,13 @@ export interface IssueGiftCardBody {
 }
 
 /**
- * Admin gift-card issue + read. Mirrors web routes.go:471-485 (no delete on
- * the backend). List is `{data, meta}`; issue returns `{data: card}` unwrapped;
- * get returns `{data: detail}` (card + transaction ledger) unwrapped.
+ * Admin gift-card issue, read and enable/disable. Mirrors the mobile route
+ * table (`mobile_routes.go`, itself mirroring web `routes.go`). There is
+ * deliberately NO delete: the backend exposes none, and one would CASCADE
+ * the transaction ledger — including rows that reference real orders.
+ *
+ * List is `{data, meta}`; issue/enable/disable return `{data: card}`
+ * unwrapped; get returns `{data: detail}` (card + ledger) unwrapped.
  */
 export function createGiftCardsApi(client: ReturnType<typeof createApiClient>) {
   return {
@@ -47,6 +51,25 @@ export function createGiftCardsApi(client: ReturnType<typeof createApiClient>) {
     issue: (body: IssueGiftCardBody) =>
       client
         .post<{ data: GiftCard }>("/gift-cards", body, enveloped(giftCardSchema))
+        .then((r) => r.data),
+    /**
+     * Freeze a card's remaining balance. NO request body — the handler reads
+     * only the path params.
+     *
+     * Reversible and idempotent: re-enabling restores the balance in full,
+     * and asking for the state the card is already in is a 200, not a 409
+     * (repository.go `classifyStatusTransition`). Refused with 409
+     * `invalid_transition` from any other status, and 410 `gift_card_expired`
+     * once `expires_at` has passed.
+     */
+    disable: (id: string) =>
+      client
+        .post<{ data: GiftCard }>(`/gift-cards/${id}/disable`, undefined, enveloped(giftCardSchema))
+        .then((r) => r.data),
+    /** The exact inverse of `disable`, with the same refusals. */
+    enable: (id: string) =>
+      client
+        .post<{ data: GiftCard }>(`/gift-cards/${id}/enable`, undefined, enveloped(giftCardSchema))
         .then((r) => r.data),
   };
 }

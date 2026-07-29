@@ -9,13 +9,21 @@ import type { GiftCard } from "@repo/mobile-shared/api/types";
 interface GiftCardRowProps {
   card: GiftCard;
   onPress: (card: GiftCard) => void;
+  /**
+   * Opens the row's action menu. OPTIONAL, and the screen passes `undefined`
+   * while that card's own request is in flight — `SwipeRow.enabled` does not
+   * reach this handler, so the busy guard has to be applied here separately
+   * or the menu stays a live second route onto a row already being changed.
+   */
+  onLongPress?: (card: GiftCard) => void;
 }
 
-export function GiftCardRow({ card, onPress }: GiftCardRowProps) {
+export function GiftCardRow({ card, onPress, onLongPress }: GiftCardRowProps) {
   return (
     <PressableRow
       lines={2}
       onPress={() => onPress(card)}
+      onLongPress={onLongPress ? () => onLongPress(card) : undefined}
       style={styles.row}
       testID={`gift-card-row-${card.id}`}
       accessibilityLabel={`Gift card ${card.code_display}, ${card.status}`}

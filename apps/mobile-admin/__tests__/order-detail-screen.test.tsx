@@ -105,8 +105,9 @@ jest.mock("@/lib/admin-api/shipment-actions", () => ({
 }));
 
 import { Alert, StyleSheet } from "react-native";
-import { fireEvent, render, type RenderResult } from "@testing-library/react-native";
+import { act, fireEvent, render, type RenderResult } from "@testing-library/react-native";
 import OrderDetailScreen from "@/app/(tabs)/orders/[id]";
+import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 
 const BASE = {
   id: "o1",
@@ -161,6 +162,35 @@ function openOverflow(utils: RenderResult) {
 /** Reads `accessibilityState.disabled` off a menu row by its item key. */
 function disabledOf(utils: RenderResult, key: string): boolean | undefined {
   return utils.getByTestId(`action-sheet-item-${key}`).props.accessibilityState?.disabled;
+}
+
+/**
+ * Confirm and Fulfil fire from `Alert.alert` buttons, not a direct press —
+ * find the button by its label in the most recent `Alert.alert` call and
+ * invoke its `onPress` the way the OS would after a tap.
+ */
+function pressAlertButton(
+  spy: jest.SpiedFunction<typeof Alert.alert>,
+  label: string,
+): void {
+  const calls = spy.mock.calls;
+  const buttons = calls[calls.length - 1]![2] as Array<{
+    text?: string;
+    onPress?: () => void;
+  }>;
+  const button = buttons.find((b) => b.text === label);
+  if (!button?.onPress) throw new Error(`No Alert button labelled "${label}"`);
+  button.onPress();
+}
+
+/** The `{ onSuccess, onError }` object `mutate` was called with. */
+function mutationCallbacks(mock: jest.Mock, callIndex = 0): {
+  onSuccess: () => void;
+  onError: (error?: unknown) => void;
+} {
+  const call = mock.mock.calls[callIndex];
+  if (!call) throw new Error(`mutate was not called (call index ${callIndex})`);
+  return call[1] as { onSuccess: () => void; onError: (error?: unknown) => void };
 }
 
 beforeEach(() => jest.clearAllMocks());
@@ -301,5 +331,105 @@ describe("Order detail — overflow menu", () => {
     expect(mockEmailInvoice).toHaveBeenCalled();
     fireEvent.press(utils.getByText("Email receipt"));
     expect(mockEmailReceipt).toHaveBeenCalled();
+  });
+});
+
+// Task 18 — Confirm and Fulfil were the two mutations on this screen with NO
+// failure surface at all: no message, no haptic, no visible state change. See
+// .superpowers/sdd/i3-task-18-brief.md. Both `mutate` calls now carry
+// `onError`/`onSuccess`, wired to the same `useActionFailure` +
+// `ActionFailureNotice` pair every other screen in this app uses.
+describe("Order detail — confirm/fulfil failure surface", () => {
+  it("reports a failed Confirm", () => {
+    const spy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const utils = renderOrder(FIXTURES.pending);
+    fireEvent.press(utils.getByLabelText("Confirm order"));
+    pressAlertButton(spy, "Confirm");
+    expect(mockConfirm).toHaveBeenCalledTimes(1);
+    expect(mockConfirm.mock.calls[0]![0]).toMatchObject({ id: "o1" });
+
+    act(() => mutationCallbacks(mockConfirm).onError(new Error("boom")));
+
+    expect(utils.getByTestId("action-failure-title")).toHaveTextContent(
+      "Couldn't confirm this order",
+    );
+    expect(adminHaptics.actionFailed).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // A distinct `mutate` call from plain Confirm — Task 18's brief flags this
+  // as a separate bug if missed, since it is a second bare call site, not a
+  // second code path through the first one.
+  it("reports a failed Confirm & mark paid", () => {
+    const spy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const utils = renderOrder(FIXTURES.pending);
+    fireEvent.press(utils.getByLabelText("Confirm order"));
+    pressAlertButton(spy, "Confirm & mark paid");
+    expect(mockConfirm).toHaveBeenCalledTimes(1);
+    expect(mockConfirm.mock.calls[0]![0]).toMatchObject({
+      id: "o1",
+      body: { payment_status: "paid" },
+    });
+
+    act(() => mutationCallbacks(mockConfirm).onError(new Error("boom")));
+
+    expect(utils.getByTestId("action-failure-title")).toHaveTextContent(
+      "Couldn't confirm this order",
+    );
+    spy.mockRestore();
+  });
+
+  it("reports a failed Fulfil", () => {
+    const spy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const utils = renderOrder(FIXTURES.confirmed);
+    fireEvent.press(utils.getByLabelText("Mark fulfilled"));
+    pressAlertButton(spy, "Fulfill");
+    expect(mockFulfill).toHaveBeenCalledTimes(1);
+    expect(mockFulfill.mock.calls[0]![0]).toBe("o1");
+
+    act(() => mutationCallbacks(mockFulfill).onError(new Error("boom")));
+
+    expect(utils.getByTestId("action-failure-title")).toHaveTextContent(
+      "Couldn't fulfil this order",
+    );
+    expect(adminHaptics.actionFailed).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("clears the notice on a later success", () => {
+    const spy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const utils = renderOrder(FIXTURES.pending);
+
+    fireEvent.press(utils.getByLabelText("Confirm order"));
+    pressAlertButton(spy, "Confirm");
+    act(() => mutationCallbacks(mockConfirm, 0).onError(new Error("boom")));
+    expect(utils.queryByTestId("action-failure-notice")).toBeTruthy();
+
+    fireEvent.press(utils.getByLabelText("Confirm order"));
+    pressAlertButton(spy, "Confirm");
+    act(() => mutationCallbacks(mockConfirm, 1).onSuccess());
+
+    expect(utils.queryByTestId("action-failure-notice")).toBeNull();
+    expect(adminHaptics.actionSucceeded).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // The real difficulty per the brief: this screen has a sticky bar that
+  // `ActionFailureNotice`'s default anchoring (`useDockClearance()`) knows
+  // nothing about. Assert the relationship, not a number — a test that pins
+  // today's arithmetic passes on a wrong answer tomorrow.
+  it("keeps the failure strip clear of the sticky action bar", () => {
+    const spy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const utils = renderOrder(FIXTURES.pending);
+    fireEvent.press(utils.getByLabelText("Confirm order"));
+    pressAlertButton(spy, "Confirm");
+    act(() => mutationCallbacks(mockConfirm).onError(new Error("boom")));
+
+    const barStyle = StyleSheet.flatten(utils.getByTestId("order-action-bar").props.style);
+    const noticeStyle = StyleSheet.flatten(utils.getByTestId("action-failure-notice").props.style);
+    const barTop = (barStyle.bottom as number) + (barStyle.minHeight as number);
+
+    expect(noticeStyle.bottom as number).toBeGreaterThanOrEqual(barTop);
+    spy.mockRestore();
   });
 });

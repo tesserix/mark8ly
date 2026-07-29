@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
-import * as Haptics from "expo-haptics";
 import { useLocalSearchParams } from "expo-router";
 import { MoreHorizontal } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,6 +21,7 @@ import {
   useRefundOrder,
 } from "../../../lib/admin-api/order-actions";
 import {
+  ActionFailureNotice,
   ActionSheet,
   BackHeader,
   Eyebrow,
@@ -37,6 +37,7 @@ import {
 import type { ActionSheetItem } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/money";
+import { useActionFailure } from "@/lib/use-action-failure";
 import { OrderStatusBadges } from "@/components/orders/OrderStatusBadges";
 import { CancelReasonSheet, type CancelReasonSheetHandle } from "@/components/orders/CancelReasonSheet";
 import { RefundSheet, type RefundSheetHandle } from "@/components/orders/RefundSheet";
@@ -46,11 +47,19 @@ import { useShipment } from "@/lib/hooks/use-shipment";
 import { useApiClient } from "@/lib/api-client";
 import { ApiError } from "@repo/mobile-shared/api/client";
 import { createShipmentsApi } from "@repo/mobile-shared/api/shipments";
+import { adminHaptics } from "@repo/mobile-shared/haptics/feedback";
 import type { OrderItem, OrderAddress } from "@repo/mobile-shared/api/types";
-// NOT `useDockClearance()`: that helper sizes content clearance for the dock
-// alone, and this screen's content now has to clear the sticky action bar the
-// dock sits under as well. The two terms are composed explicitly below.
-import { DOCK_BOTTOM_GAP, DOCK_HEIGHT } from "@/components/navigation/dock-metrics";
+// NOT `useDockClearance()` for scroll padding: that helper sizes content
+// clearance for the dock alone, and this screen's content now has to clear
+// the sticky action bar the dock sits under as well. The two terms are
+// composed explicitly below. `useDockClearance()` IS used further down, but
+// only to work out how far `ActionFailureNotice`'s own anchoring differs from
+// this screen's — see `noticeOffset`.
+import {
+  DOCK_BOTTOM_GAP,
+  DOCK_HEIGHT,
+  useDockClearance,
+} from "@/components/navigation/dock-metrics";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-AU", {
@@ -178,6 +187,15 @@ export default function OrderDetailScreen() {
   const [measuredBarHeight, setMeasuredBarHeight] = useState(0);
   const barHeight = Math.max(estimatedBarHeight, measuredBarHeight);
   const scrollPad = barBottom + barHeight + theme.spacing.md;
+  // `ActionFailureNotice` anchors itself at `useDockClearance() + bottomOffset`
+  // — a DIFFERENT base than `barBottom` above, built from the same dock
+  // numbers plus a different trailing gap (12 vs `theme.spacing.xs`). Passing
+  // the bar height straight through as `bottomOffset` lands the strip on top
+  // of the bar rather than above it. Measuring the gap between the two live
+  // values, rather than hand-deriving the constant the two bases differ by,
+  // keeps this correct if either formula ever changes.
+  const dockClearance = useDockClearance();
+  const noticeOffset = Math.max(0, barBottom + barHeight - dockClearance) + theme.spacing.sm;
   // The primary slot's floor. Scaled, because `bodyEmphasis` is 32pt at the
   // app's 2× cap and a 48pt box cannot hold it — the eighth instance of that
   // exact defect is the one this task also had to fix in the sheets. Shared
@@ -202,6 +220,11 @@ export default function OrderDetailScreen() {
   const refundSheetRef = useRef<RefundSheetHandle>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [refundError, setRefundError] = useState<string | null>(null);
+  // Confirm and Fulfil were the two mutations on this screen with no failure
+  // surface at all — see i3-task-18-brief.md. Cancel and Refund keep their
+  // own inline sheet errors (the typed reason has to stay on screen beside
+  // the message); this is for the two that fire directly off the bar.
+  const { failure, reportFailure, clearFailure } = useActionFailure();
 
   const isMutating =
     confirmMutation.isPending ||
@@ -209,23 +232,53 @@ export default function OrderDetailScreen() {
     cancelMutation.isPending ||
     refundMutation.isPending;
 
+  // Shared by both Confirm buttons AND Fulfil: same action class, same
+  // outcome, only the phrase and mutation differ.
+  const confirmCallbacks = useCallback(
+    () => ({
+      onSuccess: () => {
+        clearFailure();
+        void adminHaptics.actionSucceeded();
+      },
+      onError: (error?: unknown) => {
+        reportFailure(error, "confirm this order");
+        void adminHaptics.actionFailed();
+      },
+    }),
+    [reportFailure, clearFailure],
+  );
+
   const handleConfirm = useCallback(() => {
     Alert.alert("Confirm order", "Mark this order as confirmed?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Confirm", onPress: () => confirmMutation.mutate({ id }) },
+      { text: "Confirm", onPress: () => confirmMutation.mutate({ id }, confirmCallbacks()) },
       {
         text: "Confirm & mark paid",
-        onPress: () => confirmMutation.mutate({ id, body: { payment_status: "paid" } }),
+        onPress: () =>
+          confirmMutation.mutate({ id, body: { payment_status: "paid" } }, confirmCallbacks()),
       },
     ]);
-  }, [id, confirmMutation]);
+  }, [id, confirmMutation, confirmCallbacks]);
 
   const handleFulfill = useCallback(() => {
     Alert.alert("Mark fulfilled", "Mark this order as fulfilled?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Fulfill", onPress: () => fulfillMutation.mutate(id) },
+      {
+        text: "Fulfill",
+        onPress: () =>
+          fulfillMutation.mutate(id, {
+            onSuccess: () => {
+              clearFailure();
+              void adminHaptics.actionSucceeded();
+            },
+            onError: (error?: unknown) => {
+              reportFailure(error, "fulfil this order");
+              void adminHaptics.actionFailed();
+            },
+          }),
+      },
     ]);
-  }, [id, fulfillMutation]);
+  }, [id, fulfillMutation, reportFailure, clearFailure]);
 
   const handleCancelSubmit = useCallback(
     (reason: string) => {
@@ -241,10 +294,10 @@ export default function OrderDetailScreen() {
                   ? err.message
                   : "Couldn't cancel the order. Please try again.";
             setCancelError(msg);
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            void adminHaptics.actionFailed();
           },
           onSuccess: async () => {
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            void adminHaptics.actionSucceeded();
             cancelSheetRef.current?.dismiss();
             // The order cancel itself always succeeds independently of the
             // shipment — the server cancels/returns the shipment with the
@@ -287,10 +340,10 @@ export default function OrderDetailScreen() {
                   ? err.message
                   : "Couldn't issue the refund. Please try again.";
             setRefundError(msg);
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            void adminHaptics.actionFailed();
           },
           onSuccess: () => {
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            void adminHaptics.actionSucceeded();
             refundSheetRef.current?.dismiss();
           },
         },
@@ -566,6 +619,11 @@ export default function OrderDetailScreen() {
           <MoreHorizontal size={20} color={theme.colors.text} />
         </IconButton>
       </StickyActionBar>
+
+      {/* Confirm/Fulfil's only failure surface. `noticeOffset` lifts it clear
+          of the sticky bar above — the strip's own default anchoring
+          (`useDockClearance()`) knows nothing about that bar. */}
+      <ActionFailureNotice failure={failure} onDismiss={clearFailure} bottomOffset={noticeOffset} />
 
       <ActionSheet
         title={`Order #${order.order_number}`}

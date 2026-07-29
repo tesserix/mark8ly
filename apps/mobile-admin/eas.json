@@ -22,39 +22,52 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "ios": { "resourceClass": "m-medium" },
-      "android": { "buildType": "apk" },
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
         "GIP_TENANT_ID": "MP-Internal-e986p",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a"
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "849928263410-bo2d94i7073b9562afsfr60ssm0keise.apps.googleusercontent.com"
       }
     },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
-      "ios": { "resourceClass": "m-medium" },
+      "ios": {
+        "resourceClass": "m-medium"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
         "GIP_TENANT_ID": "MP-Internal-e986p",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a"
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "849928263410-bo2d94i7073b9562afsfr60ssm0keise.apps.googleusercontent.com"
       }
     },
     "production": {
       "channel": "production",
       "autoIncrement": true,
-      "ios": { "resourceClass": "m-medium" },
-      "android": { "buildType": "app-bundle" },
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
         "GIP_TENANT_ID": "MP-Internal-e986p",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a"
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.849928263410-12gn2k9g5rsc3gp8sg0ei5nvq0qhhv8a",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "849928263410-q2p9uc6t43s6t7a0v7bjjn140gnvnd6o.apps.googleusercontent.com"
       }
     }
   },

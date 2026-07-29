@@ -177,9 +177,20 @@ export default function NewProductScreen() {
     // behind the modal and nothing appears to happen. (Gestures still work via
     // the root GestureHandlerRootView, which covers react-native-screens modals.)
     <BottomSheetModalProvider>
-      {/* topInset=false: the modal card is already presented below the notch,
-          so Screen's own safe-area top padding would double it. */}
-      <Screen topInset={false}>
+      {/* iOS presents this route's `presentation: "modal"` as a CARD already
+          inset below the notch, so Screen's own safe-area top padding would
+          double it — hence topInset={false} there.
+          🔴 Android is the opposite: react-native-screens presents a modal
+          FULL-SCREEN with no inset of its own, so skipping the padding put the
+          eyebrow/title under the status bar AND the display cutout, and left
+          the back chevron a tap target beneath system UI. Measured on a Pixel
+          8 Pro: topmost header text at y=24 against an 84px statusBars inset
+          and a 151px cutout (the products list, for comparison, starts at
+          y=224). Guarded by "safe-area top inset differs by platform (B6)" in
+          __tests__/new-product.test.tsx — which has to inject a non-zero inset
+          via SafeAreaProvider, because the safe-area jest mock reports all
+          zeroes and would make the assertion unfalsifiable. */}
+      <Screen topInset={Platform.OS === "android"}>
         <BackHeader eyebrow="NEW PRODUCT" title="New product" />
 
         {/* Keep the floating footer (Create / Save) above the keyboard on iOS.

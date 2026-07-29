@@ -57,8 +57,10 @@ jest.mock("@/lib/admin-api/product-crud", () => ({
 }));
 
 import { render, fireEvent } from "@testing-library/react-native";
-import { Alert } from "react-native";
+import { Alert, Platform, StyleSheet } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import NewProductScreen from "../app/(tabs)/products/new";
+import { theme } from "@/lib/theme";
 
 // tsconfig scopes `types` to ["jest"] only, so Node's ambient globals aren't
 // picked up automatically — declare the one the density-and-type describe
@@ -283,5 +285,83 @@ describe("NewProductScreen — density and type (task 10)", () => {
 
   it("gives all three eyebrows (Essentials, Status, Category) the same 20pt gutter", () => {
     expect(source.match(/style=\{styles\.eyebrowGutter\}/g)?.length).toBe(3);
+  });
+});
+
+/**
+ * B6 — the create screen is the app's ONLY `presentation: "modal"` route
+ * (products/_layout.tsx) and the ONLY caller that passes `topInset={false}`.
+ * That was justified by "the modal card is already presented below the notch",
+ * which is TRUE ON iOS ONLY: react-native-screens presents an Android modal
+ * FULL-SCREEN with no inset of its own, so skipping `Screen`'s
+ * `paddingTop: insets.top` put the header UNDER the status bar and the camera
+ * cutout. Measured on a Pixel 8 Pro emulator before the fix: topmost header
+ * text at y=24, against a reported statusBars inset of 84px and a 151px
+ * display cutout — and the back chevron became a tap target beneath system UI.
+ *
+ * 🔴 FIXTURE TRAP, and it is the whole reason these tests can fail at all:
+ * `react-native-safe-area-context/jest/mock` returns insets of ALL ZEROES, so
+ * asserting `paddingTop === insets.top` against the default mock compares 0 to
+ * 0 and passes whether the fix is present or not. The mock's
+ * `useSafeAreaInsets` reads `SafeAreaInsetsContext` when one exists, so these
+ * tests inject a REAL notch inset via `SafeAreaProvider initialMetrics`.
+ * Without that wrapper this whole describe block would be a test that cannot
+ * fail.
+ */
+describe("NewProductScreen — safe-area top inset differs by platform (B6)", () => {
+  const ORIGINAL_PLATFORM_OS = Platform.OS;
+  const NOTCH_TOP = 47;
+  const METRICS = {
+    frame: { x: 0, y: 0, width: 393, height: 852 },
+    insets: { top: NOTCH_TOP, left: 0, right: 0, bottom: 34 },
+  };
+
+  afterEach(() => {
+    Platform.OS = ORIGINAL_PLATFORM_OS;
+  });
+
+  /**
+   * `Screen`'s own root is the node carrying BOTH `flex: 1` and the paper
+   * background — specific enough not to collide with the scroll container or
+   * the sticky bar, neither of which sets a background.
+   */
+  function screenRootPaddingTop(node: unknown): number | undefined {
+    let found: number | undefined;
+    const visit = (n: any): void => {
+      if (!n || typeof n !== "object") return;
+      const flat = StyleSheet.flatten(n.props?.style) as
+        | { flex?: number; backgroundColor?: string; paddingTop?: number }
+        | undefined;
+      if (
+        flat?.flex === 1 &&
+        flat.backgroundColor === theme.colors.background &&
+        found === undefined
+      ) {
+        found = flat.paddingTop;
+      }
+      (n.children ?? []).forEach(visit);
+    };
+    visit(node);
+    return found;
+  }
+
+  function renderWithNotch() {
+    return render(
+      <SafeAreaProvider initialMetrics={METRICS}>
+        <NewProductScreen />
+      </SafeAreaProvider>,
+    );
+  }
+
+  it("pads the top by the status-bar inset on Android, where the modal is full-screen", () => {
+    Platform.OS = "android";
+    const { toJSON } = renderWithNotch();
+    expect(screenRootPaddingTop(toJSON())).toBe(NOTCH_TOP);
+  });
+
+  it("still skips the inset on iOS, where the modal card already sits below the notch", () => {
+    Platform.OS = "ios";
+    const { toJSON } = renderWithNotch();
+    expect(screenRootPaddingTop(toJSON())).toBeUndefined();
   });
 });

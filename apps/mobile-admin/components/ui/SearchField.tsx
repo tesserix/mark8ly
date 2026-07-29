@@ -2,6 +2,7 @@ import { View, TextInput, StyleSheet, type ViewStyle } from "react-native";
 import { Search, X } from "lucide-react-native";
 import { IconButton } from "./IconButton";
 import { theme } from "@/lib/theme";
+import { BODY_FONT_FAMILY } from "@/lib/fonts";
 
 interface SearchFieldProps {
   value: string;
@@ -57,7 +58,10 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     height: "100%",
-    fontFamily: theme.fonts.sans,
+    // BODY_FONT_FAMILY, not theme.fonts.sans — the latter is the OS system
+    // font and is NOT what <Text preset="body"> renders through (see
+    // lib/fonts.ts). Same gap FieldInput had (task 10).
+    fontFamily: BODY_FONT_FAMILY,
     // Was a literal 14 (the old body scale) — orphaned by the type rescale
     // to native metrics, so typed search text rendered a step smaller than
     // the rows beneath it. theme.text.body.fontSize stays anchored to the

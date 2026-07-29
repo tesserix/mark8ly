@@ -14,3 +14,21 @@ export const fontMap: Record<string, number> = {
   'SourceSans-Medium': SourceSans3_500Medium,
   'SourceSans-SemiBold': SourceSans3_600SemiBold,
 };
+
+/**
+ * The registered family NativeWind's `font-sans` Tailwind class resolves to
+ * (tailwind.config.js `fontFamily.sans[0]`) — i.e. exactly what
+ * `<Text preset="body">` (components/ui/Text.tsx, PRESET_CLASSES.body =
+ * "font-sans ...") renders through.
+ *
+ * `TextInput` cannot take a NativeWind `className` the way `<Text>` does
+ * (RN only applies style objects to it), so `FieldInput` and `SearchField`
+ * import this constant directly instead of reaching for `theme.fonts.sans`
+ * — which is the OS system font (`Platform.select({ios:"System",
+ * android:"Roboto"})`, see lib/theme.ts) and is NOT what `<Text>` renders.
+ *
+ * `lib/fonts.test.ts` asserts this literal stays equal to
+ * tailwind.config.js's actual `fontFamily.sans[0]` so the two sources of
+ * truth can't silently drift apart.
+ */
+export const BODY_FONT_FAMILY: keyof typeof fontMap = 'SourceSans';

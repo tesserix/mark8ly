@@ -2,6 +2,7 @@ import { render, fireEvent } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
 import { FieldInput, FieldLabel } from "@/components/ui/FieldInput";
 import { theme } from "@/lib/theme";
+import { BODY_FONT_FAMILY } from "@/lib/fonts";
 
 jest.mock("lucide-react-native", () => new Proxy({}, { get: () => () => null }));
 
@@ -30,12 +31,15 @@ describe("FieldInput", () => {
     expect(getByText("SKU")).toBeTruthy();
   });
 
-  it("renders input text at the app's 17pt body baseline in the app's sans family — not the RN default (task 10)", () => {
+  it("renders input text at the app's 17pt body baseline in the SAME family <Text preset=\"body\"> renders through — not theme.fonts.sans, the OS system font (task 10)", () => {
     const { getByLabelText } = render(
       <FieldInput value="x" onChangeText={() => {}} accessibilityLabel="F" />,
     );
     const style = StyleSheet.flatten(getByLabelText("F").props.style);
-    expect(style.fontFamily).toBe(theme.fonts.sans);
+    // BODY_FONT_FAMILY, not theme.fonts.sans — see lib/fonts.ts and
+    // lib/fonts.test.ts for why these are not the same value.
+    expect(style.fontFamily).toBe(BODY_FONT_FAMILY);
+    expect(style.fontFamily).not.toBe(theme.fonts.sans);
     expect(style.fontSize).toBe(theme.text.body.fontSize);
     expect(style.lineHeight).toBe(theme.text.body.lineHeight);
   });

@@ -1,6 +1,7 @@
 import { TextInput, View, StyleSheet, type TextInputProps } from "react-native";
 import { Text } from "./Text";
 import { theme } from "@/lib/theme";
+import { BODY_FONT_FAMILY } from "@/lib/fonts";
 
 export function FieldLabel({ label }: { label: string }) {
   return (
@@ -49,7 +50,11 @@ const styles = StyleSheet.create({
     // the app goes through (see Text.tsx). TextInput can't take a NativeWind
     // preset className the way <Text> does, so this resolves to the same
     // real values `SearchField`'s input already anchors to `theme.text.body`.
-    fontFamily: theme.fonts.sans,
+    //
+    // fontFamily is BODY_FONT_FAMILY, not theme.fonts.sans — the latter is
+    // the OS system font and is NOT what <Text preset="body"> renders
+    // through (see lib/fonts.ts).
+    fontFamily: BODY_FONT_FAMILY,
     fontSize: theme.text.body.fontSize,
     lineHeight: theme.text.body.lineHeight,
   },

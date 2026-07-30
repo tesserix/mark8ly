@@ -1,8 +1,19 @@
 # Mobile-admin store links on web surfaces — spec
 
-**Status: BLOCKED ON iOS APPROVAL — deliberately not implemented yet (user decision
-2026-07-30).** Nothing ships until App Store 1.0.0 is approved, then all three
-surfaces ship together with both badges.
+**Status: SHIPPED 2026-07-30, Android-only by gating** (`bc222611`, lint fix
+`e08b4b5f`). The user revised the earlier "wait for iOS" decision in favour of
+shipping gated: all three surfaces are live and render the Play badge now; the
+App Store badge appears automatically the moment its URL is filled in.
+
+**The one remaining step is a single line**: set `MOBILE_ADMIN_APP_LINKS.ios` in
+`packages/ui/src/app-store-badges.tsx` once the app is approved, and update the
+`ships with Play live and iOS deliberately withheld` test in
+`app-store-badges.test.tsx` — it asserts the empty string on purpose, so the
+change has to be deliberate rather than drifting in unnoticed.
+
+🔴 A separate session is evaluating adding store badges to `@tesserix/web`. If
+that lands, retire this local component — see "Relocating to @tesserix/web"
+below for the constraints it will hit.
 
 ## Why it is blocked, with evidence
 
@@ -154,3 +165,78 @@ of the affordance.
 App Store 1.0.0 approved → `itunes.apple.com/lookup?bundleId=com.mark8ly.admin`
 returns a `trackId` → fill `MOBILE_ADMIN_APP_LINKS.ios` → implement all three
 surfaces → gates → ship.
+
+---
+
+## What actually shipped (2026-07-30)
+
+| Surface | File | Treatment |
+|---|---|---|
+| Onboarding success | `apps/onboarding/app/welcome/page.tsx` | Hairline block after the `<dl>`: "Run your store from anywhere." |
+| Admin, persistent | `apps/admin/app/(admin)/settings/account/page.tsx` | Quiet section, `height={36}`, no dismissal — the app is a personal tool, so it sits with the merchant's own settings, not the store's |
+| Admin dashboard | `apps/admin/components/dashboard/MobileAppPrompt.tsx` | Dismissible, rendered last so it never competes with the revenue hero |
+
+Component + config: `packages/ui/src/app-store-badges.tsx`. Chosen over
+`@tesserix/web` because that is a separate repo mid-evaluation by another
+session, and because `@repo/ui` is where this project's own Path C strategy puts
+brand-level reusable components.
+
+27 tests, both suites green: `packages/ui/src/app-store-badges.test.tsx` (19),
+`apps/admin/components/dashboard/MobileAppPrompt.test.tsx` (8).
+
+### Verified
+
+- Real `next build` of `/welcome` emits `google-play.png` and
+  `play.google.com/...`, with **zero** occurrences of `app-store.svg` or
+  `apps.apple.com`. The gate holds in a production build, not just in jsdom.
+- Full CI-equivalent gate green: `turbo run lint check-types build` — 15/15.
+- `tsc --noEmit` clean in `packages/ui`, `apps/admin`, `apps/onboarding`,
+  `apps/storefront`.
+- Admin's 81 pre-existing test failures are unchanged (verified by stashing:
+  670→697 tests, same 81 failures), so nothing here regressed them.
+
+### Equal visual weight — the measured bit
+
+Google's badge is a 646×250 canvas whose **ink is only 564×168** (41px of
+built-in clear space per side; ink = 67.2% of canvas height). Apple's SVG is
+119.66×40 with **no** built-in padding. Sizing both elements to the same height
+renders Google's artwork ~33% smaller, breaching the equal-prominence rule in
+both guidelines. The component therefore scales the Play element by
+**1/0.672 = 1.4881×** so the *inked* heights match, and adds Apple's clear space
+as margin. Two tests guard this; both proven to fail when the ratio is
+"simplified" to equal heights.
+
+### Two traps worth keeping
+
+1. **`eslint-disable` for a rule that isn't configured is itself a lint
+   warning.** I added `eslint-disable-next-line @next/next/no-img-element` in
+   `packages/ui`, which has no Next ESLint plugin. ESLint emitted "Definition
+   for rule ... was not found", and `--max-warnings 0` turned that into a **red
+   main** (`30517179120`). My local gates missed it because I ran tests, tsc and
+   builds but never `npm run lint`. Run the *whole* turbo command.
+2. **A negative assertion can pass vacuously, and a role query can pass for the
+   wrong reason.** The gating tests originally used
+   `queryByRole('link', …)`; an `<a href="">` loses its implicit `link` role, so
+   they reported the badge absent even when the gate was broken. Only 1 of 4
+   went red on the red proof. Rewritten to assert on the `<img>` alt text — 5
+   now bite. Query the thing that renders, not a role that disappears.
+
+## Relocating to `@tesserix/web` (for whoever evaluates it)
+
+Constraints found while building this, which that work will hit:
+
+- **`@tesserix/web` ships no images.** It builds via tsup with
+  `files: ["dist", "tailwind.config.js", "README.md"]` and there is not a single
+  `.svg`/`.png` under `src/`. A published npm package also cannot place files in
+  a consumer's `public/`. So the artwork must be **inlined**: Apple's badge is
+  SVG and can become JSX verbatim (unmodified artwork, guideline-compliant);
+  Google's is a **PNG**, so it needs a base64 data URI (~6.5KB) — redrawing it
+  as SVG would breach Google's guidelines.
+- **Two lockfile touches.** Publishing `@tesserix/web` and bumping `^1.7.1` in
+  three mark8ly apps both change the root lockfile, which cannot be regenerated
+  locally.
+- **Keep the URLs out of the design system.** Ship a generic
+  `<AppStoreBadges links={…} />` there and leave `MOBILE_ADMIN_APP_LINKS` in
+  mark8ly. Mark8ly's store URLs are not a design-system concern.
+- The swap is cheap by construction: three consumers import from one path, so
+  retiring the local component is an import change plus a delete.

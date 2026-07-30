@@ -106,8 +106,11 @@ export function AppStoreBadges({
             rel="noopener noreferrer"
             className="inline-block rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- @repo/ui
-                stays framework-agnostic; explicit width/height prevents CLS. */}
+            {/* Plain <img>, not next/image: @repo/ui declares only
+                react/react-dom and stays framework-agnostic. Explicit
+                width/height prevents layout shift. No eslint-disable here —
+                @next/next rules are not configured in this package, so a
+                disable directive for them is itself a lint warning. */}
             <img
               src={APPLE_BADGE_SRC}
               alt="Download Mark8ly Admin on the App Store"
@@ -127,7 +130,7 @@ export function AppStoreBadges({
             rel="noopener noreferrer"
             className="inline-block rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
+            {/* Plain <img> — see the note on the App Store badge above. */}
             <img
               src={PLAY_BADGE_SRC}
               alt="Get Mark8ly Admin on Google Play"

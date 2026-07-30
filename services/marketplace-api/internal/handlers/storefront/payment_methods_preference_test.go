@@ -24,8 +24,8 @@ func methodList(providers ...string) []paymentMethodResponse {
 
 // TestSortByPreference_FirstAllowlistEntryWins is the guard on which gateway the
 // storefront pre-selects. The checkout page selects methods[0], so this
-// ordering — not the DB's row order — is what makes Cashfree the default in
-// India. A regression here silently sends INR checkouts to the wrong gateway.
+// ordering — not the DB's row order — is what decides the default gateway in
+// India. A regression here silently sends INR checkouts to the wrong one.
 func TestSortByPreference_FirstAllowlistEntryWins(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -34,28 +34,39 @@ func TestSortByPreference_FirstAllowlistEntryWins(t *testing.T) {
 		want       string
 	}{
 		{
-			name:       "india post-000099 — cashfree preferred",
+			// India's live seed after 000100: Razorpay is the default and
+			// Cashfree is a selectable secondary option.
+			name:       "india post-000100 — razorpay preferred, cashfree selectable",
+			preference: []string{"razorpay", "paypal", "cashfree"},
+			methods:    methodList("cashfree", "paypal", "razorpay"),
+			want:       "razorpay,paypal,cashfree",
+		},
+		{
+			// The same function must honour the OPPOSITE seed (000099's order)
+			// with no code change. This is what makes the "which gateway is
+			// default" decision a one-row migration rather than a deploy.
+			name:       "a cashfree-first seed is honoured too — order is data, not code",
 			preference: []string{"cashfree", "razorpay", "paypal"},
 			methods:    methodList("paypal", "razorpay", "cashfree"),
 			want:       "cashfree,razorpay,paypal",
 		},
 		{
 			name:       "already in order stays put",
-			preference: []string{"cashfree", "razorpay", "paypal"},
-			methods:    methodList("cashfree", "razorpay", "paypal"),
-			want:       "cashfree,razorpay,paypal",
+			preference: []string{"razorpay", "paypal", "cashfree"},
+			methods:    methodList("razorpay", "paypal", "cashfree"),
+			want:       "razorpay,paypal,cashfree",
 		},
 		{
 			name:       "only some providers configured",
-			preference: []string{"cashfree", "razorpay", "paypal"},
-			methods:    methodList("paypal", "cashfree"),
-			want:       "cashfree,paypal",
+			preference: []string{"razorpay", "paypal", "cashfree"},
+			methods:    methodList("cashfree", "razorpay"),
+			want:       "razorpay,cashfree",
 		},
 		{
-			name:       "a store with no cashfree config still prefers razorpay over paypal",
-			preference: []string{"cashfree", "razorpay", "paypal"},
-			methods:    methodList("paypal", "razorpay"),
-			want:       "razorpay,paypal",
+			name:       "a store with no razorpay config falls to paypal, not cashfree",
+			preference: []string{"razorpay", "paypal", "cashfree"},
+			methods:    methodList("cashfree", "paypal"),
+			want:       "paypal,cashfree",
 		},
 		{
 			name:       "unrelated country order is honoured, not hardcoded",

@@ -1,0 +1,33 @@
+-- 000100_razorpay_preferred_in_india.up.sql
+-- Make Razorpay the preferred India gateway again, with Cashfree kept as a
+-- selectable secondary option.
+--
+-- Migration 000099 put 'cashfree' at the head of India's payment_providers,
+-- which made it the default at checkout. That is being reversed as a business
+-- decision: existing kitchens settle through Razorpay, so it stays the default
+-- and Cashfree becomes an option the buyer picks deliberately.
+--
+-- This is a NEW migration rather than an edit to 000099 because 000099 has
+-- already been applied in production. `migrate up` only runs versions the
+-- database has not seen, so editing it in place would change nothing on any
+-- environment that is already at 99 — and would silently diverge a fresh
+-- environment from a migrated one.
+--
+-- ORDER IS MEANINGFUL. The payment-methods endpoint sorts its response by each
+-- provider's position in this array (sortByPreference), and the storefront
+-- pre-selects the first entry and badges it "Recommended". So position 1 is the
+-- whole mechanism: Cashfree stays fully configured and selectable, it just
+-- stops being the default.
+--
+-- Written to NORMALIZE rather than assume a starting shape: strip 'cashfree'
+-- wherever it currently sits, then re-append it. remove-then-append is
+-- idempotent by construction, so no ordering guard is needed — and a guard on
+-- "is razorpay already first" would be actively wrong, because it would accept
+-- {razorpay,cashfree,paypal} and leave PayPal demoted below Cashfree.
+--
+-- Correct from any starting state: 99's {cashfree,razorpay,paypal}, a
+-- rolled-back 98's {razorpay,paypal} (Cashfree is re-added, which is what this
+-- migration wants), or an already-correct row.
+UPDATE supported_countries
+   SET payment_providers = array_append(array_remove(payment_providers, 'cashfree'), 'cashfree')
+ WHERE country_code = 'IN';

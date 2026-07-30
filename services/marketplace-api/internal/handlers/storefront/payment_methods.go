@@ -191,8 +191,10 @@ func (h *PaymentMethodsHandler) ListPaymentMethods(c *gin.Context) {
 // The gateway-config query has no ORDER BY, so without this the picker order was
 // whatever order Postgres happened to return rows in — stable enough to look
 // intentional in testing, and free to change under a plan flip or a row update.
-// Sorting here makes "Cashfree is preferred in India" a property of the seed
-// data (migration 000099) rather than an accident of row layout.
+// Sorting here makes "which gateway is the default in India" a property of the
+// seed data rather than an accident of row layout, which is what lets the
+// decision be reversed by a one-row migration: 000099 promoted Cashfree, 000100
+// put Razorpay back in front with Cashfree kept as a selectable option.
 func sortByPreference(methods []paymentMethodResponse, preference []string) {
 	rank := make(map[string]int, len(preference))
 	for i, p := range preference {

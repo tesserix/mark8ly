@@ -86,8 +86,15 @@ block test-mode work.
 
 ### What to expect at checkout
 
-Cashfree is first in India's `payment_providers`, so on an IN store it is
-**pre-selected and badged "Recommended"**, with Razorpay and PayPal below it.
+**Razorpay is the default**, so on an IN store it is pre-selected and badged
+"Recommended", with PayPal and Cashfree below it as options. Cashfree is a
+deliberate choice the buyer makes — to test it you must **select the Cashfree
+radio** before placing the order. Forgetting that step is the likeliest reason a
+"Cashfree test" ends up going through Razorpay.
+
+If Cashfree does not appear in the list at all, it has no active gateway config
+for that store (see section 2 of `cashfree-verify.sql`) — the storefront only
+lists providers that are both allowlisted for the country and configured.
 
 The order confirms via a server-side status poll, not a client signature:
 Cashfree's SDK returns no signed receipt, so after the sheet closes the

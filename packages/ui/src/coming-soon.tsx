@@ -8,7 +8,13 @@
 // Lives inside the consumer's shell — do NOT wrap in AdminShell here.
 // The consumer owns the chrome.
 
-import Link from "next/link";
+// Uses a plain anchor rather than next/link: this package declares only
+// react/react-dom and `next` is not hoisted to the workspace root, so
+// importing next/link broke `tsc --noEmit` here and in apps/admin. Adding
+// `next` would mean editing the root lockfile, which cannot be regenerated
+// locally. This is a stub-route placeholder, so a document navigation on the
+// back link is fine.
+
 import { ArrowRight } from "lucide-react";
 
 export interface ComingSoonProps {
@@ -59,13 +65,13 @@ export function ComingSoon({
           </p>
         </div>
         <div className="mt-8">
-          <Link
+          <a
             href={backHref}
             className="inline-flex h-12 items-center gap-2 rounded-md bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary-hover"
           >
             {backLabel}
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          </Link>
+          </a>
         </div>
       </div>
     </div>

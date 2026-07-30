@@ -72,15 +72,40 @@ fails when the fix is removed.
 
 ---
 
-## Phase C — Play Store readiness
+## Phase C — Play Store readiness — AUDITED 2026-07-30, effectively DONE
 
-| # | Item | Notes |
+Audited via the Play Developer API (service-account read) plus live URL checks.
+Evidence in `.superpowers/sdd/progress.md`.
+
+| # | Item | Status |
 |---|---|---|
-| C1 | Play Console app for `com.mark8ly.admin`, internal track | `submit` config already targets `track: "internal"` |
-| C2 | Data safety form, content rating, target-audience | Play-specific; no iOS equivalent |
-| C3 | Store listing — description, screenshots (phone + tablet), feature graphic | Screenshots must come from the **release** build |
-| C4 | Account deletion | Play requires an in-app path **and** a public web URL. In-app exists (verified on device: Account → Delete account). **The public URL still needs confirming** |
-| C5 | Privacy policy URL reachable | Play validates it |
+| C1 | Play Console app, internal track | ✅ production **and** internal both carry versionCode 7, status `completed` |
+| C2 | Data safety, content rating, target-audience | ✅ inferred soundly — Play **blocks** production publishing until these are complete, and v7 is live on production |
+| C3 | Store listing — text, screenshots, feature graphic | ⚠️ **the one real action.** Text + required assets all present (title 13/30, short 68/80, full 268/4000, 4 phone shots, feature graphic, icon). But the 4 live screenshots are **stale** — they show the pre-increment-3 app |
+| C4 | Account deletion | ✅ `mark8ly.com/delete-account` is 200, indexable, and covers all four required elements (what's deleted, retention, how to request, in-app path) |
+| C5 | Privacy policy URL | ✅ `/privacy` + `/terms` 200; correctly names Tesserix Pty Ltd, NSW Australia |
+
+**C3 detail — why the screenshots must be refreshed.** All four downloaded and
+inspected. They show the **old light dock** (now the Ink dock, a dark floating
+pill), an **old dashboard** ("$0", "Finish setup 75%", no chart — now
+"THIS MONTH $460" with the moss chart and the NEEDS YOU queue), the row label
+**"Support tickets"** (renamed to "Tickets" by Task 11 Sweep B), and the
+**pre-cleanup catalogue** (boxing gloves, swim goggles — the store is now 12
+curated linen products). The listing sells an app that no longer exists.
+
+Refreshing requires a **release** build, so it sequences *with* the build rather
+than before it. The dev-client shots taken during verification are unusable: the
+Tools FAB is burned in, and the frames are 6.3"/1206x2622 — App Store Connect
+wants 6.9" (1320x2868, iPhone 17 Pro Max).
+
+Tablet screenshots are absent, which is **consistent** with tablet layouts being
+explicitly out of scope. Do not add screenshots of layouts that were never
+designed or tested.
+
+⚠️ Asymmetry worth remembering: "a prior release proves C2" is valid because Play
+*gates* on it; "a prior release proves the service account has permission" was
+**not** valid, because Play doesn't care which credential published — a human
+upload bypasses the account entirely. Same argument shape, only one holds.
 
 ---
 

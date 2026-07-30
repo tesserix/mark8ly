@@ -200,6 +200,10 @@ jobs:
           FP=$(printf '%s' "$KEY" | sha256sum | cut -c1-12)
           # sha256("") — means the repo secret is unset or empty.
           if [ "$FP" = "e3b0c44298fc" ]; then
+            # shellcheck disable=SC2028  # the \n is literal text in the remedy
+            # command we are telling the operator to run, so echo NOT expanding
+            # it is the desired behaviour — printf here would emit a real
+            # newline and corrupt the instruction.
             echo "::error::NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is empty or unset. Set it with: openssl rand -base64 32 | tr -d '\n' | gh secret set NEXT_SERVER_ACTIONS_ENCRYPTION_KEY --repo tesserix/mark8ly"
             exit 1
           fi

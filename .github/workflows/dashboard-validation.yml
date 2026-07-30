@@ -24,6 +24,11 @@ on:
 
 permissions:
   contents: read
+  # Required by reusable-security.yml, which declares `packages: read` for its
+  # @tesserix/* install. A caller cannot grant a reusable workflow more than it
+  # holds itself, so omitting this fails the whole run at STARTUP — before any
+  # job executes and with no log to read.
+  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,6 +41,10 @@ jobs:
   # workflow-specific path filter skipped the main CI build.
   security:
     uses: ./.github/workflows/reusable-security.yml
+    # Reusable workflows need explicit secret forwarding — GITHUB_TOKEN passes
+    # automatically but org PATs like GHCR_PAT do not, and npm-audit's install
+    # authenticates to GitHub Packages with it.
+    secrets: inherit
 
   validate:
     name: Validate dashboards

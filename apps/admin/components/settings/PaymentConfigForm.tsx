@@ -248,6 +248,11 @@ function apiKeyPlaceholder(provider: string): string {
   switch (provider.toLowerCase()) {
     case "razorpay":
       return "rzp_test_… or rzp_live_…";
+    case "cashfree":
+      // Cashfree calls this the App ID (x-client-id). It carries no
+      // environment prefix — sandbox vs production is selected by the Mode
+      // field below, which picks the API host.
+      return "Cashfree App ID";
     case "paypal":
       return "PayPal client ID";
     default:
@@ -259,6 +264,8 @@ function secretKeyPlaceholder(provider: string): string {
   switch (provider.toLowerCase()) {
     case "razorpay":
       return "Razorpay key secret";
+    case "cashfree":
+      return "Cashfree Secret Key";
     case "paypal":
       return "PayPal client secret";
     default:
@@ -272,6 +279,8 @@ function webhookSecretPlaceholder(provider: string): string {
       return "whsec_...";
     case "razorpay":
       return "Razorpay webhook secret";
+    case "cashfree":
+      return "Cashfree webhook secret";
     case "paypal":
       return "PayPal webhook ID / secret";
     default:
@@ -292,6 +301,9 @@ function webhookSecretHelpText(
   }
   if (p === "stripe") {
     return "Optional. Paste the signing secret from your Stripe webhook endpoint (starts with whsec_). Leave blank to use the API secret.";
+  }
+  if (p === "cashfree") {
+    return "Optional. Cashfree signs webhooks with your Secret Key by default. Set a dedicated secret here if you configured one on the webhook endpoint in your Cashfree dashboard, so rotating the API secret doesn't invalidate webhooks.";
   }
   return "Optional. When set, this secret is used for webhook signature verification instead of the API secret.";
 }

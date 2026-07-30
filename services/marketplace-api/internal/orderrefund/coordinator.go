@@ -289,10 +289,14 @@ func (c *Coordinator) Refund(ctx context.Context, cmd RefundCommand) (RefundResu
 	if split.Gateway.GreaterThan(decimal.Zero) {
 		ref, err := c.pay.ExecuteGatewayRefund(ctx, gw, payment.RefundInput{
 			ProviderPaymentID: pc.ProviderPaymentID,
-			Amount:            split.Gateway,
-			CurrencyCode:      o.CurrencyCode,
-			Reason:            cmd.Reason,
-			IdempotencyKey:    key,
+			// Order-scoped gateways (Cashfree) refund against the order id
+			// rather than the payment id. Passed for every provider; the
+			// payment-scoped ones ignore it.
+			OrderID:        cmd.OrderID.String(),
+			Amount:         split.Gateway,
+			CurrencyCode:   o.CurrencyCode,
+			Reason:         cmd.Reason,
+			IdempotencyKey: key,
 		})
 		if err != nil {
 			if payment.IsPermanentGatewayError(err) {

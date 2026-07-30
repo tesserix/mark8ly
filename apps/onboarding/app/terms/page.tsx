@@ -63,7 +63,10 @@ export default function TermsOfServicePage() {
         <ul>
           <li>Store hosting and infrastructure</li>
           <li>Product and catalogue management tools</li>
-          <li>Payment processing integration (via Stripe and Razorpay)</li>
+          <li>
+            Payment processing integration (via Stripe, Razorpay, and Cashfree
+            Payments)
+          </li>
           <li>Order management</li>
           <li>Human customer support</li>
         </ul>

@@ -7,6 +7,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -176,7 +178,37 @@ func (h *PaymentMethodsHandler) ListPaymentMethods(c *gin.Context) {
 		})
 	}
 
+	sortByPreference(result, sc.PaymentProviders)
+
 	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+// sortByPreference orders the payment-method list by each provider's position
+// in the country's payment_providers array, making that array the single source
+// of truth for preference: the first entry is the gateway the storefront
+// pre-selects at checkout, and the rest render beneath it as alternatives.
+//
+// The gateway-config query has no ORDER BY, so without this the picker order was
+// whatever order Postgres happened to return rows in — stable enough to look
+// intentional in testing, and free to change under a plan flip or a row update.
+// Sorting here makes "Cashfree is preferred in India" a property of the seed
+// data (migration 000099) rather than an accident of row layout.
+func sortByPreference(methods []paymentMethodResponse, preference []string) {
+	rank := make(map[string]int, len(preference))
+	for i, p := range preference {
+		rank[strings.ToLower(p)] = i
+	}
+	sort.SliceStable(methods, func(i, j int) bool {
+		ri, iOK := rank[strings.ToLower(methods[i].Provider)]
+		rj, jOK := rank[strings.ToLower(methods[j].Provider)]
+		// A provider absent from the allowlist cannot normally reach here (the
+		// query filters on it), but if one ever does it sorts last rather than
+		// silently landing at position 0 and becoming the pre-selected default.
+		if !iOK || !jOK {
+			return iOK && !jOK
+		}
+		return ri < rj
+	})
 }
 
 // methodsForProvider returns the payment methods available for a provider.
@@ -186,6 +218,8 @@ func methodsForProvider(provider string) []string {
 		return []string{"card"}
 	case "razorpay":
 		return []string{"card", "upi", "netbanking"}
+	case "cashfree":
+		return []string{"card", "upi", "netbanking", "wallet"}
 	case "paypal":
 		return []string{"paypal"}
 	default:

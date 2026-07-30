@@ -7,12 +7,17 @@ import "github.com/gin-gonic/gin"
 // Covers OWASP recommended headers: HSTS, CSP, X-Content-Type-Options,
 // X-Frame-Options, Referrer-Policy.
 func SecurityHeaders() gin.HandlerFunc {
+	// Payment SDK hosts are wildcarded per vendor: each SDK pulls further
+	// scripts at runtime from sibling subdomains that reading our own source
+	// never reveals (Razorpay's cdn/lumberjack, Cashfree's sdk/payments), and
+	// each missed host is a silent prod-only checkout failure. Same reasoning
+	// as apps/storefront/next.config.ts — keep the two in step.
 	csp := "default-src 'self'; " +
-		"script-src 'self' https://js.stripe.com https://checkout.razorpay.com; " +
-		"frame-src https://js.stripe.com https://api.razorpay.com; " +
+		"script-src 'self' https://js.stripe.com https://*.razorpay.com https://*.cashfree.com; " +
+		"frame-src https://js.stripe.com https://*.razorpay.com https://*.cashfree.com; " +
 		"img-src 'self' https://storage.googleapis.com data:; " +
 		"style-src 'self' 'unsafe-inline'; " +
-		"connect-src 'self' https://api.stripe.com"
+		"connect-src 'self' https://api.stripe.com https://*.cashfree.com"
 
 	return func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")

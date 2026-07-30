@@ -49,6 +49,13 @@ const SUB_PROCESSORS: ReadonlyArray<SubProcessor> = [
     transfer: "Domestic (within India); DPDP-aligned",
   },
   {
+    vendor: "Cashfree Payments",
+    purpose: "Payment processing for Indian merchants and customers",
+    data: "Payment method details, billing address, contact phone, transaction metadata",
+    location: "India",
+    transfer: "Domestic (within India); DPDP-aligned",
+  },
+  {
     vendor: "SendGrid (Twilio)",
     purpose: "Transactional email delivery (receipts, invites, password resets)",
     data: "Recipient email, message content, delivery status",

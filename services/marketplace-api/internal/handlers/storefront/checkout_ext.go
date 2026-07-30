@@ -757,7 +757,15 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	// URLs. Origin is a browser-set header so it's the right source of
 	// truth here even when the request goes through Cloudflare / Istio.
 	returnBase := strings.TrimRight(c.GetHeader("Origin"), "/")
-	paymentToken, paymentRedirect, err := h.createPaymentIntent(ctx, store, req.PaymentProvider, result.Order, grandTotal, returnBase)
+	// The shipping address is the only place a phone number is captured at
+	// checkout (orders has no phone column), and Cashfree requires one to
+	// create an order at all.
+	var customerPhone string
+	if req.ShippingAddress.Phone != nil {
+		customerPhone = strings.TrimSpace(*req.ShippingAddress.Phone)
+	}
+	paymentToken, paymentRedirect, err := h.createPaymentIntent(
+		ctx, store, req.PaymentProvider, result.Order, grandTotal, returnBase, customerPhone)
 	if err != nil {
 		h.logWarn("checkout_ext: payment intent creation failed",
 			"order_id", result.Order.ID.String(), "err", err)
@@ -1093,6 +1101,7 @@ func (h *CheckoutExtHandler) createPaymentIntent(
 	ord *order.Order,
 	amount decimal.Decimal,
 	returnBase string,
+	customerPhone string,
 ) (string, string, error) {
 	// Look up the payment gateway config for this provider + store.
 	var cfg paymentGatewayConfigRow
@@ -1168,11 +1177,17 @@ func (h *CheckoutExtHandler) createPaymentIntent(
 		return "", session.URL, nil
 	}
 
+	var customerName string
+	if ord.CustomerName != nil {
+		customerName = *ord.CustomerName
+	}
 	intent, err := gateway.CreateIntent(ctx, payment.CreateIntentInput{
 		OrderID:       ord.ID.String(),
 		Amount:        amount,
 		CurrencyCode:  ord.CurrencyCode,
 		CustomerEmail: ord.CustomerEmail,
+		CustomerName:  customerName,
+		CustomerPhone: customerPhone,
 		Description:   fmt.Sprintf("Order %s", ord.OrderNumber),
 		Metadata:      metadata,
 	})

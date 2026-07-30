@@ -15,7 +15,10 @@ import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { toast } from "@/lib/toast";
 import { isIndia, isInPhoneValid, normalizeInPhone } from "@/lib/checkout/phone";
-import { openRazorpayCheckout } from "@/lib/payments/razorpay";
+import {
+  isEmbeddedProvider,
+  openEmbeddedCheckout,
+} from "@/lib/payments/launch";
 import { CouponInput } from "@/components/checkout/CouponInput";
 import { GiftCardInput } from "@/components/checkout/GiftCardInput";
 import { LoyaltyRedemption } from "@/components/checkout/LoyaltyRedemption";
@@ -243,7 +246,14 @@ export default function CheckoutPage() {
     fetchPaymentMethods(storeSlug).then((methods) => {
       if (!cancelled) {
         setPaymentMethods(methods);
-        if (methods.length === 1) setSelectedProvider(methods[0]!.provider);
+        // Pre-select the merchant's preferred gateway. The API returns methods
+        // ordered by the country's payment_providers array, so methods[0] is
+        // the intended default (Cashfree in India) and the rest render beneath
+        // it as alternatives. Previously this only auto-selected when exactly
+        // one method existed, which left every multi-gateway store starting on
+        // "Choose a payment method" — an extra required click for the option we
+        // already know we want.
+        if (methods.length > 0) setSelectedProvider(methods[0]!.provider);
       }
     });
     // Also pull the merchant's configured carrier list so we can render
@@ -512,16 +522,15 @@ export default function CheckoutPage() {
 
     // Safety net: every checkout response must give us a way to actually
     // collect payment. Hosted providers (Stripe) ship a redirect URL;
-    // embedded providers (Razorpay) ship a payment_token + a known
+    // embedded providers (Razorpay, Cashfree) ship a payment_token + a known
     // client integration. Without one of those, the buyer has nowhere to
     // pay — bail out before clearing the cart so the merchant doesn't
     // end up with an unpaid "completed" order.
-    const KNOWN_EMBEDDED_PROVIDERS = new Set(["razorpay"]);
     const hasRedirect =
       typeof result.payment_redirect_url === "string" &&
       result.payment_redirect_url.length > 0;
     const hasEmbeddedPath =
-      KNOWN_EMBEDDED_PROVIDERS.has(result.provider) &&
+      isEmbeddedProvider(result.provider) &&
       typeof result.payment_token === "string" &&
       result.payment_token.length > 0;
     if (!hasRedirect && !hasEmbeddedPath) {
@@ -573,6 +582,10 @@ export default function CheckoutPage() {
       publicKey: pm?.public_key ?? "",
       amount: grandTotal,
       currencyCode: items[0]?.currencyCode ?? "INR",
+      // Cashfree selects sandbox vs production from the gateway mode rather
+      // than from a key prefix, so the retry path on /orders/[id] needs it
+      // stashed alongside the token.
+      mode: pm?.mode,
       customerName: customerName.trim() || undefined,
       customerEmail: email.trim() || undefined,
     };
@@ -614,14 +627,15 @@ export default function CheckoutPage() {
     // checkout, where the redirect leaves an empty cart behind too).
     clear();
 
-    // Open Razorpay right away — one click from "Place order" to the payment
-    // sheet, no intermediate "Pay now". On success we verify + confirm and
-    // land on the order page in its paid state; if the buyer dismisses the
-    // sheet or it errors, we still route to the order page where the stashed
-    // context powers the "Pay now" retry, so nobody is left with an
-    // unpayable reserved order.
+    // Open the payment sheet right away — one click from "Place order" to
+    // paying, no intermediate "Pay now". On success the server has already
+    // verified/confirmed the payment and we land on the order page in its paid
+    // state; if the buyer dismisses the sheet or it errors, we still route to
+    // the order page where the stashed context powers the "Pay now" retry, so
+    // nobody is left with an unpayable reserved order.
     const orderPath = `/orders/${result.order_id}`;
-    await openRazorpayCheckout(
+    await openEmbeddedCheckout(
+      result.provider,
       {
         orderId: result.order_id,
         paymentToken: pending.paymentToken ?? "",
@@ -629,6 +643,7 @@ export default function CheckoutPage() {
         amount: pending.amount,
         currencyCode: pending.currencyCode,
         storeName: "",
+        mode: pending.mode,
         customerName: pending.customerName,
         customerEmail: pending.customerEmail,
       },
@@ -1023,7 +1038,7 @@ export default function CheckoutPage() {
             <fieldset className="mt-4">
               <legend className="sr-only">Select a payment method</legend>
               <div className="space-y-3">
-                {paymentMethods.map((pm) => (
+                {paymentMethods.map((pm, i) => (
                   <label
                     key={pm.provider}
                     className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 transition-colors duration-150 ${
@@ -1041,8 +1056,17 @@ export default function CheckoutPage() {
                       className="accent-[color:var(--storefront-accent,var(--moss-700))]"
                     />
                     <span className="flex flex-col">
-                      <span className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
+                      <span className="flex items-center gap-2 text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
                         {providerBrand(pm.provider)}
+                        {/* The API returns methods in preference order, so the
+                            first entry is the merchant's preferred gateway.
+                            Only worth badging when there is something to
+                            prefer it over. */}
+                        {i === 0 && paymentMethods.length > 1 && (
+                          <span className="rounded-full bg-[color:var(--storefront-accent,var(--moss-700))]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--storefront-accent,var(--moss-700))]">
+                            Recommended
+                          </span>
+                        )}
                       </span>
                       <span className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-60">
                         {providerLabel(pm.provider)}
@@ -1458,6 +1482,7 @@ function providerLabel(provider: string): string {
   switch (provider) {
     case "stripe": return "Credit / Debit card";
     case "razorpay": return "Card, UPI, or Netbanking";
+    case "cashfree": return "Card, UPI, Netbanking, or Wallet";
     case "paypal": return "PayPal";
     default: return provider.charAt(0).toUpperCase() + provider.slice(1);
   }
@@ -1670,6 +1695,7 @@ function providerBrand(provider: string): string {
   switch (provider) {
     case "stripe": return "Stripe";
     case "razorpay": return "Razorpay";
+    case "cashfree": return "Cashfree";
     case "paypal": return "PayPal";
     default: return provider.charAt(0).toUpperCase() + provider.slice(1);
   }

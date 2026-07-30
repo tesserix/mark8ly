@@ -3,6 +3,7 @@ import '../global.css';
 import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
@@ -87,6 +88,20 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <AuthProvider>
+        {/* 🔴 DARK status-bar content, set at RUNTIME and on PURPOSE.
+            Nothing set a status-bar style before this, so Android defaulted to
+            LIGHT content and painted a white clock/battery/wifi onto the Paper
+            background (#F7F6F2) — measured luminance 255 on 245, about 1.04:1,
+            i.e. invisible on EVERY screen. iOS already resolved to dark content
+            (measured 0), so this makes the two platforms agree rather than
+            changing iOS.
+            Runtime `<StatusBar>` rather than app.config.js `androidStatusBar`:
+            the config route only lands at prebuild, and android/ + ios/ are
+            gitignored and regenerated, so a JS-owned value cannot drift out of
+            the repo. This app is light-mode only (Paper · Ink · Moss), so dark
+            content is correct unconditionally — there is no dark theme to
+            branch on. */}
+        <StatusBar style="dark" />
         <GestureHandlerRootView style={{ flex: 1 }}>
           <SafeAreaProvider>
             <QueryClientProvider client={queryClient}>

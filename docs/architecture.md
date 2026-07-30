@@ -248,6 +248,32 @@ Adding a new carrier is a one-file extension: implement
 `LabelFetcher`), register it in `shipping.NewCarrier`, and the
 per-tenant secret store auto-namespaces the credentials by provider.
 
+## Payment gateway integrations
+
+Payment providers sit behind `payment.Gateway`, resolved per (store,
+provider) from `payment_gateway_configs`. Checkout, the refund saga,
+webhook receipt and admin config all run through that one interface, so
+adding a gateway does not touch the money paths.
+
+Which providers a store may configure is data, not code:
+`supported_countries.payment_providers` gates both the admin write path
+and the storefront picker, **and its order is the preference order** —
+the first entry is pre-selected at checkout.
+
+- [`cashfree-webhook.md`](./cashfree-webhook.md) — Cashfree webhook setup
+  runbook (endpoint, event subscriptions, signature scheme)
+- [`testing-payments.md`](./testing-payments.md) — test store, per-provider
+  test-mode setup and instruments
+
+Two optional capability interfaces let a provider opt into behaviour the
+base interface can't express, via type assertion at the call site rather
+than provider branching:
+
+- `CheckoutGateway` — hosts its own payment page (Stripe). Gift-card
+  purchase requires this.
+- `OrderStatusGateway` — has no client-side signature, so confirmation
+  polls the provider instead (Cashfree).
+
 ## What's deliberately NOT here (yet)
 
 This slice ends at the welcome page. Everything below is next-phase

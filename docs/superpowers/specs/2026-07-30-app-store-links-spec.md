@@ -15,7 +15,7 @@ change has to be deliberate rather than drifting in unnoticed.
 that lands, retire this local component — see "Relocating to @tesserix/web"
 below for the constraints it will hit.
 
-## Why it is blocked, with evidence
+## Why iOS alone is held back, with evidence
 
 | Platform | Linkable today? | Evidence |
 |---|---|---|
@@ -25,7 +25,8 @@ below for the constraints it will hit.
 iOS 1.0.0 / buildNumber 10 is an **initial** release still in review.
 `apps.apple.com` product URLs do not resolve until first release, so an App
 Store badge shipped now would be a dead link on the highest-intent page in the
-funnel. The user chose to hold rather than ship Android-only.
+funnel. So the badge is gated on its URL rather than held back as a whole
+feature: Android ships today, iOS switches on at approval.
 
 ### Getting the App Store URL at approval time
 
@@ -43,7 +44,8 @@ locale-prefixed URL, so it resolves for merchants in every market.
 
 ## Decisions locked 2026-07-30
 
-1. **Sequencing** — wait for iOS approval; ship both badges together.
+1. **Sequencing** — REVISED 2026-07-30, superseding an initial "wait for iOS"
+   call: ship gated, so Android goes live now and iOS switches on with its URL.
 2. **Treatment** — official Apple and Google badge artwork (not a restrained
    text row, not QR).
 3. **Surfaces** — all three: onboarding `/welcome`, a persistent quiet entry in
@@ -54,7 +56,7 @@ locale-prefixed URL, so it resolves for merchants in every market.
 | # | Surface | File | Treatment |
 |---|---|---|---|
 | 1 | Onboarding success | `apps/onboarding/app/welcome/page.tsx` | Hairline-separated block, badges. Highest intent — merchant just created a store and is signed in. |
-| 2 | Admin persistent entry | `apps/admin/app/(admin)/settings/page.tsx` | Quiet, permanent, findable. No dismissal state. |
+| 2 | Admin persistent entry | `apps/admin/app/(admin)/settings/account/page.tsx` | Quiet, permanent, findable. No dismissal state. `/settings` is only a redirect, so it went on the merchant's own account page. |
 | 3 | Admin dashboard prompt | `apps/admin/app/(admin)/dashboard/page.tsx` | One-time, dismissible, must never become a nag. |
 
 Surface 1 already ends in a hairline-ruled `<dl>` grid inside
@@ -77,8 +79,9 @@ The rules that matter here:
   badge.
 - Maintain the required **clear space** around each badge, and respect each
   badge's **minimum size**.
-- When both appear together they must be **visually equal weight** — the same
-  height, aligned on a shared baseline.
+- When both appear together they must be **visually equal weight**. Note this
+  means equal *inked* height, which is NOT the same as equal element height —
+  see the measured section at the end.
 - Each badge must link to its own product page and nothing else.
 
 🔴 **Verify the exact clear-space and minimum-size figures against the current
@@ -148,8 +151,8 @@ of the affordance.
 
 ## Do not
 
-- Do not ship the App Store badge before `itunes.apple.com/lookup` returns a
-  result — that is the entire reason this is blocked.
+- Do not fill in the App Store URL before `itunes.apple.com/lookup` returns a
+  result — a badge pointing at an unreleased app is a dead link.
 - Do not add a QR dependency. `qrcode.react` is **not** currently a dependency
   of `apps/onboarding` or `apps/admin`, and the root lockfile cannot be
   regenerated locally (a plain `npm install` collapses the deliberate multi-

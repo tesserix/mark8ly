@@ -1,3 +1,5 @@
+import { AppStoreBadges } from "@repo/ui/app-store-badges";
+
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 import { WelcomeCta } from "@/components/onboarding/WelcomeCta";
 
@@ -57,6 +59,21 @@ export default function WelcomePage() {
             </dd>
           </div>
         </dl>
+
+        {/* Highest-intent moment in the funnel: the store exists and they
+            are already signed in. Badges render per configured platform —
+            see MOBILE_ADMIN_APP_LINKS. */}
+        <section className="mt-16 border-t border-border-subtle pt-10">
+          <p className="eyebrow mb-3">On your phone</p>
+          <h2 className="font-serif text-2xl font-medium text-foreground">
+            Run your store from anywhere.
+          </h2>
+          <p className="mt-3 max-w-prose leading-relaxed text-foreground-secondary">
+            Confirm orders, check stock, and answer customers from the Mark8ly
+            Admin app — the same store, in your pocket.
+          </p>
+          <AppStoreBadges className="mt-6" />
+        </section>
       </div>
     </PostSubmitShell>
   );

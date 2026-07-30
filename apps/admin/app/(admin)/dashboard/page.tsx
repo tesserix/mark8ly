@@ -12,6 +12,7 @@ import { RecentOrders } from "@/components/dashboard/RecentOrders";
 import { TopProducts } from "@/components/dashboard/TopProducts";
 import { LowStockAlerts } from "@/components/dashboard/LowStockAlerts";
 import { AnalyticsSection } from "@/components/dashboard/AnalyticsSection";
+import { MobileAppPrompt } from "@/components/dashboard/MobileAppPrompt";
 
 /**
  * Dashboard — data-driven merchant home with stats, orders, products,
@@ -61,6 +62,7 @@ export default async function DashboardPage() {
             dashboard={dashboard}
             currencyCode={currentStore.currency_code ?? "USD"}
             storeId={currentStore.id}
+            tenantId={tenantId}
           />
         )}
       </AdminPage>
@@ -107,10 +109,12 @@ function DashboardContent({
   dashboard,
   currencyCode,
   storeId,
+  tenantId,
 }: {
   dashboard: DashboardResponse;
   currencyCode: string;
   storeId: string;
+  tenantId: string;
 }) {
   const { stats, setup_checklist, recent_orders, top_products, low_stock } =
     dashboard;
@@ -169,6 +173,13 @@ function DashboardContent({
 
           {/* Low stock alerts */}
           <LowStockAlerts items={low_stock} />
+
+          {/* Mobile app nudge — last, so it never competes with the revenue
+              hero, and dismissible so it cannot become a nag. Deliberately
+              absent from the new-store branch above: that path is focused on
+              adding a first product, and those merchants have just come from
+              the onboarding welcome page, which carries the same badges. */}
+          <MobileAppPrompt tenantId={tenantId} />
         </>
       )}
     </>

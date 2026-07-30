@@ -4,21 +4,23 @@
 // the order is still pending and the storefront stashed a payment
 // context for it on the checkout page, this component:
 //
-//   1. Loads Razorpay's checkout.js script on demand.
-//   2. On "Pay now", opens the Razorpay widget keyed to the merchant's
-//      public key + the pre-created Razorpay order id (payment_token).
-//   3. On widget success, POSTs {razorpay_order_id, razorpay_payment_id,
-//      razorpay_signature} to /api/orders/{id}/verify-payment, which
-//      proxies to marketplace-api's verify endpoint. The backend re-derives
-//      the HMAC and marks the order paid via the same handler the webhook
-//      flow uses, so this works even when no Razorpay webhook reaches
-//      the cluster.
+//   1. Loads the provider's checkout SDK on demand.
+//   2. On "Pay now", opens the payment sheet keyed to the pre-created
+//      provider-side payment token stashed at checkout.
+//   3. Confirms the outcome SERVER-SIDE before treating the order as paid —
+//      Razorpay by re-deriving the checkout HMAC over the returned triplet,
+//      Cashfree by polling the gateway (its SDK returns nothing signed). Both
+//      reuse the same handler the webhook flow uses, so this works even when
+//      no provider webhook reaches the cluster.
 //   4. Clears the local sessionStorage context and refreshes the page.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
-import { openRazorpayCheckout } from "@/lib/payments/razorpay";
+import {
+  isEmbeddedProvider,
+  openEmbeddedCheckout,
+} from "@/lib/payments/launch";
 
 interface PendingPayment {
   orderId: string;
@@ -27,6 +29,8 @@ interface PendingPayment {
   publicKey: string;
   amount: string;
   currencyCode: string;
+  /** Gateway mode ("test" | "live") — Cashfree needs it to pick its environment. */
+  mode?: string;
   customerName?: string;
   customerEmail?: string;
 }
@@ -62,7 +66,7 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
   // webhook, so the order may briefly show pending after redirect — say
   // so explicitly instead of rendering blank, and tell the buyer how to
   // recover if they cancelled mid-flow.
-  if (!pending || pending.provider !== "razorpay") {
+  if (!pending || !isEmbeddedProvider(pending.provider)) {
     return (
       <section
         aria-labelledby="payment-status-heading"
@@ -88,7 +92,8 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
     if (!pending) return;
     setError(null);
     setBusy(true);
-    await openRazorpayCheckout(
+    await openEmbeddedCheckout(
+      pending.provider,
       {
         orderId,
         paymentToken: pending.paymentToken,
@@ -96,6 +101,7 @@ export function PaymentPrompt({ orderId, paymentStatus, storeName }: Props) {
         amount: pending.amount,
         currencyCode: pending.currencyCode,
         storeName,
+        mode: pending.mode,
         customerName: pending.customerName,
         customerEmail: pending.customerEmail,
       },

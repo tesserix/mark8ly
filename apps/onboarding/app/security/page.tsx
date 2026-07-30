@@ -120,7 +120,8 @@ export default function SecurityPage() {
           <a href="/dpa">Data Processing Addendum</a> for details.
         </p>
         <p>
-          Card payments are handled exclusively by Stripe and Razorpay;
+          Card payments are handled exclusively by Stripe, Razorpay, and
+          Cashfree Payments;
           Mark8ly does not store full card numbers. PCI DSS obligations for
           payment data sit with those processors.
         </p>

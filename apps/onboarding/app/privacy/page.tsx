@@ -58,7 +58,7 @@ export default function PrivacyPolicyPage() {
           <li>
             <strong>Payment information:</strong> billing address and payment
             method details. We never store full card numbers — card data is
-            handled by Stripe and Razorpay.
+            handled by Stripe, Razorpay, and Cashfree Payments.
           </li>
           <li>
             <strong>Communications:</strong> messages you send us through
@@ -140,7 +140,10 @@ export default function PrivacyPolicyPage() {
         <ul>
           <li>TLS 1.2+ encryption for every connection</li>
           <li>AES-256 at rest on managed Google Cloud services</li>
-          <li>PCI DSS-compliant payment routing through Stripe and Razorpay</li>
+          <li>
+            PCI DSS-compliant payment routing through Stripe, Razorpay, and
+            Cashfree Payments
+          </li>
           <li>APP-, GDPR-, UK GDPR-, CCPA/CPRA-, and DPDP-aligned data handling</li>
           <li>Regular dependency scanning and code review</li>
         </ul>

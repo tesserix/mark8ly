@@ -786,6 +786,16 @@ func extractWebhookSignature(c *gin.Context, provider string) string {
 		return c.GetHeader("Stripe-Signature")
 	case "razorpay":
 		return c.GetHeader("X-Razorpay-Signature")
+	case "cashfree":
+		// Cashfree signs base64(HMAC-SHA256(timestamp + rawBody)), so the
+		// timestamp is part of the signed material and has to reach
+		// VerifyWebhook alongside the signature. Packed into the single
+		// string the Gateway interface takes — see
+		// payment.CashfreeWebhookSignature for the format.
+		return payment.CashfreeWebhookSignature(
+			c.GetHeader(payment.CashfreeWebhookTimestampHeader),
+			c.GetHeader(payment.CashfreeWebhookSignatureHeader),
+		)
 	case "paypal":
 		return c.GetHeader("PAYPAL-TRANSMISSION-SIG")
 	default:

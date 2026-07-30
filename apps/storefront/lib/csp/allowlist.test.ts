@@ -94,18 +94,28 @@ describe("CSP script-src covers every external script the app loads", () => {
 });
 
 describe("isAllowed matching rules", () => {
-  const directive = `"script-src 'self' https://accounts.google.com/gsi/client https://*.razorpay.com",`;
+  const directive = `"script-src 'self' https://accounts.google.com/gsi/client https://*.razorpay.com https://*.cashfree.com",`;
 
   it.each([
     ["checkout.razorpay.com", true],
     ["cdn.razorpay.com", true],
     ["lumberjack.razorpay.com", true],
+    // Cashfree's v3 SDK is served from sdk.cashfree.com and pulls the checkout
+    // modal from payments.cashfree.com — the same runtime-subdomain problem
+    // that makes enumeration unworkable for Razorpay.
+    ["sdk.cashfree.com", true],
+    ["payments.cashfree.com", true],
     ["accounts.google.com", true],
   ])("allows %s", (host, want) => {
     expect(isAllowed(host as string, directive)).toBe(want);
   });
 
-  it.each(["evil.com", "razorpay.com.evil.com", "cdn.stripe.com"])(
+  it.each([
+    "evil.com",
+    "razorpay.com.evil.com",
+    "cashfree.com.evil.com",
+    "cdn.stripe.com",
+  ])(
     "rejects %s",
     (host) => {
       expect(isAllowed(host, directive)).toBe(false);

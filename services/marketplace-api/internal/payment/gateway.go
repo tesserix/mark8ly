@@ -1,6 +1,6 @@
 // Package payment defines the payment gateway provider abstraction.
-// Concrete implementations (Stripe, Razorpay, PayPal) live in separate
-// files and are wired in P2.
+// Concrete implementations (Stripe, Razorpay, PayPal, Cashfree) live in
+// separate files and are wired in P2.
 package payment
 
 import (
@@ -30,6 +30,35 @@ type CheckoutGateway interface {
 	CreateCheckoutSession(ctx context.Context, in CreateCheckoutSessionInput) (*CheckoutSession, error)
 }
 
+// OrderStatusGateway is an optional capability interface for providers whose
+// client SDK returns no signed payment receipt. Razorpay Checkout hands the
+// browser an HMAC of order_id|payment_id that the server re-derives (see
+// handlers/storefront/payment_verify.go); Cashfree's SDK returns nothing
+// signed at all, so the only authority on "did this actually get paid" is the
+// provider itself. Polling here is a STRONGER gate than the Razorpay path, not
+// a weaker one — it never trusts a client-supplied value — but it means the
+// confirm flow has to ask the gateway rather than verify a signature.
+//
+// Not every provider implements this — use type assertion at call sites.
+type OrderStatusGateway interface {
+	// FetchOrderPayment returns the captured payment on a provider-side order,
+	// or (nil, nil) when the order exists but nothing has been captured yet.
+	// providerOrderID is the id CreateIntent submitted, which for order-scoped
+	// providers is our own order id (see RefundInput.OrderID).
+	FetchOrderPayment(ctx context.Context, providerOrderID string) (*OrderPayment, error)
+}
+
+// OrderPayment is a captured provider-side payment as reported by a status
+// poll. Status is already normalized to the same vocabulary WebhookEvent
+// uses, so a confirm handler and a webhook handler can share one code path.
+type OrderPayment struct {
+	ProviderPaymentID string
+	Status            string // "payment.succeeded" | "payment.failed" | "payment.pending"
+	PaymentMethod     string
+	Amount            decimal.Decimal
+	CurrencyCode      string
+}
+
 // CreateCheckoutSessionInput describes a hosted checkout session.
 type CreateCheckoutSessionInput struct {
 	ReferenceID   string // our internal id (e.g. gift card uuid) — passed as metadata
@@ -56,6 +85,12 @@ type CreateIntentInput struct {
 	Amount        decimal.Decimal
 	CurrencyCode  string
 	CustomerEmail string
+	// CustomerName and CustomerPhone are optional for Stripe/Razorpay/PayPal
+	// but customer_phone is MANDATORY at Cashfree — it is what UPI intent
+	// keys off, so a blank one fails order creation outright rather than
+	// degrading to a card-only checkout.
+	CustomerName  string
+	CustomerPhone string
 	Description   string
 	Metadata      map[string]string
 }
@@ -79,10 +114,17 @@ type Capture struct {
 // RefundInput describes a refund request.
 type RefundInput struct {
 	ProviderPaymentID string
-	Amount            decimal.Decimal
-	CurrencyCode      string
-	Reason            string
-	IdempotencyKey    string // provider idempotency key; retries with the same key never double-refund
+	// OrderID is OUR internal order id. Stripe, Razorpay and PayPal refund
+	// against ProviderPaymentID and ignore this field; Cashfree scopes refunds
+	// by order (POST /pg/orders/{order_id}/refunds) with no payment-level
+	// endpoint, so it needs the provider-side order id. The two always agree
+	// because Cashfree's CreateIntent submits this same value as its order_id
+	// — that is what makes a Cashfree refund resolvable from the ledger.
+	OrderID        string
+	Amount         decimal.Decimal
+	CurrencyCode   string
+	Reason         string
+	IdempotencyKey string // provider idempotency key; retries with the same key never double-refund
 }
 
 // Refund is the provider's response to a refund request.

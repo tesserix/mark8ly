@@ -78,7 +78,6 @@
         "ascAppId": "6791884754"
       },
       "android": {
-        "comment_serviceAccountKeyPath": "@secret:PLAY_SERVICE_ACCOUNT_KEY DOES NOT WORK HERE — eas submit treats this value as a literal PATH and fails 'File @secret:... doesn't exist'. The EAS file secret is only readable at BUILD time, not by submit. This local path works for local submits; the key is gitignored so CI auto-submit for Android will still fail. Proper fix: store the key as an EAS Google Service Account credential (`eas credentials` → Android → submissions), then DELETE serviceAccountKeyPath entirely.",
         "serviceAccountKeyPath": "./play-service-account.json",
         "track": "internal"
       }

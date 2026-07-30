@@ -14,14 +14,15 @@
 \if :{?store_slug} \else \set store_slug '' \endif
 
 \echo ''
-\echo '=== 1. Country allowlist — is cashfree permitted, and is it preferred? ==='
+\echo '=== 1. Country allowlist — is cashfree permitted, and where does it rank? ==='
 \echo '    payment_providers order IS the preference order: position 1 is what'
-\echo '    the storefront pre-selects. Expect cashfree first for IN (migration 000099).'
+\echo '    the storefront pre-selects. For IN expect razorpay first and cashfree'
+\echo '    present as a selectable secondary option (migration 000100).'
 SELECT country_code,
        payment_providers,
-       'cashfree' = ANY (payment_providers)            AS cashfree_allowed,
-       payment_providers[1] = 'cashfree'               AS cashfree_preferred,
-       array_position(payment_providers, 'cashfree')   AS cashfree_rank
+       'cashfree' = ANY (payment_providers)          AS cashfree_allowed,
+       payment_providers[1]                          AS default_provider,
+       array_position(payment_providers, 'cashfree') AS cashfree_rank
   FROM supported_countries
  WHERE 'cashfree' = ANY (payment_providers)
     OR country_code = 'IN'

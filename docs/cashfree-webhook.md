@@ -135,14 +135,21 @@ whose header documents the plaintext-until-first-read caveat.
 ### Prerequisite: the country allowlist
 
 `supported_countries.payment_providers` gates both the admin write path and the
-storefront read path. Migration `000099_supported_countries_cashfree` puts
-`cashfree` at the head of India's list. Without it, admin rejects the provider
-outright and the storefront never offers it — so a webhook configured first
-would arrive for a store that has no Cashfree config and be dropped.
+storefront read path. Migration `000099_supported_countries_cashfree` adds
+`cashfree` to India's list. Without it, admin rejects the provider outright and
+the storefront never offers it — so a webhook configured first would arrive for
+a store that has no Cashfree config and be dropped.
 
 Array **order is preference**: the payment-methods endpoint sorts its response
 by position (`sortByPreference`), and the storefront pre-selects the first entry
-and badges it *Recommended*. `cashfree` first is what makes it the default.
+and badges it *Recommended*.
+
+**Razorpay is the default in India, not Cashfree.** 000099 originally promoted
+Cashfree to the head; `000100_razorpay_preferred_in_india` reversed that, so the
+live order is `{razorpay,paypal,cashfree}` — Cashfree is fully configured and
+selectable, it is simply not pre-selected. Buyers reach it by choosing it at
+checkout. Because the ordering is read from data rather than named in code,
+flipping the default back is a one-row migration, not a deploy.
 
 ## Signature verification
 

@@ -248,11 +248,13 @@ export default function CheckoutPage() {
         setPaymentMethods(methods);
         // Pre-select the merchant's preferred gateway. The API returns methods
         // ordered by the country's payment_providers array, so methods[0] is
-        // the intended default (Cashfree in India) and the rest render beneath
-        // it as alternatives. Previously this only auto-selected when exactly
-        // one method existed, which left every multi-gateway store starting on
-        // "Choose a payment method" — an extra required click for the option we
-        // already know we want.
+        // the intended default (Razorpay in India) and the rest — Cashfree
+        // included — render beneath it as options the buyer can pick instead.
+        // Previously this only auto-selected when exactly one method existed,
+        // which left every multi-gateway store starting on "Choose a payment
+        // method" — an extra required click for the option we already know we
+        // want. Deliberately reads position rather than naming a provider, so
+        // changing the default stays a migration and not a deploy.
         if (methods.length > 0) setSelectedProvider(methods[0]!.provider);
       }
     });

@@ -281,3 +281,58 @@ func TestAutoLogin_RejectsEmptyFields(t *testing.T) {
 		}
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Unwired authz client
+// ─────────────────────────────────────────────────────────────────────────
+
+// Regression: a nil FGA client used to dereference into a recovered panic,
+// which Gin turned into a 500 on every sign-in. It must report the outage
+// as ErrFGAUnreachable so the handler answers 503 and clients retry.
+func TestAutoLogin_NilFGAClient_ReportsUnreachableNotPanic(t *testing.T) {
+	gipFake := gip.NewFakeVerifier()
+	gipFake.Add("good-token", gip.VerifiedToken{
+		UID:      "user-1",
+		Email:    "u@e.com",
+		TenantID: "MP-Internal-test",
+	})
+
+	sm, err := session.NewManager(session.Config{
+		CookieName: "m8_test",
+		Domain:     "localhost",
+		Secure:     false,
+		EncryptKey: testKey,
+	})
+	if err != nil {
+		t.Fatalf("session manager: %v", err)
+	}
+
+	svc := NewService(Config{
+		GIP:      gipFake,
+		FGA:      nil, // openfga never resolved at startup
+		Sessions: sm,
+		Policy:   fastPolicy,
+	})
+
+	w := httptest.NewRecorder()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("AutoLogin panicked with a nil FGA client: %v", r)
+		}
+	}()
+
+	_, err = svc.AutoLogin(context.Background(), w, Request{
+		IDToken:          "good-token",
+		ExpectedTenantID: "MP-Internal-test",
+		WorkspaceTenant:  "tenant-uuid-1",
+	})
+	if !errors.Is(err, ErrFGAUnreachable) {
+		t.Fatalf("err = %v, want ErrFGAUnreachable", err)
+	}
+
+	for _, c := range w.Result().Cookies() {
+		if strings.HasPrefix(c.Name, "m8_") && c.Value != "" {
+			t.Error("session cookie minted despite unreachable authz")
+		}
+	}
+}

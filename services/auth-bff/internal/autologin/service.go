@@ -258,6 +258,12 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 // is still missing after that, we return ErrNotMember (the drainer is
 // genuinely failing — admin should investigate).
 func (s *Service) checkMembershipWithRetry(ctx context.Context, userID, tenantID string) error {
+	// An unwired client is an outage, not a crash — report it as such
+	// rather than dereferencing nil into a recovered panic and a 500.
+	if s.fga == nil {
+		return fmt.Errorf("%w: authz client not configured", ErrFGAUnreachable)
+	}
+
 	backoff := s.policy.InitialBackoff
 	var lastErr error
 

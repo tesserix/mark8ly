@@ -101,33 +101,15 @@ func main() {
 		panic(err)
 	}
 
-	// ─── OpenFGA client (auto-discover store) ──────────────────────────
-	storeID := cfg.FGAStoreID
-	if storeID == "" {
-		discoverCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		discovered, derr := authz.DiscoverStoreID(discoverCtx, cfg.FGAAPIURL, authz.FGAStoreName)
-		cancel()
-		if derr != nil {
-			log.Warn("authz: store discovery failed", "err", derr)
-		} else if discovered == "" {
-			log.Warn("authz: no store named " + authz.FGAStoreName + " found — autologin will return 503")
-		} else {
-			storeID = discovered
-			log.Info("authz: discovered openfga store", "store_id", storeID)
-		}
-	}
-
-	var fgaClient authz.Client
-	if storeID != "" {
-		fgaClient, err = authz.New(authz.Config{
-			APIURL:  cfg.FGAAPIURL,
-			StoreID: storeID,
-		})
-		if err != nil {
-			log.Error("authz: openfga client", "err", err)
-			panic(err)
-		}
-	}
+	// ─── OpenFGA client (store resolved lazily) ────────────────────────
+	// Resolution is deferred to first use so a boot that races openfga's
+	// startup degrades to 503-and-retry instead of killing authorization
+	// for the life of the pod.
+	fgaClient := authz.NewLazy(authz.LazyConfig{
+		APIURL:  cfg.FGAAPIURL,
+		StoreID: cfg.FGAStoreID,
+		Logger:  log,
+	})
 
 	// ─── Session manager ───────────────────────────────────────────────
 	// Secure flag: only set in non-dev. Plain HTTP localhost dev needs

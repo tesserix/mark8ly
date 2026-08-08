@@ -45,6 +45,25 @@ type PasswordResetVars struct {
 	SupportEmail string
 }
 
+// LoginOTPVars are the variables for the email one-time sign-in code.
+type LoginOTPVars struct {
+	Code         string // six digits
+	ExpiresIn    string // human-readable, e.g. "5 minutes"
+	SupportEmail string
+}
+
+// NewDeviceLoginVars are the variables for the unrecognised-device alert.
+// Device derives from the User-Agent header and is therefore attacker
+// influenced — it must only ever be rendered through html/template.
+type NewDeviceLoginVars struct {
+	Device       string
+	CountryName  string // already humanised, or "an unknown location"
+	IPAddress    string // optional — omitted from the email when empty
+	At           string // formatted timestamp including zone
+	SecureURL    string
+	SupportEmail string
+}
+
 // RenderEmailVerification renders the verification OTP email and returns
 // a fully populated Email ready to hand to a Sender.
 func RenderEmailVerification(to, from string, vars EmailVerificationVars) (Email, error) {
@@ -100,6 +119,47 @@ func RenderPasswordReset(to, from string, vars PasswordResetVars) (Email, error)
 		To:       to,
 		From:     from,
 		Subject:  "Reset your Mark8ly password",
+		HTMLBody: html,
+		TextBody: text,
+	}, nil
+}
+
+// RenderLoginOTP renders the email one-time sign-in code. The code is in
+// the subject line so it previews on a lock screen without opening the
+// message.
+func RenderLoginOTP(to, from string, vars LoginOTPVars) (Email, error) {
+	html, err := renderHTML("templates/login_otp.html", vars)
+	if err != nil {
+		return Email{}, err
+	}
+	text, err := renderText("templates/login_otp.txt", vars)
+	if err != nil {
+		return Email{}, err
+	}
+	return Email{
+		To:       to,
+		From:     from,
+		Subject:  fmt.Sprintf("%s is your Mark8ly sign-in code", vars.Code),
+		HTMLBody: html,
+		TextBody: text,
+	}, nil
+}
+
+// RenderNewDeviceLogin renders the alert sent when an account is used
+// from a device fingerprint with no history.
+func RenderNewDeviceLogin(to, from string, vars NewDeviceLoginVars) (Email, error) {
+	html, err := renderHTML("templates/new_device_login.html", vars)
+	if err != nil {
+		return Email{}, err
+	}
+	text, err := renderText("templates/new_device_login.txt", vars)
+	if err != nil {
+		return Email{}, err
+	}
+	return Email{
+		To:       to,
+		From:     from,
+		Subject:  "New sign-in to your Mark8ly account",
 		HTMLBody: html,
 		TextBody: text,
 	}, nil

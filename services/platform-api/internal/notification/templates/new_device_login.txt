@@ -1,0 +1,20 @@
+New sign-in to your Mark8ly account
+==========================================
+
+Your account was just accessed from a device we haven't seen before.
+
+   Device    {{.Device}}
+   Location  {{.CountryName}}{{if .IPAddress}}
+   IP        {{.IPAddress}}{{end}}
+   When      {{.At}}
+
+If this was you, nothing to do.
+
+If it wasn't, change your password now and sign out every other device:
+
+   {{.SecureURL}}
+
+---
+Questions? Reply to this email or reach {{.SupportEmail}}
+
+mark8ly

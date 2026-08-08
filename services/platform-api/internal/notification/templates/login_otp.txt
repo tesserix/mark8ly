@@ -1,0 +1,17 @@
+Your Mark8ly sign-in code
+==========================================
+
+Enter this code to finish signing in:
+
+   {{.Code}}
+
+The code expires in {{.ExpiresIn}} and can only be used once.
+
+If you didn't try to sign in, someone may have your password. Ignore
+this email and change your password — the code alone is useless without
+this message.
+
+---
+Questions? Reply to this email or reach {{.SupportEmail}}
+
+mark8ly

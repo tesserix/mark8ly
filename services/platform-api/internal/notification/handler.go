@@ -54,6 +54,8 @@ func (h *Handler) Register(internal *gin.RouterGroup) {
 	g := internal.Group("/templates")
 	g.POST("/refresh", h.refresh)
 	g.POST("/:key/test", h.testSend)
+
+	internal.POST("/notifications/send", h.send)
 }
 
 type refreshBody struct {
@@ -99,7 +101,7 @@ func (h *Handler) testSend(c *gin.Context) {
 	// path which doesn't care about Go types, but we want test-send to
 	// work even with no DB row yet (operator wants to test an embedded
 	// template via this same surface).
-	vars, err := decodeTestSendVars(key, body.Vars)
+	vars, err := decodeVars(key, body.Vars)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_vars", "message": err.Error()})
 		return
@@ -123,10 +125,10 @@ func (h *Handler) testSend(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sent": true, "key": key, "to": body.To})
 }
 
-// decodeTestSendVars maps a key onto its concrete Vars struct so the
-// embedded fallback can render correctly. New keys must be added here
-// to be testable from the admin UI.
-func decodeTestSendVars(key string, raw json.RawMessage) (any, error) {
+// decodeVars maps a key onto its concrete Vars struct so the embedded
+// fallback can render correctly. New keys must be added here to be
+// reachable from either the test-send or the send endpoint.
+func decodeVars(key string, raw json.RawMessage) (any, error) {
 	if len(raw) == 0 {
 		raw = []byte("{}")
 	}
@@ -155,6 +157,18 @@ func decodeTestSendVars(key string, raw json.RawMessage) (any, error) {
 			return nil, err
 		}
 		return v, nil
+	case "login_otp":
+		var v LoginOTPVars
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return nil, err
+		}
+		return v, nil
+	case "new_device_login":
+		var v NewDeviceLoginVars
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return nil, err
+		}
+		return v, nil
 	}
-	return nil, fmt.Errorf("notification: no test-send vars binding for key %q", key)
+	return nil, fmt.Errorf("notification: no vars binding for key %q", key)
 }

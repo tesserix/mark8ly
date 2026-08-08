@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New sign-in to your Mark8ly account</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F7F6F2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Source Sans 3',Helvetica,Arial,sans-serif;color:#0E0E0C;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    Your account was accessed from a new device in {{.CountryName}}.
+  </div>
+  <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#F7F6F2;padding:48px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#FFFFFF;border:1px solid #ECEAE3;">
+          <tr>
+            <td style="padding:36px 40px 20px 40px;border-bottom:1px solid #ECEAE3;">
+              <span style="font-family:Georgia,'Source Serif 4','Times New Roman',serif;font-size:22px;font-weight:500;letter-spacing:-0.025em;color:#0E0E0C;">mark8ly</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:40px 40px 24px 40px;">
+              <p style="margin:0 0 14px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">
+                Security alert
+              </p>
+              <h1 style="margin:0 0 20px 0;font-family:Georgia,'Source Serif 4','Times New Roman',serif;font-size:36px;font-weight:500;letter-spacing:-0.025em;line-height:1.05;color:#0E0E0C;">
+                New sign-in to your account
+              </h1>
+              <p style="margin:0 0 32px 0;font-size:16px;line-height:1.7;color:#45433E;">
+                Your account was just accessed from a device we haven&rsquo;t seen before.
+              </p>
+
+              <table cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 28px 0;border-top:1px solid #ECEAE3;">
+                <tr>
+                  <td style="padding:16px 0;border-bottom:1px solid #ECEAE3;">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">Device</p>
+                    <p style="margin:0;font-size:15px;line-height:1.6;color:#0E0E0C;">{{.Device}}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px 0;border-bottom:1px solid #ECEAE3;">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">Location</p>
+                    <p style="margin:0;font-size:15px;line-height:1.6;color:#0E0E0C;">{{.CountryName}}</p>
+                  </td>
+                </tr>
+                {{if .IPAddress}}
+                <tr>
+                  <td style="padding:16px 0;border-bottom:1px solid #ECEAE3;">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">IP address</p>
+                    <p style="margin:0;font-family:'SF Mono','Roboto Mono',Consolas,monospace;font-size:14px;line-height:1.6;color:#0E0E0C;">{{.IPAddress}}</p>
+                  </td>
+                </tr>
+                {{end}}
+                <tr>
+                  <td style="padding:16px 0;border-bottom:1px solid #ECEAE3;">
+                    <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7A766E;font-weight:600;">When</p>
+                    <p style="margin:0;font-size:15px;line-height:1.6;color:#0E0E0C;">{{.At}}</p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 20px 0;font-size:15px;line-height:1.7;color:#45433E;">
+                If this was you, there&rsquo;s nothing to do. If it wasn&rsquo;t, change your password now and sign out every other device.
+              </p>
+
+              <table cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px 0;">
+                <tr>
+                  <td>
+                    <a href="{{.SecureURL}}" style="display:inline-block;background-color:#0E0E0C;color:#FDFCF8;text-decoration:none;font-weight:600;padding:14px 28px;font-size:15px;letter-spacing:0.04em;border-radius:6px;">
+                      Secure my account
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 40px 36px 40px;border-top:1px solid #ECEAE3;">
+              <p style="margin:0;font-size:12px;line-height:1.7;color:#7A766E;">
+                We send this every time an account is used from an unrecognised device. Questions? Reply to this email or reach
+                <a href="mailto:{{.SupportEmail}}" style="color:#2D4A2B;text-decoration:underline;text-decoration-color:#2D4A2B;text-underline-offset:3px;">{{.SupportEmail}}</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:20px 0 0 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#A09C92;">
+          Mark8ly · A Tesserix product
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

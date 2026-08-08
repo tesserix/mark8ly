@@ -272,6 +272,28 @@ func renderEmbedded(key, to, from, tenantID string, vars any) (Email, error) {
 		}
 		msg.TenantID = tenantID
 		return msg, nil
+	case "login_otp":
+		v, ok := vars.(LoginOTPVars)
+		if !ok {
+			return Email{}, fmt.Errorf("notification: login_otp render expected LoginOTPVars, got %T", vars)
+		}
+		msg, err := RenderLoginOTP(to, from, v)
+		if err != nil {
+			return Email{}, err
+		}
+		msg.TenantID = tenantID
+		return msg, nil
+	case "new_device_login":
+		v, ok := vars.(NewDeviceLoginVars)
+		if !ok {
+			return Email{}, fmt.Errorf("notification: new_device_login render expected NewDeviceLoginVars, got %T", vars)
+		}
+		msg, err := RenderNewDeviceLogin(to, from, v)
+		if err != nil {
+			return Email{}, err
+		}
+		msg.TenantID = tenantID
+		return msg, nil
 	}
 	return Email{}, fmt.Errorf("notification: no embedded template for key %q", key)
 }
@@ -346,6 +368,20 @@ func embeddedSeed() []seedRow {
 			html:     read("templates/password_reset.html"),
 			text:     read("templates/password_reset.txt"),
 			varsJSON: `[{"name":"ResetURL","type":"string","required":true},{"name":"ExpiresIn","type":"string","required":true},{"name":"SupportEmail","type":"string","required":true}]`,
+		},
+		{
+			key:      "login_otp",
+			subject:  "{{.Code}} is your Mark8ly sign-in code",
+			html:     read("templates/login_otp.html"),
+			text:     read("templates/login_otp.txt"),
+			varsJSON: `[{"name":"Code","type":"string","required":true},{"name":"ExpiresIn","type":"string","required":true},{"name":"SupportEmail","type":"string","required":true}]`,
+		},
+		{
+			key:      "new_device_login",
+			subject:  "New sign-in to your Mark8ly account",
+			html:     read("templates/new_device_login.html"),
+			text:     read("templates/new_device_login.txt"),
+			varsJSON: `[{"name":"Device","type":"string","required":true},{"name":"CountryName","type":"string","required":true},{"name":"IPAddress","type":"string","required":false},{"name":"At","type":"string","required":true},{"name":"SecureURL","type":"string","required":true},{"name":"SupportEmail","type":"string","required":true}]`,
 		},
 	}
 }

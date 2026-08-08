@@ -3,14 +3,14 @@
 //
 // The flow:
 //
-//   1. apps/onboarding completes a session via platform-api → tenant + user exist
-//   2. Frontend redirects to /auth/auto-login with a tenant_id and id_token
-//   3. auto-login handler:
-//      a. Verifies the id_token via GIP (multi-tenant aware)
-//      b. CheckMembership against OpenFGA — IS THE TUPLE THERE YET?
-//      c. If yes: mint session cookie, return success
-//      d. If no:  retry CheckMembership with backoff up to ~2 seconds
-//      e. After retry budget: return 503, frontend can retry the call
+//  1. apps/onboarding completes a session via platform-api → tenant + user exist
+//  2. Frontend redirects to /auth/auto-login with a tenant_id and id_token
+//  3. auto-login handler:
+//     a. Verifies the id_token via GIP (multi-tenant aware)
+//     b. CheckMembership against OpenFGA — IS THE TUPLE THERE YET?
+//     c. If yes: mint session cookie, return success
+//     d. If no:  retry CheckMembership with backoff up to ~2 seconds
+//     e. After retry budget: return 503, frontend can retry the call
 //
 // Step (b)+(d) is the auth-bug #2 fix on the auth-bff side. Even if the
 // outbox drainer hasn't shipped the FGA write yet, the autologin call won't
@@ -28,6 +28,7 @@ import (
 
 	"github.com/mark8ly/auth-bff/internal/audit"
 	"github.com/mark8ly/auth-bff/internal/authz"
+	"github.com/mark8ly/auth-bff/internal/deviceguard"
 	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
 	"github.com/mark8ly/auth-bff/internal/usersessions"
@@ -41,6 +42,17 @@ type MFAStatusChecker interface {
 	IsEnabled(ctx context.Context, userID string) (bool, error)
 }
 
+// DeviceEvaluator reports whether a login came from a device the
+// account has not used before, alerting the user when it has not.
+type DeviceEvaluator interface {
+	Evaluate(ctx context.Context, l deviceguard.Login) (bool, error)
+}
+
+// ChallengeIssuer mails a one-time sign-in code to the address.
+type ChallengeIssuer interface {
+	IssueChallenge(ctx context.Context, email, ip string) error
+}
+
 // Service is the autologin business logic.
 type Service struct {
 	gip      gip.Verifier
@@ -48,6 +60,8 @@ type Service struct {
 	sessions *session.Manager
 	registry *usersessions.Repository
 	mfa      MFAStatusChecker
+	devices  DeviceEvaluator
+	emailOTP ChallengeIssuer
 	audit    *audit.Client // optional — nil/no-op when marketplace-api is not wired
 	logger   *slog.Logger
 	policy   RetryPolicy
@@ -78,6 +92,13 @@ type Config struct {
 	// AutoLogin short-circuits to MintPending + MFARequired whenever
 	// the user has a verified enrolment on file.
 	MFA MFAStatusChecker
+	// Devices raises new-device security alerts. Optional — when nil,
+	// logins are not checked against device history.
+	Devices DeviceEvaluator
+	// EmailOTP gates unrecognised devices behind a mailed code. Optional
+	// — when nil, a new device is alerted about but not challenged,
+	// which is the pre-feature behaviour.
+	EmailOTP ChallengeIssuer
 	// Audit posts cross-service audit events to marketplace-api. Optional.
 	Audit  *audit.Client
 	Logger *slog.Logger
@@ -102,6 +123,8 @@ func NewService(cfg Config) *Service {
 		sessions: cfg.Sessions,
 		registry: cfg.Registry,
 		mfa:      cfg.MFA,
+		devices:  cfg.Devices,
+		emailOTP: cfg.EmailOTP,
 		audit:    cfg.Audit,
 		logger:   cfg.Logger,
 		policy:   p,
@@ -118,6 +141,8 @@ type Request struct {
 	Device    string
 	IPAddress string
 	UserAgent string
+	// Country is an ISO-3166 alpha-2 code resolved at the edge, or "".
+	Country string
 }
 
 // Result is what AutoLogin returns on success.
@@ -130,6 +155,10 @@ type Result struct {
 	// written; the caller must complete POST /auth/mfa-challenge before
 	// any authenticated request will succeed.
 	MFARequired bool
+	// EmailOTPRequired is true when the login came from an unrecognised
+	// device and a code was mailed instead of a session being minted.
+	// The caller must complete POST /auth/otp/verify.
+	EmailOTPRequired bool
 }
 
 // Errors. Each maps to a specific HTTP response in the handler.
@@ -139,6 +168,11 @@ var (
 	ErrNotMember       = errors.New("autologin: user is not a member of the tenant")
 	ErrFGAUnreachable  = errors.New("autologin: openfga is unreachable")
 	ErrSessionMintFail = errors.New("autologin: failed to mint session")
+	// ErrChallengeSendFail means the device was unrecognised but the code
+	// could not be delivered. Deliberately fatal to the login: falling
+	// through to a session would let anyone who can disrupt the mail path
+	// walk straight past the new-device gate.
+	ErrChallengeSendFail = errors.New("autologin: failed to send sign-in code")
 )
 
 // AutoLogin verifies the ID token, confirms tenant membership (with retry
@@ -194,6 +228,60 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 		}
 	}
 
+	device := req.Device
+	if device == "" {
+		device = "Browser"
+	}
+	fingerprint := deviceguard.Fingerprint(req.UserAgent)
+
+	// Step 2c: device history. Evaluated BEFORE the session row is
+	// written, otherwise the row we are about to insert would itself
+	// make this device look familiar and every alert would be
+	// suppressed. Evaluate also dispatches the new-device alert, which
+	// is why it runs even when the login is about to be challenged —
+	// the attempt is what the account holder needs to hear about.
+	newDevice := false
+	if s.devices != nil {
+		isNew, err := s.devices.Evaluate(ctx, deviceguard.Login{
+			UserID:      tok.UID,
+			Email:       tok.Email,
+			Fingerprint: fingerprint,
+			Device:      device,
+			IPAddress:   req.IPAddress,
+			Country:     req.Country,
+			At:          time.Now().UTC(),
+		})
+		if err != nil && s.logger != nil {
+			s.logger.Warn("deviceguard: evaluate failed", "err", err, "user_id", tok.UID)
+		}
+		newDevice = isNew
+	}
+
+	// Step 2d: an unrecognised device must prove control of the account's
+	// email before it gets a session. This is what makes signing in on a
+	// second device safe rather than merely possible.
+	if newDevice && s.emailOTP != nil {
+		if err := s.emailOTP.IssueChallenge(ctx, tok.Email, req.IPAddress); err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrChallengeSendFail, err)
+		}
+		if err := s.sessions.MintPending(w, session.Pending{
+			UID:         tok.UID,
+			Email:       tok.Email,
+			TenantID:    req.WorkspaceTenant,
+			Fingerprint: fingerprint,
+			Device:      device,
+			IPAddress:   req.IPAddress,
+		}); err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrSessionMintFail, err)
+		}
+		return &Result{
+			UID:              tok.UID,
+			Email:            tok.Email,
+			TenantID:         req.WorkspaceTenant,
+			EmailOTPRequired: true,
+		}, nil
+	}
+
 	// Step 3: mint the session cookie.
 	if err := s.sessions.Mint(w, session.Session{
 		UID:      tok.UID,
@@ -207,16 +295,13 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 	// the admin "Active sessions" UI. A DB failure here must not break
 	// login — the user is already authenticated and the cookie is set.
 	if s.registry != nil {
-		device := req.Device
-		if device == "" {
-			device = "Browser"
-		}
 		if _, err := s.registry.Create(ctx, usersessions.CreateParams{
-			UserID:    tok.UID,
-			TenantID:  req.WorkspaceTenant,
-			Device:    device,
-			IPAddress: req.IPAddress,
-			UserAgent: req.UserAgent,
+			UserID:      tok.UID,
+			TenantID:    req.WorkspaceTenant,
+			Device:      device,
+			IPAddress:   req.IPAddress,
+			UserAgent:   req.UserAgent,
+			Fingerprint: fingerprint,
 		}); err != nil && s.logger != nil {
 			s.logger.Warn("usersessions: create failed", "err", err, "user_id", tok.UID)
 		}
@@ -226,16 +311,16 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 	// blocks login — a slow or down marketplace-api must not delay the
 	// happy path.
 	s.audit.EmitAsync(audit.Event{
-		TenantID:    req.WorkspaceTenant,
-		Action:      "user.signed_in",
+		TenantID:     req.WorkspaceTenant,
+		Action:       "user.signed_in",
 		ResourceType: "user",
-		ResourceID:  tok.UID,
-		ActorType:   "user",
-		ActorUserID: tok.UID,
-		ActorEmail:  tok.Email,
-		IPAddress:   req.IPAddress,
-		UserAgent:   req.UserAgent,
-		Metadata:    map[string]any{"device": req.Device, "method": "auto_login"},
+		ResourceID:   tok.UID,
+		ActorType:    "user",
+		ActorUserID:  tok.UID,
+		ActorEmail:   tok.Email,
+		IPAddress:    req.IPAddress,
+		UserAgent:    req.UserAgent,
+		Metadata:     map[string]any{"device": req.Device, "method": "auto_login"},
 	})
 
 	return &Result{

@@ -32,6 +32,15 @@ type Pending struct {
 	Email     string    `json:"email"`
 	TenantID  string    `json:"tenant_id"`
 	ExpiresAt time.Time `json:"exp"`
+
+	// Device context, carried so the challenge that completes the login
+	// can write the session registry row for the device it actually
+	// started on. Recomputing the fingerprint at verify time would risk
+	// a User-Agent that shifted mid-flow never being recorded, which
+	// would challenge that browser on every future sign-in.
+	Fingerprint string `json:"fp,omitempty"`
+	Device      string `json:"dev,omitempty"`
+	IPAddress   string `json:"ip,omitempty"`
 }
 
 // IsExpired reports whether the pending challenge has timed out.

@@ -47,6 +47,9 @@ type CreateParams struct {
 	Device    string
 	IPAddress string
 	UserAgent string
+	// Fingerprint is the deviceguard hash of the user agent. Recording
+	// it here is what makes the next login from this device recognised.
+	Fingerprint string
 }
 
 // Create inserts a new session row and returns the generated ID.
@@ -56,10 +59,10 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (string, error)
 	}
 	id := uuid.NewString()
 	const q = `
-		INSERT INTO user_sessions (id, user_id, tenant_id, device, ip_address, user_agent)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO user_sessions (id, user_id, tenant_id, device, ip_address, user_agent, fingerprint)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
-	if _, err := r.db.ExecContext(ctx, q, id, p.UserID, p.TenantID, p.Device, p.IPAddress, p.UserAgent); err != nil {
+	if _, err := r.db.ExecContext(ctx, q, id, p.UserID, p.TenantID, p.Device, p.IPAddress, p.UserAgent, p.Fingerprint); err != nil {
 		return "", fmt.Errorf("usersessions: create: %w", err)
 	}
 	return id, nil

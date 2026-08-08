@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/mark8ly/auth-bff/internal/geoip"
 )
 
 // deviceFromUA produces a short, human-readable device label from a
@@ -75,6 +77,7 @@ func (h *Handler) autoLogin(c *gin.Context) {
 		Device:           deviceFromUA(c.Request.UserAgent()),
 		IPAddress:        c.ClientIP(),
 		UserAgent:        c.Request.UserAgent(),
+		Country:          geoip.CountryFromHeaders(c.Request.Header),
 	})
 	if err != nil {
 		respondError(c, err)
@@ -82,10 +85,11 @@ func (h *Handler) autoLogin(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"uid":          res.UID,
-			"email":        res.Email,
-			"tenant_id":    res.TenantID,
-			"mfa_required": res.MFARequired,
+			"uid":                res.UID,
+			"email":              res.Email,
+			"tenant_id":          res.TenantID,
+			"mfa_required":       res.MFARequired,
+			"email_otp_required": res.EmailOTPRequired,
 		},
 	})
 }
@@ -94,7 +98,9 @@ func (h *Handler) autoLogin(c *gin.Context) {
 //
 // 401: token invalid or tenant pool mismatch — the client is wrong
 // 403: not a member of the tenant — the membership tuple is not (yet) visible;
-//      after the retry budget this is a real "not authorized" answer
+//
+//	after the retry budget this is a real "not authorized" answer
+//
 // 503: openfga is unreachable — the system is broken, retry the call
 // 500: anything else (session mint failure, internal bugs)
 func respondError(c *gin.Context, err error) {
@@ -113,6 +119,11 @@ func respondError(c *gin.Context, err error) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "openfga_unreachable",
 			"message": "authorization service is temporarily unavailable; please retry",
+		})
+	case errors.Is(err, ErrChallengeSendFail):
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "challenge_send_failed",
+			"message": "could not send your sign-in code; please retry",
 		})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{

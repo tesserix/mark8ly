@@ -21,7 +21,11 @@ import (
 	"github.com/mark8ly/auth-bff/internal/audit"
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/autologin"
+	"github.com/mark8ly/auth-bff/internal/deviceguard"
+	"github.com/mark8ly/auth-bff/internal/emailotp"
 	"github.com/mark8ly/auth-bff/internal/gip"
+	"github.com/mark8ly/auth-bff/internal/loginotp"
+	"github.com/mark8ly/auth-bff/internal/notify"
 	"github.com/mark8ly/auth-bff/internal/observability"
 	"github.com/mark8ly/auth-bff/internal/session"
 	"github.com/mark8ly/auth-bff/internal/usermfa"
@@ -35,6 +39,32 @@ import (
 // serviceName is the OpenTelemetry service.name attribute and the label
 // used by the gin OTel middleware.
 const serviceName = "mark8ly-auth-bff"
+
+// notifierOrNil returns a genuinely nil interface for a nil client, so
+// deviceguard's `notifier != nil` check means what it reads as rather
+// than holding a typed nil.
+func notifierOrNil(c *notify.Client) deviceguard.Notifier {
+	if c == nil {
+		return nil
+	}
+	return c
+}
+
+// registryAdapter bridges the session registry onto the narrower
+// interface loginotp declares for its own use.
+type registryAdapter struct{ repo *usersessions.Repository }
+
+func (a registryAdapter) CreateSession(ctx context.Context, p loginotp.CreateParams) error {
+	_, err := a.repo.Create(ctx, usersessions.CreateParams{
+		UserID:      p.UserID,
+		TenantID:    p.TenantID,
+		Device:      p.Device,
+		IPAddress:   p.IPAddress,
+		UserAgent:   p.UserAgent,
+		Fingerprint: p.Fingerprint,
+	})
+	return err
+}
 
 func main() {
 	cfg, err := config.Load()
@@ -143,6 +173,61 @@ func main() {
 	// disables it so dev environments without marketplace-api still boot.
 	auditClient := audit.New(cfg.MarketplaceAPIURL, cfg.AuditIngestSecret, log)
 
+	// ─── New-device detection + email OTP step-up ──────────────────────
+	// notify posts to platform-api's /internal/notifications/send. With
+	// no PLATFORM_API_URL the client errors on every call, so deviceguard
+	// is only given a notifier when it can actually deliver.
+	var notifier *notify.Client
+	if cfg.PlatformAPIURL != "" {
+		notifier = notify.New(notify.Config{
+			BaseURL:      cfg.PlatformAPIURL,
+			AuthSecret:   cfg.PlatformAPIInternalSecret,
+			SupportEmail: cfg.NotificationSupportEmail,
+			SecureURL:    cfg.NotificationSecurityURL,
+		})
+	} else {
+		log.Warn("notify: PLATFORM_API_URL unset — new-device alerts and email OTP are disabled")
+	}
+
+	var deviceEvaluator autologin.DeviceEvaluator
+	deviceSvc, err := deviceguard.NewService(deviceguard.Config{
+		Store:    deviceguard.NewSessionStore(dbConn),
+		Notifier: notifierOrNil(notifier),
+		Logger:   log,
+	})
+	if err != nil {
+		log.Error("deviceguard: new service", "err", err)
+		panic(err)
+	}
+	deviceEvaluator = deviceSvc
+
+	// The gate is wired only when both halves exist: a pepper to hash
+	// codes with and a way to mail them. A half-configured gate would
+	// block logins it cannot complete.
+	var otpIssuer autologin.ChallengeIssuer
+	var otpHandler *loginotp.Handler
+	if cfg.EmailOTPPepper != "" && notifier != nil {
+		otpSvc, err := emailotp.NewService(emailotp.Config{
+			Store:  emailotp.NewPostgresStore(dbConn),
+			Pepper: cfg.EmailOTPPepper,
+		})
+		if err != nil {
+			log.Error("emailotp: new service", "err", err)
+			panic(err)
+		}
+		gate := loginotp.NewGate(otpSvc, notifier, emailotp.DefaultTTL)
+		otpIssuer = gate
+		otpHandler = loginotp.NewHandler(loginotp.Config{
+			Gate:     gate,
+			Sessions: sessions,
+			Registry: registryAdapter{sessionRegistry},
+			Logger:   log,
+		})
+		log.Info("emailotp: new-device sign-in challenge enabled")
+	} else {
+		log.Warn("emailotp: disabled — set EMAIL_OTP_PEPPER and PLATFORM_API_URL to gate unrecognised devices")
+	}
+
 	// ─── Autologin ─────────────────────────────────────────────────────
 	autologinSvc := autologin.NewService(autologin.Config{
 		GIP:      verifier,
@@ -150,6 +235,8 @@ func main() {
 		Sessions: sessions,
 		Registry: sessionRegistry,
 		MFA:      mfaSvc,
+		Devices:  deviceEvaluator,
+		EmailOTP: otpIssuer,
 		Audit:    auditClient,
 		Logger:   log,
 	})
@@ -185,6 +272,9 @@ func main() {
 	autologinHandler.Register(v1)
 	sessionHandler.Register(v1)
 	adminHandoffHandler.Register(v1)
+	if otpHandler != nil {
+		otpHandler.Register(v1)
+	}
 
 	// /api/v1 surface consumed by marketplace-api's account handler,
 	// which proxies admin UI requests through to us. Kept separate from

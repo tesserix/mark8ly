@@ -62,7 +62,7 @@ export default function ContactPage() {
           </div>
           <div className="space-y-6 text-foreground-secondary leading-relaxed lg:max-w-xl">
             <p>
-              Mumbai, India. We work remote-first across a small distributed
+              Australia. We work remote-first across a small distributed
               team, which means there is almost always someone awake when you
               write to us.
             </p>

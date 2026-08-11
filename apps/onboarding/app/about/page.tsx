@@ -44,8 +44,8 @@ export default function AboutPage() {
             </p>
             <p>
               Mark8ly is the opposite. The storefront looks like something a
-              studio made. The admin only shows what you need. Six months are
-              free. After that the price is one honest number.
+              studio made. The admin only shows what you need. The first ninety
+              days are free. After that the price is one honest number.
             </p>
             <p>
               We&rsquo;re not trying to be the biggest platform. We&rsquo;re

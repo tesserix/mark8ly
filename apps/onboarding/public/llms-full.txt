@@ -88,7 +88,7 @@ We're a small team building a commerce platform for independent merchants who wa
 
 There are dozens of ways to open an online store. Most of them are designed for merchants with a developer, a design budget, or a long runway. If you don't have any of those, the experience is overwhelming, expensive, and slow.
 
-Mark8ly is the opposite. The storefront looks like something a studio made. The admin only shows what you need. Six months are free. After that the price is one honest number.
+Mark8ly is the opposite. The storefront looks like something a studio made. The admin only shows what you need. The first ninety days are free. After that the price is one honest number.
 
 We're not trying to be the biggest platform. We're trying to be the one that treats indie merchants like the adults they are.
 

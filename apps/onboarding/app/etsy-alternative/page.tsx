@@ -30,7 +30,7 @@ export default function EtsyAlternativePage() {
       intro={[
         "Etsy is a marketplace, and a marketplace is someone else's shopping mall. You rent a stall, you compete with near-identical listings a scroll away, and you pay for the privilege on every sale — listing fees, transaction fees, payment processing, and more if you want to be seen. Worst of all, the customer belongs to Etsy, not to you.",
         "Mark8ly is the opposite of that. It's your own website, on your own domain, with your own brand at the top and your own customer list underneath. When someone buys, they're buying from you — and you keep their relationship, their email, and the next sale.",
-        "There's no per-sale platform fee. You pay only your payment processor's standard rate; we don't add a cut on top. Ninety days free to start, then plans from $29 a month — a flat, predictable cost instead of a stack of fees that grows with every order.",
+        "There's no per-sale platform fee. You pay only your payment processor's standard rate; we don't add a cut on top. Ninety days free to start, then plans from $15 a month billed yearly — a flat, predictable cost instead of a stack of fees that grows with every order.",
       ]}
       competitorName="Etsy"
       comparisonNote="Etsy is a marketplace with listing, transaction, and payment fees per sale; Mark8ly is your own website with no platform cut."
@@ -94,7 +94,7 @@ export default function EtsyAlternativePage() {
         {
           question: "Are there listing or transaction fees?",
           answer:
-            "No. There are no listing fees and no platform transaction fee. You pay only your payment processor's standard rate, plus a flat monthly plan starting at $29 after 90 days free.",
+            "No. There are no listing fees and no platform transaction fee. You pay only your payment processor's standard rate, plus a flat plan starting at $15 a month billed yearly after 90 days free.",
         },
         {
           question: "Can I keep selling on Etsy too?",

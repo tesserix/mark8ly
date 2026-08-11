@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { FaqAccordion } from "@repo/ui/faq-accordion";
+import { MOBILE_ADMIN_APP_LINKS } from "@repo/ui/app-store-badges";
 import {
   CURRENCY_COOKIE_NAME,
   Money,
@@ -10,11 +12,232 @@ import {
   getPlanPrice,
   normalizeCurrency,
   type Currency,
+  type PlanId,
+  type SharedPlan,
 } from "@repo/ui/subscription";
 
 import { Header } from "@/components/marketing/Header";
 import { Footer } from "@/components/marketing/Footer";
 import { Pricing } from "@/components/marketing/Pricing";
+
+const SITE_URL = "https://mark8ly.com";
+
+/* ============================================================
+   Homepage metadata. The root layout supplies the site-wide
+   defaults; this overrides them for `/` specifically so the
+   highest-traffic page has its own description rather than
+   inheriting the generic one.
+
+   `title.absolute` bypasses the root `%s · Mark8ly` template —
+   without it the rendered title reads "Mark8ly — … · Mark8ly".
+   ============================================================ */
+
+export const metadata: Metadata = {
+  title: {
+    absolute: "Mark8ly — quiet commerce for people who make things",
+  },
+  description:
+    "Mark8ly is an editorial commerce platform for independent merchants. " +
+    "Open a storefront in an afternoon, keep every sale — no platform " +
+    "transaction fees — and ship a store that looks considered from day one. " +
+    "Ninety days free, no card required.",
+  alternates: {
+    canonical: "/",
+  },
+};
+
+/* ============================================================
+   Homepage structured data.
+
+   Two graphs: the product itself (SoftwareApplication, with the
+   plan line-up as an AggregateOffer) and the FAQ. The guides and
+   the SEO landing pages already emit Article/FAQPage; the
+   homepage — the page most likely to be cited in an AI answer —
+   previously emitted none, so pricing and plan facts were only
+   available as prose.
+
+   Prices are derived from SHARED_PRICING_CATALOGUE rather than
+   hardcoded, so the schema can never drift from the numbers the
+   Pricing section actually renders. Google requires structured
+   data to match visible content; a hardcoded price here would
+   silently become a mismatch the next time pricing moves.
+   ============================================================ */
+
+const PLAN_NAMES: Record<PlanId, string> = {
+  starter: "Starter",
+  studio: "Studio",
+  pro: "Pro",
+};
+
+/** Catalogue amounts are minor units (cents/paise); schema.org wants major. */
+function toMajorUnits(minorUnits: number): string {
+  return (minorUnits / 100).toFixed(2);
+}
+
+/**
+ * The companion admin app, described only in terms of the stores that
+ * actually resolve today. Play is live; the iOS listing is still in
+ * review and `MOBILE_ADMIN_APP_LINKS.ios` is deliberately empty until
+ * it clears — an indexed `installUrl` pointing at an unpublished
+ * listing is a crawlable 404, and claiming `operatingSystem: "iOS"`
+ * for an app nobody can install is a false claim in the graph.
+ *
+ * Both fields derive from the same constant the store badges render
+ * from, so filling in the iOS URL switches on the badge and the
+ * structured data together, with no second edit here.
+ */
+function describeMobileApp(): {
+  installUrls: string[];
+  operatingSystems: string[];
+} {
+  const ios = MOBILE_ADMIN_APP_LINKS.ios.trim();
+  const android = MOBILE_ADMIN_APP_LINKS.android.trim();
+  return {
+    installUrls: [ios, android].filter(Boolean),
+    operatingSystems: [ios ? "iOS" : "", android ? "Android" : ""].filter(
+      Boolean,
+    ),
+  };
+}
+
+/**
+ * Resolves a plan's price alongside the currency it is actually
+ * denominated in. `getPlanPrice` silently falls back to USD for an
+ * unlisted currency, which would otherwise let us label a USD amount
+ * with the visitor's currency code — a wrong price in the schema.
+ */
+function resolvePricedPlan(
+  plan: SharedPlan,
+  currency: Currency,
+): { monthly: number; annualMonthly: number; priceCurrency: Currency } {
+  const localized = plan.prices[currency];
+  const price = localized ?? getPlanPrice(plan, "USD");
+  return {
+    monthly: price.monthly,
+    annualMonthly: price.annualMonthlyEquivalent,
+    priceCurrency: localized ? currency : "USD",
+  };
+}
+
+function buildHomeJsonLd(currency: Currency) {
+  const pricedPlans = SHARED_PRICING_CATALOGUE.plans.map((plan) => ({
+    id: plan.id,
+    ...resolvePricedPlan(plan, currency),
+  }));
+
+  // Every plan resolves to the same currency (the catalogue defines a
+  // full row per currency), so the aggregate can take the first one.
+  const priceCurrency = pricedPlans[0]?.priceCurrency ?? "USD";
+
+  // Both billing cadences are offered on the page, and the toggle
+  // defaults to annual — so the headline a visitor first sees is the
+  // annual-billed per-month equivalent, not the monthly rate. Emit an
+  // Offer for each cadence, all expressed per-month so the aggregate
+  // range stays coherent and matches whichever toggle state is shown.
+  const monthlyAmounts = pricedPlans.flatMap((p) => [
+    p.monthly,
+    p.annualMonthly,
+  ]);
+
+  const mobileApp = describeMobileApp();
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": `${SITE_URL}#software`,
+        name: "Mark8ly",
+        applicationCategory: "BusinessApplication",
+        applicationSubCategory: "Ecommerce platform",
+        operatingSystem: "Web",
+        url: SITE_URL,
+        publisher: { "@id": `${SITE_URL}#organization` },
+        // The same three shots the Features section renders. Absolute
+        // URLs — schema.org image properties are not resolved against
+        // metadataBase the way Next's OG helpers are.
+        screenshot: FEATURES.map((feature) => `${SITE_URL}${feature.screen}`),
+        offers: {
+          "@type": "AggregateOffer",
+          priceCurrency,
+          lowPrice: toMajorUnits(Math.min(...monthlyAmounts)),
+          highPrice: toMajorUnits(Math.max(...monthlyAmounts)),
+          offerCount: pricedPlans.length * 2,
+          offers: pricedPlans.flatMap((plan) => [
+            {
+              "@type": "Offer",
+              name: `${PLAN_NAMES[plan.id]} (billed yearly)`,
+              price: toMajorUnits(plan.annualMonthly),
+              priceCurrency: plan.priceCurrency,
+              category: "SubscriptionPlan",
+              priceSpecification: {
+                "@type": "UnitPriceSpecification",
+                price: toMajorUnits(plan.annualMonthly),
+                priceCurrency: plan.priceCurrency,
+                unitText: "MONTH",
+                billingDuration: 12,
+              },
+            },
+            {
+              "@type": "Offer",
+              name: `${PLAN_NAMES[plan.id]} (billed monthly)`,
+              price: toMajorUnits(plan.monthly),
+              priceCurrency: plan.priceCurrency,
+              category: "SubscriptionPlan",
+              priceSpecification: {
+                "@type": "UnitPriceSpecification",
+                price: toMajorUnits(plan.monthly),
+                priceCurrency: plan.priceCurrency,
+                unitText: "MONTH",
+                billingDuration: 1,
+              },
+            },
+          ]),
+        },
+      },
+      // Only claimed once at least one store listing resolves. With no
+      // live platform this node drops out entirely rather than
+      // describing an app nobody can install.
+      ...(mobileApp.installUrls.length > 0
+        ? [
+            {
+              "@type": "MobileApplication",
+              "@id": `${SITE_URL}#mobile-app`,
+              name: "Mark8ly Admin",
+              applicationCategory: "BusinessApplication",
+              operatingSystem: mobileApp.operatingSystems.join(", "),
+              description:
+                "Run your Mark8ly store from your phone — orders, " +
+                "products, inventory, and customers.",
+              publisher: { "@id": `${SITE_URL}#organization` },
+              // The companion app to the platform itself, not a
+              // separate product.
+              isPartOf: { "@id": `${SITE_URL}#software` },
+              installUrl: mobileApp.installUrls,
+              offers: {
+                "@type": "Offer",
+                // Free to install; running a store on it needs a plan,
+                // which the AggregateOffer above prices.
+                price: "0",
+                priceCurrency,
+              },
+            },
+          ]
+        : []),
+      {
+        "@type": "FAQPage",
+        "@id": `${SITE_URL}#faq`,
+        // Built from the same `faqItems` the accordion renders, so the
+        // schema and the visible answers cannot diverge.
+        mainEntity: faqItems.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: { "@type": "Answer", text: item.answer },
+        })),
+      },
+    ],
+  };
+}
 
 /**
  * Marketing landing page.
@@ -39,6 +262,19 @@ export default async function HomePage() {
 
   return (
     <div className="bg-background text-foreground">
+      <script
+        type="application/ld+json"
+        // Serialised from our own static catalogue and copy — no user
+        // input reaches this. `<` is escaped as a matter of habit,
+        // matching app/guides/[slug]/page.tsx.
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(buildHomeJsonLd(currency)).replace(
+            /</g,
+            "\\u003c",
+          ),
+        }}
+      />
+
       <Header />
 
       <main id="main">
@@ -98,7 +334,7 @@ function Hero() {
 
           <p className="mt-8 text-sm text-foreground-tertiary">
             Free for ninety days. No card required. Three clear plans after
-            that, from $29 a month.
+            that, from $15 a month, billed yearly.
           </p>
         </div>
       </div>
@@ -223,34 +459,39 @@ function Manifesto() {
    grid. Each feature gets a real moment.
    ============================================================ */
 
-function Features() {
-  const features = [
-    {
-      kicker: "Storefront",
-      title: "A theme that feels considered, out of the box.",
-      body:
-        "Quiet typography, generous whitespace, real attention to product detail pages. The default storefront looks like something you would have hired a designer to build — because we did.",
-      screen: "/screens/storefront.png",
-      screenAlt: "Mark8ly storefront — coastal hero with editorial typography",
-    },
-    {
-      kicker: "Checkout",
-      title: "Payments that work everywhere customers do.",
-      body:
-        "Cards, UPI, wallets, and local methods, all behind a single checkout. No upcharges from us. Standard processor fees only.",
-      screen: "/screens/checkout.png",
-      screenAlt: "Mark8ly checkout — single page with order summary and progressive contact, address, shipping, payment steps",
-    },
-    {
-      kicker: "Admin",
-      title: "An admin you don't have to learn.",
-      body:
-        "Products, orders, customers, inventory. Each screen does one thing, clearly. No dashboards full of metrics that don't matter to you.",
-      screen: "/screens/admin.png",
-      screenAlt: "Mark8ly admin — branding settings with editorial layout gallery",
-    },
-  ];
+/**
+ * Module-level so the JSON-LD `screenshot` list and the rendered rows
+ * read from one array — a screenshot swapped here can't silently leave
+ * the structured data pointing at an image the page no longer shows.
+ */
+const FEATURES = [
+  {
+    kicker: "Storefront",
+    title: "A theme that feels considered, out of the box.",
+    body:
+      "Quiet typography, generous whitespace, real attention to product detail pages. The default storefront looks like something you would have hired a designer to build — because we did.",
+    screen: "/screens/storefront.png",
+    screenAlt: "Mark8ly storefront — coastal hero with editorial typography",
+  },
+  {
+    kicker: "Checkout",
+    title: "Payments that work everywhere customers do.",
+    body:
+      "Cards, UPI, wallets, and local methods, all behind a single checkout. No upcharges from us. Standard processor fees only.",
+    screen: "/screens/checkout.png",
+    screenAlt: "Mark8ly checkout — single page with order summary and progressive contact, address, shipping, payment steps",
+  },
+  {
+    kicker: "Admin",
+    title: "An admin you don't have to learn.",
+    body:
+      "Products, orders, customers, inventory. Each screen does one thing, clearly. No dashboards full of metrics that don't matter to you.",
+    screen: "/screens/admin.png",
+    screenAlt: "Mark8ly admin — branding settings with editorial layout gallery",
+  },
+];
 
+function Features() {
   return (
     <section className="border-t border-border-subtle py-16 sm:py-24">
       <div className="mx-auto max-w-6xl px-6">
@@ -264,7 +505,7 @@ function Features() {
         </div>
 
         <div className="space-y-14">
-          {features.map((f, i) => (
+          {FEATURES.map((f, i) => (
             <article
               key={f.title}
               className={`grid gap-8 lg:grid-cols-[1fr_1.4fr] lg:gap-12 ${
@@ -881,7 +1122,7 @@ const faqItems = [
   {
     question: "What happens after the ninety-day free trial?",
     answer:
-      "You choose between three plans — Starter, Studio, or Pro — starting at $29 a month. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.",
+      "You choose between three plans — Starter, Studio, or Pro — from $15 a month billed yearly, or $19 a month billed monthly. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.",
   },
   {
     question: "What does Mark8ly take from each sale?",
@@ -891,7 +1132,7 @@ const faqItems = [
   {
     question: "Is there a limit on products?",
     answer:
-      "Starter caps at 100 products for merchants just opening their first store. Studio and Pro are unlimited — add as many products, photos, and variants as you like.",
+      "No. Every plan includes unlimited products and orders — add as many products, photos, and variants as you like. What changes between plans is how many storefronts you can run: two on Starter, five on Studio, ten on Pro.",
   },
   {
     question: "Can I leave?",

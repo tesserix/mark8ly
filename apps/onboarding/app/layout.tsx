@@ -114,7 +114,11 @@ const jsonLd = {
       name: SITE_NAME,
       legalName: "Tesserix",
       url: SITE_URL,
-      logo: `${SITE_URL}/opengraph-image`,
+      // A square mark, not the 1200×630 social card. Google's
+      // Organization logo guidance wants a logo image it can crop to
+      // a square; handing it the OG banner gets the logo dropped from
+      // knowledge-panel and AI-answer attribution.
+      logo: `${SITE_URL}/icon-192.png`,
       description: SITE_DESCRIPTION,
       email: "hello@mark8ly.com",
       sameAs: [

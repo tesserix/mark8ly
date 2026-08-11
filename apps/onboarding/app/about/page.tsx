@@ -10,7 +10,7 @@ export const metadata = {
   openGraph: {
     title: "About · Mark8ly",
     description:
-      "Built for people who make things. A small team, three commitments, Mumbai.",
+      "Built for people who make things. A small team, three commitments, Australia.",
     url: "/about",
   },
 };
@@ -44,8 +44,8 @@ export default function AboutPage() {
             </p>
             <p>
               Mark8ly is the opposite. The storefront looks like something a
-              studio made. The admin only shows what you need. Six months are
-              free. After that the price is one honest number.
+              studio made. The admin only shows what you need. The first ninety
+              days are free. After that the price is one honest number.
             </p>
             <p>
               We&rsquo;re not trying to be the biggest platform. We&rsquo;re
@@ -102,7 +102,7 @@ export default function AboutPage() {
           </div>
           <div className="space-y-6 text-foreground-secondary leading-relaxed lg:max-w-xl">
             <p>
-              Mumbai, India. Remote-first, global by default. We build and
+              Australia. Remote-first, global by default. We build and
               support Mark8ly from a small distributed team of engineers,
               designers, and merchants.
             </p>

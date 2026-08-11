@@ -102,8 +102,7 @@ export function Footer() {
           {/* Operator disclosure. Named here so a merchant can match the entity
               on their invoice and settlement to the product they signed up to. */}
           <p className="mt-6 text-xs leading-relaxed text-paper-500">
-            Powered by Zivana Innovations LLP, part of Tesserix Pty Ltd
-            (ACN 694 070 865 · ABN 59 694 070 865)
+            Tesserix Pty Ltd (ACN 694 070 865 · ABN 59 694 070 865)
           </p>
         </div>
       </div>

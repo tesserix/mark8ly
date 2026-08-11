@@ -2,7 +2,7 @@
 
 > Mark8ly is a modern editorial commerce platform for independent merchants. Launch a storefront in an afternoon, keep every sale (no platform transaction fees), and ship a store that looks considered from day one.
 
-Mark8ly is a Tesserix product built for indie merchants and small established brands who want an online store that feels composed — the opposite of templated SaaS builders. Six free months, then one flat monthly fee. No transaction fees, no tier maze, no feature paywalls. You own your data, your customers, your domain, and you can export everything and leave at any time.
+Mark8ly is a Tesserix product built for indie merchants and small established brands who want an online store that feels composed — the opposite of templated SaaS builders. Ninety days free, then one flat monthly fee. No transaction fees, no tier maze, no feature paywalls. You own your data, your customers, your domain, and you can export everything and leave at any time.
 
 The project is pre-launch. The marketing site at https://mark8ly.com is the primary public surface. Admin and storefront surfaces for live merchants are in development.
 
@@ -16,7 +16,7 @@ The project is pre-launch. The marketing site at https://mark8ly.com is the prim
 
 ## Pricing
 
-Free for ninety days, no credit card required. After that, three clear plans — Starter at $29/month, Studio at $79/month, and Pro at $99/month (annual) or $119/month (monthly). Pro merchants can add the optional White-label App add-on, billed annually. Annual billing is available on every plan. Mark8ly never takes a cut of your sales — only your payment processor charges their standard fees (around 2% for UPI, 2–3% for cards).
+Free for ninety days, no credit card required. After that, three clear plans — Starter at $15/month (annual) or $19/month (monthly), Studio at $39/month (annual) or $49/month (monthly), and Pro at $99/month (annual) or $119/month (monthly). Pro merchants can add the optional White-label App add-on, billed annually. Annual billing is available on every plan. Mark8ly never takes a cut of your sales — only your payment processor charges their standard fees (around 2% for UPI, 2–3% for cards).
 
 ## Core beliefs
 
@@ -26,7 +26,7 @@ Free for ninety days, no credit card required. After that, three clear plans —
 
 ## Who it's for
 
-Indie merchants, small batch makers, boutique brands, and established small-to-mid merchants migrating off Shopify, WooCommerce, or Squarespace. India-based, globally available.
+Indie merchants, small batch makers, boutique brands, and established small-to-mid merchants migrating off Shopify, WooCommerce, or Squarespace. Australia-based, globally available.
 
 ## Not indexed
 

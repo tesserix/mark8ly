@@ -7,7 +7,7 @@ import {
 export const metadata = {
   title: "Terms",
   description:
-    "Mark8ly Terms of Service. Ninety-day free trial, then one of three clear plans from $29 a month. No transaction fees from Mark8ly. Governed by New South Wales, Australia. Australian Consumer Law always applies.",
+    "Mark8ly Terms of Service. Ninety-day free trial, then one of three clear plans from $15 a month billed yearly. No transaction fees from Mark8ly. Governed by New South Wales, Australia. Australian Consumer Law always applies.",
   alternates: { canonical: "/terms" },
 };
 
@@ -88,7 +88,8 @@ export default function TermsOfServicePage() {
         </p>
         <p>
           <strong>After the free period:</strong> three plans — Starter,
-          Studio, and Pro — from $29 a month. Annual billing available on
+          Studio, and Pro — from $19 a month billed monthly, or from $15 a
+          month billed yearly. Annual billing available on
           every plan. No extra platform transaction fees from Mark8ly.
           Upgrades prorate; downgrades take effect at the end of your
           current period. Cancel any time.
@@ -104,18 +105,15 @@ export default function TermsOfServicePage() {
           required.
         </p>
         <p>
-          <strong>Payment methods:</strong> Mark8ly subscriptions are
-          charged through Stripe (global) or Razorpay (India). See{" "}
-          <a href="/sub-processors">/sub-processors</a>.
+          <strong>Payment methods:</strong> Mark8ly subscriptions are charged
+          through Stripe. See <a href="/sub-processors">/sub-processors</a>.
         </p>
         <p>
           <strong>Who collects your payment:</strong> Subscription payments are
-          collected and settled by{" "}
-          <strong>Zivana Innovations LLP</strong>, part of Tesserix Pty Ltd.
-          That is the name that may appear on your bank or card statement,
-          whether you are billed through Stripe or Razorpay. If we begin billing
-          you through a different group entity, we will tell you before it
-          takes effect.
+          collected and settled by <strong>Tesserix Pty Ltd</strong> through
+          Stripe. That is the name that may appear on your bank or card
+          statement. If we begin billing you through a different group entity,
+          we will tell you before it takes effect.
         </p>
 
         <h2>4. Acceptable use</h2>
@@ -340,8 +338,7 @@ export default function TermsOfServicePage() {
         <p>
           Mark8ly is a product of <strong>Tesserix Pty Ltd</strong> (ACN 694
           070 865, ABN 59 694 070 865), registered in New South Wales,
-          Australia. Operations are conducted from Mumbai, India and Sydney,
-          Australia.
+          Australia. Operations are conducted from Sydney, Australia.
         </p>
       </Prose>
     </MarketingPage>

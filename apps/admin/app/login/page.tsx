@@ -39,7 +39,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
               merchant decides to trust the platform, and the entity on their
               settlement statement should not be a surprise later. */}
           <p className="mt-10 text-center text-xs leading-relaxed text-muted-foreground">
-            Powered by Zivana Innovations LLP, part of Tesserix Pty Ltd
+            Tesserix Pty Ltd
             <br />
             ACN 694 070 865 · ABN 59 694 070 865
           </p>

@@ -334,7 +334,7 @@ function Hero() {
 
           <p className="mt-8 text-sm text-foreground-tertiary">
             Free for ninety days. No card required. Three clear plans after
-            that, from $19 a month.
+            that, from $15 a month, billed yearly.
           </p>
         </div>
       </div>
@@ -1122,7 +1122,7 @@ const faqItems = [
   {
     question: "What happens after the ninety-day free trial?",
     answer:
-      "You choose between three plans — Starter, Studio, or Pro — starting at $19 a month. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.",
+      "You choose between three plans — Starter, Studio, or Pro — from $15 a month billed yearly, or $19 a month billed monthly. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.",
   },
   {
     question: "What does Mark8ly take from each sale?",

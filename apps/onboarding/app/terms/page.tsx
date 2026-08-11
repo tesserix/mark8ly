@@ -7,7 +7,7 @@ import {
 export const metadata = {
   title: "Terms",
   description:
-    "Mark8ly Terms of Service. Ninety-day free trial, then one of three clear plans from $19 a month. No transaction fees from Mark8ly. Governed by New South Wales, Australia. Australian Consumer Law always applies.",
+    "Mark8ly Terms of Service. Ninety-day free trial, then one of three clear plans from $15 a month billed yearly. No transaction fees from Mark8ly. Governed by New South Wales, Australia. Australian Consumer Law always applies.",
   alternates: { canonical: "/terms" },
 };
 
@@ -88,7 +88,8 @@ export default function TermsOfServicePage() {
         </p>
         <p>
           <strong>After the free period:</strong> three plans — Starter,
-          Studio, and Pro — from $19 a month. Annual billing available on
+          Studio, and Pro — from $19 a month billed monthly, or from $15 a
+          month billed yearly. Annual billing available on
           every plan. No extra platform transaction fees from Mark8ly.
           Upgrades prorate; downgrades take effect at the end of your
           current period. Cancel any time.

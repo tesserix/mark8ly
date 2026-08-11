@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { FaqAccordion } from "@repo/ui/faq-accordion";
+import { MOBILE_ADMIN_APP_LINKS } from "@repo/ui/app-store-badges";
 import {
   CURRENCY_COOKIE_NAME,
   Money,
@@ -74,6 +75,32 @@ function toMajorUnits(minorUnits: number): string {
 }
 
 /**
+ * The companion admin app, described only in terms of the stores that
+ * actually resolve today. Play is live; the iOS listing is still in
+ * review and `MOBILE_ADMIN_APP_LINKS.ios` is deliberately empty until
+ * it clears — an indexed `installUrl` pointing at an unpublished
+ * listing is a crawlable 404, and claiming `operatingSystem: "iOS"`
+ * for an app nobody can install is a false claim in the graph.
+ *
+ * Both fields derive from the same constant the store badges render
+ * from, so filling in the iOS URL switches on the badge and the
+ * structured data together, with no second edit here.
+ */
+function describeMobileApp(): {
+  installUrls: string[];
+  operatingSystems: string[];
+} {
+  const ios = MOBILE_ADMIN_APP_LINKS.ios.trim();
+  const android = MOBILE_ADMIN_APP_LINKS.android.trim();
+  return {
+    installUrls: [ios, android].filter(Boolean),
+    operatingSystems: [ios ? "iOS" : "", android ? "Android" : ""].filter(
+      Boolean,
+    ),
+  };
+}
+
+/**
  * Resolves a plan's price alongside the currency it is actually
  * denominated in. `getPlanPrice` silently falls back to USD for an
  * unlisted currency, which would otherwise let us label a USD amount
@@ -112,6 +139,8 @@ function buildHomeJsonLd(currency: Currency) {
     p.annualMonthly,
   ]);
 
+  const mobileApp = describeMobileApp();
+
   return {
     "@context": "https://schema.org",
     "@graph": [
@@ -124,6 +153,10 @@ function buildHomeJsonLd(currency: Currency) {
         operatingSystem: "Web",
         url: SITE_URL,
         publisher: { "@id": `${SITE_URL}#organization` },
+        // The same three shots the Features section renders. Absolute
+        // URLs — schema.org image properties are not resolved against
+        // metadataBase the way Next's OG helpers are.
+        screenshot: FEATURES.map((feature) => `${SITE_URL}${feature.screen}`),
         offers: {
           "@type": "AggregateOffer",
           priceCurrency,
@@ -162,6 +195,35 @@ function buildHomeJsonLd(currency: Currency) {
           ]),
         },
       },
+      // Only claimed once at least one store listing resolves. With no
+      // live platform this node drops out entirely rather than
+      // describing an app nobody can install.
+      ...(mobileApp.installUrls.length > 0
+        ? [
+            {
+              "@type": "MobileApplication",
+              "@id": `${SITE_URL}#mobile-app`,
+              name: "Mark8ly Admin",
+              applicationCategory: "BusinessApplication",
+              operatingSystem: mobileApp.operatingSystems.join(", "),
+              description:
+                "Run your Mark8ly store from your phone — orders, " +
+                "products, inventory, and customers.",
+              publisher: { "@id": `${SITE_URL}#organization` },
+              // The companion app to the platform itself, not a
+              // separate product.
+              isPartOf: { "@id": `${SITE_URL}#software` },
+              installUrl: mobileApp.installUrls,
+              offers: {
+                "@type": "Offer",
+                // Free to install; running a store on it needs a plan,
+                // which the AggregateOffer above prices.
+                price: "0",
+                priceCurrency,
+              },
+            },
+          ]
+        : []),
       {
         "@type": "FAQPage",
         "@id": `${SITE_URL}#faq`,
@@ -397,34 +459,39 @@ function Manifesto() {
    grid. Each feature gets a real moment.
    ============================================================ */
 
-function Features() {
-  const features = [
-    {
-      kicker: "Storefront",
-      title: "A theme that feels considered, out of the box.",
-      body:
-        "Quiet typography, generous whitespace, real attention to product detail pages. The default storefront looks like something you would have hired a designer to build — because we did.",
-      screen: "/screens/storefront.png",
-      screenAlt: "Mark8ly storefront — coastal hero with editorial typography",
-    },
-    {
-      kicker: "Checkout",
-      title: "Payments that work everywhere customers do.",
-      body:
-        "Cards, UPI, wallets, and local methods, all behind a single checkout. No upcharges from us. Standard processor fees only.",
-      screen: "/screens/checkout.png",
-      screenAlt: "Mark8ly checkout — single page with order summary and progressive contact, address, shipping, payment steps",
-    },
-    {
-      kicker: "Admin",
-      title: "An admin you don't have to learn.",
-      body:
-        "Products, orders, customers, inventory. Each screen does one thing, clearly. No dashboards full of metrics that don't matter to you.",
-      screen: "/screens/admin.png",
-      screenAlt: "Mark8ly admin — branding settings with editorial layout gallery",
-    },
-  ];
+/**
+ * Module-level so the JSON-LD `screenshot` list and the rendered rows
+ * read from one array — a screenshot swapped here can't silently leave
+ * the structured data pointing at an image the page no longer shows.
+ */
+const FEATURES = [
+  {
+    kicker: "Storefront",
+    title: "A theme that feels considered, out of the box.",
+    body:
+      "Quiet typography, generous whitespace, real attention to product detail pages. The default storefront looks like something you would have hired a designer to build — because we did.",
+    screen: "/screens/storefront.png",
+    screenAlt: "Mark8ly storefront — coastal hero with editorial typography",
+  },
+  {
+    kicker: "Checkout",
+    title: "Payments that work everywhere customers do.",
+    body:
+      "Cards, UPI, wallets, and local methods, all behind a single checkout. No upcharges from us. Standard processor fees only.",
+    screen: "/screens/checkout.png",
+    screenAlt: "Mark8ly checkout — single page with order summary and progressive contact, address, shipping, payment steps",
+  },
+  {
+    kicker: "Admin",
+    title: "An admin you don't have to learn.",
+    body:
+      "Products, orders, customers, inventory. Each screen does one thing, clearly. No dashboards full of metrics that don't matter to you.",
+    screen: "/screens/admin.png",
+    screenAlt: "Mark8ly admin — branding settings with editorial layout gallery",
+  },
+];
 
+function Features() {
   return (
     <section className="border-t border-border-subtle py-16 sm:py-24">
       <div className="mx-auto max-w-6xl px-6">
@@ -438,7 +505,7 @@ function Features() {
         </div>
 
         <div className="space-y-14">
-          {features.map((f, i) => (
+          {FEATURES.map((f, i) => (
             <article
               key={f.title}
               className={`grid gap-8 lg:grid-cols-[1fr_1.4fr] lg:gap-12 ${

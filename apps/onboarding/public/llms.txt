@@ -16,7 +16,7 @@ The project is pre-launch. The marketing site at https://mark8ly.com is the prim
 
 ## Pricing
 
-Free for ninety days, no credit card required. After that, three clear plans — Starter at $19/month, Studio at $49/month, and Pro at $99/month (annual) or $119/month (monthly). Pro merchants can add the optional White-label App add-on, billed annually. Annual billing is available on every plan. Mark8ly never takes a cut of your sales — only your payment processor charges their standard fees (around 2% for UPI, 2–3% for cards).
+Free for ninety days, no credit card required. After that, three clear plans — Starter at $15/month (annual) or $19/month (monthly), Studio at $39/month (annual) or $49/month (monthly), and Pro at $99/month (annual) or $119/month (monthly). Pro merchants can add the optional White-label App add-on, billed annually. Annual billing is available on every plan. Mark8ly never takes a cut of your sales — only your payment processor charges their standard fees (around 2% for UPI, 2–3% for cards).
 
 ## Core beliefs
 

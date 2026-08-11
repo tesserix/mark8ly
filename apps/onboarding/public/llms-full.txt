@@ -12,7 +12,7 @@ A storefront worth opening.
 
 Mark8ly is a quiet, considered commerce platform for people who actually make things. Set up in an afternoon. Keep your margins. Sell on a storefront that doesn't look like everyone else's.
 
-Free for ninety days. No card required. Three clear plans after that, from $29 a month.
+Free for ninety days. No card required. Three clear plans after that, from $19 a month.
 
 ### What we believe
 
@@ -38,8 +38,8 @@ Free for ninety days. No card required. Three clear plans after that, from $29 a
 
 Ninety days free to start. After that, three clear plans — no hidden fees, no transaction cuts from Mark8ly, only what your payment processor charges at their standard rate. Change plans any time; upgrades prorate, downgrades take effect at the end of your current period.
 
-- **Starter — $29/month.** For merchants opening their first store. 1 storefront, up to 100 products, 500 orders/month, your own domain, standard analytics.
-- **Studio — $79/month.** For stores finding their rhythm. 3 storefronts, unlimited products, 5,000 orders/month, advanced analytics, discount codes, custom domain, priority email support.
+- **Starter — $19/month.** For merchants opening their first store. 1 storefront, up to 100 products, 500 orders/month, your own domain, standard analytics.
+- **Studio — $49/month.** For stores finding their rhythm. 3 storefronts, unlimited products, 5,000 orders/month, advanced analytics, discount codes, custom domain, priority email support.
 - **Pro — $99/month (annual) or $119/month (monthly).** For teams scaling past $10k orders a month. Unlimited storefronts, unlimited everything, SLA-backed uptime, dedicated infrastructure, named account manager, enterprise SSO.
 
 **White-label App add-on** (Pro only): publish a branded iOS and Android app for your storefront. Billed annually and co-terminated with your Pro renewal.
@@ -65,7 +65,7 @@ Every plan includes:
 Yes — that's the entire point. If you can write an email, you can run a store on Mark8ly. And if you get stuck, real humans answer real messages.
 
 **What happens after the ninety-day free trial?**
-You choose between three plans — Starter, Studio, or Pro — starting at $29 a month. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.
+You choose between three plans — Starter, Studio, or Pro — starting at $19 a month. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.
 
 **What does Mark8ly take from each sale?**
 Nothing. Your payment processor charges their standard fee (around 2% for UPI, 2–3% for cards). We don't add anything on top of that.
@@ -146,7 +146,7 @@ Mumbai, India. We work remote-first across a small distributed team, which means
 
 - Age requirement: 18+.
 - Free trial: 90 days, no credit card.
-- After the free period: three plans — Starter at $29/month, Studio at $79/month, Pro at $99/month (annual) or $119/month (monthly). Annual billing available on every plan. No extra platform transaction fees from Mark8ly. Optional White-label App add-on on Pro, billed annually.
+- After the free period: three plans — Starter at $19/month, Studio at $49/month, Pro at $99/month (annual) or $119/month (monthly). Annual billing available on every plan. No extra platform transaction fees from Mark8ly. Optional White-label App add-on on Pro, billed annually.
 - Refunds: within 14 days, via support@mark8ly.com.
 - Acceptable use: no illegal, counterfeit, or restricted items. No fraud, malware, or interference with other stores.
 - Cancellation: any time, no fees, no penalties. Download your data before cancelling.

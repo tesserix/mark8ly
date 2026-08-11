@@ -96,8 +96,7 @@ export default function AcceptableUsePage() {
         <p>
           Mark8ly is a product of <strong>Tesserix Pty Ltd</strong> (ACN 694
           070 865, ABN 59 694 070 865), registered in New South Wales,
-          Australia. Operations are conducted from Mumbai, India and Sydney,
-          Australia.
+          Australia. Operations are conducted from Sydney, Australia.
         </p>
       </Prose>
     </MarketingPage>

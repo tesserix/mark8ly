@@ -33,7 +33,7 @@ export default function PrivacyPolicyPage() {
           and manage online stores. Mark8ly is a product of{" "}
           <strong>Tesserix Pty Ltd</strong> (ACN 694 070 865, ABN 59 694 070
           865), registered in New South Wales, Australia. Day-to-day
-          operations are conducted from Mumbai, India and Sydney, Australia.
+          operations are conducted from Sydney, Australia.
           Tesserix Pty Ltd is the data controller for the personal
           information processed through the Mark8ly website and account.
         </p>

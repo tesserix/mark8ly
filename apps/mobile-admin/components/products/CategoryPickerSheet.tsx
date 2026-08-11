@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type ComponentType } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type ComponentType, type ReactElement } from "react";
 import { View, Pressable, ActivityIndicator, Alert, StyleSheet } from "react-native";
 import { BottomSheetModal, BottomSheetFlatList as GorhomBottomSheetFlatList } from "@gorhom/bottom-sheet";
 import * as Haptics from "expo-haptics";
@@ -20,7 +20,7 @@ const BottomSheetFlatList = GorhomBottomSheetFlatList as unknown as ComponentTyp
   data: CategoryNode[];
   keyExtractor: (item: CategoryNode) => string;
   contentContainerStyle?: unknown;
-  renderItem: (info: { item: CategoryNode }) => JSX.Element;
+  renderItem: (info: { item: CategoryNode }) => ReactElement;
 }>;
 
 /**

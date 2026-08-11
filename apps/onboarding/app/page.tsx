@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -10,11 +11,171 @@ import {
   getPlanPrice,
   normalizeCurrency,
   type Currency,
+  type PlanId,
+  type SharedPlan,
 } from "@repo/ui/subscription";
 
 import { Header } from "@/components/marketing/Header";
 import { Footer } from "@/components/marketing/Footer";
 import { Pricing } from "@/components/marketing/Pricing";
+
+const SITE_URL = "https://mark8ly.com";
+
+/* ============================================================
+   Homepage metadata. The root layout supplies the site-wide
+   defaults; this overrides them for `/` specifically so the
+   highest-traffic page has its own description rather than
+   inheriting the generic one.
+
+   `title.absolute` bypasses the root `%s · Mark8ly` template —
+   without it the rendered title reads "Mark8ly — … · Mark8ly".
+   ============================================================ */
+
+export const metadata: Metadata = {
+  title: {
+    absolute: "Mark8ly — quiet commerce for people who make things",
+  },
+  description:
+    "Mark8ly is an editorial commerce platform for independent merchants. " +
+    "Open a storefront in an afternoon, keep every sale — no platform " +
+    "transaction fees — and ship a store that looks considered from day one. " +
+    "Ninety days free, no card required.",
+  alternates: {
+    canonical: "/",
+  },
+};
+
+/* ============================================================
+   Homepage structured data.
+
+   Two graphs: the product itself (SoftwareApplication, with the
+   plan line-up as an AggregateOffer) and the FAQ. The guides and
+   the SEO landing pages already emit Article/FAQPage; the
+   homepage — the page most likely to be cited in an AI answer —
+   previously emitted none, so pricing and plan facts were only
+   available as prose.
+
+   Prices are derived from SHARED_PRICING_CATALOGUE rather than
+   hardcoded, so the schema can never drift from the numbers the
+   Pricing section actually renders. Google requires structured
+   data to match visible content; a hardcoded price here would
+   silently become a mismatch the next time pricing moves.
+   ============================================================ */
+
+const PLAN_NAMES: Record<PlanId, string> = {
+  starter: "Starter",
+  studio: "Studio",
+  pro: "Pro",
+};
+
+/** Catalogue amounts are minor units (cents/paise); schema.org wants major. */
+function toMajorUnits(minorUnits: number): string {
+  return (minorUnits / 100).toFixed(2);
+}
+
+/**
+ * Resolves a plan's price alongside the currency it is actually
+ * denominated in. `getPlanPrice` silently falls back to USD for an
+ * unlisted currency, which would otherwise let us label a USD amount
+ * with the visitor's currency code — a wrong price in the schema.
+ */
+function resolvePricedPlan(
+  plan: SharedPlan,
+  currency: Currency,
+): { monthly: number; annualMonthly: number; priceCurrency: Currency } {
+  const localized = plan.prices[currency];
+  const price = localized ?? getPlanPrice(plan, "USD");
+  return {
+    monthly: price.monthly,
+    annualMonthly: price.annualMonthlyEquivalent,
+    priceCurrency: localized ? currency : "USD",
+  };
+}
+
+function buildHomeJsonLd(currency: Currency) {
+  const pricedPlans = SHARED_PRICING_CATALOGUE.plans.map((plan) => ({
+    id: plan.id,
+    ...resolvePricedPlan(plan, currency),
+  }));
+
+  // Every plan resolves to the same currency (the catalogue defines a
+  // full row per currency), so the aggregate can take the first one.
+  const priceCurrency = pricedPlans[0]?.priceCurrency ?? "USD";
+
+  // Both billing cadences are offered on the page, and the toggle
+  // defaults to annual — so the headline a visitor first sees is the
+  // annual-billed per-month equivalent, not the monthly rate. Emit an
+  // Offer for each cadence, all expressed per-month so the aggregate
+  // range stays coherent and matches whichever toggle state is shown.
+  const monthlyAmounts = pricedPlans.flatMap((p) => [
+    p.monthly,
+    p.annualMonthly,
+  ]);
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": `${SITE_URL}#software`,
+        name: "Mark8ly",
+        applicationCategory: "BusinessApplication",
+        applicationSubCategory: "Ecommerce platform",
+        operatingSystem: "Web",
+        url: SITE_URL,
+        publisher: { "@id": `${SITE_URL}#organization` },
+        offers: {
+          "@type": "AggregateOffer",
+          priceCurrency,
+          lowPrice: toMajorUnits(Math.min(...monthlyAmounts)),
+          highPrice: toMajorUnits(Math.max(...monthlyAmounts)),
+          offerCount: pricedPlans.length * 2,
+          offers: pricedPlans.flatMap((plan) => [
+            {
+              "@type": "Offer",
+              name: `${PLAN_NAMES[plan.id]} (billed yearly)`,
+              price: toMajorUnits(plan.annualMonthly),
+              priceCurrency: plan.priceCurrency,
+              category: "SubscriptionPlan",
+              priceSpecification: {
+                "@type": "UnitPriceSpecification",
+                price: toMajorUnits(plan.annualMonthly),
+                priceCurrency: plan.priceCurrency,
+                unitText: "MONTH",
+                billingDuration: 12,
+              },
+            },
+            {
+              "@type": "Offer",
+              name: `${PLAN_NAMES[plan.id]} (billed monthly)`,
+              price: toMajorUnits(plan.monthly),
+              priceCurrency: plan.priceCurrency,
+              category: "SubscriptionPlan",
+              priceSpecification: {
+                "@type": "UnitPriceSpecification",
+                price: toMajorUnits(plan.monthly),
+                priceCurrency: plan.priceCurrency,
+                unitText: "MONTH",
+                billingDuration: 1,
+              },
+            },
+          ]),
+        },
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${SITE_URL}#faq`,
+        // Built from the same `faqItems` the accordion renders, so the
+        // schema and the visible answers cannot diverge.
+        mainEntity: faqItems.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: { "@type": "Answer", text: item.answer },
+        })),
+      },
+    ],
+  };
+}
 
 /**
  * Marketing landing page.
@@ -39,6 +200,19 @@ export default async function HomePage() {
 
   return (
     <div className="bg-background text-foreground">
+      <script
+        type="application/ld+json"
+        // Serialised from our own static catalogue and copy — no user
+        // input reaches this. `<` is escaped as a matter of habit,
+        // matching app/guides/[slug]/page.tsx.
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(buildHomeJsonLd(currency)).replace(
+            /</g,
+            "\\u003c",
+          ),
+        }}
+      />
+
       <Header />
 
       <main id="main">

@@ -30,7 +30,7 @@ export default function EcommerceForMakersPage() {
       intro={[
         "Most ecommerce platforms are built for catalogues, not craft. They optimise for thousands of SKUs, bulk imports, and dashboards full of metrics — which is exactly wrong for a maker with forty carefully-made products and a story behind each one. What you need is a shop that treats each item like it matters, not a spreadsheet with a checkout bolted on.",
         "Mark8ly is built the other way round. The default storefront is editorial: quiet typography, generous whitespace, and product pages that give a single object room to breathe. It's the kind of layout you'd normally hire a designer for — because we did, working alongside real merchants who sell the things they make.",
-        "And because makers usually run on thin margins, we don't take a cut. There's no platform fee on your sales — you pay only your payment processor's standard rate. Ninety days free to start, then plans from $15 a month billed yearly, with a Starter tier that caps at 100 products for people opening their first shop.",
+        "And because makers usually run on thin margins, we don't take a cut. There's no platform fee on your sales — you pay only your payment processor's standard rate. Ninety days free to start, then plans from $15 a month billed yearly, with unlimited products on every tier — including the Starter plan people open their first shop on.",
       ]}
       competitorName="Generic platforms"
       comparisonNote="Most mainstream platforms are tuned for high-SKU catalogues and add fees or design costs that hit small makers hardest."
@@ -74,7 +74,7 @@ export default function EcommerceForMakersPage() {
           heading: "Margins that survive the sale",
           body: [
             "When you make things by hand, every percentage point matters. Mark8ly adds nothing to your sales — no platform fee, no per-order surcharge. Your processor takes their standard rate (about 2% for UPI, 2–3% for cards) and that's it.",
-            "The Starter plan is priced for a first shop and caps at 100 products, which is plenty for a considered range. When you outgrow it, Studio and Pro are unlimited — add as many products, photos, and variants as you like.",
+            "The Starter plan is priced for a first shop and still carries unlimited products and orders — list a considered range or a deep archive, it costs the same. What you gain further up is more storefronts, more images per product, and deeper API access.",
           ],
         },
         {
@@ -99,7 +99,7 @@ export default function EcommerceForMakersPage() {
         {
           question: "How many products can I list?",
           answer:
-            "Starter caps at 100 products, which suits most makers opening their first shop. Studio and Pro are unlimited.",
+            "As many as you like — products and orders are unlimited on every plan, Starter included.",
         },
         {
           question: "Do I need to be technical?",

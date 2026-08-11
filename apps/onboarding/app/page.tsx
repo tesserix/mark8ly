@@ -1132,7 +1132,7 @@ const faqItems = [
   {
     question: "Is there a limit on products?",
     answer:
-      "Starter caps at 100 products for merchants just opening their first store. Studio and Pro are unlimited — add as many products, photos, and variants as you like.",
+      "No. Every plan includes unlimited products and orders — add as many products, photos, and variants as you like. What changes between plans is how many storefronts you can run: two on Starter, five on Studio, ten on Pro.",
   },
   {
     question: "Can I leave?",

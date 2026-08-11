@@ -67,7 +67,7 @@ export default function ShopifyAlternativePage() {
           heading: "No platform fees, in plain terms",
           body: [
             "Every sale on Mark8ly costs you exactly what your payment processor charges — nothing more. There's no percentage skim, no per-order surcharge, no penalty for using the processor you prefer. Over a year, on real volume, that's the kind of saving that funds better packaging or a second product line.",
-            "After the ninety-day free trial you choose one of three plans — Starter, Studio, or Pro — from $29 a month. That's the whole bill. The plan is the price; the sales are yours.",
+            "After the ninety-day free trial you choose one of three plans — Starter, Studio, or Pro — from $19 a month. That's the whole bill. The plan is the price; the sales are yours.",
           ],
         },
         {
@@ -94,7 +94,7 @@ export default function ShopifyAlternativePage() {
         {
           question: "How does the price compare to Shopify?",
           answer:
-            "Plans start at $29 a month after a 90-day free trial, with no added transaction fees. Shopify Basic starts around $29 a month with a 3-day trial and a 2% platform fee unless you use Shopify Payments.",
+            "Plans start at $19 a month after a 90-day free trial, with no added transaction fees. Shopify Basic starts around $29 a month with a 3-day trial and a 2% platform fee unless you use Shopify Payments.",
         },
         {
           question: "Can I use my own domain?",

@@ -30,7 +30,7 @@ export default function EcommerceForMakersPage() {
       intro={[
         "Most ecommerce platforms are built for catalogues, not craft. They optimise for thousands of SKUs, bulk imports, and dashboards full of metrics — which is exactly wrong for a maker with forty carefully-made products and a story behind each one. What you need is a shop that treats each item like it matters, not a spreadsheet with a checkout bolted on.",
         "Mark8ly is built the other way round. The default storefront is editorial: quiet typography, generous whitespace, and product pages that give a single object room to breathe. It's the kind of layout you'd normally hire a designer for — because we did, working alongside real merchants who sell the things they make.",
-        "And because makers usually run on thin margins, we don't take a cut. There's no platform fee on your sales — you pay only your payment processor's standard rate. Ninety days free to start, then plans from $29 a month, with a Starter tier that caps at 100 products for people opening their first shop.",
+        "And because makers usually run on thin margins, we don't take a cut. There's no platform fee on your sales — you pay only your payment processor's standard rate. Ninety days free to start, then plans from $19 a month, with a Starter tier that caps at 100 products for people opening their first shop.",
       ]}
       competitorName="Generic platforms"
       comparisonNote="Most mainstream platforms are tuned for high-SKU catalogues and add fees or design costs that hit small makers hardest."
@@ -94,7 +94,7 @@ export default function EcommerceForMakersPage() {
         {
           question: "How much does it cost to sell handmade goods here?",
           answer:
-            "There's no platform fee on your sales. You pay only your payment processor's standard rate. Plans start at $29 a month after 90 days free, with a Starter tier for first-time shops.",
+            "There's no platform fee on your sales. You pay only your payment processor's standard rate. Plans start at $19 a month after 90 days free, with a Starter tier for first-time shops.",
         },
         {
           question: "How many products can I list?",

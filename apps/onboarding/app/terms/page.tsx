@@ -105,17 +105,15 @@ export default function TermsOfServicePage() {
           required.
         </p>
         <p>
-          <strong>Payment methods:</strong> Mark8ly subscriptions are
-          charged through Stripe (global) or Razorpay (India). See{" "}
-          <a href="/sub-processors">/sub-processors</a>.
+          <strong>Payment methods:</strong> Mark8ly subscriptions are charged
+          through Stripe. See <a href="/sub-processors">/sub-processors</a>.
         </p>
         <p>
           <strong>Who collects your payment:</strong> Subscription payments are
-          collected and settled by <strong>Tesserix Pty Ltd</strong>. That is
-          the name that may appear on your bank or card statement, whether you
-          are billed through Stripe or Razorpay. If we begin billing you
-          through a different group entity, we will tell you before it takes
-          effect.
+          collected and settled by <strong>Tesserix Pty Ltd</strong> through
+          Stripe. That is the name that may appear on your bank or card
+          statement. If we begin billing you through a different group entity,
+          we will tell you before it takes effect.
         </p>
 
         <h2>4. Acceptable use</h2>

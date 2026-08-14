@@ -78,7 +78,6 @@
         "ascAppId": "6791884754"
       },
       "android": {
-        "serviceAccountKeyPath": "@secret:PLAY_SERVICE_ACCOUNT_KEY",
         "track": "internal"
       }
     }

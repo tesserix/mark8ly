@@ -34,6 +34,7 @@ export const useTenantStore = create<TenantStoreState>((set, get) => ({
     if (store) {
       tokenStorage.setStoreId(store.id).catch(() => undefined);
       tokenStorage.setTenantId(store.id).catch(() => undefined);
+      tokenStorage.setActiveStore(store).catch(() => undefined);
     }
   },
   setStores: (stores) => set({ stores }),
@@ -44,11 +45,20 @@ export const useTenantStore = create<TenantStoreState>((set, get) => ({
   hydrate: async () => {
     if (get().hydrated) return;
     try {
-      const [tenantId, storeId] = await Promise.all([
+      const [tenantId, storeId, activeStore] = await Promise.all([
         tokenStorage.getTenantId(),
         tokenStorage.getStoreId(),
+        tokenStorage.getActiveStore(),
       ]);
-      set({ tenantId: tenantId ?? storeId ?? null, hydrated: true });
+      // The remembered id is authoritative — a persisted Store that no longer
+      // matches it is stale (store switched, membership revoked) and the
+      // resolver has to re-decide.
+      const restored = activeStore && activeStore.id === storeId ? activeStore : null;
+      set({
+        tenantId: tenantId ?? storeId ?? null,
+        activeStore: restored,
+        hydrated: true,
+      });
     } catch {
       set({ hydrated: true });
     }

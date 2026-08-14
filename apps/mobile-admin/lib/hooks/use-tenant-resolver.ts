@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { tokenStorage } from "@repo/mobile-shared/auth/token-storage";
+import { ApiError } from "@repo/mobile-shared/api/client";
 import type { Store } from "@repo/mobile-shared/api/types";
 import { useStores } from "./use-store";
 
@@ -98,15 +99,21 @@ export function useTenantResolver(): ResolverState {
   const showPicker = needsPicker && !activeStore;
   const showOnboarding = !!stores && stores.length === 0 && !activeStore;
 
+  // A store restored from the keychain is enough to run on — a slow or failed
+  // refetch must not gate the whole app on one network call. A 403 is exempt:
+  // that is a verdict, not a blip.
+  const denied = isError && error instanceof ApiError && error.status === 403;
+
   return {
     resolving:
       !hydrated ||
-      isLoading ||
-      (!!stores && stores.length > 0 && !activeStore && !showPicker && !decided),
+      (!activeStore &&
+        (isLoading ||
+          (!!stores && stores.length > 0 && !showPicker && !decided))),
     needsOnboarding: showOnboarding,
     needsPicker: showPicker,
     availableStores: showPicker ? (stores ?? []) : [],
-    error: isError ? error : null,
+    error: isError && (denied || !activeStore) ? error : null,
     refetch,
   };
 }

@@ -1,7 +1,8 @@
 import { renderHook, waitFor } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
-import { useStores } from "@/lib/hooks/use-store";
+import { ApiError } from "@repo/mobile-shared/api/client";
+import { useStores, shouldRetryStores } from "@/lib/hooks/use-store";
 
 const REAL_RESPONSE = {
   data: [
@@ -53,5 +54,30 @@ describe("useStores", () => {
     const { result } = renderHook(() => useStores(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(__getTenant).toHaveBeenCalledWith("/stores", undefined, expect.anything());
+  });
+});
+
+describe("shouldRetryStores", () => {
+  it("retries a transient failure past the app-wide default of 2", () => {
+    expect(shouldRetryStores(2, new Error("Network request failed"))).toBe(true);
+    expect(shouldRetryStores(4, new Error("Network request failed"))).toBe(true);
+  });
+
+  it("gives up eventually", () => {
+    expect(shouldRetryStores(5, new Error("Network request failed"))).toBe(false);
+  });
+
+  it("does not retry a 403 — retrying a denial just fails again", () => {
+    expect(shouldRetryStores(0, new ApiError(403, "forbidden", "Forbidden"))).toBe(false);
+  });
+
+  it("does not retry a contract mismatch — the payload will not change", () => {
+    expect(
+      shouldRetryStores(0, new ApiError(200, "contract_mismatch", "bad shape")),
+    ).toBe(false);
+  });
+
+  it("retries a 503 from a restarting backend", () => {
+    expect(shouldRetryStores(0, new ApiError(503, "unavailable", "no upstream"))).toBe(true);
   });
 });

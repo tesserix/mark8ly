@@ -64,6 +64,14 @@ module.exports = {
     '^react/(.*)$': '<rootDir>/node_modules/react/$1',
     '^expo-haptics$': '<rootDir>/node_modules/expo-haptics',
     '^expo-haptics/(.*)$': '<rootDir>/node_modules/expo-haptics/$1',
+    // Sixth instance of the hoisting bug, this time silent rather than loud:
+    // packages/mobile-shared/auth/token-storage.ts resolves expo-secure-store
+    // to the hoisted ROOT copy, so a test's own
+    // `jest.mock("expo-secure-store", …)` intercepts a different physical
+    // module than the source imports — every read returns null and every
+    // write lands nowhere, with no error to explain it.
+    '^expo-secure-store$': '<rootDir>/node_modules/expo-secure-store',
+    '^expo-secure-store/(.*)$': '<rootDir>/node_modules/expo-secure-store/$1',
     '^@gorhom/bottom-sheet$': '<rootDir>/lib/test-support/gorhom-bottom-sheet-mock',
   },
 };

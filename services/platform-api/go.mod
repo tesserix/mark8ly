@@ -1,6 +1,6 @@
 module github.com/mark8ly/platform-api
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/gin-gonic/gin v1.12.0

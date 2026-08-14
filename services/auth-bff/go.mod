@@ -1,6 +1,6 @@
 module github.com/mark8ly/auth-bff
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.0

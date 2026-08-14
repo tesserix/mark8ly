@@ -10,6 +10,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\""
   },
   "devDependencies": {
+    "nanoid": "3.3.18",
     "prettier": "^3.7.4",
     "turbo": "^2.9.4",
     "typescript": "5.9.2"

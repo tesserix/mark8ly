@@ -36,7 +36,7 @@
     "react-native-screens": "~4.4.0",
     "react-native-gesture-handler": "~2.20.0",
     "react-native-reanimated": "~3.16.0",
-    "react-native-svg": "~15.8.0",
+    "react-native-svg": "~15.15.5",
     "@tesserix/native": "*",
     "@tesserix/tokens": "*",
     "@tesserix/hooks": "*",

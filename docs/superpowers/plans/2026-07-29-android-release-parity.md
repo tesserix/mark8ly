@@ -42,7 +42,7 @@ Each item is currently absent, verified in-repo.
 | A2 | `eas.json` `production` has no `android` block | `eas.json` production = `{channel, autoIncrement, ios, env}` | Add `android: { buildType: "app-bundle" }` |
 | A3 | No Android Google client id in production `env` | production `env` carries only `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | Add `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` once A1 exists |
 | A4 | `google-services.json` is gitignored, CI can't see it | `.gitignore:19`; `app.config.js:97` reads `process.env.GOOGLE_SERVICES_JSON` | Upload as an EAS **file** secret; same for iOS `GoogleService-Info.plist` — **verify how the iOS build currently gets it, it may already be broken** |
-| A5 | Play submit key is a local path | `submit.production.android.serviceAccountKeyPath: ./play-service-account.json` | Create Play service account, upload JSON as EAS secret, point config at it |
+| A5 | ~~Play submit key is a local path~~ **done 2026-08-14** | — | `eas-play-submit@tesseracthub-480811` key registered in EAS credentials; `serviceAccountKeyPath` removed so submits use it |
 | A6 | No Android keystore in EAS | — | `eas credentials` → Android → generate/upload keystore (one-time, mirrors the documented iOS cert flow) |
 | A7 | Workflow tag path is iOS-only | `mobile-admin-build.yml`: "Tag builds are always iOS / production / --auto-submit" | Make the tag path build **both** platforms, or matrix it |
 

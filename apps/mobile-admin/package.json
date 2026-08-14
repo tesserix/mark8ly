@@ -34,7 +34,7 @@
     "expo-image": "~56.0.0",
     "expo-image-manipulator": "~56.0.0",
     "expo-image-picker": "~56.0.0",
-    "expo-linking": "~56.0.0",
+    "expo-linking": "~57.0.5",
     "expo-notifications": "~56.0.0",
     "expo-router": "~57.0.12",
     "expo-secure-store": "~56.0.0",

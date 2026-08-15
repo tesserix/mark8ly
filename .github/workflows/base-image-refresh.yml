@@ -13,7 +13,9 @@ env:
 
 on:
   repository_dispatch:
-    types: [tesserix-base-images-updated]
+    # base-docker-images sends `base-image-refresh`; the older name is kept
+    # so an in-flight dispatch from a not-yet-updated sender still lands.
+    types: [base-image-refresh, tesserix-base-images-updated]
   workflow_dispatch:
 
 permissions:

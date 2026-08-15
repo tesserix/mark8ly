@@ -110,7 +110,9 @@ jobs:
           # org-wide GHCR_PAT is the cross-repo equivalent of the
           # prod-ghcr-token used for local dev.
           NODE_AUTH_TOKEN: ${{ secrets.GHCR_PAT }}
-      - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-storefront'
+      # mobile-admin joins the other two Expo apps here: it has its own
+      # build workflow, and its typecheck must not gate the container images.
+      - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-storefront' --filter='!@repo/mobile-admin'
       - run: npx turbo run test --filter='@repo/mobile-admin' --filter='@repo/mobile-shared'
 
   # ─── Security scans ────────────────────────────────────────────────

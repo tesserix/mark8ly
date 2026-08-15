@@ -131,7 +131,9 @@ jobs:
   # them to GHCR. Skipped on PRs (only main pushes ship images).
   images:
     name: Build & push (${{ matrix.image.name }})
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # workflow_dispatch is how the base-image refresh fans out; without it the
+    # refresh runs CI, skips this job and reports success having built nothing.
+    if: contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main'
     needs: [go, node, security]
     runs-on: ubuntu-latest
     strategy:

@@ -38,16 +38,26 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  # Expo packages are versioned in lockstep with the SDK the app pins, so a
+  # single-package bump always lands a mismatch. Upgrade with `expo install --fix`.
   - package-ecosystem: npm
     directory: /apps/mobile-admin
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: expo
+      - dependency-name: expo-*
+      - dependency-name: react-native
   - package-ecosystem: npm
     directory: /apps/storefront-mobile
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: expo
+      - dependency-name: expo-*
+      - dependency-name: react-native
 
   # ── Workflow actions ───────────────────────────────────────────────
   - package-ecosystem: github-actions

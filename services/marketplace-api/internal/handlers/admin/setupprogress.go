@@ -168,7 +168,7 @@ func (h *SetupProgressHandler) Stream(c *gin.Context) {
 		if err != nil {
 			return false
 		}
-		if _, err := fmt.Fprintf(c.Writer, "event: progress\ndata: %s\n\n", data); err != nil {
+		if _, err := fmt.Fprintf(c.Writer, "event: progress\ndata: %s\n\n", data); err != nil { //nolint:logging-smoke // SSE frame to the client, not a log
 			return false
 		}
 		c.Writer.Flush()
@@ -199,7 +199,7 @@ func (h *SetupProgressHandler) Stream(c *gin.Context) {
 		case <-deadline.C:
 			return // client reconnects with a fresh stream
 		case <-heartbeat.C:
-			if _, err := fmt.Fprint(c.Writer, ": ping\n\n"); err != nil {
+			if _, err := fmt.Fprint(c.Writer, ": ping\n\n"); err != nil { //nolint:logging-smoke // SSE keep-alive to the client, not a log
 				return
 			}
 			c.Writer.Flush()

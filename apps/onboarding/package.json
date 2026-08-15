@@ -6,13 +6,14 @@
     "dev": "next dev --port 4201",
     "build": "next build",
     "start": "next start --port 4201",
-    "lint": "echo 'lint stub — migrate to ESLint flat config (next lint removed in Next 16)'",
+    "lint": "echo 'lint stub \u2014 migrate to ESLint flat config (next lint removed in Next 16)'",
     "check-types": "tsc --noEmit",
     "test": "playwright test --config=playwright.unit.config.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@openpanel/nextjs": "^1.5.1",
     "@repo/ui": "*",
     "@tailwindcss/postcss": "^4.2.2",
     "@tesserix/web": "^1.7.1",

@@ -10,6 +10,7 @@ import {
 } from "next/font/google";
 import { cookies, headers } from "next/headers";
 import { SkipLink } from "@repo/ui/skip-link";
+import { Analytics } from "./analytics";
 
 import {
   normalizeStorefrontTheme,
@@ -256,6 +257,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
         </CustomerAuthProvider>
         <Toaster />
         <MerchantCSS css={brandingData?.branding?.custom_css} />
+        <Analytics />
       </body>
     </html>
   );

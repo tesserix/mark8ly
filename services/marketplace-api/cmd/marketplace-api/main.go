@@ -1935,6 +1935,10 @@ func main() {
 		// 301 to the merchant's verified custom domain.
 		internalsvc.NewStoreActiveDomainHandler(conn).
 			Register(r.Group("/internal"), cfg.AuditIngestSecret)
+		// OpenPanel CORS reconciler reads this — no wildcard covers a
+		// merchant's own domain, so the list has to be enumerated.
+		internalsvc.NewActiveDomainsHandler(conn).
+			Register(r.Group("/internal"), cfg.AuditIngestSecret)
 		// Tenant hard-delete — platform-api's outbox drainer POSTs here to
 		// run the destructive purge of a tenant's marketplace-api domain
 		// data (see internal/tenantpurge). Purge is idempotent, so replay
@@ -2017,6 +2021,10 @@ func main() {
 			// Custom-domain takeover — wired on both engines so admin
 			// + storefront middlewares can hit whichever pod is local.
 			internalsvc.NewStoreActiveDomainHandler(conn).
+				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
+			// OpenPanel CORS reconciler reads this — admin-only, matching
+			// the other cross-tenant enumerations above.
+			internalsvc.NewActiveDomainsHandler(conn).
 				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
 			// Tenant hard-delete — platform-api's outbox drainer POSTs here
 			// to run the destructive purge of a tenant's marketplace-api

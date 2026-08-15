@@ -60,7 +60,7 @@ const nextConfig: NextConfig = {
             // reveals. Each missed host is a silent prod-only breakage, so
             // trust the payment processor's domain rather than guess its
             // subdomains.
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://*.razorpay.com https://*.cashfree.com",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://*.razorpay.com https://*.cashfree.com https://analytics.tesserix.app",
             "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data:",

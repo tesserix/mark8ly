@@ -28,7 +28,7 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               // accounts.google.com hosts the GSI client script used by
               // /auth/google (customer Google sign-in trampoline).
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://analytics.tesserix.app",
               "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",

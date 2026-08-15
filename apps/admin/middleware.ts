@@ -54,6 +54,7 @@ const PUBLIC_PREFIXES = [
   "/auth/handoff", // cross-TLD admin handoff — mints a session for this host, so it MUST render before the cookie exists
   "/webhooks", // external provider callbacks (Stripe, etc.) — never gated
   "/api/health", // kubelet probe target; must not 30x to /login
+  "/api/analytics-config", // non-secret client id, read before sign-in
   "/_next",
   "/favicon",
   "/icon-",

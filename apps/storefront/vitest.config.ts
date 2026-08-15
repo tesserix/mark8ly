@@ -5,7 +5,10 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: false,
-    include: ["lib/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "lib/**/*.{test,spec}.{ts,tsx}",
+      "app/api/**/*.{test,spec}.{ts,tsx}",
+    ],
     exclude: ["**/node_modules/**", "**/tests/e2e/**", "**/.next/**"],
   },
   resolve: {

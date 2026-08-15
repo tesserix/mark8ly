@@ -40,7 +40,7 @@ const nextConfig: NextConfig = {
             // (SignInForm → getAppleCredential, lib/gip/apple-js.ts) — without
             // it the script tag is blocked and Apple sign-in fails with
             // "apple sdk load failed".
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://appleid.cdn-apple.com",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://appleid.cdn-apple.com https://analytics.tesserix.app",
             "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data:",

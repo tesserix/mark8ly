@@ -55,7 +55,11 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <body>
         <SkipLink />
         <QueryProvider>{children}</QueryProvider>
-        <Analytics />
+        <Analytics
+          clientId={process.env.OPENPANEL_CLIENT_ID}
+          apiUrl={process.env.OPENPANEL_API_URL}
+          scriptUrl={process.env.OPENPANEL_SCRIPT_URL}
+        />
       </body>
     </html>
   );

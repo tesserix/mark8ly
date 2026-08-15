@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@openpanel/nextjs": "^1.5.1",
     "@react-pdf/renderer": "^4.3.1",
     "@repo/ui": "*",
     "@tailwindcss/postcss": "^4.2.2",

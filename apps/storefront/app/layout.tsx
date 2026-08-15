@@ -257,11 +257,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
         </CustomerAuthProvider>
         <Toaster />
         <MerchantCSS css={brandingData?.branding?.custom_css} />
-        <Analytics
-          clientId={process.env.OPENPANEL_CLIENT_ID}
-          apiUrl={process.env.OPENPANEL_API_URL}
-          scriptUrl={process.env.OPENPANEL_SCRIPT_URL}
-        />
+        <Analytics />
       </body>
     </html>
   );

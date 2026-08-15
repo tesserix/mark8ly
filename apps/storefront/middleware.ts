@@ -13,6 +13,7 @@ const HOST_GATE_BYPASS = [
   "/favicon",
   "/icon-",
   "/api/health",
+  "/api/analytics-config",
   "/robots.txt",
   "/sitemap",
 ];

@@ -7,6 +7,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -46,6 +47,19 @@ func main() {
 			Timestamp: "1755859200", Nonce: "018f3c2a-0000-7000-8000-000000000002",
 			Operator: "op_7f3a", Capability: "tenant.suspend",
 		}},
+		// Pins two rules most likely to be implemented wrong by a
+		// reimplementation on a different stack:
+		//   - repeated query keys sort their values too, not just their keys
+		//     (a=z&a=a&b=2 -> a=a&a=z&b=2)
+		//   - Path is signed exactly as given here. This mirrors the decoded
+		//     net/http Request.URL.Path a later task passes in — never
+		//     RawPath/EscapedPath. See the package doc on signature.go.
+		{"repeated-query-and-encoded-path", platformadmin.SignatureInput{
+			Method: "GET", Path: "/api/v1/admin/tenants/t%20one",
+			RawQuery:  "a=z&a=a&b=2",
+			Timestamp: "1755859200", Nonce: "018f3c2a-0000-7000-8000-000000000003",
+			Operator: "op_7f3a", Capability: "tenant.read",
+		}},
 	}
 
 	const secret = "reference-secret-do-not-use"
@@ -71,10 +85,17 @@ func main() {
 		})
 	}
 
-	enc := json.NewEncoder(os.Stdout)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
 	enc.SetIndent("", "  ")
+	// This file is read by humans on the console team as a specification,
+	// not just parsed. Default encoding/json HTML-escapes '&' to "&",
+	// which is harmless to parsers but would surprise anyone hand-copying a
+	// query string out of the document while chasing a signature mismatch.
+	enc.SetEscapeHTML(false)
 	if err := enc.Encode(out); err != nil {
 		fmt.Fprintln(os.Stderr, "encode:", err)
 		os.Exit(1)
 	}
+	os.Stdout.Write(buf.Bytes())
 }

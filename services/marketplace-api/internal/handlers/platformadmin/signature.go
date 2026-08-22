@@ -3,6 +3,37 @@
 // internal/handlers/admin: different auth chain, different response
 // envelope, different audience. The two share the domain packages beneath
 // them and nothing at the HTTP layer.
+//
+// # Signature scheme
+//
+// This package is the reference implementation of mark8ly's request-signing
+// scheme for /admin/* calls. It is specified nowhere else — the console team
+// implements against this code and the golden vectors in testdata/vectors.json
+// (published on #275). A few properties matter enough to call out explicitly:
+//
+//   - Path must be the *decoded* path as populated by Go's net/http into
+//     Request.URL.Path — never RawPath or EscapedPath. Pass it exactly as
+//     net/http parsed it, with no additional encoding or decoding at the
+//     call site. See testdata vector "repeated-query-and-encoded-path" for a
+//     pinned example.
+//   - Method, Path, Timestamp, Nonce, Operator and Capability must not
+//     contain '\n' or '\r'. CanonicalString enforces this and returns an
+//     error otherwise. The canonical string joins fields with "\n" and has
+//     no length prefixes, so without this guard two different inputs could
+//     produce identical bytes (e.g. Operator="a", Capability="b\nc" collides
+//     with Operator="a\nb", Capability="c"). This is not exploitable today —
+//     RawQuery is percent-escaped by CanonicalQuery, Body is folded into a
+//     fixed-width hash, and net/http itself rejects '\n' in header values —
+//     but the invariant is enforced here rather than left accidental,
+//     because Path is populated from a decoded URL and a literal '%0A' in a
+//     request path decodes to a real newline in Request.URL.Path.
+//   - Sign always emits lowercase hex. Verify accepts either case: some
+//     client stacks (.NET's BitConverter.ToString, several Java HMAC
+//     helpers) emit uppercase hex by default, and a naive string-equality
+//     check against that would fail with an unexplained 401.
+//   - Sign and Verify reject an empty secret. An unconfigured secret
+//     reaching this layer is a misconfiguration, not something that should
+//     silently produce a valid-looking HMAC.
 package platformadmin
 
 import (
@@ -27,6 +58,9 @@ const (
 // SignatureInput is everything covered by the HMAC. Operator and capability
 // are signed so neither can be substituted after signing — they are the
 // attribution the whole surface exists to record.
+//
+// Path must be the decoded net/http Request.URL.Path, not RawPath or
+// EscapedPath — see the package doc.
 type SignatureInput struct {
 	Method     string
 	Path       string
@@ -52,12 +86,14 @@ func CanonicalQuery(raw string) (string, error) {
 	}
 
 	keys := make([]string, 0, len(values))
-	for k := range values {
+	total := 0
+	for k, vs := range values {
 		keys = append(keys, k)
+		total += len(vs)
 	}
 	sort.Strings(keys)
 
-	parts := make([]string, 0, len(values))
+	parts := make([]string, 0, total)
 	for _, k := range keys {
 		vs := append([]string(nil), values[k]...)
 		sort.Strings(vs)
@@ -68,10 +104,38 @@ func CanonicalQuery(raw string) (string, error) {
 	return strings.Join(parts, "&"), nil
 }
 
+// noLineBreakFields are the components joined by "\n" in CanonicalString
+// that are not otherwise protected from ambiguity (RawQuery is
+// percent-escaped by CanonicalQuery; Body is folded into a fixed-width
+// hash). Order is fixed so a multi-field violation always reports the same
+// field first.
+func checkNoLineBreaks(in SignatureInput) error {
+	fields := []struct {
+		name, value string
+	}{
+		{"method", in.Method},
+		{"path", in.Path},
+		{"timestamp", in.Timestamp},
+		{"nonce", in.Nonce},
+		{"operator", in.Operator},
+		{"capability", in.Capability},
+	}
+	for _, f := range fields {
+		if strings.ContainsAny(f.value, "\n\r") {
+			return fmt.Errorf("platformadmin: %s must not contain a newline or carriage return", f.name)
+		}
+	}
+	return nil
+}
+
 // CanonicalString builds the string the HMAC covers. The body is included as
 // a hash rather than inline so a captured signature cannot be lifted onto a
 // different payload. An absent body hashes as the empty string.
 func CanonicalString(in SignatureInput) (string, error) {
+	if err := checkNoLineBreaks(in); err != nil {
+		return "", err
+	}
+
 	query, err := CanonicalQuery(in.RawQuery)
 	if err != nil {
 		return "", err
@@ -90,8 +154,15 @@ func CanonicalString(in SignatureInput) (string, error) {
 	}, "\n"), nil
 }
 
-// Sign returns the hex HMAC-SHA256 of the canonical string.
+// Sign returns the hex HMAC-SHA256 of the canonical string, always in
+// lowercase. It rejects an empty secret: an unconfigured secret reaching
+// this layer is a misconfiguration that should be loud rather than
+// producing a valid-looking HMAC.
 func Sign(secret string, in SignatureInput) (string, error) {
+	if secret == "" {
+		return "", fmt.Errorf("platformadmin: secret must not be empty")
+	}
+
 	canonical, err := CanonicalString(in)
 	if err != nil {
 		return "", err
@@ -102,13 +173,28 @@ func Sign(secret string, in SignatureInput) (string, error) {
 }
 
 // Verify compares a presented signature against the expected one in constant
-// time. A malformed query yields an error rather than a false negative, so
-// the caller can distinguish "bad request" from "bad signature" in logs while
-// still returning one opaque status to the client.
+// time. It accepts hex in either case — some client stacks emit uppercase
+// hex by default — by decoding both sides to bytes before comparing, so an
+// uppercase-hex signature from such a client does not present as an
+// unexplained 401. A malformed (non-hex) presented signature is treated as a
+// failed verification rather than a caller error, since it is
+// indistinguishable from a client with a mismatched signature. A malformed
+// query or an empty secret still yields an error, so the caller can
+// distinguish "bad request"/"misconfigured" from "bad signature" in logs
+// while still returning one opaque status to the client.
 func Verify(secret, got string, in SignatureInput) (bool, error) {
 	want, err := Sign(secret, in)
 	if err != nil {
 		return false, err
 	}
-	return hmac.Equal([]byte(got), []byte(want)), nil
+
+	gotRaw, err := hex.DecodeString(got)
+	if err != nil {
+		return false, nil
+	}
+	wantRaw, err := hex.DecodeString(want)
+	if err != nil {
+		return false, err
+	}
+	return hmac.Equal(gotRaw, wantRaw), nil
 }

@@ -200,18 +200,19 @@ func TestCanonicalStringRejectsLineBreaksInSignedFields(t *testing.T) {
 // this test is the guard against silent drift between signature.go and the
 // published testdata/vectors.json.
 type vectorFile struct {
-	Name       string `json:"name"`
-	Secret     string `json:"secret"`
-	Method     string `json:"method"`
-	Path       string `json:"path"`
-	RawQuery   string `json:"raw_query"`
-	Body       string `json:"body"`
-	Timestamp  string `json:"timestamp"`
-	Nonce      string `json:"nonce"`
-	Operator   string `json:"operator"`
-	Capability string `json:"capability"`
-	Canonical  string `json:"canonical"`
-	Signature  string `json:"signature"`
+	Name          string `json:"name"`
+	Secret        string `json:"secret"`
+	Method        string `json:"method"`
+	RequestTarget string `json:"request_target"`
+	Path          string `json:"path"`
+	RawQuery      string `json:"raw_query"`
+	Body          string `json:"body"`
+	Timestamp     string `json:"timestamp"`
+	Nonce         string `json:"nonce"`
+	Operator      string `json:"operator"`
+	Capability    string `json:"capability"`
+	Canonical     string `json:"canonical"`
+	Signature     string `json:"signature"`
 }
 
 func TestTestdataVectorsMatchImplementation(t *testing.T) {

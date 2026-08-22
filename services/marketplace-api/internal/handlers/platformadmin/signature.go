@@ -11,11 +11,27 @@
 // implements against this code and the golden vectors in testdata/vectors.json
 // (published on #275). A few properties matter enough to call out explicitly:
 //
-//   - Path must be the *decoded* path as populated by Go's net/http into
-//     Request.URL.Path — never RawPath or EscapedPath. Pass it exactly as
-//     net/http parsed it, with no additional encoding or decoding at the
-//     call site. See testdata vector "repeated-query-and-encoded-path" for a
-//     pinned example.
+//   - The signed Path is c.Request.URL.Path — already
+//     percent-decoded by net/http — never RawPath, never EscapedPath, and
+//     never the raw wire form of the request target. A caller that signs
+//     the wire-form path (e.g. "/tenants/t%20one") while the server signs
+//     the decoded form (e.g. "/tenants/t one", with a real space) produces
+//     a different canonical string and every percent-encoded path 401s. See
+//     testdata vector "repeated-query-and-encoded-path", whose "path" field
+//     is the decoded form actually signed and whose "request_target" field
+//     is the raw wire form shown only for illustration.
+//   - Query values are escaped with application/x-www-form-urlencoded
+//     semantics (Go's url.QueryEscape): a space becomes "+", and a literal
+//     "+" becomes "%2B". This diverges from encodeURIComponent-style
+//     escaping (JavaScript, Python's urllib.parse.quote), which encodes a
+//     space as "%20" and leaves "+" as data. An implementation built on
+//     encodeURIComponent must convert "%20" to "+" (and must not
+//     double-escape an existing "+") to match this canonicaliser, or every
+//     query value containing a space silently 401s — see testdata vector
+//     "query-value-with-space". Only the *output* escaping diverges:
+//     url.ParseQuery decodes both "%20" and "+" to a space on input, so the
+//     raw query string the caller happened to build with is irrelevant —
+//     what matters is how CanonicalQuery re-escapes it on the way out.
 //   - Method, Path, Timestamp, Nonce, Operator and Capability must not
 //     contain '\n' or '\r'. CanonicalString enforces this and returns an
 //     error otherwise. The canonical string joins fields with "\n" and has
